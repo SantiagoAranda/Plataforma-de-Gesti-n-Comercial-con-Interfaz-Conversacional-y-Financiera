@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* =========================
+   ENUMS
+========================= */
+
+enum UserRole {
+  ADMIN
+  BUSINESS
+}
+
+enum ProductType {
+  PRODUCT
+  SERVICE
+}
+
+enum AccountingType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+  COST
+}
+
+/* =========================
+   CORE
+========================= */
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  role      UserRole
+
+  businesses Business[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Business {
+  id          String      @id @default(uuid())
+  name        String
+  isActive    Boolean     @default(true)
+
+  ownerId     String
+  owner       User        @relation(fields: [ownerId], references: [id])
+
+  products    Product[]
+  sales       Sale[]
+  accounts    AccountingEntry[]
+  reservations Reservation[]
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+/* =========================
+   PRODUCTS / SERVICES
+========================= */
+
+model Product {
+  id          String      @id @default(uuid())
+  name        String
+  description String?
+  price       Float
+  type        ProductType
+  durationMin Int?        // solo para servicios
+
+  businessId  String
+  business    Business    @relation(fields: [businessId], references: [id])
+
+  saleItems   SaleItem[]
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+/* =========================
+   SALES
+========================= */
+
+model Sale {
+  id          String      @id @default(uuid())
+  total       Float
+
+  businessId  String
+  business    Business    @relation(fields: [businessId], references: [id])
+
+  items       SaleItem[]
+
+  createdAt   DateTime    @default(now())
+}
+
+model SaleItem {
+  id         String   @id @default(uuid())
+  quantity   Int
+  price      Float
+
+  saleId     String
+  sale       Sale     @relation(fields: [saleId], references: [id])
+
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+}
+
+/* =========================
+   ACCOUNTING
+========================= */
+
+model AccountingEntry {
+  id          String           @id @default(uuid())
+  type        AccountingType
+  description String
+  amount      Float
+
+  businessId  String
+  business    Business         @relation(fields: [businessId], references: [id])
+
+  createdAt   DateTime         @default(now())
+}
+
+/* =========================
+   RESERVATIONS (SERVICES)
+========================= */
+
+model Reservation {
+  id            String    @id @default(uuid())
+  customerName  String
+  customerPhone String
+
+  startTime     DateTime
+  endTime       DateTime
+
+  businessId    String
+  business      Business  @relation(fields: [businessId], references: [id])
+
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+
+  createdAt     DateTime  @default(now())
+}
