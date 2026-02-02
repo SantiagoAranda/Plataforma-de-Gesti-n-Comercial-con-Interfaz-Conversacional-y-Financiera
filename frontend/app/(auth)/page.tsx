@@ -1,16 +1,7 @@
-import { ReactNode } from "react";
+"use client"; // solo si usarás hooks de cliente
 
-export default function AuthLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-h-screen bg-gray-100 flex justify-center px-4 pt-16">
-      <div className="w-full max-w-sm">
-        {children}
-      </div>
-    </div>
-  );
+import React from "react";
+
+export default function Page() {
+  return <div>Auth / Registro OK</div>;
 }
-
