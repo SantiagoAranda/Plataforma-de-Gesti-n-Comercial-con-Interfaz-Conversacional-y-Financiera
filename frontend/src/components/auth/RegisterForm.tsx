@@ -9,22 +9,61 @@ export default function RegisterForm() {
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const isValidEmail = (email: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const isValidPassword = (password: string) =>
+    password.length >= 6 &&
+    /[A-Z]/.test(password) &&
+    /\d/.test(password);
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!isValidEmail(email)) {
+      setError("El correo no tiene un formato válido");
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      setError(
+        "La contraseña debe tener al menos 6 caracteres, una mayúscula y un número"
+      );
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+
     setLoading(true);
 
     // ⛔ MOCK TEMPORAL
     setTimeout(() => {
-      if (businessName && email && password) {
-        router.push("/login");
-      } else {
-        setError("Completá todos los campos");
-      }
+      console.log({
+        businessName,
+        email,
+        password,
+        taxId,
+        whatsapp,
+        ownerName,
+      });
+
       setLoading(false);
+      router.push("/login");
     }, 1000);
   };
 
@@ -43,50 +82,60 @@ export default function RegisterForm() {
         </p>
       )}
 
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
-          Nombre del negocio
-        </label>
-        <input
-          type="text"
-          placeholder="Mi negocio"
-          value={businessName}
-          onChange={(e) => setBusinessName(e.target.value)}
-          required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
-        />
-      </div>
+      <Input
+        label="Nombre del negocio"
+        value={businessName}
+        onChange={setBusinessName}
+        placeholder="Mi negocio"
+      />
 
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
-          Email
-        </label>
-        <input
-          type="email"
-          placeholder="correo@ejemplo.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
-        />
-      </div>
+      <Input
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        placeholder="correo@ejemplo.com"
+      />
 
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
-          Contraseña
-        </label>
-        <input
-          type="password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
-        />
-      </div>
+      {/* Contraseña */}
+      <PasswordInput
+        label="Contraseña"
+        value={password}
+        onChange={setPassword}
+        show={showPassword}
+        setShow={setShowPassword}
+      />
+
+      {/* Confirmar contraseña */}
+      <PasswordInput
+        label="Confirmar contraseña"
+        value={confirmPassword}
+        onChange={setConfirmPassword}
+        show={showConfirmPassword}
+        setShow={setShowConfirmPassword}
+      />
+
+      <Input
+        label="Documento fiscal"
+        value={taxId}
+        onChange={setTaxId}
+        placeholder="CUIT / RUC / NIF"
+      />
+
+      <Input
+        label="Número de WhatsApp"
+        type="tel"
+        value={whatsapp}
+        onChange={setWhatsapp}
+        placeholder="+54 9 11 1234 5678"
+      />
+
+      <Input
+        label="Nombre del propietario"
+        value={ownerName}
+        onChange={setOwnerName}
+        placeholder="Nombre completo"
+      />
 
       <button
         type="submit"
@@ -106,5 +155,78 @@ export default function RegisterForm() {
         </span>
       </p>
     </form>
+  );
+}
+
+/* ---------- COMPONENTES AUXILIARES ---------- */
+
+function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1 text-gray-700">
+        {label}
+      </label>
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        required
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
+        placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
+      />
+    </div>
+  );
+}
+
+function PasswordInput({
+  label,
+  value,
+  onChange,
+  show,
+  setShow,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  setShow: (v: boolean) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1 text-gray-700">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="••••••••"
+          required
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-800
+          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
+        />
+        <button
+          type="button"
+          onClick={() => setShow(!show)}
+          className="absolute right-2 top-2 text-sm text-gray-600"
+        >
+          {show ? "Ocultar" : "Ver"}
+        </button>
+      </div>
+    </div>
   );
 }
