@@ -17,16 +17,14 @@ export default function RegisterForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const isValidEmail = (email: string) =>
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const isValidEmail = (value: string) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
-  const isValidPassword = (password: string) =>
-    password.length >= 6 &&
-    /[A-Z]/.test(password) &&
-    /\d/.test(password);
+  const isValidPassword = (value: string) =>
+    value.length >= 6 && /[A-Z]/.test(value) && /\d/.test(value);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +49,7 @@ export default function RegisterForm() {
 
     setLoading(true);
 
-    // ⛔ MOCK TEMPORAL
+    // ⛔ MOCK
     setTimeout(() => {
       console.log({
         businessName,
@@ -70,9 +68,17 @@ export default function RegisterForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm bg-white border border-gray-200 rounded-xl p-6 space-y-4 shadow-md"
+      className="
+        w-full max-w-md
+        bg-white
+        border border-gray-200
+        rounded-2xl
+        px-5 py-6
+        space-y-5
+        shadow-lg
+      "
     >
-      <h1 className="text-2xl font-semibold text-center text-gray-800">
+      <h1 className="text-xl font-semibold text-center text-gray-900">
         Crear cuenta
       </h1>
 
@@ -82,151 +88,207 @@ export default function RegisterForm() {
         </p>
       )}
 
-      <Input
-        label="Nombre del negocio"
-        value={businessName}
-        onChange={setBusinessName}
-        placeholder="Mi negocio"
-      />
+      {/* Nombre del negocio */}
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Nombre del negocio
+        </label>
+        <input
+          value={businessName}
+          onChange={(e) => setBusinessName(e.target.value)}
+          required
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            focus:outline-none focus:ring-2 focus:ring-black/70
+            transition
+          "
+        />
+      </div>
 
-      <Input
-        label="Email"
-        type="email"
-        value={email}
-        onChange={setEmail}
-        placeholder="correo@ejemplo.com"
-      />
+      {/* Email */}
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Email
+        </label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            focus:outline-none focus:ring-2 focus:ring-black/70
+            transition
+          "
+        />
+      </div>
 
       {/* Contraseña */}
-      <PasswordInput
-        label="Contraseña"
-        value={password}
-        onChange={setPassword}
-        show={showPassword}
-        setShow={setShowPassword}
-      />
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Contraseña
+        </label>
+        <div className="relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="
+              w-full
+              border border-gray-300
+              rounded-lg
+              px-3 py-2.5 pr-10
+              text-gray-800
+              focus:outline-none focus:ring-2 focus:ring-black/70
+              transition
+            "
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-2 top-2 text-sm text-gray-600"
+          >
+            {showPassword ? "Ocultar" : "Ver"}
+          </button>
+        </div>
+      </div>
 
       {/* Confirmar contraseña */}
-      <PasswordInput
-        label="Confirmar contraseña"
-        value={confirmPassword}
-        onChange={setConfirmPassword}
-        show={showConfirmPassword}
-        setShow={setShowConfirmPassword}
-      />
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Confirmar contraseña
+        </label>
+        <div className="relative">
+          <input
+            type={showConfirmPassword ? "text" : "password"}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            className="
+              w-full
+              border border-gray-300
+              rounded-lg
+              px-3 py-2.5 pr-10
+              text-gray-800
+              focus:outline-none focus:ring-2 focus:ring-black/70
+              transition
+            "
+          />
+          <button
+            type="button"
+            onClick={() =>
+              setShowConfirmPassword(!showConfirmPassword)
+            }
+            className="absolute right-2 top-2 text-sm text-gray-600"
+          >
+            {showConfirmPassword ? "Ocultar" : "Ver"}
+          </button>
+        </div>
+      </div>
 
-      <Input
-        label="Documento fiscal"
-        value={taxId}
-        onChange={setTaxId}
-        placeholder="CUIT / RUC / NIF"
-      />
+      {/* Documento fiscal */}
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Documento fiscal
+        </label>
+        <input
+          value={taxId}
+          onChange={(e) => setTaxId(e.target.value)}
+          required
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            focus:outline-none focus:ring-2 focus:ring-black/70
+            transition
+          "
+        />
+      </div>
 
-      <Input
-        label="Número de WhatsApp"
-        type="tel"
-        value={whatsapp}
-        onChange={setWhatsapp}
-        placeholder="+54 9 11 1234 5678"
-      />
+      {/* WhatsApp */}
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          WhatsApp
+        </label>
+        <input
+          value={whatsapp}
+          onChange={(e) => setWhatsapp(e.target.value)}
+          required
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            focus:outline-none focus:ring-2 focus:ring-black/70
+            transition
+          "
+        />
+      </div>
 
-      <Input
-        label="Nombre del propietario"
-        value={ownerName}
-        onChange={setOwnerName}
-        placeholder="Nombre completo"
-      />
+      {/* Nombre del propietario */}
+      <div>
+        <label className="block text-sm font-medium mb-1 text-gray-700">
+          Nombre del propietario
+        </label>
+        <input
+          value={ownerName}
+          onChange={(e) => setOwnerName(e.target.value)}
+          required
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            focus:outline-none focus:ring-2 focus:ring-black/70
+            transition
+          "
+        />
+      </div>
 
+      {/* Botón */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-black text-white py-2 rounded-lg font-medium disabled:opacity-50"
+        className="
+          w-full
+          bg-gradient-to-b from-black to-gray-800
+          text-white
+          py-3
+          rounded-xl
+          font-medium
+          shadow-md
+          hover:from-gray-900 hover:to-black
+          active:scale-[0.98]
+          disabled:opacity-50
+          transition
+        "
       >
         {loading ? "Creando cuenta..." : "Registrarse"}
       </button>
 
+      {/* Link a login */}
       <p className="text-sm text-center text-gray-500">
         ¿Ya tenés cuenta?{" "}
         <span
           onClick={() => router.push("/login")}
-          className="text-black underline cursor-pointer"
+          className="text-black underline underline-offset-2 cursor-pointer"
         >
           Iniciar sesión
         </span>
       </p>
     </form>
-  );
-}
-
-/* ---------- COMPONENTES AUXILIARES ---------- */
-
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1 text-gray-700">
-        {label}
-      </label>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        required
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-        placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
-      />
-    </div>
-  );
-}
-
-function PasswordInput({
-  label,
-  value,
-  onChange,
-  show,
-  setShow,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  show: boolean;
-  setShow: (v: boolean) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1 text-gray-700">
-        {label}
-      </label>
-      <div className="relative">
-        <input
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="••••••••"
-          required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
-        />
-        <button
-          type="button"
-          onClick={() => setShow(!show)}
-          className="absolute right-2 top-2 text-sm text-gray-600"
-        >
-          {show ? "Ocultar" : "Ver"}
-        </button>
-      </div>
-    </div>
   );
 }

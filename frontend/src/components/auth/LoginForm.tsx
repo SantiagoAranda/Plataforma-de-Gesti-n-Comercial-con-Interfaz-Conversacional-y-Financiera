@@ -16,7 +16,6 @@ export default function LoginForm() {
     setError("");
     setLoading(true);
 
-    // ⛔ MOCK TEMPORAL
     setTimeout(() => {
       if (email === "admin@test.com" && password === "123456") {
         router.push("/home");
@@ -24,24 +23,35 @@ export default function LoginForm() {
         setError("Credenciales incorrectas");
       }
       setLoading(false);
-    }, 1000);
+    }, 800);
   };
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-sm bg-white border border-gray-200 rounded-xl p-6 space-y-4 shadow-md"
+      className="
+        w-full max-w-md
+        bg-white
+        border border-gray-200
+        rounded-2xl
+        px-5 py-6
+        space-y-5
+        shadow-lg
+      "
     >
-      <h1 className="text-2xl font-semibold text-center text-gray-800">
+      {/* Título */}
+      <h1 className="text-xl font-semibold text-center text-gray-900">
         Iniciar sesión
       </h1>
 
+      {/* Error */}
       {error && (
         <p className="text-sm text-red-600 text-center">
           {error}
         </p>
       )}
 
+      {/* Email */}
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700">
           Email
@@ -52,11 +62,21 @@ export default function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            placeholder-gray-400
+            focus:outline-none
+            focus:ring-2 focus:ring-black/70
+            transition
+          "
         />
       </div>
 
+      {/* Contraseña */}
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700">
           Contraseña
@@ -67,24 +87,47 @@ export default function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800
-          placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-black"
+          className="
+            w-full
+            border border-gray-300
+            rounded-lg
+            px-3 py-2.5
+            text-gray-800
+            placeholder-gray-400
+            focus:outline-none
+            focus:ring-2 focus:ring-black/70
+            transition
+          "
         />
       </div>
 
+      {/* Botón */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-black text-white py-2 rounded-lg font-medium disabled:opacity-50"
+        className="
+          w-full
+          bg-gradient-to-b from-black to-gray-800
+          text-white
+          py-3
+          rounded-xl
+          font-medium
+          shadow-md
+          hover:from-gray-900 hover:to-black
+          active:scale-[0.98]
+          disabled:opacity-50
+          transition
+        "
       >
         {loading ? "Ingresando..." : "Ingresar"}
       </button>
 
+      {/* Link register */}
       <p className="text-sm text-center text-gray-500">
         ¿No tenés cuenta?{" "}
         <span
           onClick={() => router.push("/register")}
-          className="text-black underline cursor-pointer"
+          className="text-black underline underline-offset-2 cursor-pointer"
         >
           Registrarse
         </span>
