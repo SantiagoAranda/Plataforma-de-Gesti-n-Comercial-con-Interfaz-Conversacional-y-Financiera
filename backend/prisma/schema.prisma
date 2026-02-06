@@ -4,147 +4,88 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-/* =========================
-   ENUMS
-========================= */
+//
+// ENUMS
+//
 
 enum UserRole {
   ADMIN
   BUSINESS
 }
 
-enum ProductType {
+enum BusinessStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ItemType {
   PRODUCT
   SERVICE
 }
 
-enum AccountingType {
-  ASSET
-  LIABILITY
-  EQUITY
-  INCOME
-  EXPENSE
-  COST
+enum ItemStatus {
+  ACTIVE
+  INACTIVE
 }
 
-/* =========================
-   CORE
-========================= */
+//
+// MODELOS
+//
 
 model User {
-  id        String    @id @default(uuid())
-  email     String    @unique
-  password  String
-  role      UserRole
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  role        UserRole
 
-  businesses Business[]
+  businessId  String?
+  business    Business? @relation(fields: [businessId], references: [id])
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt   DateTime @default(now())
 }
 
 model Business {
-  id          String      @id @default(uuid())
-  name        String
-  isActive    Boolean     @default(true)
+  id             String         @id @default(uuid())
+  name           String
+  fiscalId       String
+  phoneWhatsapp  String
+  logoUrl        String?
+  status         BusinessStatus @default(ACTIVE)
+  inactivatedAt  DateTime?
 
-  ownerId     String
-  owner       User        @relation(fields: [ownerId], references: [id])
+  users          User[]
+  items          Item[]
 
-  products    Product[]
-  sales       Sale[]
-  accounts    AccountingEntry[]
-  reservations Reservation[]
-
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt      DateTime @default(now())
 }
 
-/* =========================
-   PRODUCTS / SERVICES
-========================= */
+model Item {
+  id               String      @id @default(uuid())
+  businessId       String
+  business         Business    @relation(fields: [businessId], references: [id])
 
-model Product {
-  id          String      @id @default(uuid())
-  name        String
-  description String?
-  price       Float
-  type        ProductType
-  durationMin Int?        // solo para servicios
+  type             ItemType
+  status           ItemStatus  @default(ACTIVE)
 
-  businessId  String
-  business    Business    @relation(fields: [businessId], references: [id])
+  name             String
+  price            Decimal
+  description      String?
 
-  saleItems   SaleItem[]
+  // solo para servicios
+  durationMinutes  Int?
 
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  images           ItemImage[]
+
+  createdAt        DateTime @default(now())
 }
 
-/* =========================
-   SALES
-========================= */
+model ItemImage {
+  id      String @id @default(uuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id])
 
-model Sale {
-  id          String      @id @default(uuid())
-  total       Float
-
-  businessId  String
-  business    Business    @relation(fields: [businessId], references: [id])
-
-  items       SaleItem[]
-
-  createdAt   DateTime    @default(now())
-}
-
-model SaleItem {
-  id         String   @id @default(uuid())
-  quantity   Int
-  price      Float
-
-  saleId     String
-  sale       Sale     @relation(fields: [saleId], references: [id])
-
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
-}
-
-/* =========================
-   ACCOUNTING
-========================= */
-
-model AccountingEntry {
-  id          String           @id @default(uuid())
-  type        AccountingType
-  description String
-  amount      Float
-
-  businessId  String
-  business    Business         @relation(fields: [businessId], references: [id])
-
-  createdAt   DateTime         @default(now())
-}
-
-/* =========================
-   RESERVATIONS (SERVICES)
-========================= */
-
-model Reservation {
-  id            String    @id @default(uuid())
-  customerName  String
-  customerPhone String
-
-  startTime     DateTime
-  endTime       DateTime
-
-  businessId    String
-  business      Business  @relation(fields: [businessId], references: [id])
-
-  productId     String
-  product       Product   @relation(fields: [productId], references: [id])
-
-  createdAt     DateTime  @default(now())
+  url    String
+  order  Int
 }
