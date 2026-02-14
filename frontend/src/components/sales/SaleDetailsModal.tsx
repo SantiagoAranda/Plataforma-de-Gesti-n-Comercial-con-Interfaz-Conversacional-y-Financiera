@@ -53,9 +53,9 @@ export default function SaleDetailsModal({
     const total = calcTotal(sale);
 
     return (
-        <div className="fixed inset-0 z-[9998] bg-black/40 flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
+                <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between shrink-0">
                     <div className="font-semibold text-neutral-900">Detalles</div>
                     <button
                         onClick={onClose}
@@ -66,15 +66,15 @@ export default function SaleDetailsModal({
                     </button>
                 </div>
 
-                <div className="p-4 space-y-3">
+                <div className="p-4 space-y-3 overflow-y-auto">
                     <div className="space-y-1">
                         <div className="text-sm text-neutral-500">Cliente</div>
-                        <div className="text-base font-semibold text-neutral-900">
+                        <div className="text-base font-semibold text-neutral-900 break-words">
                             {sale.customerName}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <div className="text-sm text-neutral-500">Tipo</div>
                             <div className="text-sm font-medium text-neutral-900">
@@ -97,18 +97,16 @@ export default function SaleDetailsModal({
                     </div>
 
                     <div className="border-t border-neutral-200 pt-3">
-                        <div className="text-sm font-semibold text-neutral-900 mb-2">
-                            Ítems
-                        </div>
+                        <div className="text-sm font-semibold text-neutral-900 mb-2">Ítems</div>
 
                         <div className="space-y-2">
                             {sale.items.map((it, idx) => (
-                                <div key={idx} className="flex justify-between text-sm">
-                                    <span className="text-neutral-700">
+                                <div key={idx} className="flex justify-between gap-3 text-sm">
+                                    <span className="text-neutral-700 break-words">
                                         {sale.type === "PRODUCTO" ? `${it.qty}x ` : ""}
                                         {it.name}
                                     </span>
-                                    <span className="text-neutral-900 font-medium">
+                                    <span className="text-neutral-900 font-medium shrink-0">
                                         ${formatMoney(it.price)}
                                     </span>
                                 </div>
@@ -122,6 +120,7 @@ export default function SaleDetailsModal({
                             </span>
                         </div>
                     </div>
+
                     <button
                         onClick={() =>
                             generateInvoicePdf({
@@ -136,7 +135,6 @@ export default function SaleDetailsModal({
                     >
                         Descargar PDF
                     </button>
-
 
                     <button
                         onClick={onClose}

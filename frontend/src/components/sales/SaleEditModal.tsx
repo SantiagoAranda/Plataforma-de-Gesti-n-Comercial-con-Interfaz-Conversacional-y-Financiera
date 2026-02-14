@@ -66,10 +66,7 @@ export default function SaleEditModal({
     };
 
     const addItem = () => {
-        setItems((prev) => [
-            ...prev,
-            { qty: type === "SERVICIO" ? 1 : 1, name: "", price: 0 },
-        ]);
+        setItems((prev) => [...prev, { qty: type === "SERVICIO" ? 1 : 1, name: "", price: 0 }]);
     };
 
     const removeItem = (idx: number) => {
@@ -78,7 +75,6 @@ export default function SaleEditModal({
 
     const handleChangeType = (nextType: Sale["type"]) => {
         setType(nextType);
-        // si cambia a SERVICIO, qty queda fijo en 1
         setItems((prev) =>
             prev.map((it) => ({
                 ...it,
@@ -99,7 +95,6 @@ export default function SaleEditModal({
             }))
             .filter((it) => it.name.length > 0);
 
-        // regla simple: no permitir guardar sin ítems
         if (cleanedItems.length === 0) return;
 
         const updated: Sale = {
@@ -115,9 +110,9 @@ export default function SaleEditModal({
     };
 
     return (
-        <div className="fixed inset-0 z-[9998] bg-black/40 flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
+                <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between shrink-0">
                     <div className="font-semibold text-neutral-900">Editar</div>
                     <button
                         onClick={onClose}
@@ -128,7 +123,7 @@ export default function SaleEditModal({
                     </button>
                 </div>
 
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-4 overflow-y-auto">
                     <div>
                         <label className="text-sm text-neutral-600">Cliente</label>
                         <input
@@ -139,7 +134,7 @@ export default function SaleEditModal({
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label className="text-sm text-neutral-600">Tipo</label>
                             <select
@@ -181,8 +176,8 @@ export default function SaleEditModal({
                         <div className="space-y-3">
                             {items.map((it, idx) => (
                                 <div key={idx} className="rounded-xl border border-neutral-200 p-3">
-                                    <div className="grid grid-cols-12 gap-2 items-end">
-                                        <div className="col-span-12">
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                                        <div className="col-span-1 sm:col-span-12">
                                             <label className="text-xs text-neutral-600">
                                                 {type === "SERVICIO" ? "Servicio" : "Producto"}
                                             </label>
@@ -194,7 +189,7 @@ export default function SaleEditModal({
                                             />
                                         </div>
 
-                                        <div className="col-span-4">
+                                        <div className="col-span-1 sm:col-span-4">
                                             <label className="text-xs text-neutral-600">Cantidad</label>
                                             <input
                                                 type="number"
@@ -206,7 +201,7 @@ export default function SaleEditModal({
                                             />
                                         </div>
 
-                                        <div className="col-span-6">
+                                        <div className="col-span-1 sm:col-span-6">
                                             <label className="text-xs text-neutral-600">Precio</label>
                                             <input
                                                 type="number"
@@ -218,7 +213,7 @@ export default function SaleEditModal({
                                             />
                                         </div>
 
-                                        <div className="col-span-2 flex justify-end">
+                                        <div className="col-span-1 sm:col-span-2 flex justify-end">
                                             <button
                                                 type="button"
                                                 onClick={() => removeItem(idx)}
@@ -239,7 +234,7 @@ export default function SaleEditModal({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                             onClick={onClose}
                             className="w-full rounded-xl py-3 font-semibold border border-neutral-300 hover:bg-neutral-50"
