@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, ArrowDownLeft, ArrowLeft } from "lucide-react";
 
 const movements = [
   {
@@ -54,6 +55,8 @@ const movements = [
 ];
 
 export default function MovimientosPage() {
+  const router = useRouter();
+
   const grouped = movements.reduce((acc: any, item) => {
     if (!acc[item.dateGroup]) acc[item.dateGroup] = [];
     acc[item.dateGroup].push(item);
@@ -81,16 +84,29 @@ export default function MovimientosPage() {
 
       {/* HEADER */}
       <div className="bg-green-600 px-5 pt-8 pb-12 text-white rounded-b-3xl shadow-md animate-fade-in">
-        <h1 className="text-xl font-semibold">Movimientos</h1>
-        <p className="text-sm text-green-100 mt-1">
-          Resumen financiero del negocio
-        </p>
+
+        {/* TOP BAR CON BOTÓN BACK */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 transition-all duration-200"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+
+          <div>
+            <h1 className="text-xl font-semibold">Movimientos</h1>
+            <p className="text-sm text-green-100 mt-1">
+              Resumen financiero del negocio
+            </p>
+          </div>
+        </div>
 
         {/* BLOQUE RESUMEN */}
         <div className="mt-6 bg-white text-neutral-800 rounded-2xl p-5 shadow-xl transition-all duration-300 hover:shadow-2xl animate-fade-in-delay">
           <p className="text-sm text-neutral-500">Saldo actual</p>
 
-          <p className="text-3xl font-bold mt-1 tracking-tight transition-all duration-300">
+          <p className="text-3xl font-bold mt-1 tracking-tight">
             {formatCurrency(balance)}
           </p>
 
@@ -152,9 +168,9 @@ export default function MovimientosPage() {
                       `}
                     >
                       {item.amount > 0 ? (
-                        <ArrowUpRight className="text-green-600 w-5 h-5 transition-transform duration-200 group-hover:scale-110" />
+                        <ArrowUpRight className="text-green-600 w-5 h-5" />
                       ) : (
-                        <ArrowDownLeft className="text-red-500 w-5 h-5 transition-transform duration-200" />
+                        <ArrowDownLeft className="text-red-500 w-5 h-5" />
                       )}
                     </div>
 
@@ -169,7 +185,7 @@ export default function MovimientosPage() {
                   </div>
 
                   <div
-                    className={`font-semibold text-base transition-colors duration-200 ${
+                    className={`font-semibold text-base ${
                       item.amount > 0
                         ? "text-green-600"
                         : "text-red-500"
