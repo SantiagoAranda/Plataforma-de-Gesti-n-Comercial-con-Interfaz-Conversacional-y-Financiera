@@ -6,6 +6,7 @@ import type { Sale } from "@/src/types/sales";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import SalesList from "@/src/components/sales/SalesList";
+import SalesSearchBar from "@/src/components/sales/SalesSearchBar";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
@@ -48,7 +49,7 @@ export default function VentaPage() {
         });
     }, [q, sales]);
 
-    // WhatsApp test (lo mantiene la page, no SaleCard)
+    // WhatsApp test
     const businessWhatsappE164 = "5493424353124";
     const businessName = "Mi Negocio";
 
@@ -72,11 +73,24 @@ export default function VentaPage() {
         <div className="min-h-screen bg-[#F0F2F5]">
             <AppHeader title="Ventas" showBack />
 
-            <SalesList
-                sales={filtered}
-                onEdit={(sale) => setEditingSale(sale)}
-                onDetails={(sale) => setDetailsSale(sale)}   // ✅ detalles por modal
-                onSendWhatsApp={handleSendWhatsApp}
+            {/* Contenido con padding abajo para que NO lo tape la barra fija */}
+            <div className="pb-28">
+                <SalesList
+                    sales={filtered}
+                    onEdit={(sale) => setEditingSale(sale)}
+                    onDetails={(sale) => setDetailsSale(sale)}
+                    onSendWhatsApp={handleSendWhatsApp}
+                />
+            </div>
+
+            {/* Barra fija abajo */}
+            <SalesSearchBar
+                value={q}
+                onChange={setQ}
+                onAction={() => {
+                    // si querés, podés hacer algo acá (ej: limpiar búsqueda)
+                    // setQ("");
+                }}
             />
 
             <SaleDetailsModal

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Sale } from "@/src/types/sales";
+import { generateInvoicePdf } from "@/src/lib/invoicePdf";
 
 function formatMoney(n: number) {
     return n.toFixed(2);
@@ -121,6 +122,21 @@ export default function SaleDetailsModal({
                             </span>
                         </div>
                     </div>
+                    <button
+                        onClick={() =>
+                            generateInvoicePdf({
+                                sale,
+                                businessName: "Mi Negocio",
+                                businessPhone: "54911XXXXYYYY",
+                                invoiceNumber: `#${sale.id}`,
+                                currencySymbol: "$",
+                            })
+                        }
+                        className="w-full bg-[#11d473] text-white rounded-xl py-3 font-semibold hover:brightness-95"
+                    >
+                        Descargar PDF
+                    </button>
+
 
                     <button
                         onClick={onClose}
