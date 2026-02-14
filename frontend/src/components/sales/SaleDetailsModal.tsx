@@ -74,6 +74,13 @@ export default function SaleDetailsModal({
                         </div>
                     </div>
 
+                    <div className="space-y-1">
+                        <div className="text-sm text-neutral-500">WhatsApp</div>
+                        <div className="text-sm font-medium text-neutral-900 break-words">
+                            {sale.customerPhone?.trim() ? sale.customerPhone : "—"}
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <div className="text-sm text-neutral-500">Tipo</div>
@@ -96,8 +103,19 @@ export default function SaleDetailsModal({
                         </div>
                     </div>
 
+                    {sale.type === "SERVICIO" && (
+                        <div className="space-y-1">
+                            <div className="text-sm text-neutral-500">Turno</div>
+                            <div className="text-sm font-medium text-neutral-900">
+                                {sale.scheduledAt ? formatDateTime(sale.scheduledAt) : "—"}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="border-t border-neutral-200 pt-3">
-                        <div className="text-sm font-semibold text-neutral-900 mb-2">Ítems</div>
+                        <div className="text-sm font-semibold text-neutral-900 mb-2">
+                            Ítems
+                        </div>
 
                         <div className="space-y-2">
                             {sale.items.map((it, idx) => (
@@ -105,7 +123,14 @@ export default function SaleDetailsModal({
                                     <span className="text-neutral-700 break-words">
                                         {sale.type === "PRODUCTO" ? `${it.qty}x ` : ""}
                                         {it.name}
+                                        {sale.type === "SERVICIO" && it.durationMin ? (
+                                            <span className="text-neutral-500">
+                                                {" "}
+                                                • {it.durationMin} min
+                                            </span>
+                                        ) : null}
                                     </span>
+
                                     <span className="text-neutral-900 font-medium shrink-0">
                                         ${formatMoney(it.price)}
                                     </span>
