@@ -19,12 +19,12 @@ export const HOME_THREADS: HomeThread[] = [
     route: "/mi-negocio",
   },
   {
-    id: "ventas",
-    title: "Ventas",
+    id: "venta",
+    title: "Venta",
     preview: "Orden #1024 generada exitosamente",
     time: "10:45 AM",
     icon: "📊",
-    route: "/ventas",
+    route: "/venta",
   },
   {
     id: "contabilidad",
