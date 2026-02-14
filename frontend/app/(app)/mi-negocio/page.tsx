@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import AppHeader from "@/src/components/layout/AppHeader";
+
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -126,13 +128,7 @@ export default function MiNegocioPage() {
     <div className="flex flex-col h-screen bg-neutral-100">
 
       {/* Header */}
-      <header className="h-14 flex items-center justify-between px-4 bg-white border-b border-neutral-200">
-        <button className="text-xl">←</button>
-        <h1 className="font-medium">Crear Item</h1>
-        <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-sm">
-          N
-        </div>
-      </header>
+      <AppHeader title="Mi negocio" showBack />
 
       {/* Preview */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
@@ -412,7 +408,6 @@ export default function MiNegocioPage() {
                 </button>
               </div>
             </div>
-
           </div>
         )}
       </div>
