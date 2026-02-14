@@ -5,6 +5,8 @@ import type { Sale } from "@/src/types/sales";
 
 import { useContextMenu } from "@/src/hooks/useContextMenu";
 import ContextMenu from "@/src/components/common/ContextMenu";
+import { getStatusStyles } from "@/src/lib/statusStyles";
+
 
 function statusBadge(status: Sale["status"]) {
     switch (status) {
@@ -63,6 +65,8 @@ export default function SaleCard({
 
     const total = calcTotal(sale);
 
+    const styles = getStatusStyles(sale.status);
+
     const handleEdit = () => {
         if (onEdit) return onEdit(sale);
         router.push(`/ventas/${sale.id}/editar`);
@@ -78,7 +82,8 @@ export default function SaleCard({
             <div className="flex flex-col gap-1 items-start max-w-[90%]">
                 <div
                     {...menu.handlers}
-                    className="bg-white rounded-xl rounded-tl-none p-4 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] w-full select-none"
+                    className={`bg-white rounded-xl rounded-tl-none p-4 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] w-full select-none ${styles.border}`}
+                    
                 >
                     <div className="flex justify-between items-start mb-3">
                         <div>

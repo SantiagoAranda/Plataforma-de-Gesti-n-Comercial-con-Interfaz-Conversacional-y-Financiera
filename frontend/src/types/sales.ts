@@ -1,4 +1,4 @@
-export type SaleStatus = "CONFIRMADO" | "CERRADO" | "PENDIENTE";
+export type SaleStatus = "CONFIRMADO" | "CERRADO" | "PENDIENTE" | "CANCELADO";
 export type SaleType = "PRODUCTO" | "SERVICIO";
 
 export interface SaleItem {
