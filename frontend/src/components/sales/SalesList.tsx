@@ -1,15 +1,16 @@
-import SaleCard from "./SaleCard";
-import { Sale } from "@/src/types/sales";
+"use client";
 
-export default function SalesList({
-    sales,
-    businessName,
-    businessWhatsappE164,
-}: {
+import type { Sale } from "@/src/types/sales";
+import SaleCard from "./SaleCard";
+
+type Props = {
     sales: Sale[];
-    businessName?: string;
-    businessWhatsappE164: string;
-}) {
+    onEdit?: (sale: Sale) => void;
+    onDetails?: (sale: Sale) => void;
+    onSendWhatsApp?: (sale: Sale) => void;
+};
+
+export default function SalesList({ sales, onEdit, onDetails, onSendWhatsApp }: Props) {
     return (
         <main className="flex flex-col p-4 gap-6 max-w-md mx-auto pb-24">
             <div className="flex justify-center my-2">
@@ -22,8 +23,9 @@ export default function SalesList({
                 <SaleCard
                     key={s.id}
                     sale={s}
-                    businessName={businessName}
-                    businessWhatsappE164={businessWhatsappE164}
+                    onEdit={onEdit}
+                    onDetails={onDetails}
+                    onSendWhatsApp={onSendWhatsApp}
                 />
             ))}
         </main>
