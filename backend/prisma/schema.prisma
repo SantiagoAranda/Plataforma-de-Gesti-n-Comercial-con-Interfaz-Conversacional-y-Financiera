@@ -44,11 +44,14 @@ model User {
   business    Business? @relation(fields: [businessId], references: [id])
 
   createdAt   DateTime @default(now())
+
+  @@index([businessId])
 }
 
 model Business {
   id             String         @id @default(uuid())
   name           String
+  slug           String         @unique
   fiscalId       String
   phoneWhatsapp  String
   logoUrl        String?
@@ -70,22 +73,27 @@ model Item {
   status           ItemStatus  @default(ACTIVE)
 
   name             String
-  price            Decimal
+  price            Decimal     @db.Decimal(10,2)
   description      String?
 
-  // solo para servicios
+  // Solo para servicios
   durationMinutes  Int?
 
   images           ItemImage[]
 
   createdAt        DateTime @default(now())
+
+  @@index([businessId])
+  @@index([type])
 }
 
 model ItemImage {
   id      String @id @default(uuid())
-  itemId String
-  item   Item   @relation(fields: [itemId], references: [id])
+  itemId  String
+  item    Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  url    String
-  order  Int
+  url     String
+  order   Int
+
+  @@index([itemId])
 }
