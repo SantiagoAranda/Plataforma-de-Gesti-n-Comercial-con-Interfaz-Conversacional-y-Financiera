@@ -1,25 +1,26 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { Business } from '@prisma/client';
+import slugify from 'slugify';
 
 @Injectable()
 export class BusinessesService {
-  create(data: any) {
-    return {
-      message: 'Negocio creado (MVP sin DB)',
-      data,
-    };
-  }
+  constructor(private prisma: PrismaService) {}
 
-  findAll() {
-    return {
-      message: 'Listado de negocios (MVP sin DB)',
-      data: [],
-    };
-  }
+  async createBusiness(data: {
+    name: string;
+    fiscalId: string;
+    phoneWhatsapp: string;
+  }): Promise<Business> {
+    const slug = slugify(data.name, { lower: true, strict: true });
 
-  findOne(id: string) {
-    return {
-      message: 'Negocio encontrado (MVP sin DB)',
-      id,
-    };
+    return this.prisma.business.create({
+      data: {
+        name: data.name,
+        slug,
+        fiscalId: data.fiscalId,
+        phoneWhatsapp: data.phoneWhatsapp,
+      },
+    });
   }
 }
