@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { BusinessesModule } from './businesses/businesses.module';
 import { CommonModule } from './common/common.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ItemsModule } from './items/items.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module';
     BusinessesModule,
     CommonModule,
     PrismaModule,
+    ItemsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
