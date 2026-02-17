@@ -9,6 +9,8 @@ import { BusinessesModule } from './businesses/businesses.module';
 import { CommonModule } from './common/common.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ItemsModule } from './items/items.module';
+import { SalesModule } from './sales/sales.module';
+
 
 @Module({
   imports: [
@@ -21,6 +23,7 @@ import { ItemsModule } from './items/items.module';
     CommonModule,
     PrismaModule,
     ItemsModule,
+    SalesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
