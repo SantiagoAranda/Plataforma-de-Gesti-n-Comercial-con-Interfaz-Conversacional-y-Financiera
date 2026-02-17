@@ -5,7 +5,10 @@ import {
   Post,
   Req,
   UseGuards,
+  Param,
+  Patch,
 } from '@nestjs/common';
+
 import { SalesService } from './sales.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -25,5 +28,11 @@ export class SalesController {
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   findAll(@Req() req: any) {
     return this.salesService.findAll(req.user.businessId);
+  }
+
+  @Patch(':id/confirm')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  confirm(@Req() req: any, @Param('id') id: string) {
+    return this.salesService.confirmOrder(req.user.businessId, id);
   }
 }

@@ -28,9 +28,7 @@ export class SalesService {
     const orderItemsData = dto.items.map(input => {
       const item = itemsFromDb.find(i => i.id === input.itemId)!;
 
-      const lineTotal =
-        Number(item.price) * input.quantity;
-
+      const lineTotal = Number(item.price) * input.quantity;
       total += lineTotal;
 
       return {
@@ -74,5 +72,34 @@ export class SalesService {
         createdAt: 'desc',
       },
     });
+  }
+
+  async confirmOrder(businessId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+        businessId,
+      },
+    });
+
+    if (!order) {
+      throw new BadRequestException('Order not found');
+    }
+
+    if (order.status !== 'DRAFT') {
+      throw new BadRequestException('Only DRAFT orders can be confirmed');
+    }
+
+    const updatedOrder = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: 'COMPLETED',
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    return updatedOrder;
   }
 }
