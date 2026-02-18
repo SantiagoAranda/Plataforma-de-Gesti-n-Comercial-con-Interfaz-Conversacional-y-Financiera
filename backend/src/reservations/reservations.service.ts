@@ -11,7 +11,6 @@ export class ReservationsService {
       throw new BadRequestException('Invalid time range');
     }
 
-    // Verificar que el servicio pertenece al negocio
     const item = await this.prisma.item.findFirst({
       where: {
         id: dto.itemId,
@@ -27,7 +26,6 @@ export class ReservationsService {
     const dateOnly = new Date(dto.date);
     dateOnly.setHours(0, 0, 0, 0);
 
-    // Validar solapamiento
     const overlapping = await this.prisma.reservation.findFirst({
       where: {
         businessId,
@@ -38,14 +36,10 @@ export class ReservationsService {
         },
         AND: [
           {
-            startMinute: {
-              lt: dto.endMinute,
-            },
+            startMinute: { lt: dto.endMinute },
           },
           {
-            endMinute: {
-              gt: dto.startMinute,
-            },
+            endMinute: { gt: dto.startMinute },
           },
         ],
       },
@@ -99,6 +93,95 @@ export class ReservationsService {
       where: { id },
       data: {
         status: 'CANCELLED',
+      },
+    });
+  }
+
+  async confirm(businessId: string, id: string) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: {
+        id,
+        businessId,
+      },
+    });
+
+    if (!reservation) {
+      throw new BadRequestException('Reservation not found');
+    }
+
+    if (reservation.status !== 'PENDING') {
+      throw new BadRequestException(
+        'Only PENDING reservations can be confirmed',
+      );
+    }
+
+    return this.prisma.reservation.update({
+      where: { id },
+      data: {
+        status: 'CONFIRMED',
+      },
+    });
+  }
+
+  async reschedule(
+    businessId: string,
+    id: string,
+    dto: { date: string; startMinute: number; endMinute: number },
+  ) {
+    if (dto.startMinute >= dto.endMinute) {
+      throw new BadRequestException('Invalid time range');
+    }
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: {
+        id,
+        businessId,
+      },
+    });
+
+    if (!reservation) {
+      throw new BadRequestException('Reservation not found');
+    }
+
+    if (reservation.status !== 'PENDING') {
+      throw new BadRequestException(
+        'Only PENDING reservations can be rescheduled',
+      );
+    }
+
+    const dateOnly = new Date(dto.date);
+    dateOnly.setHours(0, 0, 0, 0);
+
+    const overlapping = await this.prisma.reservation.findFirst({
+      where: {
+        businessId,
+        itemId: reservation.itemId,
+        date: dateOnly,
+        status: {
+          not: 'CANCELLED',
+        },
+        id: { not: id },
+        AND: [
+          {
+            startMinute: { lt: dto.endMinute },
+          },
+          {
+            endMinute: { gt: dto.startMinute },
+          },
+        ],
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException('Time slot already booked');
+    }
+
+    return this.prisma.reservation.update({
+      where: { id },
+      data: {
+        date: dateOnly,
+        startMinute: dto.startMinute,
+        endMinute: dto.endMinute,
       },
     });
   }

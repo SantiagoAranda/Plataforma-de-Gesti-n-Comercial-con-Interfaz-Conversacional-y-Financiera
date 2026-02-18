@@ -12,6 +12,7 @@ import {
 
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { RescheduleReservationDto } from './dto/reschedule-reservation.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 
@@ -35,5 +36,25 @@ export class ReservationsController {
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   cancel(@Req() req: any, @Param('id') id: string) {
     return this.reservationsService.cancel(req.user.businessId, id);
+  }
+
+  @Patch(':id/confirm')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  confirm(@Req() req: any, @Param('id') id: string) {
+    return this.reservationsService.confirm(req.user.businessId, id);
+  }
+
+  @Patch(':id/reschedule')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  reschedule(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: RescheduleReservationDto,
+  ) {
+    return this.reservationsService.reschedule(
+      req.user.businessId,
+      id,
+      dto,
+    );
   }
 }

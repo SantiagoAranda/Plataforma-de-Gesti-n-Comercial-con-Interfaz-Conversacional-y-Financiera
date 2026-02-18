@@ -11,6 +11,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ItemsModule } from './items/items.module';
 import { SalesModule } from './sales/sales.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { PublicModule } from './public/public.module';
 
 
 
@@ -27,6 +28,7 @@ import { ReservationsModule } from './reservations/reservations.module';
     ItemsModule,
     SalesModule,
     ReservationsModule,
+    PublicModule,
   ],
   controllers: [AppController],
   providers: [AppService],
