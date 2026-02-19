@@ -12,6 +12,7 @@ import { ItemsModule } from './items/items.module';
 import { SalesModule } from './sales/sales.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { PublicModule } from './public/public.module';
+import { MovementsModule } from './movements/movements.module';
 
 
 
@@ -29,6 +30,7 @@ import { PublicModule } from './public/public.module';
     SalesModule,
     ReservationsModule,
     PublicModule,
+    MovementsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
