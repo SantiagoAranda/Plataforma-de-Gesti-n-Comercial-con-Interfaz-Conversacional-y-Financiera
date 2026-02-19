@@ -49,7 +49,6 @@ export default function RegisterForm() {
 
     setLoading(true);
 
-    // ⛔ MOCK
     setTimeout(() => {
       console.log({
         businessName,
@@ -69,28 +68,27 @@ export default function RegisterForm() {
     <form
       onSubmit={handleSubmit}
       className="
-        w-full max-w-md
+        w-full
         bg-white
-        border border-gray-200
-        rounded-2xl
-        px-5 py-6
-        space-y-5
-        shadow-lg
+        rounded-3xl
+        px-8 py-8
+        space-y-6
+        shadow-md
       "
     >
-      <h1 className="text-xl font-semibold text-center text-gray-900">
+      <h1 className="text-2xl font-semibold text-center text-gray-900">
         Crear cuenta
       </h1>
 
       {error && (
-        <p className="text-sm text-red-600 text-center">
+        <p className="text-sm text-red-500 text-center font-medium">
           {error}
         </p>
       )}
 
       {/* Nombre del negocio */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Nombre del negocio
         </label>
         <input
@@ -99,19 +97,22 @@ export default function RegisterForm() {
           required
           className="
             w-full
-            border border-gray-300
-            rounded-lg
-            px-3 py-2.5
+            bg-neutral-50
+            border border-neutral-300
+            rounded-xl
+            px-4 py-3
             text-gray-800
-            focus:outline-none focus:ring-2 focus:ring-black/70
+            focus:outline-none
+            focus:ring-2 focus:ring-emerald-600
+            focus:border-emerald-600
             transition
           "
         />
       </div>
 
       {/* Email */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Email
         </label>
         <input
@@ -121,19 +122,22 @@ export default function RegisterForm() {
           required
           className="
             w-full
-            border border-gray-300
-            rounded-lg
-            px-3 py-2.5
+            bg-neutral-50
+            border border-neutral-300
+            rounded-xl
+            px-4 py-3
             text-gray-800
-            focus:outline-none focus:ring-2 focus:ring-black/70
+            focus:outline-none
+            focus:ring-2 focus:ring-emerald-600
+            focus:border-emerald-600
             transition
           "
         />
       </div>
 
       {/* Contraseña */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Contraseña
         </label>
         <div className="relative">
@@ -144,18 +148,21 @@ export default function RegisterForm() {
             required
             className="
               w-full
-              border border-gray-300
-              rounded-lg
-              px-3 py-2.5 pr-10
+              bg-neutral-50
+              border border-neutral-300
+              rounded-xl
+              px-4 py-3 pr-16
               text-gray-800
-              focus:outline-none focus:ring-2 focus:ring-black/70
+              focus:outline-none
+              focus:ring-2 focus:ring-emerald-600
+              focus:border-emerald-600
               transition
             "
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-2 top-2 text-sm text-gray-600"
+            className="absolute right-4 top-3 text-sm text-gray-500 hover:text-gray-700"
           >
             {showPassword ? "Ocultar" : "Ver"}
           </button>
@@ -163,8 +170,8 @@ export default function RegisterForm() {
       </div>
 
       {/* Confirmar contraseña */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Confirmar contraseña
         </label>
         <div className="relative">
@@ -175,11 +182,14 @@ export default function RegisterForm() {
             required
             className="
               w-full
-              border border-gray-300
-              rounded-lg
-              px-3 py-2.5 pr-10
+              bg-neutral-50
+              border border-neutral-300
+              rounded-xl
+              px-4 py-3 pr-16
               text-gray-800
-              focus:outline-none focus:ring-2 focus:ring-black/70
+              focus:outline-none
+              focus:ring-2 focus:ring-emerald-600
+              focus:border-emerald-600
               transition
             "
           />
@@ -188,7 +198,7 @@ export default function RegisterForm() {
             onClick={() =>
               setShowConfirmPassword(!showConfirmPassword)
             }
-            className="absolute right-2 top-2 text-sm text-gray-600"
+            className="absolute right-4 top-3 text-sm text-gray-500 hover:text-gray-700"
           >
             {showConfirmPassword ? "Ocultar" : "Ver"}
           </button>
@@ -196,8 +206,8 @@ export default function RegisterForm() {
       </div>
 
       {/* Documento fiscal */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Documento fiscal
         </label>
         <input
@@ -206,19 +216,22 @@ export default function RegisterForm() {
           required
           className="
             w-full
-            border border-gray-300
-            rounded-lg
-            px-3 py-2.5
+            bg-neutral-50
+            border border-neutral-300
+            rounded-xl
+            px-4 py-3
             text-gray-800
-            focus:outline-none focus:ring-2 focus:ring-black/70
+            focus:outline-none
+            focus:ring-2 focus:ring-emerald-600
+            focus:border-emerald-600
             transition
           "
         />
       </div>
 
       {/* WhatsApp */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           WhatsApp
         </label>
         <input
@@ -227,19 +240,22 @@ export default function RegisterForm() {
           required
           className="
             w-full
-            border border-gray-300
-            rounded-lg
-            px-3 py-2.5
+            bg-neutral-50
+            border border-neutral-300
+            rounded-xl
+            px-4 py-3
             text-gray-800
-            focus:outline-none focus:ring-2 focus:ring-black/70
+            focus:outline-none
+            focus:ring-2 focus:ring-emerald-600
+            focus:border-emerald-600
             transition
           "
         />
       </div>
 
       {/* Nombre del propietario */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">
           Nombre del propietario
         </label>
         <input
@@ -248,11 +264,14 @@ export default function RegisterForm() {
           required
           className="
             w-full
-            border border-gray-300
-            rounded-lg
-            px-3 py-2.5
+            bg-neutral-50
+            border border-neutral-300
+            rounded-xl
+            px-4 py-3
             text-gray-800
-            focus:outline-none focus:ring-2 focus:ring-black/70
+            focus:outline-none
+            focus:ring-2 focus:ring-emerald-600
+            focus:border-emerald-600
             transition
           "
         />
@@ -264,13 +283,13 @@ export default function RegisterForm() {
         disabled={loading}
         className="
           w-full
-          bg-gradient-to-b from-black to-gray-800
+          bg-emerald-600
           text-white
-          py-3
+          py-3.5
           rounded-xl
           font-medium
-          shadow-md
-          hover:from-gray-900 hover:to-black
+          shadow
+          hover:bg-emerald-700
           active:scale-[0.98]
           disabled:opacity-50
           transition
@@ -279,12 +298,12 @@ export default function RegisterForm() {
         {loading ? "Creando cuenta..." : "Registrarse"}
       </button>
 
-      {/* Link a login */}
-      <p className="text-sm text-center text-gray-500">
+      {/* Link login */}
+      <p className="text-sm text-center text-gray-600">
         ¿Ya tenés cuenta?{" "}
         <span
           onClick={() => router.push("/login")}
-          className="text-black underline underline-offset-2 cursor-pointer"
+          className="text-emerald-600 font-medium cursor-pointer hover:underline"
         >
           Iniciar sesión
         </span>

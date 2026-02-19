@@ -1,5 +1,10 @@
 import "./globals.css";
 
+export const metadata = {
+  title: "Plataforma",
+  description: "MVP Gestión Comercial",
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -7,7 +12,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="min-h-screen bg-gray-100">
+      <body className="min-h-screen bg-white">
         {children}
       </body>
     </html>
