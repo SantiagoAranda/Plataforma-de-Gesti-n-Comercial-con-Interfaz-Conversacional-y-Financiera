@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Post, Body, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Body,
+  BadRequestException,
+  Patch,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationDto } from '../reservations/dto/create-reservation.dto';
 
@@ -72,12 +80,8 @@ export class PublicController {
           not: 'CANCELLED',
         },
         AND: [
-          {
-            startMinute: { lt: dto.endMinute },
-          },
-          {
-            endMinute: { gt: dto.startMinute },
-          },
+          { startMinute: { lt: dto.endMinute } },
+          { endMinute: { gt: dto.startMinute } },
         ],
       },
     });
@@ -86,7 +90,7 @@ export class PublicController {
       throw new BadRequestException('Time slot already booked');
     }
 
-    return this.prisma.reservation.create({
+    const reservation = await this.prisma.reservation.create({
       data: {
         businessId: business.id,
         itemId: dto.itemId,
@@ -95,6 +99,43 @@ export class PublicController {
         date: dateOnly,
         startMinute: dto.startMinute,
         endMinute: dto.endMinute,
+      },
+    });
+
+    return {
+      message: 'Reservation created',
+      reservationId: reservation.id,
+      editUrl: `/public/reservation/${reservation.publicToken}`,
+    };
+  }
+
+  @Get('reservation/:token')
+  async getReservation(@Param('token') token: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { publicToken: token },
+    });
+
+    if (!reservation) {
+      throw new BadRequestException('Reservation not found');
+    }
+
+    return reservation;
+  }
+
+  @Patch('reservation/:token/cancel')
+  async cancelByToken(@Param('token') token: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { publicToken: token },
+    });
+
+    if (!reservation) {
+      throw new BadRequestException('Reservation not found');
+    }
+
+    return this.prisma.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: 'CANCELLED',
       },
     });
   }

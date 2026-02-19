@@ -230,6 +230,8 @@ model OrderItem {
 model Reservation {
   id               String            @id @default(uuid())
 
+  publicToken      String?           @unique @default(uuid())
+
   businessId        String
   business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
