@@ -32,6 +32,6 @@ export const HOME_THREADS: HomeThread[] = [
     preview: "Asiento contable registrado...",
     time: "Ayer",
     icon: "🧾",
-    route: "/movimientos",
+    route: "/contabilidad",
   },
 ];
