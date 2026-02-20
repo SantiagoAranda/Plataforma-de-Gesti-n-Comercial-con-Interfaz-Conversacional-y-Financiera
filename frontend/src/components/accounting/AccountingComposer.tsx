@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AccountingEntry } from "@/src/types/accounting";
 
 type MovementType = "Activo" | "Pasivo" | "Patrimonio" | "Ingresos" | "Gastos";
 type Nature = "DEBITO" | "CREDITO";
@@ -28,22 +29,63 @@ function parseMoneyLike(input: string): number | null {
     return Number.isFinite(num) ? num : null;
 }
 
-type AccountingComposerProps = {
+function kindToMovement(kind: AccountingEntry["kind"]): MovementType {
+    switch (kind) {
+        case "ASSET":
+            return "Activo";
+        case "LIABILITY":
+            return "Pasivo";
+        case "EQUITY":
+            return "Patrimonio";
+        case "INCOME":
+            return "Ingresos";
+        case "EXPENSE":
+            return "Gastos";
+    }
+}
+
+function movementToKind(m: MovementType): AccountingEntry["kind"] {
+    switch (m) {
+        case "Activo":
+            return "ASSET";
+        case "Pasivo":
+            return "LIABILITY";
+        case "Patrimonio":
+            return "EQUITY";
+        case "Ingresos":
+            return "INCOME";
+        case "Gastos":
+            return "EXPENSE";
+    }
+}
+
+type Props = {
     searchValue: string;
     onSearchChange: (v: string) => void;
+
+    editingEntry: AccountingEntry | null;
+    onCancelEdit: () => void;
+
+    onCreate: (entry: AccountingEntry) => void;
+    onUpdate: (entry: AccountingEntry) => void;
 };
 
-export function AccountingComposer({ searchValue, onSearchChange }: AccountingComposerProps) {
+export function AccountingComposer({
+    searchValue,
+    onSearchChange,
+    editingEntry,
+    onCancelEdit,
+    onCreate,
+    onUpdate,
+}: Props) {
     const [expanded, setExpanded] = useState(false);
 
-    // modo expandido (formulario)
     const [movementType, setMovementType] = useState<MovementType>("Activo");
     const [puc, setPuc] = useState("");
     const [value, setValue] = useState("");
     const [nature, setNature] = useState<Nature>("DEBITO");
     const [description, setDescription] = useState("");
 
-    // focus en descripción al abrir
     const descRef = useRef<HTMLInputElement | null>(null);
 
     // altura animada real
@@ -76,33 +118,73 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
         setDescription("");
     }
 
-    function handleSend() {
-        if (!expanded) return;
+    // ✅ Si llega un entry para editar: abre + precarga
+    useEffect(() => {
+        if (!editingEntry) return;
 
-        const payload = {
-            movementType,
-            pucCode: puc.trim() || null,
-            amount: signedAmount,
-            nature,
-            description: description.trim(),
-        };
+        setExpanded(true);
+        setMovementType(kindToMovement(editingEntry.kind));
+        setPuc(editingEntry.pucCode ?? "");
+        setNature(editingEntry.amount >= 0 ? "DEBITO" : "CREDITO");
+        setValue(String(Math.abs(editingEntry.amount)));
+        setDescription(editingEntry.description ?? "");
 
-        console.log("SEND", payload);
-
-        resetForm();
-        setExpanded(false);
-    }
+        requestAnimationFrame(() => descRef.current?.focus());
+    }, [editingEntry]);
 
     function toggleExpanded() {
         setExpanded((p) => {
             const next = !p;
-            if (next) {
-                requestAnimationFrame(() => descRef.current?.focus());
-            } else {
-                setDescription("");
-            }
+
+            // si estabas editando y cerrás, cancelás edición
+            if (!next && editingEntry) onCancelEdit();
+
+            if (next) requestAnimationFrame(() => descRef.current?.focus());
+
             return next;
         });
+    }
+
+    function handleSend() {
+        if (!expanded) return;
+        if (signedAmount === null) return;
+
+        const kind = movementToKind(movementType);
+
+        if (editingEntry) {
+            const updated: AccountingEntry = {
+                ...editingEntry,
+                kind,
+                pucCode: puc.trim() || "",
+                description: description.trim(),
+                amount: signedAmount,
+            };
+
+            onUpdate(updated);
+            setExpanded(false);
+            resetForm();
+            return;
+        }
+
+        const now = new Date();
+        const dateISO = now.toISOString().slice(0, 10);
+        const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        const created: AccountingEntry = {
+            id: crypto.randomUUID(),
+            dateISO,
+            time,
+            pucCode: puc.trim() || "",
+            accountName: movementType, // si no tenés catálogo PUC, al menos algo visible
+            description: description.trim(),
+            amount: signedAmount,
+            source: "MANUAL",
+            kind,
+        };
+
+        onCreate(created);
+        setExpanded(false);
+        resetForm();
     }
 
     const chipBase = "rounded-full px-4 py-2 text-sm border transition whitespace-nowrap";
@@ -124,28 +206,31 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
                         <div ref={expandableRef} className="px-5 pt-5 pb-4 space-y-4">
                             {/* TIPO DE MOVIMIENTO */}
                             <div>
-                                <div className="text-xs font-semibold tracking-widest text-gray-500">TIPO DE MOVIMIENTO</div>
+                                <div className="text-xs font-semibold tracking-widest text-gray-500">
+                                    TIPO DE MOVIMIENTO
+                                </div>
                                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                                    {(["Activo", "Pasivo", "Patrimonio", "Ingresos", "Gastos"] as MovementType[]).map((t) => {
-                                        const active = movementType === t;
-                                        return (
+                                    {(["Activo", "Pasivo", "Patrimonio", "Ingresos", "Gastos"] as MovementType[]).map(
+                                        (t) => (
                                             <button
                                                 key={t}
                                                 type="button"
                                                 onClick={() => setMovementType(t)}
-                                                className={`${chipBase} ${active ? chipOn : chipOff}`}
+                                                className={`${chipBase} ${movementType === t ? chipOn : chipOff}`}
                                             >
                                                 {t}
                                             </button>
-                                        );
-                                    })}
+                                        )
+                                    )}
                                 </div>
                             </div>
 
                             {/* CÓDIGO PUC / VALOR */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <div className="text-xs font-semibold tracking-widest text-gray-500">CÓDIGO PUC</div>
+                                    <div className="text-xs font-semibold tracking-widest text-gray-500">
+                                        CÓDIGO PUC
+                                    </div>
                                     <input
                                         value={puc}
                                         onChange={(e) => setPuc(e.target.value)}
@@ -155,7 +240,9 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
                                 </div>
 
                                 <div>
-                                    <div className="text-xs font-semibold tracking-widest text-gray-500">VALOR</div>
+                                    <div className="text-xs font-semibold tracking-widest text-gray-500">
+                                        VALOR
+                                    </div>
                                     <input
                                         value={value}
                                         onChange={(e) => setValue(e.target.value)}
@@ -222,7 +309,7 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
                                         type="text"
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="Descripción del movimiento"
+                                        placeholder={editingEntry ? "Editar descripción..." : "Descripción del movimiento"}
                                         className="w-full h-11 px-4 rounded-full bg-white border border-gray-300 text-sm outline-none"
                                     />
                                 ) : (
@@ -239,12 +326,13 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
                             <button
                                 type="button"
                                 onClick={handleSend}
-                                aria-label="Enviar"
+                                aria-label={editingEntry ? "Guardar" : "Enviar"}
                                 className="
                   shrink-0 aspect-square h-12 min-h-12 w-12 min-w-12 rounded-full
                   bg-emerald-500 text-white grid place-items-center
                   shadow-[0_6px_14px_rgba(16,185,129,0.35)]
                   active:scale-95 transition
+                  disabled:opacity-50
                 "
                                 disabled={!expanded}
                             >
@@ -253,6 +341,7 @@ export function AccountingComposer({ searchValue, onSearchChange }: AccountingCo
                                 </svg>
                             </button>
                         </div>
+
                     </div>
                 </div>
             </div>
