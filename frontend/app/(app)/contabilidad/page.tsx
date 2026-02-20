@@ -75,9 +75,10 @@ function groupLabel(dateISO: string) {
 export default function ContabilidadClient() {
     const [filter, setFilter] = useState<AccountingType>("ALL");
     const [filterOpen, setFilterOpen] = useState(false);
-
+    const [search, setSearch] = useState("");
     const entries = useMemo(() => {
-        // filtro simple (ajustalo cuando conectes backend)
+        const q = search.trim().toLowerCase();
+
         const base =
             filter === "ALL"
                 ? MOCK
@@ -88,8 +89,18 @@ export default function ContabilidadClient() {
                     return true;
                 });
 
-        return base.slice().sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
-    }, [filter]);
+        const searched = !q
+            ? base
+            : base.filter((e) => {
+                return (
+                    e.description.toLowerCase().includes(q) ||
+                    e.accountName.toLowerCase().includes(q) ||
+                    e.pucCode.toLowerCase().includes(q)
+                );
+            });
+
+        return searched.slice().sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
+    }, [filter, search]);
 
     const grouped = useMemo(() => {
         return entries.reduce<Record<string, AccountingEntry[]>>((acc, e) => {
@@ -149,8 +160,7 @@ export default function ContabilidadClient() {
             </main>
 
             {/* composer fixed bottom-0 (tipo whatsapp) */}
-            <AccountingComposer />
-
+            <AccountingComposer searchValue={search} onSearchChange={setSearch} />
             <AccountingFilterSheet
                 open={filterOpen}
                 onClose={() => setFilterOpen(false)}
