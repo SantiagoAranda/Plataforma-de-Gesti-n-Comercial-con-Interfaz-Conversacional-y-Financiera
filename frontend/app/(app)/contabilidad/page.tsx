@@ -143,7 +143,7 @@ export default function ContabilidadClient() {
                 onRightClick={() => setFilterOpen(true)}
             />
 
-            <main className="pt-2 pb-6">
+            <main className="pt-2 pb-24">
                 <div className="px-4">
                     <div className="text-sm text-gray-500">Octubre 2023</div>
                 </div>
