@@ -2,9 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccountingEntry } from "@/src/types/accounting";
+import type { PucNode, PucKind } from "@/src/types/puc";
+import { PucTypeahead } from "@/src/components/accounting/PucTypeahead";
 
 type MovementType = "Activo" | "Pasivo" | "Patrimonio" | "Ingresos" | "Gastos";
 type Nature = "DEBITO" | "CREDITO";
+
+/** MVP demo data: reemplazar por tu datasource real (API / seed / etc.) */
+const PUC_ITEMS: PucNode[] = [
+    { code: "1105", name: "Caja", kind: "ASSET", breadcrumbs: ["Activo", "Disponible", "Caja"] },
+    { code: "110505", name: "Caja general", kind: "ASSET", breadcrumbs: ["Activo", "Disponible", "Caja", "Caja general"] },
+    { code: "1110", name: "Bancos", kind: "ASSET", breadcrumbs: ["Activo", "Disponible", "Bancos"] },
+    { code: "1305", name: "Clientes", kind: "ASSET", breadcrumbs: ["Activo", "Deudores", "Clientes"] },
+    { code: "2105", name: "Proveedores", kind: "LIABILITY", breadcrumbs: ["Pasivo", "Cuentas por pagar", "Proveedores"] },
+    { code: "2365", name: "Retenciones", kind: "LIABILITY", breadcrumbs: ["Pasivo", "Impuestos", "Retenciones"] },
+    { code: "3105", name: "Capital social", kind: "EQUITY", breadcrumbs: ["Patrimonio", "Capital", "Capital social"] },
+    { code: "4135", name: "Ventas", kind: "INCOME", breadcrumbs: ["Ingresos", "Operacionales", "Ventas"] },
+    { code: "4175", name: "Servicios", kind: "INCOME", breadcrumbs: ["Ingresos", "Operacionales", "Servicios"] },
+    { code: "5105", name: "Gastos de personal", kind: "EXPENSE", breadcrumbs: ["Gastos", "Administración", "Personal"] },
+    { code: "5205", name: "Arriendos", kind: "EXPENSE", breadcrumbs: ["Gastos", "Administración", "Arriendos"] },
+];
 
 function parseMoneyLike(input: string): number | null {
     const raw = input.trim();
@@ -59,6 +76,288 @@ function movementToKind(m: MovementType): AccountingEntry["kind"] {
     }
 }
 
+/** filtro para PUC por “tipo de movimiento” */
+function movementToKindFilter(m: MovementType): PucKind {
+    return movementToKind(m);
+}
+
+/** -------- Opción B (Wizard 4 pasos con subcuenta) -------- */
+
+type WizardStep = "KIND" | "GROUP" | "ACCOUNT" | "SUBACCOUNT";
+
+function kindLabel(kind: PucKind) {
+    switch (kind) {
+        case "ASSET":
+            return "Activo";
+        case "LIABILITY":
+            return "Pasivo";
+        case "EQUITY":
+            return "Patrimonio";
+        case "INCOME":
+            return "Ingresos";
+        case "EXPENSE":
+            return "Gastos";
+    }
+}
+
+function uniqSorted(arr: string[]) {
+    return Array.from(new Set(arr)).sort((a, b) => a.localeCompare(b));
+}
+
+function crumb(it: PucNode, idx: number) {
+    return it.breadcrumbs[idx] ?? null;
+}
+
+function PucWizard({
+    items,
+    forcedKind,
+    value,
+    onChange,
+    onClose,
+}: {
+    items: PucNode[];
+    forcedKind?: PucKind;
+    value: PucNode | null;
+    onChange: (v: PucNode | null) => void;
+    onClose: () => void;
+}) {
+    const [step, setStep] = useState<WizardStep>(forcedKind ? "GROUP" : "KIND");
+    const [kind, setKind] = useState<PucKind | null>(forcedKind ?? null);
+
+    const [group, setGroup] = useState<string | null>(null);
+    const [account, setAccount] = useState<string | null>(null);
+
+    useEffect(() => {
+        setKind(forcedKind ?? null);
+        setStep(forcedKind ? "GROUP" : "KIND");
+        setGroup(null);
+        setAccount(null);
+    }, [forcedKind]);
+
+    const base = useMemo(() => {
+        const k = kind ?? forcedKind;
+        return k ? items.filter((x) => x.kind === k) : items;
+    }, [items, kind, forcedKind]);
+
+    const groups = useMemo(() => {
+        return uniqSorted(base.map((it) => crumb(it, 1)).filter(Boolean) as string[]);
+    }, [base]);
+
+    const accounts = useMemo(() => {
+        if (!group) return [];
+        const scoped = base.filter((it) => crumb(it, 1) === group);
+        return uniqSorted(scoped.map((it) => crumb(it, 2)).filter(Boolean) as string[]);
+    }, [base, group]);
+
+    const leafCandidates = useMemo(() => {
+        if (!group || !account) return [];
+        return base.filter((it) => crumb(it, 1) === group && crumb(it, 2) === account);
+    }, [base, group, account]);
+
+    const subaccounts = useMemo(() => {
+        if (!group || !account) return [];
+        return uniqSorted(leafCandidates.map((it) => crumb(it, 3)).filter(Boolean) as string[]);
+    }, [leafCandidates, group, account]);
+
+    function pickBestLeaf(sub: string | null) {
+        if (sub) {
+            return leafCandidates.find((it) => crumb(it, 3) === sub) ?? leafCandidates[0] ?? null;
+        }
+        // cuenta sin subcuenta
+        const noSub = leafCandidates.find((it) => !crumb(it, 3));
+        return noSub ?? leafCandidates[0] ?? null;
+    }
+
+    return (
+        <div className="mt-2 rounded-2xl border border-gray-200 bg-white/70 backdrop-blur p-3">
+            <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold tracking-widest text-gray-500">SELECTOR PUC</div>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="text-xs font-semibold text-gray-600 hover:text-gray-800"
+                >
+                    Cerrar
+                </button>
+            </div>
+
+            <div className="mt-2 flex gap-2 text-xs">
+                <span className={`px-2 py-1 rounded-full border ${step === "KIND" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/70 border-gray-200 text-gray-600"}`}>
+                    1. Tipo
+                </span>
+                <span className={`px-2 py-1 rounded-full border ${step === "GROUP" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/70 border-gray-200 text-gray-600"}`}>
+                    2. Grupo
+                </span>
+                <span className={`px-2 py-1 rounded-full border ${step === "ACCOUNT" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/70 border-gray-200 text-gray-600"}`}>
+                    3. Cuenta
+                </span>
+                <span className={`px-2 py-1 rounded-full border ${step === "SUBACCOUNT" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white/70 border-gray-200 text-gray-600"}`}>
+                    4. Subcuenta
+                </span>
+            </div>
+
+            {!forcedKind && step === "KIND" && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                    {(["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"] as PucKind[]).map((k) => (
+                        <button
+                            key={k}
+                            type="button"
+                            onClick={() => {
+                                setKind(k);
+                                setStep("GROUP");
+                                setGroup(null);
+                                setAccount(null);
+                            }}
+                            className="rounded-xl border border-gray-200 bg-white/70 px-3 py-2 text-sm text-gray-800 hover:bg-white"
+                        >
+                            {kindLabel(k)}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {step === "GROUP" && (
+                <div className="mt-3">
+                    <div className="text-xs text-gray-500">Elegí un grupo</div>
+                    <div className="mt-2 max-h-48 overflow-auto rounded-xl border border-gray-200 bg-white">
+                        {groups.map((g) => (
+                            <button
+                                key={g}
+                                type="button"
+                                onClick={() => {
+                                    setGroup(g);
+                                    setAccount(null);
+                                    setStep("ACCOUNT");
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                            >
+                                {g}
+                            </button>
+                        ))}
+                        {groups.length === 0 && <div className="px-3 py-2 text-sm text-gray-500">Sin grupos.</div>}
+                    </div>
+
+                    <div className="mt-2 flex gap-2">
+                        {!forcedKind && (
+                            <button
+                                type="button"
+                                onClick={() => setStep("KIND")}
+                                className="px-3 py-2 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-700 hover:bg-white"
+                            >
+                                Atrás
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {step === "ACCOUNT" && (
+                <div className="mt-3">
+                    <div className="text-xs text-gray-500">Elegí una cuenta</div>
+                    <div className="mt-2 max-h-48 overflow-auto rounded-xl border border-gray-200 bg-white">
+                        {accounts.map((a) => (
+                            <button
+                                key={a}
+                                type="button"
+                                onClick={() => {
+                                    setAccount(a);
+                                    setStep("SUBACCOUNT");
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                            >
+                                {a}
+                            </button>
+                        ))}
+                        {accounts.length === 0 && <div className="px-3 py-2 text-sm text-gray-500">Sin cuentas.</div>}
+                    </div>
+
+                    <div className="mt-2 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setStep("GROUP")}
+                            className="px-3 py-2 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-700 hover:bg-white"
+                        >
+                            Atrás
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {step === "SUBACCOUNT" && (
+                <div className="mt-3">
+                    <div className="text-xs text-gray-500">Elegí una subcuenta (si no hay, usás la cuenta)</div>
+
+                    <div className="mt-2 max-h-48 overflow-auto rounded-xl border border-gray-200 bg-white">
+                        {subaccounts.length === 0 && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const leaf = pickBestLeaf(null);
+                                    if (leaf) onChange(leaf);
+                                    onClose();
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                            >
+                                <div className="text-sm font-semibold text-gray-900">Usar cuenta: {account}</div>
+                                <div className="text-xs text-gray-500 truncate">
+                                    {kindLabel((kind ?? forcedKind) as PucKind)} &gt; {group} &gt; {account}
+                                </div>
+                            </button>
+                        )}
+
+                        {subaccounts.map((s) => (
+                            <button
+                                key={s}
+                                type="button"
+                                onClick={() => {
+                                    const leaf = pickBestLeaf(s);
+                                    if (leaf) onChange(leaf);
+                                    onClose();
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                            >
+                                <div className="text-sm font-semibold text-gray-900">{s}</div>
+                                <div className="text-xs text-gray-500 truncate">
+                                    {kindLabel((kind ?? forcedKind) as PucKind)} &gt; {group} &gt; {account} &gt; {s}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="mt-2 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setStep("ACCOUNT")}
+                            className="px-3 py-2 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-700 hover:bg-white"
+                        >
+                            Atrás
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                onChange(null);
+                                onClose();
+                            }}
+                            className="ml-auto px-3 py-2 rounded-xl border border-gray-200 bg-white/70 text-sm text-gray-700 hover:bg-white"
+                        >
+                            Limpiar
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {value && (
+                <div className="mt-3 text-xs text-gray-600">
+                    Seleccionado: <span className="font-semibold">{value.code}</span> — {value.name}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** -------- Composer -------- */
+
 type Props = {
     searchValue: string;
     onSearchChange: (v: string) => void;
@@ -81,10 +380,17 @@ export function AccountingComposer({
     const [expanded, setExpanded] = useState(false);
 
     const [movementType, setMovementType] = useState<MovementType>("Activo");
-    const [puc, setPuc] = useState("");
     const [value, setValue] = useState("");
     const [nature, setNature] = useState<Nature>("DEBITO");
     const [description, setDescription] = useState("");
+
+    // PUC selection (A o B)
+    const [selectedPuc, setSelectedPuc] = useState<PucNode | null>(null);
+    const kindFilter = movementToKindFilter(movementType);
+
+    // toggle A/B
+    const [pucMode, setPucMode] = useState<"A" | "B">("A");
+    const [wizardOpen, setWizardOpen] = useState(false);
 
     const descRef = useRef<HTMLInputElement | null>(null);
 
@@ -112,10 +418,12 @@ export function AccountingComposer({
 
     function resetForm() {
         setMovementType("Activo");
-        setPuc("");
         setValue("");
         setNature("DEBITO");
         setDescription("");
+        setSelectedPuc(null);
+        setPucMode("A");
+        setWizardOpen(false);
     }
 
     // ✅ Si llega un entry para editar: abre + precarga
@@ -124,23 +432,32 @@ export function AccountingComposer({
 
         setExpanded(true);
         setMovementType(kindToMovement(editingEntry.kind));
-        setPuc(editingEntry.pucCode ?? "");
         setNature(editingEntry.amount >= 0 ? "DEBITO" : "CREDITO");
         setValue(String(Math.abs(editingEntry.amount)));
         setDescription(editingEntry.description ?? "");
 
+        // Intentar precargar PUC si existe en dataset
+        if (editingEntry.pucCode) {
+            const found = PUC_ITEMS.find((x) => x.code === editingEntry.pucCode) ?? null;
+            setSelectedPuc(found);
+        } else {
+            setSelectedPuc(null);
+        }
+
         requestAnimationFrame(() => descRef.current?.focus());
     }, [editingEntry]);
+
+    // Si cambia movementType, y el PUC seleccionado no coincide con el kind, lo limpiamos
+    useEffect(() => {
+        if (!selectedPuc) return;
+        if (selectedPuc.kind !== kindFilter) setSelectedPuc(null);
+    }, [kindFilter, selectedPuc]);
 
     function toggleExpanded() {
         setExpanded((p) => {
             const next = !p;
-
-            // si estabas editando y cerrás, cancelás edición
             if (!next && editingEntry) onCancelEdit();
-
             if (next) requestAnimationFrame(() => descRef.current?.focus());
-
             return next;
         });
     }
@@ -151,11 +468,15 @@ export function AccountingComposer({
 
         const kind = movementToKind(movementType);
 
+        // MVP: requerir PUC seleccionado
+        if (!selectedPuc) return;
+
         if (editingEntry) {
             const updated: AccountingEntry = {
                 ...editingEntry,
                 kind,
-                pucCode: puc.trim() || "",
+                pucCode: selectedPuc.code,
+                accountName: selectedPuc.name,
                 description: description.trim(),
                 amount: signedAmount,
             };
@@ -174,8 +495,8 @@ export function AccountingComposer({
             id: crypto.randomUUID(),
             dateISO,
             time,
-            pucCode: puc.trim() || "",
-            accountName: movementType, // si no tenés catálogo PUC, al menos algo visible
+            pucCode: selectedPuc.code,
+            accountName: selectedPuc.name,
             description: description.trim(),
             amount: signedAmount,
             source: "MANUAL",
@@ -225,32 +546,96 @@ export function AccountingComposer({
                                 </div>
                             </div>
 
-                            {/* CÓDIGO PUC / VALOR */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
+                            {/* PUC (Modo A o B) */}
+                            <div>
+                                <div className="flex items-center justify-between">
                                     <div className="text-xs font-semibold tracking-widest text-gray-500">
                                         CÓDIGO PUC
                                     </div>
-                                    <input
-                                        value={puc}
-                                        onChange={(e) => setPuc(e.target.value)}
-                                        placeholder="Ej. 1105"
-                                        className={`${inputBase} mt-2`}
-                                    />
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setPucMode("A");
+                                                setWizardOpen(false);
+                                            }}
+                                            className={`text-xs px-3 py-1 rounded-full border ${pucMode === "A"
+                                                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                                    : "bg-white/70 border-gray-200 text-gray-600"
+                                                }`}
+                                        >
+                                            Buscar
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setPucMode("B");
+                                                setWizardOpen((v) => !v);
+                                            }}
+                                            className={`text-xs px-3 py-1 rounded-full border ${pucMode === "B"
+                                                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                                    : "bg-white/70 border-gray-200 text-gray-600"
+                                                }`}
+                                        >
+                                            Ver todo
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <div className="text-xs font-semibold tracking-widest text-gray-500">
-                                        VALOR
-                                    </div>
-                                    <input
-                                        value={value}
-                                        onChange={(e) => setValue(e.target.value)}
-                                        placeholder="0.00"
-                                        inputMode="decimal"
-                                        className={`${inputBase} mt-2`}
+                                {pucMode === "A" && (
+                                    <PucTypeahead
+                                        showLabel={false}
+                                        kindFilter={kindFilter}
+                                        items={PUC_ITEMS}
+                                        value={selectedPuc}
+                                        onChange={setSelectedPuc}
+                                        placeholder="Ej. 1105 o “caja”, “clientes”…"
                                     />
-                                </div>
+                                )}
+
+                                {pucMode === "B" && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setWizardOpen((v) => !v)}
+                                            className={`${inputBase} mt-2 text-left`}
+                                        >
+                                            {selectedPuc
+                                                ? `${selectedPuc.code} — ${selectedPuc.name}`
+                                                : "Abrir selector por pasos…"}
+                                        </button>
+
+                                        {wizardOpen && (
+                                            <PucWizard
+                                                items={PUC_ITEMS}
+                                                forcedKind={kindFilter}
+                                                value={selectedPuc}
+                                                onChange={setSelectedPuc}
+                                                onClose={() => setWizardOpen(false)}
+                                            />
+                                        )}
+                                    </>
+                                )}
+
+                                {selectedPuc && (
+                                    <div className="mt-2 text-xs text-gray-500">
+                                        {selectedPuc.breadcrumbs.join(" > ")}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* VALOR */}
+                            <div>
+                                <div className="text-xs font-semibold tracking-widest text-gray-500">VALOR</div>
+                                <input
+                                    value={value}
+                                    onChange={(e) => setValue(e.target.value)}
+                                    placeholder="0.00"
+                                    inputMode="decimal"
+                                    className={`${inputBase} mt-2`}
+                                />
                             </div>
 
                             {/* NATURALEZA */}
@@ -262,7 +647,9 @@ export function AccountingComposer({
                                         <button
                                             type="button"
                                             onClick={() => setNature("DEBITO")}
-                                            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                                            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${nature === "DEBITO"
+                                                    ? "bg-emerald-400 text-emerald-950"
+                                                    : "text-gray-600"
                                                 }`}
                                         >
                                             DÉBITO
@@ -271,7 +658,9 @@ export function AccountingComposer({
                                         <button
                                             type="button"
                                             onClick={() => setNature("CREDITO")}
-                                            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                                            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${nature === "CREDITO"
+                                                    ? "bg-emerald-400 text-emerald-950"
+                                                    : "text-gray-600"
                                                 }`}
                                         >
                                             CRÉDITO
@@ -335,13 +724,35 @@ export function AccountingComposer({
                   disabled:opacity-50
                 "
                                 disabled={!expanded}
+                                title={!selectedPuc && expanded ? "Seleccioná un PUC" : undefined}
                             >
-                                <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="currentColor" aria-hidden="true">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    className="h-5 w-5 block"
+                                    fill="currentColor"
+                                    aria-hidden="true"
+                                >
                                     <path d="M8 5v14l13-7-13-7z" />
                                 </svg>
                             </button>
                         </div>
 
+                        {editingEntry && (
+                            <div className="mt-2 px-1 text-xs text-neutral-500">
+                                Editando: <span className="font-medium">{editingEntry.pucCode}</span>
+                                <button
+                                    type="button"
+                                    className="ml-3 text-red-600 font-semibold"
+                                    onClick={() => {
+                                        onCancelEdit();
+                                        setExpanded(false);
+                                        resetForm();
+                                    }}
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
