@@ -107,6 +107,7 @@ export default function ContabilidadClient() {
         <div className="min-h-[100dvh] bg-gray-100">
             <AppHeader
                 title="Contabilidad"
+                subtitle="Registro financiero"
                 showBack
                 rightAriaLabel="Filtros"
                 rightIcon={
@@ -127,9 +128,6 @@ export default function ContabilidadClient() {
 
             {/* IMPORTANTE: sin padding lateral si querés full width */}
             <main className="pt-4 pb-6">
-                <div className="px-4">
-                    <div className="text-sm text-gray-500">Octubre 2023</div>
-                </div>
 
                 <div className="mt-5 space-y-6">
                     {dates.map((dateISO) => (
