@@ -127,16 +127,16 @@ export default function ContabilidadClient() {
             />
 
             {/* IMPORTANTE: sin padding lateral si querés full width */}
-            <main className="pt-4 pb-6">
+            <main className="pt-1 pb-6">
 
-                <div className="mt-5 space-y-6">
+                <div className="mt-2 space-y-6">
                     {dates.map((dateISO) => (
                         <section key={dateISO}>
                             <div className="px-4 text-xs font-semibold tracking-widest text-gray-400">
                                 {groupLabel(dateISO)}
                             </div>
 
-                            <div className="mt-3 space-y-4">
+                            <div className="mt-1 space-y-4">
                                 {grouped[dateISO].map((e) => (
                                     <div key={e.id} className="px-4">
                                         <AccountingCard entry={e} />
