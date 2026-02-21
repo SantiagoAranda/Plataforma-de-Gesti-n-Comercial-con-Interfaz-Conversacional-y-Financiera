@@ -26,7 +26,7 @@ export default function RegisterForm() {
   const isValidPassword = (value: string) =>
     value.length >= 6 && /[A-Z]/.test(value) && /\d/.test(value);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
@@ -49,19 +49,37 @@ export default function RegisterForm() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      console.log({
-        businessName,
-        email,
-        password,
-        taxId,
-        whatsapp,
-        ownerName,
+    try {
+      const res = await fetch("http://localhost:3001/auth/register-business", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: businessName,
+          fiscalId: taxId,
+          phoneWhatsapp: whatsapp,
+          email,
+          password,
+        }),
       });
 
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Error al registrarse");
+      }
+
+      // Guardar token automáticamente
+      localStorage.setItem("accessToken", data.accessToken);
+
+      // Redirigir a home privada
+      router.push("/home");
+    } catch (err: any) {
+      setError(err.message || "Error inesperado");
+    } finally {
       setLoading(false);
-      router.push("/login");
-    }, 1000);
+    }
   };
 
   return (
@@ -253,31 +271,6 @@ export default function RegisterForm() {
         />
       </div>
 
-      {/* Nombre del propietario */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">
-          Nombre del propietario
-        </label>
-        <input
-          value={ownerName}
-          onChange={(e) => setOwnerName(e.target.value)}
-          required
-          className="
-            w-full
-            bg-neutral-50
-            border border-neutral-300
-            rounded-xl
-            px-4 py-3
-            text-gray-800
-            focus:outline-none
-            focus:ring-2 focus:ring-emerald-600
-            focus:border-emerald-600
-            transition
-          "
-        />
-      </div>
-
-      {/* Botón */}
       <button
         type="submit"
         disabled={loading}
@@ -298,7 +291,6 @@ export default function RegisterForm() {
         {loading ? "Creando cuenta..." : "Registrarse"}
       </button>
 
-      {/* Link login */}
       <p className="text-sm text-center text-gray-600">
         ¿Ya tenés cuenta?{" "}
         <span

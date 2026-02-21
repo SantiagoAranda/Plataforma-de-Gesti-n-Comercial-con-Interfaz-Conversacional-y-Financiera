@@ -1,8 +1,13 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { BusinessesService } from '../businesses/businesses.service';
+import { RegisterBusinessDto } from './dto/register-business.dto';
 
 @Injectable()
 export class AuthService {
@@ -12,40 +17,44 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async registerBusiness(data: {
-    name: string;
-    fiscalId: string;
-    phoneWhatsapp: string;
-    email: string;
-    password: string;
-  }) {
-    const existingUser = await this.usersService.findByEmail(data.email);
+  async registerBusiness(dto: RegisterBusinessDto) {
+    // Verificar si el email ya está registrado
+    const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
       throw new BadRequestException('Email already in use');
     }
 
-    const hashedPassword = await bcrypt.hash(data.password, 10);
+    // Hashear contraseña
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
 
+    // Crear negocio
     const business = await this.businessesService.createBusiness({
-      name: data.name,
-      fiscalId: data.fiscalId,
-      phoneWhatsapp: data.phoneWhatsapp,
+      name: dto.name,
+      fiscalId: dto.fiscalId,
+      phoneWhatsapp: dto.phoneWhatsapp,
     });
 
+    // Crear usuario asociado al negocio
     const user = await this.usersService.createBusinessUser({
-      email: data.email,
+      email: dto.email,
       password: hashedPassword,
       businessId: business.id,
     });
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      role: user.role,
-      businessId: business.id,
-    });
+    // Generar JWT con expiración
+    const accessToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        businessId: business.id,
+      },
+      {
+        expiresIn: '15m',
+      },
+    );
 
     return {
-      accessToken: token,
+      accessToken,
     };
   }
 
@@ -56,20 +65,31 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // Validar contraseña
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const token = this.jwtService.sign({
-      sub: user.id,
-      role: user.role,
-      businessId: user.businessId,
-    });
+    // Validar estado del negocio
+    if (!user.business || user.business.status === 'INACTIVE') {
+      throw new UnauthorizedException('Business inactive');
+    }
+
+    const accessToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        role: user.role,
+        businessId: user.businessId,
+      },
+      {
+        expiresIn: '15m',
+      },
+    );
 
     return {
-      accessToken: token,
+      accessToken,
     };
   }
 }
