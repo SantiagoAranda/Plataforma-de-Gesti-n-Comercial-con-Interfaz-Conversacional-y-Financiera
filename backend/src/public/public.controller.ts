@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Query,
   Param,
   Post,
   Body,
@@ -9,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationDto } from '../reservations/dto/create-reservation.dto';
+import { NotFoundException } from '@nestjs/common/exceptions/not-found.exception';
 
 @Controller('public')
 export class PublicController {
@@ -139,4 +141,40 @@ export class PublicController {
       },
     });
   }
+
+  @Get("/public/:slug/items")
+async listPublicItems(@Param("slug") slug: string, @Query("type") type?: string) {
+  const business = await this.prisma.business.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!business) return { business: null, data: [] };
+
+  const where: any = { businessId: business.id, status: "ACTIVE" };
+  if (type) where.type = type;
+
+  const data = await this.prisma.item.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: { images: { orderBy: { order: "asc" } } },
+  });
+
+  return { business, data };
+}
+@Get("/public/:slug/items/:itemId")
+async getPublicItem(@Param("slug") slug: string, @Param("itemId") itemId: string) {
+  const business = await this.prisma.business.findFirst({
+    where: { slug, status: "ACTIVE" },
+    select: { id: true, name: true, slug: true },
+  });
+  if (!business) throw new NotFoundException("Business not found");
+
+  const item = await this.prisma.item.findFirst({
+    where: { id: itemId, businessId: business.id, status: "ACTIVE" },
+    include: { images: { orderBy: { order: "asc" } } },
+  });
+  if (!item) throw new NotFoundException("Item not found");
+
+  return { business, item };
+}
 }
