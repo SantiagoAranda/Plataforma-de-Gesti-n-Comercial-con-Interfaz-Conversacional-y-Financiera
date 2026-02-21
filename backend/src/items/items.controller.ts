@@ -8,6 +8,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } fro
 import { UpdateItemDto } from "./dto/update-item.dto";
 import { UpdateItemStatusDto } from "./dto/update-item-status.dto";
 import { AddItemImageDto } from "./dto/add-item-image.dto";
+@UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('items')
 export class ItemsController {
   constructor(private itemsService: ItemsService) {}
