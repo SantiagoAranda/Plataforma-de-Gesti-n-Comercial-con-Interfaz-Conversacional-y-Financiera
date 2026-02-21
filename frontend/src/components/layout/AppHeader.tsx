@@ -1,63 +1,72 @@
 "use client";
 
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 
 type Props = {
-  title?: string;
+  title: string;
+  subtitle?: string;
   showBack?: boolean;
-  onRightClick?: () => void;
-  rightIcon?: React.ReactNode;
+  rightIcon?: ReactNode;
   rightAriaLabel?: string;
+  onRightClick?: () => void;
 };
 
 export default function AppHeader({
-  title = "MVP",
+  title,
+  subtitle,
   showBack = false,
-  onRightClick,
   rightIcon,
-  rightAriaLabel = "Opciones",
+  rightAriaLabel = "Acción",
+  onRightClick,
 }: Props) {
   const router = useRouter();
 
   return (
     <header
-      className="
-  sticky
-  top-0
-  z-50
-  flex
-  items-center
-  px-4
-  py-3
-  border-b
-  border-neutral-200
-  bg-white
-"
+      className="sticky top-0 z-30 w-full bg-white"
+      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
-      {showBack ? (
-        <button
-          onClick={() => router.back()}
-          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-neutral-100 transition"
-          aria-label="Volver"
-        >
-          ←
-        </button>
-      ) : (
-        <div className="w-9 h-9" />
-      )}
+      <div className="flex items-center justify-between px-4 h-[64px]">
+        {/* Left */}
+        <div className="w-10">
+          {showBack && (
+            <button
+              onClick={() => router.back()}
+              aria-label="Volver"
+              className="grid place-items-center h-8 w-8 rounded-full hover:bg-black/5 active:scale-95 transition"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
-      <h1 className="absolute left-1/2 -translate-x-1/2 text-sm font-semibold tracking-wide text-neutral-700">
-        {title}
-      </h1>
+        {/* Title block */}
+        <div className="flex-1 px-2 text-center leading-tight">
+          <h1 className="text-[20px] font-semibold truncate">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="text-[13px] text-emerald-600 font-medium truncate">
+              {subtitle}
+            </p>
+          )}
+        </div>
 
-      <button
-        className="ml-auto w-9 h-9 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-600"
-        onClick={onRightClick}
-        aria-label={rightAriaLabel}
-        type="button"
-      >
-        {rightIcon ?? "⋮"}
-      </button>
+        {/* Right */}
+        <div className="w-10 flex justify-end">
+          {rightIcon && (
+            <button
+              aria-label={rightAriaLabel}
+              onClick={onRightClick}
+              className="grid place-items-center h-8 w-8 rounded-full hover:bg-black/5 active:scale-95 transition"
+            >
+              {rightIcon}
+            </button>
+          )}
+        </div>
+      </div>
     </header>
   );
 }
