@@ -7,14 +7,11 @@ import {
   Body,
   BadRequestException,
   Patch,
-  UseGuards,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationDto } from '../reservations/dto/create-reservation.dto';
 import { NotFoundException } from '@nestjs/common';
-import { BusinessActiveGuard } from 'src/auth/guards/business-active.guard';
-import { JwtAuthGuard } from 'src/auth/guards/jwt-auth-guard';
-@UseGuards(JwtAuthGuard, BusinessActiveGuard) 
+
 @Controller('public')
 export class PublicController {
   constructor(private prisma: PrismaService) {}

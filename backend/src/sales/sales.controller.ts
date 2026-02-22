@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AddOrderItemDto } from "./dto/add-order-item.dto";
 import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
-
+@UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('sales')
 export class SalesController {
   constructor(private salesService: SalesService) {}
