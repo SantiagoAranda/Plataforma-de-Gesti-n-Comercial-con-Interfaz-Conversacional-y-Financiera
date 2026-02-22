@@ -65,18 +65,18 @@ enum Weekday {
 //
 
 model User {
-  id         String   @id @default(uuid())
-  email      String   @unique
-  password   String
-  role       UserRole
+  id       String   @id @default(uuid())
+  email    String   @unique
+  password String
+  role     UserRole
 
   // MVP: 1 cuenta BUSINESS por negocio.
   // ADMIN queda sin negocio (businessId = null).
   businessId String?   @unique
   business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([role])
 }
@@ -92,68 +92,67 @@ model Business {
   inactivatedAt DateTime?
 
   // 1–1 (derivada del @unique en User.businessId)
-  user          User?
+  user User?
 
-  items         Item[]
-  orders        Order[]
-  reservations  Reservation[]
+  items        Item[]
+  orders       Order[]
+  reservations Reservation[]
 
-  accounting    AccountingEntry[]
+  accounting AccountingEntry[]
 
-  schedules     ServiceScheduleWindow[]
-  blocks        ServiceScheduleBlock[]
+  schedules ServiceScheduleWindow[]
+  blocks    ServiceScheduleBlock[]
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Item {
-  id              String     @id @default(uuid())
-  businessId      String
-  business        Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  type            ItemType
-  status          ItemStatus @default(ACTIVE)
+  type   ItemType
+  status ItemStatus @default(ACTIVE)
 
-  name            String
-  price           Decimal    @db.Decimal(10, 2)
-  description     String?
+  name        String
+  price       Decimal @db.Decimal(10, 2)
+  description String?
 
   // Solo para servicios (validar en app: requerido si type=SERVICE)
   durationMinutes Int?
 
-  images          ItemImage[]
+  images ItemImage[]
 
-  orderItems      OrderItem[]
-  reservations    Reservation[]
+  orderItems   OrderItem[]
+  reservations Reservation[]
 
   scheduleWindows ServiceScheduleWindow[]
   scheduleBlocks  ServiceScheduleBlock[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([businessId])
-  @@index([type])
-  @@index([status])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // ✅ habilita FK compuesta desde OrderItem (y permite validar "carrito 1 negocio")
   @@unique([id, businessId])
+  @@index([businessId])
+  @@index([type])
+  @@index([status])
 }
 
 model ItemImage {
-  id        String @id @default(uuid())
-  itemId    String
-  item      Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  url       String
-  order     Int
+  url   String
+  order Int
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([itemId])
   @@unique([itemId, order])
+  @@index([itemId])
 }
 
 //
@@ -161,66 +160,66 @@ model ItemImage {
 //
 
 model Order {
-  id               String      @id @default(uuid())
+  id String @id @default(uuid())
 
-  businessId        String
-  business          Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  status            OrderStatus @default(DRAFT)
+  status OrderStatus @default(DRAFT)
 
   // Cliente final sin registro
-  customerName      String
-  customerWhatsapp  String
-  note              String?
+  customerName     String
+  customerWhatsapp String
+  note             String?
 
   // Totales “congelados”
-  total             Decimal     @default(0) @db.Decimal(14, 2)
-  currency          String      @default("ARS") @db.VarChar(3)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+  currency String  @default("ARS") @db.VarChar(3)
 
   // envío / documento (PDF)
-  sentAt            DateTime?
-  pdfUrl            String?
-  pdfGeneratedAt    DateTime?
-  documentNumber    String?
+  sentAt         DateTime?
+  pdfUrl         String?
+  pdfGeneratedAt DateTime?
+  documentNumber String?
 
-  items             OrderItem[]
+  items OrderItem[]
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([businessId, createdAt])
   @@index([status])
 }
 
 model OrderItem {
-  id                   String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  orderId              String
-  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   // ✅ se setea desde backend = Order.businessId
-  businessId           String
+  businessId String
 
-  itemId               String
+  itemId String
   // ✅ impide items de otro negocio en la misma orden
-  item                 Item     @relation(fields: [itemId, businessId], references: [id, businessId], onDelete: Restrict)
+  item   Item   @relation(fields: [itemId, businessId], references: [id, businessId], onDelete: Restrict)
 
-  quantity             Int      @default(1)
+  quantity Int @default(1)
 
   // Snapshots para histórico/PDF (evita que cambien si se edita el catálogo)
-  itemNameSnapshot     String
-  itemTypeSnapshot     ItemType
+  itemNameSnapshot        String
+  itemTypeSnapshot        ItemType
   durationMinutesSnapshot Int?
 
-  unitPrice            Decimal  @db.Decimal(10, 2)
-  lineTotal            Decimal  @db.Decimal(14, 2)
+  unitPrice Decimal @db.Decimal(10, 2)
+  lineTotal Decimal @db.Decimal(14, 2)
 
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  @@unique([orderId, itemId])
   @@index([orderId])
   @@index([itemId])
-  @@unique([orderId, itemId])
 }
 
 //
@@ -228,37 +227,37 @@ model OrderItem {
 //
 
 model Reservation {
-  id               String            @id @default(uuid())
+  id String @id @default(uuid())
 
-  publicToken      String?           @unique @default(uuid())
+  publicToken String? @unique @default(uuid())
 
-  businessId        String
-  business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  itemId            String
-  item              Item              @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Restrict)
 
-  status            ReservationStatus @default(PENDING)
+  status ReservationStatus @default(PENDING)
 
   // Cliente final sin registro
-  customerName      String
-  customerWhatsapp  String
-  note              String?
+  customerName     String
+  customerWhatsapp String
+  note             String?
 
   // Fecha del turno + rango horario (minutos del día)
   // Recomendación: date representa el "día" (normalizar a 00:00 en backend).
-  date              DateTime
-  startMinute       Int
-  endMinute         Int
+  date        DateTime
+  startMinute Int
+  endMinute   Int
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  // Evita duplicar exactamente el mismo slot para el mismo servicio
+  @@unique([itemId, date, startMinute, endMinute])
   @@index([businessId, date])
   @@index([itemId, date])
   @@index([status])
-  // Evita duplicar exactamente el mismo slot para el mismo servicio
-  @@unique([itemId, date, startMinute, endMinute])
 }
 
 //
@@ -266,39 +265,39 @@ model Reservation {
 //
 
 model ServiceScheduleWindow {
-  id          String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   // null => horario general del negocio.
   // set => horario específico de un servicio (Item.type=SERVICE).
-  itemId      String?
-  item        Item?    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId String?
+  item   Item?   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  weekday     Weekday
+  weekday Weekday
 
   // Minutos desde 00:00 (ej 540=09:00)
   startMinute Int
   endMinute   Int
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  @@unique([businessId, itemId, weekday, startMinute, endMinute])
   @@index([businessId, weekday])
   @@index([itemId, weekday])
-  @@unique([businessId, itemId, weekday, startMinute, endMinute])
 }
 
 model ServiceScheduleBlock {
-  id          String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  businessId  String
-  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   // bloqueos específicos de un servicio (opcional)
-  itemId      String?
-  item        Item?    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId String?
+  item   Item?   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   // Bloqueo por fecha (normalizar a 00:00 en backend)
   date        DateTime
@@ -306,10 +305,10 @@ model ServiceScheduleBlock {
   startMinute Int?
   endMinute   Int?
 
-  reason      String?
+  reason String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([businessId, date])
   @@index([itemId, date])
@@ -320,46 +319,49 @@ model ServiceScheduleBlock {
 //
 
 model PucClase {
-  code   String   @id @db.VarChar(1) // ej "1"
-  name   String
+  code String @id @db.VarChar(1) // ej "1"
+  name String
 
   grupos PucGrupo[]
 }
 
 model PucGrupo {
-  code      String   @id @db.VarChar(2) // ej "11"
-  name      String
+  code String @id @db.VarChar(2) // ej "11"
+  name String
 
   claseCode String   @db.VarChar(1)
   clase     PucClase @relation(fields: [claseCode], references: [code], onDelete: Restrict)
 
-  cuentas   PucCuenta[]
+  cuentas PucCuenta[]
 
   @@index([claseCode])
 }
 
 model PucCuenta {
-  code       String   @id @db.VarChar(4) // ej "1105"
-  name       String
+  code String @id @db.VarChar(4) // ej "1105"
+  name String
 
-  grupoCode  String   @db.VarChar(2)
-  grupo      PucGrupo @relation(fields: [grupoCode], references: [code], onDelete: Restrict)
+  grupoCode String   @db.VarChar(2)
+  grupo     PucGrupo @relation(fields: [grupoCode], references: [code], onDelete: Restrict)
 
   subcuentas PucSubcuenta[]
+
+  // NUEVO: back relation desde AccountingLine cuando se imputa a nivel cuenta
+  lines AccountingLine[] @relation("AccountingLinePucCuenta")
 
   @@index([grupoCode])
 }
 
 model PucSubcuenta {
-  code       String     @id @db.VarChar(6) // ej "110505"
-  name       String
+  code String @id @db.VarChar(6) // ej "110505"
+  name String
 
-  cuentaCode String     @db.VarChar(4)
-  cuenta     PucCuenta  @relation(fields: [cuentaCode], references: [code], onDelete: Restrict)
+  cuentaCode String    @db.VarChar(4)
+  cuenta     PucCuenta @relation(fields: [cuentaCode], references: [code], onDelete: Restrict)
 
-  active     Boolean    @default(true)
+  active Boolean @default(true)
 
-  lines      AccountingLine[]
+  lines AccountingLine[]
 
   @@index([cuentaCode])
 }
@@ -369,38 +371,42 @@ model PucSubcuenta {
 //
 
 model AccountingEntry {
-  id          String                @id @default(uuid())
-  businessId  String
-  business    Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  date        DateTime
-  memo        String?
-  status      AccountingEntryStatus @default(POSTED)
+  date   DateTime
+  memo   String?
+  status AccountingEntryStatus @default(POSTED)
 
-  lines       AccountingLine[]
+  lines AccountingLine[]
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([businessId, date])
   @@index([status])
 }
 
 model AccountingLine {
-  id           String          @id @default(uuid())
-  entryId      String
-  entry        AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  id      String          @id @default(uuid())
+  entryId String
+  entry   AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
-  pucSubCode   String          @db.VarChar(6)
-  pucSubcuenta PucSubcuenta    @relation(fields: [pucSubCode], references: [code], onDelete: Restrict)
+  pucCuentaCode String?    @db.VarChar(4)
+  pucCuenta     PucCuenta? @relation("AccountingLinePucCuenta", fields: [pucCuentaCode], references: [code], onDelete: Restrict)
 
-  debit        Decimal         @default(0) @db.Decimal(14, 2)
-  credit       Decimal         @default(0) @db.Decimal(14, 2)
-  description  String?
+  pucSubCode   String?       @db.VarChar(6)
+  pucSubcuenta PucSubcuenta? @relation(fields: [pucSubCode], references: [code], onDelete: Restrict)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  debit       Decimal @default(0) @db.Decimal(14, 2)
+  credit      Decimal @default(0) @db.Decimal(14, 2)
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([entryId])
   @@index([pucSubCode])
+  @@index([pucCuentaCode])
 }
