@@ -8,16 +8,28 @@ export function formatSaleMessage(opts: {
   businessName?: string;
   customerName: string;
   items: { qty: number; name: string; price: number }[];
-  total: number;
 }) {
+  const subtotal = opts.items.reduce(
+    (acc, i) => acc + i.qty * i.price,
+    0
+  );
+
   const lines = [
-    `Pedido de: ${opts.customerName}`,
-    ...(opts.businessName ? [`Negocio: ${opts.businessName}`] : []),
+    `🧾 *Nuevo Pedido*`,
     "",
-    "Detalle:",
-    ...opts.items.map((i) => `- ${i.qty}x ${i.name}: $${i.price.toFixed(2)}`),
+    `👤 Cliente: ${opts.customerName}`,
+    ...(opts.businessName ? [`🏪 Negocio: ${opts.businessName}`] : []),
     "",
-    `Total: $${opts.total.toFixed(2)}`,
+    "📦 *Detalle:*",
+    ...opts.items.map((i) => {
+      const lineTotal = i.qty * i.price;
+      return `• ${i.qty}x ${i.name} — $${i.price.toFixed(
+        2
+      )} c/u — *$${lineTotal.toFixed(2)}*`;
+    }),
+    "",
+    `💰 *Total: $${subtotal.toFixed(2)}*`,
   ];
+
   return lines.join("\n");
 }
