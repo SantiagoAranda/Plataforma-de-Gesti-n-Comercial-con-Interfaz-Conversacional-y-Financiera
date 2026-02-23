@@ -1,4 +1,6 @@
 import "./globals.css";
+import BottomNav from "@/src/components/layout/BottomNav";
+import  AppHeader from "@/src/components/layout/AppHeader";
 
 export const metadata = {
   title: "Plataforma",

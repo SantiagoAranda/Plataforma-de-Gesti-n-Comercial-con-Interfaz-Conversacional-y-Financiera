@@ -205,13 +205,11 @@
 // }
 
 // app/(app)/movimientos/page.tsx
-// app/(app)/movimientos/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Landmark, CreditCard } from "lucide-react";
 
-// TODO: ajustá estas rutas a tu proyecto
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
 
@@ -248,8 +246,6 @@ function Progress({
     tone === "orange" && "bg-orange-500"
   );
 
-  // Cuando animate=false => se muestra instantáneo (útil para SSR o tests)
-  // Cuando animate=true => arranca en 0 y transiciona al valor
   const width = `${Math.max(0, Math.min(1, value)) * 100}%`;
 
   return (
@@ -261,7 +257,7 @@ function Progress({
           animate ? "transition-[width] duration-700 ease-out" : ""
         )}
         style={{
-          width: animate ? width : width,
+          width,
           transitionDelay: animate ? `${delayMs}ms` : undefined,
         }}
       />
@@ -372,38 +368,54 @@ export default function MovimientosPage() {
   ];
 
   const pasivos: BalanceItem[] = [
-    { label: "Cuentas por Pagar", amount: 12_000, tone: "red", note: "Vence en 15 días" },
-    { label: "Préstamos Bancarios", amount: 35_000, tone: "orange", note: "Largo plazo" },
+    {
+      label: "Cuentas por Pagar",
+      amount: 12_000,
+      tone: "red",
+      note: "Vence en 15 días",
+    },
+    {
+      label: "Préstamos Bancarios",
+      amount: 35_000,
+      tone: "orange",
+      note: "Largo plazo",
+    },
     { label: "Impuestos", amount: 8_500, tone: "red" },
   ];
 
-  const maxActivo = useMemo(() => Math.max(...activos.map((x) => x.amount), 1), [activos]);
-  const maxPasivo = useMemo(() => Math.max(...pasivos.map((x) => x.amount), 1), [pasivos]);
+  const maxActivo = useMemo(
+    () => Math.max(...activos.map((x) => x.amount), 1),
+    [activos]
+  );
+  const maxPasivo = useMemo(
+    () => Math.max(...pasivos.map((x) => x.amount), 1),
+    [pasivos]
+  );
 
   // Animación on-mount
   const [animateBars, setAnimateBars] = useState(false);
 
   useEffect(() => {
-    // 1 frame para que el DOM pinte en 0, y luego transicione
     const t = requestAnimationFrame(() => setAnimateBars(true));
     return () => cancelAnimationFrame(t);
   }, []);
 
   return (
-    <div className="min-h-dvh bg-zinc-50">
-      {/* AppHeader (fijo arriba) */}
+    // overflow-x-hidden evita que algún elemento “se salga” y rompa el viewport (típico en mobile)
+    <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
       <AppHeader
         title="Movimientos"
         subtitle={`Balance General · ${periodo}`}
         showBack={true}
-        rightIcon="calendar" // ajustá a tu API real
+        rightIcon="calendar"
       />
 
-      {/* Contenido: dejá padding inferior para que no lo tape el bottom nav */}
-      <main className="mx-auto max-w-md px-4 pb-28 pt-3">
-        {/* Patrimonio Card */}
+      {/* pb-32 deja espacio extra para el nav si tu BottomNav usa bottom-4 */}
+      <main className="mx-auto max-w-md px-4 pb-32 pt-3">
         <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
-          <div className="text-sm font-medium text-zinc-500">Patrimonio Neto</div>
+          <div className="text-sm font-medium text-zinc-500">
+            Patrimonio Neto
+          </div>
           <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
             {formatMoney(patrimonio)}
           </div>
@@ -416,7 +428,6 @@ export default function MovimientosPage() {
           </div>
         </div>
 
-        {/* Activos */}
         <div className="mt-6 space-y-4">
           <SectionHeader
             tone="green"
@@ -447,7 +458,6 @@ export default function MovimientosPage() {
           </button>
         </div>
 
-        {/* Pasivos */}
         <div className="mt-6 space-y-4">
           <SectionHeader
             tone="red"
@@ -473,7 +483,6 @@ export default function MovimientosPage() {
         </div>
       </main>
 
-      {/* BottomNavbar (fijo abajo) */}
       <BottomNavbar active="movimientos" />
     </div>
   );
