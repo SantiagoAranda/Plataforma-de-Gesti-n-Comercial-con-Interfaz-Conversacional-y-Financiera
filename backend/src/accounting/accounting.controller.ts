@@ -39,24 +39,25 @@ export class AccountingController {
     return this.accountingService.voidEntry(req.user.businessId, id);
   }
 
-  // PUC read-only
+   @Get('puc/clases')
+  listPucClases() {
+    return this.accountingService.listPucClases();
+  }
+
+  @Get('puc/grupos')
+  listPucGrupos(@Query('clase') clase: string) {
+    return this.accountingService.listPucGrupos(clase);
+  }
+
   @Get('puc/search')
   searchPuc(@Query('q') q: string) {
     return this.accountingService.searchPuc(q ?? '');
   }
 
+  // ✅ PARAMÉTRICA AL FINAL
   @Get('puc/:code')
   getPuc(@Param('code') code: string) {
     return this.accountingService.getPuc(code);
-  }
-  @Get("puc/clases")
-  listPucClases() {
-    return this.accountingService.listPucClases();
-  }
-
-  @Get("puc/grupos")
-  listPucGrupos(@Query("clase") clase: string) {
-    return this.accountingService.listPucGrupos(clase);
   }
 
 }
