@@ -20,3 +20,8 @@ export type AccountingEntry = {
     source: EntrySource;
     kind: AccountingKind;
 };
+
+export function cuentaDesdeGrupo(grupoCode: string): string {
+  // 71 -> 7100
+    return `${grupoCode}00`;
+}

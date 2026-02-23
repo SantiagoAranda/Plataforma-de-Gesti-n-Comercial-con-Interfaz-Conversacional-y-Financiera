@@ -1,0 +1,41 @@
+code,name,claseCode
+11,Disponible,1
+12,Inversiones,1
+13,Deudores,1
+14,Inventarios,1
+15,"Propiedades, planta y equipo",1
+16,Intangibles,1
+17,Diferidos,1
+18,Otros activos,1
+19,Valorizaciones,1
+21,Obligaciones financieras,2
+22,Proveedores,2
+23,Cuentas por pagar,2
+24,"Impuestos, gravámenes y tasas",2
+25,Obligaciones laborales,2
+26,Pasivos estimados y provisiones,2
+27,Diferidos,2
+28,Otros pasivos,2
+29,Bonos y papeles comerciales,2
+31,Capital social,3
+32,Superávit de capital,3
+33,Reservas,3
+34,Revalorización del patrimonio,3
+35,"Dividendos o participaciones decretados en acciones, cuotas o partes de interés social",3
+36,Resultados del ejercicio,3
+37,Resultados de ejercicios anteriores,3
+38,Superávit por valorizaciones,3
+41,Operacionales,4
+42,No operacionales,4
+47,Ajustes por inflación,4
+51,Operacionales de administración,5
+52,Operacionales de ventas,5
+53,No operacionales,5
+54,Impuesto de renta y complementarios,5
+59,Ganancias y pérdidas,5
+61,Costo de ventas y de prestación de servicios,6
+62,Compras,6
+71,Materia prima,7
+72,Mano de obra directa,7
+73,Costos indirectos,7
+74,Contratos de servicios,7

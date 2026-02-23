@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AccountingService } from './accounting.service';
 import { CreateEntryDto } from './dto/create-entry.dto';
+
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
 export class AccountingController {
@@ -48,4 +49,14 @@ export class AccountingController {
   getPuc(@Param('code') code: string) {
     return this.accountingService.getPuc(code);
   }
+  @Get("puc/clases")
+  listPucClases() {
+    return this.accountingService.listPucClases();
+  }
+
+  @Get("puc/grupos")
+  listPucGrupos(@Query("clase") clase: string) {
+    return this.accountingService.listPucGrupos(clase);
+  }
+
 }

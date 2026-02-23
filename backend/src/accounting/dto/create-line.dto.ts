@@ -1,10 +1,16 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateLineDto {
+  @ValidateIf(o => !o.pucSubCode)
   @IsString()
   @IsNotEmpty()
-  pucSubCode: string;
+  pucCuentaCode?: string;
+
+  @ValidateIf(o => !o.pucCuentaCode)
+  @IsString()
+  @IsNotEmpty()
+  pucSubCode?: string;
 
   @IsOptional()
   @IsString()

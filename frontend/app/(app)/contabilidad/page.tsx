@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
 
 import { AccountingCard } from "@/src/components/accounting/AccountingCard";
@@ -8,79 +8,53 @@ import { AccountingComposer } from "@/src/components/accounting/AccountingCompos
 import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
 
 import type { AccountingEntry, AccountingType } from "@/src/types/accounting";
+import { getPucClases, getPucGrupos } from "@/src/services/puc";
 
-const MOCK: AccountingEntry[] = [
-    {
-        id: "1",
-        dateISO: "2023-10-10",
-        time: "10:45 AM",
-        pucCode: "4135",
-        accountName: "Ventas",
-        description: "Venta de servicios Pro",
-        amount: 1200,
-        source: "AUTO_ORDER",
-        kind: "INCOME",
-    },
-    {
-        id: "2",
-        dateISO: "2023-10-10",
-        time: "09:15 AM",
-        pucCode: "5105",
-        accountName: "Gastos Personal",
-        description: "Pago nómina mensual",
-        amount: -850,
-        source: "MANUAL",
-        kind: "EXPENSE",
-    },
-    {
-        id: "3",
-        dateISO: "2023-10-09",
-        time: "03:00 PM",
-        pucCode: "1110",
-        accountName: "Bancos",
-        description: "Transferencia interna",
-        amount: 5000,
-        source: "SYSTEM",
-        kind: "ASSET",
-    },
-    {
-        id: "4",
-        dateISO: "2023-10-09",
-        time: "11:20 AM",
-        pucCode: "2105",
-        accountName: "Obligaciones",
-        description: "Cuota préstamo local",
-        amount: -320,
-        source: "RECURRENT",
-        kind: "LIABILITY",
-    },
-];
+const MOCK: AccountingEntry[] = [/* ... igual que lo tuyo ... */];
 
-function groupLabel(dateISO: string) {
-    const d = new Date(dateISO + "T00:00:00");
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
+function groupLabel(dateISO: string): string {
+  const d = new Date(dateISO + "T00:00:00");
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
 
-    const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    if (dd.getTime() === today.getTime()) return "HOY";
-    if (dd.getTime() === yesterday.getTime()) return "AYER";
-    return dateISO;
+  const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (dd.getTime() === today.getTime()) return "HOY";
+  if (dd.getTime() === yesterday.getTime()) return "AYER";
+  return dateISO;
 }
 
 export default function ContabilidadClient() {
     const [filter, setFilter] = useState<AccountingType>("ALL");
     const [filterOpen, setFilterOpen] = useState(false);
 
-    // ✅ lista editable
     const [items, setItems] = useState<AccountingEntry[]>(MOCK);
-
-    // ✅ buscador
     const [search, setSearch] = useState("");
-
-    // ✅ item en edición
     const [editingEntry, setEditingEntry] = useState<AccountingEntry | null>(null);
+
+    // ✅ PUC: clases + grupos
+    const [pucClases, setPucClases] = useState<{ code: string; name: string }[]>([]);
+    const [pucGrupos, setPucGrupos] = useState<{ code: string; name: string; claseCode: string }[]>([]);
+    const [selectedClase, setSelectedClase] = useState<string>("");
+
+    useEffect(() => {
+        (async () => {
+            const clases = await getPucClases();
+            setPucClases(clases);
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (!selectedClase) {
+            setPucGrupos([]);
+            return;
+        }
+        (async () => {
+            const grupos = await getPucGrupos(selectedClase);
+            setPucGrupos(grupos);
+        })();
+    }, [selectedClase]);
 
     const entries = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -128,13 +102,7 @@ export default function ContabilidadClient() {
                 showBack
                 rightAriaLabel="Filtros"
                 rightIcon={
-                    <svg
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                    >
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M4 6h16" />
                         <path d="M7 12h10" />
                         <path d="M10 18h4" />
@@ -161,9 +129,7 @@ export default function ContabilidadClient() {
                                         <AccountingCard
                                             entry={e}
                                             onEdit={(entry) => setEditingEntry(entry)}
-                                            onDelete={(entry) =>
-                                                setItems((prev) => prev.filter((x) => x.id !== entry.id))
-                                            }
+                                            onDelete={(entry) => setItems((prev) => prev.filter((x) => x.id !== entry.id))}
                                         />
                                     </div>
                                 ))}
@@ -183,6 +149,12 @@ export default function ContabilidadClient() {
                     setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
                     setEditingEntry(null);
                 }}
+
+                // ✅ NUEVO: PUC
+                pucClases={pucClases}
+                pucGrupos={pucGrupos}
+                selectedClase={selectedClase}
+                onSelectClase={setSelectedClase}
             />
 
             <AccountingFilterSheet
