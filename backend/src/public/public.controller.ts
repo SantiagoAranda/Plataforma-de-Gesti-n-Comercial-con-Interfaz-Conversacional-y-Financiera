@@ -18,8 +18,8 @@ export class PublicController {
 
   @Get(':slug/services')
   async getServices(@Param('slug') slug: string) {
-    const business = await this.prisma.business.findUnique({
-      where: { slug },
+    const business = await this.prisma.business.findFirst({
+      where: { slug, status: 'ACTIVE' },
     });
 
     if (!business) {
@@ -160,8 +160,14 @@ async listPublicItems(@Param('slug') slug: string, @Query('type') type?: string)
     include: { images: { orderBy: { order: 'asc' } } },
   });
 
-  return { business, data };
-}
+   return {
+     business,
+     data: data.map((item) => ({
+       ...item,
+       price: Number(item.price),
+     })),
+   };
+ }
 
 @Get(':slug/items/:itemId')
 async getPublicItem(@Param('slug') slug: string, @Param('itemId') itemId: string) {
@@ -179,6 +185,12 @@ async getPublicItem(@Param('slug') slug: string, @Param('itemId') itemId: string
 
   if (!item) throw new NotFoundException('Item not found');
 
-  return { business, item };
+  return {
+  business,
+  item: {
+    ...item,
+    price: Number(item.price),
+  },
+};
 }
 }
