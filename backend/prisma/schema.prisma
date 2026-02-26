@@ -379,7 +379,7 @@ model AccountingEntry {
 
   date   DateTime
   memo   String?
-  status AccountingEntryStatus @default(POSTED)
+  status AccountingEntryStatus @default(DRAFT)
 
   lines AccountingLine[]
 

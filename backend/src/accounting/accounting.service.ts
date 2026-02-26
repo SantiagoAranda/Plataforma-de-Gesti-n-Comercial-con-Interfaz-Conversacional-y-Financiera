@@ -1,7 +1,13 @@
+// src/accounting/accounting.service.ts
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEntryDto } from './dto/create-entry.dto';
+import { UpdateEntryDto } from './dto/update-entry.dto';
+import { CreateMovementDto, MovementNature } from './dto/create-movement.dto';
+import { MovementsQueryDto } from './dto/movements-query.dto';
 
+// Nota: en tu schema debit/credit son Decimal. Prisma devuelve Decimal.js.
+// Con Number(...) alcanza para sumar/mostrar.
 type LineInput = {
   pucCuentaCode?: string;
   pucSubCode?: string;
@@ -10,20 +16,73 @@ type LineInput = {
   description?: string;
 };
 
+const MSG = {
+  ENTRY_NOT_FOUND: 'Entry not found',
+  ENTRY_NOT_EDITABLE: 'Entry not editable (only DRAFT)',
+  ENTRY_NOT_DELETABLE: 'Entry not deletable (only DRAFT)',
+  ENTRY_LINES_REQUIRED: 'Entry must contain lines',
+  ENTRY_LINE_PUC_ONEOF: 'Provide either pucCuentaCode or pucSubCode',
+  ENTRY_LINE_DEBIT_OR_CREDIT: 'Each line must have either debit or credit',
+  ENTRY_LINE_NONNEGATIVE: 'Debit/Credit must be >= 0',
+  INVALID_PUC_CUENTA: 'One or more PUC cuenta codes are invalid',
+  INVALID_PUC_SUB: 'One or more PUC subcuenta codes are invalid',
+  POST_ONLY_DRAFT: 'Only DRAFT entries can be posted',
+  POST_NOT_BALANCED: 'Entry is not balanced',
+  VOID_ALREADY: 'Entry already voided',
+  MOV_AMOUNT_POSITIVE: 'Movement amount must be > 0',
+  DATE_REQUIRED: 'Query param is required',
+};
+
+function parseDateOrThrow(s: string, fieldName: string) {
+  if (!s) throw new BadRequestException(`${MSG.DATE_REQUIRED}: ${fieldName}`);
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException(`Invalid date: ${fieldName}`);
+  return d;
+}
+
+// Clasificación simple por primer dígito del código (clase PUC)
+function classFromPucCode(
+  code: string,
+):
+  | 'ASSET'
+  | 'LIABILITY'
+  | 'EQUITY'
+  | 'INCOME'
+  | 'EXPENSE'
+  | 'MEMO'
+  | 'CONTROL'
+  | 'UNKNOWN' {
+  const c = (code ?? '').trim();
+  const first = c[0];
+  if (first === '1') return 'ASSET';
+  if (first === '2') return 'LIABILITY';
+  if (first === '3') return 'EQUITY';
+  if (first === '4') return 'INCOME';
+  if (first === '5' || first === '6' || first === '7') return 'EXPENSE';
+  if (first === '8') return 'MEMO';
+  if (first === '9') return 'CONTROL';
+  return 'UNKNOWN';
+}
+
+function isCashLike(pucCode: string) {
+  // Ajustá según tu PUC. Con tu estructura, "11" suele ser Disponible.
+  const c = (pucCode ?? '').trim();
+  return c.startsWith('11');
+}
+
 @Injectable()
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
   private validateLines(lines: LineInput[]) {
-    if (!lines?.length) throw new BadRequestException('Entry must contain lines');
+    if (!lines?.length) throw new BadRequestException(MSG.ENTRY_LINES_REQUIRED);
 
     for (const l of lines) {
       const hasCuenta = !!l.pucCuentaCode;
       const hasSub = !!l.pucSubCode;
 
-      // exactamente uno: cuenta o subcuenta
       if ((hasCuenta && hasSub) || (!hasCuenta && !hasSub)) {
-        throw new BadRequestException('Provide either pucCuentaCode or pucSubCode');
+        throw new BadRequestException(MSG.ENTRY_LINE_PUC_ONEOF);
       }
 
       const d = Number(l.debit ?? 0);
@@ -31,9 +90,9 @@ export class AccountingService {
 
       const both = d > 0 && c > 0;
       const none = d === 0 && c === 0;
-      if (both || none) throw new BadRequestException('Each line must have either debit or credit');
+      if (both || none) throw new BadRequestException(MSG.ENTRY_LINE_DEBIT_OR_CREDIT);
 
-      if (d < 0 || c < 0) throw new BadRequestException('Debit/Credit must be >= 0');
+      if (d < 0 || c < 0) throw new BadRequestException(MSG.ENTRY_LINE_NONNEGATIVE);
     }
   }
 
@@ -43,26 +102,18 @@ export class AccountingService {
     return { debit, credit };
   }
 
-  async createEntry(businessId: string, dto: CreateEntryDto) {
-    // dto.lines ahora debe permitir pucCuentaCode o pucSubCode
-    this.validateLines(dto.lines as any);
-
-    // validar existencia en PUC según tipo
+  private async validatePucExistence(lines: LineInput[]) {
     const cuentaCodes = [
-      ...new Set((dto.lines as any[]).filter(l => l.pucCuentaCode).map(l => l.pucCuentaCode as string)),
+      ...new Set(lines.filter(l => l.pucCuentaCode).map(l => l.pucCuentaCode as string)),
     ];
-    const subCodes = [
-      ...new Set((dto.lines as any[]).filter(l => l.pucSubCode).map(l => l.pucSubCode as string)),
-    ];
+    const subCodes = [...new Set(lines.filter(l => l.pucSubCode).map(l => l.pucSubCode as string))];
 
     if (cuentaCodes.length) {
       const cuentas = await this.prisma.pucCuenta.findMany({
         where: { code: { in: cuentaCodes } },
         select: { code: true },
       });
-      if (cuentas.length !== cuentaCodes.length) {
-        throw new BadRequestException('One or more PUC cuenta codes are invalid');
-      }
+      if (cuentas.length !== cuentaCodes.length) throw new BadRequestException(MSG.INVALID_PUC_CUENTA);
     }
 
     if (subCodes.length) {
@@ -70,10 +121,14 @@ export class AccountingService {
         where: { code: { in: subCodes }, active: true },
         select: { code: true },
       });
-      if (subs.length !== subCodes.length) {
-        throw new BadRequestException('One or more PUC subcuenta codes are invalid');
-      }
+      if (subs.length !== subCodes.length) throw new BadRequestException(MSG.INVALID_PUC_SUB);
     }
+  }
+
+  // ---------------- ENTRIES ----------------
+  async createEntry(businessId: string, dto: CreateEntryDto) {
+    this.validateLines(dto.lines as any);
+    await this.validatePucExistence(dto.lines as any);
 
     const date = dto.date ? new Date(dto.date) : new Date();
 
@@ -82,6 +137,7 @@ export class AccountingService {
         businessId,
         date,
         memo: dto.memo ?? null,
+        // OJO: en tu schema el default es POSTED. Para MVP, lo correcto es DRAFT:
         status: 'DRAFT',
         lines: {
           create: (dto.lines as any[]).map(l => ({
@@ -119,21 +175,76 @@ export class AccountingService {
       where: { id, businessId },
       include: { lines: true },
     });
-    if (!entry) throw new NotFoundException('Entry not found');
+    if (!entry) throw new NotFoundException(MSG.ENTRY_NOT_FOUND);
     return entry;
+  }
+
+  async updateEntry(businessId: string, id: string, dto: UpdateEntryDto) {
+    const entry = await this.getEntry(businessId, id);
+
+    if (entry.status !== 'DRAFT') throw new BadRequestException(MSG.ENTRY_NOT_EDITABLE);
+
+    const date = dto.date ? new Date(dto.date) : undefined;
+    const memoProvided = dto.memo !== undefined;
+
+    if (!dto.lines) {
+      return this.prisma.accountingEntry.update({
+        where: { id: entry.id },
+        data: {
+          ...(date ? { date } : {}),
+          ...(memoProvided ? { memo: dto.memo ?? null } : {}),
+        },
+        include: { lines: true },
+      });
+    }
+
+    const lines = dto.lines as any as LineInput[];
+    this.validateLines(lines);
+    await this.validatePucExistence(lines);
+
+    return this.prisma.$transaction(async tx => {
+      await tx.accountingLine.deleteMany({ where: { entryId: entry.id } });
+
+      return tx.accountingEntry.update({
+        where: { id: entry.id },
+        data: {
+          ...(date ? { date } : {}),
+          ...(memoProvided ? { memo: dto.memo ?? null } : {}),
+          lines: {
+            create: (dto.lines as any[]).map(l => ({
+              pucCuentaCode: l.pucCuentaCode ?? null,
+              pucSubCode: l.pucSubCode ?? null,
+              description: l.description ?? null,
+              debit: l.debit,
+              credit: l.credit,
+            })),
+          },
+        },
+        include: { lines: true },
+      });
+    });
+  }
+
+  async deleteEntry(businessId: string, id: string) {
+    const entry = await this.getEntry(businessId, id);
+
+    if (entry.status !== 'DRAFT') throw new BadRequestException(MSG.ENTRY_NOT_DELETABLE);
+
+    return this.prisma.$transaction(async tx => {
+      // En tu schema hay onDelete: Cascade, pero lo dejamos explícito:
+      await tx.accountingLine.deleteMany({ where: { entryId: entry.id } });
+      await tx.accountingEntry.delete({ where: { id: entry.id } });
+      return { ok: true, id: entry.id };
+    });
   }
 
   async postEntry(businessId: string, id: string) {
     const entry = await this.getEntry(businessId, id);
 
-    if (entry.status !== 'DRAFT') {
-      throw new BadRequestException('Only DRAFT entries can be posted');
-    }
+    if (entry.status !== 'DRAFT') throw new BadRequestException(MSG.POST_ONLY_DRAFT);
 
     const { debit, credit } = this.sum(entry.lines as any);
-    if (Math.abs(debit - credit) > 0.0001) {
-      throw new BadRequestException('Entry is not balanced');
-    }
+    if (Math.abs(debit - credit) > 0.0001) throw new BadRequestException(MSG.POST_NOT_BALANCED);
 
     return this.prisma.accountingEntry.update({
       where: { id: entry.id },
@@ -145,9 +256,7 @@ export class AccountingService {
   async voidEntry(businessId: string, id: string) {
     const entry = await this.getEntry(businessId, id);
 
-    if (entry.status === 'VOID') {
-      throw new BadRequestException('Entry already voided');
-    }
+    if (entry.status === 'VOID') throw new BadRequestException(MSG.VOID_ALREADY);
 
     return this.prisma.accountingEntry.update({
       where: { id: entry.id },
@@ -156,7 +265,246 @@ export class AccountingService {
     });
   }
 
-  // PUC (busca cuentas y subcuentas, unificado)
+  // ---------------- MOVEMENTS ----------------
+  async createMovement(businessId: string, dto: CreateMovementDto) {
+    const amount = Number(dto.amount ?? 0);
+    if (!(amount > 0)) throw new BadRequestException(MSG.MOV_AMOUNT_POSITIVE);
+
+    const hasCuenta = !!dto.pucCuentaCode;
+    const hasSub = !!dto.pucSubCode;
+    if ((hasCuenta && hasSub) || (!hasCuenta && !hasSub)) {
+      throw new BadRequestException(MSG.ENTRY_LINE_PUC_ONEOF);
+    }
+
+    const debit = dto.nature === MovementNature.DEBIT ? amount : 0;
+    const credit = dto.nature === MovementNature.CREDIT ? amount : 0;
+
+    const line: LineInput = {
+      pucCuentaCode: dto.pucCuentaCode,
+      pucSubCode: dto.pucSubCode,
+      debit,
+      credit,
+      description: dto.description,
+    };
+
+    this.validateLines([line]);
+    await this.validatePucExistence([line]);
+
+    const date = dto.date ? new Date(dto.date) : new Date();
+
+    return this.prisma.accountingEntry.create({
+      data: {
+        businessId,
+        date,
+        memo: dto.memo ?? null,
+        status: 'DRAFT',
+        lines: {
+          create: [
+            {
+              pucCuentaCode: dto.pucCuentaCode ?? null,
+              pucSubCode: dto.pucSubCode ?? null,
+              description: dto.description ?? null,
+              debit,
+              credit,
+            },
+          ],
+        },
+      },
+      include: { lines: true },
+    });
+  }
+
+  async listMovements(businessId: string, q: MovementsQueryDto) {
+    const onlyPosted = (q.onlyPosted ?? 'false') === 'true';
+
+    const entryWhere: any = { businessId };
+    if (onlyPosted) entryWhere.status = 'POSTED';
+    else if (q.status) entryWhere.status = q.status;
+
+    if (q.from || q.to) {
+      entryWhere.date = {};
+      if (q.from) entryWhere.date.gte = new Date(q.from);
+      if (q.to) entryWhere.date.lte = new Date(q.to);
+    }
+
+    // filtro por memo (entry) y por description/codes (line)
+    const text = (q.q ?? '').trim();
+    if (text) {
+      entryWhere.OR = [{ memo: { contains: text, mode: 'insensitive' } }];
+    }
+
+    const lineWhere: any = {};
+    if (q.pucCode) {
+      lineWhere.OR = [
+        { pucCuentaCode: { contains: q.pucCode } },
+        { pucSubCode: { contains: q.pucCode } },
+      ];
+    }
+    if (text) {
+      lineWhere.OR = (lineWhere.OR ?? []).concat([
+        { description: { contains: text, mode: 'insensitive' } },
+        { pucCuentaCode: { contains: text } },
+        { pucSubCode: { contains: text } },
+      ]);
+    }
+
+    const lines = await this.prisma.accountingLine.findMany({
+      where: {
+        ...lineWhere,
+        entry: entryWhere,
+      },
+      include: {
+        entry: { select: { id: true, date: true, status: true, memo: true } },
+      },
+      orderBy: [{ entry: { date: 'desc' } }],
+      take: 500,
+    });
+
+    // nombres PUC en batch
+    const codes = Array.from(
+      new Set(
+        lines
+          .map(l => (l.pucSubCode ?? l.pucCuentaCode ?? '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    const [cuentas, subcuentas] = await this.prisma.$transaction([
+      this.prisma.pucCuenta.findMany({
+        where: { code: { in: codes } },
+        select: { code: true, name: true },
+      }),
+      this.prisma.pucSubcuenta.findMany({
+        where: { code: { in: codes } },
+        select: { code: true, name: true },
+      }),
+    ]);
+
+    const nameByCode = new Map<string, string>();
+    for (const c of cuentas) nameByCode.set(c.code, c.name);
+    for (const s of subcuentas) nameByCode.set(s.code, s.name);
+
+    return lines.map(l => {
+      const pucCode = (l.pucSubCode ?? l.pucCuentaCode ?? '').trim();
+      const pucName = pucCode ? nameByCode.get(pucCode) ?? null : null;
+
+      const debit = Number(l.debit ?? 0);
+      const credit = Number(l.credit ?? 0);
+      const amountSigned = debit - credit;
+
+      return {
+        id: l.id,
+        entryId: l.entryId,
+        date: l.entry.date,
+        status: l.entry.status,
+        memo: l.entry.memo ?? null,
+        pucCode,
+        pucName,
+        description: l.description ?? null,
+        debit,
+        credit,
+        amountSigned,
+        class: pucCode ? classFromPucCode(pucCode) : 'UNKNOWN',
+      };
+    });
+  }
+
+  // ---------------- REPORTS ----------------
+  private async postedLinesInRange(businessId: string, from: Date, to: Date) {
+    return this.prisma.accountingLine.findMany({
+      where: {
+        entry: { businessId, status: 'POSTED', date: { gte: from, lte: to } },
+      },
+    });
+  }
+
+  private async postedLinesUpTo(businessId: string, date: Date) {
+    return this.prisma.accountingLine.findMany({
+      where: {
+        entry: { businessId, status: 'POSTED', date: { lte: date } },
+      },
+    });
+  }
+
+  async reportPnl(businessId: string, opts: { from: string; to: string }) {
+    const from = parseDateOrThrow(opts.from, 'from');
+    const to = parseDateOrThrow(opts.to, 'to');
+
+    const lines = await this.postedLinesInRange(businessId, from, to);
+
+    let income = 0;
+    let expense = 0;
+
+    for (const l of lines) {
+      const pucCode = (l.pucSubCode ?? l.pucCuentaCode ?? '').trim();
+      const cls = classFromPucCode(pucCode);
+      const signed = Number(l.debit ?? 0) - Number(l.credit ?? 0);
+
+      if (cls === 'INCOME') income += -signed; // ingresos suelen ser crédito
+      if (cls === 'EXPENSE') expense += signed; // costos/gastos suelen ser débito
+    }
+
+    return {
+      from,
+      to,
+      income,
+      expense,
+      net: income - expense,
+    };
+  }
+
+  async reportBalanceSheet(businessId: string, opts: { date: string }) {
+    const date = parseDateOrThrow(opts.date, 'date');
+
+    const lines = await this.postedLinesUpTo(businessId, date);
+
+    let assets = 0;
+    let liabilities = 0;
+    let equity = 0;
+
+    for (const l of lines) {
+      const pucCode = (l.pucSubCode ?? l.pucCuentaCode ?? '').trim();
+      const cls = classFromPucCode(pucCode);
+      const signed = Number(l.debit ?? 0) - Number(l.credit ?? 0);
+
+      if (cls === 'ASSET') assets += signed;
+      if (cls === 'LIABILITY') liabilities += -signed; // pasivo suele ser crédito
+      if (cls === 'EQUITY') equity += -signed; // patrimonio suele ser crédito
+    }
+
+    return {
+      date,
+      assets,
+      liabilities,
+      equity,
+      check: assets - (liabilities + equity),
+    };
+  }
+
+  async reportCashFlow(businessId: string, opts: { from: string; to: string }) {
+    const from = parseDateOrThrow(opts.from, 'from');
+    const to = parseDateOrThrow(opts.to, 'to');
+
+    const lines = await this.postedLinesInRange(businessId, from, to);
+
+    let cashNet = 0;
+    for (const l of lines) {
+      const pucCode = (l.pucSubCode ?? l.pucCuentaCode ?? '').trim();
+      if (!isCashLike(pucCode)) continue;
+
+      const signed = Number(l.debit ?? 0) - Number(l.credit ?? 0);
+      cashNet += signed;
+    }
+
+    return {
+      from,
+      to,
+      cashNet,
+      rule: 'Only PUC codes starting with "11" (Disponible). Adjust isCashLike() if needed.',
+    };
+  }
+
+  // ---------------- PUC (tal cual tu schema) ----------------
   async searchPuc(q: string) {
     const query = q.trim();
     if (!query) return [];
@@ -192,7 +540,6 @@ export class AccountingService {
   }
 
   async getPuc(code: string) {
-    // intenta subcuenta primero, luego cuenta
     const sub = await this.prisma.pucSubcuenta.findUnique({ where: { code } });
     if (sub) return { kind: 'SUBCUENTA' as const, ...sub };
 
@@ -203,21 +550,20 @@ export class AccountingService {
   }
 
   async listPucClases() {
-  return this.prisma.pucClase.findMany({
-    orderBy: { code: 'asc' },
-    select: { code: true, name: true },
-  });
-}
+    return this.prisma.pucClase.findMany({
+      orderBy: { code: 'asc' },
+      select: { code: true, name: true },
+    });
+  }
 
-async listPucGrupos(claseCode: string) {
-  const code = (claseCode ?? '').trim();
-  if (!code) throw new BadRequestException('Query param "clase" is required');
+  async listPucGrupos(claseCode: string) {
+    const code = (claseCode ?? '').trim();
+    if (!code) throw new BadRequestException('Query param "clase" is required');
 
-  return this.prisma.pucGrupo.findMany({
-    where: { claseCode: code },
-    orderBy: { code: 'asc' },
-    select: { code: true, name: true, claseCode: true },
-  });
-}
-
+    return this.prisma.pucGrupo.findMany({
+      where: { claseCode: code },
+      orderBy: { code: 'asc' },
+      select: { code: true, name: true, claseCode: true },
+    });
+  }
 }

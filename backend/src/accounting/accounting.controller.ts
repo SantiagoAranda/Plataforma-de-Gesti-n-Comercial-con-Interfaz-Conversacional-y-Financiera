@@ -1,14 +1,30 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+// src/accounting/accounting.controller.ts  (agregá esto, respetando tu archivo actual)
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AccountingService } from './accounting.service';
 import { CreateEntryDto } from './dto/create-entry.dto';
+import { UpdateEntryDto } from './dto/update-entry.dto';
+import { CreateMovementDto } from './dto/create-movement.dto';
+import { MovementsQueryDto } from './dto/movements-query.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
 export class AccountingController {
   constructor(private readonly accountingService: AccountingService) {}
 
+  // ---- ENTRIES ----
   @Post('entries')
   createEntry(@Req() req: any, @Body() dto: CreateEntryDto) {
     return this.accountingService.createEntry(req.user.businessId, dto);
@@ -29,6 +45,16 @@ export class AccountingController {
     return this.accountingService.getEntry(req.user.businessId, id);
   }
 
+  @Patch('entries/:id')
+  updateEntry(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateEntryDto) {
+    return this.accountingService.updateEntry(req.user.businessId, id, dto);
+  }
+
+  @Delete('entries/:id')
+  deleteEntry(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.deleteEntry(req.user.businessId, id);
+  }
+
   @Post('entries/:id/post')
   postEntry(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.postEntry(req.user.businessId, id);
@@ -39,7 +65,35 @@ export class AccountingController {
     return this.accountingService.voidEntry(req.user.businessId, id);
   }
 
-   @Get('puc/clases')
+  // ---- MOVEMENTS ----
+  @Post('movements')
+  createMovement(@Req() req: any, @Body() dto: CreateMovementDto) {
+    return this.accountingService.createMovement(req.user.businessId, dto);
+  }
+
+  @Get('movements')
+  listMovements(@Req() req: any, @Query() q: MovementsQueryDto) {
+    return this.accountingService.listMovements(req.user.businessId, q);
+  }
+
+  // ---- REPORTS ----
+  @Get('reports/pnl')
+  pnl(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.accountingService.reportPnl(req.user.businessId, { from, to });
+  }
+
+  @Get('reports/balance-sheet')
+  balanceSheet(@Req() req: any, @Query('date') date: string) {
+    return this.accountingService.reportBalanceSheet(req.user.businessId, { date });
+  }
+
+  @Get('reports/cash-flow')
+  cashFlow(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
+    return this.accountingService.reportCashFlow(req.user.businessId, { from, to });
+  }
+
+  // ---- PUC ----
+  @Get('puc/clases')
   listPucClases() {
     return this.accountingService.listPucClases();
   }
@@ -54,10 +108,8 @@ export class AccountingController {
     return this.accountingService.searchPuc(q ?? '');
   }
 
-  // ✅ PARAMÉTRICA AL FINAL
   @Get('puc/:code')
   getPuc(@Param('code') code: string) {
     return this.accountingService.getPuc(code);
   }
-
 }
