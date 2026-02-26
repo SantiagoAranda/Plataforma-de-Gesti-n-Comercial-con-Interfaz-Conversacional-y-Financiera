@@ -1,537 +1,375 @@
-// "use client";
-
-// import React, { useEffect, useMemo, useState } from "react";
-
-// /** ===== Types ===== */
-// type ItemType = "PRODUCT" | "SERVICE";
-
-// type Service = {
-//   id: string;
-//   type: "SERVICE";
-//   name: string;
-//   price: number;
-//   durationMinutes: number; // requerido para agenda
-// };
-
-// type Product = {
-//   id: string;
-//   type: "PRODUCT";
-//   name: string;
-//   price: number;
-// };
-
-// type Item = Service | Product;
-
-// type BusinessSchedule = {
-//   timezone: string; // "America/Argentina/Buenos_Aires"
-//   workDays: number[]; // 0=Dom ... 6=Sáb. Ej: Lun-Vie => [1,2,3,4,5]
-//   startTime: string; // "09:00"
-//   endTime: string;   // "17:00"
-//   bufferMinutes: number; // ej 0, 10, 15
-// };
-
-// type Booking = {
-//   id: string;
-//   serviceId: string;
-//   startISO: string; // fecha/hora inicio
-//   endISO: string;   // fecha/hora fin
-//   customerName: string;
-//   whatsapp: string;
-// };
-
-// type CartLine =
-//   | { kind: "PRODUCT"; productId: string; name: string; price: number; qty: number }
-//   | { kind: "SERVICE_BOOKING"; serviceId: string; name: string; price: number; startISO: string; endISO: string; customerName: string; whatsapp: string };
-
-// /** ===== Demo schedule + existing bookings (reemplazar por API) ===== */
-// const BUSINESS_SCHEDULE: BusinessSchedule = {
-//   timezone: "America/Argentina/Buenos_Aires",
-//   workDays: [1, 2, 3, 4, 5],
-//   startTime: "09:00",
-//   endTime: "17:00",
-//   bufferMinutes: 0,
-// };
-
-// // Reservas existentes para bloquear slots (mock)
-// const EXISTING_BOOKINGS: Booking[] = [
-//   {
-//     id: "b1",
-//     serviceId: "svc-1",
-//     startISO: new Date(2026, 1, 24, 10, 0, 0).toISOString(), // 24 Feb 2026 10:00
-//     endISO: new Date(2026, 1, 24, 11, 0, 0).toISOString(),
-//     customerName: "Ana",
-//     whatsapp: "+54 9 11 1111 1111",
-//   },
-// ];
-
-// /** ===== Helpers (date/time) ===== */
-// function pad2(n: number) {
-//   return String(n).padStart(2, "0");
-// }
-
-// function startOfMonth(d: Date) {
-//   return new Date(d.getFullYear(), d.getMonth(), 1);
-// }
-
-// function endOfMonth(d: Date) {
-//   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
-// }
-
-// function isSameDay(a: Date, b: Date) {
-//   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-// }
-
-// function addMinutes(date: Date, minutes: number) {
-//   return new Date(date.getTime() + minutes * 60_000);
-// }
-
-// function parseHHmm(hhmm: string) {
-//   const [h, m] = hhmm.split(":").map(Number);
-//   return { h, m };
-// }
-
-// function setTimeOnDate(day: Date, hhmm: string) {
-//   const { h, m } = parseHHmm(hhmm);
-//   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
-// }
-
-// function intervalsOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
-//   return aStart < bEnd && bStart < aEnd;
-// }
-
-// function formatMonthTitle(d: Date) {
-//   const months = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-//   return `${months[d.getMonth()]} ${d.getFullYear()}`;
-// }
-
-// function formatTimeLabel(d: Date) {
-//   // 12h como el mock
-//   let h = d.getHours();
-//   const m = pad2(d.getMinutes());
-//   const ampm = h >= 12 ? "PM" : "AM";
-//   h = h % 12;
-//   if (h === 0) h = 12;
-//   return `${pad2(h)}:${m} ${ampm}`;
-// }
-
-// /** ===== Calendar grid ===== */
-// function buildMonthGrid(viewDate: Date) {
-//   const first = startOfMonth(viewDate);
-//   const last = endOfMonth(viewDate);
-
-//   // grid starts on Sunday (0). Your UI shows D L M M J V S.
-//   const start = new Date(first);
-//   start.setDate(first.getDate() - first.getDay());
-
-//   const end = new Date(last);
-//   end.setDate(last.getDate() + (6 - last.getDay()));
-
-//   const days: Date[] = [];
-//   const cur = new Date(start);
-//   while (cur <= end) {
-//     days.push(new Date(cur));
-//     cur.setDate(cur.getDate() + 1);
-//   }
-//   return { days, first, last };
-// }
-
-// /** ===== Reservation Drawer ===== */
-// function ReservationDrawer(props: {
-//   open: boolean;
-//   service: Service | null;
-//   schedule: BusinessSchedule;
-//   existingBookings: Booking[];
-//   onClose: () => void;
-//   onConfirm: (line: CartLine) => void;
-// }) {
-//   const { open, service, schedule, existingBookings, onClose, onConfirm } = props;
-
-//   const [viewDate, setViewDate] = useState(() => new Date());
-//   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
-//   const [selectedSlotStart, setSelectedSlotStart] = useState<Date | null>(null);
-//   const [customerName, setCustomerName] = useState("");
-//   const [whatsapp, setWhatsapp] = useState("");
-
-//   useEffect(() => {
-//     if (!open) return;
-//     // reset form on open
-//     setViewDate(new Date());
-//     setSelectedDay(null);
-//     setSelectedSlotStart(null);
-//     setCustomerName("");
-//     setWhatsapp("");
-//   }, [open]);
-
-//   const month = useMemo(() => buildMonthGrid(viewDate), [viewDate]);
-
-//   const workDaysSet = useMemo(() => new Set(schedule.workDays), [schedule.workDays]);
-
-//   const isDaySelectable = (d: Date) => {
-//     // dentro del mes visible, y es día hábil
-//     const inMonth = d.getMonth() === viewDate.getMonth();
-//     const isWorkDay = workDaysSet.has(d.getDay());
-//     // opcional: bloquear pasado
-//     const today = new Date();
-//     const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-//     const startD = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-//     const notPast = startD >= startToday;
-//     return inMonth && isWorkDay && notPast;
-//   };
-
-//   const slots = useMemo(() => {
-//     if (!service || !selectedDay) return [];
-
-//     const dayStart = setTimeOnDate(selectedDay, schedule.startTime);
-//     const dayEnd = setTimeOnDate(selectedDay, schedule.endTime);
-
-//     const duration = service.durationMinutes;
-//     const buffer = schedule.bufferMinutes;
-
-//     const results: { start: Date; end: Date; disabled: boolean }[] = [];
-
-//     let cursor = new Date(dayStart);
-//     while (true) {
-//       const slotStart = new Date(cursor);
-//       const slotEnd = addMinutes(slotStart, duration);
-
-//       if (slotEnd > dayEnd) break;
-
-//       // chequear solapamiento con reservas existentes para el mismo servicio (o si querés, para todo el negocio)
-//       const disabled = existingBookings.some((b) => {
-//         // si querés bloquear por servicio específico:
-//         if (b.serviceId !== service.id) return false;
-//         const bStart = new Date(b.startISO);
-//         const bEnd = new Date(b.endISO);
-//         return intervalsOverlap(slotStart, slotEnd, bStart, bEnd);
-//       });
-
-//       results.push({ start: slotStart, end: slotEnd, disabled });
-
-//       cursor = addMinutes(slotStart, duration + buffer);
-//     }
-
-//     return results;
-//   }, [service, selectedDay, schedule.startTime, schedule.endTime, schedule.bufferMinutes, existingBookings]);
-
-//   const canConfirm =
-//     !!service &&
-//     !!selectedDay &&
-//     !!selectedSlotStart &&
-//     customerName.trim().length >= 2 &&
-//     whatsapp.trim().length >= 8;
-
-//   if (!open || !service) return null;
-
-//   const onPickSlot = (s: { start: Date; end: Date; disabled: boolean }) => {
-//     if (s.disabled) return;
-//     setSelectedSlotStart(s.start);
-//   };
-
-//   const handleConfirm = () => {
-//     if (!canConfirm || !selectedSlotStart) return;
-
-//     const start = selectedSlotStart;
-//     const end = addMinutes(start, service.durationMinutes);
-
-//     onConfirm({
-//       kind: "SERVICE_BOOKING",
-//       serviceId: service.id,
-//       name: service.name,
-//       price: service.price,
-//       startISO: start.toISOString(),
-//       endISO: end.toISOString(),
-//       customerName: customerName.trim(),
-//       whatsapp: whatsapp.trim(),
-//     });
-
-//     onClose();
-//   };
-
-//   return (
-//     <div className="fixed inset-0 z-50">
-//       {/* backdrop */}
-//       <button
-//         type="button"
-//         className="absolute inset-0 bg-black/25"
-//         onClick={onClose}
-//         aria-label="Cerrar"
-//       />
-//       {/* sheet */}
-//       <div className="absolute inset-x-0 bottom-0 top-0 mx-auto w-full max-w-md bg-white">
-//         {/* header */}
-//         <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white/80 px-4 py-4 backdrop-blur">
-//           <button
-//             type="button"
-//             className="rounded-full p-2 hover:bg-gray-100"
-//             onClick={onClose}
-//             aria-label="Volver"
-//           >
-//             ←
-//           </button>
-//           <div className="flex-1 text-center text-lg font-semibold">Reservar Servicio</div>
-//           <div className="w-10" />
-//         </div>
-
-//         <div className="px-4 pb-28 pt-5">
-//           {/* Fecha */}
-//           <div className="text-xl font-semibold">Selecciona una fecha</div>
-//           <div className="mt-1 text-sm text-gray-500">Disponibilidad para el mes actual</div>
-
-//           <div className="mt-4 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
-//             <div className="flex items-center justify-between">
-//               <button
-//                 type="button"
-//                 className="rounded-full p-2 hover:bg-gray-100"
-//                 onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-//                 aria-label="Mes anterior"
-//               >
-//                 ‹
-//               </button>
-//               <div className="text-base font-semibold">{formatMonthTitle(viewDate)}</div>
-//               <button
-//                 type="button"
-//                 className="rounded-full p-2 hover:bg-gray-100"
-//                 onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-//                 aria-label="Mes siguiente"
-//               >
-//                 ›
-//               </button>
-//             </div>
-
-//             <div className="mt-4 grid grid-cols-7 text-center text-xs font-medium text-gray-400">
-//               <div>D</div><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div>
-//             </div>
-
-//             <div className="mt-2 grid grid-cols-7 gap-y-2 text-center">
-//               {month.days.map((d) => {
-//                 const inMonth = d.getMonth() === viewDate.getMonth();
-//                 const selectable = isDaySelectable(d);
-//                 const selected = selectedDay && isSameDay(d, selectedDay);
-
-//                 const base =
-//                   "mx-auto flex h-10 w-10 items-center justify-center rounded-full text-sm";
-//                 const styles = selected
-//                   ? "bg-emerald-400 text-white"
-//                   : selectable
-//                     ? "text-gray-900 hover:bg-gray-100"
-//                     : "text-gray-300";
-
-//                 return (
-//                   <button
-//                     key={d.toISOString()}
-//                     type="button"
-//                     className={`${base} ${styles}`}
-//                     disabled={!selectable}
-//                     onClick={() => {
-//                       setSelectedDay(d);
-//                       setSelectedSlotStart(null);
-//                     }}
-//                     aria-label={`Día ${d.getDate()}`}
-//                   >
-//                     <span className={inMonth ? "" : "opacity-40"}>{d.getDate()}</span>
-//                   </button>
-//                 );
-//               })}
-//             </div>
-//           </div>
-
-//           {/* Horarios */}
-//           <div className="mt-6 text-xl font-semibold">Selecciona un horario</div>
-
-//           <div className="mt-3 grid grid-cols-3 gap-3">
-//             {slots.length === 0 ? (
-//               <div className="col-span-3 rounded-2xl border border-gray-200 p-4 text-sm text-gray-500">
-//                 {selectedDay ? "No hay horarios disponibles para este día." : "Seleccioná una fecha para ver horarios."}
-//               </div>
-//             ) : (
-//               slots.map((s) => {
-//                 const selected = selectedSlotStart && s.start.getTime() === selectedSlotStart.getTime();
-//                 const cls =
-//                   "rounded-full border px-3 py-3 text-center text-sm font-medium transition " +
-//                   (s.disabled
-//                     ? "border-gray-200 text-gray-300"
-//                     : selected
-//                       ? "border-emerald-300 bg-emerald-100 text-emerald-900"
-//                       : "border-gray-200 text-gray-900 hover:bg-gray-50");
-
-//                 return (
-//                   <button
-//                     key={s.start.toISOString()}
-//                     type="button"
-//                     className={cls}
-//                     disabled={s.disabled}
-//                     onClick={() => onPickSlot(s)}
-//                   >
-//                     {formatTimeLabel(s.start)}
-//                   </button>
-//                 );
-//               })
-//             )}
-//           </div>
-
-//           {/* Contacto */}
-//           <div className="mt-8 text-xl font-semibold">Datos de contacto</div>
-
-//           <div className="mt-4 space-y-4">
-//             <div>
-//               <label className="mb-2 block text-sm font-medium text-gray-700">Nombre completo</label>
-//               <input
-//                 className="w-full rounded-2xl border border-gray-200 px-4 py-4 text-base outline-none focus:border-emerald-400"
-//                 placeholder="Ej. Juan Pérez"
-//                 value={customerName}
-//                 onChange={(e) => setCustomerName(e.target.value)}
-//               />
-//             </div>
-
-//             <div>
-//               <label className="mb-2 block text-sm font-medium text-gray-700">WhatsApp</label>
-//               <input
-//                 className="w-full rounded-2xl border border-gray-200 px-4 py-4 text-base outline-none focus:border-emerald-400"
-//                 placeholder="+54 9 11 1234 5678"
-//                 value={whatsapp}
-//                 onChange={(e) => setWhatsapp(e.target.value)}
-//                 inputMode="tel"
-//               />
-//             </div>
-//           </div>
-//         </div>
-
-//         {/* bottom fixed CTA */}
-//         <div className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md border-t border-gray-200 bg-white/85 px-4 py-4 backdrop-blur">
-//           <button
-//             type="button"
-//             disabled={!canConfirm}
-//             onClick={handleConfirm}
-//             className={
-//               "w-full rounded-2xl py-4 text-base font-semibold shadow-sm transition " +
-//               (canConfirm
-//                 ? "bg-emerald-400 text-black hover:bg-emerald-500"
-//                 : "bg-gray-200 text-gray-500")
-//             }
-//           >
-//             Confirmar Reserva ✓
-//           </button>
-//           <div className="mt-2 text-center text-xs text-gray-400">
-//             Al confirmar, recibirás un mensaje de confirmación por WhatsApp.
-//           </div>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-// /** ===== Example: page usage ===== */
-// export default function StoreServiceExample() {
-//   // items mock
-//   const items: Item[] = [
-//     { id: "svc-1", type: "SERVICE", name: "Sesión de masaje", price: 15000, durationMinutes: 60 },
-//     { id: "svc-2", type: "SERVICE", name: "Consulta kinesiología", price: 12000, durationMinutes: 45 },
-//     { id: "prd-1", type: "PRODUCT", name: "Banda elástica", price: 8000 },
-//   ];
-
-//   const [cart, setCart] = useState<CartLine[]>([]);
-//   const [drawerOpen, setDrawerOpen] = useState(false);
-//   const [selectedService, setSelectedService] = useState<Service | null>(null);
-
-//   const openReservation = (service: Service) => {
-//     setSelectedService(service);
-//     setDrawerOpen(true);
-//   };
-
-//   const addProductToCart = (p: Product) => {
-//     setCart((prev) => {
-//       const idx = prev.findIndex((x) => x.kind === "PRODUCT" && x.productId === p.id);
-//       if (idx >= 0) {
-//         const copy = [...prev];
-//         const line = copy[idx] as Extract<CartLine, { kind: "PRODUCT" }>;
-//         copy[idx] = { ...line, qty: line.qty + 1 };
-//         return copy;
-//       }
-//       return [...prev, { kind: "PRODUCT", productId: p.id, name: p.name, price: p.price, qty: 1 }];
-//     });
-//   };
-
-//   const handleAddToCart = (item: Item) => {
-//     if (item.type === "SERVICE") {
-//       openReservation(item);
-//       return;
-//     }
-//     addProductToCart(item);
-//   };
-
-//   const handleConfirmBooking = (line: CartLine) => {
-//     setCart((prev) => [...prev, line]);
-//     // acá normalmente llamás a tu API para crear Reservation (y/o Order draft) y luego redirigir a WhatsApp si aplica
-//   };
-
-//   return (
-//     <div className="min-h-screen bg-gray-50">
-//       <div className="mx-auto w-full max-w-md px-4 py-6">
-//         <div className="text-lg font-semibold">Tienda</div>
-//         <div className="mt-4 space-y-3">
-//           {items.map((it) => (
-//             <div key={it.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-//               <div className="flex items-start justify-between gap-3">
-//                 <div>
-//                   <div className="font-semibold">{it.name}</div>
-//                   <div className="mt-1 text-sm text-gray-500">
-//                     ${it.price.toLocaleString("es-AR")}
-//                     {it.type === "SERVICE" ? ` · ${it.durationMinutes} min` : ""}
-//                   </div>
-//                 </div>
-
-//                 <button
-//                   type="button"
-//                   onClick={() => handleAddToCart(it)}
-//                   className="rounded-full bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-black/90"
-//                 >
-//                   Cargar al carrito
-//                 </button>
-//               </div>
-//             </div>
-//           ))}
-//         </div>
-
-//         <div className="mt-8 rounded-2xl border border-gray-200 bg-white p-4">
-//           <div className="font-semibold">Carrito</div>
-//           <div className="mt-3 space-y-2 text-sm">
-//             {cart.length === 0 ? (
-//               <div className="text-gray-500">Vacío</div>
-//             ) : (
-//               cart.map((c, i) => {
-//                 if (c.kind === "PRODUCT") {
-//                   return (
-//                     <div key={i} className="flex justify-between">
-//                       <div>{c.name} × {c.qty}</div>
-//                       <div>${(c.price * c.qty).toLocaleString("es-AR")}</div>
-//                     </div>
-//                   );
-//                 }
-//                 return (
-//                   <div key={i} className="space-y-1">
-//                     <div className="flex justify-between">
-//                       <div>{c.name}</div>
-//                       <div>${c.price.toLocaleString("es-AR")}</div>
-//                     </div>
-//                     <div className="text-xs text-gray-500">
-//                       {new Date(c.startISO).toLocaleString("es-AR")} · {c.customerName} · {c.whatsapp}
-//                     </div>
-//                   </div>
-//                 );
-//               })
-//             )}
-//           </div>
-//         </div>
-//       </div>
-
-//       <ReservationDrawer
-//         open={drawerOpen}
-//         service={selectedService}
-//         schedule={BUSINESS_SCHEDULE}
-//         existingBookings={EXISTING_BOOKINGS}
-//         onClose={() => setDrawerOpen(false)}
-//         onConfirm={handleConfirmBooking}
-//       />
-//     </div>
-//   );
-// }
+// src/components/reservations/ReservationDrawer.tsx
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+
+type ReservationData = {
+    date: Date | null;
+    time: string | null;
+    fullName: string;
+    whatsapp: string;
+};
+
+type ReservationDrawerProps = {
+    open: boolean;
+    onClose: () => void;
+    title?: string;
+    subtitle?: string;
+    /** si querés pasar horarios desde afuera */
+    timeSlots?: string[];
+    /** callback al confirmar */
+    onConfirm?: (data: ReservationData) => void;
+};
+
+const WEEKDAYS = ["D", "L", "M", "M", "J", "V", "S"] as const;
+const MONTHS_ES = [
+    "Enero",
+    "Febrero",
+    "Marzo",
+    "Abril",
+    "Mayo",
+    "Junio",
+    "Julio",
+    "Agosto",
+    "Septiembre",
+    "Octubre",
+    "Noviembre",
+    "Diciembre",
+] as const;
+
+function pad2(n: number) {
+    return String(n).padStart(2, "0");
+}
+
+function startOfMonth(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function endOfMonth(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+}
+function sameDay(a: Date, b: Date) {
+    return (
+        a.getFullYear() === b.getFullYear() &&
+        a.getMonth() === b.getMonth() &&
+        a.getDate() === b.getDate()
+    );
+}
+function clampDateToMonth(day: number, baseMonth: Date) {
+    const last = endOfMonth(baseMonth).getDate();
+    const d = Math.min(Math.max(day, 1), last);
+    return new Date(baseMonth.getFullYear(), baseMonth.getMonth(), d);
+}
+
+function buildMonthGrid(month: Date) {
+    // devuelve 6 semanas * 7 dias (42 celdas)
+    const first = startOfMonth(month);
+    const last = endOfMonth(month);
+
+    const firstWeekday = first.getDay(); // 0..6 (D..S)
+    const daysInMonth = last.getDate();
+
+    const cells: Array<{ date: Date; inMonth: boolean }> = [];
+
+    // prev month tail
+    const prevMonthLast = endOfMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1));
+    const prevDays = prevMonthLast.getDate();
+
+    for (let i = 0; i < firstWeekday; i++) {
+        const day = prevDays - (firstWeekday - 1 - i);
+        const d = new Date(month.getFullYear(), month.getMonth() - 1, day);
+        cells.push({ date: d, inMonth: false });
+    }
+
+    // current month
+    for (let day = 1; day <= daysInMonth; day++) {
+        cells.push({ date: new Date(month.getFullYear(), month.getMonth(), day), inMonth: true });
+    }
+
+    // next month head to reach 42
+    const remaining = 42 - cells.length;
+    for (let day = 1; day <= remaining; day++) {
+        const d = new Date(month.getFullYear(), month.getMonth() + 1, day);
+        cells.push({ date: d, inMonth: false });
+    }
+
+    return cells;
+}
+
+function cn(...xs: Array<string | false | null | undefined>) {
+    return xs.filter(Boolean).join(" ");
+}
+
+export default function ReservationDrawer({
+    open,
+    onClose,
+    title = "Reservar Servicio",
+    subtitle = "Disponibilidad para el mes actual",
+    timeSlots = ["09:00 AM", "10:00 AM", "11:00 AM", "02:00 PM", "03:00 PM", "04:00 PM"],
+    onConfirm,
+}: ReservationDrawerProps) {
+    const today = useMemo(() => new Date(), []);
+    const [viewMonth, setViewMonth] = useState(() => startOfMonth(today));
+
+    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+    const [selectedTime, setSelectedTime] = useState<string | null>(timeSlots[0] ?? null);
+
+    const [fullName, setFullName] = useState("");
+    const [whatsapp, setWhatsapp] = useState("");
+
+    // Reset básico al abrir (opcional)
+    useEffect(() => {
+        if (!open) return;
+        setViewMonth(startOfMonth(today));
+    }, [open, today]);
+
+    const grid = useMemo(() => buildMonthGrid(viewMonth), [viewMonth]);
+
+    const monthLabel = useMemo(() => {
+        const m = MONTHS_ES[viewMonth.getMonth()];
+        return `${m} ${viewMonth.getFullYear()}`;
+    }, [viewMonth]);
+
+    const canConfirm = !!selectedDate && !!selectedTime;
+
+    function prevMonth() {
+        setViewMonth((m) => startOfMonth(new Date(m.getFullYear(), m.getMonth() - 1, 1)));
+        // si tenías una fecha elegida, la clamp para no explotar
+        setSelectedDate((d) => (d ? clampDateToMonth(d.getDate(), new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1)) : d));
+    }
+    function nextMonth() {
+        setViewMonth((m) => startOfMonth(new Date(m.getFullYear(), m.getMonth() + 1, 1)));
+        setSelectedDate((d) => (d ? clampDateToMonth(d.getDate(), new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)) : d));
+    }
+
+    function handlePickDate(d: Date, inMonth: boolean) {
+        if (!inMonth) return; // en el mock de la UI, los de afuera casi no se usan
+        setSelectedDate(d);
+    }
+
+    function handleConfirm() {
+        const payload: ReservationData = {
+            date: selectedDate,
+            time: selectedTime,
+            fullName,
+            whatsapp,
+        };
+        onConfirm?.(payload);
+    }
+
+    // ESC para cerrar
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onClose();
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [open, onClose]);
+
+    return (
+        <div
+            className={cn(
+                "fixed inset-0 z-50",
+                open ? "pointer-events-auto" : "pointer-events-none"
+            )}
+            aria-hidden={!open}
+        >
+            {/* Backdrop */}
+            <div
+                className={cn(
+                    "absolute inset-0 bg-black/30 transition-opacity",
+                    open ? "opacity-100" : "opacity-0"
+                )}
+                onClick={onClose}
+            />
+
+            {/* Panel */}
+            <div
+                className={cn(
+                    "absolute inset-x-0 bottom-0 mx-auto w-full max-w-md",
+                    "transition-transform duration-300",
+                    open ? "translate-y-0" : "translate-y-[105%]"
+                )}
+                role="dialog"
+                aria-modal="true"
+            >
+                <div className="relative h-[92vh] rounded-t-3xl bg-[#F4F6F4] shadow-2xl">
+                    {/* Header */}
+                    <div className="sticky top-0 z-10 rounded-t-3xl bg-white/70 backdrop-blur">
+                        <div className="flex items-center gap-3 px-5 py-4">
+                            <button
+                                onClick={onClose}
+                                className="grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm ring-1 ring-black/5 active:scale-[0.98]"
+                                aria-label="Volver"
+                            >
+                                <span className="text-xl leading-none">‹</span>
+                            </button>
+                            <div className="flex-1 text-center">
+                                <div className="text-lg font-semibold text-black">{title}</div>
+                            </div>
+                            <div className="h-10 w-10" />
+                        </div>
+                    </div>
+
+                    {/* Body scroll */}
+                    <div className="h-full overflow-y-auto px-5 pb-28 pt-4">
+                        {/* Fecha */}
+                        <div className="mb-4">
+                            <div className="text-2xl font-semibold text-black">Selecciona una fecha</div>
+                            <div className="mt-1 text-sm text-black/50">{subtitle}</div>
+                        </div>
+
+                        {/* Calendar card */}
+                        <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+                            <div className="flex items-center justify-between">
+                                <button
+                                    onClick={prevMonth}
+                                    className="grid h-10 w-10 place-items-center rounded-full bg-white ring-1 ring-black/5 active:scale-[0.98]"
+                                    aria-label="Mes anterior"
+                                >
+                                    <span className="text-xl leading-none">‹</span>
+                                </button>
+
+                                <div className="text-base font-semibold text-black">{monthLabel}</div>
+
+                                <button
+                                    onClick={nextMonth}
+                                    className="grid h-10 w-10 place-items-center rounded-full bg-white ring-1 ring-black/5 active:scale-[0.98]"
+                                    aria-label="Mes siguiente"
+                                >
+                                    <span className="text-xl leading-none">›</span>
+                                </button>
+                            </div>
+
+                            <div className="mt-4 grid grid-cols-7 gap-2 px-1">
+                                {WEEKDAYS.map((w, idx) => (
+                                    <div
+                                        key={`${w}-${idx}`}
+                                        className="text-center text-xs font-semibold tracking-wide text-black/35"
+                                    >
+                                        {w}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-7 gap-2 px-1">
+                                {grid.map(({ date, inMonth }, i) => {
+                                    const isSelected = selectedDate ? sameDay(selectedDate, date) : false;
+                                    const isToday = sameDay(today, date);
+
+                                    return (
+                                        <button
+                                            key={`${date.toISOString()}-${i}`}
+                                            onClick={() => handlePickDate(date, inMonth)}
+                                            disabled={!inMonth}
+                                            className={cn(
+                                                "h-11 w-11 rounded-full text-sm font-medium transition",
+                                                inMonth ? "text-black" : "text-black/20",
+                                                isSelected
+                                                    ? "bg-[#22C55E] text-black shadow-sm"
+                                                    : "bg-transparent",
+                                                !isSelected && inMonth ? "hover:bg-black/5 active:bg-black/10" : "",
+                                                isToday && !isSelected ? "ring-1 ring-black/10" : "",
+                                                !inMonth ? "cursor-not-allowed" : ""
+                                            )}
+                                            aria-label={`Día ${date.getDate()}`}
+                                        >
+                                            {date.getDate()}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Horarios */}
+                        <div className="mt-8">
+                            <div className="text-2xl font-semibold text-black">Selecciona un horario</div>
+
+                            <div className="mt-4 grid grid-cols-3 gap-3">
+                                {timeSlots.map((t) => {
+                                    const active = selectedTime === t;
+                                    return (
+                                        <button
+                                            key={t}
+                                            onClick={() => setSelectedTime(t)}
+                                            className={cn(
+                                                "h-12 rounded-full border text-sm font-semibold transition",
+                                                active
+                                                    ? "border-transparent bg-[#CFF8DC] text-black shadow-sm"
+                                                    : "border-black/10 bg-white text-black/80 hover:bg-black/5"
+                                            )}
+                                        >
+                                            {t}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Datos de contacto */}
+                        <div className="mt-10">
+                            <div className="text-2xl font-semibold text-black">Datos de contacto</div>
+
+                            <div className="mt-5 space-y-5">
+                                <div>
+                                    <label className="mb-2 block text-sm font-medium text-black/70">
+                                        Nombre completo
+                                    </label>
+                                    <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
+                                        <input
+                                            value={fullName}
+                                            onChange={(e) => setFullName(e.target.value)}
+                                            placeholder="Ej. Juan Pérez"
+                                            className="w-full bg-transparent text-base text-black placeholder:text-black/35 outline-none"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="mb-2 block text-sm font-medium text-black/70">
+                                        WhatsApp
+                                    </label>
+                                    <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
+                                        <div className="grid h-10 w-10 place-items-center rounded-xl bg-black/5">
+                                            <span className="text-lg">📱</span>
+                                        </div>
+                                        <input
+                                            value={whatsapp}
+                                            onChange={(e) => setWhatsapp(e.target.value)}
+                                            placeholder="+54 9 11 1234 5678"
+                                            inputMode="tel"
+                                            className="w-full bg-transparent text-base text-black placeholder:text-black/35 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom action */}
+                    <div className="absolute inset-x-0 bottom-0 z-10 bg-[#F4F6F4] px-5 pb-5 pt-3">
+                        <button
+                            onClick={handleConfirm}
+                            disabled={!canConfirm}
+                            className={cn(
+                                "h-14 w-full rounded-full text-base font-semibold shadow-lg transition",
+                                canConfirm
+                                    ? "bg-[#22C55E] text-black active:scale-[0.99]"
+                                    : "bg-black/10 text-black/40"
+                            )}
+                        >
+                            Confirmar Reserva{" "}
+                            <span className="ml-2 inline-grid h-6 w-6 place-items-center rounded-full bg-black/10">
+                                ✓
+                            </span>
+                        </button>
+
+                        <div className="mt-3 text-center text-xs text-black/35">
+                            Al confirmar, recibirás un mensaje de confirmación por WhatsApp.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
