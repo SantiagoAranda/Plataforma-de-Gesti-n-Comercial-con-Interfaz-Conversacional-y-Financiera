@@ -48,93 +48,6 @@ export class PublicController {
     }));
   }
 
-  @Post(':slug/reserve')
-  async createReservation(
-    @Param('slug') slug: string,
-    @Body() dto: CreateReservationDto,
-  ) {
-    const business = await this.prisma.business.findUnique({
-      where: { slug },
-    });
-
-    if (!business) throw new BadRequestException('Business not found');
-    if (dto.startMinute >= dto.endMinute)
-      throw new BadRequestException('Invalid time range');
-
-    const item = await this.prisma.item.findFirst({
-      where: {
-        id: dto.itemId,
-        businessId: business.id,
-        type: 'SERVICE',
-      },
-    });
-
-    if (!item) throw new BadRequestException('Invalid service');
-
-    const dateOnly = new Date(dto.date);
-    dateOnly.setHours(0, 0, 0, 0);
-
-    const overlapping = await this.prisma.reservation.findFirst({
-      where: {
-        businessId: business.id,
-        itemId: dto.itemId,
-        date: dateOnly,
-        status: { not: 'CANCELLED' },
-        AND: [
-          { startMinute: { lt: dto.endMinute } },
-          { endMinute: { gt: dto.startMinute } },
-        ],
-      },
-    });
-
-    if (overlapping)
-      throw new BadRequestException('Time slot already booked');
-
-    const reservation = await this.prisma.reservation.create({
-      data: {
-        businessId: business.id,
-        itemId: dto.itemId,
-        customerName: dto.customerName,
-        customerWhatsapp: dto.customerWhatsapp,
-        date: dateOnly,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-      },
-    });
-
-    return {
-      message: 'Reservation created',
-      publicToken: reservation.publicToken,
-    };
-  }
-
-  @Get('reservation/:token')
-  async getReservation(@Param('token') token: string) {
-    const reservation = await this.prisma.reservation.findUnique({
-      where: { publicToken: token },
-    });
-
-    if (!reservation)
-      throw new BadRequestException('Reservation not found');
-
-    return reservation;
-  }
-
-  @Patch('reservation/:token/cancel')
-  async cancelReservation(@Param('token') token: string) {
-    const reservation = await this.prisma.reservation.findUnique({
-      where: { publicToken: token },
-    });
-
-    if (!reservation)
-      throw new BadRequestException('Reservation not found');
-
-    return this.prisma.reservation.update({
-      where: { id: reservation.id },
-      data: { status: 'CANCELLED' },
-    });
-  }
-
   /* =========================================================
      ITEMS (CATÁLOGO)
   ========================================================== */
@@ -176,7 +89,7 @@ export class PublicController {
   ) {
     const business = await this.prisma.business.findFirst({
       where: { slug, status: 'ACTIVE' },
-      select: { id: true, name: true, slug: true },
+      select: { id: true },
     });
 
     if (!business) throw new NotFoundException('Business not found');
@@ -193,11 +106,8 @@ export class PublicController {
     if (!item) throw new NotFoundException('Item not found');
 
     return {
-      business,
-      item: {
-        ...item,
-        price: Number(item.price),
-      },
+      ...item,
+      price: Number(item.price),
     };
   }
 
@@ -221,8 +131,17 @@ export class PublicController {
     });
 
     if (!business) throw new BadRequestException('Business not found');
+
+    if (!body.customerName || !body.customerWhatsapp)
+      throw new BadRequestException('Customer data required');
+
     if (!body.items || body.items.length === 0)
       throw new BadRequestException('Order must contain items');
+
+    for (const item of body.items) {
+      if (!item.quantity || item.quantity <= 0)
+        throw new BadRequestException('Invalid quantity');
+    }
 
     const dbItems = await this.prisma.item.findMany({
       where: {
@@ -241,11 +160,12 @@ export class PublicController {
         customerName: body.customerName,
         customerWhatsapp: body.customerWhatsapp,
         note: body.note,
-        status: 'DRAFT',
+        status: 'SENT',
+        sentAt: new Date(),
         items: {
           create: body.items.map((inputItem) => {
             const item = dbItems.find((i) => i.id === inputItem.itemId)!;
-            const quantity = inputItem.quantity ?? 1;
+            const quantity = inputItem.quantity;
 
             const unitPrice = item.price;
             const lineTotal = unitPrice.mul(quantity);
@@ -278,7 +198,7 @@ export class PublicController {
 
     return {
       message: 'Order created',
-      publicToken: order.publicToken,
+      orderId: order.publicToken, // 🔐 usamos token seguro
     };
   }
 
@@ -315,26 +235,17 @@ export class PublicController {
 
     if (!order) throw new NotFoundException('Order not found');
 
+    if (order.status === 'CANCELLED')
+      throw new BadRequestException('Order already cancelled');
+
+    if (order.status === 'COMPLETED')
+      throw new BadRequestException(
+        'Completed orders cannot be cancelled',
+      );
+
     return this.prisma.order.update({
       where: { id: order.id },
       data: { status: 'CANCELLED' },
-    });
-  }
-
-  @Patch('order/:token/confirm')
-  async confirmOrder(@Param('token') token: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { publicToken: token },
-    });
-
-    if (!order) throw new NotFoundException('Order not found');
-
-    return this.prisma.order.update({
-      where: { id: order.id },
-      data: {
-        status: 'SENT',
-        sentAt: new Date(),
-      },
     });
   }
 }

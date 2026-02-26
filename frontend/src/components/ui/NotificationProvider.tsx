@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 type NotificationType = "success" | "error" | "info" | "warning";
@@ -19,6 +19,11 @@ const NotificationContext = createContext<NotificationContextType | null>(null);
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const notify = ({ type, message }: Omit<Notification, "id">) => {
     const id = Date.now();
@@ -34,14 +39,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     <NotificationContext.Provider value={{ notify }}>
       {children}
 
-      {createPortal(
-        <div className="fixed top-5 right-5 z-[999999] space-y-3">
-          {notifications.map((n) => (
-            <Toast key={n.id} {...n} />
-          ))}
-        </div>,
-        document.body
-      )}
+      {mounted &&
+        createPortal(
+          <div className="fixed top-5 right-5 z-[999999] space-y-3">
+            {notifications.map((n) => (
+              <Toast key={n.id} {...n} />
+            ))}
+          </div>,
+          document.body
+        )}
     </NotificationContext.Provider>
   );
 }
@@ -51,8 +57,6 @@ export function useNotification() {
   if (!ctx) throw new Error("useNotification must be used inside NotificationProvider");
   return ctx;
 }
-
-/* ================= TOAST ================= */
 
 function Toast({ type, message }: Notification) {
   const base =

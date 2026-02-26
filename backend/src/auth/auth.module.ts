@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
@@ -12,15 +14,17 @@ import { BusinessActiveGuard } from './guards/business-active.guard';
   imports: [
     UsersModule,
     BusinessesModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'supersecret_dev_key',
-      signOptions: {
-        expiresIn: '15m',
-      },
+    ConfigModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+        signOptions: { expiresIn: '15m' },
+      }),
     }),
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, RolesGuard, BusinessActiveGuard],
-  exports: [JwtModule], // importante si luego otros módulos lo usan
+  exports: [JwtModule],
 })
 export class AuthModule {}

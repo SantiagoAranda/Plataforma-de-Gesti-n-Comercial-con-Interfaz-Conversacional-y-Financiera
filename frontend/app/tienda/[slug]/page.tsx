@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useMemo, useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { Search, ShoppingBag } from "lucide-react";
+import AppHeader from "@/src/components/layout/AppHeader";
+import BottomNav from "@/src/components/layout/BottomNav";
+import { createPortal } from "react-dom";
+import { useNotification } from "@/src/components/ui/NotificationProvider";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -16,50 +20,56 @@ type Item = {
   images?: { id: string; url: string; order: number }[];
 };
 
-export default function TiendaPage() {
+export default function MiTiendaPage() {
+  const { notify } = useNotification();
   const { slug } = useParams<{ slug: string }>();
+  const router = useRouter();
 
   const [items, setItems] = useState<Item[]>([]);
-  const [businessName, setBusinessName] = useState("");
   const [query, setQuery] = useState("");
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [customerWhatsapp, setCustomerWhatsapp] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  /* ================= FETCH ================= */
+  /* ======================= FETCH ITEMS ======================= */
 
   useEffect(() => {
     if (!slug) return;
 
     const fetchItems = async () => {
       try {
+        setLoading(true);
+
         const res = await fetch(
-          `http://localhost:3001/public/${slug}/items`
+          `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/items`
         );
 
-        if (!res.ok) {
-          console.error("Error:", res.status);
-          return;
-        }
+        if (!res.ok) throw new Error("Error loading items");
 
         const data = await res.json();
 
-        setBusinessName(data.business?.name ?? "Tienda");
-
-        const normalized = (data.data ?? []).map((item: any) => ({
-          ...item,
-          price: Number(item.price),
-        }));
-
-        setItems(normalized);
+        setItems(
+          (data.data ?? []).map((item: any) => ({
+            ...item,
+            price: Number(item.price),
+          }))
+        );
       } catch (err) {
-        console.error("Fetch failed:", err);
+        notify({
+          type: "error",
+          message: "No se pudo cargar la tienda",
+        });
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchItems();
   }, [slug]);
 
-  /* ================= FILTRO ================= */
+  /* ======================= FILTRO ======================= */
 
   const filtered = useMemo(() => {
     return items.filter((i) =>
@@ -67,21 +77,81 @@ export default function TiendaPage() {
     );
   }, [items, query]);
 
+  /* ======================= CARRITO ======================= */
+
   const addToCart = (id: string) => {
     setCart((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
+
+    notify({
+      type: "success",
+      message: "Producto agregado al carrito",
+    });
   };
 
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
 
-  /* ================= UI ================= */
+  const cartTotal = useMemo(() => {
+    return Object.entries(cart).reduce((acc, [itemId, quantity]) => {
+      const item = items.find((i) => i.id === itemId);
+      if (!item) return acc;
+      return acc + item.price * quantity;
+    }, 0);
+  }, [cart, items]);
+
+  /* ======================= CHECKOUT REAL ======================= */
+
+  const handleCheckout = async () => {
+    if (!customerName || !customerWhatsapp) {
+      notify({
+        type: "warning",
+        message: "Completá nombre y WhatsApp",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/order`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName,
+            customerWhatsapp,
+            items: Object.entries(cart).map(([itemId, quantity]) => ({
+              itemId,
+              quantity,
+            })),
+          }),
+        }
+      );
+
+      if (!res.ok) throw new Error("Error creating order");
+
+      const data = await res.json();
+
+      notify({
+        type: "success",
+        message: "Orden creada correctamente",
+      });
+
+      setCart({});
+      setShowCheckout(false);
+
+      router.push(`/orden/${data.orderId}`);
+    } catch (err) {
+      notify({
+        type: "error",
+        message: "No se pudo crear la orden",
+      });
+    }
+  };
+
+  /* ======================= UI ======================= */
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
-      <div className="bg-white shadow-sm border-b border-neutral-200 px-6 py-6">
-        <h1 className="text-xl font-semibold text-neutral-900">
-          {businessName}
-        </h1>
-      </div>
+      <AppHeader title="Tienda" showBack />
 
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
         <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
@@ -90,41 +160,109 @@ export default function TiendaPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar productos..."
-            className="w-full bg-transparent text-[15px] outline-none placeholder:text-black/35"
+            className="w-full bg-transparent text-[15px] outline-none"
           />
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-4 items-stretch">
-          {filtered.map((item) => (
-            <ProductCard
-              key={item.id}
-              item={item}
-              onAdd={() => addToCart(item.id)}
-              onDetail={() => setSelectedItem(item)}
-            />
-          ))}
-        </div>
+        {loading ? (
+          <p className="text-center text-neutral-400 mt-6">
+            Cargando productos...
+          </p>
+        ) : (
+          <div className="mt-5 grid grid-cols-2 gap-4">
+            {filtered.map((item) => (
+              <ProductCard
+                key={item.id}
+                item={item}
+                onAdd={() => addToCart(item.id)}
+              />
+            ))}
+          </div>
+        )}
       </main>
 
       {cartCount > 0 && (
-        <button className="fixed bottom-[88px] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xl active:scale-95 transition">
+        <button
+          onClick={() => setShowCheckout(true)}
+          className="fixed bottom-[88px] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xl"
+        >
           <ShoppingBag className="h-6 w-6" />
-          <span className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-emerald-600 shadow">
+          <span className="absolute -top-1 -right-1 bg-white text-emerald-600 text-xs font-bold px-2 py-0.5 rounded-full">
             {cartCount}
           </span>
         </button>
       )}
 
-      {selectedItem && (
-        <ItemDetailSheet
-          item={selectedItem}
-          onClose={() => setSelectedItem(null)}
-          onAdd={() => {
-            addToCart(selectedItem.id);
-            setSelectedItem(null);
-          }}
-        />
-      )}
+      {showCheckout &&
+        createPortal(
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowCheckout(false)}
+          >
+            <div
+              className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="rounded-t-3xl bg-white p-5 shadow-2xl">
+                <h2 className="text-lg font-semibold mb-4">
+                  Confirmar compra
+                </h2>
+
+                <div className="space-y-2 text-sm">
+                  {Object.entries(cart).map(([id, qty]) => {
+                    const item = items.find((i) => i.id === id);
+                    if (!item) return null;
+
+                    return (
+                      <div key={id} className="flex justify-between">
+                        <span>{item.name} x{qty}</span>
+                        <span>${(item.price * qty).toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex justify-between font-bold mt-4 border-t pt-3">
+                  <span>Total</span>
+                  <span>${cartTotal.toFixed(2)}</span>
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <input
+                    placeholder="Nombre"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    className="w-full border rounded-xl p-3"
+                  />
+                  <input
+                    placeholder="WhatsApp"
+                    value={customerWhatsapp}
+                    onChange={(e) => setCustomerWhatsapp(e.target.value)}
+                    className="w-full border rounded-xl p-3"
+                  />
+                </div>
+
+                <div className="flex gap-3 mt-5">
+                  <button
+                    onClick={() => setShowCheckout(false)}
+                    className="flex-1 border rounded-xl py-3 font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleCheckout}
+                    className="flex-1 bg-emerald-600 text-white rounded-xl py-3 font-semibold"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      <BottomNav active="tienda" />
     </div>
   );
 }
@@ -134,15 +272,13 @@ export default function TiendaPage() {
 function ProductCard({
   item,
   onAdd,
-  onDetail,
 }: {
   item: Item;
   onAdd: () => void;
-  onDetail: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col rounded-[12px] bg-white shadow-sm ring-1 ring-black/5">
-      <div className="aspect-square w-full overflow-hidden rounded-t-[12px] bg-gray-100">
+    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5">
+      <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
           <img
             src={item.images[0].url}
@@ -152,117 +288,21 @@ function ProductCard({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col p-3">
-        <div className="min-h-[40px] text-[15px] font-semibold line-clamp-2">
+      <div className="p-3 flex flex-col">
+        <div className="font-semibold text-sm line-clamp-2">
           {item.name}
         </div>
 
-        <div className="mt-2 text-[18px] font-extrabold text-emerald-600">
+        <div className="text-emerald-600 font-bold mt-2">
           ${item.price.toFixed(2)}
         </div>
 
-        <div className="mt-auto space-y-2 pt-3">
-          <button
-            onClick={onDetail}
-            className="w-full rounded-[10px] border border-gray-200 py-2 text-[14px] font-semibold"
-          >
-            Ver detalle
-          </button>
-
-          <button
-            onClick={onAdd}
-            className="w-full rounded-[10px] bg-emerald-600 py-2 text-[14px] font-semibold text-white"
-          >
-            Añadir al carrito
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ================= DETAIL SHEET ================= */
-
-function ItemDetailSheet({
-  item,
-  onClose,
-  onAdd,
-}: {
-  item: Item;
-  onClose: () => void;
-  onAdd: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-[99999] bg-black/40 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="rounded-t-3xl bg-white p-5 shadow-2xl">
-          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-300" />
-
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-bold">
-              {item.type === "SERVICE"
-                ? "Detalles del Servicio"
-                : "Detalles del Producto"}
-            </h2>
-            <button onClick={onClose}>✕</button>
-          </div>
-
-          {item.images?.[0]?.url && (
-            <div className="overflow-hidden rounded-2xl bg-gray-100">
-              <img
-                src={item.images[0].url}
-                className="w-full object-cover"
-              />
-            </div>
-          )}
-
-          <div className="mt-4 space-y-4">
-            <Field label="Nombre">{item.name}</Field>
-            <Field label="Precio">${item.price.toFixed(2)}</Field>
-
-            {item.type === "SERVICE" && (
-              <Field label="Duración">
-                {item.durationMinutes} min
-              </Field>
-            )}
-
-            <Field label="Descripción">
-              {item.description ?? "Producto premium."}
-            </Field>
-
-            <button
-              onClick={onAdd}
-              className="mt-2 w-full rounded-full bg-emerald-600 py-4 text-lg font-semibold text-white shadow-lg"
-            >
-              Agregar al carrito
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <p className="text-sm font-semibold uppercase text-emerald-700">
-        {label}
-      </p>
-      <div className="mt-1 rounded-xl bg-gray-100 p-3 text-base">
-        {children}
+        <button
+          onClick={onAdd}
+          className="mt-3 bg-emerald-600 text-white rounded-lg py-2 text-sm font-semibold"
+        >
+          Añadir al carrito
+        </button>
       </div>
     </div>
   );
