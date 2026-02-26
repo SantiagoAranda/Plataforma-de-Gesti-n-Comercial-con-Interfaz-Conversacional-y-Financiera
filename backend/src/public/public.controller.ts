@@ -248,4 +248,35 @@ export class PublicController {
       data: { status: 'CANCELLED' },
     });
   }
+
+  @Get(':slug/reservations')
+  async getReservationsByDate(
+    @Param('slug') slug: string,
+    @Query('date') date: string,
+    @Query('itemId') itemId: string,
+  ) {
+    const business = await this.prisma.business.findFirst({
+      where: { slug, status: 'ACTIVE' },
+    });
+
+    if (!business) throw new BadRequestException('Business not found');
+
+    const dateOnly = new Date(date);
+    dateOnly.setHours(0, 0, 0, 0);
+
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        businessId: business.id,
+        itemId,
+        date: dateOnly,
+        status: { not: 'CANCELLED' },
+      },
+      select: {
+        startMinute: true,
+        endMinute: true,
+      },
+    });
+
+    return reservations;
+  }
 }
