@@ -162,6 +162,8 @@ model ItemImage {
 model Order {
   id String @id @default(uuid())
 
+  publicToken String @unique @default(uuid())
+
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { api } from "../../lib/api";
 
 export default function LoginForm() {
   const router = useRouter();
@@ -17,30 +18,22 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/auth/login", {
+      const data = await api<{ accessToken: string }>("/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           email,
           password,
         }),
+        auth: false, // importante: login no necesita token
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || "Error al iniciar sesión");
-      }
 
       // Guardar token
       localStorage.setItem("accessToken", data.accessToken);
 
-      // Redirigir a home privada
+      // Redirigir
       router.push("/home");
     } catch (err: any) {
-      setError(err.message || "Error inesperado");
+      setError(err.message || "Error al iniciar sesión");
     } finally {
       setLoading(false);
     }

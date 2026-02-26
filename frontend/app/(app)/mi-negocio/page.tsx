@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
-
+import { api } from "@/src/lib/api";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
-type SentItem = {
+type Item = {
+  id: string;
+  type: ItemType;
   name: string;
-  price: string;
-  description: string;
-  image?: string;
+  price: number;
+  description?: string;
+  durationMinutes?: number;
+  images?: { id: string; url: string; order: number }[];
 };
 
 type TimeRange = {
@@ -43,33 +46,115 @@ export default function MiNegocioPage() {
   const [description, setDescription] = useState("");
   const [image, setImage] = useState<string | null>(null);
   const [duration, setDuration] = useState(30);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const [week, setWeek] = useState<WeeklySchedule[]>(INITIAL_WEEK);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
-  const [sentItem, setSentItem] = useState<SentItem | null>(null);
+  const [items, setItems] = useState<Item[]>([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+
+  // 🔥 Traer items reales
+  useEffect(() => {
+    const fetchItems = async () => {
+      try {
+        const data = await api<Item[]>("/items");
+        setItems(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingItems(false);
+      }
+    };
+
+    fetchItems();
+  }, []);
+
+  useEffect(() => {
+  const handleClickOutside = () => {
+    setOpenMenuId(null);
+  };
+
+  window.addEventListener("click", handleClickOutside);
+
+  return () => {
+    window.removeEventListener("click", handleClickOutside);
+  };
+}, []);
 
   const handleAddImage = (file: File | null) => {
     if (!file) return;
-    setImage(URL.createObjectURL(file));
+
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      setImage(reader.result as string);
+    };
+
+    reader.readAsDataURL(file);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!name || !price) return;
 
-    setSentItem({
-      name,
-      price,
-      description,
-      image: image || undefined,
+    try {
+      const payload = {
+        type,
+        name,
+        price: Number(price),
+        description: description || undefined,
+        durationMinutes:
+          type === "SERVICE" ? Number(duration) : undefined,
+      };
+
+      // 1️⃣ Crear item
+      const createdItem = await api<any>("/items", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      // 2️⃣ Si hay imagen → guardarla
+      if (image) {
+        await api(`/items/${createdItem.id}/images`, {
+          method: "POST",
+          body: JSON.stringify({
+            url: image,
+          }),
+        });
+      }
+
+      // 3️⃣ Traer item actualizado con images
+      const updatedItem = await api<any>(`/items/${createdItem.id}`);
+
+      setItems((prev) => [updatedItem, ...prev]);
+
+      // Reset form
+      setName("");
+      setPrice("");
+      setDescription("");
+      setImage(null);
+      setIsOpen(false);
+
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+  const confirmDelete = confirm("¿Eliminar este producto?");
+  if (!confirmDelete) return;
+
+  try {
+    await api(`/items/${id}`, {
+      method: "DELETE",
     });
 
-    setName("");
-    setPrice("");
-    setDescription("");
-    setImage(null);
-    setIsOpen(false);
-  };
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    setOpenMenuId(null);
+  } catch (err) {
+    console.error(err);
+  }
+};
 
   const toggleDay = (index: number) => {
     setWeek((prev) =>
@@ -84,9 +169,9 @@ export default function MiNegocioPage() {
       prev.map((d, i) =>
         i === currentDayIndex && d.ranges.length < 2
           ? {
-              ...d,
-              ranges: [...d.ranges, { start: "14:00", end: "18:00" }],
-            }
+            ...d,
+            ranges: [...d.ranges, { start: "14:00", end: "18:00" }],
+          }
           : d
       )
     );
@@ -101,11 +186,11 @@ export default function MiNegocioPage() {
       prev.map((d, i) =>
         i === currentDayIndex
           ? {
-              ...d,
-              ranges: d.ranges.map((r, ri) =>
-                ri === rangeIndex ? { ...r, [field]: value } : r
-              ),
-            }
+            ...d,
+            ranges: d.ranges.map((r, ri) =>
+              ri === rangeIndex ? { ...r, [field]: value } : r
+            ),
+          }
           : d
       )
     );
@@ -116,9 +201,9 @@ export default function MiNegocioPage() {
       prev.map((d, i) =>
         i === currentDayIndex
           ? {
-              ...d,
-              ranges: d.ranges.filter((_, ri) => ri !== rangeIndex),
-            }
+            ...d,
+            ranges: d.ranges.filter((_, ri) => ri !== rangeIndex),
+          }
           : d
       )
     );
@@ -126,34 +211,107 @@ export default function MiNegocioPage() {
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100">
-
-      {/* Header */}
       <AppHeader title="Mi negocio" showBack />
 
-      {/* Preview */}
+      {/* CHAT REAL */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
-        {sentItem && (
-          <div className="ml-auto max-w-[85%] bg-green-100 rounded-3xl p-3 space-y-2">
-            {sentItem.image && (
-              <img
-                src={sentItem.image}
-                alt="Preview"
-                className="w-full h-56 object-cover rounded-2xl"
-              />
-            )}
-            <div className="flex justify-between items-center">
-              <p className="font-medium text-sm">{sentItem.name}</p>
-              <p className="font-semibold text-green-700 text-sm">
-                ${sentItem.price}
-              </p>
-            </div>
-            {sentItem.description && (
-              <p className="text-xs text-neutral-600 leading-snug">
-                {sentItem.description}
-              </p>
-            )}
-          </div>
+        {loadingItems && (
+          <p className="text-center text-neutral-400 text-sm">
+            Cargando productos...
+          </p>
         )}
+
+        {items.map((item) => (
+  <div
+    key={item.id}
+    className="relative ml-auto max-w-[78%] bg-white rounded-2xl shadow-sm border border-neutral-200 overflow-hidden"
+  >
+    {/* Botón tres puntos */}
+    <div className="absolute top-2 right-2 z-10">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpenMenuId(openMenuId === item.id ? null : item.id);
+        }}
+        className="w-7 h-7 rounded-full bg-white/80 backdrop-blur flex items-center justify-center text-neutral-600 hover:bg-neutral-100 text-sm shadow-sm"
+      >
+        ⋯
+      </button>
+
+      {openMenuId === item.id && (
+        <div className="absolute right-0 mt-2 w-32 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden">
+          <button
+            className="w-full text-left px-4 py-2 text-sm hover:bg-neutral-50"
+            onClick={() => {
+              console.log("Editar", item.id);
+              setOpenMenuId(null);
+            }}
+          >
+            Editar
+          </button>
+
+          <button
+            className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-neutral-50"
+            onClick={() => {
+              handleDelete(item.id);
+            }}
+          >
+            Eliminar
+          </button>
+        </div>
+      )}
+    </div>
+
+    {/* Imagen */}
+    {item.images && item.images.length > 0 && (
+      <div className="bg-neutral-50 flex items-center justify-center">
+        <img
+          src={item.images[0].url}
+          alt={item.name}
+          className="w-full max-h-60 object-contain"
+        />
+      </div>
+    )}
+
+    <div className="px-4 py-3 space-y-2">
+      {/* Título + Precio */}
+      <div className="flex justify-between items-start">
+        <p className="text-sm font-semibold text-neutral-900">
+          {item.name}
+        </p>
+
+        <p className="text-emerald-600 font-semibold text-sm">
+          ${item.price}
+        </p>
+      </div>
+
+      {/* Duración */}
+      {item.type === "SERVICE" && (
+        <div className="flex items-center gap-2 text-neutral-500 text-xs">
+          <span>🕒</span>
+          <span>{item.durationMinutes} min</span>
+        </div>
+      )}
+
+      {/* Descripción */}
+      {item.description && (
+        <p className="text-xs text-neutral-500 leading-relaxed">
+          {item.description}
+        </p>
+      )}
+
+      {/* Hora */}
+      <div className="flex justify-end">
+        <span className="text-[11px] text-neutral-400">
+          {new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </div>
+    </div>
+  </div>
+))}
       </main>
 
       {/* Panel inferior */}
@@ -197,21 +355,19 @@ export default function MiNegocioPage() {
             <div className="flex bg-neutral-100 rounded-full p-1 mb-4">
               <button
                 onClick={() => setType("PRODUCT")}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "PRODUCT"
+                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "PRODUCT"
                     ? "bg-white text-green-600 shadow-sm"
                     : "text-neutral-500"
-                }`}
+                  }`}
               >
                 Producto
               </button>
               <button
                 onClick={() => setType("SERVICE")}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "SERVICE"
+                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "SERVICE"
                     ? "bg-white text-green-600 shadow-sm"
                     : "text-neutral-500"
-                }`}
+                  }`}
               >
                 Servicio
               </button>
@@ -302,11 +458,10 @@ export default function MiNegocioPage() {
                     <button
                       key={d.day}
                       onClick={() => toggleDay(i)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                        d.active
+                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${d.active
                           ? "bg-green-600 text-white shadow-md scale-105"
                           : "bg-neutral-100 text-neutral-400"
-                      }`}
+                        }`}
                     >
                       {d.day.slice(0, 2).toUpperCase()}
                     </button>
@@ -408,6 +563,7 @@ export default function MiNegocioPage() {
                 </button>
               </div>
             </div>
+
           </div>
         )}
       </div>

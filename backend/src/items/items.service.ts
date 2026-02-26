@@ -25,7 +25,12 @@ export class ItemsService {
   async findAll(businessId: string) {
     return this.prisma.item.findMany({
       where: { businessId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
+      include: {
+        images: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
   }
 

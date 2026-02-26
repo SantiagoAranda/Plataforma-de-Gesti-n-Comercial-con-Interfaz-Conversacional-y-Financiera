@@ -1,6 +1,7 @@
 import "./globals.css";
 import BottomNav from "@/src/components/layout/BottomNav";
 import  AppHeader from "@/src/components/layout/AppHeader";
+import { NotificationProvider } from "@/src/components/ui/NotificationProvider";
 
 export const metadata = {
   title: "Plataforma",
@@ -15,7 +16,8 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="min-h-screen bg-white">
-        {children}
+        <NotificationProvider>{children}</NotificationProvider>
+        
       </body>
     </html>
   );
