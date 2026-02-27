@@ -37,6 +37,21 @@ const INITIAL_WEEK: WeeklySchedule[] = [
   { day: "Domingo", active: false, ranges: [] },
 ];
 
+const WEEKDAY_ENUM = [
+  "MON",
+  "TUE",
+  "WED",
+  "THU",
+  "FRI",
+  "SAT",
+  "SUN",
+];
+
+function timeToMinutes(time: string) {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
 export default function MiNegocioPage() {
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [isOpen, setIsOpen] = useState(false);
@@ -98,6 +113,21 @@ export default function MiNegocioPage() {
     if (!name || !price) return;
 
     try {
+      let schedule: any[] = [];
+
+      if (type === "SERVICE") {
+        schedule = week
+          .map((d, index) => ({ ...d, index }))
+          .filter((d) => d.active && d.ranges.length > 0)
+          .flatMap((d) =>
+            d.ranges.map((r) => ({
+              weekday: WEEKDAY_ENUM[d.index],
+              startMinute: timeToMinutes(r.start),
+              endMinute: timeToMinutes(r.end),
+            }))
+          );
+      }
+
       const payload = {
         type,
         name,
@@ -105,38 +135,36 @@ export default function MiNegocioPage() {
         description: description || undefined,
         durationMinutes:
           type === "SERVICE" ? Number(duration) : undefined,
+        schedule: type === "SERVICE" ? schedule : undefined,
       };
 
-      // 1️⃣ Crear item
+      console.log("PAYLOAD FINAL:", payload);
+
       const createdItem = await api<any>("/items", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
-      // 2️⃣ Si hay imagen → guardarla
       if (image) {
         await api(`/items/${createdItem.id}/images`, {
           method: "POST",
-          body: JSON.stringify({
-            url: image,
-          }),
+          body: JSON.stringify({ url: image }),
         });
       }
 
-      // 3️⃣ Traer item actualizado con images
       const updatedItem = await api<any>(`/items/${createdItem.id}`);
-
       setItems((prev) => [updatedItem, ...prev]);
 
-      // Reset form
+      // reset
       setName("");
       setPrice("");
       setDescription("");
       setImage(null);
+      setWeek(INITIAL_WEEK);
       setIsOpen(false);
 
     } catch (err) {
-      console.error(err);
+      console.error("ERROR BACKEND:", err);
     }
   };
 
