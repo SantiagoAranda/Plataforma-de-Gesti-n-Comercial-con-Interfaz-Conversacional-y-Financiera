@@ -14,10 +14,18 @@ export type PucNode = {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:3001";
 
-function getToken() {
+/*function getToken() {
   // ajustá la key si usás otra
   if (typeof window === "undefined") return null;
   return localStorage.getItem("token");
+}*/
+function getToken() {
+  if (typeof window === "undefined") return null;
+  return (
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("token") ||
+    localStorage.getItem("jwt")
+  );
 }
 
 async function apiGet<T>(path: string): Promise<T> {

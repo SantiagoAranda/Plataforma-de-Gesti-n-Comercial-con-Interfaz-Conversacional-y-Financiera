@@ -22,7 +22,7 @@ import { MovementsQueryDto } from './dto/movements-query.dto';
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
 export class AccountingController {
-  constructor(private readonly accountingService: AccountingService) {}
+  constructor(private readonly accountingService: AccountingService) { }
 
   // ---- ENTRIES ----
   @Post('entries')
@@ -111,5 +111,10 @@ export class AccountingController {
   @Get('puc/:code')
   getPuc(@Param('code') code: string) {
     return this.accountingService.getPuc(code);
+  }
+
+  @Get('movements/progress')
+  movementsProgress(@Req() req: any, @Query('date') date?: string) {
+    return this.accountingService.movementsProgress(req.user.businessId, { date });
   }
 }

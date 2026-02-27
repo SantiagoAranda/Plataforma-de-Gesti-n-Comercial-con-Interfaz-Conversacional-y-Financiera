@@ -70,6 +70,50 @@ function isCashLike(pucCode: string) {
   return c.startsWith('11');
 }
 
+/* ===========================
+   PROGRESS (Activos/Pasivos/...)
+   =========================== */
+
+function parseProgressDateOrDefault(s?: string) {
+  if (!s) {
+    const d = new Date();
+    d.setHours(23, 59, 59, 999);
+    return d;
+  }
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException('Invalid date');
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+/**
+ * Convención de signo para acumular saldos “positivos” por sección:
+ * - Activo (1):    saldo = debit - credit
+ * - Pasivo (2):    saldo = credit - debit
+ * - Patrim (3):    saldo = credit - debit
+ * - Ingresos (4):  saldo = credit - debit
+ * - Gastos (5-7):  saldo = debit - credit
+ */
+function balanceSignedForClase(claseCode: string, debit: number, credit: number) {
+  const cls = (claseCode ?? '').trim();
+  if (cls === '1') return debit - credit;
+  if (cls === '2') return credit - debit;
+  if (cls === '3') return credit - debit;
+  if (cls === '4') return credit - debit;
+  if (cls === '5' || cls === '6' || cls === '7') return debit - credit;
+  return debit - credit;
+}
+
+function sectionMeta(claseCode: string) {
+  if (claseCode === '1') return { key: 'ASSET', title: 'Activos' };
+  if (claseCode === '2') return { key: 'LIABILITY', title: 'Pasivos' };
+  if (claseCode === '3') return { key: 'EQUITY', title: 'Patrimonio' };
+  if (claseCode === '4') return { key: 'INCOME', title: 'Ingresos' };
+  if (claseCode === '5' || claseCode === '6' || claseCode === '7')
+    return { key: 'EXPENSE', title: 'Gastos' };
+  return { key: 'OTHER', title: 'Otros' };
+}
+
 @Injectable()
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
@@ -137,7 +181,6 @@ export class AccountingService {
         businessId,
         date,
         memo: dto.memo ?? null,
-        // OJO: en tu schema el default es POSTED. Para MVP, lo correcto es DRAFT:
         status: 'DRAFT',
         lines: {
           create: (dto.lines as any[]).map(l => ({
@@ -231,7 +274,6 @@ export class AccountingService {
     if (entry.status !== 'DRAFT') throw new BadRequestException(MSG.ENTRY_NOT_DELETABLE);
 
     return this.prisma.$transaction(async tx => {
-      // En tu schema hay onDelete: Cascade, pero lo dejamos explícito:
       await tx.accountingLine.deleteMany({ where: { entryId: entry.id } });
       await tx.accountingEntry.delete({ where: { id: entry.id } });
       return { ok: true, id: entry.id };
@@ -327,7 +369,6 @@ export class AccountingService {
       if (q.to) entryWhere.date.lte = new Date(q.to);
     }
 
-    // filtro por memo (entry) y por description/codes (line)
     const text = (q.q ?? '').trim();
     if (text) {
       entryWhere.OR = [{ memo: { contains: text, mode: 'insensitive' } }];
@@ -360,7 +401,6 @@ export class AccountingService {
       take: 500,
     });
 
-    // nombres PUC en batch
     const codes = Array.from(
       new Set(
         lines
@@ -409,6 +449,114 @@ export class AccountingService {
     });
   }
 
+  /**
+   * ✅ Endpoint de “tarjetas con Progress” (Activos/Pasivos/…)
+   * - SOLO FINALIZADO: usa solo AccountingEntry POSTED
+   * - Agrupa por Grupo PUC (ej "11 Bancos y Efectivo")
+   * - Devuelve porcentajes para barra de progreso (amount / totalSeccion)
+   *
+   * Nota: para “Balance” tiene sentido usar clases 1/2/3.
+   * Si querés también Ingresos/Gastos, quedan incluidas (4/5/6/7).
+   */
+  async movementsProgress(businessId: string, opts: { date?: string }) {
+    const date = parseProgressDateOrDefault(opts.date);
+
+    const lines = await this.prisma.accountingLine.findMany({
+      where: {
+        entry: {
+          businessId,
+          status: 'POSTED',
+          date: { lte: date },
+        },
+      },
+      include: {
+        // Para lines imputadas a CUENTA (pucCuentaCode)
+        pucCuenta: {
+          select: {
+            code: true,
+            name: true,
+            grupo: { select: { code: true, name: true, claseCode: true } },
+          },
+        },
+        // Para lines imputadas a SUBCUENTA (pucSubCode)
+        pucSubcuenta: {
+          select: {
+            code: true,
+            name: true,
+            cuenta: {
+              select: {
+                code: true,
+                name: true,
+                grupo: { select: { code: true, name: true, claseCode: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    type Bucket = { claseCode: string; grupoCode: string; label: string; amount: number };
+    const buckets = new Map<string, Bucket>();
+
+    for (const l of lines) {
+      const debit = Number(l.debit ?? 0);
+      const credit = Number(l.credit ?? 0);
+
+      const grupoFromSub = l.pucSubcuenta?.cuenta?.grupo;
+      const grupoFromCuenta = l.pucCuenta?.grupo;
+      const grupo = grupoFromSub ?? grupoFromCuenta;
+      if (!grupo) continue;
+
+      const claseCode = grupo.claseCode; // "1".."7"
+      const grupoCode = grupo.code;      // "11","14",...
+      const label = grupo.name;          // nombre del grupo (seed)
+
+      const amount = balanceSignedForClase(claseCode, debit, credit);
+
+      const key = `${claseCode}:${grupoCode}`;
+      const prev = buckets.get(key);
+      if (!prev) buckets.set(key, { claseCode, grupoCode, label, amount });
+      else prev.amount += amount;
+    }
+
+    // Agrupar por clase => secciones
+    const byClase = new Map<string, Bucket[]>();
+    for (const b of buckets.values()) {
+      if (!byClase.has(b.claseCode)) byClase.set(b.claseCode, []);
+      byClase.get(b.claseCode)!.push({ ...b, amount: Number(b.amount) });
+    }
+
+    const sections = Array.from(byClase.entries())
+      .map(([claseCode, items]) => {
+        // Filtrar montos <= 0 (evita barras raras si algo quedó negativo)
+        const filtered = items.filter(i => i.amount > 0);
+
+        const total = filtered.reduce((a, x) => a + x.amount, 0);
+        filtered.sort((a, b) => b.amount - a.amount);
+
+        const meta = sectionMeta(claseCode);
+
+        return {
+          key: meta.key,
+          title: meta.title,
+          total,
+          items: filtered.map(i => ({
+            code: i.grupoCode,
+            label: i.label,
+            amount: i.amount,
+            progress: total > 0 ? i.amount / total : 0,
+          })),
+        };
+      })
+      // Orden “tipo Balance”
+      .sort((a, b) => {
+        const order = ['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE', 'OTHER'];
+        return order.indexOf(a.key) - order.indexOf(b.key);
+      });
+
+    return { date, sections };
+  }
+
   // ---------------- REPORTS ----------------
   private async postedLinesInRange(businessId: string, from: Date, to: Date) {
     return this.prisma.accountingLine.findMany({
@@ -440,8 +588,8 @@ export class AccountingService {
       const cls = classFromPucCode(pucCode);
       const signed = Number(l.debit ?? 0) - Number(l.credit ?? 0);
 
-      if (cls === 'INCOME') income += -signed; // ingresos suelen ser crédito
-      if (cls === 'EXPENSE') expense += signed; // costos/gastos suelen ser débito
+      if (cls === 'INCOME') income += -signed;
+      if (cls === 'EXPENSE') expense += signed;
     }
 
     return {
@@ -468,8 +616,8 @@ export class AccountingService {
       const signed = Number(l.debit ?? 0) - Number(l.credit ?? 0);
 
       if (cls === 'ASSET') assets += signed;
-      if (cls === 'LIABILITY') liabilities += -signed; // pasivo suele ser crédito
-      if (cls === 'EQUITY') equity += -signed; // patrimonio suele ser crédito
+      if (cls === 'LIABILITY') liabilities += -signed;
+      if (cls === 'EQUITY') equity += -signed;
     }
 
     return {
@@ -504,7 +652,7 @@ export class AccountingService {
     };
   }
 
-  // ---------------- PUC (tal cual tu schema) ----------------
+  // ---------------- PUC ----------------
   async searchPuc(q: string) {
     const query = q.trim();
     if (!query) return [];

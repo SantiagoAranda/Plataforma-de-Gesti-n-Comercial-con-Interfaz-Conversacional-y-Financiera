@@ -1,6 +1,5 @@
 import * as React from "react";
-import type { AccountingEntry } from "../../types/accounting";
-
+import type { UiAccountingEntry as AccountingEntry } from "@/src/types/accounting-ui";
 import { useContextMenu } from "@/src/hooks/useContextMenu";
 import { ContextMenu } from "@/src/hooks/ContextMenu";
 
