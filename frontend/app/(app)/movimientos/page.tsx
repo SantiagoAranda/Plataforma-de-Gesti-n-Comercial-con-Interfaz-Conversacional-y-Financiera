@@ -208,17 +208,21 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Landmark, CreditCard } from "lucide-react";
+import {
+  Landmark,
+  CreditCard,
+  Banknote,
+  TrendingUp,
+  TrendingDown,
+  Layers,
+} from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
-
-type BalanceItem = {
-  label: string;
-  amount: number;
-  tone?: "green" | "red" | "orange";
-  note?: string;
-};
+import {
+  getMovementsProgress,
+  type MovementsProgressResponse,
+} from "@/src/types/accounting";
 
 function formatMoney(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -352,56 +356,179 @@ function RowCard({
   );
 }
 
-export default function MovimientosPage() {
-  // Datos demo (reemplazá con tu fuente real)
-  const periodo = "Octubre 2023";
-  const patrimonio = 125_400;
-  const variacionMensual = 0.052;
+type Tone = "green" | "red" | "orange";
+type SectionMeta = {
+  title: string;
+  tone: "green" | "red";
+  icon: React.ReactNode;
+};
 
-  const activosTotal = 180_900;
-  const pasivosTotal = 55_500;
+function sectionMeta(
+  key: MovementsProgressResponse["sections"][number]["key"]
+): SectionMeta {
+  switch (key) {
+    case "ASSET":
+      return {
+        title: "Activos",
+        tone: "green",
+        icon: <Landmark className="h-5 w-5" />,
+      };
+    case "LIABILITY":
+      return {
+        title: "Pasivos",
+        tone: "red",
+        icon: <CreditCard className="h-5 w-5" />,
+      };
+    case "EQUITY":
+      return {
+        title: "Patrimonio",
+        tone: "green",
+        icon: <Layers className="h-5 w-5" />,
+      };
+    case "INCOME":
+      return {
+        title: "Ingresos",
+        tone: "green",
+        icon: <TrendingUp className="h-5 w-5" />,
+      };
+    case "EXPENSE":
+      return {
+        title: "Gastos",
+        tone: "red",
+        icon: <TrendingDown className="h-5 w-5" />,
+      };
+    default:
+      return {
+        title: "Otros",
+        tone: "green",
+        icon: <Banknote className="h-5 w-5" />,
+      };
+  }
+}
 
-  const activos: BalanceItem[] = [
-    { label: "Bancos y Efectivo", amount: 80_000 },
-    { label: "Inventario", amount: 30_500 },
-    { label: "Cuentas por Cobrar", amount: 15_400 },
-  ];
+function formatPeriodoFromISO(isoDate?: string) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate + "T00:00:00");
+  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+}
 
-  const pasivos: BalanceItem[] = [
-    {
-      label: "Cuentas por Pagar",
-      amount: 12_000,
-      tone: "red",
-      note: "Vence en 15 días",
-    },
-    {
-      label: "Préstamos Bancarios",
-      amount: 35_000,
-      tone: "orange",
-      note: "Largo plazo",
-    },
-    { label: "Impuestos", amount: 8_500, tone: "red" },
-  ];
+const MAX_VISIBLE = 3;
 
-  const maxActivo = useMemo(
-    () => Math.max(...activos.map((x) => x.amount), 1),
-    [activos]
+function SectionBlock({
+  sec,
+  animateBars,
+}: {
+  sec: MovementsProgressResponse["sections"][number];
+  animateBars: boolean;
+}) {
+  const meta = sectionMeta(sec.key);
+
+  const [expanded, setExpanded] = useState(false);
+
+  const itemsSorted = useMemo(() => {
+    // opcional: orden por monto desc (más relevante arriba)
+    return sec.items.slice().sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  }, [sec.items]);
+
+  const visibleItems = expanded ? itemsSorted : itemsSorted.slice(0, MAX_VISIBLE);
+
+  const max = useMemo(
+    () => Math.max(...itemsSorted.map((x) => Math.abs(x.amount)), 1),
+    [itemsSorted]
   );
-  const maxPasivo = useMemo(
-    () => Math.max(...pasivos.map((x) => x.amount), 1),
-    [pasivos]
-  );
-
-  // Animación on-mount
-  const [animateBars, setAnimateBars] = useState(false);
-
-  useEffect(() => {
-    const t = requestAnimationFrame(() => setAnimateBars(true));
-    return () => cancelAnimationFrame(t);
-  }, []);
 
   return (
-    // overflow-x-hidden evita que algún elemento “se salga” y rompa el viewport (típico en mobile)
+    <div className="space-y-4">
+      <SectionHeader
+        tone={meta.tone}
+        title={meta.title}
+        total={sec.total}
+        icon={meta.icon}
+      />
+
+      <div className="space-y-3">
+        {visibleItems.map((x, idx) => {
+          const p =
+            typeof x.progress === "number" ? x.progress : Math.abs(x.amount) / max;
+
+          const tone: Tone = meta.tone;
+
+          return (
+            <RowCard
+              key={`${sec.key}-${x.code}`}
+              label={x.label}
+              amount={x.amount}
+              tone={tone}
+              progress={animateBars ? p : 0}
+              animate={true}
+              delayMs={idx * 90}
+            />
+          );
+        })}
+      </div>
+
+      {itemsSorted.length > MAX_VISIBLE && (
+        <button
+          type="button"
+          onClick={() => setExpanded((p) => !p)}
+          className={cn(
+            "w-full py-2 text-center text-sm font-semibold",
+            meta.tone === "green" ? "text-emerald-600" : "text-red-600"
+          )}
+        >
+          {expanded ? "Ver menos ˄" : `Ver todos (${itemsSorted.length}) ˅`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function MovimientosPage() {
+  const [loading, setLoading] = useState(true);
+  const [animateBars, setAnimateBars] = useState(false);
+  const [data, setData] = useState<MovementsProgressResponse | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getMovementsProgress();
+        setData(res);
+      } catch (e) {
+        console.error(e);
+        setData(null);
+      } finally {
+        setLoading(false);
+        requestAnimationFrame(() => setAnimateBars(true));
+      }
+    })();
+  }, []);
+
+  const orderedKeys: MovementsProgressResponse["sections"][number]["key"][] = [
+    "ASSET",
+    "LIABILITY",
+    "EQUITY",
+    "INCOME",
+    "EXPENSE",
+    "OTHER",
+  ];
+
+  const sections = useMemo(() => {
+    const s = data?.sections ?? [];
+    const map = new Map(s.map((x) => [x.key, x]));
+    return orderedKeys
+      .map((k) => map.get(k))
+      .filter(Boolean) as MovementsProgressResponse["sections"];
+  }, [data]);
+
+  const patrimonioNeto = useMemo(() => {
+    const assets = data?.sections?.find((s) => s.key === "ASSET")?.total ?? 0;
+    const liabilities = data?.sections?.find((s) => s.key === "LIABILITY")?.total ?? 0;
+    return assets - liabilities;
+  }, [data]);
+
+  const periodo = useMemo(() => formatPeriodoFromISO(data?.date), [data]);
+
+  return (
     <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
       <AppHeader
         title="Movimientos"
@@ -410,76 +537,21 @@ export default function MovimientosPage() {
         rightIcon="calendar"
       />
 
-      {/* pb-32 deja espacio extra para el nav si tu BottomNav usa bottom-4 */}
       <main className="mx-auto max-w-md px-4 pb-32 pt-3">
         <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
-          <div className="text-sm font-medium text-zinc-500">
-            Patrimonio Neto
-          </div>
+          <div className="text-sm font-medium text-zinc-500">Patrimonio Neto</div>
           <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
-            {formatMoney(patrimonio)}
+            {loading ? "—" : formatMoney(patrimonioNeto)}
           </div>
-
-          <div className="mt-4 flex items-center gap-3">
-            <div className="rounded-full bg-emerald-500/15 px-3 py-1 text-sm font-semibold text-emerald-600">
-              ↗ +{(variacionMensual * 100).toFixed(1)}%
-            </div>
-            <div className="text-sm text-zinc-500">vs mes anterior</div>
+          <div className="mt-4 text-sm text-zinc-500">
+            {loading ? "Cargando..." : "Calculado: Activos − Pasivos"}
           </div>
         </div>
 
-        <div className="mt-6 space-y-4">
-          <SectionHeader
-            tone="green"
-            title="Activos"
-            total={activosTotal}
-            icon={<Landmark className="h-5 w-5" />}
-          />
-
-          <div className="space-y-3">
-            {activos.map((x, idx) => (
-              <RowCard
-                key={x.label}
-                label={x.label}
-                amount={x.amount}
-                tone="green"
-                progress={animateBars ? x.amount / maxActivo : 0}
-                animate={true}
-                delayMs={idx * 90}
-              />
-            ))}
-          </div>
-
-          <button
-            type="button"
-            className="w-full py-2 text-center text-sm font-semibold text-emerald-600"
-          >
-            Ver todos los activos ˅
-          </button>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <SectionHeader
-            tone="red"
-            title="Pasivos"
-            total={pasivosTotal}
-            icon={<CreditCard className="h-5 w-5" />}
-          />
-
-          <div className="space-y-3">
-            {pasivos.map((x, idx) => (
-              <RowCard
-                key={x.label}
-                label={x.label}
-                amount={x.amount}
-                tone={x.tone ?? "red"}
-                note={x.note}
-                progress={animateBars ? x.amount / maxPasivo : 0}
-                animate={true}
-                delayMs={idx * 90}
-              />
-            ))}
-          </div>
+        <div className="mt-6 space-y-10">
+          {sections.map((sec) => (
+            <SectionBlock key={sec.key} sec={sec} animateBars={animateBars} />
+          ))}
         </div>
       </main>
 

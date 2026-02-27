@@ -88,3 +88,25 @@ export async function searchPuc(q: string) {
         `/accounting/puc/search?q=${encodeURIComponent(q)}`
     );
 }
+
+export type MovementsProgressResponse = {
+  date: string;
+  sections: Array<{
+    key: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE" | "OTHER";
+    title: string;
+    total: number;
+    items: Array<{
+      code: string;
+      label: string;
+      amount: number;
+      progress: number; // 0..1
+    }>;
+  }>;
+};
+
+export async function getMovementsProgress(date?: string) {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  return api<MovementsProgressResponse>(
+    `/accounting/movements/progress${qs}`
+  );
+}
