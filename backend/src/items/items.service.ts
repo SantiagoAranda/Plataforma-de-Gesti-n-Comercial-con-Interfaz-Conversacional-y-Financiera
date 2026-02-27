@@ -10,15 +10,32 @@ export class ItemsService {
   constructor(private prisma: PrismaService) {}
 
   async create(businessId: string, dto: CreateItemDto) {
-    return this.prisma.item.create({
-      data: {
-        businessId,
-        type: dto.type,
-        name: dto.name,
-        price: dto.price,
-        description: dto.description,
-        durationMinutes: dto.durationMinutes,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.item.create({
+        data: {
+          businessId,
+          type: dto.type,
+          name: dto.name,
+          price: dto.price,
+          description: dto.description,
+          durationMinutes: dto.durationMinutes,
+        },
+      });
+
+      // 🔥 Si es SERVICE y tiene horarios → crear ventanas
+      if (dto.type === 'SERVICE' && dto.schedule?.length) {
+        await tx.serviceScheduleWindow.createMany({
+          data: dto.schedule.map((s) => ({
+            businessId,
+            itemId: item.id,
+            weekday: s.weekday,
+            startMinute: s.startMinute,
+            endMinute: s.endMinute,
+          })),
+        });
+      }
+
+      return item;
     });
   }
 
