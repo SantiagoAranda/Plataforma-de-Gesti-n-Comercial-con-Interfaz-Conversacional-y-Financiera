@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UiAccountingEntry } from "@/src/types/accounting-ui";
+
 import {
-  createMovement,
   getPuc,
   searchPuc,
   updateEntry,
-  type MovementNature,
+  type MovementNature, // lo usabas, pero ya no es el centro
   getEntry,
   postEntry,
   voidEntry,
   type AccountingEntryStatus,
+  createEntry, // ✅ nuevo
+  type CreateLineDto,
 } from "@/src/services/accounting";
+
 import {
   getPucGrupos,
   getPucCuentas,
@@ -67,19 +70,24 @@ function kindFromPucCode(code: string): PucKind {
   if (first === "2") return "LIABILITY";
   if (first === "3") return "EQUITY";
   if (first === "4") return "INCOME";
-  return "EXPENSE"; // 5/6/7
+  return "EXPENSE";
 }
 
-function formatMoneySigned(n: number) {
-  const sign = n >= 0 ? "+" : "−";
-  const abs = Math.abs(n);
-  const formatted = abs.toLocaleString("es-AR", {
+function formatARS(n: number) {
+  return n.toLocaleString("es-AR", {
     style: "currency",
     currency: "ARS",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return `${sign}${formatted}`;
+}
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 type Props = {
@@ -93,7 +101,6 @@ type Props = {
   onUpdate: () => void | Promise<void>;
 
   pucClases: PucClase[];
-  pucGrupos: Array<{ code: string; name: string; claseCode: string }>;
   selectedClase: string;
   onSelectClase: (code: string) => void;
 };
@@ -106,7 +113,8 @@ function StatusBadge({ status }: { status: AccountingEntryStatus }) {
       ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : "bg-red-50 text-red-700 border-red-200";
 
-  const label = status === "DRAFT" ? "Borrador" : status === "POSTED" ? "Publicado" : "Anulado";
+  const label =
+    status === "DRAFT" ? "Borrador" : status === "POSTED" ? "Publicado" : "Anulado";
 
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", cls)}>
@@ -129,22 +137,31 @@ export function AccountingComposer({
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<Mode>("RAPIDO");
 
-  const [value, setValue] = useState("");
-  const [nature, setNature] = useState<NatureUI>("DEBITO");
-  const [description, setDescription] = useState("");
+  // Header del asiento (memo/fecha)
+  const [memo, setMemo] = useState("");
+  const [dateISO, setDateISO] = useState<string>(todayISO());
 
-  // Estado del asiento (real desde backend)
+  // Estado real del asiento
   const [entryStatus, setEntryStatus] = useState<AccountingEntryStatus>("DRAFT");
   const [statusLoading, setStatusLoading] = useState(false);
 
-  // ---------- PUC (RÁPIDO) ----------
+  // Lines del asiento (multi-línea)
+  const [lines, setLines] = useState<CreateLineDto[]>([]);
+
+  // inputs para cargar UNA línea
+  const [value, setValue] = useState("");
+  const [nature, setNature] = useState<NatureUI>("DEBITO");
+  const [lineDesc, setLineDesc] = useState("");
+
+  // PUC
   const [pucQuery, setPucQuery] = useState("");
   const [pucItems, setPucItems] = useState<PucNode[]>([]);
   const [selectedPuc, setSelectedPuc] = useState<PucNode | null>(null);
   const [pucLoading, setPucLoading] = useState(false);
   const [pucOpen, setPucOpen] = useState(false);
+  const pucWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // ---------- GUIADO ----------
+  // GUIADO
   const [grupos, setGrupos] = useState<PucGrupo[]>([]);
   const [selectedGrupo, setSelectedGrupo] = useState<string>("");
 
@@ -155,12 +172,11 @@ export function AccountingComposer({
   const [selectedSubcuenta, setSelectedSubcuenta] = useState<string>("");
 
   const [guidedLoading, setGuidedLoading] = useState(false);
+
   const [sending, setSending] = useState(false);
 
-  const descRef = useRef<HTMLInputElement | null>(null);
   const expandableRef = useRef<HTMLDivElement | null>(null);
   const [contentH, setContentH] = useState(0);
-  const pucWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!expandableRef.current) return;
@@ -173,26 +189,25 @@ export function AccountingComposer({
 
   const amount = useMemo(() => parseMoneyLike(value), [value]);
 
-  const previewSigned = useMemo(() => {
-    if (!amount || amount <= 0) return null;
-    return nature === "DEBITO" ? +amount : -amount;
-  }, [amount, nature]);
+  const totals = useMemo(() => {
+    const totalDebit = lines.reduce((s, l) => s + Number(l.debit ?? 0), 0);
+    const totalCredit = lines.reduce((s, l) => s + Number(l.credit ?? 0), 0);
+    const diff = totalDebit - totalCredit;
+    return { totalDebit, totalCredit, diff };
+  }, [lines]);
 
-  function setClase(code: string) {
-    onSelectClase(code);
-    setSelectedGrupo("");
-    setSelectedCuenta("");
-    setSelectedSubcuenta("");
-    setGrupos([]);
-    setCuentas([]);
-    setSubcuentas([]);
-    if (mode === "GUIADO") setSelectedPuc(null);
-  }
+  const isEditing = !!editingEntry;
+  const canEditFields = !isEditing || entryStatus === "DRAFT";
 
-  function resetForm() {
+  function resetAll() {
+    setMemo("");
+    setDateISO(todayISO());
+    setEntryStatus("DRAFT");
+    setLines([]);
+
     setValue("");
     setNature("DEBITO");
-    setDescription("");
+    setLineDesc("");
 
     setSelectedPuc(null);
     setPucQuery("");
@@ -205,8 +220,17 @@ export function AccountingComposer({
     setGrupos([]);
     setCuentas([]);
     setSubcuentas([]);
+  }
 
-    setEntryStatus("DRAFT");
+  function setClase(code: string) {
+    onSelectClase(code);
+    setSelectedGrupo("");
+    setSelectedCuenta("");
+    setSelectedSubcuenta("");
+    setGrupos([]);
+    setCuentas([]);
+    setSubcuentas([]);
+    if (mode === "GUIADO") setSelectedPuc(null);
   }
 
   // cerrar dropdown PUC al click afuera
@@ -220,50 +244,43 @@ export function AccountingComposer({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [pucOpen]);
 
-  // ---------- EDIT: abre + carga asiento real (status) ----------
+  // EDIT: abre + carga entry real (status + memo + date + lines)
   useEffect(() => {
     if (!editingEntry) return;
 
     setExpanded(true);
 
-    // precarga campos (como ya tenías)
-    setNature(editingEntry.amount >= 0 ? "DEBITO" : "CREDITO");
-    setValue(String(Math.abs(editingEntry.amount)));
-    setDescription(editingEntry.description ?? "");
-
-    const clase = (editingEntry.pucCode ?? "").trim()[0];
-    if (clase) setClase(clase);
-
-    if (editingEntry.pucCode) {
-      const node: PucNode = {
-        code: editingEntry.pucCode,
-        name: editingEntry.accountName,
-        kind: kindFromPucCode(editingEntry.pucCode),
-        breadcrumbs: [],
-      };
-      setSelectedPuc(node);
-
-      getPuc(editingEntry.pucCode)
-        .then((info) =>
-          setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev))
-        )
-        .catch(() => {});
-    }
-
-    // ✅ traer estado real del asiento
     (async () => {
       try {
         setStatusLoading(true);
         const entry = await getEntry(editingEntry.entryId);
+
         setEntryStatus(entry.status);
+        setMemo(entry.memo ?? "");
+        const d = new Date(entry.date);
+        setDateISO(d.toISOString().slice(0, 10));
+
+        // mapear líneas del backend a CreateLineDto
+        const mapped: CreateLineDto[] = (entry.lines ?? []).map((l: any) => ({
+          pucCuentaCode: l.pucCuentaCode ?? undefined,
+          pucSubCode: l.pucSubCode ?? undefined,
+          debit: Number(l.debit ?? 0),
+          credit: Number(l.credit ?? 0),
+          description: l.description ?? undefined,
+        }));
+        setLines(mapped);
+
+        // setear clase desde primera línea si existe
+        const firstCode =
+          mapped[0]?.pucSubCode ?? mapped[0]?.pucCuentaCode ?? editingEntry.pucCode ?? "";
+        const clase = String(firstCode).trim()[0];
+        if (clase) setClase(clase);
       } catch {
-        // si falla, no rompas UI
+        // no rompas UI
       } finally {
         setStatusLoading(false);
       }
     })();
-
-    requestAnimationFrame(() => descRef.current?.focus());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingEntry]);
 
@@ -271,12 +288,11 @@ export function AccountingComposer({
     setExpanded((p) => {
       const next = !p;
       if (!next && editingEntry) onCancelEdit();
-      if (next) requestAnimationFrame(() => descRef.current?.focus());
       return next;
     });
   }
 
-  // ---------- RÁPIDO: search ----------
+  // RÁPIDO: search
   useEffect(() => {
     if (!expanded) return;
     if (mode !== "RAPIDO") return;
@@ -295,10 +311,10 @@ export function AccountingComposer({
           const found = await searchPuc(q);
 
           const filtered = selectedClase
-            ? found.filter((x) => String(x.code ?? "").trim().startsWith(selectedClase))
+            ? found.filter((x: any) => String(x.code ?? "").trim().startsWith(selectedClase))
             : found;
 
-          const mapped: PucNode[] = filtered.map((x) => ({
+          const mapped: PucNode[] = filtered.map((x: any) => ({
             code: x.code,
             name: x.name,
             kind: kindFromPucCode(x.code),
@@ -335,7 +351,7 @@ export function AccountingComposer({
     } catch {}
   }
 
-  // ---------- GUIADO: cascada ----------
+  // GUIADO cascada
   useEffect(() => {
     if (!expanded) return;
     if (mode !== "GUIADO") return;
@@ -414,7 +430,6 @@ export function AccountingComposer({
     })();
   }, [selectedCuenta, expanded, mode]);
 
-  // armar selectedPuc desde guiado
   useEffect(() => {
     if (mode !== "GUIADO") return;
 
@@ -435,71 +450,95 @@ export function AccountingComposer({
     });
   }, [mode, selectedSubcuenta, selectedCuenta, subcuentas, cuentas]);
 
-  const isEditing = !!editingEntry;
+  const selectedLabel = selectedPuc
+    ? `${selectedPuc.code} — ${selectedPuc.name} · ${selectedPuc.pucDbKind ?? "PUC"}`
+    : "";
 
-  // En tu backend, updateEntry solo si DRAFT
-  const canEditFields = !isEditing || entryStatus === "DRAFT";
+  function addLine() {
+    if (!canEditFields) return;
 
-  const canSend =
-    expanded &&
-    !sending &&
-    amount !== null &&
-    amount > 0 &&
-    !!selectedPuc?.code &&
-    canEditFields;
+    if (!selectedPuc?.code) {
+      alert("Seleccioná una cuenta/subcuenta (PUC).");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      alert("Ingresá un valor válido.");
+      return;
+    }
 
-  async function handleSend() {
-    if (!canSend) return;
-    if (!amount || !selectedPuc) return;
+    const kind = selectedPuc.pucDbKind;
+    if (kind !== "CUENTA" && kind !== "SUBCUENTA") {
+      alert("El PUC seleccionado no tiene tipo (CUENTA/SUBCUENTA).");
+      return;
+    }
+
+    const debit = nature === "DEBITO" ? amount : 0;
+    const credit = nature === "CREDITO" ? amount : 0;
+
+    const line: CreateLineDto = {
+      ...(kind === "SUBCUENTA" ? { pucSubCode: selectedPuc.code } : { pucCuentaCode: selectedPuc.code }),
+      debit,
+      credit,
+      description: lineDesc.trim() || undefined,
+    };
+
+    setLines((prev) => [...prev, line]);
+
+    // limpiar inputs de línea
+    setValue("");
+    setNature("DEBITO");
+    setLineDesc("");
+    setSelectedPuc(null);
+    setPucQuery("");
+    setPucItems([]);
+    setPucOpen(false);
+  }
+
+  function removeLine(idx: number) {
+    if (!canEditFields) return;
+    setLines((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const canSaveDraft =
+    expanded && canEditFields && !sending && lines.length >= 1;
+
+  const canPost =
+    isEditing &&
+    entryStatus === "DRAFT" &&
+    lines.length >= 2 &&
+    totals.diff === 0;
+
+  async function handleSaveDraft() {
+    if (!canSaveDraft) return;
 
     setSending(true);
     try {
-      const natureApi: MovementNature = nature === "DEBITO" ? "DEBIT" : "CREDIT";
-
-      let resolvedKind = selectedPuc.pucDbKind;
-      if (!resolvedKind) {
-        const info = await getPuc(selectedPuc.code);
-        resolvedKind = info.kind;
-        setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev));
-      }
-
-      if (!editingEntry) {
-        await createMovement({
-          nature: natureApi,
-          amount,
-          description: description.trim() || undefined,
-          ...(resolvedKind === "SUBCUENTA"
-            ? { pucSubCode: selectedPuc.code }
-            : { pucCuentaCode: selectedPuc.code }),
+      if (!isEditing) {
+        // crear Entry con múltiples líneas
+        await createEntry({
+          date: dateISO,
+          memo: memo.trim() || undefined,
+          lines,
         });
 
         await onCreate();
         setExpanded(false);
-        resetForm();
+        resetAll();
         return;
       }
 
-      const debit = nature === "DEBITO" ? amount : 0;
-      const credit = nature === "CREDITO" ? amount : 0;
-
-      await updateEntry(editingEntry.entryId, {
-        lines: [
-          {
-            ...(resolvedKind === "SUBCUENTA"
-              ? { pucSubCode: selectedPuc.code }
-              : { pucCuentaCode: selectedPuc.code }),
-            description: description.trim() || undefined,
-            debit,
-            credit,
-          },
-        ],
+      // editar Entry existente: sobreescribir lines
+      await updateEntry(editingEntry!.entryId, {
+        memo: memo.trim() || undefined,
+        date: dateISO,
+        lines,
       });
 
       await onUpdate();
       setExpanded(false);
-      resetForm();
+      resetAll();
     } catch (err: any) {
-      alert(err?.details?.message ?? err?.message ?? "No se pudo guardar el movimiento");
+      alert(err?.details?.message ?? err?.message ?? "No se pudo guardar el asiento");
     } finally {
       setSending(false);
     }
@@ -507,13 +546,13 @@ export function AccountingComposer({
 
   async function handlePost() {
     if (!editingEntry) return;
-    if (entryStatus !== "DRAFT") return;
+    if (!canPost) return;
 
     setStatusLoading(true);
     try {
       const updated = await postEntry(editingEntry.entryId);
       setEntryStatus(updated.status);
-      await onUpdate(); // refrescar lista
+      await onUpdate();
     } catch (err: any) {
       alert(err?.details?.message ?? err?.message ?? "No se pudo postear el asiento");
     } finally {
@@ -529,7 +568,7 @@ export function AccountingComposer({
     try {
       const updated = await voidEntry(editingEntry.entryId);
       setEntryStatus(updated.status);
-      await onUpdate(); // refrescar lista
+      await onUpdate();
     } catch (err: any) {
       alert(err?.details?.message ?? err?.message ?? "No se pudo anular el asiento");
     } finally {
@@ -545,10 +584,6 @@ export function AccountingComposer({
   const miniOn = "bg-emerald-50 border-emerald-200 text-emerald-700";
   const miniOff = "bg-white/70 border-gray-200 text-gray-700";
 
-  const selectedLabel = selectedPuc
-    ? `${selectedPuc.code} — ${selectedPuc.name} · ${selectedPuc.pucDbKind ?? "PUC"}`
-    : "";
-
   return (
     <div className="fixed left-0 right-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
       <div className="w-full">
@@ -559,33 +594,62 @@ export function AccountingComposer({
             style={{ maxHeight: expanded ? contentH : 0, opacity: expanded ? 1 : 0 }}
           >
             <div ref={expandableRef} className="px-5 pt-4 pb-4 space-y-3">
-              {/* ASIENTO (solo en edición) */}
-              {isEditing && (
-                <div className="rounded-2xl border border-gray-200 bg-white/60 px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
+              {/* HEADER ASIENTO */}
+              <div className="rounded-2xl border border-gray-200 bg-white/60 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                    ASIENTO
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {statusLoading ? <span className="text-xs text-zinc-500">…</span> : <StatusBadge status={entryStatus} />}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div>
                     <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                      ASIENTO
+                      FECHA
                     </div>
-                    <div className="flex items-center gap-2">
-                      {statusLoading ? (
-                        <span className="text-xs text-zinc-500">…</span>
-                      ) : (
-                        <StatusBadge status={entryStatus} />
-                      )}
-                    </div>
+                    <input
+                      type="date"
+                      value={dateISO}
+                      onChange={(e) => setDateISO(e.target.value)}
+                      className={cn(inputBase, "h-11 mt-2")}
+                      disabled={!canEditFields}
+                    />
                   </div>
 
+                  <div>
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                      MEMO
+                    </div>
+                    <input
+                      value={memo}
+                      onChange={(e) => setMemo(e.target.value)}
+                      placeholder="Detalle general del asiento…"
+                      className={cn(inputBase, "h-11 mt-2")}
+                      disabled={!canEditFields}
+                    />
+                  </div>
+                </div>
+
+                {isEditing && (
                   <div className="mt-3 flex items-center gap-2">
                     <button
                       type="button"
                       onClick={handlePost}
-                      disabled={statusLoading || entryStatus !== "DRAFT"}
+                      disabled={statusLoading || !canPost}
                       className={cn(
                         "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
-                        entryStatus === "DRAFT"
+                        canPost
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                           : "bg-zinc-50 border-zinc-200 text-zinc-500"
                       )}
+                      title={
+                        !canPost
+                          ? "Requiere mínimo 2 líneas y balance (Débito = Crédito)"
+                          : undefined
+                      }
                     >
                       Postear
                     </button>
@@ -604,15 +668,31 @@ export function AccountingComposer({
                       Anular
                     </button>
                   </div>
+                )}
 
-                  {entryStatus !== "DRAFT" && (
-                    <div className="mt-2 text-xs text-zinc-500">
-                      Este asiento no es editable porque está{" "}
-                      <span className="font-semibold">{entryStatus}</span>.
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] text-gray-500">Total Débito</div>
+                    <div className="font-semibold tabular-nums">{formatARS(totals.totalDebit)}</div>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                    <div className="text-[11px] text-gray-500">Total Crédito</div>
+                    <div className="font-semibold tabular-nums">{formatARS(totals.totalCredit)}</div>
+                  </div>
+                  <div className={cn(
+                    "rounded-xl border px-3 py-2",
+                    totals.diff === 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"
+                  )}>
+                    <div className="text-[11px] text-gray-500">Diferencia</div>
+                    <div className={cn(
+                      "font-semibold tabular-nums",
+                      totals.diff === 0 ? "text-emerald-700" : "text-red-700"
+                    )}>
+                      {formatARS(totals.diff)}
                     </div>
-                  )}
+                  </div>
                 </div>
-              )}
+              </div>
 
               {/* CLASE */}
               <div>
@@ -640,9 +720,32 @@ export function AccountingComposer({
                 </div>
               </div>
 
-              {/* FILA: PUC + MODE */}
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0" ref={pucWrapRef}>
+              {/* CARGA DE LÍNEA */}
+              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                    AGREGAR LÍNEA
+                  </div>
+                  <div className="shrink-0 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMode("RAPIDO")}
+                      className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}
+                    >
+                      Rápido
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode("GUIADO")}
+                      className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}
+                    >
+                      Guiado
+                    </button>
+                  </div>
+                </div>
+
+                {/* PUC */}
+                <div ref={pucWrapRef}>
                   <div className="text-[11px] font-semibold tracking-widest text-gray-500">
                     CÓDIGO PUC
                   </div>
@@ -755,10 +858,6 @@ export function AccountingComposer({
                           </option>
                         ))}
                       </select>
-
-                      {guidedLoading ? (
-                        <div className="text-xs text-zinc-500">Cargando opciones…</div>
-                      ) : null}
                     </div>
                   )}
 
@@ -769,89 +868,133 @@ export function AccountingComposer({
                   )}
                 </div>
 
-                <div className="shrink-0 pt-[18px] flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMode("RAPIDO")}
-                    className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}
-                  >
-                    Rápido
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("GUIADO")}
-                    className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}
-                  >
-                    Guiado
-                  </button>
-                </div>
-              </div>
-
-              {/* FILA: VALOR + NATURALEZA */}
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                    VALOR
+                {/* VALOR + NAT */}
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                      VALOR
+                    </div>
+                    <input
+                      value={value}
+                      onChange={(e) => setValue(e.target.value)}
+                      placeholder="0,00"
+                      inputMode="decimal"
+                      className={cn(inputBase, "h-11 mt-2")}
+                      disabled={!canEditFields}
+                    />
                   </div>
+
+                  <div className="shrink-0">
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                      NAT.
+                    </div>
+                    <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
+                      <button
+                        type="button"
+                        onClick={() => setNature("DEBITO")}
+                        disabled={!canEditFields}
+                        className={cn(
+                          "rounded-2xl px-3 py-2 text-xs font-semibold transition",
+                          nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                        )}
+                      >
+                        Débito
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNature("CREDITO")}
+                        disabled={!canEditFields}
+                        className={cn(
+                          "rounded-2xl px-3 py-2 text-xs font-semibold transition",
+                          nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                        )}
+                      >
+                        Crédito
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* DESC LINEA + ADD */}
+                <div className="flex items-center gap-2">
                   <input
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder="0,00"
-                    inputMode="decimal"
-                    className={cn(inputBase, "h-11 mt-2")}
+                    value={lineDesc}
+                    onChange={(e) => setLineDesc(e.target.value)}
+                    placeholder="Descripción de la línea (opcional)"
+                    className={cn(inputBase, "h-11")}
                     disabled={!canEditFields}
                   />
-                </div>
-
-                <div className="shrink-0">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                    NAT.
-                  </div>
-                  <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
-                    <button
-                      type="button"
-                      onClick={() => setNature("DEBITO")}
-                      disabled={!canEditFields}
-                      className={cn(
-                        "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                        nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
-                      )}
-                    >
-                      Débito
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNature("CREDITO")}
-                      disabled={!canEditFields}
-                      className={cn(
-                        "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                        nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
-                      )}
-                    >
-                      Crédito
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    disabled={!canEditFields}
+                    className={cn(
+                      "h-11 rounded-2xl px-4 text-sm font-semibold border transition",
+                      canEditFields
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                    )}
+                  >
+                    + Línea
+                  </button>
                 </div>
               </div>
 
-              {/* subtítulo discreto */}
-              <div className="text-xs text-zinc-500">
-                {previewSigned === null ? (
-                  "Elegí débito/crédito. El signo se verá al listar el movimiento."
+              {/* TABLA LÍNEAS */}
+              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4">
+                <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                  LÍNEAS ({lines.length})
+                </div>
+
+                {lines.length === 0 ? (
+                  <div className="mt-2 text-sm text-zinc-500">
+                    Agregá al menos 2 líneas para poder postear.
+                  </div>
                 ) : (
-                  <>
-                    Resultado:{" "}
-                    <span
-                      className={cn(
-                        "font-semibold tabular-nums",
-                        previewSigned >= 0 ? "text-emerald-600" : "text-red-600"
-                      )}
-                    >
-                      {formatMoneySigned(previewSigned)}
-                    </span>
-                  </>
+                  <div className="mt-3 space-y-2">
+                    {lines.map((l, idx) => {
+                      const code = l.pucSubCode ?? l.pucCuentaCode ?? "";
+                      const isDebit = Number(l.debit ?? 0) > 0;
+                      const amt = isDebit ? Number(l.debit ?? 0) : Number(l.credit ?? 0);
+
+                      return (
+                        <div key={idx} className="rounded-2xl border border-gray-200 bg-white px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-zinc-900 truncate">
+                                {code} · {isDebit ? "Débito" : "Crédito"} · {formatARS(amt)}
+                              </div>
+                              <div className="text-xs text-zinc-500 truncate">
+                                {l.description ?? "—"}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => removeLine(idx)}
+                              disabled={!canEditFields}
+                              className={cn(
+                                "h-8 px-3 rounded-xl text-xs font-semibold border transition",
+                                canEditFields
+                                  ? "bg-red-50 border-red-200 text-red-700"
+                                  : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                              )}
+                            >
+                              Quitar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
+
+              {!canEditFields && isEditing && (
+                <div className="text-xs text-zinc-500">
+                  Este asiento no es editable porque está <span className="font-semibold">{entryStatus}</span>.
+                </div>
+              )}
             </div>
           </div>
 
@@ -869,15 +1012,15 @@ export function AccountingComposer({
 
               <div className="flex-1">
                 {expanded ? (
-                  <input
-                    ref={descRef}
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder={editingEntry ? "Editar descripción..." : "Descripción del movimiento"}
-                    className="w-full h-11 px-4 rounded-full bg-white border border-gray-300 text-sm outline-none disabled:opacity-60"
-                    disabled={!canEditFields}
-                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    disabled={!canSaveDraft}
+                    className="w-full h-11 px-4 rounded-full bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50"
+                    title={lines.length === 0 ? "Agregá al menos 1 línea para guardar borrador" : undefined}
+                  >
+                    {sending ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear asiento (DRAFT)"}
+                  </button>
                 ) : (
                   <input
                     type="text"
@@ -889,44 +1032,30 @@ export function AccountingComposer({
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={handleSend}
-                aria-label={editingEntry ? "Guardar" : "Enviar"}
-                className="shrink-0 aspect-square h-12 w-12 rounded-full bg-emerald-500 text-white grid place-items-center active:scale-95 transition disabled:opacity-50"
-                disabled={!canSend}
-                title={
-                  !canEditFields && isEditing
-                    ? "El asiento no es editable (solo DRAFT)"
-                    : !selectedPuc && expanded
-                    ? "Seleccioná un PUC"
-                    : undefined
-                }
-              >
-                {sending ? (
-                  <span className="text-xs font-semibold">...</span>
-                ) : (
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="currentColor" aria-hidden="true">
-                    <path d="M8 5v14l13-7-13-7z" />
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            {editingEntry && (
-              <div className="mt-2 px-1 text-xs text-neutral-500">
-                Editando: <span className="font-medium">{editingEntry.pucCode}</span>
+              {editingEntry && (
                 <button
                   type="button"
-                  className="ml-3 text-red-600 font-semibold"
+                  className="shrink-0 h-11 px-4 rounded-full border border-gray-200 bg-white/70 text-sm font-semibold text-red-600"
                   onClick={() => {
                     onCancelEdit();
                     setExpanded(false);
-                    resetForm();
+                    resetAll();
                   }}
                 >
                   Cancelar
                 </button>
+              )}
+            </div>
+
+            {expanded && (
+              <div className="mt-2 px-1 text-xs text-neutral-500">
+                {lines.length < 2 ? (
+                  "Recomendación: cargá mínimo 2 líneas (débitos y créditos)."
+                ) : totals.diff !== 0 ? (
+                  "No podés postear hasta que Débito = Crédito."
+                ) : (
+                  "Asiento balanceado ✅"
+                )}
               </div>
             )}
           </div>

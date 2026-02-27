@@ -1,92 +1,154 @@
+
+
 import { api } from "@/src/lib/api";
 
 export type MovementNature = "DEBIT" | "CREDIT";
 
-// frontend/src/types/accounting.ts
+// frontend/src/services/accounting.ts
 export type AccountingType = "ALL" | "INCOME" | "EXPENSE" | "ASSET";
 
 export type BackendMovement = {
-    id: string; // lineId
-    entryId: string;
-    date: string; // ISO
-    status: "DRAFT" | "POSTED" | "VOID";
-    memo: string | null;
-    pucCode: string;
-    pucName: string | null;
-    description: string | null;
-    debit: number;
-    credit: number;
-    amountSigned: number; // debit - credit
-    class: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE" | "MEMO" | "CONTROL" | "UNKNOWN";
+  id: string; // lineId
+  entryId: string;
+  date: string; // ISO
+  status: "DRAFT" | "POSTED" | "VOID";
+  memo: string | null;
+  pucCode: string;
+  pucName: string | null;
+  description: string | null;
+  debit: number;
+  credit: number;
+  amountSigned: number; // debit - credit
+  class:
+    | "ASSET"
+    | "LIABILITY"
+    | "EQUITY"
+    | "INCOME"
+    | "EXPENSE"
+    | "MEMO"
+    | "CONTROL"
+    | "UNKNOWN";
 };
 
 export async function listMovements(params?: {
-    status?: string;
-    from?: string;
-    to?: string;
-    q?: string;
-    pucCode?: string;
-    onlyPosted?: "true" | "false";
+  status?: string;
+  from?: string;
+  to?: string;
+  q?: string;
+  pucCode?: string;
+  onlyPosted?: "true" | "false";
 }) {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set("status", params.status);
-    if (params?.from) qs.set("from", params.from);
-    if (params?.to) qs.set("to", params.to);
-    if (params?.q) qs.set("q", params.q);
-    if (params?.pucCode) qs.set("pucCode", params.pucCode);
-    if (params?.onlyPosted) qs.set("onlyPosted", params.onlyPosted);
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.from) qs.set("from", params.from);
+  if (params?.to) qs.set("to", params.to);
+  if (params?.q) qs.set("q", params.q);
+  if (params?.pucCode) qs.set("pucCode", params.pucCode);
+  if (params?.onlyPosted) qs.set("onlyPosted", params.onlyPosted);
 
-    const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return api<BackendMovement[]>(`/accounting/movements${suffix}`);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<BackendMovement[]>(`/accounting/movements${suffix}`);
 }
 
+/**
+ * ⚠️ Endpoint legacy (una línea = un "movimiento").
+ * Podés mantenerlo por compatibilidad hasta migrar toda la UI.
+ */
 export async function createMovement(dto: {
-    date?: string;
-    memo?: string;
-    pucCuentaCode?: string;
-    pucSubCode?: string;
-    nature: MovementNature;
-    amount: number;
-    description?: string;
+  date?: string;
+  memo?: string;
+  pucCuentaCode?: string;
+  pucSubCode?: string;
+  nature: MovementNature;
+  amount: number;
+  description?: string;
 }) {
-    return api<any>(`/accounting/movements`, {
-        method: "POST",
-        body: JSON.stringify(dto),
-    });
+  return api<any>(`/accounting/movements`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
 }
 
-export async function updateEntry(entryId: string, dto: {
+export type AccountingEntryStatus = "DRAFT" | "POSTED" | "VOID";
+
+export type AccountingEntryDto = {
+  id: string;
+  date: string;
+  memo: string | null;
+  status: AccountingEntryStatus;
+  lines: Array<{
+    id: string;
+    pucCuentaCode: string | null;
+    pucSubCode: string | null;
+    description: string | null;
+    debit: number;
+    credit: number;
+  }>;
+};
+
+// ✅ Tipos para crear/editar asientos multi-línea
+export type CreateLineDto = {
+  pucCuentaCode?: string;
+  pucSubCode?: string;
+  description?: string;
+  debit: number;
+  credit: number;
+};
+
+export type CreateEntryDto = {
+  date?: string; // "YYYY-MM-DD"
+  memo?: string;
+  lines: CreateLineDto[];
+};
+
+/**
+ * ✅ NUEVO: crear asiento DRAFT multi-línea
+ * Requiere backend: POST /accounting/entries
+ */
+export async function createEntry(dto: CreateEntryDto) {
+  return api<AccountingEntryDto>(`/accounting/entries`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export async function updateEntry(
+  entryId: string,
+  dto: {
     date?: string;
     memo?: string;
     lines?: Array<{
-        pucCuentaCode?: string;
-        pucSubCode?: string;
-        description?: string;
-        debit: number;
-        credit: number;
+      pucCuentaCode?: string;
+      pucSubCode?: string;
+      description?: string;
+      debit: number;
+      credit: number;
     }>;
-}) {
-    return api<any>(`/accounting/entries/${entryId}`, {
-        method: "PATCH",
-        body: JSON.stringify(dto),
-    });
+  },
+) {
+  return api<any>(`/accounting/entries/${entryId}`, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
 }
 
 export async function deleteEntry(entryId: string) {
-    return api<{ ok: true; id: string }>(`/accounting/entries/${entryId}`, {
-        method: "DELETE",
-    });
+  return api<{ ok: true; id: string }>(`/accounting/entries/${entryId}`, {
+    method: "DELETE",
+  });
 }
 
 export async function getPuc(code: string) {
-    // back: GET /accounting/puc/:code -> { kind: 'SUBCUENTA'|'CUENTA', ... }
-    return api<{ kind: "SUBCUENTA" | "CUENTA"; code: string; name: string }>(`/accounting/puc/${code}`);
+  // GET /accounting/puc/:code -> { kind: 'SUBCUENTA'|'CUENTA', ... }
+  return api<{ kind: "SUBCUENTA" | "CUENTA"; code: string; name: string }>(
+    `/accounting/puc/${code}`,
+  );
 }
 
 export async function searchPuc(q: string) {
-    return api<Array<{ kind: "SUBCUENTA" | "CUENTA"; code: string; name: string }>>(
-        `/accounting/puc/search?q=${encodeURIComponent(q)}`
-    );
+  return api<Array<{ kind: "SUBCUENTA" | "CUENTA"; code: string; name: string }>>(
+    `/accounting/puc/search?q=${encodeURIComponent(q)}`,
+  );
 }
 
 export type MovementsProgressResponse = {
@@ -106,27 +168,8 @@ export type MovementsProgressResponse = {
 
 export async function getMovementsProgress(date?: string) {
   const qs = date ? `?date=${encodeURIComponent(date)}` : "";
-  return api<MovementsProgressResponse>(
-    `/accounting/movements/progress${qs}`
-  );
+  return api<MovementsProgressResponse>(`/accounting/movements/progress${qs}`);
 }
-// REVISAR, POSIBLE DUPLICACIÓN CON listMovements, PERO CON UN FORMATO DE RESPUESTA DIFERENTE
-export type AccountingEntryStatus = "DRAFT" | "POSTED" | "VOID";
-
-export type AccountingEntryDto = {
-  id: string;
-  date: string;
-  memo: string | null;
-  status: AccountingEntryStatus;
-  lines: Array<{
-    id: string;
-    pucCuentaCode: string | null;
-    pucSubCode: string | null;
-    description: string | null;
-    debit: number;
-    credit: number;
-  }>;
-};
 
 export async function getEntry(entryId: string) {
   return api<AccountingEntryDto>(`/accounting/entries/${entryId}`);
