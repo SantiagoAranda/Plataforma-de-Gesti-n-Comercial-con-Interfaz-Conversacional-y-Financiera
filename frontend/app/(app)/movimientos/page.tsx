@@ -527,35 +527,73 @@ export default function MovimientosPage() {
   }, [data]);
 
   const periodo = useMemo(() => formatPeriodoFromISO(data?.date), [data]);
+const hasData =
+  !!data &&
+  Array.isArray(data.sections) &&
+  data.sections.length > 0 &&
+  data.sections.some((s) => Math.abs(s.total) > 0);
 
-  return (
-    <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
-      <AppHeader
-        title="Movimientos"
-        subtitle={`Balance General · ${periodo}`}
-        showBack={true}
-        rightIcon="calendar"
-      />
+return (
+  <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
+    <AppHeader
+      title="Movimientos"
+      subtitle={`Balance General · ${periodo}`}
+      showBack={true}
+      rightIcon="calendar"
+    />
 
-      <main className="mx-auto max-w-md px-4 pb-32 pt-3">
-        <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
-          <div className="text-sm font-medium text-zinc-500">Patrimonio Neto</div>
-          <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
-            {loading ? "—" : formatMoney(patrimonioNeto)}
-          </div>
-          <div className="mt-4 text-sm text-zinc-500">
-            {loading ? "Cargando..." : "Calculado: Activos − Pasivos"}
-          </div>
+    <main className="mx-auto max-w-md px-4 pb-32 pt-3">
+      {/* Patrimonio siempre visible */}
+      <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
+        <div className="text-sm font-medium text-zinc-500">
+          Patrimonio Neto
         </div>
 
+        <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
+          {loading ? "—" : formatMoney(patrimonioNeto)}
+        </div>
+
+        <div className="mt-4 text-sm text-zinc-500">
+          {loading ? "Cargando..." : "Calculado: Activos − Pasivos"}
+        </div>
+      </div>
+
+      {/* Estado vacío */}
+      {!loading && !hasData && (
+        <div className="mt-6 rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 text-center">
+          <div className="text-lg font-semibold text-zinc-900">
+            Aún no hay movimientos
+          </div>
+
+          <div className="mt-2 text-sm text-zinc-500">
+            Ir a Contabilidad para empezar a cargar información.
+          </div>
+
+          <button
+            type="button"
+            onClick={() => (window.location.href = "/contabilidad")}
+            className="mt-5 w-full rounded-xl bg-emerald-500 py-3 text-sm font-semibold text-white hover:bg-emerald-600 transition"
+          >
+            Ir a Contabilidad
+          </button>
+        </div>
+      )}
+
+      {/* Secciones normales */}
+      {!loading && hasData && (
         <div className="mt-6 space-y-10">
           {sections.map((sec) => (
-            <SectionBlock key={sec.key} sec={sec} animateBars={animateBars} />
+            <SectionBlock
+              key={sec.key}
+              sec={sec}
+              animateBars={animateBars}
+            />
           ))}
         </div>
-      </main>
+      )}
+    </main>
 
-      <BottomNavbar active="movimientos" />
-    </div>
-  );
+    <BottomNavbar active="movimientos" />
+  </div>
+);
 }
