@@ -8,6 +8,10 @@ import {
   searchPuc,
   updateEntry,
   type MovementNature,
+  getEntry,
+  postEntry,
+  voidEntry,
+  type AccountingEntryStatus,
 } from "@/src/services/accounting";
 import {
   getPucGrupos,
@@ -88,12 +92,28 @@ type Props = {
   onCreate: () => void | Promise<void>;
   onUpdate: () => void | Promise<void>;
 
-  // ✅ vienen del page
   pucClases: PucClase[];
-  pucGrupos: Array<{ code: string; name: string; claseCode: string }>; // (si no lo usás aún, dejalo para compatibilidad)
+  pucGrupos: Array<{ code: string; name: string; claseCode: string }>;
   selectedClase: string;
   onSelectClase: (code: string) => void;
 };
+
+function StatusBadge({ status }: { status: AccountingEntryStatus }) {
+  const cls =
+    status === "DRAFT"
+      ? "bg-zinc-100 text-zinc-700 border-zinc-200"
+      : status === "POSTED"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : "bg-red-50 text-red-700 border-red-200";
+
+  const label = status === "DRAFT" ? "Borrador" : status === "POSTED" ? "Publicado" : "Anulado";
+
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", cls)}>
+      {label}
+    </span>
+  );
+}
 
 export function AccountingComposer({
   searchValue,
@@ -107,12 +127,15 @@ export function AccountingComposer({
   onSelectClase,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-
   const [mode, setMode] = useState<Mode>("RAPIDO");
 
   const [value, setValue] = useState("");
   const [nature, setNature] = useState<NatureUI>("DEBITO");
   const [description, setDescription] = useState("");
+
+  // Estado del asiento (real desde backend)
+  const [entryStatus, setEntryStatus] = useState<AccountingEntryStatus>("DRAFT");
+  const [statusLoading, setStatusLoading] = useState(false);
 
   // ---------- PUC (RÁPIDO) ----------
   const [pucQuery, setPucQuery] = useState("");
@@ -132,13 +155,11 @@ export function AccountingComposer({
   const [selectedSubcuenta, setSelectedSubcuenta] = useState<string>("");
 
   const [guidedLoading, setGuidedLoading] = useState(false);
-
   const [sending, setSending] = useState(false);
 
   const descRef = useRef<HTMLInputElement | null>(null);
   const expandableRef = useRef<HTMLDivElement | null>(null);
   const [contentH, setContentH] = useState(0);
-
   const pucWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -159,14 +180,12 @@ export function AccountingComposer({
 
   function setClase(code: string) {
     onSelectClase(code);
-    // reset cascada guiada al cambiar clase
     setSelectedGrupo("");
     setSelectedCuenta("");
     setSelectedSubcuenta("");
     setGrupos([]);
     setCuentas([]);
     setSubcuentas([]);
-    // si estabas en rápido, no toques selectedPuc; si estabas en guiado, se recalcula igual
     if (mode === "GUIADO") setSelectedPuc(null);
   }
 
@@ -186,9 +205,11 @@ export function AccountingComposer({
     setGrupos([]);
     setCuentas([]);
     setSubcuentas([]);
+
+    setEntryStatus("DRAFT");
   }
 
-  // ✅ cerrar dropdown PUC al click afuera
+  // cerrar dropdown PUC al click afuera
   useEffect(() => {
     if (!pucOpen) return;
     const onDoc = (e: MouseEvent) => {
@@ -199,11 +220,13 @@ export function AccountingComposer({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [pucOpen]);
 
-  // ---------- EDIT ----------
+  // ---------- EDIT: abre + carga asiento real (status) ----------
   useEffect(() => {
     if (!editingEntry) return;
 
     setExpanded(true);
+
+    // precarga campos (como ya tenías)
     setNature(editingEntry.amount >= 0 ? "DEBITO" : "CREDITO");
     setValue(String(Math.abs(editingEntry.amount)));
     setDescription(editingEntry.description ?? "");
@@ -226,6 +249,19 @@ export function AccountingComposer({
         )
         .catch(() => {});
     }
+
+    // ✅ traer estado real del asiento
+    (async () => {
+      try {
+        setStatusLoading(true);
+        const entry = await getEntry(editingEntry.entryId);
+        setEntryStatus(entry.status);
+      } catch {
+        // si falla, no rompas UI
+      } finally {
+        setStatusLoading(false);
+      }
+    })();
 
     requestAnimationFrame(() => descRef.current?.focus());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,7 +435,18 @@ export function AccountingComposer({
     });
   }, [mode, selectedSubcuenta, selectedCuenta, subcuentas, cuentas]);
 
-  const canSend = expanded && !sending && amount !== null && amount > 0 && !!selectedPuc?.code;
+  const isEditing = !!editingEntry;
+
+  // En tu backend, updateEntry solo si DRAFT
+  const canEditFields = !isEditing || entryStatus === "DRAFT";
+
+  const canSend =
+    expanded &&
+    !sending &&
+    amount !== null &&
+    amount > 0 &&
+    !!selectedPuc?.code &&
+    canEditFields;
 
   async function handleSend() {
     if (!canSend) return;
@@ -458,8 +505,40 @@ export function AccountingComposer({
     }
   }
 
+  async function handlePost() {
+    if (!editingEntry) return;
+    if (entryStatus !== "DRAFT") return;
+
+    setStatusLoading(true);
+    try {
+      const updated = await postEntry(editingEntry.entryId);
+      setEntryStatus(updated.status);
+      await onUpdate(); // refrescar lista
+    } catch (err: any) {
+      alert(err?.details?.message ?? err?.message ?? "No se pudo postear el asiento");
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
+  async function handleVoid() {
+    if (!editingEntry) return;
+    if (entryStatus === "VOID") return;
+
+    setStatusLoading(true);
+    try {
+      const updated = await voidEntry(editingEntry.entryId);
+      setEntryStatus(updated.status);
+      await onUpdate(); // refrescar lista
+    } catch (err: any) {
+      alert(err?.details?.message ?? err?.message ?? "No se pudo anular el asiento");
+    } finally {
+      setStatusLoading(false);
+    }
+  }
+
   const inputBase =
-    "w-full rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-sm outline-none focus:border-emerald-300 transition";
+    "w-full rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-sm outline-none focus:border-emerald-300 transition disabled:opacity-60 disabled:cursor-not-allowed";
 
   const miniToggleBase =
     "h-10 rounded-2xl border text-xs font-semibold px-3 whitespace-nowrap transition";
@@ -480,6 +559,61 @@ export function AccountingComposer({
             style={{ maxHeight: expanded ? contentH : 0, opacity: expanded ? 1 : 0 }}
           >
             <div ref={expandableRef} className="px-5 pt-4 pb-4 space-y-3">
+              {/* ASIENTO (solo en edición) */}
+              {isEditing && (
+                <div className="rounded-2xl border border-gray-200 bg-white/60 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                      ASIENTO
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {statusLoading ? (
+                        <span className="text-xs text-zinc-500">…</span>
+                      ) : (
+                        <StatusBadge status={entryStatus} />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePost}
+                      disabled={statusLoading || entryStatus !== "DRAFT"}
+                      className={cn(
+                        "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
+                        entryStatus === "DRAFT"
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                      )}
+                    >
+                      Postear
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleVoid}
+                      disabled={statusLoading || entryStatus === "VOID"}
+                      className={cn(
+                        "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
+                        entryStatus !== "VOID"
+                          ? "bg-red-50 border-red-200 text-red-700"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                      )}
+                    >
+                      Anular
+                    </button>
+                  </div>
+
+                  {entryStatus !== "DRAFT" && (
+                    <div className="mt-2 text-xs text-zinc-500">
+                      Este asiento no es editable porque está{" "}
+                      <span className="font-semibold">{entryStatus}</span>.
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* CLASE */}
               <div>
                 <div className="text-[11px] font-semibold tracking-widest text-gray-500">
@@ -491,11 +625,13 @@ export function AccountingComposer({
                       key={c.code}
                       type="button"
                       onClick={() => setClase(c.code)}
+                      disabled={!canEditFields}
                       className={cn(
                         "rounded-full px-3 py-1.5 text-xs border transition whitespace-nowrap",
                         selectedClase === c.code
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          : "bg-white/70 border-gray-200 text-gray-700"
+                          : "bg-white/70 border-gray-200 text-gray-700",
+                        !canEditFields && "opacity-60 cursor-not-allowed"
                       )}
                     >
                       {c.code} · {c.name}
@@ -524,9 +660,10 @@ export function AccountingComposer({
                         }}
                         placeholder="Buscar (código o nombre)…"
                         className={cn(inputBase, "h-11")}
+                        disabled={!canEditFields}
                       />
 
-                      {pucOpen && (
+                      {pucOpen && canEditFields && (
                         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50">
                           <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden">
                             <div className="px-3 py-2 text-xs text-gray-500 flex items-center justify-between">
@@ -575,11 +712,9 @@ export function AccountingComposer({
                         className={cn(inputBase, "h-11")}
                         value={selectedGrupo}
                         onChange={(e) => setSelectedGrupo(e.target.value)}
-                        disabled={!selectedClase || guidedLoading}
+                        disabled={!selectedClase || guidedLoading || !canEditFields}
                       >
-                        <option value="">
-                          {selectedClase ? "Grupo..." : "Elegí clase primero"}
-                        </option>
+                        <option value="">{selectedClase ? "Grupo..." : "Elegí clase primero"}</option>
                         {grupos.map((g) => (
                           <option key={g.code} value={g.code}>
                             {g.code} — {g.name}
@@ -591,11 +726,9 @@ export function AccountingComposer({
                         className={cn(inputBase, "h-11")}
                         value={selectedCuenta}
                         onChange={(e) => setSelectedCuenta(e.target.value)}
-                        disabled={!selectedGrupo || guidedLoading}
+                        disabled={!selectedGrupo || guidedLoading || !canEditFields}
                       >
-                        <option value="">
-                          {selectedGrupo ? "Cuenta..." : "Elegí grupo primero"}
-                        </option>
+                        <option value="">{selectedGrupo ? "Cuenta..." : "Elegí grupo primero"}</option>
                         {cuentas.map((c) => (
                           <option key={c.code} value={c.code}>
                             {c.code} — {c.name}
@@ -607,7 +740,7 @@ export function AccountingComposer({
                         className={cn(inputBase, "h-11")}
                         value={selectedSubcuenta}
                         onChange={(e) => setSelectedSubcuenta(e.target.value)}
-                        disabled={!selectedCuenta || guidedLoading || subcuentas.length === 0}
+                        disabled={!selectedCuenta || guidedLoading || subcuentas.length === 0 || !canEditFields}
                       >
                         <option value="">
                           {selectedCuenta
@@ -666,6 +799,7 @@ export function AccountingComposer({
                     placeholder="0,00"
                     inputMode="decimal"
                     className={cn(inputBase, "h-11 mt-2")}
+                    disabled={!canEditFields}
                   />
                 </div>
 
@@ -673,10 +807,11 @@ export function AccountingComposer({
                   <div className="text-[11px] font-semibold tracking-widest text-gray-500">
                     NAT.
                   </div>
-                  <div className="mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1">
+                  <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
                     <button
                       type="button"
                       onClick={() => setNature("DEBITO")}
+                      disabled={!canEditFields}
                       className={cn(
                         "rounded-2xl px-3 py-2 text-xs font-semibold transition",
                         nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
@@ -687,6 +822,7 @@ export function AccountingComposer({
                     <button
                       type="button"
                       onClick={() => setNature("CREDITO")}
+                      disabled={!canEditFields}
                       className={cn(
                         "rounded-2xl px-3 py-2 text-xs font-semibold transition",
                         nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
@@ -739,7 +875,8 @@ export function AccountingComposer({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder={editingEntry ? "Editar descripción..." : "Descripción del movimiento"}
-                    className="w-full h-11 px-4 rounded-full bg-white border border-gray-300 text-sm outline-none"
+                    className="w-full h-11 px-4 rounded-full bg-white border border-gray-300 text-sm outline-none disabled:opacity-60"
+                    disabled={!canEditFields}
                   />
                 ) : (
                   <input
@@ -758,7 +895,13 @@ export function AccountingComposer({
                 aria-label={editingEntry ? "Guardar" : "Enviar"}
                 className="shrink-0 aspect-square h-12 w-12 rounded-full bg-emerald-500 text-white grid place-items-center active:scale-95 transition disabled:opacity-50"
                 disabled={!canSend}
-                title={!selectedPuc && expanded ? "Seleccioná un PUC" : undefined}
+                title={
+                  !canEditFields && isEditing
+                    ? "El asiento no es editable (solo DRAFT)"
+                    : !selectedPuc && expanded
+                    ? "Seleccioná un PUC"
+                    : undefined
+                }
               >
                 {sending ? (
                   <span className="text-xs font-semibold">...</span>

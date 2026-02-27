@@ -110,3 +110,36 @@ export async function getMovementsProgress(date?: string) {
     `/accounting/movements/progress${qs}`
   );
 }
+// REVISAR, POSIBLE DUPLICACIÓN CON listMovements, PERO CON UN FORMATO DE RESPUESTA DIFERENTE
+export type AccountingEntryStatus = "DRAFT" | "POSTED" | "VOID";
+
+export type AccountingEntryDto = {
+  id: string;
+  date: string;
+  memo: string | null;
+  status: AccountingEntryStatus;
+  lines: Array<{
+    id: string;
+    pucCuentaCode: string | null;
+    pucSubCode: string | null;
+    description: string | null;
+    debit: number;
+    credit: number;
+  }>;
+};
+
+export async function getEntry(entryId: string) {
+  return api<AccountingEntryDto>(`/accounting/entries/${entryId}`);
+}
+
+export async function postEntry(entryId: string) {
+  return api<AccountingEntryDto>(`/accounting/entries/${entryId}/post`, {
+    method: "POST",
+  });
+}
+
+export async function voidEntry(entryId: string) {
+  return api<AccountingEntryDto>(`/accounting/entries/${entryId}/void`, {
+    method: "POST",
+  });
+}
