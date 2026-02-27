@@ -2,14 +2,38 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UiAccountingEntry } from "@/src/types/accounting-ui";
-import { PucTypeahead } from "@/src/components/accounting/PucTypeahead";
-import { createMovement, getPuc, searchPuc, updateEntry } from "@/src/types/accounting";
+import {
+  createMovement,
+  getPuc,
+  searchPuc,
+  updateEntry,
+  type MovementNature,
+} from "@/src/services/accounting";
+import {
+  getPucGrupos,
+  getPucCuentas,
+  getPucSubcuentas,
+  type PucClase,
+  type PucGrupo,
+  type PucCuenta,
+  type PucSubcuenta,
+} from "@/src/services/puc";
 
-type MovementType = "Activo" | "Pasivo" | "Patrimonio" | "Ingresos" | "Gastos";
 type NatureUI = "DEBITO" | "CREDITO";
+type Mode = "RAPIDO" | "GUIADO";
 
 type PucKind = "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
-type PucNode = { code: string; name: string; kind: PucKind; breadcrumbs: string[]; pucDbKind?: "CUENTA" | "SUBCUENTA" };
+type PucNode = {
+  code: string;
+  name: string;
+  kind: PucKind;
+  breadcrumbs: string[];
+  pucDbKind?: "CUENTA" | "SUBCUENTA";
+};
+
+function cn(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
 
 function parseMoneyLike(input: string): number | null {
   const raw = input.trim();
@@ -21,7 +45,6 @@ function parseMoneyLike(input: string): number | null {
   const decSep = Math.max(lastComma, lastDot);
 
   let normalized = cleaned;
-
   if (decSep !== -1) {
     const intPart = cleaned.slice(0, decSep).replace(/[.,]/g, "");
     const decPart = cleaned.slice(decSep + 1).replace(/[.,]/g, "");
@@ -35,8 +58,7 @@ function parseMoneyLike(input: string): number | null {
 }
 
 function kindFromPucCode(code: string): PucKind {
-  const c = (code ?? "").trim();
-  const first = c[0];
+  const first = (code ?? "").trim()[0];
   if (first === "1") return "ASSET";
   if (first === "2") return "LIABILITY";
   if (first === "3") return "EQUITY";
@@ -44,34 +66,16 @@ function kindFromPucCode(code: string): PucKind {
   return "EXPENSE"; // 5/6/7
 }
 
-function kindToMovement(kind: UiAccountingEntry["kind"]): MovementType {
-  switch (kind) {
-    case "ASSET":
-      return "Activo";
-    case "LIABILITY":
-      return "Pasivo";
-    case "EQUITY":
-      return "Patrimonio";
-    case "INCOME":
-      return "Ingresos";
-    case "EXPENSE":
-      return "Gastos";
-  }
-}
-
-function movementToKind(m: MovementType): UiAccountingEntry["kind"] {
-  switch (m) {
-    case "Activo":
-      return "ASSET";
-    case "Pasivo":
-      return "LIABILITY";
-    case "Patrimonio":
-      return "EQUITY";
-    case "Ingresos":
-      return "INCOME";
-    case "Gastos":
-      return "EXPENSE";
-  }
+function formatMoneySigned(n: number) {
+  const sign = n >= 0 ? "+" : "−";
+  const abs = Math.abs(n);
+  const formatted = abs.toLocaleString("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${sign}${formatted}`;
 }
 
 type Props = {
@@ -81,12 +85,12 @@ type Props = {
   editingEntry: UiAccountingEntry | null;
   onCancelEdit: () => void;
 
-  onCreate: (entry: UiAccountingEntry) => void;
-  onUpdate: (entry: UiAccountingEntry) => void;
+  onCreate: () => void | Promise<void>;
+  onUpdate: () => void | Promise<void>;
 
-  // PUC (para tu selector por clase/grupo en el futuro)
-  pucClases: { code: string; name: string }[];
-  pucGrupos: { code: string; name: string; claseCode: string }[];
+  // ✅ vienen del page
+  pucClases: PucClase[];
+  pucGrupos: Array<{ code: string; name: string; claseCode: string }>; // (si no lo usás aún, dejalo para compatibilidad)
   selectedClase: string;
   onSelectClase: (code: string) => void;
 };
@@ -99,73 +103,132 @@ export function AccountingComposer({
   onCreate,
   onUpdate,
   pucClases,
-  pucGrupos,
   selectedClase,
   onSelectClase,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
 
-  const [movementType, setMovementType] = useState<MovementType>("Activo");
+  const [mode, setMode] = useState<Mode>("RAPIDO");
+
   const [value, setValue] = useState("");
   const [nature, setNature] = useState<NatureUI>("DEBITO");
   const [description, setDescription] = useState("");
 
-  // PUC (remoto)
+  // ---------- PUC (RÁPIDO) ----------
+  const [pucQuery, setPucQuery] = useState("");
   const [pucItems, setPucItems] = useState<PucNode[]>([]);
   const [selectedPuc, setSelectedPuc] = useState<PucNode | null>(null);
+  const [pucLoading, setPucLoading] = useState(false);
+  const [pucOpen, setPucOpen] = useState(false);
+
+  // ---------- GUIADO ----------
+  const [grupos, setGrupos] = useState<PucGrupo[]>([]);
+  const [selectedGrupo, setSelectedGrupo] = useState<string>("");
+
+  const [cuentas, setCuentas] = useState<PucCuenta[]>([]);
+  const [selectedCuenta, setSelectedCuenta] = useState<string>("");
+
+  const [subcuentas, setSubcuentas] = useState<PucSubcuenta[]>([]);
+  const [selectedSubcuenta, setSelectedSubcuenta] = useState<string>("");
+
+  const [guidedLoading, setGuidedLoading] = useState(false);
+
+  const [sending, setSending] = useState(false);
 
   const descRef = useRef<HTMLInputElement | null>(null);
-
-  // altura animada real
   const expandableRef = useRef<HTMLDivElement | null>(null);
   const [contentH, setContentH] = useState(0);
+
+  const pucWrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!expandableRef.current) return;
     const el = expandableRef.current;
-
     const ro = new ResizeObserver(() => setContentH(el.scrollHeight));
     ro.observe(el);
     setContentH(el.scrollHeight);
-
     return () => ro.disconnect();
   }, []);
 
-  const parsedValue = useMemo(() => parseMoneyLike(value), [value]);
-  const amount = useMemo(() => (parsedValue === null ? null : parsedValue), [parsedValue]);
+  const amount = useMemo(() => parseMoneyLike(value), [value]);
+
+  const previewSigned = useMemo(() => {
+    if (!amount || amount <= 0) return null;
+    return nature === "DEBITO" ? +amount : -amount;
+  }, [amount, nature]);
+
+  function setClase(code: string) {
+    onSelectClase(code);
+    // reset cascada guiada al cambiar clase
+    setSelectedGrupo("");
+    setSelectedCuenta("");
+    setSelectedSubcuenta("");
+    setGrupos([]);
+    setCuentas([]);
+    setSubcuentas([]);
+    // si estabas en rápido, no toques selectedPuc; si estabas en guiado, se recalcula igual
+    if (mode === "GUIADO") setSelectedPuc(null);
+  }
 
   function resetForm() {
-    setMovementType("Activo");
     setValue("");
     setNature("DEBITO");
     setDescription("");
+
     setSelectedPuc(null);
+    setPucQuery("");
     setPucItems([]);
+    setPucOpen(false);
+
+    setSelectedGrupo("");
+    setSelectedCuenta("");
+    setSelectedSubcuenta("");
+    setGrupos([]);
+    setCuentas([]);
+    setSubcuentas([]);
   }
 
-  // precarga edición
+  // ✅ cerrar dropdown PUC al click afuera
+  useEffect(() => {
+    if (!pucOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!pucWrapRef.current?.contains(target)) setPucOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [pucOpen]);
+
+  // ---------- EDIT ----------
   useEffect(() => {
     if (!editingEntry) return;
 
     setExpanded(true);
-    setMovementType(kindToMovement(editingEntry.kind));
     setNature(editingEntry.amount >= 0 ? "DEBITO" : "CREDITO");
     setValue(String(Math.abs(editingEntry.amount)));
     setDescription(editingEntry.description ?? "");
 
-    // para editar, seteo un PUC “mínimo”
+    const clase = (editingEntry.pucCode ?? "").trim()[0];
+    if (clase) setClase(clase);
+
     if (editingEntry.pucCode) {
-      setSelectedPuc({
+      const node: PucNode = {
         code: editingEntry.pucCode,
         name: editingEntry.accountName,
         kind: kindFromPucCode(editingEntry.pucCode),
         breadcrumbs: [],
-      });
-    } else {
-      setSelectedPuc(null);
+      };
+      setSelectedPuc(node);
+
+      getPuc(editingEntry.pucCode)
+        .then((info) =>
+          setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev))
+        )
+        .catch(() => {});
     }
 
     requestAnimationFrame(() => descRef.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingEntry]);
 
   function toggleExpanded() {
@@ -177,134 +240,235 @@ export function AccountingComposer({
     });
   }
 
-  async function handlePickPuc(node: PucNode | null) {
-    setSelectedPuc(node);
-    if (!node) return;
+  // ---------- RÁPIDO: search ----------
+  useEffect(() => {
+    if (!expanded) return;
+    if (mode !== "RAPIDO") return;
 
-    // saber si es CUENTA o SUBCUENTA (para enviar correctamente)
+    const q = pucQuery.trim();
+    if (!q) {
+      setPucItems([]);
+      setPucLoading(false);
+      return;
+    }
+
+    const t = setTimeout(() => {
+      (async () => {
+        try {
+          setPucLoading(true);
+          const found = await searchPuc(q);
+
+          const filtered = selectedClase
+            ? found.filter((x) => String(x.code ?? "").trim().startsWith(selectedClase))
+            : found;
+
+          const mapped: PucNode[] = filtered.map((x) => ({
+            code: x.code,
+            name: x.name,
+            kind: kindFromPucCode(x.code),
+            breadcrumbs: [],
+            pucDbKind: x.kind,
+          }));
+
+          setPucItems(mapped);
+          setPucOpen(true);
+        } catch {
+          setPucItems([]);
+        } finally {
+          setPucLoading(false);
+        }
+      })();
+    }, 120);
+
+    return () => clearTimeout(t);
+  }, [pucQuery, selectedClase, expanded, mode]);
+
+  async function handlePickPuc(node: PucNode) {
+    setSelectedPuc(node);
+    setPucOpen(false);
+
+    if (!selectedClase) {
+      const clase = (node.code ?? "").trim()[0];
+      if (clase) setClase(clase);
+    }
+
+    if (node.pucDbKind) return;
     try {
       const info = await getPuc(node.code);
       setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev));
-    } catch {
-      // si falla, seguimos (pero al enviar va a fallar si el code no existe)
-    }
+    } catch {}
   }
 
-  // Search remoto PUC: usa tu input de búsqueda del typeahead (hack simple: escuchamos changes en items)
-  // Como PucTypeahead no es async, lo mínimo es: cuando el usuario escribe, le damos items ya “server-searched”.
-  // Para eso, reutilizamos searchValue? No: mejor un estado local de query para PUC.
-  const [pucQuery, setPucQuery] = useState("");
+  // ---------- GUIADO: cascada ----------
   useEffect(() => {
-    const q = pucQuery.trim();
-    const t = setTimeout(() => {
-      (async () => {
-        if (!q) {
-          setPucItems([]);
-          return;
-        }
-        const found = await searchPuc(q);
-        const mapped: PucNode[] = found.map((x) => ({
-          code: x.code,
-          name: x.name,
-          kind: kindFromPucCode(x.code),
-          breadcrumbs: [],
-          pucDbKind: x.kind,
-        }));
-        setPucItems(mapped);
-      })().catch(() => setPucItems([]));
-    }, 250);
+    if (!expanded) return;
+    if (mode !== "GUIADO") return;
 
-    return () => clearTimeout(t);
-  }, [pucQuery]);
+    if (!selectedClase) {
+      setGrupos([]);
+      setSelectedGrupo("");
+      setCuentas([]);
+      setSelectedCuenta("");
+      setSubcuentas([]);
+      setSelectedSubcuenta("");
+      setSelectedPuc(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        setGuidedLoading(true);
+        const data = await getPucGrupos(selectedClase);
+        setGrupos(data);
+      } catch {
+        setGrupos([]);
+      } finally {
+        setGuidedLoading(false);
+      }
+    })();
+  }, [selectedClase, expanded, mode]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    if (mode !== "GUIADO") return;
+
+    if (!selectedGrupo) {
+      setCuentas([]);
+      setSelectedCuenta("");
+      setSubcuentas([]);
+      setSelectedSubcuenta("");
+      setSelectedPuc(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        setGuidedLoading(true);
+        const data = await getPucCuentas(selectedGrupo);
+        setCuentas(data);
+      } catch {
+        setCuentas([]);
+      } finally {
+        setGuidedLoading(false);
+      }
+    })();
+  }, [selectedGrupo, expanded, mode]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    if (mode !== "GUIADO") return;
+
+    if (!selectedCuenta) {
+      setSubcuentas([]);
+      setSelectedSubcuenta("");
+      setSelectedPuc(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        setGuidedLoading(true);
+        const data = await getPucSubcuentas(selectedCuenta);
+        setSubcuentas(data);
+      } catch {
+        setSubcuentas([]);
+      } finally {
+        setGuidedLoading(false);
+      }
+    })();
+  }, [selectedCuenta, expanded, mode]);
+
+  // armar selectedPuc desde guiado
+  useEffect(() => {
+    if (mode !== "GUIADO") return;
+
+    const code = selectedSubcuenta || selectedCuenta || "";
+    if (!code) return;
+
+    const name =
+      (selectedSubcuenta && subcuentas.find((s) => s.code === selectedSubcuenta)?.name) ||
+      (selectedCuenta && cuentas.find((c) => c.code === selectedCuenta)?.name) ||
+      "";
+
+    setSelectedPuc({
+      code,
+      name: name || "(sin nombre)",
+      kind: kindFromPucCode(code),
+      breadcrumbs: [],
+      pucDbKind: selectedSubcuenta ? "SUBCUENTA" : "CUENTA",
+    });
+  }, [mode, selectedSubcuenta, selectedCuenta, subcuentas, cuentas]);
+
+  const canSend = expanded && !sending && amount !== null && amount > 0 && !!selectedPuc?.code;
 
   async function handleSend() {
-    if (!expanded) return;
-    if (amount === null) return;
-    if (!selectedPuc) return;
+    if (!canSend) return;
+    if (!amount || !selectedPuc) return;
 
-    const kind = movementToKind(movementType);
-    const natureApi = nature === "DEBITO" ? "DEBIT" : "CREDIT";
+    setSending(true);
+    try {
+      const natureApi: MovementNature = nature === "DEBITO" ? "DEBIT" : "CREDIT";
 
-    // CREATE
-    if (!editingEntry) {
-      try {
+      let resolvedKind = selectedPuc.pucDbKind;
+      if (!resolvedKind) {
+        const info = await getPuc(selectedPuc.code);
+        resolvedKind = info.kind;
+        setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev));
+      }
+
+      if (!editingEntry) {
         await createMovement({
           nature: natureApi,
           amount,
-          description: description.trim(),
-          ...(selectedPuc.pucDbKind === "SUBCUENTA"
+          description: description.trim() || undefined,
+          ...(resolvedKind === "SUBCUENTA"
             ? { pucSubCode: selectedPuc.code }
             : { pucCuentaCode: selectedPuc.code }),
         });
 
-        // UI: armamos un item “optimista”
-        const now = new Date();
-        const dateISO = now.toISOString().slice(0, 10);
-        const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        const signed = nature === "DEBITO" ? amount : -amount;
-
-        onCreate({
-          id: crypto.randomUUID(), // placeholder (ideal: refrescar listMovements)
-          entryId: crypto.randomUUID(), // placeholder
-          dateISO,
-          time,
-          pucCode: selectedPuc.code,
-          accountName: selectedPuc.name,
-          description: description.trim(),
-          amount: signed,
-          source: "MANUAL",
-          kind,
-          status: "DRAFT",
-        });
-
+        await onCreate();
         setExpanded(false);
         resetForm();
-      } catch (err: any) {
-        alert(err?.details?.message ?? err?.message ?? "No se pudo crear el movimiento");
+        return;
       }
-      return;
-    }
 
-    // UPDATE (solo DRAFT en backend)
-    try {
       const debit = nature === "DEBITO" ? amount : 0;
       const credit = nature === "CREDITO" ? amount : 0;
 
       await updateEntry(editingEntry.entryId, {
         lines: [
           {
-            ...(selectedPuc.pucDbKind === "SUBCUENTA"
+            ...(resolvedKind === "SUBCUENTA"
               ? { pucSubCode: selectedPuc.code }
               : { pucCuentaCode: selectedPuc.code }),
-            description: description.trim(),
+            description: description.trim() || undefined,
             debit,
             credit,
           },
         ],
       });
 
-      onUpdate({
-        ...editingEntry,
-        kind,
-        pucCode: selectedPuc.code,
-        accountName: selectedPuc.name,
-        description: description.trim(),
-        amount: debit - credit,
-      });
-
+      await onUpdate();
       setExpanded(false);
       resetForm();
     } catch (err: any) {
-      alert(err?.details?.message ?? err?.message ?? "No se pudo actualizar (solo DRAFT)");
+      alert(err?.details?.message ?? err?.message ?? "No se pudo guardar el movimiento");
+    } finally {
+      setSending(false);
     }
   }
 
-  const chipBase = "rounded-full px-4 py-2 text-sm border transition whitespace-nowrap";
-  const chipOn = "bg-emerald-50 border-emerald-200 text-emerald-700";
-  const chipOff = "bg-white/70 border-gray-200 text-gray-700 hover:bg-white";
-
   const inputBase =
     "w-full rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-sm outline-none focus:border-emerald-300 transition";
+
+  const miniToggleBase =
+    "h-10 rounded-2xl border text-xs font-semibold px-3 whitespace-nowrap transition";
+  const miniOn = "bg-emerald-50 border-emerald-200 text-emerald-700";
+  const miniOff = "bg-white/70 border-gray-200 text-gray-700";
+
+  const selectedLabel = selectedPuc
+    ? `${selectedPuc.code} — ${selectedPuc.name} · ${selectedPuc.pucDbKind ?? "PUC"}`
+    : "";
 
   return (
     <div className="fixed left-0 right-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
@@ -315,91 +479,242 @@ export function AccountingComposer({
             className="overflow-hidden transition-[max-height,opacity] duration-300 ease-out"
             style={{ maxHeight: expanded ? contentH : 0, opacity: expanded ? 1 : 0 }}
           >
-            <div ref={expandableRef} className="px-5 pt-5 pb-4 space-y-4">
-              {/* TIPO */}
+            <div ref={expandableRef} className="px-5 pt-4 pb-4 space-y-3">
+              {/* CLASE */}
               <div>
-                <div className="text-xs font-semibold tracking-widest text-gray-500">TIPO DE MOVIMIENTO</div>
+                <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                  CLASE
+                </div>
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {(["Activo", "Pasivo", "Patrimonio", "Ingresos", "Gastos"] as MovementType[]).map((t) => (
+                  {(pucClases ?? []).map((c) => (
                     <button
-                      key={t}
+                      key={c.code}
                       type="button"
-                      onClick={() => setMovementType(t)}
-                      className={`${chipBase} ${movementType === t ? chipOn : chipOff}`}
+                      onClick={() => setClase(c.code)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-xs border transition whitespace-nowrap",
+                        selectedClase === c.code
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                          : "bg-white/70 border-gray-200 text-gray-700"
+                      )}
                     >
-                      {t}
+                      {c.code} · {c.name}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* PUC REMOTO */}
-              <div>
-                <div className="text-xs font-semibold tracking-widest text-gray-500">CÓDIGO PUC</div>
-
-                {/* si querés mantener tus selects de clase/grupo, están disponibles: pucClases/pucGrupos */}
-                {/* por ahora: buscador remoto */}
-                <div className="mt-2">
-                  {/* input “puente” para disparar búsqueda remota */}
-                  <input
-                    value={pucQuery}
-                    onChange={(e) => setPucQuery(e.target.value)}
-                    placeholder="Buscar PUC (código o nombre)..."
-                    className={inputBase}
-                  />
-
-                  <div className="mt-2">
-                    <PucTypeahead
-                      showLabel={false}
-                      kindFilter={movementToKind(movementType) as any}
-                      items={pucItems as any}
-                      value={selectedPuc as any}
-                      onChange={(v) => handlePickPuc(v as any)}
-                      placeholder="Elegí un resultado..."
-                    />
+              {/* FILA: PUC + MODE */}
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0" ref={pucWrapRef}>
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                    CÓDIGO PUC
                   </div>
+
+                  {mode === "RAPIDO" ? (
+                    <div className="relative mt-2">
+                      <input
+                        value={pucQuery}
+                        onChange={(e) => {
+                          setPucQuery(e.target.value);
+                          if (!pucOpen) setPucOpen(true);
+                        }}
+                        onFocus={() => {
+                          if (pucQuery.trim()) setPucOpen(true);
+                        }}
+                        placeholder="Buscar (código o nombre)…"
+                        className={cn(inputBase, "h-11")}
+                      />
+
+                      {pucOpen && (
+                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50">
+                          <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+                            <div className="px-3 py-2 text-xs text-gray-500 flex items-center justify-between">
+                              <span>{pucLoading ? "Buscando..." : "Resultados"}</span>
+                              {selectedPuc ? (
+                                <button
+                                  type="button"
+                                  className="text-emerald-700 font-semibold"
+                                  onClick={() => setSelectedPuc(null)}
+                                >
+                                  Limpiar
+                                </button>
+                              ) : null}
+                            </div>
+
+                            {pucItems.length === 0 ? (
+                              <div className="px-3 pb-3 text-sm text-gray-500">
+                                {pucQuery.trim() ? "Sin resultados" : "Escribí para buscar"}
+                              </div>
+                            ) : (
+                              <div className="max-h-56 overflow-auto">
+                                {pucItems.slice(0, 12).map((x) => (
+                                  <button
+                                    key={x.code}
+                                    type="button"
+                                    className="w-full text-left px-3 py-3 border-t border-gray-100 hover:bg-gray-50"
+                                    onClick={() => handlePickPuc(x)}
+                                  >
+                                    <div className="text-sm font-semibold text-zinc-900">
+                                      {x.code} — {x.name}
+                                    </div>
+                                    <div className="text-xs text-zinc-500">
+                                      {(x.pucDbKind ?? "PUC")} · {x.kind}
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <select
+                        className={cn(inputBase, "h-11")}
+                        value={selectedGrupo}
+                        onChange={(e) => setSelectedGrupo(e.target.value)}
+                        disabled={!selectedClase || guidedLoading}
+                      >
+                        <option value="">
+                          {selectedClase ? "Grupo..." : "Elegí clase primero"}
+                        </option>
+                        {grupos.map((g) => (
+                          <option key={g.code} value={g.code}>
+                            {g.code} — {g.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        className={cn(inputBase, "h-11")}
+                        value={selectedCuenta}
+                        onChange={(e) => setSelectedCuenta(e.target.value)}
+                        disabled={!selectedGrupo || guidedLoading}
+                      >
+                        <option value="">
+                          {selectedGrupo ? "Cuenta..." : "Elegí grupo primero"}
+                        </option>
+                        {cuentas.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} — {c.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      <select
+                        className={cn(inputBase, "h-11")}
+                        value={selectedSubcuenta}
+                        onChange={(e) => setSelectedSubcuenta(e.target.value)}
+                        disabled={!selectedCuenta || guidedLoading || subcuentas.length === 0}
+                      >
+                        <option value="">
+                          {selectedCuenta
+                            ? subcuentas.length
+                              ? "Subcuenta (opcional)..."
+                              : "Sin subcuentas (usa cuenta)"
+                            : "Elegí cuenta primero"}
+                        </option>
+                        {subcuentas.map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {s.code} — {s.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {guidedLoading ? (
+                        <div className="text-xs text-zinc-500">Cargando opciones…</div>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {selectedPuc ? (
+                    <div className="mt-2 text-xs text-zinc-600 truncate">{selectedLabel}</div>
+                  ) : (
+                    <div className="mt-2 text-xs text-zinc-500">Seleccioná una cuenta/subcuenta.</div>
+                  )}
+                </div>
+
+                <div className="shrink-0 pt-[18px] flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMode("RAPIDO")}
+                    className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}
+                  >
+                    Rápido
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("GUIADO")}
+                    className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}
+                  >
+                    Guiado
+                  </button>
                 </div>
               </div>
 
-              {/* VALOR */}
-              <div>
-                <div className="text-xs font-semibold tracking-widest text-gray-500">VALOR</div>
-                <input
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="0.00"
-                  inputMode="decimal"
-                  className={`${inputBase} mt-2`}
-                />
-              </div>
+              {/* FILA: VALOR + NATURALEZA */}
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                    VALOR
+                  </div>
+                  <input
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="0,00"
+                    inputMode="decimal"
+                    className={cn(inputBase, "h-11 mt-2")}
+                  />
+                </div>
 
-              {/* NATURALEZA */}
-              <div>
-                <div className="rounded-2xl bg-gray-50/60 border border-gray-200 px-4 py-3 flex items-center gap-3">
-                  <div className="text-sm font-medium text-gray-800">Naturaleza</div>
-
-                  <div className="ml-auto flex items-center gap-2 rounded-full border border-gray-200 bg-white/70 p-1">
+                <div className="shrink-0">
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
+                    NAT.
+                  </div>
+                  <div className="mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1">
                     <button
                       type="button"
                       onClick={() => setNature("DEBITO")}
-                      className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                      className={cn(
+                        "rounded-2xl px-3 py-2 text-xs font-semibold transition",
                         nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
-                      }`}
+                      )}
                     >
-                      DÉBITO
+                      Débito
                     </button>
-
                     <button
                       type="button"
                       onClick={() => setNature("CREDITO")}
-                      className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                      className={cn(
+                        "rounded-2xl px-3 py-2 text-xs font-semibold transition",
                         nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
-                      }`}
+                      )}
                     >
-                      CRÉDITO
+                      Crédito
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* subtítulo discreto */}
+              <div className="text-xs text-zinc-500">
+                {previewSigned === null ? (
+                  "Elegí débito/crédito. El signo se verá al listar el movimiento."
+                ) : (
+                  <>
+                    Resultado:{" "}
+                    <span
+                      className={cn(
+                        "font-semibold tabular-nums",
+                        previewSigned >= 0 ? "text-emerald-600" : "text-red-600"
+                      )}
+                    >
+                      {formatMoneySigned(previewSigned)}
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -442,12 +757,16 @@ export function AccountingComposer({
                 onClick={handleSend}
                 aria-label={editingEntry ? "Guardar" : "Enviar"}
                 className="shrink-0 aspect-square h-12 w-12 rounded-full bg-emerald-500 text-white grid place-items-center active:scale-95 transition disabled:opacity-50"
-                disabled={!expanded}
+                disabled={!canSend}
                 title={!selectedPuc && expanded ? "Seleccioná un PUC" : undefined}
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="currentColor" aria-hidden="true">
-                  <path d="M8 5v14l13-7-13-7z" />
-                </svg>
+                {sending ? (
+                  <span className="text-xs font-semibold">...</span>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 block" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l13-7-13-7z" />
+                  </svg>
+                )}
               </button>
             </div>
 

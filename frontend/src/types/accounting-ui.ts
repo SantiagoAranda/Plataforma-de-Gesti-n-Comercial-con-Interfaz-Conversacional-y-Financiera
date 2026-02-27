@@ -14,4 +14,7 @@ export type UiAccountingEntry = {
     kind: "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
 
     status: "DRAFT" | "POSTED" | "VOID";
+
+    pucLevel: "CUENTA" | "SUBCUENTA";
+
 };

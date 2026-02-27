@@ -103,6 +103,16 @@ export class AccountingController {
     return this.accountingService.listPucGrupos(clase);
   }
 
+  @Get('puc/cuentas')
+  listPucCuentas(@Query('grupo') grupo: string) {
+    return this.accountingService.listPucCuentas(grupo);
+  }
+
+  @Get('puc/subcuentas')
+  listPucSubcuentas(@Query('cuenta') cuenta: string) {
+    return this.accountingService.listPucSubcuentas(cuenta);
+  }
+
   @Get('puc/search')
   searchPuc(@Query('q') q: string) {
     return this.accountingService.searchPuc(q ?? '');

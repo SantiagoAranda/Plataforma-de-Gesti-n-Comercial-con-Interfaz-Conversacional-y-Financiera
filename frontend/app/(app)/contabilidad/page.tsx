@@ -1,4 +1,3 @@
-// frontend/app/(app)/contabilidad/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -8,11 +7,11 @@ import { AccountingCard } from "@/src/components/accounting/AccountingCard";
 import { AccountingComposer } from "@/src/components/accounting/AccountingComposer";
 import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
 
-import type { AccountingType } from "@/src/types/accounting";
+import type { AccountingType } from "@/src/services/accounting";
 import type { UiAccountingEntry } from "@/src/types/accounting-ui";
 
 import { getPucClases, getPucGrupos } from "@/src/services/puc";
-import { deleteEntry, listMovements } from "@/src/types/accounting";
+import { deleteEntry, listMovements } from "@/src/services/accounting";
 
 function groupLabel(dateISO: string): string {
   const d = new Date(dateISO + "T00:00:00");
@@ -43,13 +42,15 @@ function toUi(m: any): UiAccountingEntry {
 
   return {
     id: m.id, // lineId
-    entryId: m.entryId, // entryId (para PATCH/DELETE)
+    entryId: m.entryId, // entryId
     dateISO,
     time,
     pucCode: m.pucCode,
     accountName: m.pucName ?? "(sin nombre)",
     description: m.description ?? m.memo ?? "",
     amount: Number(m.amountSigned ?? 0),
+    pucLevel: (m.pucLevel ?? "CUENTA"),
+    // si tu backend después expone source, reemplazalo acá
     source: "MANUAL",
     kind,
     status: m.status,
@@ -62,11 +63,17 @@ export default function ContabilidadClient() {
 
   const [items, setItems] = useState<UiAccountingEntry[]>([]);
   const [search, setSearch] = useState("");
-  const [editingEntry, setEditingEntry] = useState<UiAccountingEntry | null>(null);
+  const [editingEntry, setEditingEntry] = useState<UiAccountingEntry | null>(
+    null,
+  );
 
   // PUC: clases + grupos
-  const [pucClases, setPucClases] = useState<{ code: string; name: string }[]>([]);
-  const [pucGrupos, setPucGrupos] = useState<{ code: string; name: string; claseCode: string }[]>([]);
+  const [pucClases, setPucClases] = useState<{ code: string; name: string }[]>(
+    [],
+  );
+  const [pucGrupos, setPucGrupos] = useState<
+    { code: string; name: string; claseCode: string }[]
+  >([]);
   const [selectedClase, setSelectedClase] = useState<string>("");
 
   const [loading, setLoading] = useState(false);
@@ -87,7 +94,6 @@ export default function ContabilidadClient() {
     }
   }, [search]);
 
-  // ✅ único fetch: cuando cambia search
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -136,8 +142,10 @@ export default function ContabilidadClient() {
 
   const dates = useMemo(
     () => Object.keys(grouped).sort((a, b) => (a < b ? 1 : -1)),
-    [grouped]
+    [grouped],
   );
+
+  const isEmpty = !loading && items.length === 0 && search.trim() === "";
 
   return (
     <div className="min-h-[100dvh] bg-white">
@@ -147,7 +155,13 @@ export default function ContabilidadClient() {
         showBack
         rightAriaLabel="Filtros"
         rightIcon={
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M4 6h16" />
             <path d="M7 12h10" />
             <path d="M10 18h4" />
@@ -161,34 +175,71 @@ export default function ContabilidadClient() {
           <div className="px-4 py-2 text-xs text-neutral-500">Cargando...</div>
         )}
 
-        <div className="mt-3 space-y-6">
-          {dates.map((dateISO) => (
-            <section key={dateISO}>
-              <div className="px-4 text-xs font-semibold tracking-widest text-gray-400">
-                {groupLabel(dateISO)}
+        {/* ✅ Estado vacío: solo si no hay nada y no estás buscando */}
+        {isEmpty && (
+          <div className="px-4 mt-4">
+            <div className="rounded-3xl bg-white border border-neutral-200 shadow-sm p-6">
+              <div className="text-lg font-semibold text-neutral-900">
+                Empezá a cargar tu contabilidad
+              </div>
+              <div className="mt-2 text-sm text-neutral-600">
+                Podés registrar movimientos manuales desde el botón{" "}
+                <span className="font-semibold">+</span> de abajo. Si entran
+                ventas automáticas, esta pantalla se va a completar sola.
               </div>
 
-              <div className="mt-2 space-y-4">
-                {grouped[dateISO].map((e) => (
-                  <div key={e.id} className="px-4">
-                    <AccountingCard
-                      entry={e as any} // ✅ si cambiás AccountingCard al tipo UiAccountingEntry, podés borrar este cast
-                      onEdit={(entry: any) => setEditingEntry(entry)}
-                      onDelete={async (entry: any) => {
-                        try {
-                          await deleteEntry(entry.entryId);
-                          await refresh();
-                        } catch (err: any) {
-                          alert(err?.details?.message ?? err?.message ?? "No se pudo eliminar");
-                        }
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  // enfoca el flujo del composer: lo más simple es scrollear y que toque "+"
+                  window.scrollTo({
+                    top: document.body.scrollHeight,
+                    behavior: "smooth",
+                  });
+                }}
+                className="mt-5 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-semibold text-white hover:bg-emerald-600 transition"
+              >
+                Cargar primer movimiento
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Lista normal */}
+        {!isEmpty && (
+          <div className="mt-3 space-y-6">
+            {dates.map((dateISO) => (
+              <section key={dateISO}>
+                <div className="px-4 text-xs font-semibold tracking-widest text-gray-400">
+                  {groupLabel(dateISO)}
+                </div>
+
+                <div className="mt-2 space-y-4">
+                  {grouped[dateISO].map((e) => (
+                    <div key={e.id} className="px-4">
+                      <AccountingCard
+                        entry={e as any}
+                        onEdit={(entry: any) => setEditingEntry(entry)}
+                        onDelete={async (entry: any) => {
+                          try {
+                            await deleteEntry(entry.entryId);
+                            await refresh();
+                          } catch (err: any) {
+                            alert(
+                              err?.details?.message ??
+                                err?.message ??
+                                "No se pudo eliminar",
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        )}
       </main>
 
       <AccountingComposer

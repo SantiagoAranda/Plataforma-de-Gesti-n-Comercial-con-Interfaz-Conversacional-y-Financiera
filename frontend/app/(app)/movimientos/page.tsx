@@ -207,7 +207,7 @@
 // app/(app)/movimientos/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Landmark,
   CreditCard,
@@ -222,7 +222,7 @@ import BottomNavbar from "@/src/components/layout/BottomNav";
 import {
   getMovementsProgress,
   type MovementsProgressResponse,
-} from "@/src/types/accounting";
+} from "@/src/services/accounting";
 
 function formatMoney(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -368,47 +368,28 @@ function sectionMeta(
 ): SectionMeta {
   switch (key) {
     case "ASSET":
-      return {
-        title: "Activos",
-        tone: "green",
-        icon: <Landmark className="h-5 w-5" />,
-      };
+      return { title: "Activos", tone: "green", icon: <Landmark className="h-5 w-5" /> };
     case "LIABILITY":
-      return {
-        title: "Pasivos",
-        tone: "red",
-        icon: <CreditCard className="h-5 w-5" />,
-      };
+      return { title: "Pasivos", tone: "red", icon: <CreditCard className="h-5 w-5" /> };
     case "EQUITY":
-      return {
-        title: "Patrimonio",
-        tone: "green",
-        icon: <Layers className="h-5 w-5" />,
-      };
+      return { title: "Patrimonio", tone: "green", icon: <Layers className="h-5 w-5" /> };
     case "INCOME":
-      return {
-        title: "Ingresos",
-        tone: "green",
-        icon: <TrendingUp className="h-5 w-5" />,
-      };
+      return { title: "Ingresos", tone: "green", icon: <TrendingUp className="h-5 w-5" /> };
     case "EXPENSE":
-      return {
-        title: "Gastos",
-        tone: "red",
-        icon: <TrendingDown className="h-5 w-5" />,
-      };
+      return { title: "Gastos", tone: "red", icon: <TrendingDown className="h-5 w-5" /> };
     default:
-      return {
-        title: "Otros",
-        tone: "green",
-        icon: <Banknote className="h-5 w-5" />,
-      };
+      return { title: "Otros", tone: "green", icon: <Banknote className="h-5 w-5" /> };
   }
 }
 
-function formatPeriodoFromISO(isoDate?: string) {
-  if (!isoDate) return "";
-  const d = new Date(isoDate + "T00:00:00");
+/**
+ * Acepta string ISO (con o sin hora) o Date.
+ * Devuelve "mes año" o "" si no puede parsear.
+ */
+function formatPeriodo(dateLike?: string | Date | null) {
+  if (!dateLike) return "";
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
 }
 
@@ -422,29 +403,19 @@ function SectionBlock({
   animateBars: boolean;
 }) {
   const meta = sectionMeta(sec.key);
-
   const [expanded, setExpanded] = useState(false);
 
   const itemsSorted = useMemo(() => {
-    // opcional: orden por monto desc (más relevante arriba)
     return sec.items.slice().sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
   }, [sec.items]);
 
   const visibleItems = expanded ? itemsSorted : itemsSorted.slice(0, MAX_VISIBLE);
 
-  const max = useMemo(
-    () => Math.max(...itemsSorted.map((x) => Math.abs(x.amount)), 1),
-    [itemsSorted]
-  );
+  const max = useMemo(() => Math.max(...itemsSorted.map((x) => Math.abs(x.amount)), 1), [itemsSorted]);
 
   return (
     <div className="space-y-4">
-      <SectionHeader
-        tone={meta.tone}
-        title={meta.title}
-        total={sec.total}
-        icon={meta.icon}
-      />
+      <SectionHeader tone={meta.tone} title={meta.title} total={sec.total} icon={meta.icon} />
 
       <div className="space-y-3">
         {visibleItems.map((x, idx) => {
@@ -487,15 +458,18 @@ export default function MovimientosPage() {
   const [loading, setLoading] = useState(true);
   const [animateBars, setAnimateBars] = useState(false);
   const [data, setData] = useState<MovementsProgressResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
+        setErrorMsg(null);
         const res = await getMovementsProgress();
         setData(res);
-      } catch (e) {
+      } catch (e: any) {
         console.error(e);
         setData(null);
+        setErrorMsg(e?.message ?? "Error al cargar movimientos");
       } finally {
         setLoading(false);
         requestAnimationFrame(() => setAnimateBars(true));
@@ -526,74 +500,89 @@ export default function MovimientosPage() {
     return assets - liabilities;
   }, [data]);
 
-  const periodo = useMemo(() => formatPeriodoFromISO(data?.date), [data]);
-const hasData =
-  !!data &&
-  Array.isArray(data.sections) &&
-  data.sections.length > 0 &&
-  data.sections.some((s) => Math.abs(s.total) > 0);
+  const periodo = useMemo(() => formatPeriodo((data as any)?.date), [data]);
 
-return (
-  <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
-    <AppHeader
-      title="Movimientos"
-      subtitle={`Balance General · ${periodo}`}
-      showBack={true}
-      rightIcon="calendar"
-    />
+  /**
+   * IMPORTANTE:
+   * Este endpoint (por tu backend) calcula con POSTED.
+   * Si no hay POSTED, sections viene vacío => empty state.
+   */
+  const hasPostedData = useMemo(() => {
+    const secs = data?.sections ?? [];
+    return secs.length > 0 && secs.some((s) => (s.items?.length ?? 0) > 0);
+  }, [data]);
 
-    <main className="mx-auto max-w-md px-4 pb-32 pt-3">
-      {/* Patrimonio siempre visible */}
-      <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
-        <div className="text-sm font-medium text-zinc-500">
-          Patrimonio Neto
-        </div>
+  return (
+    <div className="min-h-dvh bg-zinc-50 overflow-x-hidden">
+      <AppHeader
+        title="Movimientos"
+        subtitle={periodo ? `Balance General · ${periodo}` : "Balance General"}
+        showBack={true}
+        rightIcon="calendar"
+      />
 
-        <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
-          {loading ? "—" : formatMoney(patrimonioNeto)}
-        </div>
+      <main className="mx-auto max-w-md px-4 pb-32 pt-3">
+        {/* Patrimonio siempre visible */}
+        <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-black/5">
+          <div className="text-sm font-medium text-zinc-500">Patrimonio Neto</div>
 
-        <div className="mt-4 text-sm text-zinc-500">
-          {loading ? "Cargando..." : "Calculado: Activos − Pasivos"}
-        </div>
-      </div>
-
-      {/* Estado vacío */}
-      {!loading && !hasData && (
-        <div className="mt-6 rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 text-center">
-          <div className="text-lg font-semibold text-zinc-900">
-            Aún no hay movimientos
+          <div className="mt-2 text-4xl font-semibold tracking-tight text-zinc-900">
+            {loading ? "—" : formatMoney(patrimonioNeto)}
           </div>
 
-          <div className="mt-2 text-sm text-zinc-500">
-            Ir a Contabilidad para empezar a cargar información.
+          <div className="mt-4 text-sm text-zinc-500">
+            {loading ? "Cargando..." : "Calculado: Activos − Pasivos"}
           </div>
-
-          <button
-            type="button"
-            onClick={() => (window.location.href = "/contabilidad")}
-            className="mt-5 w-full rounded-xl bg-emerald-500 py-3 text-sm font-semibold text-white hover:bg-emerald-600 transition"
-          >
-            Ir a Contabilidad
-          </button>
         </div>
-      )}
 
-      {/* Secciones normales */}
-      {!loading && hasData && (
-        <div className="mt-6 space-y-10">
-          {sections.map((sec) => (
-            <SectionBlock
-              key={sec.key}
-              sec={sec}
-              animateBars={animateBars}
-            />
-          ))}
-        </div>
-      )}
-    </main>
+        {/* Error */}
+        {!loading && errorMsg && (
+          <div className="mt-6 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-black/5">
+            <div className="text-sm font-semibold text-zinc-900">No se pudo cargar</div>
+            <div className="mt-2 text-sm text-zinc-500">{errorMsg}</div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 w-full rounded-xl bg-zinc-900 py-3 text-sm font-semibold text-white"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
-    <BottomNavbar active="movimientos" />
-  </div>
-);
+        {/* Empty state: no hay POSTED */}
+        {!loading && !errorMsg && !hasPostedData && (
+          <div className="mt-6 rounded-3xl bg-white p-8 shadow-sm ring-1 ring-black/5 text-center">
+            <div className="text-lg font-semibold text-zinc-900">
+              Aún no hay movimientos publicados
+            </div>
+
+            <div className="mt-2 text-sm text-zinc-500">
+              Esta pantalla muestra el balance con asientos <b>POSTED</b>. Si cargaste en
+              Contabilidad pero quedó en <b>DRAFT</b>, no va a aparecer acá hasta postearlo.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => (window.location.href = "/contabilidad")}
+              className="mt-5 w-full rounded-xl bg-emerald-500 py-3 text-sm font-semibold text-white hover:bg-emerald-600 transition"
+            >
+              Ir a Contabilidad
+            </button>
+          </div>
+        )}
+
+        {/* Secciones */}
+        {!loading && !errorMsg && hasPostedData && (
+          <div className="mt-6 space-y-10">
+            {sections.map((sec) => (
+              <SectionBlock key={sec.key} sec={sec} animateBars={animateBars} />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <BottomNavbar active="movimientos" />
+    </div>
+  );
 }

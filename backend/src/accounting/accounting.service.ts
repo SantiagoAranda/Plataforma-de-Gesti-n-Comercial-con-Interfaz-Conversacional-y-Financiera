@@ -358,7 +358,7 @@ export class AccountingService {
 
   async listMovements(businessId: string, q: MovementsQueryDto) {
     const onlyPosted = (q.onlyPosted ?? 'false') === 'true';
-
+    
     const entryWhere: any = { businessId };
     if (onlyPosted) entryWhere.status = 'POSTED';
     else if (q.status) entryWhere.status = q.status;
@@ -440,6 +440,7 @@ export class AccountingService {
         memo: l.entry.memo ?? null,
         pucCode,
         pucName,
+        pucLevel: l.pucSubCode ? "SUBCUENTA" : "CUENTA",
         description: l.description ?? null,
         debit,
         credit,
@@ -714,4 +715,26 @@ export class AccountingService {
       select: { code: true, name: true, claseCode: true },
     });
   }
+
+  async listPucCuentas(grupoCode: string) {
+  const code = (grupoCode ?? '').trim();
+  if (!code) throw new BadRequestException('Query param "grupo" is required');
+
+  return this.prisma.pucCuenta.findMany({
+    where: { grupoCode: code },
+    orderBy: { code: 'asc' },
+    select: { code: true, name: true, grupoCode: true },
+  });
+}
+
+async listPucSubcuentas(cuentaCode: string) {
+  const code = (cuentaCode ?? '').trim();
+  if (!code) throw new BadRequestException('Query param "cuenta" is required');
+
+  return this.prisma.pucSubcuenta.findMany({
+    where: { cuentaCode: code, active: true },
+    orderBy: { code: 'asc' },
+    select: { code: true, name: true, cuentaCode: true },
+  });
+}
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { listClases, listGrupos } from "@/src/services/puc";
-import { cuentaDesdeGrupo } from "@/src/types/accounting";
+import { cuentaDesdeGrupo } from "@/src/services/accounting";
 
 type Props = {
   onSelectCuenta: (cuentaCode: string) => void;
