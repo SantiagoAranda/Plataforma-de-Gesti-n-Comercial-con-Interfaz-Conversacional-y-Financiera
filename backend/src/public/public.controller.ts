@@ -7,6 +7,7 @@ import {
   Body,
 } from '@nestjs/common';
 import { PublicService } from './public.service';
+import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 
 @Controller('public')
 export class PublicController {
@@ -35,5 +36,13 @@ export class PublicController {
     @Body() body: any,
   ) {
     return this.publicService.createReservation(slug, body);
+  }
+
+  @Post(':slug/order')
+  createOrder(
+    @Param('slug') slug: string,
+    @Body() dto: CreatePublicOrderDto,
+  ) {
+    return this.publicService.createOrder(slug, dto);
   }
 }

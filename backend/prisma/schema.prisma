@@ -256,7 +256,7 @@ model Reservation {
   updatedAt DateTime @updatedAt
 
   // Evita duplicar exactamente el mismo slot para el mismo servicio
-  @@unique([itemId, date, startMinute, endMinute])
+  @@unique([itemId, date, startMinute])
   @@index([businessId, date])
   @@index([itemId, date])
   @@index([status])
