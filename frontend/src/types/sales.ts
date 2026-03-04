@@ -1,28 +1,38 @@
-export type SaleStatus = "CONFIRMADO" | "CERRADO" | "PENDIENTE" | "CANCELADO";
+export type SaleStatus =
+  | "CONFIRMADO"
+  | "CERRADO"
+  | "PENDIENTE"
+  | "CANCELADO";
+
 export type SaleType = "PRODUCTO" | "SERVICIO";
 
 export interface SaleItem {
   qty: number;
   name: string;
-  price: number; // precio total de ese ítem (como en tu UI)
 
-  // ✅ Solo para servicios (si no aplica, queda undefined)
+  // precio TOTAL de este item (qty * precio unitario)
+  price: number;
+
+  // solo para servicios
   durationMin?: number;
 }
 
 export interface Sale {
   id: string;
+
   customerName: string;
-  customerPhone?: string;
+  customerWhatsapp?: string;
 
   type: SaleType;
   status: SaleStatus;
-  items: SaleItem[];
-  createdAt: string; // ISO string
 
-  // ✅ SOLO servicios: fecha/hora del turno (ISO)
+  items: SaleItem[];
+
+  createdAt: string; // ISO
+
+  // solo servicios
   scheduledAt?: string;
 
-  // fallback
+  // fallback temporal
   businessWhatsapp?: string;
 }

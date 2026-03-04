@@ -68,6 +68,69 @@ export default function PublicStorePage() {
     fetchItems();
   }, [slug, category]);
 
+  /* ================= FETCH DISPONIBILIDAD ================= */
+
+  const handleDateChange = async (date: Date) => {
+    if (!selectedService) return;
+
+    const formatted = date.toISOString().split("T")[0];
+
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
+      );
+
+      if (!res.ok) throw new Error();
+
+      const data = await res.json();
+
+      setAvailableSlots(data);
+    } catch {
+      setAvailableSlots([]);
+    }
+  };
+
+  /* ================= RESERVAR ================= */
+
+  const handleReserve = async (data: any) => {
+    if (!selectedService) return;
+
+    const [h, m] = data.time.split(":").map(Number);
+
+    const startMinute = h * 60 + m;
+    const endMinute = startMinute + (selectedService.durationMinutes ?? 60);
+
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/reserve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          itemId: selectedService.id,
+          customerName: data.fullName,
+          customerWhatsapp: data.whatsapp,
+          date: data.date,
+          startMinute,
+          endMinute,
+        }),
+      });
+
+      notify({
+        type: "success",
+        message: "Reserva creada correctamente",
+      });
+
+      setSelectedService(null);
+      setAvailableSlots([]);
+    } catch {
+      notify({
+        type: "error",
+        message: "No se pudo crear la reserva",
+      });
+    }
+  };
+
   /* ================= CARRITO ================= */
 
   const addToCart = (id: string) => {
@@ -139,21 +202,20 @@ export default function PublicStorePage() {
     }
 
     try {
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/order`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            customerName,
-            customerWhatsapp: whatsapp,
-            items: cartItems.map((item) => ({
-              itemId: item.id,
-              quantity: item.quantity,
-            })),
-          }),
-        }
-      );
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/order`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerName,
+          customerWhatsapp: whatsapp,
+          items: cartItems.map((item) => ({
+            itemId: item.id,
+            quantity: item.quantity,
+          })),
+        }),
+      });
 
       notify({ type: "success", message: "Compra enviada" });
 
@@ -238,7 +300,7 @@ export default function PublicStorePage() {
         </button>
       )}
 
-      {/* ================= MODAL CARRITO ================= */}
+      {/* MODAL CARRITO */}
       {showCartModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
@@ -340,6 +402,8 @@ export default function PublicStorePage() {
         title={selectedService?.name}
         subtitle="Selecciona día y horario disponible"
         timeSlots={availableSlots}
+        onDateChange={handleDateChange}
+        onConfirm={handleReserve}
       />
     </div>
   );

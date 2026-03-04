@@ -49,7 +49,7 @@ export class PublicService {
   }
 
   /* =====================================================
-     AVAILABILITY
+     AVAILABILITY (CALCULA SLOTS DISPONIBLES)
   ===================================================== */
 
   async getAvailability(slug: string, itemId: string, date: string) {
@@ -60,10 +60,45 @@ export class PublicService {
     if (!business)
       throw new BadRequestException('Business not found');
 
+    const item = await this.prisma.item.findFirst({
+      where: {
+        id: itemId,
+        businessId: business.id,
+        type: 'SERVICE',
+        status: 'ACTIVE',
+      },
+    });
+
+    if (!item)
+      throw new BadRequestException('Invalid service');
+
     const selectedDate = new Date(date);
     selectedDate.setHours(0, 0, 0, 0);
 
-    return this.prisma.reservation.findMany({
+    const weekdayMap: Record<number, Weekday> = {
+      0: 'SUN',
+      1: 'MON',
+      2: 'TUE',
+      3: 'WED',
+      4: 'THU',
+      5: 'FRI',
+      6: 'SAT',
+    };
+
+    const weekday = weekdayMap[selectedDate.getDay()];
+
+    const windows = await this.prisma.serviceScheduleWindow.findMany({
+      where: {
+        businessId: business.id,
+        weekday,
+        OR: [{ itemId: item.id }, { itemId: null }],
+      },
+      orderBy: { startMinute: 'asc' },
+    });
+
+    if (windows.length === 0) return [];
+
+    const reservations = await this.prisma.reservation.findMany({
       where: {
         businessId: business.id,
         itemId,
@@ -75,10 +110,65 @@ export class PublicService {
         endMinute: true,
       },
     });
+
+    const blocks = await this.prisma.serviceScheduleBlock.findMany({
+      where: {
+        businessId: business.id,
+        date: selectedDate,
+        OR: [{ itemId: item.id }, { itemId: null }],
+      },
+    });
+
+    const duration = item.durationMinutes ?? 60;
+
+    const slots: string[] = [];
+
+    const formatTime = (minutes: number) => {
+      const h = Math.floor(minutes / 60)
+        .toString()
+        .padStart(2, '0');
+
+      const m = (minutes % 60)
+        .toString()
+        .padStart(2, '0');
+
+      return `${h}:${m}`;
+    };
+
+    for (const window of windows) {
+      let cursor = window.startMinute;
+
+      while (cursor + duration <= window.endMinute) {
+        const start = cursor;
+        const end = cursor + duration;
+
+        const overlap = reservations.some(
+          (r) => start < r.endMinute && end > r.startMinute,
+        );
+
+        const blocked = blocks.some((b) => {
+          if (b.startMinute === null && b.endMinute === null)
+            return true;
+
+          return (
+            start < (b.endMinute ?? 0) &&
+            end > (b.startMinute ?? 0)
+          );
+        });
+
+        if (!overlap && !blocked) {
+          slots.push(formatTime(start));
+        }
+
+        cursor += duration;
+      }
+    }
+
+    return slots;
   }
 
   /* =====================================================
-     CREATE RESERVATION (PRODUCTION READY)
+     CREATE RESERVATION
   ===================================================== */
 
   async createReservation(slug: string, body: any) {
@@ -125,81 +215,6 @@ export class PublicService {
 
       if (!item)
         throw new BadRequestException('Invalid service');
-
-      /* ================================
-         VALIDACIÓN HORARIO LABORAL
-      ================================= */
-
-      const weekdayMap: Record<number, Weekday> = {
-        0: 'SUN',
-        1: 'MON',
-        2: 'TUE',
-        3: 'WED',
-        4: 'THU',
-        5: 'FRI',
-        6: 'SAT',
-      };
-
-      const weekday = weekdayMap[selectedDate.getDay()];
-
-      // Ventanas específicas del servicio o generales
-      const windows = await tx.serviceScheduleWindow.findMany({
-        where: {
-          businessId: business.id,
-          weekday,
-          OR: [
-            { itemId: item.id },
-            { itemId: null },
-          ],
-        },
-      });
-
-      if (windows.length === 0)
-        throw new BadRequestException(
-          'Service not available that day',
-        );
-
-      const insideWindow = windows.some(
-        (w) =>
-          startMinute >= w.startMinute &&
-          endMinute <= w.endMinute,
-      );
-
-      if (!insideWindow)
-        throw new BadRequestException(
-          'Outside business hours',
-        );
-
-      // Bloqueos (vacaciones, feriados, etc.)
-      const blocks = await tx.serviceScheduleBlock.findMany({
-        where: {
-          businessId: business.id,
-          date: selectedDate,
-          OR: [
-            { itemId: item.id },
-            { itemId: null },
-          ],
-        },
-      });
-
-      const blocked = blocks.some((b) => {
-        if (b.startMinute === null && b.endMinute === null)
-          return true;
-
-        return (
-          startMinute < (b.endMinute ?? 0) &&
-          endMinute > (b.startMinute ?? 0)
-        );
-      });
-
-      if (blocked)
-        throw new BadRequestException(
-          'This time is blocked',
-        );
-
-      /* ================================
-         SOLAPAMIENTO
-      ================================= */
 
       const overlapping = await tx.reservation.findFirst({
         where: {
