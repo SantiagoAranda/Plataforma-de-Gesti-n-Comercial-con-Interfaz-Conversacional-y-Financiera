@@ -1,18 +1,18 @@
+// src/components/accounting/AccountingComposer.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UiAccountingEntry } from "@/src/types/accounting-ui";
 
 import {
   getPuc,
   searchPuc,
   updateEntry,
-  type MovementNature, // lo usabas, pero ya no es el centro
   getEntry,
   postEntry,
   voidEntry,
   type AccountingEntryStatus,
-  createEntry, // ✅ nuevo
+  createEntry,
   type CreateLineDto,
 } from "@/src/services/accounting";
 
@@ -110,11 +110,10 @@ function StatusBadge({ status }: { status: AccountingEntryStatus }) {
     status === "DRAFT"
       ? "bg-zinc-100 text-zinc-700 border-zinc-200"
       : status === "POSTED"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-red-50 text-red-700 border-red-200";
+        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+        : "bg-red-50 text-red-700 border-red-200";
 
-  const label =
-    status === "DRAFT" ? "Borrador" : status === "POSTED" ? "Publicado" : "Anulado";
+  const label = status === "DRAFT" ? "Borrador" : status === "POSTED" ? "Publicado" : "Anulado";
 
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", cls)}>
@@ -137,23 +136,18 @@ export function AccountingComposer({
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<Mode>("RAPIDO");
 
-  // Header del asiento (memo/fecha)
   const [memo, setMemo] = useState("");
   const [dateISO, setDateISO] = useState<string>(todayISO());
 
-  // Estado real del asiento
   const [entryStatus, setEntryStatus] = useState<AccountingEntryStatus>("DRAFT");
   const [statusLoading, setStatusLoading] = useState(false);
 
-  // Lines del asiento (multi-línea)
   const [lines, setLines] = useState<CreateLineDto[]>([]);
 
-  // inputs para cargar UNA línea
   const [value, setValue] = useState("");
   const [nature, setNature] = useState<NatureUI>("DEBITO");
   const [lineDesc, setLineDesc] = useState("");
 
-  // PUC
   const [pucQuery, setPucQuery] = useState("");
   const [pucItems, setPucItems] = useState<PucNode[]>([]);
   const [selectedPuc, setSelectedPuc] = useState<PucNode | null>(null);
@@ -161,7 +155,6 @@ export function AccountingComposer({
   const [pucOpen, setPucOpen] = useState(false);
   const pucWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // GUIADO
   const [grupos, setGrupos] = useState<PucGrupo[]>([]);
   const [selectedGrupo, setSelectedGrupo] = useState<string>("");
 
@@ -172,11 +165,12 @@ export function AccountingComposer({
   const [selectedSubcuenta, setSelectedSubcuenta] = useState<string>("");
 
   const [guidedLoading, setGuidedLoading] = useState(false);
-
   const [sending, setSending] = useState(false);
 
   const expandableRef = useRef<HTMLDivElement | null>(null);
   const [contentH, setContentH] = useState(0);
+
+  const MAX_SHEET = "calc(100dvh - 92px)";
 
   useEffect(() => {
     if (!expandableRef.current) return;
@@ -186,6 +180,15 @@ export function AccountingComposer({
     setContentH(el.scrollHeight);
     return () => ro.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [expanded]);
 
   const amount = useMemo(() => parseMoneyLike(value), [value]);
 
@@ -199,7 +202,7 @@ export function AccountingComposer({
   const isEditing = !!editingEntry;
   const canEditFields = !isEditing || entryStatus === "DRAFT";
 
-  function resetAll() {
+  const resetAll = useCallback(() => {
     setMemo("");
     setDateISO(todayISO());
     setEntryStatus("DRAFT");
@@ -220,20 +223,22 @@ export function AccountingComposer({
     setGrupos([]);
     setCuentas([]);
     setSubcuentas([]);
-  }
+  }, []);
 
-  function setClase(code: string) {
-    onSelectClase(code);
-    setSelectedGrupo("");
-    setSelectedCuenta("");
-    setSelectedSubcuenta("");
-    setGrupos([]);
-    setCuentas([]);
-    setSubcuentas([]);
-    if (mode === "GUIADO") setSelectedPuc(null);
-  }
+  const setClase = useCallback(
+    (code: string) => {
+      onSelectClase(code);
+      setSelectedGrupo("");
+      setSelectedCuenta("");
+      setSelectedSubcuenta("");
+      setGrupos([]);
+      setCuentas([]);
+      setSubcuentas([]);
+      if (mode === "GUIADO") setSelectedPuc(null);
+    },
+    [mode, onSelectClase],
+  );
 
-  // cerrar dropdown PUC al click afuera
   useEffect(() => {
     if (!pucOpen) return;
     const onDoc = (e: MouseEvent) => {
@@ -244,7 +249,6 @@ export function AccountingComposer({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [pucOpen]);
 
-  // EDIT: abre + carga entry real (status + memo + date + lines)
   useEffect(() => {
     if (!editingEntry) return;
 
@@ -260,7 +264,6 @@ export function AccountingComposer({
         const d = new Date(entry.date);
         setDateISO(d.toISOString().slice(0, 10));
 
-        // mapear líneas del backend a CreateLineDto
         const mapped: CreateLineDto[] = (entry.lines ?? []).map((l: any) => ({
           pucCuentaCode: l.pucCuentaCode ?? undefined,
           pucSubCode: l.pucSubCode ?? undefined,
@@ -270,13 +273,11 @@ export function AccountingComposer({
         }));
         setLines(mapped);
 
-        // setear clase desde primera línea si existe
-        const firstCode =
-          mapped[0]?.pucSubCode ?? mapped[0]?.pucCuentaCode ?? editingEntry.pucCode ?? "";
+        const firstCode = mapped[0]?.pucSubCode ?? mapped[0]?.pucCuentaCode ?? editingEntry.pucCode ?? "";
         const clase = String(firstCode).trim()[0];
         if (clase) setClase(clase);
       } catch {
-        // no rompas UI
+        // noop
       } finally {
         setStatusLoading(false);
       }
@@ -284,15 +285,23 @@ export function AccountingComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingEntry]);
 
-  function toggleExpanded() {
-    setExpanded((p) => {
-      const next = !p;
-      if (!next && editingEntry) onCancelEdit();
-      return next;
-    });
-  }
+  // ✅ IMPORTANTE: no llames onCancelEdit adentro del setState updater.
+  const toggleExpanded = useCallback(() => {
+    setExpanded((prev) => !prev);
+  }, []);
 
-  // RÁPIDO: search
+  // ✅ Si se cierra (expanded pasa a false) y estabas editando, cancelá en un effect (no en render).
+  const wasExpandedRef = useRef(false);
+  useEffect(() => {
+    const wasExpanded = wasExpandedRef.current;
+    wasExpandedRef.current = expanded;
+
+    if (wasExpanded && !expanded && editingEntry) {
+      onCancelEdit();
+      resetAll();
+    }
+  }, [expanded, editingEntry, onCancelEdit, resetAll]);
+
   useEffect(() => {
     if (!expanded) return;
     if (mode !== "RAPIDO") return;
@@ -351,7 +360,6 @@ export function AccountingComposer({
     } catch {}
   }
 
-  // GUIADO cascada
   useEffect(() => {
     if (!expanded) return;
     if (mode !== "GUIADO") return;
@@ -457,20 +465,11 @@ export function AccountingComposer({
   function addLine() {
     if (!canEditFields) return;
 
-    if (!selectedPuc?.code) {
-      alert("Seleccioná una cuenta/subcuenta (PUC).");
-      return;
-    }
-    if (!amount || amount <= 0) {
-      alert("Ingresá un valor válido.");
-      return;
-    }
+    if (!selectedPuc?.code) return alert("Seleccioná una cuenta/subcuenta (PUC).");
+    if (!amount || amount <= 0) return alert("Ingresá un valor válido.");
 
     const kind = selectedPuc.pucDbKind;
-    if (kind !== "CUENTA" && kind !== "SUBCUENTA") {
-      alert("El PUC seleccionado no tiene tipo (CUENTA/SUBCUENTA).");
-      return;
-    }
+    if (kind !== "CUENTA" && kind !== "SUBCUENTA") return alert("El PUC seleccionado no tiene tipo (CUENTA/SUBCUENTA).");
 
     const debit = nature === "DEBITO" ? amount : 0;
     const credit = nature === "CREDITO" ? amount : 0;
@@ -484,7 +483,6 @@ export function AccountingComposer({
 
     setLines((prev) => [...prev, line]);
 
-    // limpiar inputs de línea
     setValue("");
     setNature("DEBITO");
     setLineDesc("");
@@ -499,14 +497,8 @@ export function AccountingComposer({
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const canSaveDraft =
-    expanded && canEditFields && !sending && lines.length >= 1;
-
-  const canPost =
-    isEditing &&
-    entryStatus === "DRAFT" &&
-    lines.length >= 2 &&
-    totals.diff === 0;
+  const canSaveDraft = expanded && canEditFields && !sending && lines.length >= 1;
+  const canPost = isEditing && entryStatus === "DRAFT" && lines.length >= 2 && totals.diff === 0;
 
   async function handleSaveDraft() {
     if (!canSaveDraft) return;
@@ -514,7 +506,6 @@ export function AccountingComposer({
     setSending(true);
     try {
       if (!isEditing) {
-        // crear Entry con múltiples líneas
         await createEntry({
           date: dateISO,
           memo: memo.trim() || undefined,
@@ -527,7 +518,6 @@ export function AccountingComposer({
         return;
       }
 
-      // editar Entry existente: sobreescribir lines
       await updateEntry(editingEntry!.entryId, {
         memo: memo.trim() || undefined,
         date: dateISO,
@@ -579,27 +569,30 @@ export function AccountingComposer({
   const inputBase =
     "w-full rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-sm outline-none focus:border-emerald-300 transition disabled:opacity-60 disabled:cursor-not-allowed";
 
-  const miniToggleBase =
-    "h-10 rounded-2xl border text-xs font-semibold px-3 whitespace-nowrap transition";
+  const miniToggleBase = "h-10 rounded-2xl border text-xs font-semibold px-3 whitespace-nowrap transition";
   const miniOn = "bg-emerald-50 border-emerald-200 text-emerald-700";
   const miniOff = "bg-white/70 border-gray-200 text-gray-700";
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
-      <div className="w-full">
+    <div className="fixed inset-x-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
+      <div className="mx-auto w-full sm:max-w-2xl lg:max-w-3xl">
         <div className="w-full rounded-none border-t border-white/40 bg-white/70 backdrop-blur-xl shadow-[0_-10px_25px_rgba(0,0,0,0.10)]">
-          {/* EXPANDIBLE */}
           <div
-            className="overflow-hidden transition-[max-height,opacity] duration-300 ease-out"
-            style={{ maxHeight: expanded ? contentH : 0, opacity: expanded ? 1 : 0 }}
+            className="transition-[max-height,opacity] duration-300 ease-out overflow-hidden"
+            style={{
+              maxHeight: expanded ? `min(${contentH}px, ${MAX_SHEET})` : 0,
+              opacity: expanded ? 1 : 0,
+            }}
           >
-            <div ref={expandableRef} className="px-5 pt-4 pb-4 space-y-3">
+            <div
+              ref={expandableRef}
+              className="px-5 pt-4 pb-4 space-y-3 overflow-y-auto overscroll-contain"
+              style={{ maxHeight: MAX_SHEET }}
+            >
               {/* HEADER ASIENTO */}
               <div className="rounded-2xl border border-gray-200 bg-white/60 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                    ASIENTO
-                  </div>
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">ASIENTO</div>
                   <div className="flex items-center gap-2">
                     {statusLoading ? <span className="text-xs text-zinc-500">…</span> : <StatusBadge status={entryStatus} />}
                   </div>
@@ -607,9 +600,7 @@ export function AccountingComposer({
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div>
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                      FECHA
-                    </div>
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">FECHA</div>
                     <input
                       type="date"
                       value={dateISO}
@@ -620,9 +611,7 @@ export function AccountingComposer({
                   </div>
 
                   <div>
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                      MEMO
-                    </div>
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">MEMO</div>
                     <input
                       value={memo}
                       onChange={(e) => setMemo(e.target.value)}
@@ -643,13 +632,9 @@ export function AccountingComposer({
                         "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
                         canPost
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-500",
                       )}
-                      title={
-                        !canPost
-                          ? "Requiere mínimo 2 líneas y balance (Débito = Crédito)"
-                          : undefined
-                      }
+                      title={!canPost ? "Requiere mínimo 2 líneas y balance (Débito = Crédito)" : undefined}
                     >
                       Postear
                     </button>
@@ -662,7 +647,7 @@ export function AccountingComposer({
                         "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
                         entryStatus !== "VOID"
                           ? "bg-red-50 border-red-200 text-red-700"
-                          : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                          : "bg-zinc-50 border-zinc-200 text-zinc-500",
                       )}
                     >
                       Anular
@@ -679,26 +664,38 @@ export function AccountingComposer({
                     <div className="text-[11px] text-gray-500">Total Crédito</div>
                     <div className="font-semibold tabular-nums">{formatARS(totals.totalCredit)}</div>
                   </div>
-                  <div className={cn(
-                    "rounded-xl border px-3 py-2",
-                    totals.diff === 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"
-                  )}>
+                  <div
+                    className={cn(
+                      "rounded-xl border px-3 py-2",
+                      totals.diff === 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50",
+                    )}
+                  >
                     <div className="text-[11px] text-gray-500">Diferencia</div>
-                    <div className={cn(
-                      "font-semibold tabular-nums",
-                      totals.diff === 0 ? "text-emerald-700" : "text-red-700"
-                    )}>
+                    <div className={cn("font-semibold tabular-nums", totals.diff === 0 ? "text-emerald-700" : "text-red-700")}>
                       {formatARS(totals.diff)}
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* CARGA DE LÍNEA */}
+              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 space-y-3">
+              
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">AGREGAR LÍNEA</div>
+                  <div className="shrink-0 flex gap-2">
+                    <button type="button" onClick={() => setMode("RAPIDO")} className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}>
+                      Rápido
+                    </button>
+                    <button type="button" onClick={() => setMode("GUIADO")} className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}>
+                      Guiado
+                    </button>
+                  </div>
+                </div>
+
               {/* CLASE */}
               <div>
-                <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                  CLASE
-                </div>
+                <div className="text-[11px] font-semibold tracking-widest text-gray-500">CLASE</div>
                 <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                   {(pucClases ?? []).map((c) => (
                     <button
@@ -711,7 +708,7 @@ export function AccountingComposer({
                         selectedClase === c.code
                           ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                           : "bg-white/70 border-gray-200 text-gray-700",
-                        !canEditFields && "opacity-60 cursor-not-allowed"
+                        !canEditFields && "opacity-60 cursor-not-allowed",
                       )}
                     >
                       {c.code} · {c.name}
@@ -720,35 +717,9 @@ export function AccountingComposer({
                 </div>
               </div>
 
-              {/* CARGA DE LÍNEA */}
-              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                    AGREGAR LÍNEA
-                  </div>
-                  <div className="shrink-0 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMode("RAPIDO")}
-                      className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}
-                    >
-                      Rápido
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMode("GUIADO")}
-                      className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}
-                    >
-                      Guiado
-                    </button>
-                  </div>
-                </div>
-
                 {/* PUC */}
                 <div ref={pucWrapRef}>
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                    CÓDIGO PUC
-                  </div>
+                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">CÓDIGO PUC</div>
 
                   {mode === "RAPIDO" ? (
                     <div className="relative mt-2">
@@ -772,22 +743,16 @@ export function AccountingComposer({
                             <div className="px-3 py-2 text-xs text-gray-500 flex items-center justify-between">
                               <span>{pucLoading ? "Buscando..." : "Resultados"}</span>
                               {selectedPuc ? (
-                                <button
-                                  type="button"
-                                  className="text-emerald-700 font-semibold"
-                                  onClick={() => setSelectedPuc(null)}
-                                >
+                                <button type="button" className="text-emerald-700 font-semibold" onClick={() => setSelectedPuc(null)}>
                                   Limpiar
                                 </button>
                               ) : null}
                             </div>
 
                             {pucItems.length === 0 ? (
-                              <div className="px-3 pb-3 text-sm text-gray-500">
-                                {pucQuery.trim() ? "Sin resultados" : "Escribí para buscar"}
-                              </div>
+                              <div className="px-3 pb-3 text-sm text-gray-500">{pucQuery.trim() ? "Sin resultados" : "Escribí para buscar"}</div>
                             ) : (
-                              <div className="max-h-56 overflow-auto">
+                              <div className="max-h-48 sm:max-h-56 overflow-auto">
                                 {pucItems.slice(0, 12).map((x) => (
                                   <button
                                     key={x.code}
@@ -871,9 +836,7 @@ export function AccountingComposer({
                 {/* VALOR + NAT */}
                 <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                      VALOR
-                    </div>
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">VALOR</div>
                     <input
                       value={value}
                       onChange={(e) => setValue(e.target.value)}
@@ -885,9 +848,7 @@ export function AccountingComposer({
                   </div>
 
                   <div className="shrink-0">
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                      NAT.
-                    </div>
+                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">NAT.</div>
                     <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
                       <button
                         type="button"
@@ -895,7 +856,7 @@ export function AccountingComposer({
                         disabled={!canEditFields}
                         className={cn(
                           "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                          nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                          nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
                         )}
                       >
                         Débito
@@ -906,7 +867,7 @@ export function AccountingComposer({
                         disabled={!canEditFields}
                         className={cn(
                           "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                          nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600"
+                          nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
                         )}
                       >
                         Crédito
@@ -915,7 +876,7 @@ export function AccountingComposer({
                   </div>
                 </div>
 
-                {/* DESC LINEA + ADD */}
+                {/* DESC + ADD */}
                 <div className="flex items-center gap-2">
                   <input
                     value={lineDesc}
@@ -930,9 +891,7 @@ export function AccountingComposer({
                     disabled={!canEditFields}
                     className={cn(
                       "h-11 rounded-2xl px-4 text-sm font-semibold border transition",
-                      canEditFields
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                        : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                      canEditFields ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-zinc-50 border-zinc-200 text-zinc-500",
                     )}
                   >
                     + Línea
@@ -940,16 +899,12 @@ export function AccountingComposer({
                 </div>
               </div>
 
-              {/* TABLA LÍNEAS */}
+              {/* LÍNEAS */}
               <div className="rounded-2xl border border-gray-200 bg-white/60 p-4">
-                <div className="text-[11px] font-semibold tracking-widest text-gray-500">
-                  LÍNEAS ({lines.length})
-                </div>
+                <div className="text-[11px] font-semibold tracking-widest text-gray-500">LÍNEAS ({lines.length})</div>
 
                 {lines.length === 0 ? (
-                  <div className="mt-2 text-sm text-zinc-500">
-                    Agregá al menos 2 líneas para poder postear.
-                  </div>
+                  <div className="mt-2 text-sm text-zinc-500">Agregá al menos 2 líneas para poder postear.</div>
                 ) : (
                   <div className="mt-3 space-y-2">
                     {lines.map((l, idx) => {
@@ -964,9 +919,7 @@ export function AccountingComposer({
                               <div className="text-sm font-semibold text-zinc-900 truncate">
                                 {code} · {isDebit ? "Débito" : "Crédito"} · {formatARS(amt)}
                               </div>
-                              <div className="text-xs text-zinc-500 truncate">
-                                {l.description ?? "—"}
-                              </div>
+                              <div className="text-xs text-zinc-500 truncate">{l.description ?? "—"}</div>
                             </div>
 
                             <button
@@ -975,9 +928,7 @@ export function AccountingComposer({
                               disabled={!canEditFields}
                               className={cn(
                                 "h-8 px-3 rounded-xl text-xs font-semibold border transition",
-                                canEditFields
-                                  ? "bg-red-50 border-red-200 text-red-700"
-                                  : "bg-zinc-50 border-zinc-200 text-zinc-500"
+                                canEditFields ? "bg-red-50 border-red-200 text-red-700" : "bg-zinc-50 border-zinc-200 text-zinc-500",
                               )}
                             >
                               Quitar
@@ -1037,6 +988,7 @@ export function AccountingComposer({
                   type="button"
                   className="shrink-0 h-11 px-4 rounded-full border border-gray-200 bg-white/70 text-sm font-semibold text-red-600"
                   onClick={() => {
+                    // ✅ solo en evento
                     onCancelEdit();
                     setExpanded(false);
                     resetAll();
@@ -1049,13 +1001,11 @@ export function AccountingComposer({
 
             {expanded && (
               <div className="mt-2 px-1 text-xs text-neutral-500">
-                {lines.length < 2 ? (
-                  "Recomendación: cargá mínimo 2 líneas (débitos y créditos)."
-                ) : totals.diff !== 0 ? (
-                  "No podés postear hasta que Débito = Crédito."
-                ) : (
-                  "Asiento balanceado ✅"
-                )}
+                {lines.length < 2
+                  ? "Recomendación: cargá mínimo 2 líneas (débitos y créditos)."
+                  : totals.diff !== 0
+                    ? "No podés postear hasta que Débito = Crédito."
+                    : "Asiento balanceado ✅"}
               </div>
             )}
           </div>

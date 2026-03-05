@@ -3,92 +3,140 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
 
-import { AccountingCard } from "@/src/components/accounting/AccountingCard";
 import { AccountingComposer } from "@/src/components/accounting/AccountingComposer";
 import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
 
-import type { AccountingType } from "@/src/services/accounting";
-import type { UiAccountingEntry } from "@/src/types/accounting-ui";
+import { AccountingSelectionBar } from "@/src/components/accounting/AccountingSelectionBar";
+import { ConfirmDeleteModal } from "@/src/components/accounting/ConfirmDeleteModal";
 
-import { getPucClases, getPucGrupos } from "@/src/services/puc";
+import {
+  AccountingEntryCard,
+  type UiAccountingEntryGroup,
+  type UiAccountingLine,
+} from "@/src/components/accounting/AccountingEntryCard";
+
+import type { AccountingType } from "@/src/services/accounting";
 import { deleteEntry, listMovements } from "@/src/services/accounting";
+
+import { getPucClases, type PucClase } from "@/src/services/puc";
+
+function cn(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
 
 function groupLabel(dateISO: string): string {
   const d = new Date(dateISO + "T00:00:00");
   const now = new Date();
+
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
 
   const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
   if (dd.getTime() === today.getTime()) return "HOY";
   if (dd.getTime() === yesterday.getTime()) return "AYER";
+
   return dateISO;
 }
 
-function toUi(m: any): UiAccountingEntry {
-  const d = new Date(m.date);
-  const dateISO = d.toISOString().slice(0, 10);
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function normalizeDateISO(x: any) {
+  const d = new Date(x);
+  return d.toISOString().slice(0, 10);
+}
 
-  const kind =
-    m.class === "ASSET" ||
-    m.class === "LIABILITY" ||
-    m.class === "EQUITY" ||
-    m.class === "INCOME" ||
-    m.class === "EXPENSE"
-      ? m.class
-      : "ASSET";
+function toEntryGroups(rows: any[]): UiAccountingEntryGroup[] {
+  const map = new Map<string, UiAccountingEntryGroup>();
 
-  return {
-    id: m.id, // lineId
-    entryId: m.entryId, // entryId
-    dateISO,
-    time,
-    pucCode: m.pucCode,
-    accountName: m.pucName ?? "(sin nombre)",
-    description: m.description ?? m.memo ?? "",
-    amount: Number(m.amountSigned ?? 0),
-    pucLevel: (m.pucLevel ?? "CUENTA"),
-    // si tu backend después expone source, reemplazalo acá
-    source: "MANUAL",
-    kind,
-    status: m.status,
-  };
+  for (const r of rows ?? []) {
+    const entryId = String(r.entryId ?? "");
+    if (!entryId) continue;
+
+    const dateISO = normalizeDateISO(r.date);
+
+    const line: UiAccountingLine = {
+      pucCode: String(r.pucCode ?? ""),
+      accountName: (r.pucName ?? "").toString(),
+      debit: Number(r.debit ?? 0),
+      credit: Number(r.credit ?? 0),
+      description: r.description ?? null,
+    };
+
+    const curr = map.get(entryId);
+
+    if (!curr) {
+      map.set(entryId, {
+        id: entryId,
+        dateISO,
+        memo: r.memo ?? "",
+        status: r.status === "POSTED" ? "POSTED" : "DRAFT",
+        totalDebit: Number(r.debit ?? 0),
+        totalCredit: Number(r.credit ?? 0),
+        lines: [line],
+      });
+    } else {
+      curr.totalDebit += Number(r.debit ?? 0);
+      curr.totalCredit += Number(r.credit ?? 0);
+      curr.lines.push(line);
+    }
+  }
+
+  return Array.from(map.values());
 }
 
 export default function ContabilidadClient() {
+
   const [filter, setFilter] = useState<AccountingType>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const [items, setItems] = useState<UiAccountingEntry[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [search, setSearch] = useState("");
-  const [editingEntry, setEditingEntry] = useState<UiAccountingEntry | null>(
-    null,
-  );
 
-  // PUC: clases + grupos
-  const [pucClases, setPucClases] = useState<{ code: string; name: string }[]>(
-    [],
-  );
-  const [pucGrupos, setPucGrupos] = useState<
-    { code: string; name: string; claseCode: string }[]
-  >([]);
-  const [selectedClase, setSelectedClase] = useState<string>("");
+  const [editingEntry, setEditingEntry] = useState<any | null>(null);
+
+  const [pucClases, setPucClases] = useState<PucClase[]>([]);
+  const [selectedClase, setSelectedClase] = useState("");
 
   const [loading, setLoading] = useState(false);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const selectionMode = selectedIds.size > 0;
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const onLongPressEntry = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
+
     try {
       const data = await listMovements({
-        q: search.trim() || undefined,
+        q: search || undefined,
         onlyPosted: "false",
       });
-      setItems(data.map(toUi));
+
+      setRows(data ?? []);
     } catch (e) {
       console.error(e);
-      setItems([]);
+      setRows([]);
     } finally {
       setLoading(false);
     }
@@ -98,164 +146,204 @@ export default function ContabilidadClient() {
     refresh();
   }, [refresh]);
 
-  // Load PUC clases
   useEffect(() => {
     (async () => {
-      const clases = await getPucClases();
-      setPucClases(clases);
+      try {
+        const clases = await getPucClases();
+        setPucClases(clases);
+      } catch (e) {
+        console.error(e);
+      }
     })();
   }, []);
 
-  // Load grupos by clase
-  useEffect(() => {
-    if (!selectedClase) {
-      setPucGrupos([]);
-      return;
-    }
-    (async () => {
-      const grupos = await getPucGrupos(selectedClase);
-      setPucGrupos(grupos);
-    })();
-  }, [selectedClase]);
-
   const entries = useMemo(() => {
-    const base =
-      filter === "ALL"
-        ? items
-        : items.filter((e) => {
-            if (filter === "INCOME") return e.kind === "INCOME";
-            if (filter === "EXPENSE") return e.kind === "EXPENSE";
-            if (filter === "ASSET") return e.kind === "ASSET";
-            return true;
-          });
+    return toEntryGroups(rows);
+  }, [rows]);
 
-    return base.slice().sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1));
-  }, [filter, items]);
+  /**
+   * ------------------------------
+   *  LÓGICA DE HABILITACIÓN UI
+   * ------------------------------
+   */
 
-  const grouped = useMemo(() => {
-    return entries.reduce<Record<string, UiAccountingEntry[]>>((acc, e) => {
-      acc[e.dateISO] ??= [];
-      acc[e.dateISO].push(e);
-      return acc;
-    }, {});
+  const entryById = useMemo(() => {
+    const map = new Map<string, UiAccountingEntryGroup>();
+    entries.forEach((e) => map.set(e.id, e));
+    return map;
+  }, [entries]);
+
+  const selectedEntries = useMemo(() => {
+    return Array.from(selectedIds)
+      .map((id) => entryById.get(id))
+      .filter(Boolean) as UiAccountingEntryGroup[];
+  }, [selectedIds, entryById]);
+
+  const canDetails = selectedEntries.length === 1;
+
+  const canEdit =
+    selectedEntries.length === 1 &&
+    selectedEntries[0].status === "DRAFT";
+
+  const canDelete =
+    selectedEntries.length > 0 &&
+    selectedEntries.every((e) => e.status === "DRAFT");
+
+  /**
+   * ------------------------------
+   *  ACTIONS
+   * ------------------------------
+   */
+
+  const openDetails = useCallback(() => {
+    if (!canDetails) return;
+
+    setEditingEntry({ entryId: selectedEntries[0].id });
+
+    clearSelection();
+  }, [canDetails, selectedEntries, clearSelection]);
+
+  const openEdit = useCallback(() => {
+    if (!canEdit) return;
+
+    setEditingEntry({ entryId: selectedEntries[0].id });
+
+    clearSelection();
+  }, [canEdit, selectedEntries, clearSelection]);
+
+  const askDelete = useCallback(() => {
+    if (!canDelete) return;
+
+    setConfirmOpen(true);
+  }, [canDelete]);
+
+  const confirmDelete = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+
+    for (const id of ids) {
+      await deleteEntry(id);
+    }
+
+    clearSelection();
+    setConfirmOpen(false);
+
+    await refresh();
+  }, [selectedIds, clearSelection, refresh]);
+
+  /**
+   * ------------------------------
+   *  GROUP BY DATE
+   * ------------------------------
+   */
+
+  const groupedByDate = useMemo(() => {
+    return entries.reduce<Record<string, UiAccountingEntryGroup[]>>(
+      (acc, e) => {
+        acc[e.dateISO] ??= [];
+        acc[e.dateISO].push(e);
+        return acc;
+      },
+      {},
+    );
   }, [entries]);
 
   const dates = useMemo(
-    () => Object.keys(grouped).sort((a, b) => (a < b ? 1 : -1)),
-    [grouped],
+    () => Object.keys(groupedByDate).sort((a, b) => (a < b ? 1 : -1)),
+    [groupedByDate],
   );
 
-  const isEmpty = !loading && items.length === 0 && search.trim() === "";
+  const isEmpty = !loading && rows.length === 0;
+
+  const listTopPad = selectionMode
+    ? "pt-[calc(56px+env(safe-area-inset-top))]"
+    : "pt-2";
 
   return (
     <div className="min-h-[100dvh] bg-white">
+
       <AppHeader
         title="Contabilidad"
-        subtitle="Historial de transacciones"
+        subtitle="Asientos contables"
         showBack
-        rightAriaLabel="Filtros"
-        rightIcon={
-          <svg
-            viewBox="0 0 24 24"
-            className="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M4 6h16" />
-            <path d="M7 12h10" />
-            <path d="M10 18h4" />
-          </svg>
-        }
         onRightClick={() => setFilterOpen(true)}
       />
 
-      <main className="pt-2 pb-24">
+      {selectionMode && (
+        <AccountingSelectionBar
+          count={selectedIds.size}
+          canDetails={canDetails}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onCancel={clearSelection}
+          onDetails={openDetails}
+          onEdit={openEdit}
+          onDelete={askDelete}
+        />
+      )}
+
+      {selectionMode && (
+        <button
+          className="fixed inset-0 z-[900]"
+          onClick={clearSelection}
+        />
+      )}
+
+      <main className={cn("relative pb-24", listTopPad)}>
+
         {loading && (
-          <div className="px-4 py-2 text-xs text-neutral-500">Cargando...</div>
-        )}
-
-        {/* ✅ Estado vacío: solo si no hay nada y no estás buscando */}
-        {isEmpty && (
-          <div className="px-4 mt-4">
-            <div className="rounded-3xl bg-white border border-neutral-200 shadow-sm p-6">
-              <div className="text-lg font-semibold text-neutral-900">
-                Empezá a cargar tu contabilidad
-              </div>
-              <div className="mt-2 text-sm text-neutral-600">
-                Podés registrar movimientos manuales desde el botón{" "}
-                <span className="font-semibold">+</span> de abajo. Si entran
-                ventas automáticas, esta pantalla se va a completar sola.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  // enfoca el flujo del composer: lo más simple es scrollear y que toque "+"
-                  window.scrollTo({
-                    top: document.body.scrollHeight,
-                    behavior: "smooth",
-                  });
-                }}
-                className="mt-5 w-full rounded-2xl bg-emerald-500 py-3 text-sm font-semibold text-white hover:bg-emerald-600 transition"
-              >
-                Cargar primer movimiento
-              </button>
-            </div>
+          <div className="px-4 py-2 text-xs text-neutral-500">
+            Cargando...
           </div>
         )}
 
-        {/* ✅ Lista normal */}
         {!isEmpty && (
           <div className="mt-3 space-y-6">
+
             {dates.map((dateISO) => (
               <section key={dateISO}>
+
                 <div className="px-4 text-xs font-semibold tracking-widest text-gray-400">
                   {groupLabel(dateISO)}
                 </div>
 
                 <div className="mt-2 space-y-4">
-                  {grouped[dateISO].map((e) => (
-                    <div key={e.id} className="px-4">
-                      <AccountingCard
-                        entry={e as any}
-                        onEdit={(entry: any) => setEditingEntry(entry)}
-                        onDelete={async (entry: any) => {
-                          try {
-                            await deleteEntry(entry.entryId);
-                            await refresh();
-                          } catch (err: any) {
-                            alert(
-                              err?.details?.message ??
-                                err?.message ??
-                                "No se pudo eliminar",
-                            );
-                          }
+
+                  {groupedByDate[dateISO].map((entry) => (
+
+                    <div key={entry.id} className="px-4">
+
+                      <AccountingEntryCard
+                        entry={entry}
+                        selectionMode={selectionMode}
+                        isSelected={selectedIds.has(entry.id)}
+                        onLongPressEntry={onLongPressEntry}
+                        onTapEntry={(id) => {
+                          if (selectionMode) toggleSelected(id);
                         }}
                       />
+
                     </div>
+
                   ))}
+
                 </div>
+
               </section>
             ))}
+
           </div>
         )}
+
       </main>
 
       <AccountingComposer
         searchValue={search}
         onSearchChange={setSearch}
-        editingEntry={editingEntry as any}
+        editingEntry={editingEntry}
         onCancelEdit={() => setEditingEntry(null)}
-        onCreate={async () => {
-          await refresh();
-        }}
-        onUpdate={async () => {
-          await refresh();
-          setEditingEntry(null);
-        }}
+        onCreate={refresh}
+        onUpdate={refresh}
         pucClases={pucClases}
-        pucGrupos={pucGrupos}
         selectedClase={selectedClase}
         onSelectClase={setSelectedClase}
       />
@@ -266,6 +354,15 @@ export default function ContabilidadClient() {
         value={filter}
         onChange={setFilter}
       />
+
+      <ConfirmDeleteModal
+        open={confirmOpen}
+        count={selectedIds.size}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={confirmDelete}
+        confirmDisabled={!canDelete}
+      />
+
     </div>
   );
 }
