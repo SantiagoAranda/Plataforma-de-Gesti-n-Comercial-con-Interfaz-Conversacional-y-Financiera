@@ -2,6 +2,7 @@
 
 import type { Sale } from "@/src/types/sales";
 import { generateInvoicePdf } from "@/src/lib/invoicePdf";
+import { getStatusStyles } from "@/src/lib/statusStyles";
 
 function formatMoney(n: number) {
   return (n ?? 0).toFixed(2);
@@ -13,6 +14,7 @@ function calcTotal(sale: Sale) {
 
 function formatDateTime(iso?: string) {
   if (!iso) return "—";
+
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "—";
 
@@ -25,21 +27,6 @@ function formatDateTime(iso?: string) {
   });
 }
 
-function statusLabel(status: Sale["status"]) {
-  switch (status) {
-    case "CONFIRMADO":
-      return "Confirmado";
-    case "CERRADO":
-      return "Cerrado";
-    case "PENDIENTE":
-      return "Pendiente";
-    case "CANCELADO":
-      return "Cancelado";
-    default:
-      return status;
-  }
-}
-
 function typeLabel(type: Sale["type"]) {
   return type === "PRODUCTO" ? "Producto" : "Servicio";
 }
@@ -48,73 +35,107 @@ export default function SaleDetailsModal({
   open,
   sale,
   onClose,
+  onEdit,
 }: {
   open: boolean;
   sale: Sale | null;
   onClose: () => void;
+  onEdit?: (sale: Sale) => void;
 }) {
   if (!open || !sale) return null;
 
   const total = calcTotal(sale);
+  const styles = getStatusStyles(sale.status);
 
   return (
     <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between shrink-0">
-          <div className="font-semibold text-neutral-900">Detalles</div>
+      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+
+        {/* HEADER */}
+        <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
+          <h2 className="font-semibold text-neutral-900 text-lg">
+            Detalles de venta
+          </h2>
+
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-neutral-100"
-            aria-label="Cerrar"
+            className="w-9 h-9 rounded-full hover:bg-neutral-100 transition"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-4 space-y-3 overflow-y-auto">
+        {/* CONTENT */}
+        <div className="p-5 space-y-5 overflow-y-auto">
+
+          {/* CLIENTE */}
           <div className="space-y-1">
-            <div className="text-sm text-neutral-500">Cliente</div>
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              Cliente
+            </div>
+
             <div className="text-base font-semibold text-neutral-900 break-words">
               {sale.customerName}
             </div>
           </div>
 
+          {/* WHATSAPP */}
           <div className="space-y-1">
-            <div className="text-sm text-neutral-500">WhatsApp</div>
-            <div className="text-sm font-medium text-neutral-900 break-words">
-              {sale.customerWhatsapp?.trim()
-                ? sale.customerWhatsapp
-                : "—"}
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              WhatsApp
+            </div>
+
+            <div className="text-sm text-neutral-900 break-words">
+              {sale.customerWhatsapp?.trim() || "—"}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* INFO GRID */}
+          <div className="grid grid-cols-2 gap-4">
+
             <div className="space-y-1">
-              <div className="text-sm text-neutral-500">Tipo</div>
-              <div className="text-sm font-medium text-neutral-900">
+              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Tipo
+              </div>
+
+              <div className="text-sm text-neutral-900">
                 {typeLabel(sale.type)}
               </div>
             </div>
 
             <div className="space-y-1">
-              <div className="text-sm text-neutral-500">Estado</div>
-              <div className="text-sm font-medium text-neutral-900">
-                {statusLabel(sale.status)}
+              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Estado
               </div>
+
+              <span
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide ${styles.badge}`}
+              >
+                {styles.label}
+              </span>
             </div>
+
           </div>
 
+          {/* FECHA */}
           <div className="space-y-1">
-            <div className="text-sm text-neutral-500">Fecha</div>
+            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              Fecha
+            </div>
+
             <div className="text-sm text-neutral-900">
               {formatDateTime(sale.createdAt)}
             </div>
           </div>
 
+          {/* TURNO */}
           {sale.type === "SERVICIO" && (
             <div className="space-y-1">
-              <div className="text-sm text-neutral-500">Turno</div>
-              <div className="text-sm font-medium text-neutral-900">
+              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Turno
+              </div>
+
+              <div className="text-sm text-neutral-900">
                 {sale.scheduledAt
                   ? formatDateTime(sale.scheduledAt)
                   : "—"}
@@ -122,65 +143,97 @@ export default function SaleDetailsModal({
             </div>
           )}
 
-          <div className="border-t border-neutral-200 pt-3">
-            <div className="text-sm font-semibold text-neutral-900 mb-2">
+          {/* ITEMS */}
+          <div className="border-t border-neutral-200 pt-4">
+
+            <div className="text-sm font-semibold text-neutral-900 mb-3">
               Ítems
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
+
               {sale.items.map((it, idx) => (
                 <div
                   key={idx}
-                  className="flex justify-between gap-3 text-sm"
+                  className="flex justify-between items-center bg-neutral-50 rounded-xl px-3 py-2"
                 >
-                  <span className="text-neutral-700 break-words">
-                    {sale.type === "PRODUCTO" ? `${it.qty}x ` : ""}
+                  <span className="text-sm text-neutral-700 break-words">
+
+                    {sale.type === "PRODUCTO" && `${it.qty}x `}
+
                     {it.name}
 
-                    {sale.type === "SERVICIO" && it.durationMin ? (
+                    {sale.type === "SERVICIO" && it.durationMin && (
                       <span className="text-neutral-500">
-                        {" "}
-                        • {it.durationMin} min
+                        {" "}• {it.durationMin} min
                       </span>
-                    ) : null}
+                    )}
+
                   </span>
 
-                  <span className="text-neutral-900 font-medium shrink-0">
+                  <span className="text-sm font-semibold text-neutral-900 shrink-0">
                     ${formatMoney(it.price)}
                   </span>
+
                 </div>
               ))}
+
             </div>
 
-            <div className="flex justify-between items-center mt-4 pt-3 border-t border-neutral-200">
-              <span className="text-sm text-neutral-500">Total</span>
-              <span className="text-lg font-bold text-neutral-900">
+            {/* TOTAL */}
+            <div className="flex justify-between items-center mt-5 pt-4 border-t border-neutral-200">
+
+              <span className="text-sm text-neutral-500">
+                Total
+              </span>
+
+              <span className="text-2xl font-bold text-neutral-900">
                 ${formatMoney(total)}
               </span>
+
             </div>
+
           </div>
 
-          <button
-            onClick={() =>
-              generateInvoicePdf({
-                sale,
-                businessName: "Mi Negocio",
-                businessPhone: "54911XXXXYYYY",
-                invoiceNumber: `#${sale.id}`,
-                currencySymbol: "$",
-              })
-            }
-            className="w-full bg-[#11d473] text-white rounded-xl py-3 font-semibold hover:brightness-95"
-          >
-            Descargar PDF
-          </button>
+          {/* BOTONES */}
+          <div className="space-y-3 pt-2">
 
-          <button
-            onClick={onClose}
-            className="w-full bg-neutral-900 text-white rounded-xl py-3 font-semibold hover:brightness-95"
-          >
-            Cerrar
-          </button>
+            {onEdit && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onEdit(sale);
+                }}
+                className="w-full bg-neutral-200 text-neutral-900 rounded-xl py-3 font-semibold hover:bg-neutral-300 transition"
+              >
+                Editar venta
+              </button>
+            )}
+
+            <button
+              onClick={() =>
+                generateInvoicePdf({
+                  sale,
+                  businessName: "Mi Negocio",
+                  businessPhone: "54911XXXXYYYY",
+                  invoiceNumber: `#${sale.id}`,
+                  currencySymbol: "$",
+                })
+              }
+              className="w-full bg-[#11d473] text-white rounded-xl py-3 font-semibold hover:brightness-95 transition"
+            >
+              Descargar PDF
+            </button>
+
+            <button
+              onClick={onClose}
+              className="w-full bg-neutral-900 text-white rounded-xl py-3 font-semibold hover:brightness-95 transition"
+            >
+              Cerrar
+            </button>
+
+          </div>
+
         </div>
       </div>
     </div>

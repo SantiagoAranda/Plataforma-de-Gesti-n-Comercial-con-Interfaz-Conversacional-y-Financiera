@@ -99,7 +99,7 @@ export default function SaleEditModal({
     setItems((prev) => [
       ...prev,
       {
-        qty: type === "SERVICIO" ? 1 : 1,
+        qty: 1,
         name: "",
         price: 0,
         durationMin: type === "SERVICIO" ? 60 : undefined,
@@ -172,51 +172,64 @@ export default function SaleEditModal({
 
   return (
     <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-neutral-200 flex items-center justify-between shrink-0">
-          <div className="font-semibold text-neutral-900">Editar</div>
+      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
+
+        {/* HEADER */}
+        <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
+          <h2 className="font-semibold text-neutral-900 text-lg">Editar venta</h2>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-neutral-100"
-            aria-label="Cerrar"
+            className="w-9 h-9 rounded-full hover:bg-neutral-100 transition"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-4 space-y-4 overflow-y-auto">
+        {/* CONTENT */}
+        <div className="p-5 space-y-5 overflow-y-auto">
+
+          {/* CLIENTE */}
           <div>
-            <label className="text-sm text-neutral-600">Cliente</label>
+            <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              Cliente
+            </label>
+
             <input
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
               placeholder="Nombre del cliente"
             />
           </div>
 
+          {/* WHATSAPP */}
           <div>
-            <label className="text-sm text-neutral-600">WhatsApp</label>
+            <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              WhatsApp
+            </label>
+
             <input
               value={customerWhatsapp}
               onChange={(e) => setCustomerWhatsapp(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
               placeholder="+54 9 11 1234 5678"
-              inputMode="tel"
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* TIPO + ESTADO */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-sm text-neutral-600">Tipo</label>
+              <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Tipo
+              </label>
 
               <select
                 value={type}
                 onChange={(e) =>
                   handleChangeType(e.target.value as Sale["type"])
                 }
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
               >
                 <option value="PRODUCTO">Producto</option>
                 <option value="SERVICIO">Servicio</option>
@@ -224,12 +237,14 @@ export default function SaleEditModal({
             </div>
 
             <div>
-              <label className="text-sm text-neutral-600">Estado</label>
+              <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                Estado
+              </label>
 
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value as Sale["status"])}
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
               >
                 <option value="PENDIENTE">Pendiente</option>
                 <option value="CONFIRMADO">Confirmado</option>
@@ -239,69 +254,68 @@ export default function SaleEditModal({
             </div>
           </div>
 
+          {/* TURNO */}
           {type === "SERVICIO" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-neutral-600">
-                  Fecha del turno
+                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                  Fecha
                 </label>
 
                 <input
                   type="date"
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
                 />
               </div>
 
               <div>
-                <label className="text-sm text-neutral-600">
-                  Hora del turno
+                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                  Hora
                 </label>
 
                 <input
                   type="time"
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
                 />
               </div>
             </div>
           )}
 
-          <div className="border-t border-neutral-200 pt-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-semibold text-neutral-900">
-                Ítems
-              </div>
+          {/* ITEMS */}
+          <div className="border-t border-neutral-200 pt-4">
+
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-semibold text-neutral-900">Ítems</span>
 
               <button
                 type="button"
                 onClick={addItem}
-                className="text-sm font-semibold text-emerald-700 hover:underline"
+                className="text-sm font-semibold text-emerald-600 hover:underline"
               >
-                + Agregar {type === "SERVICIO" ? "servicio" : "producto"}
+                + Agregar
               </button>
             </div>
 
             <div className="space-y-3">
               {items.map((it, idx) => (
-                <div key={idx} className="rounded-xl border border-neutral-200 p-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                    <div className="col-span-1 sm:col-span-12">
-                      <label className="text-xs text-neutral-600">
-                        {type === "SERVICIO" ? "Servicio" : "Producto"}
-                      </label>
+                <div
+                  key={idx}
+                  className="rounded-xl border border-neutral-200 p-4 bg-neutral-50"
+                >
+                  <div className="space-y-3">
 
-                      <input
-                        value={it.name}
-                        onChange={(e) => setItem(idx, { name: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                      />
-                    </div>
+                    <input
+                      value={it.name}
+                      onChange={(e) => setItem(idx, { name: e.target.value })}
+                      placeholder="Nombre del producto"
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                    />
 
-                    <div className="col-span-1 sm:col-span-4">
-                      <label className="text-xs text-neutral-600">Cantidad</label>
+                    <div className="grid grid-cols-3 gap-2">
 
                       <input
                         type="number"
@@ -310,29 +324,9 @@ export default function SaleEditModal({
                         onChange={(e) =>
                           setItem(idx, { qty: Number(e.target.value) })
                         }
-                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                        placeholder="Cant"
                       />
-                    </div>
-
-                    {type === "SERVICIO" && (
-                      <div className="col-span-1 sm:col-span-12">
-                        <label className="text-xs text-neutral-600">
-                          Duración (min)
-                        </label>
-
-                        <input
-                          type="number"
-                          value={it.durationMin ?? ""}
-                          onChange={(e) =>
-                            setItem(idx, { durationMin: Number(e.target.value) })
-                          }
-                          className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                        />
-                      </div>
-                    )}
-
-                    <div className="col-span-1 sm:col-span-6">
-                      <label className="text-xs text-neutral-600">Precio</label>
 
                       <input
                         type="number"
@@ -340,52 +334,55 @@ export default function SaleEditModal({
                         onChange={(e) =>
                           setItem(idx, { price: Number(e.target.value) })
                         }
-                        className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                        placeholder="Precio"
                       />
-                    </div>
 
-                    <div className="col-span-1 sm:col-span-2 flex justify-end">
                       <button
-                        type="button"
                         onClick={() => removeItem(idx)}
-                        className="w-9 h-9 rounded-full hover:bg-neutral-100"
+                        className="rounded-lg border border-neutral-300 hover:bg-red-50 text-red-500"
                       >
                         🗑
                       </button>
+
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="flex justify-between items-center mt-4 pt-3 border-t border-neutral-200">
-              <span className="text-sm text-neutral-600">Total</span>
+            {/* TOTAL */}
+            <div className="flex justify-between items-center mt-5 pt-4 border-t border-neutral-200">
+              <span className="text-sm text-neutral-500">Total</span>
 
-              <span className="text-lg font-bold text-neutral-900">
+              <span className="text-2xl font-bold text-neutral-900">
                 ${total.toFixed(2)}
               </span>
             </div>
+
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* BOTONES */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
             <button
               onClick={onClose}
-              className="w-full rounded-xl py-3 font-semibold border border-neutral-300 hover:bg-neutral-50"
+              className="rounded-xl py-3 font-semibold border border-neutral-300 hover:bg-neutral-50"
             >
               Cancelar
             </button>
 
             <button
               onClick={handleSave}
-              className="w-full rounded-xl py-3 font-semibold bg-neutral-900 text-white hover:brightness-95"
+              className="rounded-xl py-3 font-semibold bg-neutral-900 text-white hover:brightness-95"
             >
               Guardar
             </button>
           </div>
 
-          <div className="text-xs text-neutral-500">
-            Nota: en <b>Servicio</b> la cantidad queda fija en 1.
+          <div className="text-xs text-neutral-400 text-center">
+            En servicios la cantidad queda fija en 1
           </div>
+
         </div>
       </div>
     </div>

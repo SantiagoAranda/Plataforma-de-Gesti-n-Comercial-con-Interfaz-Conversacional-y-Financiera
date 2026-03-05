@@ -25,7 +25,7 @@ type ApiOrder = {
   id: string;
   customerName: string;
   customerWhatsapp?: string;
-  status: "DRAFT" | "COMPLETED" | "CANCELLED";
+  status: "DRAFT" | "SENT" | "COMPLETED" | "CANCELLED";
   createdAt: string;
   items: ApiOrderItem[];
 };
@@ -36,11 +36,12 @@ function mapOrderToSale(order: ApiOrder): Sale {
       ? "SERVICIO"
       : "PRODUCTO";
 
-  const statusMap: Record<ApiOrder["status"], Sale["status"]> = {
-    DRAFT: "PENDIENTE",
-    COMPLETED: "CERRADO",
-    CANCELLED: "CANCELADO",
-  };
+const statusMap: Record<ApiOrder["status"], Sale["status"]> = {
+  DRAFT: "PENDIENTE",
+  SENT: "CONFIRMADO",
+  CANCELLED: "CANCELADO",
+  COMPLETED: "CERRADO",
+};
 
   return {
     id: order.id,
@@ -171,6 +172,7 @@ const handleSendWhatsApp = (sale: Sale) => {
         open={!!detailsSale}
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
+        onEdit={(sale) => setEditingSale(sale)}
       />
 
       <SaleEditModal
