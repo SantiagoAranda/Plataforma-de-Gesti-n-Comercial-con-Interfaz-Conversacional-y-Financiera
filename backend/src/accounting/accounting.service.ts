@@ -116,7 +116,7 @@ function sectionMeta(claseCode: string) {
 
 @Injectable()
 export class AccountingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   private validateLines(lines: LineInput[]) {
     if (!lines?.length) throw new BadRequestException(MSG.ENTRY_LINES_REQUIRED);
@@ -358,7 +358,7 @@ export class AccountingService {
 
   async listMovements(businessId: string, q: MovementsQueryDto) {
     const onlyPosted = (q.onlyPosted ?? 'false') === 'true';
-    
+
     const entryWhere: any = { businessId };
     if (onlyPosted) entryWhere.status = 'POSTED';
     else if (q.status) entryWhere.status = q.status;
@@ -717,24 +717,256 @@ export class AccountingService {
   }
 
   async listPucCuentas(grupoCode: string) {
-  const code = (grupoCode ?? '').trim();
-  if (!code) throw new BadRequestException('Query param "grupo" is required');
+    const code = (grupoCode ?? '').trim();
+    if (!code) throw new BadRequestException('Query param "grupo" is required');
 
-  return this.prisma.pucCuenta.findMany({
-    where: { grupoCode: code },
-    orderBy: { code: 'asc' },
-    select: { code: true, name: true, grupoCode: true },
-  });
-}
+    return this.prisma.pucCuenta.findMany({
+      where: { grupoCode: code },
+      orderBy: { code: 'asc' },
+      select: { code: true, name: true, grupoCode: true },
+    });
+  }
 
-async listPucSubcuentas(cuentaCode: string) {
-  const code = (cuentaCode ?? '').trim();
-  if (!code) throw new BadRequestException('Query param "cuenta" is required');
+  async listPucSubcuentas(cuentaCode: string) {
+    const code = (cuentaCode ?? '').trim();
+    if (!code) throw new BadRequestException('Query param "cuenta" is required');
 
-  return this.prisma.pucSubcuenta.findMany({
-    where: { cuentaCode: code, active: true },
-    orderBy: { code: 'asc' },
-    select: { code: true, name: true, cuentaCode: true },
+    return this.prisma.pucSubcuenta.findMany({
+      where: { cuentaCode: code, active: true },
+      orderBy: { code: 'asc' },
+      select: { code: true, name: true, cuentaCode: true },
+    });
+  }
+
+
+  private hasPucRef(input: { cuentaCode?: string | null; subCode?: string | null }) {
+    return !!(input.cuentaCode || input.subCode);
+  }
+
+  private async validateSinglePucRefOrThrow(input: {
+    cuentaCode?: string | null;
+    subCode?: string | null;
+    fieldName: string;
+  }) {
+    const hasCuenta = !!input.cuentaCode;
+    const hasSub = !!input.subCode;
+
+    if (hasCuenta && hasSub) {
+      throw new BadRequestException(
+        `${input.fieldName}: provide either pucCuentaCode or pucSubCode, not both`,
+      );
+    }
+
+    if (!hasCuenta && !hasSub) {
+      return;
+    }
+
+    await this.validatePucExistence([
+      {
+        pucCuentaCode: input.cuentaCode ?? undefined,
+        pucSubCode: input.subCode ?? undefined,
+        debit: 1,
+        credit: 0,
+      },
+    ]);
+  }
+
+  private async validateSalesTemplateOrThrow(
+    type: 'PRODUCT' | 'SERVICE',
+    dto: {
+      debitCashPucCuentaCode?: string;
+      debitCashPucSubCode?: string;
+      debitReceivablePucCuentaCode?: string;
+      debitReceivablePucSubCode?: string;
+      creditIncomePucCuentaCode?: string;
+      creditIncomePucSubCode?: string;
+      creditVatPucCuentaCode?: string;
+      creditVatPucSubCode?: string;
+      debitCostPucCuentaCode?: string;
+      debitCostPucSubCode?: string;
+      creditInventoryPucCuentaCode?: string;
+      creditInventoryPucSubCode?: string;
+    },
+  ) {
+    const hasCash = this.hasPucRef({
+      cuentaCode: dto.debitCashPucCuentaCode,
+      subCode: dto.debitCashPucSubCode,
+    });
+
+    const hasReceivable = this.hasPucRef({
+      cuentaCode: dto.debitReceivablePucCuentaCode,
+      subCode: dto.debitReceivablePucSubCode,
+    });
+
+    if (!hasCash && !hasReceivable) {
+      throw new BadRequestException(
+        'Template must define at least one debit account: cash/bank or receivable',
+      );
+    }
+
+    const hasIncome = this.hasPucRef({
+      cuentaCode: dto.creditIncomePucCuentaCode,
+      subCode: dto.creditIncomePucSubCode,
+    });
+
+    if (!hasIncome) {
+      throw new BadRequestException('Template must define an income account');
+    }
+
+    const hasVat = this.hasPucRef({
+      cuentaCode: dto.creditVatPucCuentaCode,
+      subCode: dto.creditVatPucSubCode,
+    });
+
+    if (!hasVat) {
+      throw new BadRequestException('Template must define a VAT account');
+    }
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.debitCashPucCuentaCode,
+      subCode: dto.debitCashPucSubCode,
+      fieldName: 'debitCash',
+    });
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.debitReceivablePucCuentaCode,
+      subCode: dto.debitReceivablePucSubCode,
+      fieldName: 'debitReceivable',
+    });
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.creditIncomePucCuentaCode,
+      subCode: dto.creditIncomePucSubCode,
+      fieldName: 'creditIncome',
+    });
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.creditVatPucCuentaCode,
+      subCode: dto.creditVatPucSubCode,
+      fieldName: 'creditVat',
+    });
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.debitCostPucCuentaCode,
+      subCode: dto.debitCostPucSubCode,
+      fieldName: 'debitCost',
+    });
+
+    await this.validateSinglePucRefOrThrow({
+      cuentaCode: dto.creditInventoryPucCuentaCode,
+      subCode: dto.creditInventoryPucSubCode,
+      fieldName: 'creditInventory',
+    });
+
+    if (type === 'SERVICE') {
+      const hasCost = this.hasPucRef({
+        cuentaCode: dto.debitCostPucCuentaCode,
+        subCode: dto.debitCostPucSubCode,
+      });
+
+      const hasInventory = this.hasPucRef({
+        cuentaCode: dto.creditInventoryPucCuentaCode,
+        subCode: dto.creditInventoryPucSubCode,
+      });
+
+      if (hasCost || hasInventory) {
+        throw new BadRequestException(
+          'SERVICE template must not define cost/inventory accounts',
+        );
+      }
+    }
+  }
+  //Listar planillas
+  async listSalesTemplates(businessId: string) {
+    return this.prisma.salesAccountingTemplate.findMany({
+      where: { businessId },
+      orderBy: { type: 'asc' },
+    });
+  }
+  //Obtener una plantilla por tipo
+  async getSalesTemplate(
+    businessId: string,
+    type: 'PRODUCT' | 'SERVICE',
+  ) {
+    const template = await this.prisma.salesAccountingTemplate.findUnique({
+      where: {
+        businessId_type: {
+          businessId,
+          type,
+        },
+      },
+    });
+
+    if (!template) {
+      throw new NotFoundException(`Sales template ${type} not found`);
+    }
+
+    return template;
+  }
+
+  async upsertSalesTemplate(
+  businessId: string,
+  type: 'PRODUCT' | 'SERVICE',
+  dto: {
+    debitCashPucCuentaCode?: string;
+    debitCashPucSubCode?: string;
+    debitReceivablePucCuentaCode?: string;
+    debitReceivablePucSubCode?: string;
+    creditIncomePucCuentaCode?: string;
+    creditIncomePucSubCode?: string;
+    creditVatPucCuentaCode?: string;
+    creditVatPucSubCode?: string;
+    debitCostPucCuentaCode?: string;
+    debitCostPucSubCode?: string;
+    creditInventoryPucCuentaCode?: string;
+    creditInventoryPucSubCode?: string;
+    vatRate: number;
+    pricesIncludeVat: boolean;
+  },
+) {
+  await this.validateSalesTemplateOrThrow(type, dto);
+
+  return this.prisma.salesAccountingTemplate.upsert({
+    where: {
+      businessId_type: {
+        businessId,
+        type,
+      },
+    },
+    update: {
+      debitCashPucCuentaCode: dto.debitCashPucCuentaCode ?? null,
+      debitCashPucSubCode: dto.debitCashPucSubCode ?? null,
+      debitReceivablePucCuentaCode: dto.debitReceivablePucCuentaCode ?? null,
+      debitReceivablePucSubCode: dto.debitReceivablePucSubCode ?? null,
+      creditIncomePucCuentaCode: dto.creditIncomePucCuentaCode ?? null,
+      creditIncomePucSubCode: dto.creditIncomePucSubCode ?? null,
+      creditVatPucCuentaCode: dto.creditVatPucCuentaCode ?? null,
+      creditVatPucSubCode: dto.creditVatPucSubCode ?? null,
+      debitCostPucCuentaCode: dto.debitCostPucCuentaCode ?? null,
+      debitCostPucSubCode: dto.debitCostPucSubCode ?? null,
+      creditInventoryPucCuentaCode: dto.creditInventoryPucCuentaCode ?? null,
+      creditInventoryPucSubCode: dto.creditInventoryPucSubCode ?? null,
+      vatRate: dto.vatRate,
+      pricesIncludeVat: dto.pricesIncludeVat,
+    },
+    create: {
+      businessId,
+      type,
+      debitCashPucCuentaCode: dto.debitCashPucCuentaCode ?? null,
+      debitCashPucSubCode: dto.debitCashPucSubCode ?? null,
+      debitReceivablePucCuentaCode: dto.debitReceivablePucCuentaCode ?? null,
+      debitReceivablePucSubCode: dto.debitReceivablePucSubCode ?? null,
+      creditIncomePucCuentaCode: dto.creditIncomePucCuentaCode ?? null,
+      creditIncomePucSubCode: dto.creditIncomePucSubCode ?? null,
+      creditVatPucCuentaCode: dto.creditVatPucCuentaCode ?? null,
+      creditVatPucSubCode: dto.creditVatPucSubCode ?? null,
+      debitCostPucCuentaCode: dto.debitCostPucCuentaCode ?? null,
+      debitCostPucSubCode: dto.debitCostPucSubCode ?? null,
+      creditInventoryPucCuentaCode: dto.creditInventoryPucCuentaCode ?? null,
+      creditInventoryPucSubCode: dto.creditInventoryPucSubCode ?? null,
+      vatRate: dto.vatRate,
+      pricesIncludeVat: dto.pricesIncludeVat,
+    },
   });
 }
 }
