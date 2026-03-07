@@ -2,7 +2,8 @@
 
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import LogoutButton from "@/src/components/auth/LogoutButton";
 
 type Props = {
   title: string;
@@ -13,7 +14,6 @@ type Props = {
   onRightClick?: () => void;
 };
 
-
 export default function AppHeader({
   title,
   subtitle,
@@ -23,15 +23,26 @@ export default function AppHeader({
   onRightClick,
 }: Props) {
   const router = useRouter();
+  const [hasSession, setHasSession] = useState(false);
+  const isMainView = !showBack;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("token");
+    const session = localStorage.getItem("session");
+    const user = localStorage.getItem("user");
+    const accessToken = localStorage.getItem("accessToken");
+    setHasSession(Boolean(token || session || user || accessToken));
+  }, []);
 
   return (
     <header
       className="sticky top-0 z-30 w-full bg-white"
       style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
-      <div className="flex items-center justify-between px-4 h-[64px]">
-        {/* Left */}
-        <div className="w-10">
+      <div className="grid h-[64px] grid-cols-3 items-center px-4">
+        {/* Left (back button) */}
+        <div className="flex items-center">
           {showBack && (
             <button
               onClick={() => router.back()}
@@ -44,10 +55,8 @@ export default function AppHeader({
         </div>
 
         {/* Title block */}
-        <div className="flex-1 px-2 text-center leading-tight">
-          <h1 className="text-[20px] font-semibold truncate">
-            {title}
-          </h1>
+        <div className="px-2 text-center leading-tight">
+          <h1 className="text-[20px] font-semibold truncate">{title}</h1>
           {subtitle && (
             <p className="text-[13px] text-emerald-600 font-medium truncate">
               {subtitle}
@@ -56,7 +65,7 @@ export default function AppHeader({
         </div>
 
         {/* Right */}
-        <div className="w-10 flex justify-end">
+        <div className="flex items-center justify-end gap-2">
           {rightIcon && (
             <button
               aria-label={rightAriaLabel}
@@ -66,6 +75,7 @@ export default function AppHeader({
               {rightIcon}
             </button>
           )}
+          {hasSession && isMainView && <LogoutButton />}
         </div>
       </div>
     </header>
