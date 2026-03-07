@@ -60,9 +60,14 @@ export default function MovimientosPage() {
 
   return (
     <div className="min-h-dvh bg-zinc-50">
-      <AppHeader title="Movimientos" subtitle="Resumen del negocio" showBack rightIcon="calendar" />
+      <AppHeader
+        title="Movimientos"
+        subtitle="Resumen del negocio"
+        showBack
+        rightIcon={<CalendarDays className="h-5 w-5 text-emerald-600" />}
+      />
 
-      <main className="mx-auto max-w-3xl px-4 pb-28 pt-3 space-y-5">
+      <main className="mx-auto w-full max-w-4xl px-3 pb-28 pt-3 space-y-5 sm:px-4">
         <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-neutral-200 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
             <CalendarDays className="h-4 w-4 text-emerald-600" />
@@ -89,7 +94,7 @@ export default function MovimientosPage() {
           <>
             <MovementProfitHero amount={metrics.netProfit} />
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {metrics.topKpis.map((k) => (
                 <MovementKpiCard
                   key={k.key}

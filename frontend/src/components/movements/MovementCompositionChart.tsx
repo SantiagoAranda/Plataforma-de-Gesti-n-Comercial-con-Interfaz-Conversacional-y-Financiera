@@ -32,9 +32,9 @@ export function MovementCompositionChart({ items }: { items: Item[] }) {
           const pct = Math.min(100, Math.max(4, Math.round(pctRaw)));
           return (
             <div key={item.label} className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-neutral-600">
-                <span>{item.label}</span>
-                <span className="font-semibold text-neutral-800">
+              <div className="flex items-center justify-between text-xs text-neutral-600 gap-2">
+                <span className="truncate">{item.label}</span>
+                <span className="font-semibold text-neutral-800 whitespace-nowrap overflow-hidden text-ellipsis text-right">
                   {item.value.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
                 </span>
               </div>

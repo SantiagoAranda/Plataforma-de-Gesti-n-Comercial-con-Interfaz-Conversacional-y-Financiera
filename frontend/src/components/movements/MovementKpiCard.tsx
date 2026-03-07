@@ -29,7 +29,7 @@ export function MovementKpiCard({
       <div className={cn("grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br shadow-inner", palette[tone])}>{icon}</div>
       <div className="min-w-0">
         <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{label}</div>
-        <div className="text-lg font-semibold text-neutral-900">
+        <div className="text-lg font-semibold text-neutral-900 text-right whitespace-nowrap overflow-hidden text-ellipsis">
           {value.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
         </div>
         {helperText ? <div className="text-[11px] text-neutral-500">{helperText}</div> : null}
