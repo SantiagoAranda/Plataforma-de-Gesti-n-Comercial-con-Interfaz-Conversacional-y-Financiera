@@ -1,15 +1,14 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarDays } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
 import { MovementPeriodFilter } from "@/src/components/movements/MovementPeriodFilter";
 import { MovementProfitHero } from "@/src/components/movements/MovementProfitHero";
-import { MovementKpiCard } from "@/src/components/movements/MovementKpiCard";
-import { MovementCompositionChart } from "@/src/components/movements/MovementCompositionChart";
-import { MovementBreakdownList } from "@/src/components/movements/MovementBreakdownList";
+import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
+import { MovementPercentBarChart } from "@/src/components/movements/MovementPercentBarChart";
 import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
 import { mapMovementMetrics } from "@/src/lib/movements/mapMovementMetrics";
 import { periodRange } from "@/src/lib/movements/movementPeriod";
@@ -47,17 +46,7 @@ export default function MovimientosPage() {
 
   const range = periodRange(period);
   const metrics = useMemo(() => mapMovementMetrics(rows, range.label), [rows, range.label]);
-
-  const compositionItems = useMemo(
-    () => [
-      { label: "Ventas netas", value: metrics.netSales, tone: "green" as const },
-      { label: "Costos", value: metrics.costs, tone: "amber" as const },
-      { label: "Gastos operativos", value: metrics.operatingExpenses, tone: "red" as const },
-      { label: "Otros gastos", value: metrics.nonOperatingExpenses, tone: "red" as const },
-      { label: "Utilidad final", value: metrics.netProfit, tone: "blue" as const },
-    ],
-    [metrics],
-  );
+  const { view } = metrics;
 
   return (
     <div className="min-h-dvh bg-zinc-50">
@@ -115,21 +104,19 @@ export default function MovimientosPage() {
           <>
             <MovementProfitHero amount={metrics.netProfit} />
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {metrics.topKpis.map((k) => (
-                <MovementKpiCard
-                  key={k.key}
-                  label={k.label}
-                  value={k.value}
-                  tone={k.tone === "negative" ? "negative" : k.tone === "positive" ? "positive" : "neutral"}
-                  icon={k.icon ?? <BarChart3 className="h-5 w-5" />}
-                />
-              ))}
-            </div>
+            <MovementSummaryList metrics={view.summaryMetrics} />
 
-            <MovementCompositionChart items={compositionItems} />
-
-            <MovementBreakdownList items={metrics.breakdown} />
+            <MovementPercentBarChart
+              items={view.chartData.map((c) => ({
+                ...c,
+                tone:
+                  c.key === "netProfit"
+                    ? "blue"
+                    : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
+                      ? "red"
+                      : "green",
+              }))}
+            />
           </>
         )}
       </main>
