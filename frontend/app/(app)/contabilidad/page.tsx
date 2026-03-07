@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
+import { Settings } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { AccountingComposer } from "@/src/components/accounting/AccountingComposer";
 import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
@@ -86,6 +88,7 @@ function toEntryGroups(rows: any[]): UiAccountingEntryGroup[] {
 
 export default function ContabilidadClient() {
 
+  const router = useRouter();
   const [filter, setFilter] = useState<AccountingType>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -268,7 +271,9 @@ export default function ContabilidadClient() {
         title="Contabilidad"
         subtitle="Asientos contables"
         showBack
-        onRightClick={() => setFilterOpen(true)}
+        rightIcon={<Settings className="h-5 w-5" />}
+        rightAriaLabel="Configuración contable"
+        onRightClick={() => router.push("/contabilidad/configuracion")}
       />
 
       {selectionMode && (

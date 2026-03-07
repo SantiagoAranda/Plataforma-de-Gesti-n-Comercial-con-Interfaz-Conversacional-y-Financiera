@@ -6,6 +6,55 @@ export type MovementNature = "DEBIT" | "CREDIT";
 
 // frontend/src/services/accounting.ts
 export type AccountingType = "ALL" | "INCOME" | "EXPENSE" | "ASSET";
+export type SalesAccountingTemplateType = "PRODUCT" | "SERVICE";
+
+export type SalesAccountingTemplate = {
+  type: SalesAccountingTemplateType;
+
+  debitCashPucCuentaCode: string | null;
+  debitCashPucSubCode: string | null;
+
+  debitReceivablePucCuentaCode: string | null;
+  debitReceivablePucSubCode: string | null;
+
+  creditIncomePucCuentaCode: string | null;
+  creditIncomePucSubCode: string | null;
+
+  creditVatPucCuentaCode: string | null;
+  creditVatPucSubCode: string | null;
+
+  debitCostPucCuentaCode: string | null;
+  debitCostPucSubCode: string | null;
+
+  creditInventoryPucCuentaCode: string | null;
+  creditInventoryPucSubCode: string | null;
+
+  vatRate: number;
+  pricesIncludeVat: boolean;
+};
+
+export type UpsertSalesAccountingTemplateDto = {
+  debitCashPucCuentaCode?: string;
+  debitCashPucSubCode?: string;
+
+  debitReceivablePucCuentaCode?: string;
+  debitReceivablePucSubCode?: string;
+
+  creditIncomePucCuentaCode?: string;
+  creditIncomePucSubCode?: string;
+
+  creditVatPucCuentaCode?: string;
+  creditVatPucSubCode?: string;
+
+  debitCostPucCuentaCode?: string;
+  debitCostPucSubCode?: string;
+
+  creditInventoryPucCuentaCode?: string;
+  creditInventoryPucSubCode?: string;
+
+  vatRate: number;
+  pricesIncludeVat: boolean;
+};
 
 export type BackendMovement = {
   id: string; // lineId
@@ -184,5 +233,25 @@ export async function postEntry(entryId: string) {
 export async function voidEntry(entryId: string) {
   return api<AccountingEntryDto>(`/accounting/entries/${entryId}/void`, {
     method: "POST",
+  });
+}
+
+// ---------------- Sales templates ----------------
+
+export async function listSalesTemplates() {
+  return api<SalesAccountingTemplate[]>(`/accounting/sales-templates`);
+}
+
+export async function getSalesTemplate(type: SalesAccountingTemplateType) {
+  return api<SalesAccountingTemplate>(`/accounting/sales-templates/${type}`);
+}
+
+export async function upsertSalesTemplate(
+  type: SalesAccountingTemplateType,
+  dto: UpsertSalesAccountingTemplateDto,
+) {
+  return api<SalesAccountingTemplate>(`/accounting/sales-templates/${type}`, {
+    method: "PUT",
+    body: JSON.stringify(dto),
   });
 }
