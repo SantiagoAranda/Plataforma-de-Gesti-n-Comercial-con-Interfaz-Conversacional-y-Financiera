@@ -21,6 +21,7 @@ export default function MovimientosPage() {
   const [rows, setRows] = useState<BackendMovement[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -65,15 +66,35 @@ export default function MovimientosPage() {
         subtitle="Resumen del negocio"
         showBack
         rightIcon={<CalendarDays className="h-5 w-5 text-emerald-600" />}
+        onRightClick={() => setShowPeriodPicker((p) => !p)}
       />
 
       <main className="mx-auto w-full max-w-4xl px-3 pb-28 pt-3 space-y-5 sm:px-4">
-        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-neutral-200 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
-            <CalendarDays className="h-4 w-4 text-emerald-600" />
-            <span>Período: {range.label}</span>
-          </div>
-          <MovementPeriodFilter value={period} onChange={setPeriod} />
+        {/* Selector de período desplegable desde el ícono */}
+        <div className="relative">
+          {showPeriodPicker && (
+            <>
+              <button
+                aria-label="Cerrar periodos"
+                className="fixed inset-0 z-40"
+                onClick={() => setShowPeriodPicker(false)}
+                type="button"
+              />
+              <div className="absolute right-0 z-50 mt-2 w-full max-w-sm rounded-2xl bg-white p-4 shadow-lg ring-1 ring-neutral-200">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
+                  <CalendarDays className="h-4 w-4 text-emerald-600" />
+                  <span>Período: {range.label}</span>
+                </div>
+                <MovementPeriodFilter
+                  value={period}
+                  onChange={(v) => {
+                    setPeriod(v);
+                    setShowPeriodPicker(false);
+                  }}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {loading && (

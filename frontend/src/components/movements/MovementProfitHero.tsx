@@ -21,7 +21,7 @@ export function MovementProfitHero({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-sm font-semibold text-neutral-600">{title}</div>
-          <div className={cn("mt-2 text-4xl font-bold tracking-tight", tone, "whitespace-nowrap overflow-hidden text-ellipsis")}>
+          <div className={cn("mt-2 text-4xl font-bold tracking-tight", tone, "whitespace-nowrap overflow-hidden text-ellipsis text-left")}>
             {amount.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
           </div>
           <div className="mt-1 text-xs text-neutral-500">

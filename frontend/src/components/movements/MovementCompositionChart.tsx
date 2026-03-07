@@ -34,7 +34,7 @@ export function MovementCompositionChart({ items }: { items: Item[] }) {
             <div key={item.label} className="space-y-1">
               <div className="flex items-center justify-between text-xs text-neutral-600 gap-2">
                 <span className="truncate">{item.label}</span>
-                <span className="font-semibold text-neutral-800 whitespace-nowrap overflow-hidden text-ellipsis text-right">
+                <span className="font-semibold text-neutral-800 whitespace-nowrap overflow-hidden text-ellipsis">
                   {item.value.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
                 </span>
               </div>

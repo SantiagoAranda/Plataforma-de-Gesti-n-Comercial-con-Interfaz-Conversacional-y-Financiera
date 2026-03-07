@@ -23,7 +23,7 @@ export function MovementBreakdownList({ items }: { items: MovementMetricLine[] }
             className="flex items-center justify-between gap-3 rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm"
           >
             <span className="text-sm font-semibold text-neutral-600 truncate">{item.label}</span>
-            <span className={cn("text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis text-right", toneColor(item.tone))}>
+            <span className={cn("text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis", toneColor(item.tone))}>
               {item.value.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
             </span>
           </div>
