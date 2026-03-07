@@ -41,7 +41,10 @@ export class ItemsService {
 
   async findAll(businessId: string) {
     return this.prisma.item.findMany({
-      where: { businessId },
+      where: {
+        businessId,
+        status: ItemStatus.ACTIVE,
+      },
       orderBy: { createdAt: "desc" },
       include: {
         images: {
@@ -97,17 +100,23 @@ async setStatus(businessId: string, id: string, status: ItemStatus) {
     data: { status },
   });
 }
+
 async remove(businessId: string, id: string) {
-  const existing = await this.prisma.item.findFirst({ where: { id, businessId } });
+  const existing = await this.prisma.item.findFirst({
+    where: { id, businessId },
+  });
+
   if (!existing) throw new NotFoundException("Item not found");
 
-  await this.prisma.$transaction([
-    this.prisma.itemImage.deleteMany({ where: { itemId: id } }),
-    this.prisma.item.delete({ where: { id } }),
-  ]);
+  // En lugar de borrar, lo archivamos
+  await this.prisma.item.update({
+    where: { id },
+    data: { status: ItemStatus.INACTIVE },
+  });
 
   return { ok: true };
 }
+
 async addImage(businessId: string, itemId: string, dto: AddItemImageDto) {
   const item = await this.prisma.item.findFirst({ where: { id: itemId, businessId } });
   if (!item) throw new NotFoundException("Item not found");
