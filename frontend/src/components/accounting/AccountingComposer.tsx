@@ -1,4 +1,4 @@
-// src/components/accounting/AccountingComposer.tsx
+﻿
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +28,7 @@ import {
 
 type NatureUI = "DEBITO" | "CREDITO";
 type Mode = "RAPIDO" | "GUIADO";
+type ComposerMode = "create" | "edit" | "detail";
 
 type PucKind = "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
 type PucNode = {
@@ -36,6 +37,23 @@ type PucNode = {
   kind: PucKind;
   breadcrumbs: string[];
   pucDbKind?: "CUENTA" | "SUBCUENTA";
+};
+
+type Props = {
+  searchValue: string;
+  onSearchChange: (v: string) => void;
+
+  composerMode: ComposerMode | null;
+  editingEntry: UiAccountingEntry | null;
+  onEnterCreate: () => void;
+  onClose: () => void;
+
+  onCreate: () => void | Promise<void>;
+  onUpdate: () => void | Promise<void>;
+
+  pucClases: PucClase[];
+  selectedClase: string;
+  onSelectClase: (code: string) => void;
 };
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -90,21 +108,6 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-type Props = {
-  searchValue: string;
-  onSearchChange: (v: string) => void;
-
-  editingEntry: UiAccountingEntry | null;
-  onCancelEdit: () => void;
-
-  onCreate: () => void | Promise<void>;
-  onUpdate: () => void | Promise<void>;
-
-  pucClases: PucClase[];
-  selectedClase: string;
-  onSelectClase: (code: string) => void;
-};
-
 function StatusBadge({ status }: { status: AccountingEntryStatus }) {
   const cls =
     status === "DRAFT"
@@ -125,15 +128,16 @@ function StatusBadge({ status }: { status: AccountingEntryStatus }) {
 export function AccountingComposer({
   searchValue,
   onSearchChange,
+  composerMode,
   editingEntry,
-  onCancelEdit,
+  onEnterCreate,
+  onClose,
   onCreate,
   onUpdate,
   pucClases,
   selectedClase,
   onSelectClase,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<Mode>("RAPIDO");
 
   const [memo, setMemo] = useState("");
@@ -172,6 +176,11 @@ export function AccountingComposer({
 
   const MAX_SHEET = "calc(100dvh - 92px)";
 
+  const isOpen = composerMode !== null;
+  const isCreating = composerMode === "create";
+  const isEditing = composerMode === "edit";
+  const canEditFields = (isCreating || isEditing) && (isCreating || entryStatus === "DRAFT");
+
   useEffect(() => {
     if (!expandableRef.current) return;
     const el = expandableRef.current;
@@ -182,13 +191,13 @@ export function AccountingComposer({
   }, []);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!isOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [expanded]);
+  }, [isOpen]);
 
   const amount = useMemo(() => parseMoneyLike(value), [value]);
 
@@ -198,9 +207,6 @@ export function AccountingComposer({
     const diff = totalDebit - totalCredit;
     return { totalDebit, totalCredit, diff };
   }, [lines]);
-
-  const isEditing = !!editingEntry;
-  const canEditFields = !isEditing || entryStatus === "DRAFT";
 
   const resetAll = useCallback(() => {
     setMemo("");
@@ -250,9 +256,8 @@ export function AccountingComposer({
   }, [pucOpen]);
 
   useEffect(() => {
-    if (!editingEntry) return;
-
-    setExpanded(true);
+    if (!isOpen) return;
+    if (!editingEntry || composerMode === "create") return;
 
     (async () => {
       try {
@@ -282,28 +287,21 @@ export function AccountingComposer({
         setStatusLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingEntry]);
+  }, [editingEntry, composerMode, isOpen, setClase]);
 
-  // ✅ IMPORTANTE: no llames onCancelEdit adentro del setState updater.
-  const toggleExpanded = useCallback(() => {
-    setExpanded((prev) => !prev);
-  }, []);
-
-  // ✅ Si se cierra (expanded pasa a false) y estabas editando, cancelá en un effect (no en render).
-  const wasExpandedRef = useRef(false);
   useEffect(() => {
-    const wasExpanded = wasExpandedRef.current;
-    wasExpandedRef.current = expanded;
-
-    if (wasExpanded && !expanded && editingEntry) {
-      onCancelEdit();
+    if (!isOpen) {
+      resetAll();
+      return;
+    }
+    if (composerMode === "create") {
       resetAll();
     }
-  }, [expanded, editingEntry, onCancelEdit, resetAll]);
+  }, [isOpen, composerMode, resetAll]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!isOpen) return;
+    if (composerMode === "detail") return;
     if (mode !== "RAPIDO") return;
 
     const q = pucQuery.trim();
@@ -342,7 +340,7 @@ export function AccountingComposer({
     }, 120);
 
     return () => clearTimeout(t);
-  }, [pucQuery, selectedClase, expanded, mode]);
+  }, [pucQuery, selectedClase, isOpen, mode, composerMode]);
 
   async function handlePickPuc(node: PucNode) {
     setSelectedPuc(node);
@@ -357,11 +355,14 @@ export function AccountingComposer({
     try {
       const info = await getPuc(node.code);
       setSelectedPuc((prev) => (prev ? { ...prev, pucDbKind: info.kind } : prev));
-    } catch {}
+    } catch {
+      // noop
+    }
   }
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!isOpen) return;
+    if (composerMode === "detail") return;
     if (mode !== "GUIADO") return;
 
     if (!selectedClase) {
@@ -386,10 +387,11 @@ export function AccountingComposer({
         setGuidedLoading(false);
       }
     })();
-  }, [selectedClase, expanded, mode]);
+  }, [selectedClase, isOpen, mode, composerMode]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!isOpen) return;
+    if (composerMode === "detail") return;
     if (mode !== "GUIADO") return;
 
     if (!selectedGrupo) {
@@ -412,10 +414,11 @@ export function AccountingComposer({
         setGuidedLoading(false);
       }
     })();
-  }, [selectedGrupo, expanded, mode]);
+  }, [selectedGrupo, isOpen, mode, composerMode]);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!isOpen) return;
+    if (composerMode === "detail") return;
     if (mode !== "GUIADO") return;
 
     if (!selectedCuenta) {
@@ -436,7 +439,7 @@ export function AccountingComposer({
         setGuidedLoading(false);
       }
     })();
-  }, [selectedCuenta, expanded, mode]);
+  }, [selectedCuenta, isOpen, mode, composerMode]);
 
   useEffect(() => {
     if (mode !== "GUIADO") return;
@@ -497,7 +500,7 @@ export function AccountingComposer({
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const canSaveDraft = expanded && canEditFields && !sending && lines.length >= 1;
+  const canSaveDraft = (isCreating || isEditing) && canEditFields && !sending && lines.length >= 1;
   const canPost = isEditing && entryStatus === "DRAFT" && lines.length >= 2 && totals.diff === 0;
 
   async function handleSaveDraft() {
@@ -513,7 +516,7 @@ export function AccountingComposer({
         });
 
         await onCreate();
-        setExpanded(false);
+        onClose();
         resetAll();
         return;
       }
@@ -525,7 +528,7 @@ export function AccountingComposer({
       });
 
       await onUpdate();
-      setExpanded(false);
+      onClose();
       resetAll();
     } catch (err: any) {
       alert(err?.details?.message ?? err?.message ?? "No se pudo guardar el asiento");
@@ -565,7 +568,6 @@ export function AccountingComposer({
       setStatusLoading(false);
     }
   }
-
   const inputBase =
     "w-full rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 text-sm outline-none focus:border-emerald-300 transition disabled:opacity-60 disabled:cursor-not-allowed";
 
@@ -573,34 +575,325 @@ export function AccountingComposer({
   const miniOn = "bg-emerald-50 border-emerald-200 text-emerald-700";
   const miniOff = "bg-white/70 border-gray-200 text-gray-700";
 
+  const bottomSafe = "pb-[env(safe-area-inset-bottom)]";
+
+  const modeLabel = isCreating ? "Creando" : isEditing ? "Editando" : "Detalle";
+
+  const renderLines = () => (
+    <div className="rounded-3xl border border-gray-200 bg-white/80 p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">LÍNEAS EN ESTE ASIENTO ({lines.length})</div>
+          <div className="text-xs text-gray-500">{lines.length ? "Revisá cada línea antes de guardar" : "Agregá al menos 2 líneas para postear"}</div>
+        </div>
+      </div>
+
+      {lines.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-500">
+          Todavía no cargaste líneas.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {lines.map((l, idx) => {
+            const code = l.pucSubCode ?? l.pucCuentaCode ?? "";
+            const isDebit = Number(l.debit ?? 0) > 0;
+            const amt = isDebit ? Number(l.debit ?? 0) : Number(l.credit ?? 0);
+            return (
+              <div
+                key={`${code}-${idx}`}
+                className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 px-3 py-3 shadow-[0_2px_8px_rgba(0,0,0,0.03)]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-zinc-900 truncate">{code || "Sin código"}</span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                          isDebit ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
+                        )}
+                      >
+                        {isDebit ? "DEB" : "CRE"}
+                      </span>
+                    </div>
+                    <div className="text-xs text-zinc-500 mt-0.5 truncate">{l.description || "Sin descripción"}</div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="font-semibold tabular-nums text-sm text-neutral-900">{formatARS(amt)}</div>
+                    <div className="text-[11px] text-neutral-400">Monto</div>
+                  </div>
+                </div>
+
+                {canEditFields && (
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => removeLine(idx)}
+                      className="h-9 rounded-full px-3 text-xs font-semibold border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderAddLine = () => {
+    if (!canEditFields) return null;
+
+    return (
+      <div className="rounded-3xl border border-gray-200 bg-white/90 p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">AGREGAR LÍNEA</div>
+            <div className="text-xs text-gray-500">Elegí PUC, monto y naturaleza</div>
+          </div>
+
+          <div className="shrink-0 flex gap-2">
+            <button type="button" onClick={() => setMode("RAPIDO")} className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}>
+              Rápido
+            </button>
+            <button type="button" onClick={() => setMode("GUIADO")} className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}>
+              Guiado
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">CLASE</div>
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+            {(pucClases ?? []).map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => setClase(c.code)}
+                disabled={!canEditFields}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs border transition whitespace-nowrap",
+                  selectedClase === c.code
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                    : "bg-white/70 border-gray-200 text-gray-700",
+                  !canEditFields && "opacity-60 cursor-not-allowed",
+                )}
+              >
+                {c.code} · {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">CÓDIGO PUC</div>
+
+          {mode === "RAPIDO" ? (
+            <div className="relative mt-2" ref={pucWrapRef}>
+              <input
+                value={pucQuery}
+                onChange={(e) => {
+                  setPucQuery(e.target.value);
+                  if (!pucOpen) setPucOpen(true);
+                }}
+                onFocus={() => {
+                  if (pucQuery.trim()) setPucOpen(true);
+                }}
+                placeholder="Buscar (código o nombre)…"
+                className={cn(inputBase, "h-11")}
+                disabled={!canEditFields}
+              />
+
+              {pucOpen && canEditFields && (
+                <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50">
+                  <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+                    <div className="px-3 py-2 text-xs text-gray-500 flex items-center justify-between">
+                      <span>{pucLoading ? "Buscando..." : "Resultados"}</span>
+                      {selectedPuc ? (
+                        <button type="button" className="text-emerald-700 font-semibold" onClick={() => setSelectedPuc(null)}>
+                          Limpiar
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {pucItems.length === 0 ? (
+                      <div className="px-3 pb-3 text-sm text-gray-500">{pucQuery.trim() ? "Sin resultados" : "Escribí para buscar"}</div>
+                    ) : (
+                      <div className="max-h-48 sm:max-h-56 overflow-auto">
+                        {pucItems.slice(0, 12).map((x) => (
+                          <button
+                            key={x.code}
+                            type="button"
+                            className="w-full text-left px-3 py-3 border-t border-gray-100 hover:bg-gray-50"
+                            onClick={() => handlePickPuc(x)}
+                          >
+                            <div className="text-sm font-semibold text-zinc-900">
+                              {x.code} — {x.name}
+                            </div>
+                            <div className="text-xs text-zinc-500">
+                              {(x.pucDbKind ?? "PUC")} · {x.kind}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              <select
+                className={cn(inputBase, "h-11")}
+                value={selectedGrupo}
+                onChange={(e) => setSelectedGrupo(e.target.value)}
+                disabled={!selectedClase || guidedLoading || !canEditFields}
+              >
+                <option value="">{selectedClase ? "Grupo..." : "Elegí clase primero"}</option>
+                {grupos.map((g) => (
+                  <option key={g.code} value={g.code}>
+                    {g.code} — {g.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className={cn(inputBase, "h-11")}
+                value={selectedCuenta}
+                onChange={(e) => setSelectedCuenta(e.target.value)}
+                disabled={!selectedGrupo || guidedLoading || !canEditFields}
+              >
+                <option value="">{selectedGrupo ? "Cuenta..." : "Elegí grupo primero"}</option>
+                {cuentas.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} — {c.name}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className={cn(inputBase, "h-11")}
+                value={selectedSubcuenta}
+                onChange={(e) => setSelectedSubcuenta(e.target.value)}
+                disabled={!selectedCuenta || guidedLoading || subcuentas.length === 0 || !canEditFields}
+              >
+                <option value="">
+                  {selectedCuenta
+                    ? subcuentas.length
+                      ? "Subcuenta (opcional)..."
+                      : "Sin subcuentas (usa cuenta)"
+                    : "Elegí cuenta primero"}
+                </option>
+                {subcuentas.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.code} — {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedPuc ? (
+            <div className="mt-2 text-xs text-zinc-600 truncate">{selectedLabel}</div>
+          ) : (
+            <div className="mt-2 text-xs text-zinc-500">Seleccioná una cuenta/subcuenta.</div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">VALOR</div>
+              <input
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="0,00"
+                inputMode="decimal"
+                className={cn(inputBase, "h-11 mt-2")}
+                disabled={!canEditFields}
+              />
+            </div>
+
+            <div className="shrink-0">
+              <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">NATURALEZA</div>
+              <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
+                <button
+                  type="button"
+                  onClick={() => setNature("DEBITO")}
+                  disabled={!canEditFields}
+                  className={cn(
+                    "rounded-2xl px-3 py-2 text-xs font-semibold transition",
+                    nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
+                  )}
+                >
+                  Débito
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNature("CREDITO")}
+                  disabled={!canEditFields}
+                  className={cn(
+                    "rounded-2xl px-3 py-2 text-xs font-semibold transition",
+                    nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
+                  )}
+                >
+                  Crédito
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="sm:justify-self-end">
+            <button
+              type="button"
+              onClick={addLine}
+              disabled={!canEditFields}
+              className={cn(
+                "w-full sm:w-auto h-11 rounded-full px-4 text-sm font-semibold border transition",
+                canEditFields ? "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600" : "bg-zinc-50 border-zinc-200 text-zinc-500",
+              )}
+            >
+              Agregar línea
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
+    <div className={cn("fixed inset-x-0 bottom-0 z-50", bottomSafe)}>
       <div className="mx-auto w-full sm:max-w-2xl lg:max-w-3xl">
-        <div className="w-full rounded-none border-t border-white/40 bg-white/70 backdrop-blur-xl shadow-[0_-10px_25px_rgba(0,0,0,0.10)]">
+        <div className="w-full rounded-none border-t border-white/40 bg-white/80 backdrop-blur-xl shadow-[0_-10px_25px_rgba(0,0,0,0.10)]">
           <div
             className="transition-[max-height,opacity] duration-300 ease-out overflow-hidden"
             style={{
-              maxHeight: expanded ? `min(${contentH}px, ${MAX_SHEET})` : 0,
-              opacity: expanded ? 1 : 0,
+              maxHeight: isOpen ? `min(${contentH}px, ${MAX_SHEET})` : 0,
+              opacity: isOpen ? 1 : 0,
             }}
           >
             <div
               ref={expandableRef}
-              className="px-5 pt-4 pb-4 space-y-3 overflow-y-auto overscroll-contain"
+              className="px-5 pt-5 pb-24 space-y-4 overflow-y-auto overscroll-contain"
               style={{ maxHeight: MAX_SHEET }}
             >
-              {/* HEADER ASIENTO */}
-              <div className="rounded-2xl border border-gray-200 bg-white/60 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">ASIENTO</div>
+              {/* ASIENTO */}
+              <div className="rounded-3xl border border-gray-200 bg-white shadow-sm px-4 py-4 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">ASIENTO</div>
+                    <div className="text-xs text-gray-500">{modeLabel}</div>
+                  </div>
                   <div className="flex items-center gap-2">
                     {statusLoading ? <span className="text-xs text-zinc-500">…</span> : <StatusBadge status={entryStatus} />}
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">FECHA</div>
+                    <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">FECHA</div>
                     <input
                       type="date"
                       value={dateISO}
@@ -611,7 +904,7 @@ export function AccountingComposer({
                   </div>
 
                   <div>
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">MEMO</div>
+                    <div className="text-[11px] font-semibold tracking-[0.14em] text-gray-500">MEMO</div>
                     <input
                       value={memo}
                       onChange={(e) => setMemo(e.target.value)}
@@ -622,16 +915,16 @@ export function AccountingComposer({
                   </div>
                 </div>
 
-                {isEditing && (
-                  <div className="mt-3 flex items-center gap-2">
+                {isEditing && canEditFields && (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                     <button
                       type="button"
                       onClick={handlePost}
                       disabled={statusLoading || !canPost}
                       className={cn(
-                        "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
+                        "flex-1 h-11 rounded-full text-sm font-semibold border transition",
                         canPost
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
                           : "bg-zinc-50 border-zinc-200 text-zinc-500",
                       )}
                       title={!canPost ? "Requiere mínimo 2 líneas y balance (Débito = Crédito)" : undefined}
@@ -644,9 +937,9 @@ export function AccountingComposer({
                       onClick={handleVoid}
                       disabled={statusLoading || entryStatus === "VOID"}
                       className={cn(
-                        "flex-1 h-10 rounded-2xl text-xs font-semibold border transition",
+                        "flex-1 h-11 rounded-full text-sm font-semibold border transition",
                         entryStatus !== "VOID"
-                          ? "bg-red-50 border-red-200 text-red-700"
+                          ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
                           : "bg-zinc-50 border-zinc-200 text-zinc-500",
                       )}
                     >
@@ -655,357 +948,139 @@ export function AccountingComposer({
                   </div>
                 )}
 
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2">
                     <div className="text-[11px] text-gray-500">Total Débito</div>
-                    <div className="font-semibold tabular-nums">{formatARS(totals.totalDebit)}</div>
+                    <div className="font-semibold tabular-nums text-neutral-900">{formatARS(totals.totalDebit)}</div>
                   </div>
-                  <div className="rounded-xl border border-gray-200 bg-white px-3 py-2">
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2">
                     <div className="text-[11px] text-gray-500">Total Crédito</div>
-                    <div className="font-semibold tabular-nums">{formatARS(totals.totalCredit)}</div>
+                    <div className="font-semibold tabular-nums text-neutral-900">{formatARS(totals.totalCredit)}</div>
                   </div>
                   <div
                     className={cn(
-                      "rounded-xl border px-3 py-2",
+                      "rounded-2xl border px-3 py-2",
                       totals.diff === 0 ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50",
                     )}
                   >
                     <div className="text-[11px] text-gray-500">Diferencia</div>
-                    <div className={cn("font-semibold tabular-nums", totals.diff === 0 ? "text-emerald-700" : "text-red-700")}>
-                      {formatARS(totals.diff)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* CARGA DE LÍNEA */}
-              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4 space-y-3">
-              
-                <div className="flex items-center justify-between">
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">AGREGAR LÍNEA</div>
-                  <div className="shrink-0 flex gap-2">
-                    <button type="button" onClick={() => setMode("RAPIDO")} className={cn(miniToggleBase, mode === "RAPIDO" ? miniOn : miniOff)}>
-                      Rápido
-                    </button>
-                    <button type="button" onClick={() => setMode("GUIADO")} className={cn(miniToggleBase, mode === "GUIADO" ? miniOn : miniOff)}>
-                      Guiado
-                    </button>
+                    <div className={cn("font-semibold tabular-nums", totals.diff === 0 ? "text-emerald-700" : "text-red-700")}>{formatARS(totals.diff)}</div>
                   </div>
                 </div>
 
-              {/* CLASE */}
-              <div>
-                <div className="text-[11px] font-semibold tracking-widest text-gray-500">CLASE</div>
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {(pucClases ?? []).map((c) => (
+                {(isCreating || isEditing) && (
+                  <div className="pt-1">
                     <button
-                      key={c.code}
                       type="button"
-                      onClick={() => setClase(c.code)}
-                      disabled={!canEditFields}
+                      onClick={handleSaveDraft}
+                      disabled={!canSaveDraft}
                       className={cn(
-                        "rounded-full px-3 py-1.5 text-xs border transition whitespace-nowrap",
-                        selectedClase === c.code
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          : "bg-white/70 border-gray-200 text-gray-700",
-                        !canEditFields && "opacity-60 cursor-not-allowed",
+                        "w-full h-11 rounded-full text-sm font-semibold transition",
+                        canSaveDraft ? "bg-emerald-500 text-white hover:bg-emerald-600" : "bg-emerald-100 text-emerald-700/70",
                       )}
+                      title={lines.length === 0 ? "Agregá al menos 1 línea para guardar borrador" : undefined}
                     >
-                      {c.code} · {c.name}
+                      {sending ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear asiento (DRAFT)"}
                     </button>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {!canEditFields && isEditing && (
+                  <div className="text-xs text-zinc-500">
+                    Este asiento no es editable porque está <span className="font-semibold">{entryStatus}</span>.
+                  </div>
+                )}
               </div>
 
-                {/* PUC */}
-                <div ref={pucWrapRef}>
-                  <div className="text-[11px] font-semibold tracking-widest text-gray-500">CÓDIGO PUC</div>
+              {renderLines()}
 
-                  {mode === "RAPIDO" ? (
-                    <div className="relative mt-2">
-                      <input
-                        value={pucQuery}
-                        onChange={(e) => {
-                          setPucQuery(e.target.value);
-                          if (!pucOpen) setPucOpen(true);
-                        }}
-                        onFocus={() => {
-                          if (pucQuery.trim()) setPucOpen(true);
-                        }}
-                        placeholder="Buscar (código o nombre)…"
-                        className={cn(inputBase, "h-11")}
-                        disabled={!canEditFields}
-                      />
+              {renderAddLine()}
+            </div>
+          </div>
 
-                      {pucOpen && canEditFields && (
-                        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50">
-                          <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden">
-                            <div className="px-3 py-2 text-xs text-gray-500 flex items-center justify-between">
-                              <span>{pucLoading ? "Buscando..." : "Resultados"}</span>
-                              {selectedPuc ? (
-                                <button type="button" className="text-emerald-700 font-semibold" onClick={() => setSelectedPuc(null)}>
-                                  Limpiar
-                                </button>
-                              ) : null}
-                            </div>
-
-                            {pucItems.length === 0 ? (
-                              <div className="px-3 pb-3 text-sm text-gray-500">{pucQuery.trim() ? "Sin resultados" : "Escribí para buscar"}</div>
-                            ) : (
-                              <div className="max-h-48 sm:max-h-56 overflow-auto">
-                                {pucItems.slice(0, 12).map((x) => (
-                                  <button
-                                    key={x.code}
-                                    type="button"
-                                    className="w-full text-left px-3 py-3 border-t border-gray-100 hover:bg-gray-50"
-                                    onClick={() => handlePickPuc(x)}
-                                  >
-                                    <div className="text-sm font-semibold text-zinc-900">
-                                      {x.code} — {x.name}
-                                    </div>
-                                    <div className="text-xs text-zinc-500">
-                                      {(x.pucDbKind ?? "PUC")} · {x.kind}
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      <select
-                        className={cn(inputBase, "h-11")}
-                        value={selectedGrupo}
-                        onChange={(e) => setSelectedGrupo(e.target.value)}
-                        disabled={!selectedClase || guidedLoading || !canEditFields}
-                      >
-                        <option value="">{selectedClase ? "Grupo..." : "Elegí clase primero"}</option>
-                        {grupos.map((g) => (
-                          <option key={g.code} value={g.code}>
-                            {g.code} — {g.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      <select
-                        className={cn(inputBase, "h-11")}
-                        value={selectedCuenta}
-                        onChange={(e) => setSelectedCuenta(e.target.value)}
-                        disabled={!selectedGrupo || guidedLoading || !canEditFields}
-                      >
-                        <option value="">{selectedGrupo ? "Cuenta..." : "Elegí grupo primero"}</option>
-                        {cuentas.map((c) => (
-                          <option key={c.code} value={c.code}>
-                            {c.code} — {c.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      <select
-                        className={cn(inputBase, "h-11")}
-                        value={selectedSubcuenta}
-                        onChange={(e) => setSelectedSubcuenta(e.target.value)}
-                        disabled={!selectedCuenta || guidedLoading || subcuentas.length === 0 || !canEditFields}
-                      >
-                        <option value="">
-                          {selectedCuenta
-                            ? subcuentas.length
-                              ? "Subcuenta (opcional)..."
-                              : "Sin subcuentas (usa cuenta)"
-                            : "Elegí cuenta primero"}
-                        </option>
-                        {subcuentas.map((s) => (
-                          <option key={s.code} value={s.code}>
-                            {s.code} — {s.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {selectedPuc ? (
-                    <div className="mt-2 text-xs text-zinc-600 truncate">{selectedLabel}</div>
-                  ) : (
-                    <div className="mt-2 text-xs text-zinc-500">Seleccioná una cuenta/subcuenta.</div>
-                  )}
+          {/* BARRA INFERIOR */}
+          <div className="px-5 py-4 border-t border-white/30 bg-white/85 backdrop-blur-xl">
+            {isOpen ? (
+              composerMode === "detail" ? (
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      resetAll();
+                    }}
+                    className="h-11 w-full rounded-full border border-gray-200 bg-white/80 text-sm font-semibold text-gray-800"
+                  >
+                    Cerrar detalle
+                  </button>
                 </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      resetAll();
+                    }}
+                    className="h-12 w-12 rounded-full border border-gray-200 bg-white/70 flex items-center justify-center text-xl text-gray-700"
+                    aria-label="Cerrar"
+                  >
+                    ×
+                  </button>
 
-                {/* VALOR + NAT */}
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">VALOR</div>
+                  <div className="flex-1">
                     <input
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder="0,00"
-                      inputMode="decimal"
-                      className={cn(inputBase, "h-11 mt-2")}
+                      type="text"
+                      value={lineDesc}
+                      onChange={(e) => setLineDesc(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addLine();
+                        }
+                      }}
+                      placeholder="Descripción de la línea"
+                      className="w-full h-12 px-4 rounded-full bg-gray-100 text-sm outline-none border border-gray-200 focus:border-emerald-300"
                       disabled={!canEditFields}
                     />
                   </div>
 
-                  <div className="shrink-0">
-                    <div className="text-[11px] font-semibold tracking-widest text-gray-500">NAT.</div>
-                    <div className={cn("mt-2 flex items-center rounded-2xl border border-gray-200 bg-white/70 p-1", !canEditFields && "opacity-60")}>
-                      <button
-                        type="button"
-                        onClick={() => setNature("DEBITO")}
-                        disabled={!canEditFields}
-                        className={cn(
-                          "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                          nature === "DEBITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
-                        )}
-                      >
-                        Débito
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNature("CREDITO")}
-                        disabled={!canEditFields}
-                        className={cn(
-                          "rounded-2xl px-3 py-2 text-xs font-semibold transition",
-                          nature === "CREDITO" ? "bg-emerald-400 text-emerald-950" : "text-gray-600",
-                        )}
-                      >
-                        Crédito
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* DESC + ADD */}
-                <div className="flex items-center gap-2">
-                  <input
-                    value={lineDesc}
-                    onChange={(e) => setLineDesc(e.target.value)}
-                    placeholder="Descripción de la línea (opcional)"
-                    className={cn(inputBase, "h-11")}
-                    disabled={!canEditFields}
-                  />
                   <button
                     type="button"
                     onClick={addLine}
                     disabled={!canEditFields}
                     className={cn(
-                      "h-11 rounded-2xl px-4 text-sm font-semibold border transition",
-                      canEditFields ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-zinc-50 border-zinc-200 text-zinc-500",
+                      "h-12 w-12 rounded-full border flex items-center justify-center text-lg font-semibold",
+                      canEditFields ? "bg-emerald-500 border-emerald-500 text-white hover:bg-emerald-600" : "bg-zinc-50 border-zinc-200 text-zinc-400",
                     )}
+                    aria-label="Agregar línea"
                   >
-                    + Línea
+                    ➤
                   </button>
                 </div>
-              </div>
+              )
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onEnterCreate();
+                  }}
+                  className="h-12 w-12 rounded-full border border-gray-200 bg-white/70 flex items-center justify-center text-xl text-gray-700"
+                  aria-label="Abrir"
+                >
+                  +
+                </button>
 
-              {/* LÍNEAS */}
-              <div className="rounded-2xl border border-gray-200 bg-white/60 p-4">
-                <div className="text-[11px] font-semibold tracking-widest text-gray-500">LÍNEAS ({lines.length})</div>
-
-                {lines.length === 0 ? (
-                  <div className="mt-2 text-sm text-zinc-500">Agregá al menos 2 líneas para poder postear.</div>
-                ) : (
-                  <div className="mt-3 space-y-2">
-                    {lines.map((l, idx) => {
-                      const code = l.pucSubCode ?? l.pucCuentaCode ?? "";
-                      const isDebit = Number(l.debit ?? 0) > 0;
-                      const amt = isDebit ? Number(l.debit ?? 0) : Number(l.credit ?? 0);
-
-                      return (
-                        <div key={idx} className="rounded-2xl border border-gray-200 bg-white px-3 py-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-sm font-semibold text-zinc-900 truncate">
-                                {code} · {isDebit ? "Débito" : "Crédito"} · {formatARS(amt)}
-                              </div>
-                              <div className="text-xs text-zinc-500 truncate">{l.description ?? "—"}</div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => removeLine(idx)}
-                              disabled={!canEditFields}
-                              className={cn(
-                                "h-8 px-3 rounded-xl text-xs font-semibold border transition",
-                                canEditFields ? "bg-red-50 border-red-200 text-red-700" : "bg-zinc-50 border-zinc-200 text-zinc-500",
-                              )}
-                            >
-                              Quitar
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {!canEditFields && isEditing && (
-                <div className="text-xs text-zinc-500">
-                  Este asiento no es editable porque está <span className="font-semibold">{entryStatus}</span>.
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* BARRA INFERIOR */}
-          <div className="px-5 py-4 border-t border-white/30">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={toggleExpanded}
-                className="h-12 w-12 rounded-full border border-gray-200 bg-white/70 flex items-center justify-center text-xl text-gray-700"
-                aria-label={expanded ? "Cerrar" : "Abrir"}
-              >
-                {expanded ? "×" : "+"}
-              </button>
-
-              <div className="flex-1">
-                {expanded ? (
-                  <button
-                    type="button"
-                    onClick={handleSaveDraft}
-                    disabled={!canSaveDraft}
-                    className="w-full h-11 px-4 rounded-full bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50"
-                    title={lines.length === 0 ? "Agregá al menos 1 línea para guardar borrador" : undefined}
-                  >
-                    {sending ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear asiento (DRAFT)"}
-                  </button>
-                ) : (
+                <div className="flex-1">
                   <input
                     type="text"
                     value={searchValue}
                     onChange={(e) => onSearchChange(e.target.value)}
                     placeholder="Buscar movimiento..."
-                    className="w-full h-11 px-4 rounded-full bg-gray-100 text-sm outline-none"
+                    className="w-full h-12 px-4 rounded-full bg-gray-100 text-sm outline-none border border-gray-200"
                   />
-                )}
-              </div>
-
-              {editingEntry && (
-                <button
-                  type="button"
-                  className="shrink-0 h-11 px-4 rounded-full border border-gray-200 bg-white/70 text-sm font-semibold text-red-600"
-                  onClick={() => {
-                    // ✅ solo en evento
-                    onCancelEdit();
-                    setExpanded(false);
-                    resetAll();
-                  }}
-                >
-                  Cancelar
-                </button>
-              )}
-            </div>
-
-            {expanded && (
-              <div className="mt-2 px-1 text-xs text-neutral-500">
-                {lines.length < 2
-                  ? "Recomendación: cargá mínimo 2 líneas (débitos y créditos)."
-                  : totals.diff !== 0
-                    ? "No podés postear hasta que Débito = Crédito."
-                    : "Asiento balanceado ✅"}
+                </div>
               </div>
             )}
           </div>

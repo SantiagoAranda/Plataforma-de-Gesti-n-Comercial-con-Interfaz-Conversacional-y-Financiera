@@ -92,7 +92,8 @@ export default function ContabilidadClient() {
   const [rows, setRows] = useState<any[]>([]);
   const [search, setSearch] = useState("");
 
-  const [editingEntry, setEditingEntry] = useState<any | null>(null);
+  const [activeEntry, setActiveEntry] = useState<any | null>(null);
+  const [composerMode, setComposerMode] = useState<"create" | "edit" | "detail" | null>(null);
 
   const [pucClases, setPucClases] = useState<PucClase[]>([]);
   const [selectedClase, setSelectedClase] = useState("");
@@ -198,7 +199,8 @@ export default function ContabilidadClient() {
   const openDetails = useCallback(() => {
     if (!canDetails) return;
 
-    setEditingEntry({ entryId: selectedEntries[0].id });
+    setActiveEntry({ entryId: selectedEntries[0].id });
+    setComposerMode("detail");
 
     clearSelection();
   }, [canDetails, selectedEntries, clearSelection]);
@@ -206,7 +208,8 @@ export default function ContabilidadClient() {
   const openEdit = useCallback(() => {
     if (!canEdit) return;
 
-    setEditingEntry({ entryId: selectedEntries[0].id });
+    setActiveEntry({ entryId: selectedEntries[0].id });
+    setComposerMode("edit");
 
     clearSelection();
   }, [canEdit, selectedEntries, clearSelection]);
@@ -339,8 +342,16 @@ export default function ContabilidadClient() {
       <AccountingComposer
         searchValue={search}
         onSearchChange={setSearch}
-        editingEntry={editingEntry}
-        onCancelEdit={() => setEditingEntry(null)}
+        composerMode={composerMode}
+        editingEntry={activeEntry}
+        onEnterCreate={() => {
+          setActiveEntry(null);
+          setComposerMode("create");
+        }}
+        onClose={() => {
+          setComposerMode(null);
+          setActiveEntry(null);
+        }}
         onCreate={refresh}
         onUpdate={refresh}
         pucClases={pucClases}
