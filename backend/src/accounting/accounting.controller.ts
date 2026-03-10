@@ -19,7 +19,6 @@ import { CreateEntryDto } from './dto/create-entry.dto';
 import { UpdateEntryDto } from './dto/update-entry.dto';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { MovementsQueryDto } from './dto/movements-query.dto';
-import { UpsertSalesAccountingTemplateDto } from './dto/upsert-sales-accounting-template.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
@@ -128,31 +127,5 @@ export class AccountingController {
   @Get('movements/progress')
   movementsProgress(@Req() req: any, @Query('date') date?: string) {
     return this.accountingService.movementsProgress(req.user.businessId, { date });
-  }
-
-  @Get('sales-templates')
-  listSalesTemplates(@Req() req: any) {
-    return this.accountingService.listSalesTemplates(req.user.businessId);
-  }
-
-  @Get('sales-templates/:type')
-  getSalesTemplate(
-    @Req() req: any,
-    @Param('type') type: 'PRODUCT' | 'SERVICE',
-  ) {
-    return this.accountingService.getSalesTemplate(req.user.businessId, type);
-  }
-
-  @Put('sales-templates/:type')
-  upsertSalesTemplate(
-    @Req() req: any,
-    @Param('type') type: 'PRODUCT' | 'SERVICE',
-    @Body() dto: UpsertSalesAccountingTemplateDto,
-  ) {
-    return this.accountingService.upsertSalesTemplate(
-      req.user.businessId,
-      type,
-      dto,
-    );
   }
 }

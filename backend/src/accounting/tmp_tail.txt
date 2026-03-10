@@ -1,0 +1,10 @@
+  async listPucSubcuentas(cuentaCode: string) {
+    const code = (cuentaCode ?? '').trim();
+    if (!code) throw new BadRequestException('Query param "cuenta" is required');
+
+    return this.prisma.pucSubcuenta.findMany({
+      where: { cuentaCode: code, active: true },
+      orderBy: { code: 'asc' },
+      select: { code: true, name: true, cuentaCode: true },
+    });
+  }

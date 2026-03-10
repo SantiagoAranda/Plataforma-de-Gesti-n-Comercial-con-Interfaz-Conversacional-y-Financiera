@@ -3,21 +3,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
-import { AccountingService } from 'src/accounting/accounting.service';
-
-type AccountingDraftLine = {
-  pucCuentaCode?: string;
-  pucSubCode?: string;
-  debit: number;
-  credit: number;
-  description?: string;
-};
 @Injectable()
 export class SalesService {
-  constructor(
-    private prisma: PrismaService,
-    private accountingService: AccountingService,
-  ) { }
+  constructor(private prisma: PrismaService) { }
 
   async create(businessId: string, dto: CreateOrderDto) {
     if (!dto.items.length) {
@@ -122,12 +110,6 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const accountingEntry = await this.createAccountingEntryFromOrder(
-        tx,
-        businessId,
-        order,
-      );
-
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: {
@@ -144,7 +126,6 @@ export class SalesService {
 
       return {
         order: updatedOrder,
-        accountingEntry,
       };
     });
   }
@@ -347,182 +328,5 @@ export class SalesService {
     }
 
     return Array.from(types)[0] as 'PRODUCT' | 'SERVICE';
-  }
-  //Resolver tipo de plantilla
-  private resolveOrderTemplateType(
-    order: { items: Array<{ itemTypeSnapshot?: 'PRODUCT' | 'SERVICE' }> },
-  ): 'PRODUCT' | 'SERVICE' {
-    return this.ensureSingleItemType(order.items);
-  }
-
-  //Elegir cuenta o subcuenta.
-  private buildPucRef(input: {
-    cuentaCode?: string | null;
-    subCode?: string | null;
-  }): { pucCuentaCode?: string; pucSubCode?: string } {
-    const cuentaCode = input.cuentaCode ?? undefined;
-    const subCode = input.subCode ?? undefined;
-
-    const hasCuenta = !!cuentaCode;
-    const hasSub = !!subCode;
-
-    if (hasCuenta && hasSub) {
-      throw new BadRequestException(
-        'Template account must define either cuenta or subcuenta, not both',
-      );
-    }
-
-    if (hasSub) {
-      return { pucSubCode: subCode };
-    }
-
-    if (hasCuenta) {
-      return { pucCuentaCode: cuentaCode };
-    }
-
-    throw new BadRequestException('Template account is missing');
-  }
-  //Crear asiento automático desde la orden
-  private async createAccountingEntryFromOrder(
-    tx: any,
-    businessId: string,
-    order: any,
-  ) {
-    const templateType = this.resolveOrderTemplateType(order);
-
-    const template = await tx.salesAccountingTemplate.findUnique({
-      where: {
-        businessId_type: {
-          businessId,
-          type: templateType,
-        },
-      },
-    });
-
-    if (!template) {
-      throw new BadRequestException(
-        `Missing sales accounting template for ${templateType}`,
-      );
-    }
-
-    const existingEntry = await tx.accountingEntry.findFirst({
-      where: {
-        sourceOrderId: order.id,
-      },
-      include: {
-        lines: true,
-      },
-    });
-
-    if (existingEntry) {
-      return existingEntry;
-    }
-
-    const total = Number(order.total);
-    const vatRate = Number(template.vatRate ?? 0);
-    const pricesIncludeVat = !!template.pricesIncludeVat;
-
-    let net = total;
-    let vat = 0;
-
-    if (vatRate > 0) {
-      if (pricesIncludeVat) {
-        net = +(total / (1 + vatRate)).toFixed(2);
-        vat = +(total - net).toFixed(2);
-      } else {
-        net = total;
-        vat = +(total * vatRate).toFixed(2);
-      }
-    }
-
-    let debitMain: { pucCuentaCode?: string; pucSubCode?: string };
-
-    const hasCash =
-      !!template.debitCashPucCuentaCode || !!template.debitCashPucSubCode;
-
-    const hasReceivable =
-      !!template.debitReceivablePucCuentaCode || !!template.debitReceivablePucSubCode;
-
-    if (hasCash) {
-      debitMain = this.buildPucRef({
-        cuentaCode: template.debitCashPucCuentaCode,
-        subCode: template.debitCashPucSubCode,
-      });
-    } else if (hasReceivable) {
-      debitMain = this.buildPucRef({
-        cuentaCode: template.debitReceivablePucCuentaCode,
-        subCode: template.debitReceivablePucSubCode,
-      });
-    } else {
-      throw new BadRequestException(
-        'Template must define a debit account (cash/bank or receivable)',
-      );
-    }
-
-    const creditIncome = this.buildPucRef({
-      cuentaCode: template.creditIncomePucCuentaCode,
-      subCode: template.creditIncomePucSubCode,
-    });
-
-    const creditVat = this.buildPucRef({
-      cuentaCode: template.creditVatPucCuentaCode,
-      subCode: template.creditVatPucSubCode,
-    });
-
-    const lines: AccountingDraftLine[] = [
-      {
-        ...debitMain,
-        debit: total,
-        credit: 0,
-        description: `Débito automático por venta ${order.id}`,
-      },
-      {
-        ...creditIncome,
-        debit: 0,
-        credit: net,
-        description: `Ingreso automático por venta ${order.id}`,
-      },
-    ];
-
-    if (vat > 0) {
-      lines.push({
-        ...creditVat,
-        debit: 0,
-        credit: vat,
-        description: `IVA generado automático por venta ${order.id}`,
-      });
-    }
-
-    const debitTotal = lines.reduce((acc, l) => acc + Number(l.debit ?? 0), 0);
-    const creditTotal = lines.reduce((acc, l) => acc + Number(l.credit ?? 0), 0);
-
-    if (Math.abs(debitTotal - creditTotal) > 0.0001) {
-      throw new BadRequestException('Generated accounting entry is not balanced');
-    }
-
-    const entry = await tx.accountingEntry.create({
-      data: {
-        businessId,
-        date: new Date(),
-        memo: `Venta automática ${templateType} #${order.id}`,
-        status: 'POSTED',
-        sourceType: 'SALE',
-        sourceOrderId: order.id,
-        lines: {
-          create: lines.map((l) => ({
-            pucCuentaCode: l.pucCuentaCode ?? null,
-            pucSubCode: l.pucSubCode ?? null,
-            debit: l.debit,
-            credit: l.credit,
-            description: l.description ?? null,
-          })),
-        },
-      },
-      include: {
-        lines: true,
-      },
-    });
-
-    return entry;
   }
 }

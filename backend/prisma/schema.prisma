@@ -60,11 +60,6 @@ enum Weekday {
   SUN
 }
 
-enum SalesAccountingTemplateType {
-  PRODUCT
-  SERVICE
-}
-
 //
 // MODELOS CORE
 //
@@ -104,7 +99,6 @@ model Business {
   reservations Reservation[]
 
   accounting               AccountingEntry[]
-  salesAccountingTemplates SalesAccountingTemplate[]
 
   schedules ServiceScheduleWindow[]
   blocks    ServiceScheduleBlock[]
@@ -360,14 +354,6 @@ model PucCuenta {
   // back relation desde AccountingLine cuando se imputa a nivel cuenta
   lines AccountingLine[] @relation("AccountingLinePucCuenta")
 
-  // relaciones para plantillas contables
-  salesTplDebitCashCuenta       SalesAccountingTemplate[] @relation("SalesTplDebitCashCuenta")
-  salesTplDebitReceivableCuenta SalesAccountingTemplate[] @relation("SalesTplDebitReceivableCuenta")
-  salesTplCreditIncomeCuenta    SalesAccountingTemplate[] @relation("SalesTplCreditIncomeCuenta")
-  salesTplCreditVatCuenta       SalesAccountingTemplate[] @relation("SalesTplCreditVatCuenta")
-  salesTplDebitCostCuenta       SalesAccountingTemplate[] @relation("SalesTplDebitCostCuenta")
-  salesTplCreditInventoryCuenta SalesAccountingTemplate[] @relation("SalesTplCreditInventoryCuenta")
-
   @@index([grupoCode])
 }
 
@@ -381,14 +367,6 @@ model PucSubcuenta {
   active Boolean @default(true)
 
   lines AccountingLine[]
-
-  // relaciones para plantillas contables
-  salesTplDebitCashSub       SalesAccountingTemplate[] @relation("SalesTplDebitCashSub")
-  salesTplDebitReceivableSub SalesAccountingTemplate[] @relation("SalesTplDebitReceivableSub")
-  salesTplCreditIncomeSub    SalesAccountingTemplate[] @relation("SalesTplCreditIncomeSub")
-  salesTplCreditVatSub       SalesAccountingTemplate[] @relation("SalesTplCreditVatSub")
-  salesTplDebitCostSub       SalesAccountingTemplate[] @relation("SalesTplDebitCostSub")
-  salesTplCreditInventorySub SalesAccountingTemplate[] @relation("SalesTplCreditInventorySub")
 
   @@index([cuentaCode])
 }
@@ -444,66 +422,3 @@ model AccountingLine {
   @@index([pucCuentaCode])
 }
 
-//
-// PLANTILLAS CONTABLES AUTOMÁTICAS PARA VENTAS
-//
-
-model SalesAccountingTemplate {
-  id String @id @default(uuid())
-
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-
-  type SalesAccountingTemplateType
-
-  // Débito principal: caja/banco
-  debitCashPucCuentaCode String?    @db.VarChar(4)
-  debitCashPucCuenta     PucCuenta? @relation("SalesTplDebitCashCuenta", fields: [debitCashPucCuentaCode], references: [code], onDelete: Restrict)
-
-  debitCashPucSubCode   String?       @db.VarChar(6)
-  debitCashPucSubcuenta PucSubcuenta? @relation("SalesTplDebitCashSub", fields: [debitCashPucSubCode], references: [code], onDelete: Restrict)
-
-  // Débito alternativo: clientes / cuentas por cobrar
-  debitReceivablePucCuentaCode String?    @db.VarChar(4)
-  debitReceivablePucCuenta     PucCuenta? @relation("SalesTplDebitReceivableCuenta", fields: [debitReceivablePucCuentaCode], references: [code], onDelete: Restrict)
-
-  debitReceivablePucSubCode   String?       @db.VarChar(6)
-  debitReceivablePucSubcuenta PucSubcuenta? @relation("SalesTplDebitReceivableSub", fields: [debitReceivablePucSubCode], references: [code], onDelete: Restrict)
-
-  // Crédito: ingreso
-  creditIncomePucCuentaCode String?    @db.VarChar(4)
-  creditIncomePucCuenta     PucCuenta? @relation("SalesTplCreditIncomeCuenta", fields: [creditIncomePucCuentaCode], references: [code], onDelete: Restrict)
-
-  creditIncomePucSubCode   String?       @db.VarChar(6)
-  creditIncomePucSubcuenta PucSubcuenta? @relation("SalesTplCreditIncomeSub", fields: [creditIncomePucSubCode], references: [code], onDelete: Restrict)
-
-  // Crédito: IVA generado
-  creditVatPucCuentaCode String?    @db.VarChar(4)
-  creditVatPucCuenta     PucCuenta? @relation("SalesTplCreditVatCuenta", fields: [creditVatPucCuentaCode], references: [code], onDelete: Restrict)
-
-  creditVatPucSubCode   String?       @db.VarChar(6)
-  creditVatPucSubcuenta PucSubcuenta? @relation("SalesTplCreditVatSub", fields: [creditVatPucSubCode], references: [code], onDelete: Restrict)
-
-  // Solo PRODUCT: costo de ventas
-  debitCostPucCuentaCode String?    @db.VarChar(4)
-  debitCostPucCuenta     PucCuenta? @relation("SalesTplDebitCostCuenta", fields: [debitCostPucCuentaCode], references: [code], onDelete: Restrict)
-
-  debitCostPucSubCode   String?       @db.VarChar(6)
-  debitCostPucSubcuenta PucSubcuenta? @relation("SalesTplDebitCostSub", fields: [debitCostPucSubCode], references: [code], onDelete: Restrict)
-
-  // Solo PRODUCT: inventario
-  creditInventoryPucCuentaCode String?    @db.VarChar(4)
-  creditInventoryPucCuenta     PucCuenta? @relation("SalesTplCreditInventoryCuenta", fields: [creditInventoryPucCuentaCode], references: [code], onDelete: Restrict)
-
-  creditInventoryPucSubCode   String?       @db.VarChar(6)
-  creditInventoryPucSubcuenta PucSubcuenta? @relation("SalesTplCreditInventorySub", fields: [creditInventoryPucSubCode], references: [code], onDelete: Restrict)
-
-  vatRate          Decimal @default(0.19) @db.Decimal(5, 4)
-  pricesIncludeVat Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([businessId, type])
-  @@index([businessId])
-}
