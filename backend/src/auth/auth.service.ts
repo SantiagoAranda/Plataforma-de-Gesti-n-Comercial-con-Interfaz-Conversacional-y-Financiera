@@ -49,7 +49,7 @@ export class AuthService {
         businessId: business.id,
       },
       {
-        expiresIn: '15m',
+        expiresIn: '4h',
       },
     );
 
@@ -84,7 +84,7 @@ export class AuthService {
         businessId: user.businessId,
       },
       {
-        expiresIn: '15m',
+        expiresIn: '4h',
       },
     );
 
