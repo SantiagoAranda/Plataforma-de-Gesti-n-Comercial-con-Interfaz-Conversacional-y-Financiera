@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
+
 type Props = {
   title: string;
   preview: string;
   time: string;
   active?: boolean;
-  icon: string;
+  icon: ReactNode;
   onClick?: () => void;
 };
 

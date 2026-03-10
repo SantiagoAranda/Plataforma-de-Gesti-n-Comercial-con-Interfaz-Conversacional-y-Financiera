@@ -34,10 +34,13 @@ export default function MovimientosPage() {
           onlyPosted: "false",
         });
         setRows(data ?? []);
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error(e);
         setRows([]);
-        setError(e?.message ?? "No se pudieron cargar los movimientos");
+        const message = e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
+          ? (e as { message: string }).message
+          : "No se pudieron cargar los movimientos";
+        setError(message);
       } finally {
         setLoading(false);
       }

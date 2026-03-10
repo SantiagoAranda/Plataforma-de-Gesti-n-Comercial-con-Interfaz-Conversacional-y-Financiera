@@ -7,7 +7,7 @@ import type {
   BreakdownItem,
 } from "@/src/types/movements-ui";
 
-function safeNum(n: any) {
+function safeNum(n: unknown) {
   const v = Number(n ?? 0);
   return Number.isFinite(v) ? v : 0;
 }
@@ -44,7 +44,8 @@ export function mapMovementMetrics(rows: BackendMovement[], periodLabel: string)
       continue;
     }
 
-    if (cls === "OTHER") {
+    // Treat unclassified accounts as non-operating income/other.
+    if (cls === "UNKNOWN") {
       nonOperatingIncome += credit - debit;
     }
   }
@@ -226,19 +227,44 @@ export function mapMovementMetrics(rows: BackendMovement[], periodLabel: string)
     { key: "costs", label: "Costos", value: costs, tone: "negative" as const },
     { key: "grossProfit", label: "Utilidad", value: grossProfit, tone: "positive" as const },
     { key: "operatingExpenses", label: "Gastos operativos", value: operatingExpenses, tone: "negative" as const },
-    { key: "operatingProfit", label: "Utilidad operativa", value: operatingProfit, tone: operatingProfit >= 0 ? "positive" : "negative" },
+    {
+      key: "operatingProfit",
+      label: "Utilidad operativa",
+      value: operatingProfit,
+      tone: (operatingProfit >= 0 ? "positive" : "negative") as "positive" | "negative",
+    },
     { key: "nonOperatingIncome", label: "Ingresos no operativos", value: nonOperatingIncome, tone: "positive" as const },
     { key: "nonOperatingExpenses", label: "Gastos no operativos", value: nonOperatingExpenses, tone: "negative" as const },
-    { key: "profitBeforeTax", label: "Utilidad antes de impuesto", value: profitBeforeTax, tone: profitBeforeTax >= 0 ? "positive" : "negative" },
-    { key: "netIncome", label: "Utilidad líquida", value: netIncome, tone: netIncome >= 0 ? "positive" : "negative" },
-    { key: "netProfit", label: "Utilidad del ejercicio", value: netProfit, tone: netProfit >= 0 ? "positive" : "negative" },
+    {
+      key: "profitBeforeTax",
+      label: "Utilidad antes de impuesto",
+      value: profitBeforeTax,
+      tone: (profitBeforeTax >= 0 ? "positive" : "negative") as "positive" | "negative",
+    },
+    {
+      key: "netIncome",
+      label: "Utilidad líquida",
+      value: netIncome,
+      tone: (netIncome >= 0 ? "positive" : "negative") as "positive" | "negative",
+    },
+    {
+      key: "netProfit",
+      label: "Utilidad del ejercicio",
+      value: netProfit,
+      tone: (netProfit >= 0 ? "positive" : "negative") as "positive" | "negative",
+    },
   ];
 
   const topKpis = [
     { key: "netSales", label: "Ventas netas", value: netSales, tone: "positive" as const },
     { key: "costs", label: "Costos", value: costs, tone: "negative" as const },
     { key: "operatingExpenses", label: "Gastos", value: operatingExpenses + nonOperatingExpenses, tone: "negative" as const },
-    { key: "operatingProfit", label: "Utilidad operativa", value: operatingProfit, tone: operatingProfit >= 0 ? "positive" : "negative" },
+    {
+      key: "operatingProfit",
+      label: "Utilidad operativa",
+      value: operatingProfit,
+      tone: (operatingProfit >= 0 ? "positive" : "negative") as "positive" | "negative",
+    },
   ];
 
   const hasData = rows.length > 0;

@@ -2,7 +2,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { UiAccountingEntry } from "@/src/types/accounting-ui";
 
 import {
   getPuc,
@@ -14,6 +13,7 @@ import {
   type AccountingEntryStatus,
   createEntry,
   type CreateLineDto,
+  type AccountingEntryDto,
 } from "@/src/services/accounting";
 
 import {
@@ -29,6 +29,7 @@ import {
 type NatureUI = "DEBITO" | "CREDITO";
 type Mode = "RAPIDO" | "GUIADO";
 type ComposerMode = "create" | "edit" | "detail";
+export type ComposerEditingEntry = { entryId: string; pucCode?: string } | null;
 
 type PucKind = "ASSET" | "LIABILITY" | "EQUITY" | "INCOME" | "EXPENSE";
 type PucNode = {
@@ -44,7 +45,7 @@ type Props = {
   onSearchChange: (v: string) => void;
 
   composerMode: ComposerMode | null;
-  editingEntry: UiAccountingEntry | null;
+  editingEntry: ComposerEditingEntry;
   onEnterCreate: () => void;
   onClose: () => void;
 
@@ -106,6 +107,16 @@ function todayISO() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === "object") {
+    const details = (err as { details?: { message?: string } }).details;
+    if (details && typeof details.message === "string") return details.message;
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return fallback;
 }
 
 function StatusBadge({ status }: { status: AccountingEntryStatus }) {
@@ -269,7 +280,7 @@ export function AccountingComposer({
         const d = new Date(entry.date);
         setDateISO(d.toISOString().slice(0, 10));
 
-        const mapped: CreateLineDto[] = (entry.lines ?? []).map((l: any) => ({
+        const mapped: CreateLineDto[] = (entry.lines ?? []).map((l: AccountingEntryDto["lines"][number]) => ({
           pucCuentaCode: l.pucCuentaCode ?? undefined,
           pucSubCode: l.pucSubCode ?? undefined,
           debit: Number(l.debit ?? 0),
@@ -318,10 +329,10 @@ export function AccountingComposer({
           const found = await searchPuc(q);
 
           const filtered = selectedClase
-            ? found.filter((x: any) => String(x.code ?? "").trim().startsWith(selectedClase))
+            ? found.filter((x) => String(x.code ?? "").trim().startsWith(selectedClase))
             : found;
 
-          const mapped: PucNode[] = filtered.map((x: any) => ({
+          const mapped: PucNode[] = filtered.map((x) => ({
             code: x.code,
             name: x.name,
             kind: kindFromPucCode(x.code),
@@ -530,8 +541,8 @@ export function AccountingComposer({
       await onUpdate();
       onClose();
       resetAll();
-    } catch (err: any) {
-      alert(err?.details?.message ?? err?.message ?? "No se pudo guardar el asiento");
+    } catch (err: unknown) {
+      alert(extractErrorMessage(err, "No se pudo guardar el asiento"));
     } finally {
       setSending(false);
     }
@@ -546,8 +557,8 @@ export function AccountingComposer({
       const updated = await postEntry(editingEntry.entryId);
       setEntryStatus(updated.status);
       await onUpdate();
-    } catch (err: any) {
-      alert(err?.details?.message ?? err?.message ?? "No se pudo postear el asiento");
+    } catch (err: unknown) {
+      alert(extractErrorMessage(err, "No se pudo postear el asiento"));
     } finally {
       setStatusLoading(false);
     }
@@ -562,8 +573,8 @@ export function AccountingComposer({
       const updated = await voidEntry(editingEntry.entryId);
       setEntryStatus(updated.status);
       await onUpdate();
-    } catch (err: any) {
-      alert(err?.details?.message ?? err?.message ?? "No se pudo anular el asiento");
+    } catch (err: unknown) {
+      alert(extractErrorMessage(err, "No se pudo anular el asiento"));
     } finally {
       setStatusLoading(false);
     }

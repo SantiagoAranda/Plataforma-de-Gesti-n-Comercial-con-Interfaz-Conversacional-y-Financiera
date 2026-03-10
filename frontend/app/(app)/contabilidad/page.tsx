@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
-import { Settings } from "lucide-react";
-import { useRouter } from "next/navigation";
 
-import { AccountingComposer } from "@/src/components/accounting/AccountingComposer";
+import { AccountingComposer, type ComposerEditingEntry } from "@/src/components/accounting/AccountingComposer";
 import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
 
 import { AccountingSelectionBar } from "@/src/components/accounting/AccountingSelectionBar";
@@ -17,7 +15,7 @@ import {
   type UiAccountingLine,
 } from "@/src/components/accounting/AccountingEntryCard";
 
-import type { AccountingType } from "@/src/services/accounting";
+import type { AccountingType, BackendMovement } from "@/src/services/accounting";
 import { deleteEntry, listMovements } from "@/src/services/accounting";
 
 import { getPucClases, type PucClase } from "@/src/services/puc";
@@ -42,12 +40,12 @@ function groupLabel(dateISO: string): string {
   return dateISO;
 }
 
-function normalizeDateISO(x: any) {
+function normalizeDateISO(x: string | Date) {
   const d = new Date(x);
   return d.toISOString().slice(0, 10);
 }
 
-function toEntryGroups(rows: any[]): UiAccountingEntryGroup[] {
+function toEntryGroups(rows: BackendMovement[]): UiAccountingEntryGroup[] {
   const map = new Map<string, UiAccountingEntryGroup>();
 
   for (const r of rows ?? []) {
@@ -88,14 +86,13 @@ function toEntryGroups(rows: any[]): UiAccountingEntryGroup[] {
 
 export default function ContabilidadClient() {
 
-  const router = useRouter();
   const [filter, setFilter] = useState<AccountingType>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<BackendMovement[]>([]);
   const [search, setSearch] = useState("");
 
-  const [activeEntry, setActiveEntry] = useState<any | null>(null);
+  const [activeEntry, setActiveEntry] = useState<ComposerEditingEntry>(null);
   const [composerMode, setComposerMode] = useState<"create" | "edit" | "detail" | null>(null);
 
   const [pucClases, setPucClases] = useState<PucClase[]>([]);
@@ -111,7 +108,8 @@ export default function ContabilidadClient() {
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }, []);
@@ -202,7 +200,8 @@ export default function ContabilidadClient() {
   const openDetails = useCallback(() => {
     if (!canDetails) return;
 
-    setActiveEntry({ entryId: selectedEntries[0].id });
+    const firstLineCode = selectedEntries[0].lines[0]?.pucCode;
+    setActiveEntry({ entryId: selectedEntries[0].id, pucCode: firstLineCode });
     setComposerMode("detail");
 
     clearSelection();
@@ -211,7 +210,8 @@ export default function ContabilidadClient() {
   const openEdit = useCallback(() => {
     if (!canEdit) return;
 
-    setActiveEntry({ entryId: selectedEntries[0].id });
+    const firstLineCode = selectedEntries[0].lines[0]?.pucCode;
+    setActiveEntry({ entryId: selectedEntries[0].id, pucCode: firstLineCode });
     setComposerMode("edit");
 
     clearSelection();
@@ -271,9 +271,6 @@ export default function ContabilidadClient() {
         title="Contabilidad"
         subtitle="Asientos contables"
         showBack
-        rightIcon={<Settings className="h-5 w-5" />}
-        rightAriaLabel="Configuración contable"
-        onRightClick={() => router.push("/contabilidad/configuracion")}
       />
 
       {selectionMode && (
