@@ -1,19 +1,19 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
+import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
+import { MovementPercentBarChart } from "@/src/components/movements/MovementPercentBarChart";
 import { MovementPeriodFilter } from "@/src/components/movements/MovementPeriodFilter";
 import { MovementProfitHero } from "@/src/components/movements/MovementProfitHero";
 import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
-import { MovementPercentBarChart } from "@/src/components/movements/MovementPercentBarChart";
-import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
 import { mapMovementMetrics } from "@/src/lib/movements/mapMovementMetrics";
 import { periodRange } from "@/src/lib/movements/movementPeriod";
-import type { MovementPeriodKey } from "@/src/types/movements-ui";
 import { listMovements, type BackendMovement } from "@/src/services/accounting";
+import type { MovementPeriodKey } from "@/src/types/movements-ui";
 
 export default function MovimientosPage() {
   const [period, setPeriod] = useState<MovementPeriodKey>("THIS_MONTH");
@@ -21,6 +21,7 @@ export default function MovimientosPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [activePanel, setActivePanel] = useState<"summary" | "percentages">("summary");
 
   useEffect(() => {
     (async () => {
@@ -49,6 +50,44 @@ export default function MovimientosPage() {
   const range = periodRange(period);
   const metrics = useMemo(() => mapMovementMetrics(rows, range.label), [rows, range.label]);
   const { view } = metrics;
+  const chartItems = view.chartData.map((c) => ({
+    ...c,
+    tone:
+      c.key === "netProfit"
+        ? "blue"
+        : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
+          ? "red"
+          : "green",
+  }));
+
+  const togglePanel = () => {
+    setActivePanel((current) => (current === "summary" ? "percentages" : "summary"));
+  };
+
+  const mobileNavButtonClassName =
+    "inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm ring-1 ring-black/5 transition hover:text-neutral-900";
+
+  const mobileLeftButton = (
+    <button
+      type="button"
+      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
+      onClick={togglePanel}
+      className={mobileNavButtonClassName}
+    >
+      <ChevronLeft className="h-4 w-4" />
+    </button>
+  );
+
+  const mobileRightButton = (
+    <button
+      type="button"
+      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
+      onClick={togglePanel}
+      className={mobileNavButtonClassName}
+    >
+      <ChevronRight className="h-4 w-4" />
+    </button>
+  );
 
   return (
     <div className="min-h-dvh bg-zinc-50">
@@ -60,8 +99,8 @@ export default function MovimientosPage() {
         onRightClick={() => setShowPeriodPicker((p) => !p)}
       />
 
-      <main className="mx-auto w-full max-w-4xl px-3 pb-28 pt-3 space-y-5 sm:px-4">
-        {/* Selector de período desplegable desde el ícono */}
+      <main className="mx-auto w-full max-w-4xl space-y-5 px-3 pb-28 pt-3 sm:px-4">
+        {/* Selector de periodo desplegable desde el icono */}
         <div className="relative">
           {showPeriodPicker && (
             <>
@@ -74,7 +113,7 @@ export default function MovimientosPage() {
               <div className="absolute right-0 z-50 mt-2 w-full max-w-sm rounded-2xl bg-white p-4 shadow-lg ring-1 ring-neutral-200">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
                   <CalendarDays className="h-4 w-4 text-emerald-600" />
-                  <span>Período: {range.label}</span>
+                  <span>Periodo: {range.label}</span>
                 </div>
                 <MovementPeriodFilter
                   value={period}
@@ -106,19 +145,30 @@ export default function MovimientosPage() {
           <>
             <MovementProfitHero amount={metrics.netProfit} />
 
-            <MovementSummaryList metrics={view.summaryMetrics} />
+            <section className="space-y-3">
+              <div className="md:hidden">
+                <div className="min-h-[320px]">
+                  {activePanel === "summary" ? (
+                    <MovementSummaryList
+                      metrics={view.summaryMetrics}
+                      headerLeft={mobileLeftButton}
+                      headerRight={mobileRightButton}
+                    />
+                  ) : (
+                    <MovementPercentBarChart
+                      items={chartItems}
+                      headerLeft={mobileLeftButton}
+                      headerRight={mobileRightButton}
+                    />
+                  )}
+                </div>
+              </div>
 
-            <MovementPercentBarChart
-              items={view.chartData.map((c) => ({
-                ...c,
-                tone:
-                  c.key === "netProfit"
-                    ? "blue"
-                    : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
-                      ? "red"
-                      : "green",
-              }))}
-            />
+              <div className="hidden items-stretch gap-4 md:grid md:grid-cols-2">
+                <MovementSummaryList metrics={view.summaryMetrics} />
+                <MovementPercentBarChart items={chartItems} />
+              </div>
+            </section>
           </>
         )}
       </main>

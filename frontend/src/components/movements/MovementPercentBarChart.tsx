@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { cn } from "@/src/lib/utils";
 
 type Item = {
@@ -22,13 +23,26 @@ function formatPct(p: number) {
   return `${p.toFixed(2)}%`;
 }
 
-export function MovementPercentBarChart({ items }: { items: Item[] }) {
+type MovementPercentBarChartProps = {
+  items: Item[];
+  headerLeft?: ReactNode;
+  headerRight?: ReactNode;
+};
+
+export function MovementPercentBarChart({ items, headerLeft, headerRight }: MovementPercentBarChartProps) {
   const maxPct = Math.max(1, ...items.map((i) => Math.abs(i.percentage ?? 0)));
+  const hasHeaderControls = Boolean(headerLeft || headerRight);
 
   return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5 space-y-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Porcentajes del período</div>
-      <div className="text-lg font-semibold text-neutral-900">Cómo pesa cada indicador</div>
+    <div className="h-full rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5 space-y-3">
+      <div className={cn(hasHeaderControls && "grid grid-cols-[2.25rem_1fr_2.25rem] items-center gap-2")}>
+        {hasHeaderControls && <div className="flex justify-start">{headerLeft}</div>}
+        <div className={cn(hasHeaderControls && "text-center")}>
+          <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Porcentajes del periodo</div>
+          <div className="text-lg font-semibold text-neutral-900">Como pesa cada indicador</div>
+        </div>
+        {hasHeaderControls && <div className="flex justify-end">{headerRight}</div>}
+      </div>
 
       <div className="space-y-3">
         {items.map((item) => {
@@ -36,9 +50,9 @@ export function MovementPercentBarChart({ items }: { items: Item[] }) {
           const tone = item.tone ?? (item.value >= 0 ? "green" : "red");
           return (
             <div key={item.key} className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-neutral-600 gap-2">
+              <div className="flex items-center justify-between gap-2 text-xs text-neutral-600">
                 <span className="truncate">{item.label}</span>
-                <span className="font-semibold text-neutral-800 whitespace-nowrap overflow-hidden text-ellipsis">
+                <span className="whitespace-nowrap overflow-hidden text-ellipsis font-semibold text-neutral-800">
                   {formatPct(item.percentage)}
                 </span>
               </div>

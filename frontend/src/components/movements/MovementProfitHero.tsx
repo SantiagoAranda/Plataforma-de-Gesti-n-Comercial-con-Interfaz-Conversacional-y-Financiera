@@ -25,7 +25,7 @@ export function MovementProfitHero({
             {amount.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })}
           </div>
           <div className="mt-1 text-xs text-neutral-500">
-            {description ?? "Ingresos - costos - gastos operativos y otros"}
+            {description ?? "Ganancia neta"}
           </div>
         </div>
         <div
