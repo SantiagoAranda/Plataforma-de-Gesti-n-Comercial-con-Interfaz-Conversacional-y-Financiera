@@ -18,22 +18,27 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const data = await api<{ accessToken: string }>("/auth/login", {
+      const data = await api<{ accessToken: string; businessName?: string }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
           email,
           password,
         }),
-        auth: false, // importante: login no necesita token
+        auth: false,
       });
 
-      // Guardar token
       localStorage.setItem("accessToken", data.accessToken);
+      if (data.businessName?.trim()) {
+        localStorage.setItem("businessName", data.businessName.trim());
+      }
 
-      // Redirigir
       router.push("/home");
-    } catch (err: any) {
-      setError(err.message || "Error al iniciar sesión");
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string"
+          ? (err as { message: string }).message
+          : "Error al iniciar sesion";
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -52,7 +57,7 @@ export default function LoginForm() {
       "
     >
       <h1 className="text-2xl font-semibold text-center text-gray-900">
-        Iniciar sesión
+        Iniciar sesion
       </h1>
 
       {error && (
@@ -89,11 +94,11 @@ export default function LoginForm() {
 
       <div className="space-y-2">
         <label className="block text-sm font-medium text-gray-700">
-          Contraseña
+          Contrasena
         </label>
         <input
           type="password"
-          placeholder="••••••••"
+          placeholder="********"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -134,7 +139,7 @@ export default function LoginForm() {
       </button>
 
       <p className="text-sm text-center text-gray-600">
-        ¿No tenés cuenta?{" "}
+        No tenes cuenta?{" "}
         <span
           onClick={() => router.push("/register")}
           className="text-emerald-600 font-medium cursor-pointer hover:underline"

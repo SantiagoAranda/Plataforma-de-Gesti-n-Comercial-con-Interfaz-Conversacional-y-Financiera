@@ -35,19 +35,75 @@ export type ApiOrder = {
   items: ApiOrderItem[];
 };
 
+const FALLBACK_NO_ACTIVITY = "Sin actividad registrada";
+
+function parseDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+function formatAbsoluteDateTime(date: Date) {
+  return date.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatActivityFallback(date?: string | null) {
+  const parsed = parseDate(date);
+  if (!parsed) return FALLBACK_NO_ACTIVITY;
+
+  const now = new Date();
+  const sameDay =
+    parsed.getFullYear() === now.getFullYear() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getDate() === now.getDate();
+
+  if (sameDay) {
+    return `Ultima actividad: hoy ${parsed.toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  }
+
+  return `Ultima actividad: ${formatAbsoluteDateTime(parsed)}`;
+}
+
+function buildSubtitle(activityText?: string | null, date?: string | null) {
+  const normalized = activityText?.trim();
+  if (normalized) return `Ultima actividad: ${normalized}`;
+  return formatActivityFallback(date);
+}
+
+function isUpdatedAfterCreate(createdAt?: string | null, updatedAt?: string | null) {
+  const created = parseDate(createdAt);
+  const updated = parseDate(updatedAt);
+  if (!created || !updated) return false;
+  return updated.getTime() > created.getTime() + 1000;
+}
+
+function getLatestTimestamp(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (parseDate(value)) return value ?? null;
+  }
+  return null;
+}
+
 export function isRecentActivity(date?: string | null) {
-  if (!date) return false;
-  const ts = new Date(date).getTime();
-  if (Number.isNaN(ts)) return false;
-  const diffHours = (Date.now() - ts) / 36e5;
+  const parsed = parseDate(date);
+  if (!parsed) return false;
+  const diffHours = (Date.now() - parsed.getTime()) / 36e5;
   return diffHours <= 24;
 }
 
 export function formatActivityTime(date?: string | null) {
-  if (!date) return "Sin actividad";
-
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "Sin actividad";
+  const d = parseDate(date);
+  if (!d) return "Sin actividad";
 
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
@@ -96,8 +152,8 @@ function formatCurrency(amount: number) {
 
 const byDateDesc = <T,>(arr: T[], getDate: (item: T) => string | undefined | null) =>
   [...arr].sort((a, b) => {
-    const ad = new Date(getDate(a) ?? 0).getTime();
-    const bd = new Date(getDate(b) ?? 0).getTime();
+    const ad = parseDate(getDate(a))?.getTime() ?? 0;
+    const bd = parseDate(getDate(b))?.getTime() ?? 0;
     return bd - ad;
   });
 
@@ -105,27 +161,20 @@ export function mapBusinessActivity(items: BusinessItem[]): ModuleActivitySummar
   const sorted = byDateDesc(items, (i) => i.updatedAt ?? i.createdAt ?? undefined);
   const latest = sorted[0];
 
-  const productCount = items.filter((i) => i.type === "PRODUCT").length;
-  const serviceCount = items.filter((i) => i.type === "SERVICE").length;
+  const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt) : null;
 
-  let subtitle = "Todavia no cargaste productos o servicios";
-  let lastActivityAt: string | null | undefined = null;
-
+  let activityText: string | null = null;
   if (latest) {
-    lastActivityAt = latest.updatedAt ?? latest.createdAt ?? null;
-    const action = latest.updatedAt ? "actualizado" : "creado";
-    subtitle = `${latest.type === "SERVICE" ? "Servicio" : "Producto"} "${latest.name}" ${action}`;
-  } else if (productCount || serviceCount) {
-    const parts = [];
-    if (productCount) parts.push(`${productCount} producto${productCount === 1 ? "" : "s"}`);
-    if (serviceCount) parts.push(`${serviceCount} servicio${serviceCount === 1 ? "" : "s"}`);
-    subtitle = parts.join(" • ");
+    const itemType = latest.type === "SERVICE" ? "Servicio" : "Producto";
+    const itemName = latest.name?.trim();
+    const action = isUpdatedAfterCreate(latest.createdAt, latest.updatedAt) ? "actualizado" : "creado";
+    activityText = itemName ? `${itemType} "${itemName}" ${action}` : `${itemType} ${action}`;
   }
 
   return {
     module: "BUSINESS",
     title: "Mi Negocio",
-    subtitle,
+    subtitle: buildSubtitle(activityText, lastActivityAt),
     lastActivityAt,
     isRecent: isRecentActivity(lastActivityAt),
     href: "/mi-negocio",
@@ -137,41 +186,35 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
   const sorted = byDateDesc(orders, (o) => o.createdAt);
   const latest = sorted[0];
 
-  let subtitle = "Todavia no registraste ventas";
-  let lastActivityAt: string | null | undefined = null;
+  const lastActivityAt = latest?.createdAt ?? null;
 
+  let activityText: string | null = null;
   if (latest) {
-    const today = new Date();
-    const todayCount = sorted.filter((o) => {
-      const d = new Date(o.createdAt);
-      return (
-        d.getFullYear() === today.getFullYear() &&
-        d.getMonth() === today.getMonth() &&
-        d.getDate() === today.getDate()
-      );
-    }).length;
-
     const total = latest.items.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
     const statusLabel: Record<ApiOrder["status"], string> = {
-      DRAFT: "Orden en borrador",
-      SENT: "Venta confirmada",
-      COMPLETED: "Venta cerrada",
+      DRAFT: "Pedido en borrador",
+      SENT: "Pedido confirmado",
+      COMPLETED: "Venta completada",
       CANCELLED: "Venta cancelada",
     };
 
-    subtitle = `${statusLabel[latest.status] ?? "Venta"}${total ? ` por ${formatCurrency(total)}` : ""}`;
-
-    if (todayCount > 1) {
-      subtitle = `${todayCount} ventas hoy`;
+    const base = statusLabel[latest.status] ?? "Venta registrada";
+    const customer = latest.customerName?.trim();
+    if (customer && total) {
+      activityText = `${base} de ${customer} por ${formatCurrency(total)}`;
+    } else if (customer) {
+      activityText = `${base} de ${customer}`;
+    } else if (total) {
+      activityText = `${base} por ${formatCurrency(total)}`;
+    } else {
+      activityText = base;
     }
-
-    lastActivityAt = latest.createdAt;
   }
 
   return {
     module: "SALES",
     title: "Ventas",
-    subtitle,
+    subtitle: buildSubtitle(activityText, lastActivityAt),
     lastActivityAt,
     isRecent: isRecentActivity(lastActivityAt),
     href: "/venta",
@@ -180,28 +223,35 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
 }
 
 export function mapAccountingActivity(movements: BackendMovement[]): ModuleActivitySummary {
-  const sorted = byDateDesc(movements, (m) => m.date);
+  const sorted = byDateDesc(movements, (m) => m.updatedAt ?? m.createdAt ?? m.date);
   const latest = sorted[0];
 
-  let subtitle = "Sin movimientos contables";
-  let lastActivityAt: string | null | undefined = null;
+  const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt, latest.date) : null;
 
+  let activityText: string | null = null;
   if (latest) {
-    const amount = latest.amount ?? 0;
-    const memo = latest.detail ?? latest.pucName ?? "";
-    const details = memo ? ` • ${memo}` : "";
-    const amountLabel = Number.isFinite(amount) ? ` por ${formatCurrency(Math.abs(amount))}` : "";
+    const detail = latest.detail?.trim();
+    const accountName = latest.pucName?.trim();
+    const accountCode = latest.pucCode?.trim();
+    const amount = Number.isFinite(latest.amount) ? formatCurrency(Math.abs(latest.amount)) : "";
 
-    subtitle = `${latest.pucCode}${amountLabel}${details}`;
-    lastActivityAt = latest.date;
-  } else {
-    subtitle = "Sin movimientos • pendiente de registro";
+    if (detail) {
+      activityText = detail;
+    } else if (accountName && amount) {
+      activityText = `Movimiento en ${accountName} por ${amount}`;
+    } else if (accountCode && amount) {
+      activityText = `Movimiento ${accountCode} por ${amount}`;
+    } else if (accountName) {
+      activityText = `Movimiento en ${accountName}`;
+    } else if (accountCode) {
+      activityText = `Movimiento ${accountCode}`;
+    }
   }
 
   return {
     module: "ACCOUNTING",
     title: "Contabilidad",
-    subtitle,
+    subtitle: buildSubtitle(activityText, lastActivityAt),
     lastActivityAt,
     isRecent: isRecentActivity(lastActivityAt),
     href: "/contabilidad",

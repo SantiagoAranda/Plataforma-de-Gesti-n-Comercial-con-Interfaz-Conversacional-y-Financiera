@@ -55,6 +55,7 @@ export class AuthService {
 
     return {
       accessToken,
+      businessName: business.name,
     };
   }
 
@@ -90,6 +91,7 @@ export class AuthService {
 
     return {
       accessToken,
+      businessName: user.business.name,
     };
   }
 }

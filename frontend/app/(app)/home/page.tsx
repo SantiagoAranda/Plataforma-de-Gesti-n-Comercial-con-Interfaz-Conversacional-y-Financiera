@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Building2, Calculator, ShoppingBag } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNav from "@/src/components/layout/BottomNav";
-import { MainModuleCard } from "@/src/components/home/MainModuleCard";
+import ThreadItem from "@/src/components/chat/ThreadItem";
 import {
   type ApiOrder,
   type BusinessItem,
   type ModuleActivitySummary,
+  formatActivityTime,
   mapAccountingActivity,
   mapBusinessActivity,
   mapSalesActivity,
@@ -24,11 +26,39 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
+  const [businessName, setBusinessName] = useState("Mi Negocio");
   const [items, setItems] = useState<BusinessItem[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [movements, setMovements] = useState<BackendMovement[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const storedBusinessName = localStorage.getItem("businessName");
+    if (storedBusinessName?.trim()) {
+      setBusinessName(storedBusinessName.trim());
+      return;
+    }
+
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) return;
+
+    try {
+      const parsed = JSON.parse(storedUser) as
+        | { businessName?: string; name?: string; business?: { name?: string } }
+        | null;
+
+      const nextName = parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+      if (nextName?.trim()) {
+        setBusinessName(nextName.trim());
+      }
+    } catch {
+      // Ignore malformed persisted data and keep fallback title.
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -93,42 +123,50 @@ export default function HomePage() {
   );
 
   return (
-    <div className="min-h-dvh bg-zinc-50">
-      <AppHeader title="MVP" subtitle="Inicio" />
+    <div className="flex h-screen flex-col bg-white">
+      <AppHeader title={businessName} subtitle="Resumen general" />
 
-      <main className="mx-auto w-full max-w-3xl px-3 pb-28 pt-3 space-y-4 sm:px-4">
+      <main className="flex-1 overflow-y-auto pb-24">
         {loading && (
-          <div className="space-y-3">
+          <div>
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-20 rounded-2xl border border-neutral-200 bg-white shadow-sm animate-pulse"
-              />
+              <div key={i} className="h-[74px] animate-pulse border-b border-neutral-100 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-full bg-neutral-100" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-32 rounded bg-neutral-100" />
+                    <div className="h-3 w-48 rounded bg-neutral-100" />
+                  </div>
+                  <div className="h-3 w-12 rounded bg-neutral-100" />
+                </div>
+              </div>
             ))}
           </div>
         )}
 
         {error && !loading && (
-          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
-            {error}
+          <div className="px-4 py-4">
+            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
+              {error}
+            </div>
           </div>
         )}
 
         {!loading && !error && (
-          <section className="space-y-3">
+          <div>
             {summaries.map((summary) => (
-              <MainModuleCard
+              <ThreadItem
                 key={summary.module}
-                icon={MODULE_ICONS[summary.module]}
                 title={summary.title}
-                subtitle={summary.subtitle}
-                lastActivityAt={summary.lastActivityAt}
-                isRecent={summary.isRecent}
-                href={summary.href}
+                preview={summary.subtitle}
+                time={formatActivityTime(summary.lastActivityAt)}
+                active={summary.isRecent}
+                icon={MODULE_ICONS[summary.module]}
                 accent={summary.accent}
+                onClick={() => router.push(summary.href)}
               />
             ))}
-          </section>
+          </div>
         )}
       </main>
 

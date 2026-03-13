@@ -202,7 +202,7 @@ const handleComposerSubmit = useCallback(async () => {
           onDelete={() => handleDelete(selectedMovement.id)}
         />
       ) : (
-        <AppHeader title="Contabilidad" />
+        <AppHeader title="Contabilidad" subtitle="Movimientos y registros" showBack />
       )}
 
       <main className="mx-auto w-full max-w-3xl px-3 pb-40 pt-4 sm:px-4">

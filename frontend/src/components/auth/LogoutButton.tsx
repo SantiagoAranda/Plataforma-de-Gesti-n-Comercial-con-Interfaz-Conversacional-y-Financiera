@@ -8,29 +8,25 @@ export default function LogoutButton() {
 
   const handleLogout = () => {
     try {
-      // limpiar token o sesión
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-        localStorage.removeItem("session");
-        localStorage.removeItem("user");
-        localStorage.removeItem("accessToken");
-      }
+      localStorage.removeItem("token");
+      localStorage.removeItem("session");
+      localStorage.removeItem("user");
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("businessName");
 
-      // opcional: limpiar cookies si existen
       document.cookie = "token=; Max-Age=0; path=/";
-
-      // redirigir a login
       router.push("/login");
     } catch (error) {
-      console.error("Error al cerrar sesión", error);
+      console.error("Error al cerrar sesion", error);
     }
   };
 
   return (
     <button
       onClick={handleLogout}
-      aria-label="Cerrar sesión"
-      className="flex items-center gap-2 rounded-full border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 active:scale-95"
+      aria-label="Cerrar sesion"
+      className="inline-flex items-center justify-center text-black transition hover:opacity-70"
+      type="button"
     >
       <LogOut size={18} />
     </button>

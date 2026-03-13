@@ -72,6 +72,7 @@ export default function RegisterForm() {
 
       // Guardar token automáticamente
       localStorage.setItem("accessToken", data.accessToken);
+      localStorage.setItem("businessName", businessName.trim());
 
       // Redirigir a home privada
       router.push("/home");

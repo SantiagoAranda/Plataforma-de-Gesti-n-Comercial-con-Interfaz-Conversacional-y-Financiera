@@ -1,14 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
-import LogoutButton from "@/src/components/auth/LogoutButton";
+import type { ReactNode } from "react";
+
+const LogoutButton = dynamic(
+  () => import("@/src/components/auth/LogoutButton"),
+  { ssr: false },
+);
 
 type Props = {
   title: string;
   subtitle?: string;
   showBack?: boolean;
+  onBack?: () => void;
+  hrefBack?: string;
   rightIcon?: ReactNode;
   rightAriaLabel?: string;
   onRightClick?: () => void;
@@ -18,64 +25,62 @@ export default function AppHeader({
   title,
   subtitle,
   showBack = false,
+  onBack,
+  hrefBack = "/home",
   rightIcon,
-  rightAriaLabel = "Acción",
+  rightAriaLabel = "Accion",
   onRightClick,
 }: Props) {
   const router = useRouter();
-  const [hasSession, setHasSession] = useState(false);
   const isMainView = !showBack;
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const token = localStorage.getItem("token");
-    const session = localStorage.getItem("session");
-    const user = localStorage.getItem("user");
-    const accessToken = localStorage.getItem("accessToken");
-    setHasSession(Boolean(token || session || user || accessToken));
-  }, []);
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
+
+    router.push(hrefBack);
+  };
 
   return (
     <header
-      className="sticky top-0 z-30 w-full bg-white"
+      className="sticky top-0 z-30 w-full border-b border-black/5 bg-white"
       style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
-      <div className="grid h-[64px] grid-cols-3 items-center px-4">
-        {/* Left (back button) */}
-        <div className="flex items-center">
+      <div className="flex min-h-[72px] items-center justify-between gap-3 px-4 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {showBack && (
             <button
-              onClick={() => router.back()}
-              aria-label="Volver"
-              className="grid place-items-center h-8 w-8 rounded-full hover:bg-black/5 active:scale-95 transition"
+              onClick={handleBack}
+              aria-label="Volver al inicio"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-neutral-700 transition hover:bg-black/5 active:scale-95"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <ArrowLeft className="h-5 w-5" />
             </button>
           )}
+
+          <div className="min-w-0 leading-tight text-left">
+            <h1 className="truncate text-[20px] font-semibold text-neutral-900">{title}</h1>
+            {subtitle && (
+              <p className="mt-0.5 truncate text-[13px] font-medium text-neutral-500">
+                {subtitle}
+              </p>
+            )}
+          </div>
         </div>
 
-        {/* Title block */}
-        <div className="px-2 text-center leading-tight">
-          <h1 className="text-[20px] font-semibold truncate">{title}</h1>
-          {subtitle && (
-            <p className="text-[13px] text-emerald-600 font-medium truncate">
-              {subtitle}
-            </p>
-          )}
-        </div>
-
-        {/* Right */}
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex shrink-0 items-center justify-end gap-2">
           {rightIcon && (
             <button
               aria-label={rightAriaLabel}
               onClick={onRightClick}
-              className="grid place-items-center h-8 w-8 rounded-full hover:bg-black/5 active:scale-95 transition"
+              className="grid h-10 w-10 place-items-center rounded-full text-neutral-700 transition hover:bg-black/5 active:scale-95"
             >
               {rightIcon}
             </button>
           )}
-          {hasSession && isMainView && <LogoutButton />}
+          {isMainView && <LogoutButton />}
         </div>
       </div>
     </header>
