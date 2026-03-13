@@ -31,3 +31,12 @@ export async function getPucSubcuentas(cuentaCode: string): Promise<PucSubcuenta
 // aliases (si algún componente viejo los usa)
 export const listClases = getPucClases;
 export const listGrupos = getPucGrupos;
+
+export type PucSearchResult =
+  | { kind: "SUBCUENTA"; code: string; name: string }
+  | { kind: "CUENTA"; code: string; name: string };
+
+export async function searchPuc(query: string): Promise<PucSearchResult[]> {
+  if (!query.trim()) return [];
+  return api<PucSearchResult[]>(`/accounting/puc/search?q=${encodeURIComponent(query)}`);
+}

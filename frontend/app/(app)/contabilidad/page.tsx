@@ -1,381 +1,255 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
 
-import { AccountingComposer, type ComposerEditingEntry } from "@/src/components/accounting/AccountingComposer";
-import { AccountingFilterSheet } from "@/src/components/accounting/AccountingFilterSheet";
-
-import { AccountingSelectionBar } from "@/src/components/accounting/AccountingSelectionBar";
-import { ConfirmDeleteModal } from "@/src/components/accounting/ConfirmDeleteModal";
-
 import {
-  AccountingEntryCard,
-  type UiAccountingEntryGroup,
-  type UiAccountingLine,
-} from "@/src/components/accounting/AccountingEntryCard";
+  createMovement,
+  deleteMovement,
+  listMovements,
+  updateMovement,
+  type AccountingMovement,
+  type CreateAccountingMovementDto,
+} from "@/src/services/accounting";
 
-import type { AccountingType, BackendMovement } from "@/src/services/accounting";
-import { deleteEntry, listMovements } from "@/src/services/accounting";
+import { AccountingChatComposer } from "@/src/components/accounting/AccountingChatComposer";
+import { AccountingMovementList } from "@/src/components/accounting/AccountingMovementList";
+import { AccountingEmptyState } from "@/src/components/accounting/AccountingEmptyState";
+import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 
-import { getPucClases, type PucClase } from "@/src/services/puc";
+import type { AccountingFormState } from "@/src/types/accounting-form";
 
-function cn(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
-}
+const todayISO = () => new Date().toISOString().slice(0, 10);
 
-function groupLabel(dateISO: string): string {
-  const d = new Date(dateISO + "T00:00:00");
-  const now = new Date();
+const emptyForm: AccountingFormState = {
+  id: undefined,
+  pucSubcuentaId: "",
+  pucCode: "",
+  pucName: "",
+  amount: "",
+  date: todayISO(),
+  detail: "",
+  nature: "DEBIT",
+};
 
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-
-  const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-  if (dd.getTime() === today.getTime()) return "HOY";
-  if (dd.getTime() === yesterday.getTime()) return "AYER";
-
-  return dateISO;
-}
-
-function normalizeDateISO(x: string | Date) {
-  const d = new Date(x);
-  return d.toISOString().slice(0, 10);
-}
-
-function toEntryGroups(rows: BackendMovement[]): UiAccountingEntryGroup[] {
-  const map = new Map<string, UiAccountingEntryGroup>();
-
-  for (const r of rows ?? []) {
-    const entryId = String(r.entryId ?? "");
-    if (!entryId) continue;
-
-    const dateISO = normalizeDateISO(r.date);
-
-    const line: UiAccountingLine = {
-      pucCode: String(r.pucCode ?? ""),
-      accountName: (r.pucName ?? "").toString(),
-      debit: Number(r.debit ?? 0),
-      credit: Number(r.credit ?? 0),
-      description: r.description ?? null,
-    };
-
-    const curr = map.get(entryId);
-
-    if (!curr) {
-      map.set(entryId, {
-        id: entryId,
-        dateISO,
-        memo: r.memo ?? "",
-        status: r.status === "POSTED" ? "POSTED" : "DRAFT",
-        totalDebit: Number(r.debit ?? 0),
-        totalCredit: Number(r.credit ?? 0),
-        lines: [line],
-      });
-    } else {
-      curr.totalDebit += Number(r.debit ?? 0);
-      curr.totalCredit += Number(r.credit ?? 0);
-      curr.lines.push(line);
-    }
-  }
-
-  return Array.from(map.values());
-}
-
-export default function ContabilidadClient() {
-
-  const [filter, setFilter] = useState<AccountingType>("ALL");
-  const [filterOpen, setFilterOpen] = useState(false);
-
-  const [rows, setRows] = useState<BackendMovement[]>([]);
-  const [search, setSearch] = useState("");
-
-  const [activeEntry, setActiveEntry] = useState<ComposerEditingEntry>(null);
-  const [composerMode, setComposerMode] = useState<"create" | "edit" | "detail" | null>(null);
-
-  const [pucClases, setPucClases] = useState<PucClase[]>([]);
-  const [selectedClase, setSelectedClase] = useState("");
+export default function ContabilidadPage() {
+  const [movements, setMovements] = useState<AccountingMovement[]>([]);
+  const [selectedMovement, setSelectedMovement] =
+    useState<AccountingMovement | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const selectionMode = selectedIds.size > 0;
+  const [form, setForm] = useState<AccountingFormState>(emptyForm);
+  const [searchText, setSearchText] = useState("");
+  const [composerOpen, setComposerOpen] = useState(false);
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const toggleSelected = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
-
-  const onLongPressEntry = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
+  const isEditing = Boolean(form.id);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError(null);
 
     try {
       const data = await listMovements({
-        q: search || undefined,
-        onlyPosted: "false",
+        search: searchText.trim() || undefined,
       });
 
-      setRows(data ?? []);
-    } catch (e) {
-      console.error(e);
-      setRows([]);
+      setMovements(data ?? []);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudieron cargar los movimientos");
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [searchText]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const clases = await getPucClases();
-        setPucClases(clases);
-      } catch (e) {
-        console.error(e);
-      }
-    })();
+  const resetForm = useCallback(() => {
+    setForm({
+      ...emptyForm,
+      date: todayISO(),
+    });
   }, []);
 
-  const entries = useMemo(() => {
-    return toEntryGroups(rows);
-  }, [rows]);
+  const clearSelection = useCallback(() => {
+    setSelectedMovement(null);
+  }, []);
 
-  /**
-   * ------------------------------
-   *  LÓGICA DE HABILITACIÓN UI
-   * ------------------------------
-   */
+  const handleCancelComposer = useCallback(() => {
+    setComposerOpen(false);
+    resetForm();
+    setError(null);
+  }, [resetForm]);
 
-  const entryById = useMemo(() => {
-    const map = new Map<string, UiAccountingEntryGroup>();
-    entries.forEach((e) => map.set(e.id, e));
-    return map;
-  }, [entries]);
+  const handleSelectMovement = useCallback((movement: AccountingMovement) => {
+    setSelectedMovement((prev) => (prev?.id === movement.id ? null : movement));
+  }, []);
 
-  const selectedEntries = useMemo(() => {
-    return Array.from(selectedIds)
-      .map((id) => entryById.get(id))
-      .filter(Boolean) as UiAccountingEntryGroup[];
-  }, [selectedIds, entryById]);
+const startEdit = useCallback((movement: AccountingMovement) => {
+  setForm({
+    id: movement.id,
+    pucSubcuentaId: movement.pucSubcuentaId,
+    pucCode: movement.pucCode,
+    pucName: movement.pucName,
+    amount: String(movement.amount),
+    date: movement.date.slice(0, 10),
+    detail: movement.detail ?? "",
+    nature: movement.nature,
+  });
 
-  const canDetails = selectedEntries.length === 1;
+  setComposerOpen(true);
+  setSelectedMovement(null);
+  setError(null);
+}, []);
 
-  const canEdit =
-    selectedEntries.length === 1 &&
-    selectedEntries[0].status === "DRAFT";
-
-  const canDelete =
-    selectedEntries.length > 0 &&
-    selectedEntries.every((e) => e.status === "DRAFT");
-
-  /**
-   * ------------------------------
-   *  ACTIONS
-   * ------------------------------
-   */
-
-  const openDetails = useCallback(() => {
-    if (!canDetails) return;
-
-    const firstLineCode = selectedEntries[0].lines[0]?.pucCode;
-    setActiveEntry({ entryId: selectedEntries[0].id, pucCode: firstLineCode });
-    setComposerMode("detail");
-
-    clearSelection();
-  }, [canDetails, selectedEntries, clearSelection]);
-
-  const openEdit = useCallback(() => {
-    if (!canEdit) return;
-
-    const firstLineCode = selectedEntries[0].lines[0]?.pucCode;
-    setActiveEntry({ entryId: selectedEntries[0].id, pucCode: firstLineCode });
-    setComposerMode("edit");
-
-    clearSelection();
-  }, [canEdit, selectedEntries, clearSelection]);
-
-  const askDelete = useCallback(() => {
-    if (!canDelete) return;
-
-    setConfirmOpen(true);
-  }, [canDelete]);
-
-  const confirmDelete = useCallback(async () => {
-    const ids = Array.from(selectedIds);
-
-    for (const id of ids) {
-      await deleteEntry(id);
-    }
-
-    clearSelection();
-    setConfirmOpen(false);
-
-    await refresh();
-  }, [selectedIds, clearSelection, refresh]);
-
-  /**
-   * ------------------------------
-   *  GROUP BY DATE
-   * ------------------------------
-   */
-
-  const groupedByDate = useMemo(() => {
-    return entries.reduce<Record<string, UiAccountingEntryGroup[]>>(
-      (acc, e) => {
-        acc[e.dateISO] ??= [];
-        acc[e.dateISO].push(e);
-        return acc;
-      },
-      {},
-    );
-  }, [entries]);
-
-  const dates = useMemo(
-    () => Object.keys(groupedByDate).sort((a, b) => (a < b ? 1 : -1)),
-    [groupedByDate],
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await deleteMovement(id);
+        setSelectedMovement(null);
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        setError("No se pudo eliminar el movimiento");
+      }
+    },
+    [refresh]
   );
 
-  const isEmpty = !loading && rows.length === 0;
+const handleComposerSubmit = useCallback(async () => {
+  if (!composerOpen) {
+    await refresh();
+    return;
+  }
 
-  const listTopPad = selectionMode
-    ? "pt-[calc(56px+env(safe-area-inset-top))]"
-    : "pt-2";
+  if (!form.pucSubcuentaId || !form.amount || !form.detail.trim()) {
+    setError("Completá PUC, valor y descripción");
+    return;
+  }
+
+  const parsedAmount = Number(form.amount);
+
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    setError("Ingresá un valor válido");
+    return;
+  }
+
+  const payload = {
+    pucSubcuentaId: form.pucSubcuentaId,
+    amount: parsedAmount,
+    nature: form.nature,
+    date: form.date,
+    detail: form.detail.trim(),
+    originType: "MANUAL" as const,
+    originId: undefined,
+  };
+
+  try {
+    console.log("payload movement", payload);
+
+    setError(null);
+
+    if (form.id) {
+      await updateMovement(form.id, payload);
+    } else {
+      await createMovement(payload);
+    }
+
+    setComposerOpen(false);
+    resetForm();
+    await refresh();
+  } catch (err: any) {
+    console.error("Error guardando movimiento:", err);
+    console.error("status:", err?.status);
+    console.error("message:", err?.message);
+    console.error("details:", err?.details);
+
+    setError(
+      Array.isArray(err?.message)
+        ? err.message.join(", ")
+        : err?.message || "No se pudo guardar el movimiento"
+    );
+  }
+}, [composerOpen, form, refresh, resetForm]);
+
+  useEffect(() => {
+    if (composerOpen) return;
+
+    const timer = setTimeout(() => {
+      refresh();
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchText, composerOpen, refresh]);
+
+  const isEmpty = useMemo(
+    () => !loading && movements.length === 0,
+    [loading, movements.length]
+  );
 
   return (
-    <div className="min-h-[100dvh] bg-white">
-
-      <AppHeader
-        title="Contabilidad"
-        subtitle="Asientos contables"
-        showBack
-      />
-
-      {selectionMode && (
-        <AccountingSelectionBar
-          count={selectedIds.size}
-          canDetails={canDetails}
-          canEdit={canEdit}
-          canDelete={canDelete}
-          onCancel={clearSelection}
-          onDetails={openDetails}
-          onEdit={openEdit}
-          onDelete={askDelete}
+    <div className="min-h-dvh bg-[#f6f8f6]">
+      {selectedMovement ? (
+        <SelectionActionBar
+          visible
+          title="Movimiento seleccionado"
+          onClose={clearSelection}
+          onEdit={() => startEdit(selectedMovement)}
+          onDelete={() => handleDelete(selectedMovement.id)}
         />
+      ) : (
+        <AppHeader title="Contabilidad" />
       )}
 
-      {selectionMode && (
-        <button
-          className="fixed inset-0 z-[900]"
-          onClick={clearSelection}
-        />
-      )}
-
-      <main className={cn("relative pb-24", listTopPad)}>
+      <main className="mx-auto w-full max-w-3xl px-3 pb-40 pt-4 sm:px-4">
+        {error && (
+          <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {loading && (
-          <div className="px-4 py-2 text-xs text-neutral-500">
-            Cargando...
+          <div className="text-sm text-neutral-500">
+            Cargando movimientos...
           </div>
         )}
 
-        {!isEmpty && (
-          <div className="mt-3 space-y-6">
-
-            {dates.map((dateISO) => (
-              <section key={dateISO}>
-
-                <div className="px-4 text-xs font-semibold tracking-widest text-gray-400">
-                  {groupLabel(dateISO)}
-                </div>
-
-                <div className="mt-2 space-y-4">
-
-                  {groupedByDate[dateISO].map((entry) => (
-
-                    <div key={entry.id} className="px-4">
-
-                      <AccountingEntryCard
-                        entry={entry}
-                        selectionMode={selectionMode}
-                        isSelected={selectedIds.has(entry.id)}
-                        onLongPressEntry={onLongPressEntry}
-                        onTapEntry={(id) => {
-                          if (selectionMode) toggleSelected(id);
-                        }}
-                      />
-
-                    </div>
-
-                  ))}
-
-                </div>
-
-              </section>
-            ))}
-
-          </div>
+        {isEmpty ? (
+          <AccountingEmptyState
+            onCreate={() => {
+              setComposerOpen(true);
+              resetForm();
+              setError(null);
+            }}
+          />
+        ) : (
+          <AccountingMovementList
+            movements={movements}
+            selectedId={selectedMovement?.id ?? null}
+            onSelect={handleSelectMovement}
+          />
         )}
-
       </main>
 
-      <AccountingComposer
-        searchValue={search}
-        onSearchChange={setSearch}
-        composerMode={composerMode}
-        editingEntry={activeEntry}
-        onEnterCreate={() => {
-          setActiveEntry(null);
-          setComposerMode("create");
+      <AccountingChatComposer
+        value={form}
+        expanded={composerOpen}
+        isEditing={isEditing}
+        searchValue={searchText}
+        onOpenComposer={() => {
+          setComposerOpen(true);
+          resetForm();
+          setError(null);
         }}
-        onClose={() => {
-          setComposerMode(null);
-          setActiveEntry(null);
-        }}
-        onCreate={refresh}
-        onUpdate={refresh}
-        pucClases={pucClases}
-        selectedClase={selectedClase}
-        onSelectClase={setSelectedClase}
+        onChange={setForm}
+        onSearchChange={setSearchText}
+        onCancel={handleCancelComposer}
+        onSubmit={handleComposerSubmit}
       />
-
-      <AccountingFilterSheet
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        value={filter}
-        onChange={setFilter}
-      />
-
-      <ConfirmDeleteModal
-        open={confirmOpen}
-        count={selectedIds.size}
-        onCancel={() => setConfirmOpen(false)}
-        onConfirm={confirmDelete}
-        confirmDisabled={!canDelete}
-      />
-
     </div>
   );
 }

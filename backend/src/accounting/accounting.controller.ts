@@ -15,82 +15,43 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AccountingService } from './accounting.service';
-import { CreateEntryDto } from './dto/create-entry.dto';
-import { UpdateEntryDto } from './dto/update-entry.dto';
-import { CreateMovementDto } from './dto/create-movement.dto';
-import { MovementsQueryDto } from './dto/movements-query.dto';
+import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
+import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
+import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
 export class AccountingController {
   constructor(private readonly accountingService: AccountingService) { }
 
-  // ---- ENTRIES ----
-  @Post('entries')
-  createEntry(@Req() req: any, @Body() dto: CreateEntryDto) {
-    return this.accountingService.createEntry(req.user.businessId, dto);
-  }
-
-  @Get('entries')
-  listEntries(
-    @Req() req: any,
-    @Query('status') status?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
-    return this.accountingService.listEntries(req.user.businessId, { status, from, to });
-  }
-
-  @Get('entries/:id')
-  getEntry(@Req() req: any, @Param('id') id: string) {
-    return this.accountingService.getEntry(req.user.businessId, id);
-  }
-
-  @Patch('entries/:id')
-  updateEntry(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateEntryDto) {
-    return this.accountingService.updateEntry(req.user.businessId, id, dto);
-  }
-
-  @Delete('entries/:id')
-  deleteEntry(@Req() req: any, @Param('id') id: string) {
-    return this.accountingService.deleteEntry(req.user.businessId, id);
-  }
-
-  @Post('entries/:id/post')
-  postEntry(@Req() req: any, @Param('id') id: string) {
-    return this.accountingService.postEntry(req.user.businessId, id);
-  }
-
-  @Post('entries/:id/void')
-  voidEntry(@Req() req: any, @Param('id') id: string) {
-    return this.accountingService.voidEntry(req.user.businessId, id);
-  }
-
-  // ---- MOVEMENTS ----
+  // ---- MOVEMENTS (nuevo modelo) ----
   @Post('movements')
-  createMovement(@Req() req: any, @Body() dto: CreateMovementDto) {
+  createMovement(@Req() req: any, @Body() dto: CreateAccountingMovementDto) {
     return this.accountingService.createMovement(req.user.businessId, dto);
   }
 
   @Get('movements')
-  listMovements(@Req() req: any, @Query() q: MovementsQueryDto) {
-    return this.accountingService.listMovements(req.user.businessId, q);
+  listMovements(@Req() req: any, @Query() q: AccountingMovementsQueryDto) {
+    return this.accountingService.findAllMovements(req.user.businessId, q);
   }
 
-  // ---- REPORTS ----
-  @Get('reports/pnl')
-  pnl(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    return this.accountingService.reportPnl(req.user.businessId, { from, to });
+  @Get('movements/:id')
+  getMovement(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.findOneMovement(req.user.businessId, id);
   }
 
-  @Get('reports/balance-sheet')
-  balanceSheet(@Req() req: any, @Query('date') date: string) {
-    return this.accountingService.reportBalanceSheet(req.user.businessId, { date });
+  @Patch('movements/:id')
+  updateMovement(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateAccountingMovementDto,
+  ) {
+    return this.accountingService.updateMovement(req.user.businessId, id, dto);
   }
 
-  @Get('reports/cash-flow')
-  cashFlow(@Req() req: any, @Query('from') from: string, @Query('to') to: string) {
-    return this.accountingService.reportCashFlow(req.user.businessId, { from, to });
+  @Delete('movements/:id')
+  deleteMovement(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.removeMovement(req.user.businessId, id);
   }
 
   // ---- PUC ----
@@ -122,10 +83,5 @@ export class AccountingController {
   @Get('puc/:code')
   getPuc(@Param('code') code: string) {
     return this.accountingService.getPuc(code);
-  }
-
-  @Get('movements/progress')
-  movementsProgress(@Req() req: any, @Query('date') date?: string) {
-    return this.accountingService.movementsProgress(req.user.businessId, { date });
   }
 }

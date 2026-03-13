@@ -52,7 +52,6 @@ export function formatActivityTime(date?: string | null) {
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMinutes = Math.round(diffMs / 60000);
-  const diffHours = diffMs / 36e5;
   const diffDays = diffMs / 86400000;
 
   const isSameDay =
@@ -109,7 +108,7 @@ export function mapBusinessActivity(items: BusinessItem[]): ModuleActivitySummar
   const productCount = items.filter((i) => i.type === "PRODUCT").length;
   const serviceCount = items.filter((i) => i.type === "SERVICE").length;
 
-  let subtitle = "Todavía no cargaste productos o servicios";
+  let subtitle = "Todavia no cargaste productos o servicios";
   let lastActivityAt: string | null | undefined = null;
 
   if (latest) {
@@ -138,7 +137,7 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
   const sorted = byDateDesc(orders, (o) => o.createdAt);
   const latest = sorted[0];
 
-  let subtitle = "Todavía no registraste ventas";
+  let subtitle = "Todavia no registraste ventas";
   let lastActivityAt: string | null | undefined = null;
 
   if (latest) {
@@ -160,9 +159,7 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
       CANCELLED: "Venta cancelada",
     };
 
-    subtitle = `${statusLabel[latest.status] ?? "Venta"}${
-      total ? ` por ${formatCurrency(total)}` : ""
-    }`;
+    subtitle = `${statusLabel[latest.status] ?? "Venta"}${total ? ` por ${formatCurrency(total)}` : ""}`;
 
     if (todayCount > 1) {
       subtitle = `${todayCount} ventas hoy`;
@@ -186,23 +183,19 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
   const sorted = byDateDesc(movements, (m) => m.date);
   const latest = sorted[0];
 
-  let subtitle = "Todavía no registraste asientos";
+  let subtitle = "Sin movimientos contables";
   let lastActivityAt: string | null | undefined = null;
 
   if (latest) {
-    const amount = latest.amountSigned ?? latest.debit - latest.credit;
-    const statusLabel: Record<typeof latest.status, string> = {
-      DRAFT: "Borrador contable",
-      POSTED: "Asiento confirmado",
-      VOID: "Asiento anulado",
-    };
-
-    const memo = latest.memo ?? latest.description ?? latest.pucName ?? "";
+    const amount = latest.amount ?? 0;
+    const memo = latest.detail ?? latest.pucName ?? "";
     const details = memo ? ` • ${memo}` : "";
     const amountLabel = Number.isFinite(amount) ? ` por ${formatCurrency(Math.abs(amount))}` : "";
 
-    subtitle = `${statusLabel[latest.status]}${amountLabel}${details}`;
+    subtitle = `${latest.pucCode}${amountLabel}${details}`;
     lastActivityAt = latest.date;
+  } else {
+    subtitle = "Sin movimientos • pendiente de registro";
   }
 
   return {

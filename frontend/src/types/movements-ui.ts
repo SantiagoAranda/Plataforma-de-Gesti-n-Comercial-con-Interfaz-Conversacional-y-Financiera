@@ -50,9 +50,10 @@ export type MovementDashboardMetrics = {
 };
 
 export type BreakdownItem = {
+  key: string;
   label: string;
   value: number;
-  operator?: "+" | "-";
+  operator?: "+" | "-" | "=";
   kind?: "base" | "addition" | "deduction" | "result";
   percentage?: number;
 };

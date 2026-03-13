@@ -31,7 +31,6 @@ export default function MovimientosPage() {
         const data = await listMovements({
           from: range.from,
           to: range.to,
-          onlyPosted: "false",
         });
         setRows(data ?? []);
       } catch (e: unknown) {

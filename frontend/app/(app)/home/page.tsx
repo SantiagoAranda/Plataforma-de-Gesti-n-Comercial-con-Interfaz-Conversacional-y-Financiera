@@ -50,7 +50,7 @@ export default function HomePage() {
             if (!res.ok) throw new Error("No se pudieron cargar las ventas");
             return res.json() as Promise<ApiOrder[]>;
           }),
-          listMovements({ onlyPosted: "false" }),
+          listMovements(),
         ]);
 
         const allRejected =

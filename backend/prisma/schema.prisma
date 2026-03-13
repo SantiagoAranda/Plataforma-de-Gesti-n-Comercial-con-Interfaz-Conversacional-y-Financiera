@@ -31,10 +31,9 @@ enum ItemStatus {
   INACTIVE
 }
 
-enum AccountingEntryStatus {
-  DRAFT
-  POSTED
-  VOID
+enum AccountingMovementOriginType {
+  MANUAL
+  ORDER
 }
 
 enum OrderStatus {
@@ -98,10 +97,9 @@ model Business {
   orders       Order[]
   reservations Reservation[]
 
-  accounting               AccountingEntry[]
-
-  schedules ServiceScheduleWindow[]
-  blocks    ServiceScheduleBlock[]
+  schedules           ServiceScheduleWindow[]
+  blocks              ServiceScheduleBlock[]
+  accountingMovements AccountingMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -187,8 +185,6 @@ model Order {
   items OrderItem[]
 
   // asiento automático generado por esta orden (opcional)
-  accountingEntry AccountingEntry? @relation("OrderAccountingEntry")
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -351,9 +347,6 @@ model PucCuenta {
 
   subcuentas PucSubcuenta[]
 
-  // back relation desde AccountingLine cuando se imputa a nivel cuenta
-  lines AccountingLine[] @relation("AccountingLinePucCuenta")
-
   @@index([grupoCode])
 }
 
@@ -366,59 +359,31 @@ model PucSubcuenta {
 
   active Boolean @default(true)
 
-  lines AccountingLine[]
+  accountingMovements AccountingMovement[]
 
   @@index([cuentaCode])
 }
 
-//
-// CONTABILIDAD (por negocio): Asiento + Líneas
-//
+enum MovementNature {
+  DEBIT
+  CREDIT
+}
 
-model AccountingEntry {
-  id         String   @id @default(uuid())
-  businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+model AccountingMovement {
+  id              String                       @id @default(cuid())
+  businessId      String
+  pucSubcuentaId  String
+  amount          Decimal                      @db.Decimal(18, 2)
+  nature          MovementNature              @default(DEBIT)
+  date            DateTime
+  detail          String
+  originType      AccountingMovementOriginType
+  originId        String?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
 
-  date   DateTime
-  memo   String?
-  status AccountingEntryStatus @default(DRAFT)
-
-  sourceType    String?
-  sourceOrderId String? @unique
-
-  sourceOrder Order? @relation("OrderAccountingEntry", fields: [sourceOrderId], references: [id], onDelete: SetNull)
-
-  lines AccountingLine[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  business        Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pucSubcuenta    PucSubcuenta                @relation(fields: [pucSubcuentaId], references: [code])
 
   @@index([businessId, date])
-  @@index([status])
-  @@index([sourceOrderId])
 }
-
-model AccountingLine {
-  id      String          @id @default(uuid())
-  entryId String
-  entry   AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-
-  pucCuentaCode String?    @db.VarChar(4)
-  pucCuenta     PucCuenta? @relation("AccountingLinePucCuenta", fields: [pucCuentaCode], references: [code], onDelete: Restrict)
-
-  pucSubCode   String?       @db.VarChar(6)
-  pucSubcuenta PucSubcuenta? @relation(fields: [pucSubCode], references: [code], onDelete: Restrict)
-
-  debit       Decimal @default(0) @db.Decimal(14, 2)
-  credit      Decimal @default(0) @db.Decimal(14, 2)
-  description String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([entryId])
-  @@index([pucSubCode])
-  @@index([pucCuentaCode])
-}
-
