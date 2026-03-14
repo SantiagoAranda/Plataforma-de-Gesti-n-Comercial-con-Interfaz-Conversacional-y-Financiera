@@ -209,23 +209,7 @@ function AdminProductCard({
         </div>
 
         {/* Acciones */}
-        <div className="flex gap-2 mt-2">
-
-          <button
-            onClick={handleEdit}
-            className="flex-1 bg-blue-600 text-white text-xs py-2 rounded-lg font-semibold active:scale-95 transition"
-          >
-            Editar
-          </button>
-
-          <button
-            onClick={handleDelete}
-            className="flex-1 bg-red-500 text-white text-xs py-2 rounded-lg font-semibold active:scale-95 transition"
-          >
-            Eliminar
-          </button>
-
-        </div>
+        
       </div>
     </div>
   );

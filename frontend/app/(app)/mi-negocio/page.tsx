@@ -52,13 +52,18 @@ function timeToMinutes(time: string) {
 }
 
 function minutesToTime(min: number) {
-  const h = Math.floor(min / 60)
-    .toString()
-    .padStart(2, "0");
-
+  const h = Math.floor(min / 60).toString().padStart(2, "0");
   const m = (min % 60).toString().padStart(2, "0");
-
   return `${h}:${m}`;
+}
+
+function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
+  const aS = timeToMinutes(aStart);
+  const aE = timeToMinutes(aEnd);
+  const bS = timeToMinutes(bStart);
+  const bE = timeToMinutes(bEnd);
+
+  return aS < bE && bS < aE;
 }
 
 export default function MiNegocioPage() {
@@ -77,98 +82,32 @@ export default function MiNegocioPage() {
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
   const [items, setItems] = useState<Item[]>([]);
-  const [loadingItems, setLoadingItems] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-  message: string;
-  type: "success" | "error";
-} | null>(null);
-const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
-   useEffect(() => {
+  useEffect(() => {
     const fetchItems = async () => {
       try {
         const data = await api<Item[]>("/items");
         setItems(data);
       } catch (err) {
         console.error(err);
-      } finally {
-        setLoadingItems(false);
       }
     };
 
     fetchItems();
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = () => {
-      setOpenMenuId(null);
-    };
-
-    window.addEventListener("click", handleClickOutside);
-
-    return () => {
-      window.removeEventListener("click", handleClickOutside);
-    };
-  }, []);
-
   const handleAddImage = (file: File | null) => {
     if (!file) return;
 
     const reader = new FileReader();
-
     reader.onloadend = () => {
       setImage(reader.result as string);
     };
 
     reader.readAsDataURL(file);
-  };
-
-  const handleEdit = (item: Item) => {
-
-    setEditingItem(item);
-
-    setType(item.type);
-    setName(item.name);
-    setPrice(String(item.price));
-    setDescription(item.description || "");
-    setDuration(item.durationMinutes || 30);
-
-    if (item.images && item.images.length > 0) {
-      setImage(item.images[0].url);
-    }
-
-    if (item.type === "SERVICE") {
-
-      const schedules = item.schedule ?? [];
-
-      const newWeek: WeeklySchedule[] = INITIAL_WEEK.map((d) => ({
-        ...d,
-        active: false,
-        ranges: [],
-      }));
-
-      schedules.forEach((s) => {
-
-        const index = WEEKDAY_ENUM.indexOf(s.weekday);
-
-        if (index !== -1) {
-
-          newWeek[index].active = true;
-
-          newWeek[index].ranges.push({
-            start: minutesToTime(s.startMinute),
-            end: minutesToTime(s.endMinute),
-          });
-
-        }
-      });
-
-      setWeek(newWeek);
-    }
-
-    setIsOpen(true);
-    setOpenMenuId(null);
   };
 
   const resetForm = () => {
@@ -185,32 +124,31 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
 
     if (!name || !price) return;
 
+    let schedule: any[] = [];
+
+    if (type === "SERVICE") {
+      schedule = week
+        .map((d, index) => ({ ...d, index }))
+        .filter((d) => d.active && d.ranges.length > 0)
+        .flatMap((d) =>
+          d.ranges.map((r) => ({
+            weekday: WEEKDAY_ENUM[d.index],
+            startMinute: timeToMinutes(r.start),
+            endMinute: timeToMinutes(r.end),
+          }))
+        );
+    }
+
+    const payload = {
+      type,
+      name,
+      price: Number(price),
+      description: description || undefined,
+      durationMinutes: type === "SERVICE" ? Number(duration) : undefined,
+      schedule: type === "SERVICE" ? schedule : undefined,
+    };
+
     try {
-
-      let schedule: any[] = [];
-
-      if (type === "SERVICE") {
-
-        schedule = week
-          .map((d, index) => ({ ...d, index }))
-          .filter((d) => d.active && d.ranges.length > 0)
-          .flatMap((d) =>
-            d.ranges.map((r) => ({
-              weekday: WEEKDAY_ENUM[d.index],
-              startMinute: timeToMinutes(r.start),
-              endMinute: timeToMinutes(r.end),
-            }))
-          );
-      }
-
-      const payload = {
-        type,
-        name,
-        price: Number(price),
-        description: description || undefined,
-        durationMinutes: type === "SERVICE" ? Number(duration) : undefined,
-        schedule: type === "SERVICE" ? schedule : undefined,
-      };
 
       let savedItem: Item;
 
@@ -224,9 +162,8 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
         setItems((prev) =>
           prev.map((i) => (i.id === editingItem.id ? savedItem : i))
         );
-      }
 
-      else {
+      } else {
 
         const createdItem = await api<Item>("/items", {
           method: "POST",
@@ -234,16 +171,15 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
         });
 
         if (image) {
-
           await api(`/items/${createdItem.id}/images`, {
             method: "POST",
             body: JSON.stringify({ url: image }),
           });
-
         }
 
         savedItem = await api<Item>(`/items/${createdItem.id}`);
         setItems((prev) => [savedItem, ...prev]);
+
       }
 
       resetForm();
@@ -254,19 +190,13 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
     }
   };
 
-
-    return (
+  return (
     <div className="flex flex-col h-screen bg-neutral-100">
+
       <AppHeader title="Mi negocio" showBack />
 
       {/* LISTA DE ITEMS */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
-
-        {loadingItems && (
-          <p className="text-center text-neutral-400 text-sm">
-            Cargando productos...
-          </p>
-        )}
 
         {items.map((item) => (
           <div
@@ -274,53 +204,16 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
             className="relative ml-auto max-w-[78%] bg-white rounded-2xl shadow-sm border border-neutral-200 overflow-hidden"
           >
 
-            {/* MENU */}
-            <div className="absolute top-2 right-2 z-10">
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenMenuId(openMenuId === item.id ? null : item.id);
-                }}
-                className="w-7 h-7 rounded-full bg-white/80 backdrop-blur flex items-center justify-center text-neutral-600 hover:bg-neutral-100 text-sm shadow-sm"
-              >
-                ⋯
-              </button>
-
-              {openMenuId === item.id && (
-                <div className="absolute right-0 mt-2 w-32 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden">
-
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-neutral-50"
-                    onClick={() => handleEdit(item)}
-                  >
-                    Editar
-                  </button>
-
-                  <button
-                    className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-neutral-50"
-                    onClick={() => setDeleteId(item.id)}
-                  >
-                    Archivar
-                  </button>
-
-                </div>
-              )}
-
-            </div>
-
-            {/* IMAGEN */}
-            {item.images && item.images.length > 0 && (
+            {(item.images?.length ?? 0) > 0 && (
               <div className="bg-neutral-50 flex items-center justify-center">
                 <img
-                  src={item.images[0].url}
+                  src={item.images?.[0]?.url}
                   alt={item.name}
                   className="w-full max-h-60 object-contain"
                 />
               </div>
             )}
 
-            {/* CONTENIDO */}
             <div className="px-4 py-3 space-y-2">
 
               <div className="flex justify-between items-start">
@@ -348,22 +241,12 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
                 </p>
               )}
 
-              <div className="flex justify-end">
-                <span className="text-[11px] text-neutral-400">
-                  {new Date().toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
-
             </div>
 
           </div>
         ))}
 
       </main>
-
       {/* PANEL INFERIOR */}
       <div className="fixed bottom-0 left-0 right-0 z-20">
 
@@ -373,9 +256,10 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
             <button
               onClick={() => {
                 resetForm();
+                setType("PRODUCT"); // extra: siempre inicia en producto
                 setIsOpen(true);
               }}
-              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg transition active:scale-95"
+              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg"
             >
               +
             </button>
@@ -388,31 +272,10 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
         )}
 
         {isOpen && (
-          <div className="bg-white rounded-t-3xl border-t border-neutral-200 px-4 pt-4 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[85vh] overflow-y-auto">
-
-            {/* HEADER */}
-            <div className="flex justify-between items-center mb-4">
-
-              <h2 className="text-sm font-semibold text-neutral-700">
-                {editingItem
-                  ? "Editar item"
-                  : `Nuevo ${type === "PRODUCT" ? "Producto" : "Servicio"}`}
-              </h2>
-
-              <button
-                onClick={() => {
-                  setIsOpen(false);
-                  resetForm();
-                }}
-                className="w-9 h-9 rounded-full bg-neutral-100 text-neutral-600 flex items-center justify-center text-lg hover:bg-neutral-200"
-              >
-                ✕
-              </button>
-
-            </div>
+          <div className="bg-white rounded-t-3xl border-t border-neutral-200 px-4 pt-4 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[85vh] overflow-y-auto space-y-6">
 
             {/* TOGGLE PRODUCTO / SERVICIO */}
-            <div className="flex bg-neutral-100 rounded-full p-1 mb-4">
+            <div className="flex bg-neutral-100 rounded-full p-1">
 
               <button
                 onClick={() => setType("PRODUCT")}
@@ -438,10 +301,11 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
 
             </div>
 
-            {/* FOTO */}
-            <div className="mb-4">
 
-              <label className="block text-xs font-medium text-neutral-600 mb-2">
+            {/* FOTO */}
+            <div>
+
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
                 Fotos
               </label>
 
@@ -471,61 +335,302 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
 
             </div>
 
+
             {/* NOMBRE */}
-            <input
-              placeholder="Nombre"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full bg-neutral-100 rounded-xl px-4 py-3 text-sm outline-none mb-3"
-            />
+            <div>
 
-            {/* PRECIO */}
-            <input
-              type="number"
-              placeholder="Precio"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="w-full bg-neutral-100 rounded-xl px-4 py-3 text-sm outline-none mb-3"
-            />
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
+                Nombre
+              </label>
 
-            {/* DURACION SERVICIO */}
+              <input
+                placeholder="Nombre del servicio"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-neutral-100 rounded-xl px-4 py-3 text-sm outline-none"
+              />
+
+            </div>
+
+
+            {/* PRECIO + DURACION */}
+            <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
+
+              {/* PRECIO */}
+              <div>
+
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
+                  Precio
+                </label>
+
+                <div className="flex items-center bg-neutral-100 rounded-xl px-4 h-[44px]">
+
+                  <span className="text-neutral-500 text-sm mr-2">
+                    $
+                  </span>
+
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className="flex-1 bg-transparent outline-none text-sm"
+                  />
+
+                </div>
+
+              </div>
+
+
+              {/* DURACION */}
+              {type === "SERVICE" && (
+                <div>
+
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
+                    Duración
+                  </label>
+
+                  <div className="relative">
+
+                    <input
+                      type="number"
+                      min={5}
+                      step={5}
+                      value={duration}
+                      onChange={(e) => setDuration(Number(e.target.value))}
+                      className="w-full bg-neutral-100 rounded-xl pl-3 pr-10 py-3 text-sm outline-none"
+                    />
+
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 text-sm">
+                      min
+                    </span>
+
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+
+
+            {/* HORARIOS */}
             {type === "SERVICE" && (
-              <div className="flex items-center bg-neutral-100 rounded-xl px-4 py-3 text-sm mb-3">
+              <div>
 
-                <input
-                  type="number"
-                  value={duration}
-                  onChange={(e) => setDuration(Number(e.target.value))}
-                  className="w-full outline-none bg-transparent"
-                />
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
+                  Horarios disponibles
+                </label>
 
-                <span className="text-neutral-500 ml-2">min</span>
+                {/* DIAS */}
+                <div className="flex justify-between gap-1 mb-3">
+
+                  {week.map((day, i) => (
+
+                    <button
+                      key={day.day}
+                      onClick={() => {
+
+                        const copy = week.map(d => ({ ...d, ranges: [...d.ranges] }));
+
+                        copy[i].active = !copy[i].active;
+
+                        if (copy[i].active && copy[i].ranges.length === 0) {
+                          copy[i].ranges = [{ start: "08:00", end: "12:00" }];
+                        }
+
+                        if (!copy[i].active) {
+                          copy[i].ranges = [];
+                        }
+
+                        setWeek(copy);
+
+                      }}
+                      className={`flex-1 h-8 rounded-full text-[11px] font-semibold transition
+                      ${
+                        day.active
+                          ? "bg-green-600 text-white"
+                          : "bg-neutral-200 text-neutral-600"
+                      }`}
+                    >
+                      {day.day.slice(0, 2).toUpperCase()}
+                    </button>
+
+                  ))}
+
+                </div>
+
+
+                {/* HEADER DIA */}
+                <div className="flex items-center justify-between mb-2">
+
+                  <button
+                    onClick={() =>
+                      setCurrentDayIndex(
+                        currentDayIndex === 0 ? 6 : currentDayIndex - 1
+                      )
+                    }
+                    className="text-neutral-400 text-lg"
+                  >
+                    ‹
+                  </button>
+
+                  <p className="text-sm font-semibold text-neutral-700">
+                    {week[currentDayIndex].day}
+                  </p>
+
+                  <button
+                    onClick={() =>
+                      setCurrentDayIndex(
+                        currentDayIndex === 6 ? 0 : currentDayIndex + 1
+                      )
+                    }
+                    className="text-neutral-400 text-lg"
+                  >
+                    ›
+                  </button>
+
+                </div>
+
+
+                {/* RANGOS */}
+                <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 space-y-3 shadow-sm">
+
+                  {week[currentDayIndex].active &&
+                    week[currentDayIndex].ranges.map((range, rIndex) => (
+
+                      <div
+                        key={rIndex}
+                        className="flex items-center gap-3"
+                      >
+
+                        <input
+                          type="time"
+                          value={range.start}
+                          onChange={(e) => {
+
+                            const copy = [...week];
+                            const newStart = e.target.value;
+                            const currentRange = copy[currentDayIndex].ranges[rIndex];
+
+                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
+                              if (i === rIndex) return false;
+                              return rangesOverlap(newStart, currentRange.end, r.start, r.end);
+                            });
+
+                            if (!overlap) {
+                              copy[currentDayIndex].ranges[rIndex].start = newStart;
+                              setWeek(copy);
+                            }
+
+                          }}
+                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
+                        />
+
+                        <span className="text-neutral-300 text-sm">—</span>
+
+                        <input
+                          type="time"
+                          value={range.end}
+                          onChange={(e) => {
+
+                            const copy = [...week];
+                            const newEnd = e.target.value;
+                            const currentRange = copy[currentDayIndex].ranges[rIndex];
+
+                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
+                              if (i === rIndex) return false;
+                              return rangesOverlap(currentRange.start, newEnd, r.start, r.end);
+                            });
+
+                            if (!overlap) {
+                              copy[currentDayIndex].ranges[rIndex].end = newEnd;
+                              setWeek(copy);
+                            }
+
+                          }}
+                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
+                        />
+
+                        <button
+                          onClick={() => {
+                            const copy = [...week];
+                            copy[currentDayIndex].ranges.splice(rIndex, 1);
+                            setWeek(copy);
+                          }}
+                          className="ml-auto text-neutral-400 hover:text-red-500 transition"
+                        >
+                          ✕
+                        </button>
+
+                      </div>
+
+                    ))}
+
+                  {week[currentDayIndex].active &&
+                    week[currentDayIndex].ranges.length < 2 && (
+
+                      <button
+                        onClick={() => {
+
+                          const copy = [...week];
+                          const ranges = copy[currentDayIndex].ranges;
+
+                          if (ranges.length === 0) {
+                            ranges.push({ start: "08:00", end: "12:00" });
+                          } else if (ranges.length === 1) {
+                            ranges.push({ start: "14:00", end: "18:00" });
+                          }
+
+                          setWeek(copy);
+
+                        }}
+                        className="text-green-600 text-xs font-semibold mt-2"
+                      >
+                        + Agregar horario
+                      </button>
+
+                    )}
+
+                </div>
 
               </div>
             )}
 
-            {/* DESCRIPCION */}
-            <textarea
-              placeholder="Descripción"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-neutral-100 rounded-xl px-4 py-3 text-sm outline-none mb-4"
-            />
 
-            {/* BOTON */}
-            <button
-              onClick={handleSend}
-              className="w-full bg-green-600 text-white rounded-xl py-3 font-semibold hover:brightness-95"
-            >
-              {editingItem ? "Guardar cambios" : "Crear item"}
-            </button>
+            {/* DESCRIPCION */}
+            <div>
+
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
+                Descripción
+              </label>
+
+              <div className="flex items-end gap-2">
+
+                <textarea
+                  placeholder="Detalles adicionales..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={1}
+                  className="flex-1 bg-neutral-100 rounded-2xl px-4 py-3 text-sm outline-none resize-none min-h-[42px] max-h-[120px]"
+                />
+
+                <button
+                  onClick={handleSend}
+                  className="w-11 h-11 rounded-full bg-green-600 text-white shadow-md flex items-center justify-center active:scale-95 transition"
+                >
+                  ➤
+                </button>
+
+              </div>
+
+            </div>
 
           </div>
         )}
 
       </div>
 
-      {/* MODAL ARCHIVAR */}
+            {/* MODAL ARCHIVAR */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
 
@@ -562,6 +667,7 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
                     setItems((prev) =>
                       prev.filter((item) => item.id !== deleteId)
                     );
+
                     setOpenMenuId(null);
 
                     setToast({
@@ -598,6 +704,7 @@ const [deleteId, setDeleteId] = useState<string | null>(null);
 
         </div>
       )}
+
 
       {/* TOAST */}
       {toast && (
