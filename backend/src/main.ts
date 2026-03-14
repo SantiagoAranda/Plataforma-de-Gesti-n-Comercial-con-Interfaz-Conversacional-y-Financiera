@@ -7,7 +7,10 @@ async function bootstrap() {
 
   // 🔥 Habilitar CORS
   app.enableCors({
-    origin: 'http://localhost:3000',
+    origin: [
+      "http://localhost:3000",
+      "http://192.168.1.35:3000"
+    ],
     credentials: true,
   });
 
@@ -19,7 +22,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(3001); // 👈 Backend en 3001
+  await app.listen(3001, '0.0.0.0'); // 👈 Backend en 3001
 }
 
 bootstrap();
