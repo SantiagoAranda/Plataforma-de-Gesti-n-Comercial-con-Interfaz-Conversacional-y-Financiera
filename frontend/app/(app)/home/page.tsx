@@ -19,6 +19,9 @@ import {
 import { api } from "../../../src/lib/api";
 import { listMovements, type BackendMovement } from "../../../src/services/accounting";
 
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
@@ -85,7 +88,6 @@ export default function HomePage() {
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
 
-    // Si no tiene negocio (admin global), no cargar datos de negocio
     if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser);
@@ -103,7 +105,7 @@ export default function HomePage() {
 
         const [itemsRes, ordersRes, movementsRes] = await Promise.allSettled([
           api<BusinessItem[]>("/items"),
-          fetch("http://localhost:3001/sales", {
+          fetch(`${API_URL}/sales`, {
             headers: token
               ? {
                   Authorization: `Bearer ${token}`,

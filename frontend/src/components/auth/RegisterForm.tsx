@@ -50,7 +50,10 @@ export default function RegisterForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/auth/register-business", {
+      const API_URL =
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+      const res = await fetch(`${API_URL}/auth/register-business`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
