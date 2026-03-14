@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
+import toast from "react-hot-toast";
+
 import type { Sale } from "@/src/types/sales";
 
 import AppHeader from "@/src/components/layout/AppHeader";
@@ -56,6 +59,43 @@ export default function VentaPage() {
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null); // Added editingSale state
+
+  const showConfirmation = (
+    title: string, 
+    actionLabel: string, 
+    onAction: () => void, 
+    variant: 'emerald' | 'rose' = 'emerald'
+  ) => {
+    toast.custom((t) => (
+      <div className={`${t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-2'} max-w-xs w-full bg-white shadow-2xl rounded-2xl border border-neutral-100 p-4 pointer-events-auto`}>
+        <div className="flex items-start gap-3">
+          <div className={`mt-0.5 h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${variant === 'rose' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+            <AlertTriangle size={16} />
+          </div>
+          <div className="flex-1">
+            <p className="text-[13px] font-bold text-neutral-800 leading-tight mb-3">{title}</p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => toast.dismiss(t.id)}
+                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider hover:bg-neutral-100 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  toast.dismiss(t.id);
+                  onAction();
+                }}
+                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-bold uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+              >
+                {actionLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    ), { id: 'sale-action-confirm', position: 'top-center' });
+  };
 
   const loadOrders = useCallback(async () => {
     try {
@@ -131,28 +171,33 @@ const handleSendWhatsApp = (sale: Sale) => {
   }, [loadOrders]);
 
   const handleCancelSale = useCallback(async (sale: Sale) => {
-    if (!confirm("¿Estás seguro de que deseas anular esta venta?")) return;
+    showConfirmation(
+      "¿Deseás anular esta venta?",
+      "Anular",
+      async () => {
+        try {
+          setConfirmingSaleId(sale.id);
+          setError(null);
 
-    try {
-      setConfirmingSaleId(sale.id);
-      setError(null);
+          const result = await cancelSale(sale.id);
+          const updatedSale = mapOrderToSale(result);
 
-      const result = await cancelSale(sale.id);
-      const updatedSale = mapOrderToSale(result);
-
-      setSales((prev) =>
-        prev.map((current) => (current.id === updatedSale.id ? updatedSale : current))
-      );
-      
-      if (detailsSale?.id === sale.id) setDetailsSale(updatedSale);
-      setSelectedSale(null);
-    } catch (err) {
-      console.error(err);
-      setError("No se pudo anular la venta");
-    } finally {
-      setConfirmingSaleId(null);
-    }
-  }, [detailsSale, loadOrders]);
+          setSales((prev) =>
+            prev.map((current) => (current.id === updatedSale.id ? updatedSale : current))
+          );
+          
+          if (detailsSale?.id === sale.id) setDetailsSale(updatedSale);
+          setSelectedSale(null);
+        } catch (err) {
+          console.error(err);
+          setError("No se pudo anular la venta");
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      'rose'
+    );
+  }, [detailsSale]);
 
   const handleSaveEditedSale = async (updated: Sale) => {
     try {

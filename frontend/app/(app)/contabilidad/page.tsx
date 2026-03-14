@@ -107,7 +107,11 @@ const startEdit = useCallback((movement: AccountingMovement) => {
 }, []);
 
   const handleDelete = useCallback(
-    async (id: string) => {
+    async (id: string, originType?: string) => {
+      if (originType && originType !== "MANUAL") {
+        setError("No se pueden eliminar movimientos automáticos provenientes de ventas");
+        return;
+      }
       try {
         await deleteMovement(id);
         setSelectedMovement(null);
@@ -198,8 +202,9 @@ const handleComposerSubmit = useCallback(async () => {
           visible
           title="Movimiento seleccionado"
           onClose={clearSelection}
-          onEdit={() => startEdit(selectedMovement)}
-          onDelete={() => handleDelete(selectedMovement.id)}
+          onEdit={selectedMovement.originType === "MANUAL" ? () => startEdit(selectedMovement) : undefined}
+          onDelete={selectedMovement.originType === "MANUAL" ? () => handleDelete(selectedMovement.id, selectedMovement.originType) : undefined}
+          deleteLabel="Eliminar"
         />
       ) : (
         <AppHeader title="Contabilidad" subtitle="Movimientos y registros" showBack />
