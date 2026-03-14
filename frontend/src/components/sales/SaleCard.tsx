@@ -80,9 +80,16 @@ export default function SaleCard({
                 {sale.customerName}
               </h3>
 
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {typeLabel(sale.type)}
-              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="text-[11px] text-gray-500">
+                  {typeLabel(sale.type)}
+                </p>
+                {sale.origin && (
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                    {sale.origin === "ORDEN PUBLICA" ? "Orden publica" : "Venta interna"}
+                  </span>
+                )}
+              </div>
             </div>
 
             <span
@@ -151,7 +158,7 @@ export default function SaleCard({
         y={menu.pos.y}
         onClose={menu.close}
         items={[
-          { label: "Editar", onClick: handleEdit },
+          ...(onEdit ? [{ label: "Editar", onClick: handleEdit }] : []),
           { label: "Ver detalles", onClick: handleDetails },
         ]}
       />

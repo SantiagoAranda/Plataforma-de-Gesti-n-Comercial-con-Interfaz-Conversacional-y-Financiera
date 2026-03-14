@@ -1,11 +1,16 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AccountingService } from '../accounting/accounting.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 @Injectable()
 export class SalesService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private accountingService: AccountingService,
+  ) { }
 
   async create(businessId: string, dto: CreateOrderDto) {
     if (!dto.items.length) {
@@ -85,36 +90,98 @@ export class SalesService {
   }
 
   async confirmOrder(businessId: string, orderId: string) {
-    const order = await this.prisma.order.findFirst({
-      where: {
-        id: orderId,
-        businessId,
-      },
-      include: {
-        items: {
-          include: {
-            item: true,
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: {
+          id: orderId,
+          businessId,
+        },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!order) throw new NotFoundException('Order not found');
+      if (!order) throw new NotFoundException('Order not found');
 
-    if (order.status !== 'DRAFT') {
-      throw new BadRequestException('Only DRAFT orders can be confirmed');
-    }
+      if (!order.items.length) {
+        throw new BadRequestException('Order must contain at least one item');
+      }
 
-    if (!order.items.length) {
-      throw new BadRequestException('Order must contain at least one item');
-    }
+      if (order.status === 'CANCELLED') {
+        throw new BadRequestException('Cancelled orders cannot be confirmed');
+      }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
+      if (order.accountingPostedAt) {
+        return {
+          order,
+          accountingCreated: false,
+          alreadyPosted: true,
+        };
+      }
+
+      const confirmableStatuses: OrderStatus[] = ['DRAFT', 'SENT', 'COMPLETED'];
+
+      if (!confirmableStatuses.includes(order.status)) {
+        throw new BadRequestException('Order cannot be confirmed');
+      }
+
+      const postingDate = new Date();
+      const claim = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          businessId,
+          accountingPostedAt: null,
+          status: { in: confirmableStatuses },
+        },
         data: {
           status: 'COMPLETED',
+          accountingPostedAt: postingDate,
         },
+      });
+
+      if (claim.count === 0) {
+        const currentOrder = await tx.order.findFirst({
+          where: {
+            id: orderId,
+            businessId,
+          },
+          include: {
+            items: {
+              include: {
+                item: true,
+              },
+            },
+          },
+        });
+
+        if (!currentOrder) throw new NotFoundException('Order not found');
+
+        return {
+          order: currentOrder,
+          accountingCreated: false,
+          alreadyPosted: Boolean(currentOrder.accountingPostedAt),
+        };
+      }
+
+      const finalizedOrder = {
+        ...order,
+        status: 'COMPLETED' as const,
+        accountingPostedAt: postingDate,
+        updatedAt: postingDate,
+      };
+
+      const movements = await this.accountingService.postOrderMovements(
+        tx,
+        businessId,
+        finalizedOrder,
+      );
+
+      const updatedOrder = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
         include: {
           items: {
             include: {
@@ -126,6 +193,9 @@ export class SalesService {
 
       return {
         order: updatedOrder,
+        accountingCreated: true,
+        alreadyPosted: false,
+        movements,
       };
     });
   }

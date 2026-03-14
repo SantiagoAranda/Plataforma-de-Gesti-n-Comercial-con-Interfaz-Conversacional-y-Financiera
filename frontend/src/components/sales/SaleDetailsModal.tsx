@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { Info, X } from "lucide-react";
+
 import type { Sale } from "@/src/types/sales";
-import { generateInvoicePdf } from "@/src/lib/invoicePdf";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 
 function formatMoney(n: number) {
@@ -13,10 +15,10 @@ function calcTotal(sale: Sale) {
 }
 
 function formatDateTime(iso?: string) {
-  if (!iso) return "—";
+  if (!iso) return "-";
 
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
 
   return d.toLocaleString([], {
     year: "numeric",
@@ -36,65 +38,107 @@ export default function SaleDetailsModal({
   sale,
   onClose,
   onEdit,
+  onConfirm,
+  confirming = false,
 }: {
   open: boolean;
   sale: Sale | null;
   onClose: () => void;
   onEdit?: (sale: Sale) => void;
+  onConfirm?: (sale: Sale) => void;
+  confirming?: boolean;
 }) {
+  const [showStatusHelp, setShowStatusHelp] = useState(false);
+
   if (!open || !sale) return null;
 
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
+  const canConfirm =
+    sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
+  const ctaLabel =
+    sale.status === "PENDIENTE DE CIERRE"
+      ? "Finalizar venta y contabilizar"
+      : "Finalizar venta";
 
   return (
-    <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
-
-        {/* HEADER */}
-        <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
-          <h2 className="font-semibold text-neutral-900 text-lg">
+    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-w-md sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+          <h2 className="text-lg font-semibold text-neutral-900">
             Detalles de venta
           </h2>
 
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-neutral-100 transition"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowStatusHelp((current) => !current)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-100"
+              aria-label="Explicar estados de la venta"
+              title="Explicar estados de la venta"
+            >
+              <Info className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-700 transition hover:bg-neutral-100"
+              aria-label="Cerrar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {/* CONTENT */}
-        <div className="p-5 space-y-5 overflow-y-auto">
-
-          {/* CLIENTE */}
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-              Cliente
+        <div className="space-y-5 overflow-y-auto p-5">
+          {showStatusHelp && (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+              <div className="font-semibold text-neutral-900">
+                Estados de la venta
+              </div>
+              <div className="mt-2">
+                <strong>PENDIENTE:</strong> venta creada pero todavia no enviada
+                ni cerrada.
+              </div>
+              <div>
+                <strong>PENDIENTE DE CIERRE:</strong> orden enviada, pendiente
+                de cierre contable.
+              </div>
+              <div>
+                <strong>CERRADO:</strong> venta finalizada y contabilizada.
+              </div>
+              <div>
+                <strong>CANCELADO:</strong> venta anulada sin cierre.
+              </div>
             </div>
+          )}
 
-            <div className="text-base font-semibold text-neutral-900 break-words">
-              {sale.customerName}
-            </div>
-          </div>
-
-          {/* WHATSAPP */}
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-              WhatsApp
-            </div>
-
-            <div className="text-sm text-neutral-900 break-words">
-              {sale.customerWhatsapp?.trim() || "—"}
-            </div>
-          </div>
-
-          {/* INFO GRID */}
           <div className="grid grid-cols-2 gap-4">
+            <div className="min-w-0 space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Cliente
+              </div>
 
+              <div className="break-words text-base font-semibold text-neutral-900">
+                {sale.customerName}
+              </div>
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                WhatsApp
+              </div>
+
+              <div className="break-words text-sm text-neutral-900">
+                {sale.customerWhatsapp?.trim() || "-"}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
                 Tipo
               </div>
 
@@ -104,22 +148,30 @@ export default function SaleDetailsModal({
             </div>
 
             <div className="space-y-1">
-              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
                 Estado
               </div>
 
               <span
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide ${styles.badge}`}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${styles.badge}`}
               >
                 {styles.label}
               </span>
             </div>
-
           </div>
 
-          {/* FECHA */}
+          {sale.origin && (
+            <div className="rounded-2xl bg-neutral-100 px-4 py-3 text-sm text-neutral-700">
+              Origen:{" "}
+              {sale.origin === "ORDEN PUBLICA"
+                ? "Orden publica enviada desde la tienda"
+                : "Venta interna creada desde el sistema"}
+              .
+            </div>
+          )}
+
           <div className="space-y-1">
-            <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
               Fecha
             </div>
 
@@ -128,61 +180,55 @@ export default function SaleDetailsModal({
             </div>
           </div>
 
-          {/* TURNO */}
+          {sale.status === "PENDIENTE DE CIERRE" && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              Esta orden ya fue enviada, pero todavia no esta cerrada ni
+              contabilizada. Usa el cierre para generar contabilidad e impactar
+              en movimientos.
+            </div>
+          )}
+
           {sale.type === "SERVICIO" && (
             <div className="space-y-1">
-              <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+              <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
                 Turno
               </div>
 
               <div className="text-sm text-neutral-900">
-                {sale.scheduledAt
-                  ? formatDateTime(sale.scheduledAt)
-                  : "—"}
+                {sale.scheduledAt ? formatDateTime(sale.scheduledAt) : "-"}
               </div>
             </div>
           )}
 
-          {/* ITEMS */}
           <div className="border-t border-neutral-200 pt-4">
-
-            <div className="text-sm font-semibold text-neutral-900 mb-3">
-              Ítems
+            <div className="mb-3 text-sm font-semibold text-neutral-900">
+              Items
             </div>
 
             <div className="space-y-3">
-
               {sale.items.map((it, idx) => (
                 <div
                   key={idx}
-                  className="flex justify-between items-center bg-neutral-50 rounded-xl px-3 py-2"
+                  className="flex items-center justify-between rounded-xl bg-neutral-50 px-3 py-2"
                 >
-                  <span className="text-sm text-neutral-700 break-words">
-
+                  <span className="break-words text-sm text-neutral-700">
                     {sale.type === "PRODUCTO" && `${it.qty}x `}
-
                     {it.name}
-
                     {sale.type === "SERVICIO" && it.durationMin && (
                       <span className="text-neutral-500">
-                        {" "}• {it.durationMin} min
+                        {" "} - {it.durationMin} min
                       </span>
                     )}
-
                   </span>
 
-                  <span className="text-sm font-semibold text-neutral-900 shrink-0">
+                  <span className="shrink-0 text-sm font-semibold text-neutral-900">
                     ${formatMoney(it.price)}
                   </span>
-
                 </div>
               ))}
-
             </div>
 
-            {/* TOTAL */}
-            <div className="flex justify-between items-center mt-5 pt-4 border-t border-neutral-200">
-
+            <div className="mt-5 flex items-center justify-between border-t border-neutral-200 pt-4">
               <span className="text-sm text-neutral-500">
                 Total
               </span>
@@ -190,13 +236,19 @@ export default function SaleDetailsModal({
               <span className="text-2xl font-bold text-neutral-900">
                 ${formatMoney(total)}
               </span>
-
             </div>
-
           </div>
 
-          {/* BOTONES */}
           <div className="space-y-3 pt-2">
+            {canConfirm && onConfirm && (
+              <button
+                onClick={() => onConfirm(sale)}
+                disabled={confirming}
+                className="w-full rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {confirming ? "Finalizando..." : ctaLabel}
+              </button>
+            )}
 
             {onEdit && (
               <button
@@ -204,36 +256,28 @@ export default function SaleDetailsModal({
                   onClose();
                   onEdit(sale);
                 }}
-                className="w-full bg-neutral-200 text-neutral-900 rounded-xl py-3 font-semibold hover:bg-neutral-300 transition"
+                className="w-full rounded-xl bg-neutral-200 py-3 font-semibold text-neutral-900 transition hover:bg-neutral-300"
               >
                 Editar venta
               </button>
             )}
 
             <button
-              onClick={() =>
-                generateInvoicePdf({
-                  sale,
-                  businessName: "Mi Negocio",
-                  businessPhone: "54911XXXXYYYY",
-                  invoiceNumber: `#${sale.id}`,
-                  currencySymbol: "$",
-                })
-              }
-              className="w-full bg-[#11d473] text-white rounded-xl py-3 font-semibold hover:brightness-95 transition"
+              type="button"
+              disabled
+              className="w-full cursor-not-allowed rounded-xl bg-neutral-200 py-3 font-semibold text-neutral-500"
+              title="La descarga de PDF esta deshabilitada temporalmente"
             >
-              Descargar PDF
+              Descargar PDF deshabilitado
             </button>
 
             <button
               onClick={onClose}
-              className="w-full bg-neutral-900 text-white rounded-xl py-3 font-semibold hover:brightness-95 transition"
+              className="w-full rounded-xl bg-neutral-900 py-3 font-semibold text-white transition hover:brightness-95"
             >
               Cerrar
             </button>
-
           </div>
-
         </div>
       </div>
     </div>

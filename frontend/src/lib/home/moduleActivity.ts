@@ -193,7 +193,7 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
     const total = latest.items.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
     const statusLabel: Record<ApiOrder["status"], string> = {
       DRAFT: "Pedido en borrador",
-      SENT: "Pedido confirmado",
+      SENT: "Pedido pendiente de cierre",
       COMPLETED: "Venta completada",
       CANCELLED: "Venta cancelada",
     };
@@ -236,15 +236,15 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
     const amount = Number.isFinite(latest.amount) ? formatCurrency(Math.abs(latest.amount)) : "";
 
     if (detail) {
-      activityText = detail;
+      activityText = `Actividad contable real: ${detail}`;
     } else if (accountName && amount) {
-      activityText = `Movimiento en ${accountName} por ${amount}`;
+      activityText = `Actividad contable real en ${accountName} por ${amount}`;
     } else if (accountCode && amount) {
-      activityText = `Movimiento ${accountCode} por ${amount}`;
+      activityText = `Actividad contable real ${accountCode} por ${amount}`;
     } else if (accountName) {
-      activityText = `Movimiento en ${accountName}`;
+      activityText = `Actividad contable real en ${accountName}`;
     } else if (accountCode) {
-      activityText = `Movimiento ${accountCode}`;
+      activityText = `Actividad contable real ${accountCode}`;
     }
   }
 
