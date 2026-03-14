@@ -47,4 +47,11 @@ export class BusinessesController {
   activateBusiness(@Param('id') id: string) {
     return this.businessesService.activateBusiness(id);
   }
+
+  @Get('admin/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  getBusinessById(@Param('id') id: string) {
+    return this.businessesService.getBusinessById(id);
+  }
 }

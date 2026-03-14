@@ -98,6 +98,19 @@ export class BusinessesService {
       },
     });
   }
+
+  async getBusinessById(id: string) {
+    return this.prisma.business.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            items: true
+          }
+        }
+      }
+    })
+  }
 }
 
 

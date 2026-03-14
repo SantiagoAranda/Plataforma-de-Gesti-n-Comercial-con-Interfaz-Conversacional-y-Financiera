@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
+import * as bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 
@@ -73,6 +74,29 @@ async function main() {
                 active: toBool(r.active),
             },
         });
+    }
+
+    const adminEmail = "admin@sistema.com";
+
+    const existingAdmin = await prisma.user.findUnique({
+        where: { email: adminEmail },
+    });
+
+    if (!existingAdmin) {
+        const hashedPassword = await bcrypt.hash("admin123", 10);
+
+        await prisma.user.create({
+            data: {
+                email: adminEmail,
+                password: hashedPassword,
+                role: "ADMIN",
+                businessId: null,
+            },
+        });
+
+        console.log("ADMIN del sistema creado");
+    } else {
+        console.log("ADMIN ya existe");
     }
 
     console.log(

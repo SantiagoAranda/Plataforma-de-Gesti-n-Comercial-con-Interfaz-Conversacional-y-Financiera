@@ -73,6 +73,25 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // ✅ Permitir ADMIN global (sin negocio)
+    if (user.role === 'ADMIN' && !user.businessId) {
+      const accessToken = this.jwtService.sign(
+        {
+          sub: user.id,
+          role: user.role,
+          businessId: null,
+        },
+        {
+          expiresIn: '4h',
+        },
+      );
+
+      return {
+        accessToken,
+        businessName: 'System Admin',
+      };
+    }
+
     // Validar estado del negocio
     if (!user.business || user.business.status === 'INACTIVE') {
       throw new UnauthorizedException('Business inactive');

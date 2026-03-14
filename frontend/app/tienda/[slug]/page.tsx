@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
+
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -19,6 +20,8 @@ type Item = {
 
 export default function PublicStorePage() {
   const { slug } = useParams<{ slug: string }>();
+  const searchParams = useSearchParams();
+  const preview = searchParams.get("preview") === "true";
   const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
@@ -93,7 +96,14 @@ export default function PublicStorePage() {
   /* ================= RESERVAR ================= */
 
   const handleReserve = async (data: any) => {
-    if (!selectedService) return;
+
+    if (preview) {
+      notify({
+        type: "info",
+        message: "Modo administrador: las reservas están deshabilitadas",
+      });
+      return;
+    }
 
     const [h, m] = data.time.split(":").map(Number);
 
@@ -134,6 +144,15 @@ export default function PublicStorePage() {
   /* ================= CARRITO ================= */
 
   const addToCart = (id: string) => {
+
+    if (preview) {
+      notify({
+        type: "info",
+        message: "Modo administrador: las compras están deshabilitadas",
+      });
+      return;
+    }
+
     setCart((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
     notify({ type: "success", message: "Producto agregado" });
   };
@@ -196,8 +215,12 @@ export default function PublicStorePage() {
   /* ================= CONFIRMAR COMPRA ================= */
 
   const handleConfirmOrder = async () => {
-    if (!customerName || !whatsapp) {
-      notify({ type: "error", message: "Completa tus datos" });
+
+    if (preview) {
+      notify({
+        type: "info",
+        message: "Modo administrador: no se pueden realizar pedidos",
+      });
       return;
     }
 
@@ -233,6 +256,11 @@ export default function PublicStorePage() {
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
 
+      {preview && (
+        <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
+          Modo administrador — vista previa de la tienda
+        </div>
+      )}
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
 
         {/* Buscador */}
@@ -252,17 +280,16 @@ export default function PublicStorePage() {
             <button
               key={type}
               onClick={() => setCategory(type)}
-              className={`px-4 py-2 rounded-full text-sm ${
-                category === type
+              className={`px-4 py-2 rounded-full text-sm ${category === type
                   ? "bg-emerald-600 text-white"
                   : "bg-white"
-              }`}
+                }`}
             >
               {type === ""
                 ? "Todo"
                 : type === "PRODUCT"
-                ? "Productos"
-                : "Servicios"}
+                  ? "Productos"
+                  : "Servicios"}
             </button>
           ))}
         </div>
@@ -272,18 +299,19 @@ export default function PublicStorePage() {
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
           <div className="mt-5 grid grid-cols-2 gap-4">
-            {filtered.map((item) => (
-              <ProductCard
-                key={item.id}
-                item={item}
-                onAction={() =>
-                  item.type === "SERVICE"
-                    ? setSelectedService(item)
-                    : addToCart(item.id)
-                }
-              />
-            ))}
-          </div>
+              {filtered.map((item) => (
+                <ProductCard
+                  key={item.id}
+                  item={item}
+                  preview={preview}
+                  onAction={() =>
+                    item.type === "SERVICE"
+                      ? setSelectedService(item)
+                      : addToCart(item.id)
+                  }
+                />
+              ))}
+            </div>
         )}
       </main>
 
@@ -414,9 +442,11 @@ export default function PublicStorePage() {
 function ProductCard({
   item,
   onAction,
+  preview,
 }: {
   item: Item;
   onAction: () => void;
+  preview?: boolean;
 }) {
   return (
     <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:-translate-y-1">
@@ -440,8 +470,12 @@ function ProductCard({
         </div>
 
         <button
+          disabled={preview}
           onClick={onAction}
-          className="mt-auto bg-emerald-600 text-white text-xs py-2 rounded-lg font-semibold"
+          className={`mt-auto text-xs py-2 rounded-lg font-semibold ${preview
+              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+              : "bg-emerald-600 text-white"
+            }`}
         >
           {item.type === "SERVICE"
             ? "Reservar"

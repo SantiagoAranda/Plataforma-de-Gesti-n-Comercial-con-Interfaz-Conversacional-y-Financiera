@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Building2, Calculator, ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import AppHeader from "@/src/components/layout/AppHeader";
-import BottomNav from "@/src/components/layout/BottomNav";
-import ThreadItem from "@/src/components/chat/ThreadItem";
+import AppHeader from "../../../src/components/layout/AppHeader";
+import BottomNav from "../../../src/components/layout/BottomNav";
+import ThreadItem from "../../../src/components/chat/ThreadItem";
 import {
   type ApiOrder,
   type BusinessItem,
@@ -15,9 +15,9 @@ import {
   mapAccountingActivity,
   mapBusinessActivity,
   mapSalesActivity,
-} from "@/src/lib/home/moduleActivity";
-import { api } from "@/src/lib/api";
-import { listMovements, type BackendMovement } from "@/src/services/accounting";
+} from "../../../src/lib/home/moduleActivity";
+import { api } from "../../../src/lib/api";
+import { listMovements, type BackendMovement } from "../../../src/services/accounting";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
@@ -34,6 +34,27 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * 🔹 Detectar ADMIN global y redirigir al panel admin
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const storedUser = localStorage.getItem("user");
+    if (!storedUser) return;
+
+    try {
+      const parsed = JSON.parse(storedUser);
+
+      if (parsed?.role === "ADMIN" && !parsed?.businessId) {
+        router.replace("/admin");
+      }
+    } catch {}
+  }, [router]);
+
+  /**
+   * 🔹 Obtener nombre del negocio
+   */
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -55,18 +76,30 @@ export default function HomePage() {
       if (nextName?.trim()) {
         setBusinessName(nextName.trim());
       }
-    } catch {
-      // Ignore malformed persisted data and keep fallback title.
-    }
+    } catch {}
   }, []);
 
+  /**
+   * 🔹 Cargar actividad reciente
+   */
   useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+
+    // Si no tiene negocio (admin global), no cargar datos de negocio
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        if (!parsed?.businessId) return;
+      } catch {}
+    }
+
     (async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+        const token =
+          typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
 
         const [itemsRes, ordersRes, movementsRes] = await Promise.allSettled([
           api<BusinessItem[]>("/items"),

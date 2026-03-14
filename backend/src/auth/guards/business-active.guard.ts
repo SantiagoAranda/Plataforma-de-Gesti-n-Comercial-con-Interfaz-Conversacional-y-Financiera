@@ -14,6 +14,11 @@ export class BusinessActiveGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
+    // ✅ Permitir ADMIN global (sin negocio)
+    if (user?.role === 'ADMIN' && !user?.businessId) {
+      return true;
+    }
+
     if (!user?.businessId) {
       throw new ForbiddenException('Business context missing');
     }

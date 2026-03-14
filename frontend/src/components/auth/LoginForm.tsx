@@ -18,26 +18,55 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      const data = await api<{ accessToken: string; businessName?: string }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-        auth: false,
-      });
+      // 🔹 limpiar cualquier sesión previa
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("businessName");
+      localStorage.removeItem("user");
 
+      const data = await api<{ accessToken: string; businessName?: string }>(
+        "/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+          auth: false,
+        }
+      );
+
+      // 🔹 guardar token
       localStorage.setItem("accessToken", data.accessToken);
+
       if (data.businessName?.trim()) {
         localStorage.setItem("businessName", data.businessName.trim());
       }
 
-      router.push("/home");
+      // 🔹 leer payload del JWT
+      const payload = JSON.parse(atob(data.accessToken.split(".")[1]));
+
+      const user = {
+        role: payload.role,
+        businessId: payload.businessId,
+      };
+
+      localStorage.setItem("user", JSON.stringify(user));
+
+      // 🔹 redirección según tipo de usuario
+      if (user.role === "ADMIN" && !user.businessId) {
+        router.push("/admin");
+      } else {
+        router.push("/home");
+      }
     } catch (err: unknown) {
       const message =
-        err && typeof err === "object" && "message" in err && typeof (err as { message?: unknown }).message === "string"
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof (err as { message?: unknown }).message === "string"
           ? (err as { message: string }).message
           : "Error al iniciar sesion";
+
       setError(message);
     } finally {
       setLoading(false);
