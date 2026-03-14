@@ -6,6 +6,8 @@ import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
 type ItemType = "PRODUCT" | "SERVICE";
 
 type Item = {
@@ -72,75 +74,79 @@ export default function PublicStorePage() {
     fetchItems();
   }, [slug, category]);
 
-  /* ================= FETCH DISPONIBILIDAD ================= */
+/* ================= FETCH DISPONIBILIDAD ================= */
 
-  const handleDateChange = async (date: Date) => {
-    if (!selectedService) return;
+const handleDateChange = async (date: Date) => {
+  if (!selectedService) return;
 
-    const formatted = date.toISOString().split("T")[0];
+  const formatted = date.toISOString().split("T")[0];
 
-    try {
-      const res = await fetch(
-        `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
-      );
+  try {
+    const res = await fetch(
+      `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
+    );
 
-      if (!res.ok) throw new Error();
+    if (!res.ok) throw new Error();
 
-      const data = await res.json();
+    const data = await res.json();
 
-      setAvailableSlots(data);
-    } catch {
-      setAvailableSlots([]);
-    }
-  };
+    setAvailableSlots(data);
+  } catch {
+    setAvailableSlots([]);
+  }
+};
 
-  /* ================= RESERVAR ================= */
+/* ================= RESERVAR ================= */
 
-  const handleReserve = async (data: any) => {
+const handleReserve = async (data: any) => {
 
-    if (preview) {
-      notify({
-        type: "info",
-        message: "Modo administrador: las reservas están deshabilitadas",
-      });
-      return;
-    }
+  if (preview) {
+    notify({
+      type: "info",
+      message: "Modo administrador: las reservas están deshabilitadas",
+    });
+    return;
+  }
 
-    const [h, m] = data.time.split(":").map(Number);
+  if (!selectedService) return;
 
-    const startMinute = h * 60 + m;
-    const endMinute = startMinute + (selectedService.durationMinutes ?? 60);
+  const service = selectedService;
 
-    try {
-      await fetch(`${API_URL}/public/${slug}/reserve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          itemId: selectedService.id,
-          customerName: data.fullName,
-          customerWhatsapp: data.whatsapp,
-          date: data.date,
-          startMinute,
-          endMinute,
-        }),
-      });
+  const [h, m] = data.time.split(":").map(Number);
 
-      notify({
-        type: "success",
-        message: "Reserva creada correctamente",
-      });
+  const startMinute = h * 60 + m;
+  const endMinute = startMinute + (service.durationMinutes ?? 60);
 
-      setSelectedService(null);
-      setAvailableSlots([]);
-    } catch {
-      notify({
-        type: "error",
-        message: "No se pudo crear la reserva",
-      });
-    }
-  };
+  try {
+    await fetch(`${API_URL}/public/${slug}/reserve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        itemId: service.id,
+        customerName: data.fullName,
+        customerWhatsapp: data.whatsapp,
+        date: data.date,
+        startMinute,
+        endMinute,
+      }),
+    });
+
+    notify({
+      type: "success",
+      message: "Reserva creada correctamente",
+    });
+
+    setSelectedService(null);
+    setAvailableSlots([]);
+  } catch {
+    notify({
+      type: "error",
+      message: "No se pudo crear la reserva",
+    });
+  }
+};
 
   /* ================= CARRITO ================= */
 
