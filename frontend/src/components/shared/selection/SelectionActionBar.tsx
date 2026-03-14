@@ -1,14 +1,16 @@
 "use client";
 
-import { Pencil, Trash2, X } from "lucide-react";
+import { Eye, Pencil, Trash2, X } from "lucide-react";
 
 type Props = {
     visible: boolean;
     title?: string;
     onClose: () => void;
     onEdit?: () => void;
+    onView?: () => void;
     onDelete?: () => void;
     editLabel?: string;
+    viewLabel?: string;
     deleteLabel?: string;
 };
 
@@ -17,8 +19,10 @@ export function SelectionActionBar({
     title = "1 seleccionado",
     onClose,
     onEdit,
+    onView,
     onDelete,
     editLabel = "",
+    viewLabel = "Ver",
     deleteLabel = "",
 }: Props) {
     if (!visible) return null;
@@ -33,15 +37,28 @@ export function SelectionActionBar({
                 </div>
 
                 {/* Acciones */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 sm:gap-3">
+                    {onView && (
+                        <button
+                            type="button"
+                            onClick={onView}
+                            title={viewLabel}
+                            aria-label={viewLabel}
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 shadow-sm active:scale-95"
+                        >
+                            <Eye className="h-5 w-5" />
+                        </button>
+                    )}
+
                     {onEdit && (
                         <button
                             type="button"
                             onClick={onEdit}
-                            className="flex h-10 items-center gap-2 rounded-full bg-neutral-100 px-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                            title={editLabel}
+                            aria-label={editLabel}
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 shadow-sm active:scale-95"
                         >
                             <Pencil className="h-4 w-4" />
-                            {editLabel}
                         </button>
                     )}
 
@@ -49,20 +66,24 @@ export function SelectionActionBar({
                         <button
                             type="button"
                             onClick={onDelete}
-                            className="flex h-10 items-center gap-2 rounded-full bg-rose-50 px-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+                            title={deleteLabel}
+                            aria-label={deleteLabel}
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 shadow-sm active:scale-95"
                         >
-                            <Trash2 className="h-4 w-4" />
-                            {deleteLabel}
+                            <Trash2 className="h-5 w-5" />
                         </button>
                     )}
+
+                    <div className="h-6 w-px bg-neutral-200 mx-1 hidden sm:block" />
 
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200"
+                        title="Cerrar selección"
                         aria-label="Cerrar selección"
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-900 text-white transition hover:bg-neutral-800 shadow-sm active:scale-95"
                     >
-                        <X className="h-4 w-4" />
+                        <X className="h-5 w-5" />
                     </button>
                 </div>
 

@@ -7,6 +7,7 @@ export type SaleStatus =
 export type SaleType = "PRODUCTO" | "SERVICIO";
 
 export interface SaleItem {
+  itemId?: string;
   qty: number;
   name: string;
 

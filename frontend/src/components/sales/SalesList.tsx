@@ -5,7 +5,8 @@ import SaleCard from "./SaleCard";
 
 type Props = {
   sales: Sale[];
-  onEdit?: (sale: Sale) => void;
+  selectedId?: string | null;
+  onSelect?: (sale: Sale) => void;
   onDetails?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
 };
@@ -57,7 +58,8 @@ function groupSalesByDate(sales: Sale[]) {
 
 export default function SalesList({
   sales,
-  onEdit,
+  selectedId,
+  onSelect,
   onDetails,
   onSendWhatsApp,
 }: Props) {
@@ -86,7 +88,8 @@ export default function SalesList({
             <SaleCard
               key={s.id}
               sale={s}
-              onEdit={onEdit}
+              selected={selectedId === s.id}
+              onSelect={onSelect ? () => onSelect(s) : undefined}
               onDetails={onDetails}
               onSendWhatsApp={onSendWhatsApp}
             />

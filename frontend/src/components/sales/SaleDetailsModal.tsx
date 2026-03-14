@@ -39,6 +39,7 @@ export default function SaleDetailsModal({
   onClose,
   onEdit,
   onConfirm,
+  onCancel,
   confirming = false,
 }: {
   open: boolean;
@@ -46,6 +47,7 @@ export default function SaleDetailsModal({
   onClose: () => void;
   onEdit?: (sale: Sale) => void;
   onConfirm?: (sale: Sale) => void;
+  onCancel?: (sale: Sale) => void;
   confirming?: boolean;
 }) {
   const [showStatusHelp, setShowStatusHelp] = useState(false);
@@ -55,6 +57,8 @@ export default function SaleDetailsModal({
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
   const canConfirm =
+    sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
+  const canEdit =
     sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
   const ctaLabel =
     sale.status === "PENDIENTE DE CIERRE"
@@ -241,16 +245,26 @@ export default function SaleDetailsModal({
 
           <div className="space-y-3 pt-2">
             {canConfirm && onConfirm && (
-              <button
-                onClick={() => onConfirm(sale)}
-                disabled={confirming}
-                className="w-full rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {confirming ? "Finalizando..." : ctaLabel}
-              </button>
+              <div className="flex gap-3">
+                {onCancel && (
+                  <button
+                    onClick={() => onCancel(sale)}
+                    className="flex-1 rounded-xl bg-rose-50 py-3 font-semibold text-rose-600 transition hover:bg-rose-100"
+                  >
+                    Anular venta
+                  </button>
+                )}
+                <button
+                  onClick={() => onConfirm(sale)}
+                  disabled={confirming}
+                  className="flex-[2] rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {confirming ? "Finalizando..." : ctaLabel}
+                </button>
+              </div>
             )}
 
-            {onEdit && (
+            {canEdit && onEdit && (
               <button
                 onClick={() => {
                   onClose();
@@ -261,15 +275,6 @@ export default function SaleDetailsModal({
                 Editar venta
               </button>
             )}
-
-            <button
-              type="button"
-              disabled
-              className="w-full cursor-not-allowed rounded-xl bg-neutral-200 py-3 font-semibold text-neutral-500"
-              title="La descarga de PDF esta deshabilitada temporalmente"
-            >
-              Descargar PDF deshabilitado
-            </button>
 
             <button
               onClick={onClose}

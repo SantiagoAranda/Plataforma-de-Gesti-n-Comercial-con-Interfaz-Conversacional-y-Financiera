@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Sale } from "@/src/types/sales";
 
 import AppHeader from "@/src/components/layout/AppHeader";
@@ -8,8 +9,10 @@ import SalesList from "@/src/components/sales/SalesList";
 import SalesSearchBar from "@/src/components/sales/SalesSearchBar";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
+import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, cancelSale, updateSale, type ApiOrder } from "@/src/services/sales";
+import SaleEditModal from "@/src/components/sales/SaleEditModal";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   const type =
@@ -33,6 +36,7 @@ const statusMap: Record<ApiOrder["status"], Sale["status"]> = {
     createdAt: order.createdAt,
     origin: order.sentAt ? "ORDEN PUBLICA" : "VENTA INTERNA",
     items: order.items.map((it) => ({
+      itemId: it.item.id, // Added itemId
       qty: it.quantity,
       name: it.itemNameSnapshot,
       price: it.unitPrice * it.quantity,
@@ -42,14 +46,16 @@ const statusMap: Record<ApiOrder["status"], Sale["status"]> = {
 }
 
 export default function VentaPage() {
+  const router = useRouter(); // Initialized useRouter
   const [q, setQ] = useState("");
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
-
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [editingSale, setEditingSale] = useState<Sale | null>(null); // Added editingSale state
 
   const loadOrders = useCallback(async () => {
     try {
@@ -84,7 +90,7 @@ export default function VentaPage() {
     });
   }, [q, sales]);
 
-  const businessName = "Mi Negocio";
+  const businessName = typeof window !== "undefined" ? localStorage.getItem("businessName") || "Mi Negocio" : "Mi Negocio";
 
 const handleSendWhatsApp = (sale: Sale) => {
   if (!sale.customerWhatsapp) {
@@ -124,9 +130,90 @@ const handleSendWhatsApp = (sale: Sale) => {
     }
   }, [loadOrders]);
 
+  const handleCancelSale = useCallback(async (sale: Sale) => {
+    if (!confirm("¿Estás seguro de que deseas anular esta venta?")) return;
+
+    try {
+      setConfirmingSaleId(sale.id);
+      setError(null);
+
+      const result = await cancelSale(sale.id);
+      const updatedSale = mapOrderToSale(result);
+
+      setSales((prev) =>
+        prev.map((current) => (current.id === updatedSale.id ? updatedSale : current))
+      );
+      
+      if (detailsSale?.id === sale.id) setDetailsSale(updatedSale);
+      setSelectedSale(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo anular la venta");
+    } finally {
+      setConfirmingSaleId(null);
+    }
+  }, [detailsSale, loadOrders]);
+
+  const handleSaveEditedSale = async (updated: Sale) => {
+    try {
+      setConfirmingSaleId(updated.id);
+      
+      const dto = {
+        customerName: updated.customerName,
+        customerWhatsapp: updated.customerWhatsapp,
+        items: updated.items
+          .filter(it => it.itemId)
+          .map(it => ({
+            itemId: it.itemId!,
+            quantity: it.qty
+          }))
+      };
+
+      await updateSale(updated.id, dto);
+      await loadOrders();
+      setEditingSale(null);
+      if (detailsSale?.id === updated.id) {
+        setDetailsSale(null); // refresh details on next open
+      }
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo actualizar la venta");
+    } finally {
+      setConfirmingSaleId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F0F2F5]">
-      <AppHeader title="Ventas" showBack />
+      {selectedSale ? (
+        <SelectionActionBar
+          visible
+          title="Venta seleccionada"
+          onClose={() => setSelectedSale(null)}
+          onView={() => {
+            setDetailsSale(selectedSale);
+            setSelectedSale(null);
+          }}
+          viewLabel="Ver detalles"
+          onEdit={
+            (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+              ? () => {
+                  setEditingSale(selectedSale);
+                  setSelectedSale(null);
+                }
+              : undefined
+          }
+          editLabel="Editar"
+          onDelete={
+            (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+              ? () => handleCancelSale(selectedSale)
+              : undefined
+          }
+          deleteLabel="Anular"
+        />
+      ) : (
+        <AppHeader title="Ventas" showBack />
+      )}
 
       <div className="pb-28">
         {loading && (
@@ -144,6 +231,8 @@ const handleSendWhatsApp = (sale: Sale) => {
         {!loading && !error && (
           <SalesList
             sales={filtered}
+            selectedId={selectedSale?.id}
+            onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
             onDetails={(sale) => setDetailsSale(sale)}
             onSendWhatsApp={handleSendWhatsApp}
           />
@@ -157,7 +246,19 @@ const handleSendWhatsApp = (sale: Sale) => {
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
         onConfirm={handleConfirmSale}
+        onCancel={handleCancelSale}
+        onEdit={(sale) => {
+          setEditingSale(sale);
+          setDetailsSale(null);
+        }}
         confirming={confirmingSaleId === detailsSale?.id}
+      />
+
+      <SaleEditModal
+        open={!!editingSale}
+        sale={editingSale}
+        onClose={() => setEditingSale(null)}
+        onSave={handleSaveEditedSale}
       />
     </div>
   );
