@@ -20,7 +20,8 @@ type Item = {
 };
 
 export default function PublicStorePage() {
-  const { slug } = useParams<{ slug: string }>();
+  const params = useParams();
+  const slug = typeof params?.slug === "string" ? params.slug : "";
   const searchParams = useSearchParams();
   const preview = searchParams.get("preview") === "true";
   const { notify } = useNotification();
@@ -43,7 +44,10 @@ export default function PublicStorePage() {
   /* ================= FETCH ITEMS ================= */
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug) {
+      setLoading(false);
+      return;
+    }
 
     const fetchItems = async () => {
       try {
@@ -51,17 +55,19 @@ export default function PublicStorePage() {
           `${API_URL}/public/${slug}/items?type=${category}`
         );
 
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Error loading items");
 
         const data = await res.json();
+        const itemsList = Array.isArray(data?.data) ? data.data : [];
 
         setItems(
-          data.data.map((item: any) => ({
+          itemsList.map((item: any) => ({
             ...item,
-            price: Number(item.price),
+            price: Number(item.price || 0),
           }))
         );
-      } catch {
+      } catch (error) {
+        console.error("Fetch items error:", error);
         notify({
           type: "error",
           message: "No se pudieron cargar los productos",
@@ -72,12 +78,12 @@ export default function PublicStorePage() {
     };
 
     fetchItems();
-  }, [slug, category]);
+  }, [slug, category, notify]);
 
 /* ================= FETCH DISPONIBILIDAD ================= */
 
 const handleDateChange = async (date: Date) => {
-  if (!selectedService) return;
+  if (!selectedService || !slug) return;
 
   const formatted = date.toISOString().split("T")[0];
 
@@ -86,12 +92,12 @@ const handleDateChange = async (date: Date) => {
       `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
     );
 
-    if (!res.ok) throw new Error();
+    if (!res.ok) throw new Error("Error fetching availability");
 
     const data = await res.json();
-
-    setAvailableSlots(data);
-  } catch {
+    setAvailableSlots(Array.isArray(data) ? data : []);
+  } catch (error) {
+    console.error("Availability error:", error);
     setAvailableSlots([]);
   }
 };
@@ -118,7 +124,7 @@ const handleReserve = async (data: any) => {
   const endMinute = startMinute + (service.durationMinutes ?? 60);
 
   try {
-    await fetch(`${API_URL}/public/${slug}/reserve`, {
+    const res = await fetch(`${API_URL}/public/${slug}/reserve`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -133,6 +139,8 @@ const handleReserve = async (data: any) => {
       }),
     });
 
+    if (!res.ok) throw new Error("Error creating reservation");
+
     notify({
       type: "success",
       message: "Reserva creada correctamente",
@@ -140,7 +148,8 @@ const handleReserve = async (data: any) => {
 
     setSelectedService(null);
     setAvailableSlots([]);
-  } catch {
+  } catch (error) {
+    console.error("Reservation error:", error);
     notify({
       type: "error",
       message: "No se pudo crear la reserva",
@@ -232,7 +241,7 @@ const handleReserve = async (data: any) => {
     }
 
     try {
-      await fetch(`${API_URL}/public/${slug}/order`, {
+      const res = await fetch(`${API_URL}/public/${slug}/order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -247,13 +256,16 @@ const handleReserve = async (data: any) => {
         }),
       });
 
+      if (!res.ok) throw new Error("Error sending order");
+
       notify({ type: "success", message: "Compra enviada" });
 
       setCart({});
       setShowCartModal(false);
       setCustomerName("");
       setWhatsapp("");
-    } catch {
+    } catch (error) {
+      console.error("Order error:", error);
       notify({ type: "error", message: "Error al enviar pedido" });
     }
   };

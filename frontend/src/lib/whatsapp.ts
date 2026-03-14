@@ -9,26 +9,17 @@ export function formatSaleMessage(opts: {
   customerName: string;
   items: { qty: number; name: string; price: number }[];
 }) {
-  const subtotal = opts.items.reduce(
-    (acc, i) => acc + i.qty * i.price,
-    0
-  );
+  // La propiedad 'price' ya representa el total de la línea (unitPrice * qty) según el mapeo en VentaPage.
+  const total = opts.items.reduce((acc, i) => acc + (i.price || 0), 0);
 
   const lines = [
-    `🧾 *Nuevo Pedido*`,
+    `Hola, *${opts.customerName}*. Te compartimos el detalle de tu pedido${opts.businessName ? ` en *${opts.businessName}*` : ""}:`,
     "",
-    `👤 Cliente: ${opts.customerName}`,
-    ...(opts.businessName ? [`🏪 Negocio: ${opts.businessName}`] : []),
+    ...opts.items.map((i) => `- ${i.name} x${i.qty}`),
     "",
-    "📦 *Detalle:*",
-    ...opts.items.map((i) => {
-      const lineTotal = i.qty * i.price;
-      return `• ${i.qty}x ${i.name} — $${i.price.toFixed(
-        2
-      )} c/u — *$${lineTotal.toFixed(2)}*`;
-    }),
+    `*Total: $${total.toLocaleString("es-CO", { minimumFractionDigits: 0 })}*`,
     "",
-    `💰 *Total: $${subtotal.toFixed(2)}*`,
+    "Gracias por tu compra.",
   ];
 
   return lines.join("\n");

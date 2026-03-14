@@ -4,15 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import type { Sale } from "@/src/types/sales";
 
 type EditableItem = {
+  itemId?: string; // preserve for existing items
   qty: number;
   name: string;
   price: number;
   durationMin?: number;
 };
 
+type BusinessItem = {
+  id: string;
+  name: string;
+  price: number;
+  type: "PRODUCT" | "SERVICE";
+  durationMinutes?: number;
+};
+
 function calcTotal(items: EditableItem[]) {
   return items.reduce(
-    (acc, it) => acc + (Number.isFinite(it.price) ? it.price : 0),
+    (acc, it) => acc + (Number.isFinite(it.price) ? it.price * it.qty : 0),
     0
   );
 }
@@ -38,9 +47,28 @@ export default function SaleEditModal({
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
   const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
   const [items, setItems] = useState<EditableItem[]>([]);
+  const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
 
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
+
+  const fetchItems = async () => {
+    try {
+      const token = localStorage.getItem("accessToken");
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setBusinessItems(data.map((i: any) => ({ ...i, price: Number(i.price) })));
+    } catch (err) {
+      console.error("Error fetching items", err);
+    }
+  };
+
+  useEffect(() => {
+    if (open) fetchItems();
+  }, [open]);
 
   useEffect(() => {
     if (!open || !sale) return;
@@ -52,9 +80,10 @@ export default function SaleEditModal({
 
     setItems(
       sale.items.map((it) => ({
+        itemId: it.itemId || (it as any).id, // preserve if available
         qty: sale.type === "SERVICIO" ? 1 : it.qty,
         name: it.name,
-        price: it.price,
+        price: it.price / it.qty, // store unit price in state for easier calc
         durationMin: it.durationMin,
       }))
     );
@@ -76,7 +105,9 @@ export default function SaleEditModal({
     }
   }, [open, sale]);
 
-  const total = useMemo(() => calcTotal(items), [items]);
+  const total = useMemo(() => {
+     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
+  }, [items]);
 
   if (!open || !sale) return null;
 
@@ -87,9 +118,17 @@ export default function SaleEditModal({
 
         const next = { ...it, ...patch };
 
-        next.qty = normalizeQty(type, next.qty);
-        next.price = Number.isFinite(next.price) ? next.price : 0;
+        // If item changed by dropdown
+        if (patch.itemId && patch.itemId !== it.itemId) {
+           const selection = businessItems.find(bi => bi.id === patch.itemId);
+           if (selection) {
+              next.name = selection.name;
+              next.price = selection.price;
+              next.durationMin = selection.durationMinutes;
+           }
+        }
 
+        next.qty = normalizeQty(type, next.qty);
         return next;
       })
     );
@@ -111,24 +150,6 @@ export default function SaleEditModal({
     setItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleChangeType = (nextType: Sale["type"]) => {
-    setType(nextType);
-
-    setItems((prev) =>
-      prev.map((it) => ({
-        ...it,
-        qty: normalizeQty(nextType, it.qty),
-        durationMin:
-          nextType === "SERVICIO" ? it.durationMin ?? 60 : undefined,
-      }))
-    );
-
-    if (nextType !== "SERVICIO") {
-      setScheduledDate("");
-      setScheduledTime("");
-    }
-  };
-
   const handleSave = () => {
     const cleanedName = customerName.trim();
     if (!cleanedName) return;
@@ -144,9 +165,10 @@ export default function SaleEditModal({
 
     const cleanedItems = items
       .map((it) => ({
+        itemId: it.itemId,
         qty: normalizeQty(type, it.qty),
         name: it.name.trim(),
-        price: Number(it.price) || 0,
+        price: (Number(it.price) || 0) * normalizeQty(type, it.qty),
         durationMin:
           type === "SERVICIO"
             ? Math.max(5, Math.floor(Number(it.durationMin) || 0)) || undefined
@@ -170,87 +192,73 @@ export default function SaleEditModal({
     onClose();
   };
 
+  const isReadOnly = true; // For fields that cannot be edited in this view
+
   return (
-    <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div className="fixed inset-0 z-[9998] bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-sm">
       <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
 
         {/* HEADER */}
-        <div className="px-5 py-4 border-b border-neutral-200 flex items-center justify-between">
-          <h2 className="font-semibold text-neutral-900 text-lg">Editar venta</h2>
+        <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0">
+          <h2 className="font-bold text-neutral-900 text-lg">Editar venta</h2>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full hover:bg-neutral-100 transition"
+            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500"
           >
             ✕
           </button>
         </div>
 
         {/* CONTENT */}
-        <div className="p-5 space-y-5 overflow-y-auto">
+        <div className="p-5 space-y-6 overflow-y-auto bg-neutral-50/30">
 
-          {/* CLIENTE */}
-          <div>
-            <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-              Cliente
-            </label>
-
-            <input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-              placeholder="Nombre del cliente"
-            />
-          </div>
-
-          {/* WHATSAPP */}
-          <div>
-            <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-              WhatsApp
-            </label>
-
-            <input
-              value={customerWhatsapp}
-              onChange={(e) => setCustomerWhatsapp(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-              placeholder="+54 9 11 1234 5678"
-            />
-          </div>
-
-          {/* TIPO + ESTADO */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-                Tipo
-              </label>
-
-              <select
-                value={type}
-                onChange={(e) =>
-                  handleChangeType(e.target.value as Sale["type"])
-                }
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
-              >
-                <option value="PRODUCTO">Producto</option>
-                <option value="SERVICIO">Servicio</option>
-              </select>
+          {/* READ-ONLY INFO SECTION */}
+          <div className="space-y-4 p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+               <span className="w-1.5 h-1.5 rounded-full bg-neutral-400"></span>
+               <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Información no editable</span>
             </div>
 
+            {/* CLIENTE */}
             <div>
-              <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-                Estado
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                Cliente
               </label>
+              <div className="mt-1 w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 font-medium">
+                {customerName}
+              </div>
+            </div>
 
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as Sale["status"])}
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
-              >
-                <option value="PENDIENTE">Pendiente</option>
-                <option value="CONFIRMADO">Confirmado</option>
-                <option value="CERRADO">Cerrado</option>
-                <option value="CANCELADO">Cancelado</option>
-              </select>
+            {/* WHATSAPP */}
+            <div>
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                WhatsApp
+              </label>
+              <div className="mt-1 w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 font-medium">
+                {customerWhatsapp || "Sin WhatsApp"}
+              </div>
+            </div>
+
+            {/* TIPO + ESTADO */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                  Tipo
+                </label>
+                <div className="mt-1 w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5 text-xs text-neutral-600 font-medium">
+                  {type === "PRODUCTO" ? "Producto" : "Servicio"}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">
+                  Estado
+                </label>
+                <div className="mt-1 w-full rounded-xl bg-neutral-50 border border-neutral-200 px-3 py-2.5 text-xs text-neutral-600 font-medium">
+                  {status}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -258,7 +266,7 @@ export default function SaleEditModal({
           {type === "SERVICIO" && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">
                   Fecha
                 </label>
 
@@ -266,12 +274,12 @@ export default function SaleEditModal({
                   type="date"
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
+                  className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+                <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">
                   Hora
                 </label>
 
@@ -279,24 +287,23 @@ export default function SaleEditModal({
                   type="time"
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2.5 text-sm"
+                  className="mt-1 w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm"
                 />
               </div>
             </div>
           )}
 
           {/* ITEMS */}
-          <div className="border-t border-neutral-200 pt-4">
-
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-semibold text-neutral-900">Ítems</span>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-neutral-800 uppercase tracking-widest px-1">Items de la venta</span>
 
               <button
                 type="button"
                 onClick={addItem}
-                className="text-sm font-semibold text-emerald-600 hover:underline"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600 text-[11px] font-bold hover:bg-emerald-100 transition active:scale-95"
               >
-                + Agregar
+                + AGREGAR íTEM
               </button>
             </div>
 
@@ -304,47 +311,59 @@ export default function SaleEditModal({
               {items.map((it, idx) => (
                 <div
                   key={idx}
-                  className="rounded-xl border border-neutral-200 p-4 bg-neutral-50"
+                  className="relative rounded-2xl border border-neutral-200 p-4 bg-white shadow-sm"
                 >
                   <div className="space-y-3">
-
-                    <input
-                      value={it.name}
-                      onChange={(e) => setItem(idx, { name: e.target.value })}
-                      placeholder="Nombre del producto"
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                    />
-
-                    <div className="grid grid-cols-3 gap-2">
-
-                      <input
-                        type="number"
-                        value={type === "SERVICIO" ? 1 : it.qty}
-                        disabled={type === "SERVICIO"}
-                        onChange={(e) =>
-                          setItem(idx, { qty: Number(e.target.value) })
-                        }
-                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                        placeholder="Cant"
-                      />
-
-                      <input
-                        type="number"
-                        value={it.price}
-                        onChange={(e) =>
-                          setItem(idx, { price: Number(e.target.value) })
-                        }
-                        className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                        placeholder="Precio"
-                      />
-
-                      <button
-                        onClick={() => removeItem(idx)}
-                        className="rounded-lg border border-neutral-300 hover:bg-red-50 text-red-500"
+                    {/* Selector de Producto */}
+                    <div>
+                      <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1 block">Producto / Servicio</label>
+                      <select
+                        value={it.itemId || ""}
+                        onChange={(e) => setItem(idx, { itemId: e.target.value })}
+                        className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm bg-neutral-50/50 hover:bg-neutral-50 outline-none focus:ring-2 focus:ring-emerald-500 transition"
                       >
-                        🗑
-                      </button>
+                        <option value="" disabled>Seleccionar de la tienda...</option>
+                        {businessItems
+                          .filter(bi => bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE"))
+                          .map(bi => (
+                          <option key={bi.id} value={bi.id}>
+                            {bi.name} - ${bi.price.toFixed(2)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
+                    <div className="grid grid-cols-2 gap-3 items-end">
+                      <div>
+                         <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1 block">Cantidad</label>
+                         <input
+                           type="number"
+                           value={type === "SERVICIO" ? 1 : it.qty}
+                           disabled={type === "SERVICIO"}
+                           onChange={(e) =>
+                             setItem(idx, { qty: Number(e.target.value) })
+                           }
+                           className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm bg-white outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-neutral-100 disabled:text-neutral-500"
+                           placeholder="Cant"
+                         />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                           <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest mb-1 block">Subtotal</label>
+                           <div className="w-full rounded-xl border border-neutral-100 px-3 py-2 text-sm bg-neutral-50 text-neutral-600 font-semibold">
+                              ${(it.price * it.qty).toFixed(2)}
+                           </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => removeItem(idx)}
+                          className="h-9 w-9 flex items-center justify-center rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-100 transition active:scale-90 shadow-sm"
+                          title="Quitar ítem"
+                        >
+                          🗑
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -352,10 +371,10 @@ export default function SaleEditModal({
             </div>
 
             {/* TOTAL */}
-            <div className="flex justify-between items-center mt-5 pt-4 border-t border-neutral-200">
-              <span className="text-sm text-neutral-500">Total</span>
+            <div className="flex justify-between items-center mt-6 pt-5 border-t border-neutral-200">
+              <span className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Total venta</span>
 
-              <span className="text-2xl font-bold text-neutral-900">
+              <span className="text-3xl font-black text-neutral-900">
                 ${total.toFixed(2)}
               </span>
             </div>
@@ -363,24 +382,24 @@ export default function SaleEditModal({
           </div>
 
           {/* BOTONES */}
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="flex gap-3 pt-4 sticky bottom-0 bg-neutral-50/10 backdrop-blur-sm -mx-1 px-1 mt-auto">
             <button
               onClick={onClose}
-              className="rounded-xl py-3 font-semibold border border-neutral-300 hover:bg-neutral-50"
+              className="flex-1 rounded-2xl py-4 font-bold text-sm border-2 border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50 transition active:scale-[0.98] shadow-sm"
             >
-              Cancelar
+              CANCELAR
             </button>
 
             <button
               onClick={handleSave}
-              className="rounded-xl py-3 font-semibold bg-neutral-900 text-white hover:brightness-95"
+              className="flex-[1.5] rounded-2xl py-4 font-black text-sm bg-neutral-900 text-white hover:brightness-110 transition active:scale-[0.98] shadow-lg shadow-neutral-900/20"
             >
-              Guardar
+              GUARDAR CAMBIOS
             </button>
           </div>
 
-          <div className="text-xs text-neutral-400 text-center">
-            En servicios la cantidad queda fija en 1
+          <div className="text-[10px] text-neutral-400 text-center font-medium">
+             Solo podés editar ítems y horas. <br/>Los datos de contacto y estado son de solo lectura.
           </div>
 
         </div>

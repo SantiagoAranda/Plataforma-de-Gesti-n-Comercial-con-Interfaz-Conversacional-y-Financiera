@@ -5,6 +5,7 @@ import { AccountingService } from '../accounting/accounting.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
+import { UpdateOrderDto } from './dto/update-order.dto';
 @Injectable()
 export class SalesService {
   constructor(
@@ -220,7 +221,8 @@ export class SalesService {
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOrderOrThrow(businessId, orderId);
 
-    if (order.status !== 'DRAFT') {
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
       throw new BadRequestException('Order not editable');
     }
 
@@ -279,7 +281,8 @@ export class SalesService {
   ) {
     const order = await this.getOrderOrThrow(businessId, orderId);
 
-    if (order.status !== 'DRAFT') {
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
       throw new BadRequestException('Order not editable');
     }
 
@@ -314,7 +317,8 @@ export class SalesService {
   async removeItem(businessId: string, orderId: string, orderItemId: string) {
     const order = await this.getOrderOrThrow(businessId, orderId);
 
-    if (order.status !== 'DRAFT') {
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
       throw new BadRequestException('Order not editable');
     }
 
@@ -379,6 +383,90 @@ export class SalesService {
           },
         },
       },
+    });
+  }
+
+  async update(businessId: string, orderId: string, dto: UpdateOrderDto) {
+    const order = await this.getOrderOrThrow(businessId, orderId);
+
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
+      throw new BadRequestException('Order not editable in current status');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Update general info if provided
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          customerName: dto.customerName,
+          customerWhatsapp: dto.customerWhatsapp,
+          note: dto.note,
+        },
+      });
+
+      // 2. Handle Items Sync if provided
+      if (dto.items) {
+        // Validate items exist and belong to business
+        const itemsFromDb = await tx.item.findMany({
+          where: {
+            id: { in: dto.items.map((i) => i.itemId) },
+            businessId,
+          },
+        });
+
+        if (itemsFromDb.length !== dto.items.length) {
+          throw new BadRequestException('One or more items are invalid');
+        }
+
+        this.ensureSingleItemType(itemsFromDb);
+
+        // Delete existing items
+        await tx.orderItem.deleteMany({
+          where: { orderId },
+        });
+
+        // Create new items
+        let newTotal = 0;
+        const newOrderItems = dto.items.map((input) => {
+          const item = itemsFromDb.find((i) => i.id === input.itemId)!;
+          const lineTotal = Number(item.price) * input.quantity;
+          newTotal += lineTotal;
+
+          return {
+            orderId,
+            businessId,
+            itemId: item.id,
+            quantity: input.quantity,
+            unitPrice: item.price,
+            lineTotal,
+            itemNameSnapshot: item.name,
+            itemTypeSnapshot: item.type,
+            durationMinutesSnapshot: item.durationMinutes,
+          };
+        });
+
+        await tx.orderItem.createMany({
+          data: newOrderItems,
+        });
+
+        // Update total
+        await tx.order.update({
+          where: { id: orderId },
+          data: { total: newTotal },
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
+          },
+        },
+      });
     });
   }
 

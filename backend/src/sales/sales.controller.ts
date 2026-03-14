@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AddOrderItemDto } from "./dto/add-order-item.dto";
 import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
+import { UpdateOrderDto } from "./dto/update-order.dto";
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('sales')
 export class SalesController {
@@ -70,6 +71,15 @@ removeItem(
   @Param("orderItemId") orderItemId: string
 ) {
   return this.salesService.removeItem(req.user.businessId, id, orderItemId);
+}
+
+@Patch(":id")
+update(
+  @Req() req: any,
+  @Param("id") id: string,
+  @Body() dto: UpdateOrderDto
+) {
+  return this.salesService.update(req.user.businessId, id, dto);
 }
   
 }
