@@ -6,6 +6,8 @@ import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
 type ItemType = "PRODUCT" | "SERVICE";
 
 type Item = {
@@ -18,7 +20,7 @@ type Item = {
 };
 
 export default function PublicStorePage() {
-  const { slug } = useParams<{ slug: string }>();
+  const { token } = useParams<{ token: string }>();
   const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
@@ -34,10 +36,12 @@ export default function PublicStorePage() {
   /* ================= FETCH ITEMS ================= */
 
   useEffect(() => {
+    if (!token) return;
+
     const fetchItems = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/items`
+          `${API_URL}/public/${token}/items`
         );
 
         if (!res.ok) throw new Error();
@@ -61,7 +65,7 @@ export default function PublicStorePage() {
     };
 
     fetchItems();
-  }, [slug]);
+  }, [token]);
 
   /* ================= FILTRO ================= */
 
@@ -76,13 +80,13 @@ export default function PublicStorePage() {
   /* ================= DISPONIBILIDAD ================= */
 
   const fetchAvailability = async (date: Date) => {
-    if (!selectedService) return;
+    if (!selectedService || !token) return;
 
     try {
       const formatted = date.toISOString().split("T")[0];
 
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
+        `${API_URL}/public/${token}/availability?itemId=${selectedService.id}&date=${formatted}`
       );
 
       if (!res.ok) throw new Error();
@@ -118,7 +122,7 @@ export default function PublicStorePage() {
       const endMinute = end.getHours() * 60 + end.getMinutes();
 
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/reserve`,
+        `${API_URL}/public/${token}/reserve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

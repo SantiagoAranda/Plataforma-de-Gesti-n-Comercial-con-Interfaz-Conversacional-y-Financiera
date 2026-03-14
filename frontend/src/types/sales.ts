@@ -1,5 +1,5 @@
 export type SaleStatus =
-  | "CONFIRMADO"
+  | "PENDIENTE DE CIERRE"
   | "CERRADO"
   | "PENDIENTE"
   | "CANCELADO";
@@ -32,6 +32,8 @@ export interface Sale {
 
   // solo servicios
   scheduledAt?: string;
+
+  origin?: "ORDEN PUBLICA" | "VENTA INTERNA";
 
   // fallback temporal
   businessWhatsapp?: string;

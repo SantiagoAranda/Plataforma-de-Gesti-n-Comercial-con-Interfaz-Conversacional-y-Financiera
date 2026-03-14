@@ -5,16 +5,61 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  AccountingMovementOriginType,
+  MovementNature,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
+
+const ORDER_ACCOUNTING_DEFAULTS = {
+  debitCashPucSubcuentaId: '110505',
+  creditIncomePucSubcuentaId: '413595',
+} as const;
+
+type OrderForPosting = Prisma.OrderGetPayload<{
+  include: {
+    items: {
+      include: {
+        item: true,
+      },
+    },
+  },
+}>;
 
 @Injectable()
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
   /* ========= Accounting Movements (nuevo modelo) ========= */
+
+  private parseDateBoundary(
+    value: string,
+    boundary: 'start' | 'end',
+  ) {
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+    if (dateOnlyMatch) {
+      const year = Number(dateOnlyMatch[1]);
+      const monthIndex = Number(dateOnlyMatch[2]) - 1;
+      const day = Number(dateOnlyMatch[3]);
+
+      return boundary === 'start'
+        ? new Date(year, monthIndex, day, 0, 0, 0, 0)
+        : new Date(year, monthIndex, day, 23, 59, 59, 999);
+    }
+
+    const parsed = new Date(value);
+
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Invalid date filter');
+    }
+
+    return parsed;
+  }
 
   private async loadSubcuentaOrThrow(pucSubcuentaId: string) {
     const sub = await this.prisma.pucSubcuenta.findUnique({
@@ -57,16 +102,85 @@ export class AccountingService {
     };
   }
 
+  async postOrderMovements(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    order: OrderForPosting,
+  ) {
+    if (!order.items.length) {
+      throw new BadRequestException('Order must contain at least one item');
+    }
+
+    const [debitSubaccount, creditSubaccount] = await Promise.all([
+      this.loadSubcuentaOrThrow(
+        ORDER_ACCOUNTING_DEFAULTS.debitCashPucSubcuentaId,
+      ),
+      this.loadSubcuentaOrThrow(
+        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucSubcuentaId,
+      ),
+    ]);
+
+    const amount = Number(order.total);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Order total must be greater than zero');
+    }
+
+    // MVP limitation: Order does not store subtotal, VAT or payment method.
+    // The automatic posting therefore books the gross total as a simple sale:
+    // debit a default cash-equivalent account and credit a default income account.
+    const itemType =
+      order.items[0]?.itemTypeSnapshot ?? order.items[0]?.item?.type ?? 'PRODUCT';
+    const customerName = order.customerName?.trim();
+    const detailSuffix = customerName ? ` - ${customerName}` : '';
+    const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();
+
+    // In the current model an "asiento" is represented as multiple
+    // AccountingMovement rows sharing the same originType/originId.
+    const movements = await Promise.all([
+      tx.accountingMovement.create({
+        data: {
+          businessId,
+          pucSubcuentaId: debitSubaccount.code,
+          amount,
+          nature: MovementNature.DEBIT,
+          date,
+          detail: `Contrapartida venta ${itemType.toLowerCase()}${detailSuffix}`,
+          originType: AccountingMovementOriginType.ORDER,
+          originId: order.id,
+        },
+      }),
+      tx.accountingMovement.create({
+        data: {
+          businessId,
+          pucSubcuentaId: creditSubaccount.code,
+          amount,
+          nature: MovementNature.CREDIT,
+          date,
+          detail: `Ingreso por venta ${itemType.toLowerCase()}${detailSuffix}`,
+          originType: AccountingMovementOriginType.ORDER,
+          originId: order.id,
+        },
+      }),
+    ]);
+
+    return movements.map((movement, index) => {
+      const subaccount = index === 0 ? debitSubaccount : creditSubaccount;
+      return {
+        ...movement,
+        pucCode: subaccount.code,
+        pucName: subaccount.name,
+      };
+    });
+  }
+
   async findAllMovements(businessId: string, q: AccountingMovementsQueryDto) {
     const where: any = { businessId };
 
     if (q.from || q.to) {
       where.date = {};
-      if (q.from) where.date.gte = new Date(q.from);
+      if (q.from) where.date.gte = this.parseDateBoundary(q.from, 'start');
       if (q.to) {
-        const d = new Date(q.to);
-        d.setHours(23, 59, 59, 999);
-        where.date.lte = d;
+        where.date.lte = this.parseDateBoundary(q.to, 'end');
       }
     }
 

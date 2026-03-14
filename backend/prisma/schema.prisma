@@ -183,6 +183,7 @@ model Order {
   documentNumber String?
 
   items OrderItem[]
+  accountingPostedAt DateTime?
 
   // asiento automático generado por esta orden (opcional)
   createdAt DateTime @default(now())

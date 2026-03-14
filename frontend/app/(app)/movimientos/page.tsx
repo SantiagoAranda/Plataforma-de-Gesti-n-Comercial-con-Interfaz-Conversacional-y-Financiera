@@ -50,15 +50,19 @@ export default function MovimientosPage() {
   const range = periodRange(period);
   const metrics = useMemo(() => mapMovementMetrics(rows, range.label), [rows, range.label]);
   const { view } = metrics;
-  const chartItems = view.chartData.map((c) => ({
-    ...c,
-    tone:
+  const chartItems = view.chartData.map((c) => {
+    const tone: "blue" | "red" | "green" =
       c.key === "netProfit"
         ? "blue"
         : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
           ? "red"
-          : "green",
-  }));
+          : "green";
+
+    return {
+      ...c,
+      tone,
+    };
+  });
 
   const togglePanel = () => {
     setActivePanel((current) => (current === "summary" ? "percentages" : "summary"));

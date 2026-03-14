@@ -1,11 +1,11 @@
 // src/lib/statusStyles.ts
 
 export const STATUS_STYLES = {
-  CONFIRMADO: {
-    label: "Confirmado",
-    border: "border-l-4 border-blue-500",
-    badge: "bg-blue-100 text-blue-700",
-    softBg: "bg-blue-50",
+  "PENDIENTE DE CIERRE": {
+    label: "Pendiente de cierre",
+    border: "border-l-4 border-sky-500",
+    badge: "bg-sky-100 text-sky-700",
+    softBg: "bg-sky-50",
   },
 
   CERRADO: {

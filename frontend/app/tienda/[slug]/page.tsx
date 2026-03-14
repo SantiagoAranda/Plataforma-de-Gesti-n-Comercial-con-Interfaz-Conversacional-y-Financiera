@@ -6,6 +6,8 @@ import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
 type ItemType = "PRODUCT" | "SERVICE";
 
 type Item = {
@@ -39,10 +41,12 @@ export default function PublicStorePage() {
   /* ================= FETCH ITEMS ================= */
 
   useEffect(() => {
+    if (!slug) return;
+
     const fetchItems = async () => {
       try {
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/items?type=${category}`
+          `${API_URL}/public/${slug}/items?type=${category}`
         );
 
         if (!res.ok) throw new Error();
@@ -77,7 +81,7 @@ export default function PublicStorePage() {
 
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
+        `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
       );
 
       if (!res.ok) throw new Error();
@@ -101,7 +105,7 @@ export default function PublicStorePage() {
     const endMinute = startMinute + (selectedService.durationMinutes ?? 60);
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/reserve`, {
+      await fetch(`${API_URL}/public/${slug}/reserve`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -202,7 +206,7 @@ export default function PublicStorePage() {
     }
 
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/public/${slug}/order`, {
+      await fetch(`${API_URL}/public/${slug}/order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
