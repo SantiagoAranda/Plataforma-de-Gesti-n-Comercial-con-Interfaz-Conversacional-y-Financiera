@@ -1,15 +1,19 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.use(bodyParser.json({ limit: '10mb' }));
+  app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+  
   // 🔥 Habilitar CORS
   app.enableCors({
     origin: [
       "http://localhost:3000",
-      "http://192.168.1.107:3000"
+      "http://192.168.1.35:3000"
     ],
     credentials: true,
   });

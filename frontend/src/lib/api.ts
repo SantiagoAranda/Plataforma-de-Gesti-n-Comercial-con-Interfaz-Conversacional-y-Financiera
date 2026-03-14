@@ -41,6 +41,7 @@ export async function api<T>(
     ...init,
     headers,
     cache: "no-store",
+    credentials: "include",
   });
 
   // 🔥 Si el token expiró o es inválido
