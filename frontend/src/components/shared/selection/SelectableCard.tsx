@@ -23,8 +23,12 @@ export function SelectableCard({
     delay: 450,
   });
 
-  const handleClick = () => {
-    if (consumeLongPress()) return;
+  const handleClick = (e: React.MouseEvent) => {
+    if (consumeLongPress()) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
 
     if (selected) return;
 
@@ -33,6 +37,7 @@ export function SelectableCard({
 
   const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
+    if (consumeLongPress()) return;
     onSelect();
   };
 

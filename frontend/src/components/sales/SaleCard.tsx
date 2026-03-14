@@ -66,6 +66,7 @@ export default function SaleCard({
       onClick={handleDetails}
       onContextMenu={(e) => {
         e.preventDefault();
+        if (consumeLongPress()) return;
         onSelect?.();
       }}
       className={`relative w-full select-none transition-all cursor-pointer ${

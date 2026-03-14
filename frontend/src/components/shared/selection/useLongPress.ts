@@ -9,7 +9,8 @@ type Options = {
 
 export function useLongPress({ onLongPress, delay = 450 }: Options) {
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const longPressTriggeredRef = useRef(false);
+    const isLongPressActiveRef = useRef(false);
+    const lastTriggeredTimeRef = useRef(0);
 
     const clearTimer = useCallback(() => {
         if (timerRef.current) {
@@ -20,10 +21,11 @@ export function useLongPress({ onLongPress, delay = 450 }: Options) {
 
     const start = useCallback(() => {
         clearTimer();
-        longPressTriggeredRef.current = false;
+        isLongPressActiveRef.current = false;
 
         timerRef.current = setTimeout(() => {
-            longPressTriggeredRef.current = true;
+            isLongPressActiveRef.current = true;
+            lastTriggeredTimeRef.current = Date.now();
             onLongPress();
             clearTimer();
         }, delay);
@@ -34,20 +36,23 @@ export function useLongPress({ onLongPress, delay = 450 }: Options) {
     }, [clearTimer]);
 
     const consumeLongPress = useCallback(() => {
-        const wasTriggered = longPressTriggeredRef.current;
-        if (wasTriggered) {
-            longPressTriggeredRef.current = false;
-        }
-        return wasTriggered;
+        // Consumes if it was just triggered in the last 150ms
+        const now = Date.now();
+        const wasJustTriggered = now - lastTriggeredTimeRef.current < 150;
+        return isLongPressActiveRef.current || wasJustTriggered;
     }, []);
+
+    const end = useCallback(() => {
+        cancel();
+    }, [cancel]);
 
     return {
         handlers: {
             onMouseDown: start,
-            onMouseUp: cancel,
+            onMouseUp: end,
             onMouseLeave: cancel,
             onTouchStart: start,
-            onTouchEnd: cancel,
+            onTouchEnd: end,
             onTouchCancel: cancel,
         },
         consumeLongPress,

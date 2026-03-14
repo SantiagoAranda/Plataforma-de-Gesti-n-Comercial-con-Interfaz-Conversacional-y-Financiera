@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -32,8 +33,8 @@ export class ItemsController {
 
   // 🔹 Listar items del negocio
   @Get()
-  findAll(@Req() req: any) {
-    return this.itemsService.findAll(req.user.businessId);
+  findAll(@Req() req: any, @Query("status") status?: string) {
+    return this.itemsService.findAll(req.user.businessId, status);
   }
 
   // 🔹 Obtener item específico

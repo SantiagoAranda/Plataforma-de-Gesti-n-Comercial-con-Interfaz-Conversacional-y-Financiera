@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, Pencil, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Pencil, Trash2, X, LucideIcon } from "lucide-react";
 
 type Props = {
     visible: boolean;
@@ -9,9 +9,13 @@ type Props = {
     onEdit?: () => void;
     onView?: () => void;
     onDelete?: () => void;
+    onToggleStatus?: () => void;
     editLabel?: string;
     viewLabel?: string;
     deleteLabel?: string;
+    toggleStatusLabel?: string;
+    deleteIcon?: LucideIcon;
+    viewIcon?: LucideIcon;
 };
 
 export function SelectionActionBar({
@@ -21,9 +25,13 @@ export function SelectionActionBar({
     onEdit,
     onView,
     onDelete,
+    onToggleStatus,
     editLabel = "",
     viewLabel = "Ver",
     deleteLabel = "",
+    toggleStatusLabel = "Inhabilitar",
+    deleteIcon: DeleteIcon = Trash2,
+    viewIcon: ViewIcon = Eye,
 }: Props) {
     if (!visible) return null;
 
@@ -46,7 +54,7 @@ export function SelectionActionBar({
                             aria-label={viewLabel}
                             className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 shadow-sm active:scale-95"
                         >
-                            <Eye className="h-5 w-5" />
+                            <ViewIcon className="h-5 w-5" />
                         </button>
                     )}
 
@@ -70,7 +78,19 @@ export function SelectionActionBar({
                             aria-label={deleteLabel}
                             className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 shadow-sm active:scale-95"
                         >
-                            <Trash2 className="h-5 w-5" />
+                            <DeleteIcon className="h-5 w-5" />
+                        </button>
+                    )}
+
+                    {onToggleStatus && (
+                        <button
+                            type="button"
+                            onClick={onToggleStatus}
+                            title={toggleStatusLabel}
+                            aria-label={toggleStatusLabel}
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-50 text-amber-600 transition hover:bg-amber-100 shadow-sm active:scale-95"
+                        >
+                            <EyeOff className="h-5 w-5" />
                         </button>
                     )}
 

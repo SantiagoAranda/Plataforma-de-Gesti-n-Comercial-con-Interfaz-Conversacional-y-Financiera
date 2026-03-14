@@ -39,11 +39,13 @@ export class ItemsService {
     });
   }
 
-  async findAll(businessId: string) {
+  async findAll(businessId: string, status?: string) {
+    const itemStatus = status === 'INACTIVE' ? ItemStatus.INACTIVE : ItemStatus.ACTIVE;
+    
     return this.prisma.item.findMany({
       where: {
         businessId,
-        status: ItemStatus.ACTIVE,
+        status: itemStatus,
       },
       orderBy: { createdAt: "desc" },
       include: {

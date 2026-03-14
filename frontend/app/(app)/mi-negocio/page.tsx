@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Archive, ArchiveRestore, Plus, X, Eye } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
+import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
+import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -21,6 +24,7 @@ type Item = {
   durationMinutes?: number;
   schedule?: Schedule[];
   images?: { id: string; url: string; order: number }[];
+  status: "ACTIVE" | "INACTIVE";
 };
 
 type TimeRange = {
@@ -82,22 +86,27 @@ export default function MiNegocioPage() {
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
   const [items, setItems] = useState<Item[]>([]);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [viewArchived, setViewArchived] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        const data = await api<Item[]>("/items");
-        setItems(data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
+  const fetchItems = async () => {
+    try {
+      setLoading(true);
+      const data = await api<Item[]>(`/items?status=${viewArchived ? 'INACTIVE' : 'ACTIVE'}`);
+      setItems(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchItems();
-  }, []);
+  }, [viewArchived]);
 
   const handleAddImage = (file: File | null) => {
     if (!file) return;
@@ -118,6 +127,7 @@ export default function MiNegocioPage() {
     setImage(null);
     setDuration(30);
     setWeek(INITIAL_WEEK);
+    setIsOpen(false);
   };
 
   const handleSend = async () => {
@@ -190,60 +200,102 @@ export default function MiNegocioPage() {
     }
   };
 
+  const handleStartEdit = (item: Item) => {
+    setEditingItem(item);
+    setName(item.name);
+    setPrice(String(item.price));
+    setDescription(item.description ?? "");
+    setImage(item.images?.[0]?.url ?? null);
+    setDuration(item.durationMinutes ?? 30);
+    // Weekly schedule mapping could be added here if needed
+    setIsOpen(true);
+    setSelectedItem(null);
+  };
+
+  const handleToggleArchive = async (item: Item) => {
+    try {
+      const newStatus = item.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+      await api(`/items/${item.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      setSelectedItem(null);
+      setToast({
+        message: newStatus === 'INACTIVE' ? "Producto archivado" : "Producto desarchivado",
+        type: "success",
+      });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Error al cambiar estado", type: "error" });
+    }
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const handleStatusUpdate = async (item: Item, newStatus: "ACTIVE" | "INACTIVE") => {
+    try {
+      await api(`/items/${item.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      setSelectedItem(null);
+      setToast({
+        message: newStatus === 'INACTIVE' ? "Producto inhabilitado" : "Producto habilitado",
+        type: "success",
+      });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Error al actualizar estado", type: "error" });
+    }
+    setTimeout(() => setToast(null), 2500);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-neutral-100">
 
-      <AppHeader title="Mi negocio" showBack />
+      {selectedItem ? (
+        <SelectionActionBar
+          visible
+          title="Item seleccionado"
+          onClose={() => setSelectedItem(null)}
+          onEdit={() => handleStartEdit(selectedItem)}
+          onDelete={() => handleToggleArchive(selectedItem)}
+          deleteLabel={viewArchived ? "Desarchivar" : "Archivar"}
+          deleteIcon={viewArchived ? ArchiveRestore : Archive}
+        />
+      ) : (
+        <AppHeader 
+          title={viewArchived ? "Archivados" : "Mi negocio"} 
+          showBack={true} 
+          onBack={viewArchived ? () => setViewArchived(false) : undefined}
+          hrefBack="/home"
+          rightIcon={viewArchived ? <ArchiveRestore size={20} /> : <Archive size={20} />}
+          rightAriaLabel={viewArchived ? "Ver activos" : "Ver archivados"}
+          onRightClick={() => setViewArchived(!viewArchived)}
+        />
+      )}
 
       {/* LISTA DE ITEMS */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
 
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className="relative ml-auto max-w-[78%] bg-white rounded-2xl shadow-sm border border-neutral-200 overflow-hidden"
-          >
-
-            {(item.images?.length ?? 0) > 0 && (
-              <div className="bg-neutral-50 flex items-center justify-center">
-                <img
-                  src={item.images?.[0]?.url}
-                  alt={item.name}
-                  className="w-full max-h-60 object-contain"
-                />
-              </div>
-            )}
-
-            <div className="px-4 py-3 space-y-2">
-
-              <div className="flex justify-between items-start">
-
-                <p className="text-sm font-semibold text-neutral-900">
-                  {item.name}
-                </p>
-
-                <p className="text-emerald-600 font-semibold text-sm">
-                  ${item.price}
-                </p>
-
-              </div>
-
-              {item.type === "SERVICE" && (
-                <div className="flex items-center gap-2 text-neutral-500 text-xs">
-                  <span>🕒</span>
-                  <span>{item.durationMinutes} min</span>
-                </div>
-              )}
-
-              {item.description && (
-                <p className="text-xs text-neutral-500 leading-relaxed">
-                  {item.description}
-                </p>
-              )}
-
-            </div>
-
+        {loading && <div className="text-center py-10 text-neutral-500">Cargando...</div>}
+        {!loading && items.length === 0 && (
+          <div className="text-center py-10 text-neutral-400">
+            {viewArchived ? "No hay items archivados" : "No hay items creados"}
           </div>
+        )}
+
+        {items.map((item) => (
+          <ItemCard
+            key={item.id}
+            item={item}
+            selected={selectedItem?.id === item.id}
+            onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+            onOpen={() => handleStartEdit(item)}
+          />
         ))}
 
       </main>
@@ -273,6 +325,18 @@ export default function MiNegocioPage() {
 
         {isOpen && (
           <div className="bg-white rounded-t-3xl border-t border-neutral-200 px-4 pt-4 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[85vh] overflow-y-auto space-y-6">
+            
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-neutral-900">
+                {editingItem ? "Editar item" : "Nuevo item"}
+              </h2>
+              <button 
+                onClick={resetForm}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
             {/* TOGGLE PRODUCTO / SERVICIO */}
             <div className="flex bg-neutral-100 rounded-full p-1">
@@ -667,8 +731,6 @@ export default function MiNegocioPage() {
                     setItems((prev) =>
                       prev.filter((item) => item.id !== deleteId)
                     );
-
-                    setOpenMenuId(null);
 
                     setToast({
                       message: "Producto archivado",
