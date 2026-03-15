@@ -55,7 +55,8 @@ export default function SaleEditModal({
   onSave: (updated: Sale) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
-  const [customerWhatsapp, setCustomerWhatsapp] = useState("");
+  const [countryCode, setCountryCode] = useState("57");
+  const [phoneNumber, setPhoneNumber] = useState(""); 
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
   const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
@@ -93,7 +94,15 @@ export default function SaleEditModal({
     if (!open || !sale) return;
 
     setCustomerName(sale.customerName);
-    setCustomerWhatsapp(sale.customerWhatsapp ?? "");
+    const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
+
+    if (rawPhone.length > 10) {
+      setCountryCode(rawPhone.slice(0, rawPhone.length - 10));
+      setPhoneNumber(rawPhone.slice(-10));
+    } else {
+      setCountryCode("57");
+      setPhoneNumber(rawPhone);
+    }
     setType(sale.type);
     setStatus(sale.status);
     setPaymentMethod(sale.paymentMethod ?? "CASH");
@@ -223,8 +232,10 @@ export default function SaleEditModal({
     const updated: Sale = {
       ...sale,
       customerName: cleanedName,
-      customerWhatsapp: customerWhatsapp.trim() || undefined,
-      paymentMethod,
+      customerWhatsapp:
+        phoneNumber.trim().length > 0
+          ? `${countryCode}${phoneNumber}`
+          : undefined,
       type,
       status,
       items: cleanedItems,
@@ -250,30 +261,63 @@ export default function SaleEditModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/20">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 rounded-xl border border-neutral-100 bg-white">
+          <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-white">
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Cliente</span>
+              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                Cliente
+              </span>
+
               <input
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
-            <div className="flex flex-col gap-0.5 text-right">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">WhatsApp</span>
-              <input
-                value={customerWhatsapp}
-                onChange={(e) => setCustomerWhatsapp(e.target.value)}
-                className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-emerald-600 outline-none focus:ring-1 focus:ring-emerald-500"
-              />
-            </div>
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Tipo</span>
-              <span className="text-[12px] font-semibold text-neutral-600">{type === "PRODUCTO" ? "Directa" : "Servicio"}</span>
+              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                WhatsApp
+              </span>
+
+              <div className="flex gap-2">
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-neutral-700 outline-none"
+                >
+                  <option value="57">🇨🇴 +57</option>
+                  <option value="54">🇦🇷 +54</option>
+                  <option value="52">🇲🇽 +52</option>
+                  <option value="34">🇪🇸 +34</option>
+                  <option value="56">🇨🇱 +56</option>
+                  <option value="51">🇵🇪 +51</option>
+                </select>
+
+                <input
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Número"
+                  className="flex-1 rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-emerald-600 outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-0.5 text-right">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Estado</span>
-              <span className="text-[12px] font-semibold text-neutral-600">{status}</span>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                  Tipo
+                </span>
+                <span className="text-[12px] font-semibold text-neutral-600">
+                  {type === "PRODUCTO" ? "Directa" : "Servicio"}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-0.5 text-right">
+                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                  Estado
+                </span>
+                <span className="text-[12px] font-semibold text-neutral-600">
+                  {status}
+                </span>
+              </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Medio de pago</span>
@@ -465,7 +509,9 @@ export default function SaleEditModal({
           availableDates={availableDates}
           selectedDateValue={scheduledDate || null}
           initialFullName={customerName}
-          initialWhatsapp={customerWhatsapp}
+          initialWhatsapp={
+            phoneNumber ? `${countryCode}${phoneNumber}` : ""
+          }
           onMonthChange={loadReservationDates}
           onDateChange={(date) => {
             const key = formatLocalDateKey(date);
