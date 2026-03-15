@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
+import { formatLocalDateKey } from "@/src/lib/datetime";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -35,13 +36,13 @@ export default function PublicStorePage() {
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
 
   const [category, setCategory] = useState<string>("");
-
-  /* ================= FETCH ITEMS ================= */
 
   useEffect(() => {
     if (!slug) {
@@ -80,91 +81,108 @@ export default function PublicStorePage() {
     fetchItems();
   }, [slug, category, notify]);
 
-/* ================= FETCH DISPONIBILIDAD ================= */
-
-const handleDateChange = async (date: Date) => {
-  if (!selectedService || !slug) return;
-
-  const formatted = date.toISOString().split("T")[0];
-
-  try {
-    const res = await fetch(
-      `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
-    );
-
-    if (!res.ok) throw new Error("Error fetching availability");
-
-    const data = await res.json();
-    setAvailableSlots(Array.isArray(data) ? data : []);
-  } catch (error) {
-    console.error("Availability error:", error);
-    setAvailableSlots([]);
-  }
-};
-
-/* ================= RESERVAR ================= */
-
-const handleReserve = async (data: any) => {
-
-  if (preview) {
-    notify({
-      type: "info",
-      message: "Modo administrador: las reservas están deshabilitadas",
-    });
-    return;
-  }
-
-  if (!selectedService) return;
-
-  const service = selectedService;
-
-  const [h, m] = data.time.split(":").map(Number);
-
-  const startMinute = h * 60 + m;
-  const endMinute = startMinute + (service.durationMinutes ?? 60);
-
-  try {
-    const res = await fetch(`${API_URL}/public/${slug}/reserve`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        itemId: service.id,
-        customerName: data.fullName,
-        customerWhatsapp: data.whatsapp,
-        date: data.date,
-        startMinute,
-        endMinute,
-      }),
-    });
-
-    if (!res.ok) throw new Error("Error creating reservation");
-
-    notify({
-      type: "success",
-      message: "Reserva creada correctamente",
-    });
-
+  const resetReservationUi = () => {
     setSelectedService(null);
     setAvailableSlots([]);
-  } catch (error) {
-    console.error("Reservation error:", error);
-    notify({
-      type: "error",
-      message: "No se pudo crear la reserva",
-    });
-  }
-};
+    setAvailableDates([]);
+    setSelectedDateKey(null);
+  };
 
-  /* ================= CARRITO ================= */
+  const handleDateChange = async (date: Date) => {
+    if (!selectedService || !slug) return;
 
-  const addToCart = (id: string) => {
+    const formatted = formatLocalDateKey(date);
+    setSelectedDateKey(formatted);
 
+    try {
+      const res = await fetch(
+        `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
+      );
+
+      if (!res.ok) throw new Error("Error fetching availability");
+
+      const data = await res.json();
+      setAvailableSlots(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Availability error:", error);
+      setAvailableSlots([]);
+    }
+  };
+
+  const handleMonthChange = async (date: Date) => {
+    if (!selectedService || !slug) return;
+
+    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+    try {
+      const res = await fetch(
+        `${API_URL}/public/${slug}/availability-calendar?itemId=${selectedService.id}&month=${month}`
+      );
+
+      if (!res.ok) throw new Error("Error fetching availability calendar");
+
+      const data = await res.json();
+      setAvailableDates(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Availability calendar error:", error);
+      setAvailableDates([]);
+    }
+  };
+
+  const handleReserve = async (data: any) => {
     if (preview) {
       notify({
         type: "info",
-        message: "Modo administrador: las compras están deshabilitadas",
+        message: "Modo administrador: las reservas estan deshabilitadas",
+      });
+      return;
+    }
+
+    if (!selectedService || !data.time || !data.date) return;
+
+    const service = selectedService;
+    const [h, m] = data.time.split(":").map(Number);
+    const startMinute = h * 60 + m;
+    const endMinute = startMinute + (service.durationMinutes ?? 60);
+
+    try {
+      const res = await fetch(`${API_URL}/public/${slug}/reserve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          itemId: service.id,
+          customerName: data.fullName,
+          customerWhatsapp: data.whatsapp,
+          date: formatLocalDateKey(data.date),
+          startMinute,
+          endMinute,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Error creating reservation");
+
+      notify({
+        type: "success",
+        message: "Reserva creada correctamente",
+      });
+
+      resetReservationUi();
+    } catch (error) {
+      console.error("Reservation error:", error);
+      notify({
+        type: "error",
+        message: "No se pudo crear la reserva",
+      });
+    }
+  };
+
+  const addToCart = (id: string) => {
+    if (preview) {
+      notify({
+        type: "info",
+        message: "Modo administrador: las compras estan deshabilitadas",
       });
       return;
     }
@@ -218,8 +236,6 @@ const handleReserve = async (data: any) => {
     [cart]
   );
 
-  /* ================= FILTRO ================= */
-
   const filtered = useMemo(
     () =>
       items.filter((i) =>
@@ -228,10 +244,7 @@ const handleReserve = async (data: any) => {
     [items, query]
   );
 
-  /* ================= CONFIRMAR COMPRA ================= */
-
   const handleConfirmOrder = async () => {
-
     if (preview) {
       notify({
         type: "info",
@@ -270,19 +283,14 @@ const handleReserve = async (data: any) => {
     }
   };
 
-  /* ================= RENDER ================= */
-
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
-
       {preview && (
         <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
-          Modo administrador — vista previa de la tienda
+          Modo administrador - vista previa de la tienda
         </div>
       )}
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
-
-        {/* Buscador */}
         <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
           <Search className="h-5 w-5 text-black/40" />
           <input
@@ -293,7 +301,6 @@ const handleReserve = async (data: any) => {
           />
         </div>
 
-        {/* Filtros */}
         <div className="mt-4 flex gap-3">
           {["", "PRODUCT", "SERVICE"].map((type) => (
             <button
@@ -313,28 +320,26 @@ const handleReserve = async (data: any) => {
           ))}
         </div>
 
-        {/* Grid */}
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
           <div className="mt-5 grid grid-cols-2 gap-4">
-              {filtered.map((item) => (
-                <ProductCard
-                  key={item.id}
-                  item={item}
-                  preview={preview}
-                  onAction={() =>
-                    item.type === "SERVICE"
-                      ? setSelectedService(item)
-                      : addToCart(item.id)
-                  }
-                />
-              ))}
-            </div>
+            {filtered.map((item) => (
+              <ProductCard
+                key={item.id}
+                item={item}
+                preview={preview}
+                onAction={() =>
+                  item.type === "SERVICE"
+                    ? setSelectedService(item)
+                    : addToCart(item.id)
+                }
+              />
+            ))}
+          </div>
         )}
       </main>
 
-      {/* FAB carrito */}
       {cartCount > 0 && (
         <button
           onClick={() => setShowCartModal(true)}
@@ -347,7 +352,6 @@ const handleReserve = async (data: any) => {
         </button>
       )}
 
-      {/* MODAL CARRITO */}
       {showCartModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
@@ -356,7 +360,6 @@ const handleReserve = async (data: any) => {
           />
 
           <div className="relative w-full max-w-md bg-white rounded-3xl p-6 shadow-xl z-10">
-
             <h2 className="text-lg font-semibold mb-4">
               Finalizar compra
             </h2>
@@ -442,21 +445,21 @@ const handleReserve = async (data: any) => {
         </div>
       )}
 
-      {/* Drawer reservas */}
       <ReservationDrawer
         open={!!selectedService}
-        onClose={() => setSelectedService(null)}
+        onClose={resetReservationUi}
         title={selectedService?.name}
-        subtitle="Selecciona día y horario disponible"
+        subtitle="Selecciona dia y horario disponible"
         timeSlots={availableSlots}
+        availableDates={availableDates}
+        selectedDateValue={selectedDateKey}
         onDateChange={handleDateChange}
+        onMonthChange={handleMonthChange}
         onConfirm={handleReserve}
       />
     </div>
   );
 }
-
-/* ================= CARD ================= */
 
 function ProductCard({
   item,
@@ -498,7 +501,7 @@ function ProductCard({
         >
           {item.type === "SERVICE"
             ? "Reservar"
-            : "Añadir al carrito"}
+            : "Anadir al carrito"}
         </button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, ValidateNested, IsInt, Min } from 'class-validator';
+import { IsString, IsOptional, IsArray, ValidateNested, IsInt, Min, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class UpdateOrderItemInput {
@@ -22,6 +22,10 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
 
   @IsOptional()
   @IsArray()

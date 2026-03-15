@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Check, Plus, Trash2, Calendar, Clock, ChevronDown, Send } from "lucide-react";
+import { X, Plus, Trash2, ChevronDown, Send } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
-
-/**
- * VERSION: Simple / Accounting-aligned
- * (The previous "Premium WhatsApp" version is preserved in component history)
- */
+import { listReservationAvailability } from "@/src/services/sales";
+import { formatLocalDateKey, formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
+import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 
 type EditableItem = {
   itemId?: string;
   qty: number;
   name: string;
   price: number;
-  durationMin?: number;
+  durationMin?: number | null;
 };
 
 type BusinessItem = {
@@ -62,13 +60,15 @@ export default function SaleEditModal({
   const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
-  
-  // Pivot UI States
   const [expanded, setExpanded] = useState(false);
   const [newItem, setNewItem] = useState<{itemId: string, qty: number}>({itemId: "", qty: 1});
-
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingAvailability, setLoadingAvailability] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
 
   const fetchItems = async () => {
     try {
@@ -97,26 +97,24 @@ export default function SaleEditModal({
     setStatus(sale.status);
     setExpanded(false);
     setNewItem({itemId: "", qty: 1});
+    setAvailabilityError(null);
+    setAvailableDates([]);
+    setAvailableSlots([]);
 
     setItems(
       sale.items.map((it) => ({
         itemId: it.itemId || (it as any).id,
         qty: sale.type === "SERVICIO" ? 1 : it.qty,
         name: it.name,
-        price: it.price / it.qty,
+        price: it.price / (it.qty || 1),
         durationMin: it.durationMin,
       }))
     );
 
-    if (sale.type === "SERVICIO" && sale.scheduledAt) {
-      const d = new Date(sale.scheduledAt);
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mi = String(d.getMinutes()).padStart(2, "0");
-      setScheduledDate(`${yyyy}-${mm}-${dd}`);
-      setScheduledTime(`${hh}:${mi}`);
+    const parts = parseLocalDateTimeParts(sale.scheduledAt);
+    if (sale.type === "SERVICIO" && parts) {
+      setScheduledDate(parts.date);
+      setScheduledTime(parts.time);
     } else {
       setScheduledDate("");
       setScheduledTime("");
@@ -124,8 +122,49 @@ export default function SaleEditModal({
   }, [open, sale]);
 
   const total = useMemo(() => {
-     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
+    return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
   }, [items]);
+  const isReservation = sale?.sourceType === "RESERVATION";
+
+  const loadReservationDates = async (monthDate: Date) => {
+    if (!isReservation) return;
+
+    try {
+      setLoadingAvailability(true);
+      setAvailabilityError(null);
+      const month = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
+      const data = await listReservationAvailability(sale.id, { month });
+      setAvailableDates(data);
+    } catch (error: any) {
+      console.error(error);
+      setAvailabilityError("No se pudo cargar la disponibilidad");
+      setAvailableDates([]);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  const loadReservationSlots = async (dateKey: string) => {
+    if (!isReservation) return;
+
+    try {
+      setLoadingAvailability(true);
+      setAvailabilityError(null);
+      const data = await listReservationAvailability(sale.id, { date: dateKey });
+      setAvailableSlots(data);
+    } catch (error: any) {
+      console.error(error);
+      setAvailabilityError("No se pudo cargar los horarios disponibles");
+      setAvailableSlots([]);
+    } finally {
+      setLoadingAvailability(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!reservationPickerOpen || !isReservation || !scheduledDate) return;
+    loadReservationSlots(scheduledDate);
+  }, [isReservation, reservationPickerOpen, scheduledDate]);
 
   if (!open || !sale) return null;
 
@@ -164,8 +203,7 @@ export default function SaleEditModal({
     let scheduledAt: string | undefined = undefined;
     if (type === "SERVICIO") {
       if (!scheduledDate || !scheduledTime) return;
-      const dt = new Date(`${scheduledDate}T${scheduledTime}:00`);
-      scheduledAt = dt.toISOString();
+      scheduledAt = formatLocalDateTimeValue(scheduledDate, scheduledTime);
     }
 
     const cleanedItems = items
@@ -174,10 +212,7 @@ export default function SaleEditModal({
         qty: normalizeQty(type, it.qty),
         name: it.name.trim(),
         price: (Number(it.price) || 0) * normalizeQty(type, it.qty),
-        durationMin:
-          type === "SERVICIO"
-            ? Math.max(5, Math.floor(Number(it.durationMin) || 0)) || undefined
-            : undefined,
+        durationMin: it.durationMin,
       }))
       .filter((it) => it.name.length > 0);
 
@@ -200,8 +235,6 @@ export default function SaleEditModal({
   return (
     <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
-
-        {/* HEADER SIMPLE */}
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
              <h2 className="font-bold text-neutral-900 text-lg">Editar Pedido</h2>
@@ -213,18 +246,23 @@ export default function SaleEditModal({
           </button>
         </div>
 
-        {/* CONTENT */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/20">
-          
-          {/* READ-ONLY INFO (SUBTLE) */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 rounded-xl border border-neutral-100 bg-white">
             <div className="flex flex-col gap-0.5">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Cliente</span>
-              <span className="text-[13px] font-semibold text-neutral-800">{customerName}</span>
+              <input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500"
+              />
             </div>
             <div className="flex flex-col gap-0.5 text-right">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">WhatsApp</span>
-              <span className="text-[13px] font-bold text-emerald-600 truncate">{customerWhatsapp || "-"}</span>
+              <input
+                value={customerWhatsapp}
+                onChange={(e) => setCustomerWhatsapp(e.target.value)}
+                className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-emerald-600 outline-none focus:ring-1 focus:ring-emerald-500"
+              />
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Tipo</span>
@@ -236,40 +274,36 @@ export default function SaleEditModal({
             </div>
           </div>
 
-          {/* TURNOS (IF SERVICE) */}
           {type === "SERVICIO" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Fecha</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={14} />
-                  <input
-                    type="date"
-                    value={scheduledDate}
-                    onChange={(e) => setScheduledDate(e.target.value)}
-                    className="w-full bg-white border border-neutral-200 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500 transition"
-                  />
+            <div className="rounded-xl border border-neutral-100 bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Turno</div>
+                  <div className="text-sm font-semibold text-neutral-800">
+                    {scheduledDate && scheduledTime ? `${scheduledDate} ${scheduledTime}` : "Sin turno"}
+                  </div>
                 </div>
+                {isReservation && (
+                  <button
+                    onClick={() => setReservationPickerOpen(true)}
+                    className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white"
+                  >
+                    Reprogramar
+                  </button>
+                )}
               </div>
-              <div className="flex flex-col gap-1.5 flex-1">
-                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Hora</label>
-                <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={14} />
-                  <input
-                    type="time"
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    className="w-full bg-white border border-neutral-200 rounded-xl pl-9 pr-3 py-2.5 text-sm font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500 transition"
-                  />
-                </div>
-              </div>
+              {loadingAvailability && (
+                <div className="text-xs text-neutral-400">Cargando disponibilidad...</div>
+              )}
+              {availabilityError && (
+                <div className="text-xs text-red-500">{availabilityError}</div>
+              )}
             </div>
           )}
 
-          {/* ITEM LIST (CLEAN) */}
           <div className="space-y-3">
             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items cargados</span>
-            
+
             <div className="space-y-2">
               {items.map((it, idx) => (
                 <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
@@ -277,11 +311,11 @@ export default function SaleEditModal({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
-                       {it.qty} unidades • ${formatMoney(it.price * it.qty)}
+                       {it.qty} unidades - ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
-                  
-                  {type === "PRODUCTO" && (
+
+                  {type === "PRODUCTO" && !isReservation && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
                       <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">-</button>
                       <span className="text-xs font-black text-neutral-700 w-3 text-center">{it.qty}</span>
@@ -289,12 +323,14 @@ export default function SaleEditModal({
                     </div>
                   )}
 
-                  <button 
-                    onClick={() => removeItem(idx)}
-                    className="p-2 text-neutral-300 hover:text-rose-500 transition"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {!isReservation && (
+                    <button
+                      onClick={() => removeItem(idx)}
+                      className="p-2 text-neutral-300 hover:text-rose-500 transition"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
               ))}
 
@@ -305,22 +341,19 @@ export default function SaleEditModal({
               )}
             </div>
           </div>
-          
+
           <div className="h-16" />
         </div>
 
-        {/* ACCOUNTING-STYLE COMPOSER */}
         <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2">
            <div className="relative">
-              
-              {/* EXPANDABLE FORM (ACCOUNTING PATTERN) */}
-              {expanded && (
+              {expanded && !isReservation && (
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Producto / Servicio</span>
                         <div className="relative">
-                           <select 
+                           <select
                             value={newItem.itemId}
                             onChange={(e) => setNewItem(prev => ({ ...prev, itemId: e.target.value }))}
                             className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none appearance-none cursor-pointer focus:border-emerald-500 transition"
@@ -339,7 +372,7 @@ export default function SaleEditModal({
                       {type === "PRODUCTO" && (
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
-                          <input 
+                          <input
                             type="number"
                             min="1"
                             value={newItem.qty}
@@ -349,36 +382,33 @@ export default function SaleEditModal({
                         </div>
                       )}
 
-                      <button 
+                      <button
                         onClick={handleAddItem}
                         disabled={!newItem.itemId}
                         className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
                       >
-                        Añadir a la lista
+                        Anadir a la lista
                       </button>
                    </div>
                 </div>
               )}
 
-              {/* COMPOSER PILL */}
               <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
                  <div className="flex items-end gap-2">
-                    
-                    {/* EXPAND BUTTON */}
-                    <button
-                      onClick={() => setExpanded(!expanded)}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-                    >
-                      {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
-                    </button>
+                    {!isReservation && (
+                      <button
+                        onClick={() => setExpanded(!expanded)}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
+                      >
+                        {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                      </button>
+                    )}
 
-                    {/* STATUS PILL */}
                     <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
                        <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
                        <span className="text-lg font-black text-neutral-900">${formatMoney(total)}</span>
                     </div>
 
-                    {/* SUBMIT BUTTON */}
                     <button
                       onClick={handleSave}
                       className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
@@ -388,13 +418,39 @@ export default function SaleEditModal({
                  </div>
               </div>
            </div>
-           
+
            <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
              Pulsa el icono de enviar para guardar cambios
            </div>
         </div>
-
       </div>
+
+      {isReservation && (
+        <ReservationDrawer
+          open={reservationPickerOpen}
+          onClose={() => setReservationPickerOpen(false)}
+          title={sale.items[0]?.name ?? "Reserva"}
+          subtitle="Selecciona una nueva fecha y horario disponibles"
+          timeSlots={availableSlots}
+          availableDates={availableDates}
+          selectedDateValue={scheduledDate || null}
+          initialFullName={customerName}
+          initialWhatsapp={customerWhatsapp}
+          onMonthChange={loadReservationDates}
+          onDateChange={(date) => {
+            const key = formatLocalDateKey(date);
+            setScheduledDate(key);
+            loadReservationSlots(key);
+          }}
+          onConfirm={(data) => {
+            if (!data.date || !data.time) return;
+            const dateKey = formatLocalDateKey(data.date);
+            setScheduledDate(dateKey);
+            setScheduledTime(data.time);
+            setReservationPickerOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -9,6 +9,18 @@ import { CreateItemDto } from "./dto/create-item.dto";
 export class ItemsService {
   constructor(private prisma: PrismaService) {}
 
+  private mapItemWithSchedule<T extends { scheduleWindows?: any[] }>(item: T) {
+    const { scheduleWindows, ...rest } = item as T & { scheduleWindows?: any[] };
+    return {
+      ...rest,
+      schedule: (scheduleWindows ?? []).map((window) => ({
+        weekday: window.weekday,
+        startMinute: window.startMinute,
+        endMinute: window.endMinute,
+      })),
+    };
+  }
+
   async create(businessId: string, dto: CreateItemDto) {
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.item.create({
@@ -35,14 +47,26 @@ export class ItemsService {
         });
       }
 
-      return item;
+      const created = await tx.item.findUniqueOrThrow({
+        where: { id: item.id },
+        include: {
+          images: {
+            orderBy: { order: "asc" },
+          },
+          scheduleWindows: {
+            orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
+          },
+        },
+      });
+
+      return this.mapItemWithSchedule(created);
     });
   }
 
   async findAll(businessId: string, status?: string) {
     const itemStatus = status === 'INACTIVE' ? ItemStatus.INACTIVE : ItemStatus.ACTIVE;
     
-    return this.prisma.item.findMany({
+    const items = await this.prisma.item.findMany({
       where: {
         businessId,
         status: itemStatus,
@@ -52,17 +76,27 @@ export class ItemsService {
         images: {
           orderBy: { order: "asc" },
         },
+        scheduleWindows: {
+          orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
+        },
       },
     });
+
+    return items.map((item) => this.mapItemWithSchedule(item));
   }
 
   async findOne(businessId: string, id: string) {
   const item = await this.prisma.item.findFirst({
     where: { id, businessId },
-    include: { images: { orderBy: { order: "asc" } } },
+    include: {
+      images: { orderBy: { order: "asc" } },
+      scheduleWindows: {
+        orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
+      },
+    },
   });
   if (!item) throw new NotFoundException("Item not found");
-  return item;
+  return this.mapItemWithSchedule(item);
 }
 async update(businessId: string, id: string, dto: UpdateItemDto) {
   const existing = await this.prisma.item.findFirst({ where: { id, businessId } });
@@ -80,17 +114,49 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
     throw new BadRequestException("durationMinutes is required for SERVICE");
   }
 
-  return this.prisma.item.update({
-    where: { id }, // seguro porque validamos antes con businessId
-    data: {
-      type: dto.type,
-      name: dto.name,
-      price: dto.price,
-      description: dto.description === undefined ? undefined : (dto.description ?? null),
-      durationMinutes:
-        dto.durationMinutes === undefined && dto.type === undefined ? undefined : nextDuration,
-    },
-    include: { images: { orderBy: { order: "asc" } } },
+  return this.prisma.$transaction(async (tx) => {
+    await tx.item.update({
+      where: { id },
+      data: {
+        type: dto.type,
+        name: dto.name,
+        price: dto.price,
+        description: dto.description === undefined ? undefined : (dto.description ?? null),
+        durationMinutes:
+          dto.durationMinutes === undefined && dto.type === undefined ? undefined : nextDuration,
+      },
+    });
+
+    const shouldReplaceSchedule = dto.schedule !== undefined || nextType !== "SERVICE";
+    if (shouldReplaceSchedule) {
+      await tx.serviceScheduleWindow.deleteMany({
+        where: { businessId, itemId: id },
+      });
+
+      if (nextType === "SERVICE" && dto.schedule && dto.schedule.length > 0) {
+        await tx.serviceScheduleWindow.createMany({
+          data: dto.schedule.map((window) => ({
+            businessId,
+            itemId: id,
+            weekday: window.weekday,
+            startMinute: window.startMinute,
+            endMinute: window.endMinute,
+          })),
+        });
+      }
+    }
+
+    const updated = await tx.item.findUniqueOrThrow({
+      where: { id },
+      include: {
+        images: { orderBy: { order: "asc" } },
+        scheduleWindows: {
+          orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
+        },
+      },
+    });
+
+    return this.mapItemWithSchedule(updated);
   });
 }
 async setStatus(businessId: string, id: string, status: ItemStatus) {

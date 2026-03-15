@@ -177,6 +177,13 @@ export default function SaleDetailsModal({
               </div>
             </div>
 
+            {sale.type === "SERVICIO" && sale.scheduledAt && (
+              <div className="pt-3 border-t border-neutral-50">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Horario reservado</span>
+                <span className="text-sm font-semibold text-neutral-700">{formatDateTime(sale.scheduledAt)}</span>
+              </div>
+            )}
+
             {sale.origin && (
               <div className="pt-3 border-t border-neutral-50">
                 <p className="text-[11px] text-neutral-500 font-medium italic">

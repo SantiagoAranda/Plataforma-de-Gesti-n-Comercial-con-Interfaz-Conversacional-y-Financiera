@@ -30,6 +30,15 @@ export class PublicController {
     return this.publicService.getAvailability(slug, itemId, date);
   }
 
+  @Get(':slug/availability-calendar')
+  getAvailabilityCalendar(
+    @Param('slug') slug: string,
+    @Query('itemId') itemId: string,
+    @Query('month') month: string,
+  ) {
+    return this.publicService.getAvailabilityCalendar(slug, itemId, month);
+  }
+
   @Post(':slug/reserve')
   createReservation(
     @Param('slug') slug: string,

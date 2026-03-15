@@ -1,6 +1,18 @@
-import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from "class-validator";
+import {
+    IsArray,
+    IsEnum,
+    IsInt,
+    IsNotEmpty,
+    IsNumber,
+    IsOptional,
+    IsString,
+    Min,
+    ValidateNested,
+} from "class-validator";
 import { Transform } from "class-transformer";
+import { Type } from "class-transformer";
 import { ItemType } from '@prisma/client';
+import { ScheduleInput } from "./create-item.dto";
 
 export class UpdateItemDto {
     @IsOptional()
@@ -29,5 +41,10 @@ export class UpdateItemDto {
         value === null || value === undefined || value === "" ? undefined : Number(value)
     )
     durationMinutes?: number;
-    
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => ScheduleInput)
+    schedule?: ScheduleInput[];
 }

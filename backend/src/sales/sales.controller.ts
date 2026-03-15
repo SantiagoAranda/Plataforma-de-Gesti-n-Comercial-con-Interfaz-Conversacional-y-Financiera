@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Delete,
+  Query,
 } from '@nestjs/common';
 
 import { SalesService } from './sales.service';
@@ -17,6 +18,7 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AddOrderItemDto } from "./dto/add-order-item.dto";
 import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
+
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('sales')
 export class SalesController {
@@ -36,50 +38,73 @@ export class SalesController {
 
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
-  confirm(@Req() req: any, @Param('id') id: string) {
-    return this.salesService.confirmOrder(req.user.businessId, id);
+  confirm(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('sourceType') sourceType?: any,
+  ) {
+    return this.salesService.confirmOrder(req.user.businessId, id, sourceType);
   }
+
+  @Get(':id/reservation-availability')
+  getReservationAvailability(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('month') month?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.salesService.getReservationAvailability(
+      req.user.businessId,
+      id,
+      { month, date },
+    );
+  }
+
   @Get(":id")
-getOne(@Req() req: any, @Param("id") id: string) {
-  return this.salesService.getOne(req.user.businessId, id);
-}
+  getOne(@Req() req: any, @Param("id") id: string) {
+    return this.salesService.getOne(req.user.businessId, id);
+  }
 
-@Patch(":id/cancel")
-cancel(@Req() req: any, @Param("id") id: string) {
-  return this.salesService.cancel(req.user.businessId, id);
-}
+  @Patch(":id/cancel")
+  cancel(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Query('sourceType') sourceType?: any,
+  ) {
+    return this.salesService.cancel(req.user.businessId, id, sourceType);
+  }
 
-@Post(":id/items")
-addItem(@Req() req: any, @Param("id") id: string, @Body() dto: AddOrderItemDto) {
-  return this.salesService.addItem(req.user.businessId, id, dto);
-}
+  @Post(":id/items")
+  addItem(@Req() req: any, @Param("id") id: string, @Body() dto: AddOrderItemDto) {
+    return this.salesService.addItem(req.user.businessId, id, dto);
+  }
 
-@Patch(":id/items/:orderItemId")
-updateItem(
-  @Req() req: any,
-  @Param("id") id: string,
-  @Param("orderItemId") orderItemId: string,
-  @Body() dto: UpdateOrderItemDto
-) {
-  return this.salesService.updateItem(req.user.businessId, id, orderItemId, dto);
-}
+  @Patch(":id/items/:orderItemId")
+  updateItem(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Param("orderItemId") orderItemId: string,
+    @Body() dto: UpdateOrderItemDto
+  ) {
+    return this.salesService.updateItem(req.user.businessId, id, orderItemId, dto);
+  }
 
-@Delete(":id/items/:orderItemId")
-removeItem(
-  @Req() req: any,
-  @Param("id") id: string,
-  @Param("orderItemId") orderItemId: string
-) {
-  return this.salesService.removeItem(req.user.businessId, id, orderItemId);
-}
+  @Delete(":id/items/:orderItemId")
+  removeItem(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Param("orderItemId") orderItemId: string
+  ) {
+    return this.salesService.removeItem(req.user.businessId, id, orderItemId);
+  }
 
-@Patch(":id")
-update(
-  @Req() req: any,
-  @Param("id") id: string,
-  @Body() dto: UpdateOrderDto
-) {
-  return this.salesService.update(req.user.businessId, id, dto);
-}
-  
+  @Patch(":id")
+  update(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Body() dto: UpdateOrderDto,
+    @Query('sourceType') sourceType?: any,
+  ) {
+    return this.salesService.update(req.user.businessId, id, dto, sourceType);
+  }
 }

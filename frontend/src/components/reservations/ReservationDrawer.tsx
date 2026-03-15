@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { formatLocalDateKey } from "@/src/lib/datetime";
 
 type ReservationData = {
   date: Date | null;
@@ -15,15 +16,20 @@ type ReservationDrawerProps = {
   title?: string;
   subtitle?: string;
   timeSlots?: string[];
+  availableDates?: string[];
+  selectedDateValue?: string | null;
+  initialFullName?: string;
+  initialWhatsapp?: string;
   onDateChange?: (date: Date) => void;
+  onMonthChange?: (month: Date) => void;
   onConfirm?: (data: ReservationData) => void;
 };
 
 const WEEKDAYS = ["D", "L", "M", "M", "J", "V", "S"] as const;
 
 const MONTHS_ES = [
-  "Enero","Febrero","Marzo","Abril","Mayo","Junio",
-  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre",
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ] as const;
 
 function startOfMonth(d: Date) {
@@ -90,40 +96,49 @@ export default function ReservationDrawer({
   open,
   onClose,
   title = "Reservar Servicio",
-  subtitle = "Selecciona día y horario disponible",
+  subtitle = "Selecciona dia y horario disponible",
   timeSlots = [],
+  availableDates = [],
+  selectedDateValue,
+  initialFullName = "",
+  initialWhatsapp = "",
   onDateChange,
+  onMonthChange,
   onConfirm,
 }: ReservationDrawerProps) {
-
   const today = useMemo(() => new Date(), []);
 
-  const [viewMonth, setViewMonth] = useState(() =>
-    startOfMonth(today)
-  );
-
+  const [viewMonth, setViewMonth] = useState(() => startOfMonth(today));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
 
-  // Reset al abrir
   useEffect(() => {
     if (!open) return;
 
-    setViewMonth(startOfMonth(today));
-    setSelectedDate(null);
-    setSelectedTime(null);
-    setFullName("");
-    setWhatsapp("");
-  }, [open, today]);
+    const initialDate = selectedDateValue
+      ? new Date(`${selectedDateValue}T00:00:00`)
+      : null;
 
-  // Si cambian horarios → reset hora
+    setViewMonth(startOfMonth(initialDate ?? today));
+    setSelectedDate(initialDate);
+    setSelectedTime(null);
+    setFullName(initialFullName);
+    setWhatsapp(initialWhatsapp);
+  }, [initialFullName, initialWhatsapp, open, selectedDateValue, today]);
+
+  useEffect(() => {
+    if (!open) return;
+    onMonthChange?.(viewMonth);
+  }, [open, onMonthChange, viewMonth]);
+
   useEffect(() => {
     setSelectedTime(null);
   }, [timeSlots]);
 
   const grid = useMemo(() => buildMonthGrid(viewMonth), [viewMonth]);
+  const availableDateSet = useMemo(() => new Set(availableDates), [availableDates]);
 
   const monthLabel = useMemo(() => {
     return `${MONTHS_ES[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`;
@@ -136,7 +151,8 @@ export default function ReservationDrawer({
     whatsapp.trim().length >= 8;
 
   function handlePickDate(d: Date, inMonth: boolean) {
-    if (!inMonth) return;
+    const key = formatLocalDateKey(d);
+    if (!inMonth || !availableDateSet.has(key)) return;
     setSelectedDate(d);
     onDateChange?.(d);
   }
@@ -163,15 +179,13 @@ export default function ReservationDrawer({
 
       <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-md">
         <div className="relative h-[92vh] rounded-t-3xl bg-[#F4F6F4] shadow-2xl flex flex-col">
-
-          {/* Header */}
           <div className="sticky top-0 z-10 rounded-t-3xl bg-white/70 backdrop-blur">
             <div className="flex items-center gap-3 px-5 py-4">
               <button
                 onClick={onClose}
                 className="grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm ring-1 ring-black/5"
               >
-                ‹
+                {"<"}
               </button>
               <div className="flex-1 text-center font-semibold">
                 {title}
@@ -180,9 +194,7 @@ export default function ReservationDrawer({
             </div>
           </div>
 
-          {/* Body */}
           <div className="flex-1 overflow-y-auto px-5 pt-4">
-
             <div className="mb-4">
               <div className="text-2xl font-semibold">
                 Selecciona una fecha
@@ -192,7 +204,6 @@ export default function ReservationDrawer({
               </div>
             </div>
 
-            {/* Calendar */}
             <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
               <div className="flex justify-between items-center">
                 <button
@@ -204,7 +215,7 @@ export default function ReservationDrawer({
                     )
                   }
                 >
-                  ‹
+                  {"<"}
                 </button>
 
                 <div className="font-semibold">{monthLabel}</div>
@@ -218,7 +229,7 @@ export default function ReservationDrawer({
                     )
                   }
                 >
-                  ›
+                  {">"}
                 </button>
               </div>
 
@@ -230,20 +241,21 @@ export default function ReservationDrawer({
 
               <div className="mt-3 grid grid-cols-7 gap-2">
                 {grid.map(({ date, inMonth }, i) => {
-                  const selected =
-                    selectedDate && sameDay(selectedDate, date);
+                  const selected = selectedDate && sameDay(selectedDate, date);
+                  const dateKey = formatLocalDateKey(date);
+                  const isAvailable = inMonth && availableDateSet.has(dateKey);
 
                   return (
                     <button
                       key={i}
-                      disabled={!inMonth}
+                      disabled={!isAvailable}
                       onClick={() => handlePickDate(date, inMonth)}
                       className={cn(
                         "h-10 rounded-full text-sm",
                         selected
                           ? "bg-emerald-500 text-white"
-                          : inMonth
-                          ? "hover:bg-black/5"
+                          : isAvailable
+                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                           : "text-black/20"
                       )}
                     >
@@ -254,7 +266,6 @@ export default function ReservationDrawer({
               </div>
             </div>
 
-            {/* Horarios */}
             <div className="mt-8">
               <div className="text-xl font-semibold">
                 Selecciona un horario
@@ -262,7 +273,7 @@ export default function ReservationDrawer({
 
               {selectedDate && timeSlots.length === 0 && (
                 <div className="mt-3 text-sm text-black/40">
-                  No hay horarios disponibles para este día.
+                  No hay horarios disponibles para este dia.
                 </div>
               )}
 
@@ -284,7 +295,6 @@ export default function ReservationDrawer({
               </div>
             </div>
 
-            {/* Datos */}
             <div className="mt-10 space-y-4">
               <input
                 placeholder="Nombre completo"
@@ -301,7 +311,6 @@ export default function ReservationDrawer({
             </div>
           </div>
 
-          {/* Footer */}
           <div className="bg-[#F4F6F4] px-5 pb-5 pt-3">
             <button
               disabled={!canConfirm}

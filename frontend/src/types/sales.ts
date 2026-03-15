@@ -5,6 +5,7 @@ export type SaleStatus =
   | "CANCELADO";
 
 export type SaleType = "PRODUCTO" | "SERVICIO";
+export type SourceType = "ORDER" | "RESERVATION";
 
 export interface SaleItem {
   itemId?: string;
@@ -15,11 +16,12 @@ export interface SaleItem {
   price: number;
 
   // solo para servicios
-  durationMin?: number;
+  durationMin?: number | null;
 }
 
 export interface Sale {
   id: string;
+  sourceType: SourceType; // ORIGEN EXPLÍCITO
 
   customerName: string;
   customerWhatsapp?: string;

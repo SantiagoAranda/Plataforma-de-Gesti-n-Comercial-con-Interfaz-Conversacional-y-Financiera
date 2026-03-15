@@ -17,7 +17,10 @@ import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dt
 
 const ORDER_ACCOUNTING_DEFAULTS = {
   debitCashPucSubcuentaId: '110505',
-  creditIncomePucSubcuentaId: '413595',
+  creditIncomePucSubcuentaIdByType: {
+    PRODUCT: '413595',
+    SERVICE: '417095',
+  },
 } as const;
 
 type OrderForPosting = Prisma.OrderGetPayload<{
@@ -111,12 +114,16 @@ export class AccountingService {
       throw new BadRequestException('Order must contain at least one item');
     }
 
+    const itemType =
+      order.items[0]?.itemTypeSnapshot ?? order.items[0]?.item?.type ?? 'PRODUCT';
     const [debitSubaccount, creditSubaccount] = await Promise.all([
       this.loadSubcuentaOrThrow(
         ORDER_ACCOUNTING_DEFAULTS.debitCashPucSubcuentaId,
       ),
       this.loadSubcuentaOrThrow(
-        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucSubcuentaId,
+        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucSubcuentaIdByType[
+          itemType === 'SERVICE' ? 'SERVICE' : 'PRODUCT'
+        ],
       ),
     ]);
 
@@ -125,11 +132,6 @@ export class AccountingService {
       throw new BadRequestException('Order total must be greater than zero');
     }
 
-    // MVP limitation: Order does not store subtotal, VAT or payment method.
-    // The automatic posting therefore books the gross total as a simple sale:
-    // debit a default cash-equivalent account and credit a default income account.
-    const itemType =
-      order.items[0]?.itemTypeSnapshot ?? order.items[0]?.item?.type ?? 'PRODUCT';
     const customerName = order.customerName?.trim();
     const detailSuffix = customerName ? ` - ${customerName}` : '';
     const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();

@@ -11,6 +11,7 @@ describe('Sales Flow (Integration)', () => {
   let prisma: PrismaService;
   let businessId: string;
   let itemId: string;
+  let serviceItemId: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -47,6 +48,18 @@ describe('Sales Flow (Integration)', () => {
     });
     itemId = item.id;
 
+    const serviceItem = await prisma.item.create({
+      data: {
+        businessId,
+        name: 'Test Service',
+        type: 'SERVICE',
+        price: 150.0,
+        durationMinutes: 60,
+        status: 'ACTIVE',
+      },
+    });
+    serviceItemId = serviceItem.id;
+
     // Ensure PUC subaccounts exist (legacy fallback accounts)
     await prisma.pucClase.upsert({ where: { code: '1' }, create: { code: '1', name: 'Activo' }, update: {} });
     await prisma.pucGrupo.upsert({ where: { code: '11' }, create: { code: '11', name: 'Disponible', claseCode: '1' }, update: {} });
@@ -57,11 +70,14 @@ describe('Sales Flow (Integration)', () => {
     await prisma.pucGrupo.upsert({ where: { code: '41' }, create: { code: '41', name: 'Operacionales', claseCode: '4' }, update: {} });
     await prisma.pucCuenta.upsert({ where: { code: '4135' }, create: { code: '4135', name: 'Comercio al por mayor y al por menor', grupoCode: '41' }, update: {} });
     await prisma.pucSubcuenta.upsert({ where: { code: '413595' }, create: { code: '413595', name: 'Venta de otros productos', cuentaCode: '4135', active: true }, update: {} });
+    await prisma.pucCuenta.upsert({ where: { code: '4170' }, create: { code: '4170', name: 'Otras actividades de servicios comunitarios, sociales y personales', grupoCode: '41' }, update: {} });
+    await prisma.pucSubcuenta.upsert({ where: { code: '417095' }, create: { code: '417095', name: 'Actividades conexas', cuentaCode: '4170', active: true }, update: {} });
   });
 
   afterAll(async () => {
     // Cleanup
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
+    await prisma.reservation.deleteMany({ where: { businessId } });
     await prisma.orderItem.deleteMany({ where: { businessId } });
     await prisma.order.deleteMany({ where: { businessId } });
     await prisma.item.deleteMany({ where: { businessId } });
@@ -174,6 +190,54 @@ describe('Sales Flow (Integration)', () => {
         
         const freshOrder = await prisma.order.findUnique({ where: { id: order.id } });
         expect(freshOrder?.accountingPostedAt).toBeNull();
+    });
+
+    it('should map pending reservations as PENDIENTE and post accounting only once on confirmation', async () => {
+      const reservation = await prisma.reservation.create({
+        data: {
+          businessId,
+          itemId: serviceItemId,
+          customerName: 'Reservation Customer',
+          customerWhatsapp: '555',
+          date: new Date('2026-03-20T00:00:00.000Z'),
+          startMinute: 9 * 60,
+          endMinute: 10 * 60,
+          status: 'PENDING',
+        },
+      });
+
+      const salesBeforeConfirm = await salesService.findAll(businessId);
+      const mappedReservation = salesBeforeConfirm.find((sale) => sale.id === reservation.id);
+
+      expect(mappedReservation?.sourceType).toBe('RESERVATION');
+      expect(mappedReservation?.status).toBe('PENDIENTE');
+      expect(mappedReservation?.scheduledAt).toBeDefined();
+
+      const firstResult = await salesService.confirmOrder(
+        businessId,
+        reservation.id,
+        'RESERVATION',
+      );
+      const secondResult = await salesService.confirmOrder(
+        businessId,
+        reservation.id,
+        'RESERVATION',
+      );
+
+      expect(firstResult.accountingCreated).toBe(true);
+      expect(secondResult.accountingCreated).toBe(false);
+      expect(secondResult.alreadyPosted).toBe(true);
+
+      const reservationAfterConfirm = await prisma.reservation.findUnique({
+        where: { id: reservation.id },
+      });
+      expect(reservationAfterConfirm?.status).toBe('CONFIRMED');
+
+      const movements = await prisma.accountingMovement.findMany({
+        where: { originId: reservation.id, originType: AccountingMovementOriginType.ORDER },
+      });
+      expect(movements).toHaveLength(2);
+      expect(movements.every((movement) => Number(movement.amount) === 150)).toBe(true);
     });
   });
 

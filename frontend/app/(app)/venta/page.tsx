@@ -18,32 +18,21 @@ import { confirmSale, listSales, cancelSale, updateSale, type ApiOrder } from "@
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 
 function mapOrderToSale(order: ApiOrder): Sale {
-  const type =
-    order.items.some((i) => i.item.type === "SERVICE")
-      ? "SERVICIO"
-      : "PRODUCTO";
-
-const statusMap: Record<ApiOrder["status"], Sale["status"]> = {
-  DRAFT: "PENDIENTE",
-  SENT: "PENDIENTE DE CIERRE",
-  CANCELLED: "CANCELADO",
-  COMPLETED: "CERRADO",
-};
-
   return {
     id: order.id,
+    sourceType: order.sourceType, // ORIGEN EXPLÍCITO
     customerName: order.customerName,
     customerWhatsapp: order.customerWhatsapp,
-    type,
-    status: statusMap[order.status],
+    type: order.type,
+    status: order.status as any, // Matches UnifiedStatus
     createdAt: order.createdAt,
-    origin: order.sentAt ? "ORDEN PUBLICA" : "VENTA INTERNA",
+    scheduledAt: order.scheduledAt,
     items: order.items.map((it) => ({
-      itemId: it.item.id, // Added itemId
-      qty: it.quantity,
-      name: it.itemNameSnapshot,
-      price: it.unitPrice * it.quantity,
-      durationMin: it.item.durationMinutes ?? undefined,
+      itemId: it.itemId,
+      qty: it.qty,
+      name: it.name,
+      price: it.price,
+      durationMin: it.durationMin,
     })),
   };
 }
@@ -141,6 +130,8 @@ const handleSendWhatsApp = (sale: Sale) => {
   const msg = formatSaleMessage({
     businessName,
     customerName: sale.customerName,
+    type: sale.type,
+    scheduledAt: sale.scheduledAt,
     items: sale.items,
   });
 
@@ -154,13 +145,11 @@ const handleSendWhatsApp = (sale: Sale) => {
       setConfirmingSaleId(sale.id);
       setError(null);
 
-      const result = await confirmSale(sale.id);
-      const updatedSale = mapOrderToSale(result.order);
-
-      setSales((prev) =>
-        prev.map((current) => (current.id === updatedSale.id ? updatedSale : current))
-      );
-      setDetailsSale(updatedSale);
+      const result = await confirmSale(sale.id, sale.sourceType);
+      
+      // The result might be slightly different for reservations, but loadOrders will refresh everything correctly
+      await loadOrders();
+      setDetailsSale(null); // Close modal 
     } catch (err) {
       console.error(err);
       setError("No se pudo finalizar la venta");
@@ -179,14 +168,11 @@ const handleSendWhatsApp = (sale: Sale) => {
           setConfirmingSaleId(sale.id);
           setError(null);
 
-          const result = await cancelSale(sale.id);
-          const updatedSale = mapOrderToSale(result);
-
-          setSales((prev) =>
-            prev.map((current) => (current.id === updatedSale.id ? updatedSale : current))
-          );
+          const result = await cancelSale(sale.id, sale.sourceType);
           
-          if (detailsSale?.id === sale.id) setDetailsSale(updatedSale);
+          await loadOrders();
+          
+          if (detailsSale?.id === sale.id) setDetailsSale(null);
           setSelectedSale(null);
         } catch (err) {
           console.error(err);
@@ -206,6 +192,7 @@ const handleSendWhatsApp = (sale: Sale) => {
       const dto = {
         customerName: updated.customerName,
         customerWhatsapp: updated.customerWhatsapp,
+        scheduledAt: updated.scheduledAt,
         items: updated.items
           .filter(it => it.itemId)
           .map(it => ({
@@ -214,7 +201,7 @@ const handleSendWhatsApp = (sale: Sale) => {
           }))
       };
 
-      await updateSale(updated.id, dto);
+      await updateSale(updated.id, dto, updated.sourceType);
       await loadOrders();
       setEditingSale(null);
       if (detailsSale?.id === updated.id) {

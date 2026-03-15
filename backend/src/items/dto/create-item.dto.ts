@@ -10,7 +10,7 @@ import {
 import { Type } from 'class-transformer';
 
 import { ItemType, Weekday } from '@prisma/client';
-class ScheduleInput {
+export class ScheduleInput {
   @IsEnum(Weekday)
   weekday: Weekday;
 

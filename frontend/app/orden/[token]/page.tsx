@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Search, ShoppingBag } from "lucide-react";
+import { Search } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
+import { formatLocalDateKey } from "@/src/lib/datetime";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -26,23 +27,17 @@ export default function PublicStorePage() {
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
-
-  const [cart, setCart] = useState<Record<string, number>>({});
   const [selectedService, setSelectedService] = useState<Item | null>(null);
-
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-
-  /* ================= FETCH ITEMS ================= */
 
   useEffect(() => {
     if (!token) return;
 
     const fetchItems = async () => {
       try {
-        const res = await fetch(
-          `${API_URL}/public/${token}/items`
-        );
+        const res = await fetch(`${API_URL}/public/${token}/items`);
 
         if (!res.ok) throw new Error();
 
@@ -65,9 +60,7 @@ export default function PublicStorePage() {
     };
 
     fetchItems();
-  }, [token]);
-
-  /* ================= FILTRO ================= */
+  }, [token, notify]);
 
   const filtered = useMemo(
     () =>
@@ -77,14 +70,11 @@ export default function PublicStorePage() {
     [items, query]
   );
 
-  /* ================= DISPONIBILIDAD ================= */
-
   const fetchAvailability = async (date: Date) => {
     if (!selectedService || !token) return;
 
     try {
-      const formatted = date.toISOString().split("T")[0];
-
+      const formatted = formatLocalDateKey(date);
       const res = await fetch(
         `${API_URL}/public/${token}/availability?itemId=${selectedService.id}&date=${formatted}`
       );
@@ -92,34 +82,46 @@ export default function PublicStorePage() {
       if (!res.ok) throw new Error();
 
       const data = await res.json();
-      setAvailableSlots(data);
+      setAvailableSlots(Array.isArray(data) ? data : []);
     } catch {
       notify({
         type: "error",
         message: "No se pudo obtener disponibilidad",
       });
+      setAvailableSlots([]);
     }
   };
 
-  /* ================= RESERVA ================= */
+  const fetchAvailabilityCalendar = async (date: Date) => {
+    if (!selectedService || !token) return;
+
+    try {
+      const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const res = await fetch(
+        `${API_URL}/public/${token}/availability-calendar?itemId=${selectedService.id}&month=${month}`
+      );
+
+      if (!res.ok) throw new Error();
+
+      const data = await res.json();
+      setAvailableDates(Array.isArray(data) ? data : []);
+    } catch {
+      notify({
+        type: "error",
+        message: "No se pudo obtener disponibilidad del calendario",
+      });
+      setAvailableDates([]);
+    }
+  };
 
   const handleConfirmReservation = async (data: any) => {
     if (!selectedService || !data.date || !data.time) return;
 
     try {
-      const start = new Date(data.date);
       const [hour, minute] = data.time.split(":").map(Number);
-
-      start.setHours(hour);
-      start.setMinutes(minute);
-
       const duration = selectedService.durationMinutes || 60;
-
-      const end = new Date(start);
-      end.setMinutes(start.getMinutes() + duration);
-
-      const startMinute = start.getHours() * 60 + start.getMinutes();
-      const endMinute = end.getHours() * 60 + end.getMinutes();
+      const startMinute = hour * 60 + minute;
+      const endMinute = startMinute + duration;
 
       const res = await fetch(
         `${API_URL}/public/${token}/reserve`,
@@ -130,7 +132,7 @@ export default function PublicStorePage() {
             itemId: selectedService.id,
             customerName: data.fullName,
             customerWhatsapp: data.whatsapp,
-            date: data.date,
+            date: formatLocalDateKey(data.date),
             startMinute,
             endMinute,
           }),
@@ -146,6 +148,7 @@ export default function PublicStorePage() {
 
       setSelectedService(null);
       setAvailableSlots([]);
+      setAvailableDates([]);
       setSelectedDate(null);
     } catch {
       notify({
@@ -154,8 +157,6 @@ export default function PublicStorePage() {
       });
     }
   };
-
-  /* ================= RENDER ================= */
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
@@ -189,27 +190,29 @@ export default function PublicStorePage() {
         )}
       </main>
 
-      {/* Drawer reservas */}
       <ReservationDrawer
         open={!!selectedService}
         onClose={() => {
           setSelectedService(null);
           setAvailableSlots([]);
+          setAvailableDates([]);
+          setSelectedDate(null);
         }}
         title={selectedService?.name}
-        subtitle="Selecciona día y horario disponible"
+        subtitle="Selecciona dia y horario disponible"
         timeSlots={availableSlots}
+        availableDates={availableDates}
+        selectedDateValue={selectedDate ? formatLocalDateKey(selectedDate) : null}
         onDateChange={(date) => {
           setSelectedDate(date);
           fetchAvailability(date);
         }}
+        onMonthChange={fetchAvailabilityCalendar}
         onConfirm={handleConfirmReservation}
       />
     </div>
   );
 }
-
-/* ================= CARD ================= */
 
 function ProductCard({
   item,

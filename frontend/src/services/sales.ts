@@ -13,41 +13,67 @@ export type ApiOrderItem = {
 
 export type ApiOrder = {
   id: string;
+  sourceType: "ORDER" | "RESERVATION";
   customerName: string;
-  customerWhatsapp?: string;
-  status: "DRAFT" | "SENT" | "COMPLETED" | "CANCELLED";
+  customerWhatsapp: string;
+  total: number;
+  status: "PENDIENTE" | "CERRADO" | "CANCELADO";
   createdAt: string;
-  sentAt?: string | null;
-  updatedAt?: string;
-  accountingPostedAt?: string | null;
-  items: ApiOrderItem[];
+  scheduledAt?: string;
+  type: "PRODUCTO" | "SERVICIO";
+  items: Array<{
+    name: string;
+    qty: number;
+    price: number;
+    itemId: string;
+    durationMin?: number | null;
+  }>;
 };
 
 export type ConfirmOrderResponse = {
-  order: ApiOrder;
+  order: any; // Could be Virtual Order or real Order
   accountingCreated: boolean;
-  alreadyPosted: boolean;
+  movements: any[];
+  isReservation?: boolean;
 };
 
 export function listSales() {
   return api<ApiOrder[]>("/sales");
 }
 
-export function confirmSale(id: string) {
-  return api<ConfirmOrderResponse>(`/sales/${id}/confirm`, {
+export function confirmSale(id: string, sourceType: string = "ORDER") {
+  return api<ConfirmOrderResponse>(`/sales/${id}/confirm?sourceType=${sourceType}`, {
     method: "PATCH",
   });
 }
-export function cancelSale(id: string) {
-  return api<ApiOrder>(`/sales/${id}/cancel`, {
+export function cancelSale(id: string, sourceType: string = "ORDER") {
+  return api<ApiOrder>(`/sales/${id}/cancel?sourceType=${sourceType}`, {
     method: "PATCH",
   });
 }
-export function updateSale(id: string, data: { customerName?: string; customerWhatsapp?: string; note?: string }) {
-  return api<ApiOrder>(`/sales/${id}`, {
+export function updateSale(
+  id: string,
+  data: {
+    customerName?: string;
+    customerWhatsapp?: string;
+    note?: string;
+    scheduledAt?: string;
+    items?: Array<{ itemId: string; quantity: number }>;
+  },
+  sourceType: string = "ORDER",
+) {
+  return api<ApiOrder>(`/sales/${id}?sourceType=${sourceType}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
+}
+
+export function listReservationAvailability(id: string, params: { month?: string; date?: string }) {
+  const qs = new URLSearchParams();
+  if (params.month) qs.set("month", params.month);
+  if (params.date) qs.set("date", params.date);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<string[]>(`/sales/${id}/reservation-availability${suffix}`);
 }
 
 export function addOrderItem(saleId: string, data: { itemId: string; quantity: number }) {

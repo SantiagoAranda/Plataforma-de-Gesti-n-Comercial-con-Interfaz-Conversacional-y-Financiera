@@ -50,6 +50,13 @@ const INITIAL_WEEK: WeeklySchedule[] = [
 
 const WEEKDAY_ENUM = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
+function createInitialWeek(): WeeklySchedule[] {
+  return INITIAL_WEEK.map((day) => ({
+    ...day,
+    ranges: day.ranges.map((range) => ({ ...range })),
+  }));
+}
+
 function timeToMinutes(time: string) {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -82,7 +89,7 @@ export default function MiNegocioPage() {
   const [image, setImage] = useState<string | null>(null);
   const [duration, setDuration] = useState(30);
 
-  const [week, setWeek] = useState<WeeklySchedule[]>(INITIAL_WEEK);
+  const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
   const [items, setItems] = useState<Item[]>([]);
@@ -126,7 +133,8 @@ export default function MiNegocioPage() {
     setDescription("");
     setImage(null);
     setDuration(30);
-    setWeek(INITIAL_WEEK);
+    setWeek(createInitialWeek());
+    setType("PRODUCT");
     setIsOpen(false);
   };
 
@@ -206,8 +214,49 @@ export default function MiNegocioPage() {
     setPrice(String(item.price));
     setDescription(item.description ?? "");
     setImage(item.images?.[0]?.url ?? null);
+    setType(item.type);
     setDuration(item.durationMinutes ?? 30);
-    // Weekly schedule mapping could be added here if needed
+    const nextWeek = createInitialWeek();
+
+    if (item.type === "SERVICE" && item.schedule?.length) {
+      nextWeek.forEach((day) => {
+        day.active = false;
+        day.ranges = [];
+      });
+
+      item.schedule.forEach((slot) => {
+        const dayIndex = WEEKDAY_ENUM.indexOf(slot.weekday);
+        if (dayIndex === -1) return;
+
+        nextWeek[dayIndex].active = true;
+        nextWeek[dayIndex].ranges.push({
+          start: minutesToTime(slot.startMinute),
+          end: minutesToTime(slot.endMinute),
+        });
+      });
+
+      nextWeek.forEach((day) => {
+        if (day.ranges.length > 0) {
+          day.ranges = day.ranges.slice(-2);
+        }
+        if (day.ranges.length === 0) {
+          day.active = false;
+        }
+      });
+    } else if (item.type === "SERVICE") {
+      nextWeek.forEach((day, index) => {
+        day.active = index === 0;
+        day.ranges = index === 0 ? [{ start: "08:00", end: "12:00" }] : [];
+      });
+    } else {
+      nextWeek.forEach((day) => {
+        day.active = false;
+        day.ranges = [];
+      });
+    }
+
+    setWeek(nextWeek);
+    setCurrentDayIndex(0);
     setIsOpen(true);
     setSelectedItem(null);
   };
@@ -342,23 +391,25 @@ export default function MiNegocioPage() {
             <div className="flex bg-neutral-100 rounded-full p-1">
 
               <button
+                disabled={!!editingItem}
                 onClick={() => setType("PRODUCT")}
                 className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
                   type === "PRODUCT"
                     ? "bg-white text-green-600 shadow-sm"
                     : "text-neutral-500"
-                }`}
+                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 Producto
               </button>
 
               <button
+                disabled={!!editingItem}
                 onClick={() => setType("SERVICE")}
                 className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
                   type === "SERVICE"
                     ? "bg-white text-green-600 shadow-sm"
                     : "text-neutral-500"
-                }`}
+                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 Servicio
               </button>

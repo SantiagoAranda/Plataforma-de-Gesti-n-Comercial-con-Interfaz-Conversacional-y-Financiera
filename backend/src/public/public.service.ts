@@ -10,6 +10,145 @@ import { Weekday } from '@prisma/client';
 export class PublicService {
   constructor(private prisma: PrismaService) {}
 
+  private parseDateOnly(value: string) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
+    if (!match) {
+      throw new BadRequestException('Invalid date');
+    }
+
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      0,
+      0,
+      0,
+      0,
+    );
+  }
+
+  private parseMonth(value: string) {
+    const match = /^(\d{4})-(\d{2})$/.exec((value ?? '').trim());
+    if (!match) {
+      throw new BadRequestException('Invalid month');
+    }
+
+    return {
+      year: Number(match[1]),
+      monthIndex: Number(match[2]) - 1,
+    };
+  }
+
+  private formatDateOnly(value: Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private formatTime(minutes: number) {
+    const h = Math.floor(minutes / 60)
+      .toString()
+      .padStart(2, '0');
+
+    const m = (minutes % 60)
+      .toString()
+      .padStart(2, '0');
+
+    return `${h}:${m}`;
+  }
+
+  private getWeekday(date: Date): Weekday {
+    const weekdayMap: Record<number, Weekday> = {
+      0: 'SUN',
+      1: 'MON',
+      2: 'TUE',
+      3: 'WED',
+      4: 'THU',
+      5: 'FRI',
+      6: 'SAT',
+    };
+
+    return weekdayMap[date.getDay()];
+  }
+
+  private async getAvailabilitySlotsForItem(
+    businessId: string,
+    item: { id: string; durationMinutes: number | null },
+    date: Date,
+    excludeReservationId?: string,
+  ) {
+    const weekday = this.getWeekday(date);
+
+    const [windows, reservations, blocks] = await Promise.all([
+      this.prisma.serviceScheduleWindow.findMany({
+        where: {
+          businessId,
+          weekday,
+          OR: [{ itemId: item.id }, { itemId: null }],
+        },
+        orderBy: { startMinute: 'asc' },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          businessId,
+          itemId: item.id,
+          date,
+          status: { not: 'CANCELLED' },
+          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+        },
+        select: {
+          startMinute: true,
+          endMinute: true,
+        },
+      }),
+      this.prisma.serviceScheduleBlock.findMany({
+        where: {
+          businessId,
+          date,
+          OR: [{ itemId: item.id }, { itemId: null }],
+        },
+      }),
+    ]);
+
+    if (windows.length === 0) return [];
+
+    const duration = item.durationMinutes ?? 60;
+    const slots: string[] = [];
+
+    for (const window of windows) {
+      let cursor = window.startMinute;
+
+      while (cursor + duration <= window.endMinute) {
+        const start = cursor;
+        const end = cursor + duration;
+
+        const overlap = reservations.some(
+          (reservation) => start < reservation.endMinute && end > reservation.startMinute,
+        );
+
+        const blocked = blocks.some((block) => {
+          if (block.startMinute === null && block.endMinute === null) {
+            return true;
+          }
+
+          return (
+            start < (block.endMinute ?? 0) &&
+            end > (block.startMinute ?? 0)
+          );
+        });
+
+        if (!overlap && !blocked) {
+          slots.push(this.formatTime(start));
+        }
+
+        cursor += duration;
+      }
+    }
+
+    return slots;
+  }
+
   /* =====================================================
      ITEMS
   ===================================================== */
@@ -72,99 +211,56 @@ export class PublicService {
     if (!item)
       throw new BadRequestException('Invalid service');
 
-    const selectedDate = new Date(date);
-    selectedDate.setHours(0, 0, 0, 0);
+    const selectedDate = this.parseDateOnly(date);
+    return this.getAvailabilitySlotsForItem(business.id, item, selectedDate);
+  }
 
-    const weekdayMap: Record<number, Weekday> = {
-      0: 'SUN',
-      1: 'MON',
-      2: 'TUE',
-      3: 'WED',
-      4: 'THU',
-      5: 'FRI',
-      6: 'SAT',
-    };
-
-    const weekday = weekdayMap[selectedDate.getDay()];
-
-    const windows = await this.prisma.serviceScheduleWindow.findMany({
-      where: {
-        businessId: business.id,
-        weekday,
-        OR: [{ itemId: item.id }, { itemId: null }],
-      },
-      orderBy: { startMinute: 'asc' },
+  async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
+    const business = await this.prisma.business.findFirst({
+      where: { slug, status: 'ACTIVE' },
     });
 
-    if (windows.length === 0) return [];
+    if (!business)
+      throw new BadRequestException('Business not found');
 
-    const reservations = await this.prisma.reservation.findMany({
+    const item = await this.prisma.item.findFirst({
       where: {
+        id: itemId,
         businessId: business.id,
-        itemId,
-        date: selectedDate,
-        status: { not: 'CANCELLED' },
-      },
-      select: {
-        startMinute: true,
-        endMinute: true,
+        type: 'SERVICE',
+        status: 'ACTIVE',
       },
     });
 
-    const blocks = await this.prisma.serviceScheduleBlock.findMany({
-      where: {
-        businessId: business.id,
-        date: selectedDate,
-        OR: [{ itemId: item.id }, { itemId: null }],
-      },
-    });
+    if (!item)
+      throw new BadRequestException('Invalid service');
 
-    const duration = item.durationMinutes ?? 60;
+    const { year, monthIndex } = this.parseMonth(month);
+    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    const slots: string[] = [];
+    const cursor = new Date(firstDay);
+    const availableDates: string[] = [];
 
-    const formatTime = (minutes: number) => {
-      const h = Math.floor(minutes / 60)
-        .toString()
-        .padStart(2, '0');
-
-      const m = (minutes % 60)
-        .toString()
-        .padStart(2, '0');
-
-      return `${h}:${m}`;
-    };
-
-    for (const window of windows) {
-      let cursor = window.startMinute;
-
-      while (cursor + duration <= window.endMinute) {
-        const start = cursor;
-        const end = cursor + duration;
-
-        const overlap = reservations.some(
-          (r) => start < r.endMinute && end > r.startMinute,
+    while (cursor <= lastDay) {
+      if (cursor >= today) {
+        const slots = await this.getAvailabilitySlotsForItem(
+          business.id,
+          item,
+          new Date(cursor),
         );
 
-        const blocked = blocks.some((b) => {
-          if (b.startMinute === null && b.endMinute === null)
-            return true;
-
-          return (
-            start < (b.endMinute ?? 0) &&
-            end > (b.startMinute ?? 0)
-          );
-        });
-
-        if (!overlap && !blocked) {
-          slots.push(formatTime(start));
+        if (slots.length > 0) {
+          availableDates.push(this.formatDateOnly(cursor));
         }
-
-        cursor += duration;
       }
+
+      cursor.setDate(cursor.getDate() + 1);
     }
 
-    return slots;
+    return availableDates;
   }
 
   /* =====================================================
@@ -195,8 +291,7 @@ export class PublicService {
       if (startMinute >= endMinute)
         throw new BadRequestException('Invalid time range');
 
-      const selectedDate = new Date(date);
-      selectedDate.setHours(0, 0, 0, 0);
+      const selectedDate = this.parseDateOnly(date);
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -216,21 +311,16 @@ export class PublicService {
       if (!item)
         throw new BadRequestException('Invalid service');
 
-      const overlapping = await tx.reservation.findFirst({
-        where: {
-          businessId: business.id,
-          itemId,
-          date: selectedDate,
-          status: { not: 'CANCELLED' },
-          startMinute: { lt: endMinute },
-          endMinute: { gt: startMinute },
-        },
-      });
+      const availableSlots = await this.getAvailabilitySlotsForItem(
+        business.id,
+        item,
+        selectedDate,
+      );
+      const requestedSlot = this.formatTime(startMinute);
 
-      if (overlapping)
-        throw new BadRequestException(
-          'Time slot already reserved',
-        );
+      if (!availableSlots.includes(requestedSlot)) {
+        throw new BadRequestException('Time slot already reserved or unavailable');
+      }
 
       return tx.reservation.create({
         data: {
@@ -241,7 +331,7 @@ export class PublicService {
           date: selectedDate,
           startMinute,
           endMinute,
-          status: 'CONFIRMED',
+          status: 'PENDING',
         },
       });
     });

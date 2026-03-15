@@ -17,11 +17,11 @@ export function ItemCard({ item, selected, onSelect, onOpen }: Props) {
       className="ml-auto max-w-[85%] overflow-hidden"
     >
       {(item.images?.length ?? 0) > 0 && (
-        <div className="bg-neutral-50 flex items-center justify-center border-b border-neutral-100">
+        <div className="bg-neutral-50 aspect-[4/3] flex items-center justify-center border-b border-neutral-100 overflow-hidden">
           <img
             src={item.images?.[0]?.url}
             alt={item.name}
-            className="w-full max-h-60 object-contain"
+            className="w-full h-full object-cover"
           />
         </div>
       )}
