@@ -65,18 +65,18 @@ function formatActivityFallback(date?: string | null) {
     parsed.getDate() === now.getDate();
 
   if (sameDay) {
-    return `Ultima actividad: hoy ${parsed.toLocaleTimeString("es-AR", {
+    return ` hoy ${parsed.toLocaleTimeString("es-AR", {
       hour: "2-digit",
       minute: "2-digit",
     })}`;
   }
 
-  return `Ultima actividad: ${formatAbsoluteDateTime(parsed)}`;
+  return ` ${formatAbsoluteDateTime(parsed)}`;
 }
 
 function buildSubtitle(activityText?: string | null, date?: string | null) {
   const normalized = activityText?.trim();
-  if (normalized) return `Ultima actividad: ${normalized}`;
+  if (normalized) return ` ${normalized}`;
   return formatActivityFallback(date);
 }
 
@@ -236,15 +236,15 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
     const amount = Number.isFinite(latest.amount) ? formatCurrency(Math.abs(latest.amount)) : "";
 
     if (detail) {
-      activityText = `Actividad contable real: ${detail}`;
+      activityText = `Actividad contable:  ${detail}`;
     } else if (accountName && amount) {
-      activityText = `Actividad contable real en ${accountName} por ${amount}`;
+      activityText = `Actividad contable:  ${accountName} por ${amount}`;
     } else if (accountCode && amount) {
-      activityText = `Actividad contable real ${accountCode} por ${amount}`;
+      activityText = `Actividad contable: ${accountCode} por ${amount}`;
     } else if (accountName) {
-      activityText = `Actividad contable real en ${accountName}`;
+      activityText = `Actividad contable: ${accountName}`;
     } else if (accountCode) {
-      activityText = `Actividad contable real ${accountCode}`;
+      activityText = `Actividad contable: ${accountCode}`;
     }
   }
 

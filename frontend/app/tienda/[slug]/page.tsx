@@ -40,7 +40,8 @@ export default function PublicStorePage() {
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
+  const [countryCode, setCountryCode] = useState("57");
+  const [phoneNumber, setPhoneNumber] = useState("");
 
   const [category, setCategory] = useState<string>("");
 
@@ -261,7 +262,7 @@ export default function PublicStorePage() {
         },
         body: JSON.stringify({
           customerName,
-          customerWhatsapp: whatsapp,
+          customerWhatsapp: `${countryCode}${phoneNumber}`,
           items: cartItems.map((item) => ({
             itemId: item.id,
             quantity: item.quantity,
@@ -276,7 +277,7 @@ export default function PublicStorePage() {
       setCart({});
       setShowCartModal(false);
       setCustomerName("");
-      setWhatsapp("");
+      setPhoneNumber("");
     } catch (error) {
       console.error("Order error:", error);
       notify({ type: "error", message: "Error al enviar pedido" });
@@ -418,12 +419,30 @@ export default function PublicStorePage() {
                 className="w-full border rounded-xl px-4 py-3"
               />
 
-              <input
-                placeholder="WhatsApp"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                className="w-full border rounded-xl px-4 py-3"
-              />
+              <div className="flex gap-2">
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="w-[95px] border rounded-xl px-3 py-3 text-sm bg-white"
+                >
+                  <option value="57">🇨🇴 +57</option>
+                  <option value="54">🇦🇷 +54</option>
+                  <option value="52">🇲🇽 +52</option>
+                  <option value="34">🇪🇸 +34</option>
+                  <option value="56">🇨🇱 +56</option>
+                  <option value="51">🇵🇪 +51</option>
+                </select>
+
+                <input
+                  placeholder="WhatsApp"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
+                  className="flex-1 border rounded-xl px-4 py-3"
+                />
+              </div>
+              <p className="text-xs text-gray-400 -mt-1 px-1">
+                Usaremos este número para confirmar tu pedido
+              </p>
             </div>
 
             <div className="flex gap-3 mt-6">
