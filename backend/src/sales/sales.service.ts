@@ -15,6 +15,7 @@ export interface UnifiedSaleDto {
   sourceType: UnifiedSourceType;
   customerName: string;
   customerWhatsapp: string;
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   total: number;
   status: UnifiedStatus;
   createdAt: Date;
@@ -220,11 +221,12 @@ export class SalesService {
         customerName: dto.customerName,
         customerWhatsapp: dto.customerWhatsapp,
         note: dto.note,
+        paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
         total,
         items: {
           create: orderItemsData,
         },
-      },
+      } as any,
       include: {
         items: {
           include: {
@@ -268,6 +270,7 @@ export class SalesService {
       sourceType: 'ORDER',
       customerName: o.customerName,
       customerWhatsapp: o.customerWhatsapp,
+      paymentMethod: ((o as any).paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
       total: Number(o.total),
       status: this.mapOrderStatus(o.status),
       createdAt: o.createdAt,
@@ -286,6 +289,7 @@ export class SalesService {
       sourceType: 'RESERVATION',
       customerName: r.customerName,
       customerWhatsapp: r.customerWhatsapp,
+      paymentMethod: 'CASH',
       total: Number(r.item.price),
       status: this.mapReservationStatus(r.status),
       createdAt: r.createdAt,
@@ -770,7 +774,8 @@ export class SalesService {
           customerName: dto.customerName,
           customerWhatsapp: dto.customerWhatsapp,
           note: dto.note,
-        },
+          paymentMethod: dto.paymentMethod as any,
+        } as any,
       });
 
       // 2. Handle Items Sync if provided
@@ -896,6 +901,7 @@ export class SalesService {
       sourceType: 'RESERVATION' as const,
       customerName: updated.customerName,
       customerWhatsapp: updated.customerWhatsapp,
+      paymentMethod: 'CASH' as const,
       total: Number(updated.item.price),
       status: this.mapReservationStatus(updated.status),
       createdAt: updated.createdAt,

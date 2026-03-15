@@ -5,9 +5,14 @@ import type { Nature } from "@/src/types/accounting-form";
 type Props = {
   value: Nature;
   onChange: (value: Nature) => void;
+  disabled?: boolean;
 };
 
-export function AccountingNatureToggle({ value, onChange }: Props) {
+export function AccountingNatureToggle({
+  value,
+  onChange,
+  disabled = false,
+}: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="mb-1 text-xs font-semibold text-neutral-600">
@@ -18,26 +23,28 @@ export function AccountingNatureToggle({ value, onChange }: Props) {
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onChange("DEBIT")}
             className={`rounded-full px-2 py-2 text-xs font-semibold transition sm:px-3 sm:text-sm ${
               value === "DEBIT"
                 ? "bg-emerald-500 text-white"
                 : "bg-white text-neutral-700"
-            }`}
+            } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
           >
-            Débito
+            Debito
           </button>
 
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onChange("CREDIT")}
             className={`rounded-full px-2 py-2 text-xs font-semibold transition sm:px-3 sm:text-sm ${
               value === "CREDIT"
                 ? "bg-emerald-500 text-white"
                 : "bg-white text-neutral-700"
-            }`}
+            } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
           >
-            Crédito
+            Credito
           </button>
         </div>
       </div>

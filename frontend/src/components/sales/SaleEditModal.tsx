@@ -58,6 +58,7 @@ export default function SaleEditModal({
   const [customerWhatsapp, setCustomerWhatsapp] = useState("");
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
   const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
+  const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -95,6 +96,7 @@ export default function SaleEditModal({
     setCustomerWhatsapp(sale.customerWhatsapp ?? "");
     setType(sale.type);
     setStatus(sale.status);
+    setPaymentMethod(sale.paymentMethod ?? "CASH");
     setExpanded(false);
     setNewItem({itemId: "", qty: 1});
     setAvailabilityError(null);
@@ -222,6 +224,7 @@ export default function SaleEditModal({
       ...sale,
       customerName: cleanedName,
       customerWhatsapp: customerWhatsapp.trim() || undefined,
+      paymentMethod,
       type,
       status,
       items: cleanedItems,
@@ -271,6 +274,33 @@ export default function SaleEditModal({
             <div className="flex flex-col gap-0.5 text-right">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Estado</span>
               <span className="text-[12px] font-semibold text-neutral-600">{status}</span>
+            </div>
+            <div className="col-span-2 flex flex-col gap-1 pt-2">
+              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Medio de pago</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("CASH")}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                    paymentMethod === "CASH"
+                      ? "bg-emerald-500 text-white"
+                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                  }`}
+                >
+                  Efectivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("BANK_TRANSFER")}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                    paymentMethod === "BANK_TRANSFER"
+                      ? "bg-emerald-500 text-white"
+                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                  }`}
+                >
+                  Transferencia
+                </button>
+              </div>
             </div>
           </div>
 

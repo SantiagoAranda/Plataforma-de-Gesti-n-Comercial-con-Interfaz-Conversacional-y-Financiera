@@ -29,6 +29,7 @@ export function AccountingChatComposer({
   onSubmit,
 }: Props) {
   const isComposeMode = expanded;
+  const lockFinancialFields = isEditing && value.originType !== "MANUAL";
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4">
@@ -36,7 +37,11 @@ export function AccountingChatComposer({
         <div className="relative">
           {expanded && (
             <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10">
-              <AccountingExpandableForm value={value} onChange={onChange} />
+              <AccountingExpandableForm
+                value={value}
+                onChange={onChange}
+                lockFinancialFields={lockFinancialFields}
+              />
             </div>
           )}
 
@@ -49,8 +54,8 @@ export function AccountingChatComposer({
                 aria-label={
                   expanded
                     ? isEditing
-                      ? "Cancelar edición"
-                      : "Cancelar creación"
+                      ? "Cancelar edicion"
+                      : "Cancelar creacion"
                     : "Crear asiento contable"
                 }
               >
@@ -71,8 +76,8 @@ export function AccountingChatComposer({
                     }
                     placeholder={
                       isEditing
-                        ? "Editá la descripción del movimiento..."
-                        : "Describí el movimiento contable..."
+                        ? "Edita la descripcion del movimiento (opcional)..."
+                        : "Describi el movimiento contable (opcional)..."
                     }
                     className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
                   />

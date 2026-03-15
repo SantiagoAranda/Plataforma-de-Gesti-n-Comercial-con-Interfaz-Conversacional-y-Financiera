@@ -6,6 +6,7 @@ export type SaleStatus =
 
 export type SaleType = "PRODUCTO" | "SERVICIO";
 export type SourceType = "ORDER" | "RESERVATION";
+export type PaymentMethod = "CASH" | "BANK_TRANSFER";
 
 export interface SaleItem {
   itemId?: string;
@@ -25,6 +26,7 @@ export interface Sale {
 
   customerName: string;
   customerWhatsapp?: string;
+  paymentMethod?: PaymentMethod;
 
   type: SaleType;
   status: SaleStatus;

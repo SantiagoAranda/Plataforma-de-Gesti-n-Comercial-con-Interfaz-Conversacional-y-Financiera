@@ -16,6 +16,7 @@ export type ApiOrder = {
   sourceType: "ORDER" | "RESERVATION";
   customerName: string;
   customerWhatsapp: string;
+  paymentMethod?: "CASH" | "BANK_TRANSFER";
   total: number;
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
   createdAt: string;
@@ -57,6 +58,7 @@ export function updateSale(
     customerName?: string;
     customerWhatsapp?: string;
     note?: string;
+    paymentMethod?: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
     items?: Array<{ itemId: string; quantity: number }>;
   },

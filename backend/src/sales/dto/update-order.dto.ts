@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsArray, ValidateNested, IsInt, Min, IsDateString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 class UpdateOrderItemInput {
@@ -22,6 +31,10 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsIn(['CASH', 'BANK_TRANSFER'])
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
 
   @IsOptional()
   @IsDateString()

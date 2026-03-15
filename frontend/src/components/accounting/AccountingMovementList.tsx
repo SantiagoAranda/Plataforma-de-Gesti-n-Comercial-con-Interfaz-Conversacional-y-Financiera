@@ -10,6 +10,14 @@ type Props = {
   onOpen?: (movement: AccountingMovement) => void;
 };
 
+function movementTimestamp(movement: AccountingMovement) {
+  return new Date(movement.createdAt ?? movement.date).getTime();
+}
+
+function movementDayKey(movement: AccountingMovement) {
+  return (movement.createdAt ?? movement.date ?? "").slice(0, 10);
+}
+
 function groupLabel(dateISO: string) {
   const d = new Date(dateISO + "T00:00:00");
   const now = new Date();
@@ -34,9 +42,15 @@ export function AccountingMovementList({
   onSelect,
   onOpen,
 }: Props) {
-  const grouped = movements.reduce<Record<string, AccountingMovement[]>>(
+  const sortedMovements = [...movements].sort((a, b) => {
+    const timeDiff = movementTimestamp(a) - movementTimestamp(b);
+    if (timeDiff !== 0) return timeDiff;
+    return a.id.localeCompare(b.id);
+  });
+
+  const grouped = sortedMovements.reduce<Record<string, AccountingMovement[]>>(
     (acc, movement) => {
-      const dateISO = (movement.date ?? "").slice(0, 10);
+      const dateISO = movementDayKey(movement);
       acc[dateISO] ??= [];
       acc[dateISO].push(movement);
       return acc;
@@ -44,10 +58,10 @@ export function AccountingMovementList({
     {}
   );
 
-  const sortedDates = Object.keys(grouped).sort((a, b) => (a < b ? 1 : -1));
+  const sortedDates = Object.keys(grouped).sort((a, b) => (a > b ? 1 : -1));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {sortedDates.map((dateISO) => (
         <section key={dateISO} className="space-y-3">
           <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-700">

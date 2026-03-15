@@ -23,6 +23,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     sourceType: order.sourceType, // ORIGEN EXPLÍCITO
     customerName: order.customerName,
     customerWhatsapp: order.customerWhatsapp,
+    paymentMethod: order.paymentMethod,
     type: order.type,
     status: order.status as any, // Matches UnifiedStatus
     createdAt: order.createdAt,
@@ -192,6 +193,7 @@ const handleSendWhatsApp = (sale: Sale) => {
       const dto = {
         customerName: updated.customerName,
         customerWhatsapp: updated.customerWhatsapp,
+        paymentMethod: updated.paymentMethod,
         scheduledAt: updated.scheduledAt,
         items: updated.items
           .filter(it => it.itemId)
