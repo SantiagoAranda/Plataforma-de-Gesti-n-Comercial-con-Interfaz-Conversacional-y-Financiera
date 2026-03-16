@@ -289,7 +289,7 @@ export class SalesService {
       sourceType: 'RESERVATION',
       customerName: r.customerName,
       customerWhatsapp: r.customerWhatsapp,
-      paymentMethod: 'CASH',
+      paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
       total: Number(r.item.price),
       status: this.mapReservationStatus(r.status),
       createdAt: r.createdAt,
@@ -533,6 +533,7 @@ export class SalesService {
       status: 'COMPLETED', // compatible with Accounting logic
       customerName: res.customerName,
       customerWhatsapp: res.customerWhatsapp,
+      paymentMethod: res.paymentMethod ?? 'CASH',
       total: price,
       updatedAt: res.updatedAt,
       createdAt: res.createdAt,
@@ -865,6 +866,7 @@ export class SalesService {
       customerName: dto.customerName,
       customerWhatsapp: dto.customerWhatsapp,
       note: dto.note,
+      paymentMethod: dto.paymentMethod,
     };
 
     if (dto.scheduledAt) {
@@ -901,7 +903,7 @@ export class SalesService {
       sourceType: 'RESERVATION' as const,
       customerName: updated.customerName,
       customerWhatsapp: updated.customerWhatsapp,
-      paymentMethod: 'CASH' as const,
+      paymentMethod: updated.paymentMethod as 'CASH' | 'BANK_TRANSFER',
       total: Number(updated.item.price),
       status: this.mapReservationStatus(updated.status),
       createdAt: updated.createdAt,

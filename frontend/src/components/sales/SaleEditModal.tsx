@@ -238,6 +238,7 @@ export default function SaleEditModal({
           : undefined,
       type,
       status,
+      paymentMethod,
       items: cleanedItems,
       scheduledAt,
     };

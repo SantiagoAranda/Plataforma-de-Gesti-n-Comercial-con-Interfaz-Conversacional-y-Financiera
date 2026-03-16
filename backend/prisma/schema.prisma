@@ -251,6 +251,7 @@ model Reservation {
   customerName     String
   customerWhatsapp String
   note             String?
+  paymentMethod    PaymentMethod @default(CASH)
 
   // Fecha del turno + rango horario (minutos del día)
   // Recomendación: date representa el "día" (normalizar a 00:00 en backend).
