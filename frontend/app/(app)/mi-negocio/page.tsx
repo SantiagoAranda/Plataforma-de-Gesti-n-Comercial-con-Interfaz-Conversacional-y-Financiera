@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Archive, ArchiveRestore, Plus, X, Eye } from "lucide-react";
+import { Archive, ArchiveRestore, X } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
+import {
+  formatBytesToMb,
+  MAX_ITEM_IMAGES,
+  MAX_ITEM_IMAGE_SIZE_BYTES,
+} from "@/src/lib/itemImages";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -43,6 +48,18 @@ type FormErrors = {
   price?: string;
   duration?: string;
   schedule?: string;
+};
+
+type ItemImage = {
+  id: string;
+  url: string;
+  order: number;
+};
+
+type PendingImage = {
+  id: string;
+  file: File;
+  previewUrl: string;
 };
 
 const INITIAL_WEEK: WeeklySchedule[] = [
@@ -113,6 +130,28 @@ function generateCreationId() {
   ].join("-");
 }
 
+function revokePendingImages(images: PendingImage[]) {
+  images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("No se pudo leer la imagen."));
+    };
+
+    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function MiNegocioPage() {
 
   const [type, setType] = useState<ItemType>("PRODUCT");
@@ -122,7 +161,10 @@ export default function MiNegocioPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
-  const [image, setImage] = useState<string | null>(null);
+  const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
+  const [newImages, setNewImages] = useState<PendingImage[]>([]);
+  const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [duration, setDuration] = useState(30);
 
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
@@ -154,23 +196,82 @@ export default function MiNegocioPage() {
     fetchItems();
   }, [viewArchived]);
 
-  const handleAddImage = (file: File | null) => {
-    if (!file) return;
+  const totalImages = existingImages.length + newImages.length;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImage(reader.result as string);
-    };
+  const handleAddImages = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
-    reader.readAsDataURL(file);
+    const selectedFiles = Array.from(files);
+    const availableSlots = MAX_ITEM_IMAGES - totalImages;
+
+    if (availableSlots <= 0) {
+      setImageError(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
+      return;
+    }
+
+    const nextPendingImages: PendingImage[] = [];
+    const rejectedBySize: string[] = [];
+
+    selectedFiles.slice(0, availableSlots).forEach((file) => {
+      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) {
+        rejectedBySize.push(file.name);
+        return;
+      }
+
+      nextPendingImages.push({
+        id: generateCreationId(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    });
+
+    setNewImages((prev) => [...prev, ...nextPendingImages]);
+
+    const errors: string[] = [];
+
+    if (selectedFiles.length > availableSlots) {
+      errors.push(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
+    }
+
+    if (rejectedBySize.length > 0) {
+      errors.push(
+        `Cada imagen debe pesar como máximo ${formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)}.`
+      );
+    }
+
+    setImageError(errors.length > 0 ? errors.join(" ") : null);
+  };
+
+  const handleRemoveExistingImage = (imageId: string) => {
+    setExistingImages((prev) => prev.filter((image) => image.id !== imageId));
+    setRemovedImageIds((prev) =>
+      prev.includes(imageId) ? prev : [...prev, imageId]
+    );
+    setImageError(null);
+  };
+
+  const handleRemoveNewImage = (imageId: string) => {
+    setNewImages((prev) => {
+      const imageToRemove = prev.find((image) => image.id === imageId);
+      if (imageToRemove) {
+        URL.revokeObjectURL(imageToRemove.previewUrl);
+      }
+
+      return prev.filter((image) => image.id !== imageId);
+    });
+    setImageError(null);
   };
 
   const resetForm = () => {
+    revokePendingImages(newImages);
     setEditingItem(null);
     setName("");
     setPrice("");
     setDescription("");
-    setImage(null);
+    setExistingImages([]);
+    setNewImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
     setDuration(30);
     setWeek(createInitialWeek());
     setType("PRODUCT");
@@ -247,10 +348,6 @@ export default function MiNegocioPage() {
           body: JSON.stringify(payload),
         });
 
-        setItems((prev) =>
-          prev.map((i) => (i.id === editingItem.id ? savedItem : i))
-        );
-
       } else {
 
         const createdItem = await api<Item>("/items", {
@@ -261,17 +358,45 @@ export default function MiNegocioPage() {
           }),
         });
 
-        if (image) {
+        for (const image of newImages) {
+          const dataUrl = await fileToDataUrl(image.file);
+
           await api(`/items/${createdItem.id}/images`, {
             method: "POST",
-            body: JSON.stringify({ url: image }),
+            body: JSON.stringify({ url: dataUrl }),
           });
         }
 
         savedItem = await api<Item>(`/items/${createdItem.id}`);
-        setItems((prev) => [savedItem, ...prev]);
-
       }
+
+      if (editingItem) {
+        for (const imageId of removedImageIds) {
+          await api(`/items/${editingItem.id}/images/${imageId}`, {
+            method: "DELETE",
+          });
+        }
+
+        for (const image of newImages) {
+          const dataUrl = await fileToDataUrl(image.file);
+
+          await api(`/items/${editingItem.id}/images`, {
+            method: "POST",
+            body: JSON.stringify({ url: dataUrl }),
+          });
+        }
+
+        savedItem = await api<Item>(`/items/${editingItem.id}`);
+      }
+
+      setItems((prev) => {
+        if (editingItem) {
+          return prev.map((item) => (item.id === savedItem.id ? savedItem : item));
+        }
+
+        return [savedItem, ...prev];
+      });
+      setSelectedItem((prev) => (prev?.id === savedItem.id ? savedItem : prev));
 
       resetForm();
       setIsOpen(false);
@@ -291,7 +416,10 @@ export default function MiNegocioPage() {
     setName(item.name);
     setPrice(String(item.price));
     setDescription(item.description ?? "");
-    setImage(item.images?.[0]?.url ?? null);
+    setExistingImages(item.images ?? []);
+    setNewImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
     setType(item.type);
     setDuration(item.durationMinutes ?? 30);
     const nextWeek = createInitialWeek();
@@ -508,29 +636,83 @@ export default function MiNegocioPage() {
                 Fotos
               </label>
 
-              <div className="flex gap-3">
+              <p className="mb-3 text-xs text-neutral-500">
+                Hasta {MAX_ITEM_IMAGES} imágenes. Máximo {formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)} por imagen.
+                {editingItem ? " Las imágenes actuales se conservan si no las eliminas." : ""}
+              </p>
 
-                <label className="w-20 h-20 border-2 border-dashed border-green-500 rounded-2xl flex items-center justify-center cursor-pointer text-green-600 text-xl">
+              <div className="flex flex-wrap gap-3">
+
+                <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl ${
+                  totalImages >= MAX_ITEM_IMAGES
+                    ? "border-neutral-300 text-neutral-300 cursor-not-allowed"
+                    : "border-green-500 text-green-600"
+                }`}>
                   +
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
-                    onChange={(e) =>
-                      handleAddImage(e.target.files?.[0] || null)
-                    }
+                    disabled={totalImages >= MAX_ITEM_IMAGES}
+                    onChange={(e) => {
+                      handleAddImages(e.target.files);
+                      e.target.value = "";
+                    }}
                   />
                 </label>
 
-                {image && (
-                  <img
-                    src={image}
-                    alt="preview"
-                    className="w-20 h-20 object-cover rounded-2xl"
-                  />
-                )}
+                {existingImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
+                  >
+                    <img
+                      src={image.url}
+                      alt="Imagen actual"
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveExistingImage(image.id)}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
+                      aria-label="Eliminar imagen actual"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {newImages.map((image) => (
+                  <div
+                    key={image.id}
+                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt={image.file.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveNewImage(image.id)}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
+                      aria-label="Eliminar imagen nueva"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
 
               </div>
+
+              <p className="mt-3 text-xs text-neutral-500">
+                {totalImages} de {MAX_ITEM_IMAGES} imágenes seleccionadas.
+              </p>
+
+              {imageError && (
+                <p className="mt-2 text-xs font-medium text-red-500">{imageError}</p>
+              )}
 
             </div>
 

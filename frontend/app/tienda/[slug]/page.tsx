@@ -6,6 +6,7 @@ import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
+import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -493,10 +494,11 @@ function ProductCard({
     <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:-translate-y-1">
       <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
-          <img
-            src={item.images[0].url}
-            alt={item.name}
-            className="h-full w-full object-cover"
+          <ItemImageViewer
+            images={item.images}
+            name={item.name}
+            containerClassName="h-full w-full rounded-t-xl"
+            imageClassName="h-full w-full object-cover"
           />
         )}
       </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { SelectableCard } from "@/src/components/shared/selection/SelectableCard";
+import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
+
 type Props = {
   item: any; 
   selected?: boolean;
@@ -17,13 +19,12 @@ export function ItemCard({ item, selected, onSelect, onOpen }: Props) {
       className="ml-auto max-w-[85%] overflow-hidden"
     >
       {(item.images?.length ?? 0) > 0 && (
-        <div className="bg-neutral-50 aspect-[4/3] flex items-center justify-center border-b border-neutral-100 overflow-hidden">
-          <img
-            src={item.images?.[0]?.url}
-            alt={item.name}
-            className="w-full h-full object-cover"
-          />
-        </div>
+        <ItemImageViewer
+          images={item.images}
+          name={item.name}
+          containerClassName="bg-neutral-50 aspect-[4/3] flex items-center justify-center border-b border-neutral-100"
+          imageClassName="h-full w-full object-cover"
+        />
       )}
 
       <div className="px-4 py-3 space-y-2">

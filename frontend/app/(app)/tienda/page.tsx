@@ -5,6 +5,7 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import { Search, Share2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/src/components/layout/AppHeader";
+import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 
 type Item = {
   id: string;
@@ -225,10 +226,11 @@ function AdminProductCard({
 
       <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
-          <img
-            src={item.images[0].url}
-            alt={item.name}
-            className="h-full w-full object-cover"
+          <ItemImageViewer
+            images={item.images}
+            name={item.name}
+            containerClassName="h-full w-full rounded-t-xl"
+            imageClassName="h-full w-full object-cover"
           />
         )}
       </div>
