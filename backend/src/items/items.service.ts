@@ -22,45 +22,67 @@ export class ItemsService {
   }
 
   async create(businessId: string, dto: CreateItemDto) {
-    return this.prisma.$transaction(async (tx) => {
-      const item = await tx.item.create({
-        data: {
-          businessId,
-          type: dto.type,
-          name: dto.name,
-          price: dto.price,
-          description: dto.description,
-          durationMinutes: dto.durationMinutes,
-        },
-      });
-
-      // 🔥 Si es SERVICE y tiene horarios → crear ventanas
-      if (dto.type === 'SERVICE' && dto.schedule?.length) {
-        await tx.serviceScheduleWindow.createMany({
-          data: dto.schedule.map((s) => ({
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const item = await tx.item.create({
+          data: {
+            id: dto.id, // Prisma usará uuid() si es undefined
             businessId,
-            itemId: item.id,
-            weekday: s.weekday,
-            startMinute: s.startMinute,
-            endMinute: s.endMinute,
-          })),
+            type: dto.type,
+            name: dto.name,
+            price: dto.price,
+            description: dto.description,
+            durationMinutes: dto.durationMinutes,
+          },
         });
-      }
 
-      const created = await tx.item.findUniqueOrThrow({
-        where: { id: item.id },
-        include: {
-          images: {
-            orderBy: { order: "asc" },
+        // 🔥 Si es SERVICE y tiene horarios → crear ventanas
+        if (dto.type === 'SERVICE' && dto.schedule?.length) {
+          await tx.serviceScheduleWindow.createMany({
+            data: dto.schedule.map((s) => ({
+              businessId,
+              itemId: item.id,
+              weekday: s.weekday,
+              startMinute: s.startMinute,
+              endMinute: s.endMinute,
+            })),
+          });
+        }
+
+        const created = await tx.item.findUniqueOrThrow({
+          where: { id: item.id },
+          include: {
+            images: {
+              orderBy: { order: "asc" },
+            },
+            scheduleWindows: {
+              orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
+            },
           },
-          scheduleWindows: {
-            orderBy: [{ weekday: "asc" }, { startMinute: "asc" }],
-          },
-        },
+        });
+
+        return this.mapItemWithSchedule(created);
       });
+    } catch (error) {
+      // Si el error es una colisión de ID único (P2002)
+      if (error.code === 'P2002' && dto.id) {
+        // Buscamos el item existente para validar que pertenezca al mismo negocio
+        const existingItem = await this.prisma.item.findUnique({
+          where: { id: dto.id },
+          include: {
+            images: { orderBy: { order: "asc" } },
+            scheduleWindows: { orderBy: [{ weekday: "asc" }, { startMinute: "asc" }] },
+          },
+        });
 
-      return this.mapItemWithSchedule(created);
-    });
+        // Si existe y es del mismo negocio, lo retornamos como respuesta idempotente
+        if (existingItem && existingItem.businessId === businessId) {
+          return this.mapItemWithSchedule(existingItem);
+        }
+      }
+      // Si es otro error o la validación de negocio falla, re-lanzamos el error
+      throw error;
+    }
   }
 
   async findAll(businessId: string, status?: string) {

@@ -34,6 +34,10 @@ function typeLabel(type: Sale["type"]) {
   return type === "PRODUCTO" ? "Venta Directa" : "Servicio";
 }
 
+function paymentMethodLabel(paymentMethod?: Sale["paymentMethod"]) {
+  return paymentMethod === "BANK_TRANSFER" ? "Transferencia" : "Efectivo";
+}
+
 function ItemThumbnail() {
   return (
     <div className="h-12 w-12 shrink-0 rounded-xl bg-neutral-100 flex items-center justify-center overflow-hidden">
@@ -175,6 +179,13 @@ export default function SaleDetailsModal({
                   <span className="text-sm font-semibold text-neutral-700">{styles.label}</span>
                 </div>
               </div>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-50">
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Medio de pago</span>
+              <span className="text-sm font-semibold text-neutral-700">
+                {paymentMethodLabel(sale.paymentMethod)}
+              </span>
             </div>
 
             {sale.type === "SERVICIO" && sale.scheduledAt && (

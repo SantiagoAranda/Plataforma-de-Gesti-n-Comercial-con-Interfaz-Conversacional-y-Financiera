@@ -5,13 +5,15 @@ export type AccountingMovementOriginType = "MANUAL" | "ORDER";
 export type AccountingMovement = {
   id: string;
   businessId: string;
-  pucSubcuentaId: string;
+  pucCuentaCode?: string | null;
+  pucSubcuentaId?: string | null;
   pucCode: string;
   pucName: string;
+  pucKind: "CUENTA" | "SUBCUENTA";
   amount: number;
   nature: "DEBIT" | "CREDIT";
   date: string;
-  detail: string;
+  detail: string | null;
   originType: AccountingMovementOriginType;
   originId?: string | null;
   createdAt: string;
@@ -76,11 +78,12 @@ export async function deleteMovement(id: string) {
 export type MovementNature = "DEBIT" | "CREDIT";
 
 export type CreateAccountingMovementDto = {
-  pucSubcuentaId: string;
+  pucCuentaCode?: string | null;
+  pucSubcuentaId?: string | null;
   amount: number;
   nature: MovementNature;
   date: string;
-  detail: string;
+  detail?: string | null;
   originType: "MANUAL" | "ORDER";
   originId?: string;
 };

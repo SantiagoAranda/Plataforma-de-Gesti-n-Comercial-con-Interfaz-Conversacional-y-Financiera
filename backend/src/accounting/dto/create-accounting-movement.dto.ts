@@ -1,10 +1,14 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { AccountingMovementOriginType, MovementNature } from '@prisma/client';
-import { Transform } from 'class-transformer';
 
 export class CreateAccountingMovementDto {
+  @IsOptional()
   @IsString()
-  pucSubcuentaId: string;
+  pucSubcuentaId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  pucCuentaCode?: string | null;
 
   @IsNumber()
   @Min(0.0000001)
@@ -16,11 +20,12 @@ export class CreateAccountingMovementDto {
   @IsDateString()
   date: string;
 
+  @IsOptional()
   @IsString()
-  detail: string;
+  detail?: string | null;
 
-  @IsEnum(["MANUAL", "ORDER"])
-  originType: "MANUAL" | "ORDER";
+  @IsEnum(AccountingMovementOriginType)
+  originType: AccountingMovementOriginType;
 
   @IsOptional()
   @IsString()

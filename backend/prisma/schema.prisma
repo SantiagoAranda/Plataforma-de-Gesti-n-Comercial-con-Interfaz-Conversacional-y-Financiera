@@ -36,6 +36,11 @@ enum AccountingMovementOriginType {
   ORDER
 }
 
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+}
+
 enum OrderStatus {
   DRAFT
   SENT
@@ -171,6 +176,7 @@ model Order {
   customerName     String
   customerWhatsapp String
   note             String?
+  paymentMethod    PaymentMethod @default(CASH)
 
   // Totales “congelados”
   total    Decimal @default(0) @db.Decimal(14, 2)
@@ -346,7 +352,8 @@ model PucCuenta {
   grupoCode String   @db.VarChar(2)
   grupo     PucGrupo @relation(fields: [grupoCode], references: [code], onDelete: Restrict)
 
-  subcuentas PucSubcuenta[]
+  subcuentas          PucSubcuenta[]
+  accountingMovements AccountingMovement[]
 
   @@index([grupoCode])
 }
@@ -373,18 +380,22 @@ enum MovementNature {
 model AccountingMovement {
   id              String                       @id @default(cuid())
   businessId      String
-  pucSubcuentaId  String
+  pucCuentaCode   String?                      @db.VarChar(4)
+  pucSubcuentaId  String?
   amount          Decimal                      @db.Decimal(18, 2)
   nature          MovementNature              @default(DEBIT)
   date            DateTime
-  detail          String
+  detail          String?
   originType      AccountingMovementOriginType
   originId        String?
   createdAt       DateTime                    @default(now())
   updatedAt       DateTime                    @updatedAt
 
   business        Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  pucSubcuenta    PucSubcuenta                @relation(fields: [pucSubcuentaId], references: [code])
+  pucCuenta       PucCuenta?                  @relation(fields: [pucCuentaCode], references: [code])
+  pucSubcuenta    PucSubcuenta?               @relation(fields: [pucSubcuentaId], references: [code])
 
   @@index([businessId, date])
+  @@index([pucCuentaCode])
+  @@index([pucSubcuentaId])
 }

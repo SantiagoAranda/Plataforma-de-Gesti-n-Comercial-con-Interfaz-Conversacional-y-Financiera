@@ -1,10 +1,11 @@
 import {
   IsArray,
+  IsIn,
   IsInt,
-  IsString,
-  ValidateNested,
-  Min,
   IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -24,9 +25,13 @@ export class CreateOrderDto {
   @IsString()
   customerWhatsapp: string;
 
-  @IsOptional()   // 👈 ESTA LÍNEA
+  @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsIn(['CASH', 'BANK_TRANSFER'])
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
 
   @IsArray()
   @ValidateNested({ each: true })

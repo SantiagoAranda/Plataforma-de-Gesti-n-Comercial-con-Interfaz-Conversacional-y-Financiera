@@ -33,7 +33,7 @@ export const listClases = getPucClases;
 export const listGrupos = getPucGrupos;
 
 export type PucSearchResult =
-  | { kind: "SUBCUENTA"; code: string; name: string }
+  | { kind: "SUBCUENTA"; code: string; name: string; parentCode?: string }
   | { kind: "CUENTA"; code: string; name: string };
 
 export async function searchPuc(query: string): Promise<PucSearchResult[]> {

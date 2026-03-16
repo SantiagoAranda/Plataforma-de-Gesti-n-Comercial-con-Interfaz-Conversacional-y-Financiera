@@ -77,6 +77,35 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
   return aS < bE && bS < aE;
 }
 
+function generateCreationId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+
+  if (typeof globalThis.crypto?.getRandomValues === "function") {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
+
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
+}
+
 export default function MiNegocioPage() {
 
   const [type, setType] = useState<ItemType>("PRODUCT");
@@ -96,6 +125,8 @@ export default function MiNegocioPage() {
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(false);
   const [viewArchived, setViewArchived] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [creationId, setCreationId] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -135,12 +166,15 @@ export default function MiNegocioPage() {
     setDuration(30);
     setWeek(createInitialWeek());
     setType("PRODUCT");
+    setCreationId(generateCreationId());
     setIsOpen(false);
   };
 
   const handleSend = async () => {
 
-    if (!name || !price) return;
+    if (!name || !price || isSubmitting) return;
+
+    setIsSubmitting(true);
 
     let schedule: any[] = [];
 
@@ -185,7 +219,10 @@ export default function MiNegocioPage() {
 
         const createdItem = await api<Item>("/items", {
           method: "POST",
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            ...payload,
+            id: creationId,
+          }),
         });
 
         if (image) {
@@ -205,6 +242,10 @@ export default function MiNegocioPage() {
 
     } catch (err) {
       console.error(err);
+      setToast({ message: "Error al guardar item", type: "error" });
+      setTimeout(() => setToast(null), 2500);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -731,9 +772,12 @@ export default function MiNegocioPage() {
 
                 <button
                   onClick={handleSend}
-                  className="w-11 h-11 rounded-full bg-green-600 text-white shadow-md flex items-center justify-center active:scale-95 transition"
+                  disabled={isSubmitting}
+                  className={`w-11 h-11 rounded-full bg-green-600 text-white shadow-md flex items-center justify-center active:scale-95 transition ${
+                    isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
                 >
-                  ➤
+                  {isSubmitting ? "..." : "➤"}
                 </button>
 
               </div>

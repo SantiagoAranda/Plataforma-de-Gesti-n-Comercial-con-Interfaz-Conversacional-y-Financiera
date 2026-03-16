@@ -82,8 +82,14 @@ function iconForCategory(kind: MovementKind) {
 function badgeForOrigin(
   origin?: AccountingMovementOriginType | "RECURRENTE" | "SISTEMA"
 ) {
-  const label = origin ?? "MANUAL";
-  const cls = originBadgeColor[label] ?? "bg-neutral-100 text-neutral-700";
+  const label =
+    origin === "ORDER"
+      ? "Automatica"
+      : origin === "MANUAL"
+        ? "Manual"
+        : origin ?? "Manual";
+  const colorKey = origin ?? "MANUAL";
+  const cls = originBadgeColor[colorKey] ?? "bg-neutral-100 text-neutral-700";
 
   return (
     <span
@@ -139,8 +145,9 @@ export function AccountingMovementCard({
             <div className="text-sm font-semibold text-neutral-900">
               {movement.pucCode} - {movement.pucName}
             </div>
+            {/* Descripción del movimiento "Se puede agregar Sin descripción"*/}
             <div className="text-sm text-neutral-600">
-              {movement.detail || "Sin descripción"}
+              {movement.detail || ""}
             </div>
           </div>
         </div>
