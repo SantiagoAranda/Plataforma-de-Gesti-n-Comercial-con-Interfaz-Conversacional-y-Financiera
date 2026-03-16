@@ -106,6 +106,19 @@ function buildSelectedPucFromMovement(movement: AccountingMovement) {
   return null;
 }
 
+function formatCurrency(value: number) {
+  return value.toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
+
+function movementTimestamp(movement: AccountingMovement) {
+  return new Date(movement.createdAt ?? movement.date).getTime();
+}
+
 export default function ContabilidadPage() {
   const [movements, setMovements] = useState<AccountingMovement[]>([]);
   const [selectedMovement, setSelectedMovement] =
@@ -136,9 +149,7 @@ export default function ContabilidadPage() {
     setError(null);
 
     try {
-      const data = await listMovements({
-        search: searchText.trim() || undefined,
-      });
+      const data = await listMovements();
 
       setMovements(data ?? []);
     } catch (err) {
@@ -147,7 +158,7 @@ export default function ContabilidadPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchText]);
+  }, []);
 
   useEffect(() => {
     refresh();
@@ -353,12 +364,56 @@ export default function ContabilidadPage() {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [searchText, composerOpen, refresh]);
+  }, [composerOpen, refresh]);
+
+  const displayMovements = useMemo(() => {
+    const normalizedSearch = searchText.trim().toLowerCase();
+    const filteredMovements = normalizedSearch
+      ? movements.filter((movement) => {
+          const haystack = [
+            movement.pucCode,
+            movement.pucName,
+            movement.detail ?? "",
+            movement.originType,
+          ]
+            .join(" ")
+            .toLowerCase();
+
+          return haystack.includes(normalizedSearch);
+        })
+      : movements;
+
+    return [...filteredMovements].sort((a, b) => {
+      const timeDiff = movementTimestamp(a) - movementTimestamp(b);
+      if (timeDiff !== 0) return timeDiff;
+      return a.id.localeCompare(b.id);
+    });
+  }, [movements, searchText]);
 
   const isEmpty = useMemo(
-    () => !loading && movements.length === 0,
-    [loading, movements.length]
+    () => !loading && displayMovements.length === 0,
+    [loading, displayMovements.length]
   );
+
+  const balanceSummary = useMemo(() => {
+    const totalDebit = movements.reduce((acc, movement) => {
+      return movement.nature === "DEBIT" ? acc + Number(movement.amount || 0) : acc;
+    }, 0);
+
+    const totalCredit = movements.reduce((acc, movement) => {
+      return movement.nature === "CREDIT" ? acc + Number(movement.amount || 0) : acc;
+    }, 0);
+
+    const difference = totalDebit - totalCredit;
+    const isBalanced = difference === 0;
+
+    return {
+      totalDebit,
+      totalCredit,
+      difference,
+      isBalanced,
+    };
+  }, [movements]);
 
   useEffect(() => {
     scrollToBottom();
@@ -376,30 +431,67 @@ export default function ContabilidadPage() {
   }, [movements.length, pendingSmoothScroll, scrollToBottom]);
 
   return (
-    <div className="flex min-h-dvh min-h-0 flex-col bg-[#f6f8f6]">
-      {selectedMovement ? (
-        <SelectionActionBar
-          visible
-          title="Movimiento seleccionado"
-          onClose={clearSelection}
-          onEdit={() => startEdit(selectedMovement)}
-          onDelete={
-            selectedMovement.originType === "MANUAL"
-              ? () => handleDelete(selectedMovement.id)
-              : undefined
-          }
-          deleteLabel="Eliminar"
-        />
-      ) : (
-        <AppHeader
-          title="Contabilidad"
-          subtitle="Movimientos y registros"
-          showBack
-        />
-      )}
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f6f8f6]">
+      <div className="shrink-0">
+        {selectedMovement ? (
+          <SelectionActionBar
+            visible
+            title="Movimiento seleccionado"
+            onClose={clearSelection}
+            onEdit={() => startEdit(selectedMovement)}
+            onDelete={
+              selectedMovement.originType === "MANUAL"
+                ? () => handleDelete(selectedMovement.id)
+                : undefined
+            }
+            deleteLabel="Eliminar"
+          />
+        ) : (
+          <AppHeader
+            title="Contabilidad"
+            subtitle="Movimientos y registros"
+            showBack
+          />
+        )}
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-3 pb-24 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-3 sm:px-4">
+          <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Resumen del balance
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              <div>Debito</div>
+              <div>Credito</div>
+              <div>Diferencia</div>
+            </div>
+
+            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-bold">
+              <div className="text-neutral-900">
+                {formatCurrency(balanceSummary.totalDebit)}
+              </div>
+              <div className="text-neutral-900">
+                {formatCurrency(balanceSummary.totalCredit)}
+              </div>
+              <div
+                className={
+                  balanceSummary.isBalanced
+                    ? "text-emerald-700"
+                    : "text-amber-700"
+                }
+              >
+                {balanceSummary.isBalanced
+                  ? "Balanceado"
+                  : formatCurrency(Math.abs(balanceSummary.difference))}
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-3 pb-24 pt-1 sm:px-4">
+          <div className="min-h-0 flex-1 overflow-y-auto">
           {error && (
             <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
@@ -428,12 +520,13 @@ export default function ContabilidadPage() {
             />
           ) : (
             <AccountingMovementList
-              movements={movements}
+              movements={displayMovements}
               selectedId={selectedMovement?.id ?? null}
               onSelect={handleSelectMovement}
             />
           )}
           <div ref={bottomRef} className="h-px" />
+          </div>
         </div>
       </main>
 
