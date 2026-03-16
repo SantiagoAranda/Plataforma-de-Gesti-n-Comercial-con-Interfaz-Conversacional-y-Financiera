@@ -27,6 +27,25 @@ export default function MiTiendaPage() {
 
   /* ================= COMPARTIR TIENDA ================= */
 
+  const copyWithExecCommand = (text: string) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+      return document.execCommand("copy");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
   const handleShareStore = async () => {
     const businessName = localStorage.getItem("businessName");
 
@@ -53,16 +72,50 @@ export default function MiTiendaPage() {
           text: "Mira mi tienda online",
           url,
         });
-      } else {
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
 
         notify({
           type: "success",
           message: "Link de tu tienda copiado",
         });
+        return;
       }
+
+      if (copyWithExecCommand(url)) {
+        notify({
+          type: "success",
+          message: "Link de tu tienda copiado",
+        });
+        return;
+      }
+
+      window.prompt("Copiá el link de tu tienda:", url);
+      notify({
+        type: "info",
+        message: "Copiá el link manualmente",
+      });
     } catch (err) {
-      console.error(err);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+
+      if (copyWithExecCommand(url)) {
+        notify({
+          type: "success",
+          message: "Link de tu tienda copiado",
+        });
+        return;
+      }
+
+      window.prompt("Copiá el link de tu tienda:", url);
+      notify({
+        type: "info",
+        message: "No se pudo copiar automáticamente. Copialo manualmente.",
+      });
     }
   };
 
