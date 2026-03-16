@@ -2,6 +2,11 @@
 
 import type { AccountingMovement } from "@/src/services/accounting";
 import { AccountingMovementCard } from "./AccountingMovementCard";
+import {
+  formatBusinessDateTime,
+  getBusinessDayKey,
+  getRelativeBusinessDayLabel,
+} from "@/src/lib/businessDate";
 
 type Props = {
   movements: AccountingMovement[];
@@ -15,21 +20,17 @@ function movementTimestamp(movement: AccountingMovement) {
 }
 
 function movementDayKey(movement: AccountingMovement) {
-  return (movement.createdAt ?? movement.date ?? "").slice(0, 10);
+  return getBusinessDayKey(movement.createdAt ?? movement.date);
 }
 
 function groupLabel(dateISO: string) {
-  const d = new Date(dateISO + "T00:00:00");
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(today.getDate() - 1);
-  const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const d = new Date(`${dateISO}T12:00:00Z`);
+  const relativeLabel = getRelativeBusinessDayLabel(d, "es-AR");
 
-  if (dd.getTime() === today.getTime()) return "HOY";
-  if (dd.getTime() === yesterday.getTime()) return "AYER";
+  if (relativeLabel === "Hoy") return "HOY";
+  if (relativeLabel === "Ayer") return "AYER";
 
-  return d.toLocaleDateString("es-CO", {
+  return formatBusinessDateTime(d, "es-AR", {
     day: "2-digit",
     month: "short",
     year: "numeric",

@@ -6,20 +6,26 @@ type Props = {
   value: Nature;
   onChange: (value: Nature) => void;
   disabled?: boolean;
+  error?: string;
 };
 
 export function AccountingNatureToggle({
   value,
   onChange,
   disabled = false,
+  error,
 }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="mb-1 text-xs font-semibold text-neutral-600">
-        Naturaleza
+        Naturaleza <span className="text-red-500">*</span>
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-1">
+      <div
+        className={`rounded-2xl border bg-neutral-50 p-1 ${
+          error ? "border-red-300 bg-red-50" : "border-neutral-200"
+        }`}
+      >
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -48,6 +54,8 @@ export function AccountingNatureToggle({
           </button>
         </div>
       </div>
+
+      {error && <span className="mt-1 text-xs font-medium text-red-500">{error}</span>}
     </div>
   );
 }

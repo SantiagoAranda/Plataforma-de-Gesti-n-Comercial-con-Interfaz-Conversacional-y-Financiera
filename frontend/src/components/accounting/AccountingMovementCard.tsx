@@ -12,6 +12,7 @@ import type {
   AccountingMovementOriginType,
 } from "@/src/services/accounting";
 import { SelectableCard } from "@/src/components/shared/selection/SelectableCard";
+import { formatBusinessDateTime } from "@/src/lib/businessDate";
 
 type MovementKind =
   | "TODOS"
@@ -26,6 +27,42 @@ type Props = {
   selected?: boolean;
   onSelect: () => void;
   onOpen?: () => void;
+};
+
+const categoryStyles: Record<
+  MovementKind,
+  { label: string; amount: string; badge: string }
+> = {
+  TODOS: {
+    label: "General",
+    amount: "text-neutral-900",
+    badge: "bg-neutral-100 text-neutral-700",
+  },
+  INGRESOS: {
+    label: "Ingreso",
+    amount: "text-emerald-700",
+    badge: "bg-emerald-50 text-emerald-700",
+  },
+  GASTOS: {
+    label: "Gasto/Costo",
+    amount: "text-rose-600",
+    badge: "bg-rose-50 text-rose-700",
+  },
+  ACTIVOS: {
+    label: "Activo",
+    amount: "text-emerald-700",
+    badge: "bg-emerald-50 text-emerald-700",
+  },
+  PASIVOS: {
+    label: "Pasivo",
+    amount: "text-rose-600",
+    badge: "bg-rose-50 text-rose-700",
+  },
+  PATRIMONIO: {
+    label: "Patrimonio",
+    amount: "text-emerald-700",
+    badge: "bg-emerald-50 text-emerald-700",
+  },
 };
 
 const originBadgeColor: Record<
@@ -103,15 +140,15 @@ function badgeForOrigin(
 function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   if (nature === "DEBIT") {
     return (
-      <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-semibold text-blue-700">
-        Débito
+      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
+        Debito
       </span>
     );
   }
   if (nature === "CREDIT") {
     return (
-      <span className="rounded-full bg-purple-50 px-3 py-1 text-[11px] font-semibold text-purple-700">
-        Crédito
+      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
+        Credito
       </span>
     );
   }
@@ -125,8 +162,8 @@ export function AccountingMovementCard({
   onOpen,
 }: Props) {
   const kind = categoryFromPuc(movement.pucCode);
+  const kindStyle = categoryStyles[kind];
   const amount = Number(movement.amount);
-  const isNegative = amount < 0;
 
   return (
     <SelectableCard
@@ -145,27 +182,22 @@ export function AccountingMovementCard({
             <div className="text-sm font-semibold text-neutral-900">
               {movement.pucCode} - {movement.pucName}
             </div>
-            {/* Descripción del movimiento "Se puede agregar Sin descripción"*/}
             <div className="text-sm text-neutral-600">
               {movement.detail || ""}
             </div>
           </div>
         </div>
 
-        <div
-          className={`shrink-0 text-base font-bold ${
-            movement.nature === "DEBIT" ? "text-emerald-700" : "text-rose-600"
-          }`}
-        >
+        <div className={`shrink-0 text-base font-bold ${kindStyle.amount}`}>
           {formatCurrency(amount)}
         </div>
       </div>
 
       <div className="mt-3 border-t border-neutral-100 pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-2 w-2 rounded-full bg-neutral-400" />
-            {new Date(movement.createdAt || movement.date).toLocaleString("es-CO", {
+            {formatBusinessDateTime(movement.createdAt || movement.date, "es-AR", {
               day: "2-digit",
               month: "2-digit",
               year: "numeric",
@@ -174,9 +206,14 @@ export function AccountingMovementCard({
             })}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {badgeForOrigin(movement.originType)}
             {badgeForNature(movement.nature)}
+            <span
+              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${kindStyle.badge}`}
+            >
+              {kindStyle.label}
+            </span>
           </div>
         </div>
       </div>

@@ -38,6 +38,13 @@ type WeeklySchedule = {
   ranges: TimeRange[];
 };
 
+type FormErrors = {
+  name?: string;
+  price?: string;
+  duration?: string;
+  schedule?: string;
+};
+
 const INITIAL_WEEK: WeeklySchedule[] = [
   { day: "Lunes", active: true, ranges: [{ start: "08:00", end: "12:00" }] },
   { day: "Martes", active: false, ranges: [] },
@@ -129,6 +136,7 @@ export default function MiNegocioPage() {
   const [creationId, setCreationId] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
 
   const fetchItems = async () => {
     try {
@@ -166,13 +174,41 @@ export default function MiNegocioPage() {
     setDuration(30);
     setWeek(createInitialWeek());
     setType("PRODUCT");
+    setFormErrors({});
     setCreationId(generateCreationId());
     setIsOpen(false);
   };
 
+  const validateForm = () => {
+    const nextErrors: FormErrors = {};
+
+    if (!name.trim()) {
+      nextErrors.name = "El nombre es obligatorio.";
+    }
+
+    if (!price.trim() || !Number.isFinite(Number(price)) || Number(price) <= 0) {
+      nextErrors.price = "Ingresa un precio valido.";
+    }
+
+    if (type === "SERVICE") {
+      if (!Number.isFinite(duration) || duration < 5) {
+        nextErrors.duration = "La duracion debe ser de al menos 5 minutos.";
+      }
+
+      const hasSchedule = week.some((day) => day.active && day.ranges.length > 0);
+      if (!hasSchedule) {
+        nextErrors.schedule = "Define al menos un horario disponible.";
+      }
+    }
+
+    setFormErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
   const handleSend = async () => {
 
-    if (!name || !price || isSubmitting) return;
+    if (isSubmitting) return;
+    if (!validateForm()) return;
 
     setIsSubmitting(true);
 
@@ -250,6 +286,7 @@ export default function MiNegocioPage() {
   };
 
   const handleStartEdit = (item: Item) => {
+    setFormErrors({});
     setEditingItem(item);
     setName(item.name);
     setPrice(String(item.price));
@@ -433,7 +470,10 @@ export default function MiNegocioPage() {
 
               <button
                 disabled={!!editingItem}
-                onClick={() => setType("PRODUCT")}
+                onClick={() => {
+                  setType("PRODUCT");
+                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
+                }}
                 className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
                   type === "PRODUCT"
                     ? "bg-white text-green-600 shadow-sm"
@@ -445,7 +485,10 @@ export default function MiNegocioPage() {
 
               <button
                 disabled={!!editingItem}
-                onClick={() => setType("SERVICE")}
+                onClick={() => {
+                  setType("SERVICE");
+                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
+                }}
                 className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
                   type === "SERVICE"
                     ? "bg-white text-green-600 shadow-sm"
@@ -496,15 +539,26 @@ export default function MiNegocioPage() {
             <div>
 
               <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Nombre
+                Nombre <span className="text-red-500">*</span>
               </label>
 
               <input
                 placeholder="Nombre del servicio"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-neutral-100 rounded-xl px-4 py-3 text-sm outline-none"
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setFormErrors((prev) => ({ ...prev, name: undefined }));
+                }}
+                className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
+                  formErrors.name
+                    ? "border-red-300 bg-red-50 text-red-900"
+                    : "border-transparent bg-neutral-100"
+                }`}
               />
+
+              {formErrors.name && (
+                <p className="mt-2 text-xs font-medium text-red-500">{formErrors.name}</p>
+              )}
 
             </div>
 
@@ -516,10 +570,16 @@ export default function MiNegocioPage() {
               <div>
 
                 <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Precio
+                  Precio <span className="text-red-500">*</span>
                 </label>
 
-                <div className="flex items-center bg-neutral-100 rounded-xl px-4 h-[44px]">
+                <div
+                  className={`flex h-[44px] items-center rounded-xl border px-4 ${
+                    formErrors.price
+                      ? "border-red-300 bg-red-50"
+                      : "border-transparent bg-neutral-100"
+                  }`}
+                >
 
                   <span className="text-neutral-500 text-sm mr-2">
                     $
@@ -529,11 +589,18 @@ export default function MiNegocioPage() {
                     type="number"
                     placeholder="0.00"
                     value={price}
-                    onChange={(e) => setPrice(e.target.value)}
+                    onChange={(e) => {
+                      setPrice(e.target.value);
+                      setFormErrors((prev) => ({ ...prev, price: undefined }));
+                    }}
                     className="flex-1 bg-transparent outline-none text-sm"
                   />
 
                 </div>
+
+                {formErrors.price && (
+                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.price}</p>
+                )}
 
               </div>
 
@@ -553,8 +620,15 @@ export default function MiNegocioPage() {
                       min={5}
                       step={5}
                       value={duration}
-                      onChange={(e) => setDuration(Number(e.target.value))}
-                      className="w-full bg-neutral-100 rounded-xl pl-3 pr-10 py-3 text-sm outline-none"
+                      onChange={(e) => {
+                        setDuration(Number(e.target.value));
+                        setFormErrors((prev) => ({ ...prev, duration: undefined }));
+                      }}
+                      className={`w-full rounded-xl border pl-3 pr-10 py-3 text-sm outline-none ${
+                        formErrors.duration
+                          ? "border-red-300 bg-red-50 text-red-900"
+                          : "border-transparent bg-neutral-100"
+                      }`}
                     />
 
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 text-sm">
@@ -562,6 +636,10 @@ export default function MiNegocioPage() {
                     </span>
 
                   </div>
+
+                  {formErrors.duration && (
+                    <p className="mt-2 text-xs font-medium text-red-500">{formErrors.duration}</p>
+                  )}
 
                 </div>
               )}
@@ -574,7 +652,7 @@ export default function MiNegocioPage() {
               <div>
 
                 <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Horarios disponibles
+                  Horarios disponibles <span className="text-red-500">*</span>
                 </label>
 
                 {/* DIAS */}
@@ -599,6 +677,7 @@ export default function MiNegocioPage() {
                         }
 
                         setWeek(copy);
+                        setFormErrors((prev) => ({ ...prev, schedule: undefined }));
 
                       }}
                       className={`flex-1 h-8 rounded-full text-[11px] font-semibold transition
@@ -649,7 +728,13 @@ export default function MiNegocioPage() {
 
 
                 {/* RANGOS */}
-                <div className="bg-neutral-50 border border-neutral-100 rounded-2xl p-4 space-y-3 shadow-sm">
+                <div
+                  className={`rounded-2xl border p-4 space-y-3 shadow-sm ${
+                    formErrors.schedule
+                      ? "border-red-200 bg-red-50"
+                      : "border-neutral-100 bg-neutral-50"
+                  }`}
+                >
 
                   {week[currentDayIndex].active &&
                     week[currentDayIndex].ranges.map((range, rIndex) => (
@@ -676,6 +761,7 @@ export default function MiNegocioPage() {
                             if (!overlap) {
                               copy[currentDayIndex].ranges[rIndex].start = newStart;
                               setWeek(copy);
+                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
                             }
 
                           }}
@@ -701,6 +787,7 @@ export default function MiNegocioPage() {
                             if (!overlap) {
                               copy[currentDayIndex].ranges[rIndex].end = newEnd;
                               setWeek(copy);
+                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
                             }
 
                           }}
@@ -712,6 +799,7 @@ export default function MiNegocioPage() {
                             const copy = [...week];
                             copy[currentDayIndex].ranges.splice(rIndex, 1);
                             setWeek(copy);
+                            setFormErrors((prev) => ({ ...prev, schedule: undefined }));
                           }}
                           className="ml-auto text-neutral-400 hover:text-red-500 transition"
                         >
@@ -738,6 +826,7 @@ export default function MiNegocioPage() {
                           }
 
                           setWeek(copy);
+                          setFormErrors((prev) => ({ ...prev, schedule: undefined }));
 
                         }}
                         className="text-green-600 text-xs font-semibold mt-2"
@@ -748,6 +837,10 @@ export default function MiNegocioPage() {
                     )}
 
                 </div>
+
+                {formErrors.schedule && (
+                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.schedule}</p>
+                )}
 
               </div>
             )}

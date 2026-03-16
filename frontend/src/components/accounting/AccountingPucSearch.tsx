@@ -8,9 +8,10 @@ import type { AccountingFormState } from "@/src/types/accounting-form";
 type Props = {
   value: AccountingFormState;
   onChange: React.Dispatch<React.SetStateAction<AccountingFormState>>;
+  error?: string;
 };
 
-export function AccountingPucSearch({ value, onChange }: Props) {
+export function AccountingPucSearch({ value, onChange, error }: Props) {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<PucSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -124,9 +125,17 @@ export function AccountingPucSearch({ value, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs font-semibold text-neutral-600">Codigo PUC</span>
+      <span className="text-xs font-semibold text-neutral-600">
+        Codigo PUC <span className="text-red-500">*</span>
+      </span>
 
-      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-2">
+      <div
+        className={`rounded-2xl border p-2 ${
+          error
+            ? "border-red-300 bg-red-50"
+            : "border-neutral-200 bg-neutral-50"
+        }`}
+      >
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -207,6 +216,8 @@ export function AccountingPucSearch({ value, onChange }: Props) {
           </div>
         )}
       </div>
+
+      {error && <span className="text-xs font-medium text-red-500">{error}</span>}
     </div>
   );
 }

@@ -1,4 +1,9 @@
 import type { BackendMovement } from "@/src/services/accounting";
+import {
+  formatBusinessDateTime,
+  formatBusinessTime,
+  getBusinessDayKey,
+} from "@/src/lib/businessDate";
 
 export type ModuleActivitySummary = {
   module: "BUSINESS" | "SALES" | "ACCOUNTING";
@@ -45,7 +50,7 @@ function parseDate(value?: string | null) {
 }
 
 function formatAbsoluteDateTime(date: Date) {
-  return date.toLocaleString("es-AR", {
+  return formatBusinessDateTime(date, "es-AR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -58,17 +63,10 @@ function formatActivityFallback(date?: string | null) {
   const parsed = parseDate(date);
   if (!parsed) return FALLBACK_NO_ACTIVITY;
 
-  const now = new Date();
-  const sameDay =
-    parsed.getFullYear() === now.getFullYear() &&
-    parsed.getMonth() === now.getMonth() &&
-    parsed.getDate() === now.getDate();
+  const sameDay = getBusinessDayKey(parsed) === getBusinessDayKey(new Date());
 
   if (sameDay) {
-    return ` hoy ${parsed.toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
+    return ` hoy ${formatBusinessTime(parsed, "es-AR")}`;
   }
 
   return ` ${formatAbsoluteDateTime(parsed)}`;
@@ -110,33 +108,22 @@ export function formatActivityTime(date?: string | null) {
   const diffMinutes = Math.round(diffMs / 60000);
   const diffDays = diffMs / 86400000;
 
-  const isSameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  const isYesterday =
-    d.getFullYear() === yesterday.getFullYear() &&
-    d.getMonth() === yesterday.getMonth() &&
-    d.getDate() === yesterday.getDate();
+  const isSameDay = getBusinessDayKey(d) === getBusinessDayKey(now);
+  const isYesterday = getBusinessDayKey(d) === getBusinessDayKey(yesterday);
 
   if (diffMinutes < 2) return "AHORA";
   if (diffMinutes < 60) return `hace ${diffMinutes} min`;
   if (isSameDay) {
-    return d.toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatBusinessTime(d, "es-AR");
   }
   if (isYesterday) return "Ayer";
   if (diffDays < 7) {
-    return d
-      .toLocaleDateString("es-AR", { weekday: "short" })
+    return formatBusinessDateTime(d, "es-AR", { weekday: "short" })
       .replace(/\.$/, "");
   }
-  return d.toLocaleDateString("es-AR", {
+  return formatBusinessDateTime(d, "es-AR", {
     day: "2-digit",
     month: "short",
   });

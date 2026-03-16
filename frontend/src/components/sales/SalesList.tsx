@@ -2,6 +2,7 @@
 
 import type { Sale } from "@/src/types/sales";
 import SaleCard from "./SaleCard";
+import { getBusinessDayKey, getRelativeBusinessDayLabel } from "@/src/lib/businessDate";
 
 type Props = {
   sales: Sale[];
@@ -12,23 +13,7 @@ type Props = {
 };
 
 function getDayLabel(date: Date) {
-  const today = new Date();
-  const yesterday = new Date();
-
-  yesterday.setDate(today.getDate() - 1);
-
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  if (isSameDay(date, today)) return "Hoy";
-  if (isSameDay(date, yesterday)) return "Ayer";
-
-  return date.toLocaleDateString([], {
-    day: "numeric",
-    month: "long",
-  });
+  return getRelativeBusinessDayLabel(date);
 }
 
 function groupSalesByDate(sales: Sale[]) {
@@ -36,12 +21,7 @@ function groupSalesByDate(sales: Sale[]) {
 
   sales.forEach((sale) => {
     const date = new Date(sale.createdAt);
-
-    const key = new Date(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate()
-    ).toISOString();
+    const key = getBusinessDayKey(date);
 
     if (!groups[key]) groups[key] = [];
 
@@ -51,7 +31,7 @@ function groupSalesByDate(sales: Sale[]) {
   return Object.entries(groups)
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([dateKey, sales]) => ({
-      label: getDayLabel(new Date(dateKey)),
+      label: getDayLabel(new Date(`${dateKey}T12:00:00Z`)),
       sales,
     }));
 }

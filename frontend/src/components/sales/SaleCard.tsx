@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Sale } from "@/src/types/sales";
 import { useLongPress } from "@/src/components/shared/selection/useLongPress";
 import { getStatusStyles } from "@/src/lib/statusStyles";
+import { formatBusinessTime } from "@/src/lib/businessDate";
 
 function typeLabel(type: Sale["type"]) {
   return type === "PRODUCTO" ? "Producto" : "Servicio";
@@ -18,7 +19,7 @@ function formatTime(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatBusinessTime(d);
 }
 
 type Props = {

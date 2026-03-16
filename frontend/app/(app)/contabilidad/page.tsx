@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
 
 import {
@@ -18,8 +18,16 @@ import { AccountingEmptyState } from "@/src/components/accounting/AccountingEmpt
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 
 import type { AccountingFormState } from "@/src/types/accounting-form";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => getBusinessDayKey(new Date());
+
+type AccountingFormErrors = {
+  puc?: string;
+  date?: string;
+  amount?: string;
+  nature?: string;
+};
 
 const emptyForm: AccountingFormState = {
   id: undefined,
@@ -107,6 +115,7 @@ export default function ContabilidadPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState<AccountingFormState>(emptyForm);
+  const [formErrors, setFormErrors] = useState<AccountingFormErrors>({});
   const [searchText, setSearchText] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
@@ -149,6 +158,58 @@ export default function ContabilidadPage() {
       ...emptyForm,
       date: todayISO(),
     });
+    setFormErrors({});
+  }, []);
+
+  const validateForm = useCallback((value: AccountingFormState) => {
+    const nextErrors: AccountingFormErrors = {};
+    const pucPayload = buildPucPayload(value);
+    const parsedAmount = Number(value.amount);
+
+    if (!pucPayload.pucCuentaCode && !pucPayload.pucSubcuentaId) {
+      nextErrors.puc = "Selecciona una cuenta o subcuenta PUC.";
+    }
+
+    if (!value.date?.trim()) {
+      nextErrors.date = "La fecha es obligatoria.";
+    }
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      nextErrors.amount = "Ingresa un valor valido.";
+    }
+
+    if (!value.nature) {
+      nextErrors.nature = "Selecciona una naturaleza.";
+    }
+
+    setFormErrors(nextErrors);
+
+    return {
+      isValid: Object.keys(nextErrors).length === 0,
+      parsedAmount,
+      pucPayload,
+    };
+  }, []);
+
+  const handleFormChange = useCallback((updater: SetStateAction<AccountingFormState>) => {
+    setForm((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+
+      setFormErrors((current) => ({
+        puc:
+          next.selectedPuc || next.pucCuentaCode || next.pucSubcuentaId
+            ? undefined
+            : current.puc,
+        date: next.date?.trim() ? undefined : current.date,
+        amount:
+          Number.isFinite(Number(next.amount)) && Number(next.amount) > 0
+            ? undefined
+            : current.amount,
+        nature: next.nature ? undefined : current.nature,
+      }));
+
+      return next;
+    });
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -167,6 +228,7 @@ export default function ContabilidadPage() {
 
   const startEdit = useCallback((movement: AccountingMovement) => {
     const selectedPuc = buildSelectedPucFromMovement(movement);
+    setFormErrors({});
 
     setForm({
       id: movement.id,
@@ -179,7 +241,7 @@ export default function ContabilidadPage() {
       pucCode: movement.pucCode,
       pucName: movement.pucName,
       amount: String(movement.amount),
-      date: movement.date.slice(0, 10),
+      date: getBusinessDayKey(movement.date),
       detail: movement.detail ?? "",
       nature: movement.nature,
     });
@@ -213,16 +275,10 @@ export default function ContabilidadPage() {
       return;
     }
 
-    const selectedPuc = form.selectedPuc;
-    const pucPayload = buildPucPayload(form);
-    const hasPuc = Boolean(
-      pucPayload.pucCuentaCode || pucPayload.pucSubcuentaId
-    );
+    const { isValid, parsedAmount, pucPayload } = validateForm(form);
 
-    console.log("selectedPuc", selectedPuc);
-
-    if (!hasPuc) {
-      setError("Completa el PUC");
+    if (!isValid) {
+      setError("Revisa los campos obligatorios.");
       return;
     }
 
@@ -236,7 +292,7 @@ export default function ContabilidadPage() {
           form.originType === "MANUAL"
             ? {
                 ...pucPayload,
-                amount: Number(form.amount),
+                amount: parsedAmount,
                 nature: form.nature,
                 date: form.date,
                 detail,
@@ -252,23 +308,11 @@ export default function ContabilidadPage() {
         console.log("payload json", JSON.stringify(payload));
 
         if (form.originType === "MANUAL") {
-          const parsedAmount = Number(form.amount);
-          if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-            setError("Ingresa un valor valido");
-            return;
-          }
           payload.amount = parsedAmount;
         }
 
         await updateMovement(form.id, payload);
       } else {
-        const parsedAmount = Number(form.amount);
-
-        if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-          setError("Ingresa un valor valido");
-          return;
-        }
-
         const payload = {
           ...pucPayload,
           amount: parsedAmount,
@@ -299,7 +343,7 @@ export default function ContabilidadPage() {
           : err?.message || "No se pudo guardar el movimiento"
       );
     }
-  }, [composerOpen, form, refresh, resetForm]);
+  }, [composerOpen, form, refresh, resetForm, validateForm]);
 
   useEffect(() => {
     if (composerOpen) return;
@@ -395,6 +439,7 @@ export default function ContabilidadPage() {
 
       <AccountingChatComposer
         value={form}
+        errors={formErrors}
         expanded={composerOpen}
         isEditing={isEditing}
         searchValue={searchText}
@@ -403,7 +448,7 @@ export default function ContabilidadPage() {
           resetForm();
           setError(null);
         }}
-        onChange={setForm}
+        onChange={handleFormChange}
         onSearchChange={setSearchText}
         onCancel={handleCancelComposer}
         onSubmit={handleComposerSubmit}

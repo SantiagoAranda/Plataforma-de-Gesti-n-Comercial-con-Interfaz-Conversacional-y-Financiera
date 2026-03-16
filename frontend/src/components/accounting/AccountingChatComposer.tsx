@@ -5,8 +5,16 @@ import type { Dispatch, SetStateAction } from "react";
 import type { AccountingFormState } from "@/src/types/accounting-form";
 import { AccountingExpandableForm } from "./AccountingExpandableForm";
 
+type AccountingFormErrors = {
+  puc?: string;
+  date?: string;
+  amount?: string;
+  nature?: string;
+};
+
 type Props = {
   value: AccountingFormState;
+  errors: AccountingFormErrors;
   expanded: boolean;
   isEditing: boolean;
   searchValue: string;
@@ -19,6 +27,7 @@ type Props = {
 
 export function AccountingChatComposer({
   value,
+  errors,
   expanded,
   isEditing,
   searchValue,
@@ -39,6 +48,7 @@ export function AccountingChatComposer({
             <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10">
               <AccountingExpandableForm
                 value={value}
+                errors={errors}
                 onChange={onChange}
                 lockFinancialFields={lockFinancialFields}
               />
