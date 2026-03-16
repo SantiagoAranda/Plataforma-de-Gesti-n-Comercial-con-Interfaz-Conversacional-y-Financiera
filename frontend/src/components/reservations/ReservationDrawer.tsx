@@ -111,8 +111,10 @@ export default function ReservationDrawer({
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(today));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+
   const [fullName, setFullName] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
+  const [countryCode, setCountryCode] = useState("+57");
+  const [phone, setPhone] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -125,7 +127,7 @@ export default function ReservationDrawer({
     setSelectedDate(initialDate);
     setSelectedTime(null);
     setFullName(initialFullName);
-    setWhatsapp(initialWhatsapp);
+    setPhone(initialWhatsapp);
   }, [initialFullName, initialWhatsapp, open, selectedDateValue, today]);
 
   useEffect(() => {
@@ -148,7 +150,7 @@ export default function ReservationDrawer({
     !!selectedDate &&
     !!selectedTime &&
     fullName.trim().length >= 2 &&
-    whatsapp.trim().length >= 8;
+    phone.trim().length >= 6;
 
   function handlePickDate(d: Date, inMonth: boolean) {
     const key = formatLocalDateKey(d);
@@ -164,7 +166,7 @@ export default function ReservationDrawer({
       date: selectedDate,
       time: selectedTime,
       fullName: fullName.trim(),
-      whatsapp: whatsapp.trim(),
+      whatsapp: `${countryCode}${phone}`,
     });
   }
 
@@ -255,8 +257,8 @@ export default function ReservationDrawer({
                         selected
                           ? "bg-emerald-500 text-white"
                           : isAvailable
-                          ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                          : "text-black/20"
+                            ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                            : "text-black/20"
                       )}
                     >
                       {date.getDate()}
@@ -302,12 +304,26 @@ export default function ReservationDrawer({
                 onChange={(e) => setFullName(e.target.value)}
                 className="w-full rounded-xl border px-4 py-3"
               />
-              <input
-                placeholder="WhatsApp"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3"
-              />
+              <div className="flex gap-2">
+                <select
+                  value={countryCode}
+                  onChange={(e) => setCountryCode(e.target.value)}
+                  className="rounded-xl border px-3 py-3 bg-white"
+                >
+                  <option value="+54">🇦🇷 +54</option>
+                  <option value="+57">🇨🇴 +57</option>
+                  <option value="+52">🇲🇽 +52</option>
+                  <option value="+34">🇪🇸 +34</option>
+                </select>
+
+                <input
+                  type="tel"
+                  placeholder="WhatsApp"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-xl border px-4 py-3"
+                />
+              </div>
             </div>
           </div>
 
