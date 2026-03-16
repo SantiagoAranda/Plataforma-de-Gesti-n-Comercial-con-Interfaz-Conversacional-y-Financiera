@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 
@@ -22,6 +23,10 @@ export class ScheduleInput {
 }
 
 export class CreateItemDto {
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
   @IsEnum(ItemType)
   type: ItemType;
 
