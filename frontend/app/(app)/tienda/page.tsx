@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
-import { Search } from "lucide-react";
+import { Search, Share2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/src/components/layout/AppHeader";
 
@@ -24,52 +24,93 @@ export default function MiTiendaPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
+  /* ================= COMPARTIR TIENDA ================= */
+
+  const handleShareStore = async () => {
+    const businessName = localStorage.getItem("businessName");
+
+    if (!businessName) {
+      notify({
+        type: "error",
+        message: "No se encontró el nombre del negocio",
+      });
+      return;
+    }
+
+    const slug = businessName
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "-");
+
+    const url = `${window.location.origin}/tienda/${slug}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: businessName,
+          text: "Mira mi tienda online",
+          url,
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+
+        notify({
+          type: "success",
+          message: "Link de tu tienda copiado",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   /* ================= FETCH MIS PRODUCTOS ================= */
 
-    useEffect(() => {
-        const fetchMyItems = async () => {
-            try {
-                const token = localStorage.getItem("accessToken");
+  useEffect(() => {
+    const fetchMyItems = async () => {
+      try {
+        const token = localStorage.getItem("accessToken");
 
-                if (!token) {
-                    notify({
-                        type: "error",
-                        message: "Sesión expirada. Volvé a iniciar sesión.",
-                    });
-                    return;
-                }
+        if (!token) {
+          notify({
+            type: "error",
+            message: "Sesión expirada. Volvé a iniciar sesión.",
+          });
+          return;
+        }
 
-                const res = await fetch(
-                    `${process.env.NEXT_PUBLIC_API_URL}/items`,
-                    {
-                        headers: {
-                            Authorization: `Bearer ${token}`,
-                        },
-                    }
-                );
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/items`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
-                if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error();
 
-                const data = await res.json();
+        const data = await res.json();
 
-                setItems(
-                    data.map((item: any) => ({
-                        ...item,
-                        price: Number(item.price),
-                    }))
-                );
-            } catch {
-                notify({
-                    type: "error",
-                    message: "No se pudieron cargar tus productos",
-                });
-            } finally {
-                setLoading(false);
-            }
-        };
+        setItems(
+          data.map((item: any) => ({
+            ...item,
+            price: Number(item.price),
+          }))
+        );
+      } catch {
+        notify({
+          type: "error",
+          message: "No se pudieron cargar tus productos",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
 
-        fetchMyItems();
-    }, []);
+    fetchMyItems();
+  }, [notify]);
 
   const filtered = items.filter((i) =>
     i.name.toLowerCase().includes(query.toLowerCase())
@@ -114,6 +155,15 @@ export default function MiTiendaPage() {
           </div>
         )}
       </main>
+
+      {/* Botón compartir tienda */}
+      <button
+        onClick={handleShareStore}
+        title="Compartir mi tienda"
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl flex items-center justify-center"
+      >
+        <Share2 />
+      </button>
     </div>
   );
 }
@@ -138,11 +188,15 @@ function AdminProductCard({
     if (!confirmDelete) return;
 
     try {
+      const token = localStorage.getItem("accessToken");
+
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/items/${item.id}`,
         {
           method: "DELETE",
-          credentials: "include",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
       );
 
@@ -169,7 +223,6 @@ function AdminProductCard({
   return (
     <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
 
-      {/* Imagen */}
       <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
           <img
@@ -208,8 +261,6 @@ function AdminProductCard({
           </span>
         </div>
 
-        {/* Acciones */}
-        
       </div>
     </div>
   );
