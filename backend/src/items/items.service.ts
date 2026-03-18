@@ -85,9 +85,57 @@ export class ItemsService {
     }
   }
 
-  async findAll(businessId: string, status?: string) {
+  async getLatestActivity(businessId: string) {
+    const item = await this.prisma.item.findFirst({
+      where: { businessId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        status: true,
+        createdAt: true,
+        images: {
+          take: 1,
+          orderBy: { order: 'asc' },
+          select: { id: true, url: true, order: true },
+        },
+      },
+    });
+    return { item };
+  }
+
+  async findAll(businessId: string, status?: string, lightweight = false) {
     const itemStatus = status === 'INACTIVE' ? ItemStatus.INACTIVE : ItemStatus.ACTIVE;
-    
+
+    if (lightweight) {
+      const items = await this.prisma.item.findMany({
+        where: { businessId, status: itemStatus },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          type: true,
+          status: true,
+          description: true,
+          durationMinutes: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: { images: true }
+          },
+          images: {
+            take: 1,
+            orderBy: { order: 'asc' },
+            select: { id: true, url: true, order: true },
+          },
+        },
+      });
+      // Normalizar al mismo shape que el full para compatibilidad con el frontend
+      return items.map((item) => ({ ...item, schedule: [] }));
+    }
+
     const items = await this.prisma.item.findMany({
       where: {
         businessId,

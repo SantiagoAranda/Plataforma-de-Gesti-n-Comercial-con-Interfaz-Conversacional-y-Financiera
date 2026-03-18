@@ -315,14 +315,8 @@ export default function ContabilidadPage() {
                 detail,
               };
 
-        console.log("payload", payload);
-        console.log("payload json", JSON.stringify(payload));
-
-        if (form.originType === "MANUAL") {
-          payload.amount = parsedAmount;
-        }
-
         await updateMovement(form.id, payload);
+
       } else {
         const payload = {
           ...pucPayload,
@@ -333,8 +327,6 @@ export default function ContabilidadPage() {
           originType: "MANUAL" as const,
         };
 
-        console.log("payload", payload);
-        console.log("payload json", JSON.stringify(payload));
         await createMovement(payload);
         setPendingSmoothScroll(true);
       }
@@ -356,15 +348,6 @@ export default function ContabilidadPage() {
     }
   }, [composerOpen, form, refresh, resetForm, validateForm]);
 
-  useEffect(() => {
-    if (composerOpen) return;
-
-    const timer = setTimeout(() => {
-      refresh();
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [composerOpen, refresh]);
 
   const displayMovements = useMemo(() => {
     const normalizedSearch = searchText.trim().toLowerCase();

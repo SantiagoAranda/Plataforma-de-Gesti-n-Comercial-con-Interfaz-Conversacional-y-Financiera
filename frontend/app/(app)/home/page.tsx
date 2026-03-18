@@ -17,10 +17,10 @@ import {
   mapSalesActivity,
 } from "../../../src/lib/home/moduleActivity";
 import { api } from "../../../src/lib/api";
-import { listMovements, type BackendMovement } from "../../../src/services/accounting";
+import { type BackendMovement } from "../../../src/services/accounting";
+import { getCached, getInstantCache } from "../../../src/lib/cache";
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+const HOME_CACHE_TTL = 60_000; // 60 segundos
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
@@ -31,10 +31,18 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
 export default function HomePage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("Mi Negocio");
-  const [items, setItems] = useState<BusinessItem[]>([]);
-  const [orders, setOrders] = useState<ApiOrder[]>([]);
-  const [movements, setMovements] = useState<BackendMovement[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Leer caché en memoria síncronamente para evitar parpadeo inicial
+  const initialBusinessLatest = getInstantCache<{item: BusinessItem | null}>("home:businessActivity", HOME_CACHE_TTL);
+  const initialSales = getInstantCache<ApiOrder[]>("home:sales", HOME_CACHE_TTL);
+  const initialMovements = getInstantCache<BackendMovement[]>("home:movements", HOME_CACHE_TTL);
+  const isAllCached = !!(initialBusinessLatest && initialSales && initialMovements);
+
+  const [businessLatest, setBusinessLatest] = useState<{item: BusinessItem | null}>(initialBusinessLatest ?? {item: null});
+  const [orders, setOrders] = useState<ApiOrder[]>(initialSales ?? []);
+  const [movements, setMovements] = useState<BackendMovement[]>(initialMovements ?? []);
+  
+  // Si todo estaba fresco, loading arranca en false -> pinta UI al instante
+  const [loading, setLoading] = useState(!isAllCached);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -56,7 +64,7 @@ export default function HomePage() {
   }, [router]);
 
   /**
-   * 🔹 Obtener nombre del negocio
+   * 🔹 Obtener nombre del negocio desde localStorage (sin request)
    */
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -83,7 +91,9 @@ export default function HomePage() {
   }, []);
 
   /**
-   * 🔹 Cargar actividad reciente
+   * 🔹 Cargar actividad reciente con cache de 60 segundos
+   * - Navegar Home → otra pantalla → Home dentro de 60s no re-fetcha.
+   * - Requests simultáneas a la misma key reutilizan la misma promesa.
    */
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
@@ -96,26 +106,28 @@ export default function HomePage() {
     }
 
     (async () => {
-      setLoading(true);
+      if (!isAllCached) {
+        setLoading(true);
+      }
       setError(null);
 
       try {
-        const token =
-          typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-
         const [itemsRes, ordersRes, movementsRes] = await Promise.allSettled([
-          api<BusinessItem[]>("/items"),
-          fetch(`${API_URL}/sales`, {
-            headers: token
-              ? {
-                  Authorization: `Bearer ${token}`,
-                }
-              : undefined,
-          }).then((res) => {
-            if (!res.ok) throw new Error("No se pudieron cargar las ventas");
-            return res.json() as Promise<ApiOrder[]>;
-          }),
-          listMovements(),
+          getCached<{item: BusinessItem | null}>(
+            "home:businessActivity",
+            HOME_CACHE_TTL,
+            () => api<{item: BusinessItem | null}>("/items/latest-activity"),
+          ),
+          getCached<ApiOrder[]>(
+            "home:sales",
+            HOME_CACHE_TTL,
+            () => api<ApiOrder[]>("/sales"),
+          ),
+          getCached<BackendMovement[]>(
+            "home:movements",
+            HOME_CACHE_TTL,
+            () => api<BackendMovement[]>("/accounting/movements"),
+          ),
         ]);
 
         const allRejected =
@@ -128,8 +140,8 @@ export default function HomePage() {
           return;
         }
 
-        if (itemsRes.status === "fulfilled" && Array.isArray(itemsRes.value)) {
-          setItems(itemsRes.value);
+        if (itemsRes.status === "fulfilled" && itemsRes.value && typeof itemsRes.value === 'object' && !Array.isArray(itemsRes.value)) {
+          setBusinessLatest(itemsRes.value as {item: BusinessItem | null});
         }
 
         if (ordersRes.status === "fulfilled" && Array.isArray(ordersRes.value)) {
@@ -143,18 +155,20 @@ export default function HomePage() {
         console.error(err);
         setError("No pudimos cargar la actividad reciente");
       } finally {
-        setLoading(false);
+        if (!isAllCached) {
+          setLoading(false);
+        }
       }
     })();
-  }, []);
+  }, [isAllCached]);
 
   const summaries = useMemo(
     () => [
-      mapBusinessActivity(items),
+      mapBusinessActivity(businessLatest.item),
       mapSalesActivity(orders),
       mapAccountingActivity(movements),
     ],
-    [items, orders, movements],
+    [businessLatest, orders, movements],
   );
 
   return (

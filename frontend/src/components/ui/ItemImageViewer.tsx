@@ -15,6 +15,9 @@ type Props = {
   containerClassName?: string;
   imageClassName?: string;
   emptyClassName?: string;
+  lazy?: boolean;
+  imageCount?: number;
+  onLoadGallery?: () => Promise<void>;
 };
 
 export function ItemImageViewer({
@@ -23,6 +26,9 @@ export function ItemImageViewer({
   containerClassName = "",
   imageClassName = "",
   emptyClassName = "",
+  lazy = false,
+  imageCount,
+  onLoadGallery,
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -72,6 +78,9 @@ export function ItemImageViewer({
   const openAt = (index: number) => {
     setCurrentIndex(index);
     setIsOpen(true);
+    if (onLoadGallery && images.length < (imageCount ?? images.length)) {
+      onLoadGallery().catch(() => {});
+    }
   };
 
   const closeViewer = () => {
@@ -109,6 +118,7 @@ export function ItemImageViewer({
           src={images[0].url}
           alt={name}
           className={imageClassName}
+          loading={lazy ? "lazy" : undefined}
         />
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 via-black/20 to-transparent px-3 py-2 text-white">
@@ -117,9 +127,9 @@ export function ItemImageViewer({
             Ver foto
           </span>
 
-          {images.length > 1 && (
+          {((imageCount ?? images.length) > 1) && (
             <span className="rounded-full bg-black/60 px-2 py-1 text-[11px] font-semibold">
-              {images.length} fotos
+              {imageCount ?? images.length} fotos
             </span>
           )}
         </div>

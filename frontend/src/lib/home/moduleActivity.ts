@@ -144,10 +144,7 @@ const byDateDesc = <T,>(arr: T[], getDate: (item: T) => string | undefined | nul
     return bd - ad;
   });
 
-export function mapBusinessActivity(items: BusinessItem[]): ModuleActivitySummary {
-  const sorted = byDateDesc(items, (i) => i.updatedAt ?? i.createdAt ?? undefined);
-  const latest = sorted[0];
-
+export function mapBusinessActivity(latest: BusinessItem | null): ModuleActivitySummary {
   const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt) : null;
 
   let activityText: string | null = null;

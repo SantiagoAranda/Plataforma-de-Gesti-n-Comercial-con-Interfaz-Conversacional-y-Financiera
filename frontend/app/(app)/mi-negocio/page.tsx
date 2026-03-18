@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Archive, ArchiveRestore, X } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
+import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import {
@@ -170,31 +171,44 @@ export default function MiNegocioPage() {
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
-  const [items, setItems] = useState<Item[]>([]);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [loading, setLoading] = useState(false);
   const [viewArchived, setViewArchived] = useState(false);
+
+  const initialItems = getInstantCache<Item[]>(`mi-negocio:items:ACTIVE`, 60_000);
+  const [items, setItems] = useState<Item[]>(initialItems ?? []);
+  const [loading, setLoading] = useState(!initialItems);
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creationId, setCreationId] = useState("");
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [visibleCount, setVisibleCount] = useState(12);
 
-  const fetchItems = async () => {
+  const fetchItems = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
-      const data = await api<Item[]>(`/items?status=${viewArchived ? 'INACTIVE' : 'ACTIVE'}`);
+      const dbStatus = viewArchived ? 'INACTIVE' : 'ACTIVE';
+      const key = `mi-negocio:items:${dbStatus}`;
+      const hasInstant = !!getInstantCache<Item[]>(key, 60_000);
+      
+      if (!hasInstant && isInitial) {
+        setLoading(true);
+      }
+
+      const data = await getCached(key, 60_000, () => 
+        api<Item[]>(`/items?status=${dbStatus}&lightweight=true`)
+      );
       setItems(data);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
-  };
+  }, [viewArchived]);
 
   useEffect(() => {
-    fetchItems();
-  }, [viewArchived]);
+    setVisibleCount(12); // Reset count on filter change
+    fetchItems(true);
+  }, [fetchItems]);
 
   const totalImages = existingImages.length + newImages.length;
 
@@ -410,27 +424,37 @@ export default function MiNegocioPage() {
     }
   };
 
-  const handleStartEdit = (item: Item) => {
+  const handleStartEdit = async (item: Item) => {
     setFormErrors({});
-    setEditingItem(item);
-    setName(item.name);
-    setPrice(String(item.price));
-    setDescription(item.description ?? "");
-    setExistingImages(item.images ?? []);
+
+    // Traer el objeto completo desde la API porque el listado usa payload lightweight
+    let fullItem: Item = item;
+    try {
+      fullItem = await api<Item>(`/items/${item.id}`);
+    } catch (err) {
+      console.error('Error al cargar item completo:', err);
+      // Fallback: usar el objeto del listado (podría faltar scheduleWindows/imágenes)
+    }
+
+    setEditingItem(fullItem);
+    setName(fullItem.name);
+    setPrice(String(fullItem.price));
+    setDescription(fullItem.description ?? "");
+    setExistingImages(fullItem.images ?? []);
     setNewImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setType(item.type);
-    setDuration(item.durationMinutes ?? 30);
+    setType(fullItem.type);
+    setDuration(fullItem.durationMinutes ?? 30);
     const nextWeek = createInitialWeek();
 
-    if (item.type === "SERVICE" && item.schedule?.length) {
+    if (fullItem.type === "SERVICE" && fullItem.schedule?.length) {
       nextWeek.forEach((day) => {
         day.active = false;
         day.ranges = [];
       });
 
-      item.schedule.forEach((slot) => {
+      fullItem.schedule.forEach((slot) => {
         const dayIndex = WEEKDAY_ENUM.indexOf(slot.weekday);
         if (dayIndex === -1) return;
 
@@ -449,7 +473,7 @@ export default function MiNegocioPage() {
           day.active = false;
         }
       });
-    } else if (item.type === "SERVICE") {
+    } else if (fullItem.type === "SERVICE") {
       nextWeek.forEach((day, index) => {
         day.active = index === 0;
         day.ranges = index === 0 ? [{ start: "08:00", end: "12:00" }] : [];
@@ -543,7 +567,7 @@ export default function MiNegocioPage() {
           </div>
         )}
 
-        {items.map((item) => (
+        {items.slice(0, visibleCount).map((item) => (
           <ItemCard
             key={item.id}
             item={item}
@@ -552,6 +576,17 @@ export default function MiNegocioPage() {
             onOpen={() => handleStartEdit(item)}
           />
         ))}
+
+        {items.length > visibleCount && (
+          <div className="flex justify-center pb-8 pt-2">
+            <button
+              onClick={() => setVisibleCount((prev) => prev + 12)}
+              className="px-6 py-2.5 bg-white border border-neutral-200 text-neutral-600 font-medium rounded-full shadow-sm active:scale-95 transition-transform text-sm"
+            >
+              Cargar más
+            </button>
+          </div>
+        )}
 
       </main>
       {/* PANEL INFERIOR */}

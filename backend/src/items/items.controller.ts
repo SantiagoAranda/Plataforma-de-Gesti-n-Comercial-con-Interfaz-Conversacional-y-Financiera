@@ -33,8 +33,22 @@ export class ItemsController {
 
   // 🔹 Listar items del negocio
   @Get()
-  findAll(@Req() req: any, @Query("status") status?: string) {
-    return this.itemsService.findAll(req.user.businessId, status);
+  findAll(
+    @Req() req: any,
+    @Query('status') status?: string,
+    @Query('lightweight') lightweight?: string,
+  ) {
+    return this.itemsService.findAll(
+      req.user.businessId,
+      status,
+      lightweight === 'true',
+    );
+  }
+
+  // 🔹 Última actividad (Para Home)
+  @Get("latest-activity")
+  getLatestActivity(@Req() req: any) {
+    return this.itemsService.getLatestActivity(req.user.businessId);
   }
 
   // 🔹 Obtener item específico

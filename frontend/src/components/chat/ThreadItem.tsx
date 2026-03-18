@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, memo } from "react";
 
 import { cn } from "@/src/lib/utils";
 
@@ -18,7 +18,7 @@ const accentStyles: Record<NonNullable<Props["accent"]>, string> = {
   amber: "bg-amber-100 text-amber-700",
 };
 
-export default function ThreadItem({
+function ThreadItem({
   title,
   preview,
   time,
@@ -59,3 +59,5 @@ export default function ThreadItem({
     </div>
   );
 }
+
+export default memo(ThreadItem);
