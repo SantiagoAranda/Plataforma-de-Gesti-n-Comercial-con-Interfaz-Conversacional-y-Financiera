@@ -412,6 +412,10 @@ export default function MiNegocioPage() {
       });
       setSelectedItem((prev) => (prev?.id === savedItem.id ? savedItem : prev));
 
+      invalidateCache("mi-negocio:items:ACTIVE");
+      invalidateCache("mi-negocio:items:INACTIVE");
+      invalidateCache("home:businessActivity");
+
       resetForm();
       setIsOpen(false);
 
@@ -501,6 +505,11 @@ export default function MiNegocioPage() {
       
       setItems(prev => prev.filter(i => i.id !== item.id));
       setSelectedItem(null);
+
+      invalidateCache("mi-negocio:items:ACTIVE");
+      invalidateCache("mi-negocio:items:INACTIVE");
+      invalidateCache("home:businessActivity");
+
       setToast({
         message: newStatus === 'INACTIVE' ? "Producto archivado" : "Producto desarchivado",
         type: "success",
@@ -521,6 +530,11 @@ export default function MiNegocioPage() {
       
       setItems(prev => prev.filter(i => i.id !== item.id));
       setSelectedItem(null);
+
+      invalidateCache("mi-negocio:items:ACTIVE");
+      invalidateCache("mi-negocio:items:INACTIVE");
+      invalidateCache("home:businessActivity");
+
       setToast({
         message: newStatus === 'INACTIVE' ? "Producto inhabilitado" : "Producto habilitado",
         type: "success",
