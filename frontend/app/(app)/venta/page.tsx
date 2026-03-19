@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Filter } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -10,6 +10,7 @@ import type { Sale } from "@/src/types/sales";
 import AppHeader from "@/src/components/layout/AppHeader";
 import SalesList from "@/src/components/sales/SalesList";
 import SalesSearchBar from "@/src/components/sales/SalesSearchBar";
+import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
@@ -49,7 +50,20 @@ export default function VentaPage() {
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const [editingSale, setEditingSale] = useState<Sale | null>(null); // Added editingSale state
+  const [editingSale, setEditingSale] = useState<Sale | null>(null);
+
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const initialScrollDone = useRef(false);
+  const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    bottomRef.current?.scrollIntoView({
+      block: "end",
+      behavior,
+    });
+  }, []);
 
   const showConfirmation = (
     title: string, 
@@ -108,18 +122,49 @@ export default function VentaPage() {
   }, [loadOrders]);
 
   const filtered = useMemo(() => {
+    let result = sales;
+
+    if (filterStatus !== "ALL") {
+      result = result.filter((s) => {
+        if (filterStatus === "PENDING") {
+          return s.status === "PENDIENTE" || s.status === "PENDIENTE DE CIERRE";
+        }
+        if (filterStatus === "CLOSED") {
+          return s.status === "CERRADO";
+        }
+        if (filterStatus === "CANCELLED") {
+          return s.status === "CANCELADO";
+        }
+        return true;
+      });
+    }
+
     const term = q.trim().toLowerCase();
+    if (!term) return result;
 
-    if (!term) return sales;
-
-    return sales.filter((s) => {
+    return result.filter((s) => {
       if (s.customerName.toLowerCase().includes(term)) return true;
-
-      return s.items.some((i) =>
-        i.name.toLowerCase().includes(term)
-      );
+      return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
-  }, [q, sales]);
+  }, [q, sales, filterStatus]);
+
+  useEffect(() => {
+    if (!loading && sales.length > 0 && !initialScrollDone.current) {
+      setTimeout(() => scrollToBottom(), 100);
+      initialScrollDone.current = true;
+    }
+  }, [loading, sales.length, scrollToBottom]);
+
+  useEffect(() => {
+    if (!pendingSmoothScroll) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollToBottom("smooth");
+      setPendingSmoothScroll(false);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [sales.length, pendingSmoothScroll, scrollToBottom]);
 
   const businessName = typeof window !== "undefined" ? localStorage.getItem("businessName") || "Mi Negocio" : "Mi Negocio";
 
@@ -330,7 +375,8 @@ const handleSendWhatsApp = (sale: Sale) => {
 };
 
   return (
-    <div className="min-h-screen bg-[#F0F2F5]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+      <div className="shrink-0">
       {selectedSale ? (
         <SelectionActionBar
           visible
@@ -354,34 +400,59 @@ const handleSendWhatsApp = (sale: Sale) => {
           deleteLabel="Eliminar"
         />
       ) : (
-        <AppHeader title="Ventas" showBack />
+        <AppHeader 
+          title="Ventas" 
+          showBack 
+          rightIcon={<Filter size={20} />}
+          onRightClick={() => setFilterOpen(true)}
+          rightAriaLabel="Filtrar estado"
+        />
       )}
-
-      <div className="pb-28">
-        {loading && (
-          <div className="p-6 text-center text-gray-400">
-            Cargando ventas...
-          </div>
-        )}
-
-        {error && (
-          <div className="p-6 text-center text-red-500">
-            {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <SalesList
-            sales={filtered}
-            selectedId={selectedSale?.id}
-            onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
-            onDetails={(sale) => setDetailsSale(sale)}
-            onSendWhatsApp={handleSendWhatsApp}
-          />
-        )}
       </div>
 
-      <SalesSearchBar value={q} onChange={setQ} onAction={() => {}} />
+      <main className="min-h-0 flex-1 overflow-hidden relative">
+        <div className="h-full overflow-y-auto w-full pb-24">
+          {loading && (
+            <div className="p-6 text-center text-gray-400">
+              Cargando ventas...
+            </div>
+          )}
+
+          {error && (
+            <div className="p-6 text-center text-red-500">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && filtered.length === 0 && (
+            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 mt-10 h-32">
+              No hay ventas {filterStatus !== "ALL" ? "con este estado" : "todavía"}
+            </div>
+          )}
+
+          {!loading && !error && filtered.length > 0 && (
+            <SalesList
+              sales={filtered}
+              selectedId={selectedSale?.id}
+              onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
+              onDetails={(sale) => setDetailsSale(sale)}
+              onSendWhatsApp={handleSendWhatsApp}
+            />
+          )}
+          <div ref={bottomRef} className="h-px w-full" />
+        </div>
+      </main>
+
+      <div className="shrink-0">
+        <SalesSearchBar value={q} onChange={setQ} onAction={() => {}} />
+      </div>
+
+      <SalesFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        status={filterStatus}
+        onChange={setFilterStatus}
+      />
 
       <SaleDetailsModal
         open={!!detailsSale}

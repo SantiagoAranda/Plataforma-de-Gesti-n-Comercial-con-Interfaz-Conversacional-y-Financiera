@@ -2,7 +2,8 @@
 
 import type { Sale } from "@/src/types/sales";
 import SaleCard from "./SaleCard";
-import { getBusinessDayKey, getRelativeBusinessDayLabel } from "@/src/lib/businessDate";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
+import { DateSeparator } from "@/src/components/shared/DateSeparator";
 
 type Props = {
   sales: Sale[];
@@ -12,14 +13,14 @@ type Props = {
   onSendWhatsApp?: (sale: Sale) => void;
 };
 
-function getDayLabel(date: Date) {
-  return getRelativeBusinessDayLabel(date);
-}
-
 function groupSalesByDate(sales: Sale[]) {
+  const sortedSales = [...sales].sort((a, b) => {
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
   const groups: Record<string, Sale[]> = {};
 
-  sales.forEach((sale) => {
+  sortedSales.forEach((sale) => {
     const date = new Date(sale.createdAt);
     const key = getBusinessDayKey(date);
 
@@ -29,10 +30,10 @@ function groupSalesByDate(sales: Sale[]) {
   });
 
   return Object.entries(groups)
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([dateKey, sales]) => ({
-      label: getDayLabel(new Date(`${dateKey}T12:00:00Z`)),
-      sales,
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([dateKey, groupSales]) => ({
+      dateISO: dateKey,
+      sales: groupSales,
     }));
 }
 
@@ -46,23 +47,10 @@ export default function SalesList({
   const groups = groupSalesByDate(sales);
 
   return (
-    <main className="flex flex-col p-4 gap-6 max-w-md mx-auto pb-24">
-
-      {sales?.length === 0 && (
-        <div className="text-center text-gray-400 text-sm mt-10">
-          No hay ventas todavía
-        </div>
-      )}
-
+    <main className="flex flex-col p-4 gap-4 max-w-md mx-auto">
       {groups.map((group, idx) => (
         <div key={idx} className="flex flex-col gap-4">
-
-          {/* etiqueta de día */}
-          <div className="flex justify-center">
-            <span className="bg-white/60 backdrop-blur-sm text-[11px] font-semibold text-gray-500 px-3 py-1 rounded-full uppercase tracking-wider">
-              {group.label}
-            </span>
-          </div>
+          <DateSeparator dateISO={group.dateISO} />
 
           {group.sales.map((s) => (
             <SaleCard
@@ -74,7 +62,6 @@ export default function SalesList({
               onSendWhatsApp={onSendWhatsApp}
             />
           ))}
-
         </div>
       ))}
     </main>
