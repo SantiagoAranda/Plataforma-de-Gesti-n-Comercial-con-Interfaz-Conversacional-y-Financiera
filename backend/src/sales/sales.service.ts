@@ -239,10 +239,15 @@ export class SalesService {
     return order;
   }
 
-  async findAll(businessId: string): Promise<UnifiedSaleDto[]> {
+  async findAll(businessId: string, options?: { includeArchived?: boolean }): Promise<UnifiedSaleDto[]> {
+    const includeArchived = options?.includeArchived ?? false;
     const [orders, reservations] = await Promise.all([
       this.prisma.order.findMany({
-        where: { businessId },
+        where: { 
+          businessId,
+          ...(includeArchived ? {} : { archived: false }),
+          status: { not: 'CANCELLED' }
+        },
         include: {
           items: {
             include: {
@@ -255,7 +260,11 @@ export class SalesService {
         },
       }),
       this.prisma.reservation.findMany({
-        where: { businessId },
+        where: { 
+          businessId,
+          ...(includeArchived ? {} : { archived: false }),
+          status: { not: 'CANCELLED' }
+        },
         include: {
           item: true,
         },
@@ -740,6 +749,43 @@ export class SalesService {
     return this.prisma.order.update({
       where: { id },
       data: { status: 'CANCELLED' },
+      include: {
+        items: {
+          include: {
+            item: true,
+          },
+        },
+      },
+    });
+  }
+
+  async remove(
+    businessId: string,
+    id: string,
+    sourceType: UnifiedSourceType = 'ORDER',
+  ) {
+    if (sourceType === 'RESERVATION') {
+      const res = await this.prisma.reservation.findFirst({
+        where: { id, businessId },
+      });
+      if (!res) throw new NotFoundException('Reservation not found');
+
+      return this.prisma.reservation.update({
+        where: { id },
+        data: { archived: true },
+        include: { item: true },
+      });
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: { id, businessId },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    return this.prisma.order.update({
+      where: { id },
+      data: { archived: true },
       include: {
         items: {
           include: {

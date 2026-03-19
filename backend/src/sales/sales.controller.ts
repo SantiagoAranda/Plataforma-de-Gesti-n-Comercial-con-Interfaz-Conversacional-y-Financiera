@@ -107,4 +107,13 @@ export class SalesController {
   ) {
     return this.salesService.update(req.user.businessId, id, dto, sourceType);
   }
+
+  @Delete(":id")
+  remove(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Query('sourceType') sourceType?: any,
+  ) {
+    return this.salesService.remove(req.user.businessId, id, sourceType);
+  }
 }

@@ -87,14 +87,15 @@ export class ItemsService {
 
   async getLatestActivity(businessId: string) {
     const item = await this.prisma.item.findFirst({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' },
+      where: { businessId, status: ItemStatus.ACTIVE },
+      orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
         name: true,
         type: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
         images: {
           take: 1,
           orderBy: { order: 'asc' },

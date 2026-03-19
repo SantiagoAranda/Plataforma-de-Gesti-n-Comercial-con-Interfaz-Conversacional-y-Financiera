@@ -191,6 +191,8 @@ model Order {
   items OrderItem[]
   accountingPostedAt DateTime?
 
+  archived Boolean @default(false)
+
   // asiento automático generado por esta orden (opcional)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -261,6 +263,8 @@ model Reservation {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  archived Boolean @default(false)
 
   // Evita duplicar exactamente el mismo slot para el mismo servicio
   @@unique([itemId, date, startMinute])

@@ -365,7 +365,30 @@ export class AccountingService {
   }
 
   async findAllMovements(businessId: string, q: AccountingMovementsQueryDto) {
+    const [archivedOrders, archivedReservations] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { businessId, archived: true },
+        select: { id: true },
+      }),
+      this.prisma.reservation.findMany({
+        where: { businessId, archived: true },
+        select: { id: true },
+      }),
+    ]);
+
+    const archivedIds = [
+      ...archivedOrders.map((o) => o.id),
+      ...archivedReservations.map((r) => r.id),
+    ];
+
     const where: Prisma.AccountingMovementWhereInput = { businessId };
+
+    if (archivedIds.length > 0) {
+      where.NOT = {
+        originId: { in: archivedIds },
+        originType: AccountingMovementOriginType.ORDER,
+      };
+    }
 
     if (q.from || q.to) {
       where.date = {};
@@ -374,25 +397,27 @@ export class AccountingService {
     }
 
     if (q.pucSubcuentaId) {
-      where.OR = [
-        { pucSubcuentaId: q.pucSubcuentaId },
-        { pucCuentaCode: q.pucSubcuentaId },
-      ];
+      if (!where.AND) where.AND = [];
+      (where.AND as Prisma.AccountingMovementWhereInput[]).push({
+        OR: [
+          { pucSubcuentaId: q.pucSubcuentaId },
+          { pucCuentaCode: q.pucSubcuentaId },
+        ],
+      });
     }
 
     if (q.originType) where.originType = q.originType;
     if (q.search) {
-      where.AND = [
-        {
-          OR: [
-            { detail: { contains: q.search, mode: 'insensitive' } },
-            { pucSubcuenta: { code: { contains: q.search } } },
-            { pucSubcuenta: { name: { contains: q.search, mode: 'insensitive' } } },
-            { pucCuenta: { code: { contains: q.search } } },
-            { pucCuenta: { name: { contains: q.search, mode: 'insensitive' } } },
-          ],
-        },
-      ];
+      if (!where.AND) where.AND = [];
+      (where.AND as Prisma.AccountingMovementWhereInput[]).push({
+        OR: [
+          { detail: { contains: q.search, mode: 'insensitive' } },
+          { pucSubcuenta: { code: { contains: q.search } } },
+          { pucSubcuenta: { name: { contains: q.search, mode: 'insensitive' } } },
+          { pucCuenta: { code: { contains: q.search } } },
+          { pucCuenta: { name: { contains: q.search, mode: 'insensitive' } } },
+        ],
+      });
     }
 
     const movements = await this.prisma.accountingMovement.findMany({

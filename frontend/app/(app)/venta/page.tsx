@@ -14,7 +14,8 @@ import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, cancelSale, updateSale, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, cancelSale, deleteSale, updateSale, type ApiOrder } from "@/src/services/sales";
+import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 
 function mapOrderToSale(order: ApiOrder): Sale {
@@ -142,80 +143,191 @@ const handleSendWhatsApp = (sale: Sale) => {
 };
 
   const handleConfirmSale = useCallback(async (sale: Sale) => {
-    try {
-      setConfirmingSaleId(sale.id);
-      setError(null);
+  showConfirmation(
+    "¿Deseás confirmar esta venta?",
+    "Confirmar",
+    async () => {
+      const loadingId = "sale-confirm-loading";
+      const successId = "sale-confirm-success";
+      const errorId = "sale-confirm-error";
 
-      const result = await confirmSale(sale.id, sale.sourceType);
-      
-      // The result might be slightly different for reservations, but loadOrders will refresh everything correctly
-      await loadOrders();
-      setDetailsSale(null); // Close modal 
-    } catch (err) {
-      console.error(err);
-      setError("No se pudo finalizar la venta");
-      await loadOrders();
-    } finally {
-      setConfirmingSaleId(null);
-    }
-  }, [loadOrders]);
+      try {
+        setConfirmingSaleId(sale.id);
+        setError(null);
 
-  const handleCancelSale = useCallback(async (sale: Sale) => {
-    showConfirmation(
-      "¿Deseás anular esta venta?",
-      "Anular",
-      async () => {
-        try {
-          setConfirmingSaleId(sale.id);
-          setError(null);
+        toast.dismiss(loadingId);
+        toast.dismiss(successId);
+        toast.dismiss(errorId);
 
-          const result = await cancelSale(sale.id, sale.sourceType);
-          
-          await loadOrders();
-          
-          if (detailsSale?.id === sale.id) setDetailsSale(null);
-          setSelectedSale(null);
-        } catch (err) {
-          console.error(err);
-          setError("No se pudo anular la venta");
-        } finally {
-          setConfirmingSaleId(null);
-        }
-      },
-      'rose'
-    );
-  }, [detailsSale]);
+        toast.loading("Confirmando venta...", { id: loadingId });
+
+        await confirmSale(sale.id, sale.sourceType);
+
+        invalidateCache("home:sales");
+        await loadOrders();
+
+        setDetailsSale(null);
+
+        toast.dismiss(loadingId);
+
+        toast.success("Venta confirmada", {
+          id: successId,
+          duration: 2000,
+        });
+
+        setTimeout(() => {
+          toast.dismiss(successId);
+        }, 2100);
+      } catch (err) {
+        console.error(err);
+        setError("No se pudo finalizar la venta");
+        await loadOrders();
+
+        toast.dismiss(loadingId);
+
+        toast.error("Error al confirmar venta", {
+          id: errorId,
+          duration: 3000,
+        });
+
+        setTimeout(() => {
+          toast.dismiss(errorId);
+        }, 3100);
+      } finally {
+        setConfirmingSaleId(null);
+      }
+    },
+    "emerald"
+  );
+}, [loadOrders]);
+
+ const handleDeleteSale = useCallback(async (sale: Sale) => {
+  showConfirmation(
+    "¿Deseás eliminar esta venta?",
+    "Eliminar",
+    async () => {
+      const loadingId = "sale-delete-loading";
+      const successId = "sale-delete-success";
+      const errorId = "sale-delete-error";
+
+      try {
+        setConfirmingSaleId(sale.id);
+        setError(null);
+
+        toast.dismiss(loadingId);
+        toast.dismiss(successId);
+        toast.dismiss(errorId);
+
+        toast.loading("Eliminando venta...", { id: loadingId });
+
+        await deleteSale(sale.id, sale.sourceType);
+
+        invalidateCache("home:sales");
+        invalidateCache("home:businessActivity");
+
+        await loadOrders();
+
+        if (detailsSale?.id === sale.id) setDetailsSale(null);
+        setSelectedSale(null);
+
+        toast.dismiss(loadingId);
+
+        toast.success("Venta eliminada", {
+          id: successId,
+          duration: 2000,
+        });
+
+        setTimeout(() => {
+          toast.dismiss(successId);
+        }, 2100);
+      } catch (err) {
+        console.error(err);
+        setError("No se pudo eliminar la venta");
+
+        toast.dismiss(loadingId);
+
+        toast.error("Error al eliminar venta", {
+          id: errorId,
+          duration: 3000,
+        });
+
+        setTimeout(() => {
+          toast.dismiss(errorId);
+        }, 3100);
+      } finally {
+        setConfirmingSaleId(null);
+      }
+    },
+    "rose"
+  );
+}, [detailsSale, loadOrders]);
 
   const handleSaveEditedSale = async (updated: Sale) => {
-    try {
-      setConfirmingSaleId(updated.id);
-      
-      const dto = {
-        customerName: updated.customerName,
-        customerWhatsapp: updated.customerWhatsapp,
-        paymentMethod: updated.paymentMethod,
-        scheduledAt: updated.scheduledAt,
-        items: updated.items
-          .filter(it => it.itemId)
-          .map(it => ({
-            itemId: it.itemId!,
-            quantity: it.qty
-          }))
-      };
+  const loadingId = "sale-edit-loading";
+  const successId = "sale-edit-success";
+  const errorId = "sale-edit-error";
 
-      await updateSale(updated.id, dto, updated.sourceType);
-      await loadOrders();
-      setEditingSale(null);
-      if (detailsSale?.id === updated.id) {
-        setDetailsSale(null); // refresh details on next open
-      }
-    } catch (err) {
-      console.error(err);
-      setError("No se pudo actualizar la venta");
-    } finally {
-      setConfirmingSaleId(null);
+  try {
+    setConfirmingSaleId(updated.id);
+    setError(null);
+
+    toast.dismiss(loadingId);
+    toast.dismiss(successId);
+    toast.dismiss(errorId);
+
+    toast.loading("Guardando cambios...", { id: loadingId });
+
+    const dto = {
+      customerName: updated.customerName,
+      customerWhatsapp: updated.customerWhatsapp,
+      paymentMethod: updated.paymentMethod,
+      scheduledAt: updated.scheduledAt,
+      items: updated.items
+        .filter((it) => it.itemId)
+        .map((it) => ({
+          itemId: it.itemId!,
+          quantity: it.qty,
+        })),
+    };
+
+    await updateSale(updated.id, dto, updated.sourceType);
+
+    invalidateCache("home:sales");
+    await loadOrders();
+
+    setEditingSale(null);
+    if (detailsSale?.id === updated.id) {
+      setDetailsSale(null);
     }
-  };
+
+    toast.dismiss(loadingId);
+
+    toast.success("Venta actualizada", {
+      id: successId,
+      duration: 2000,
+    });
+
+    setTimeout(() => {
+      toast.dismiss(successId);
+    }, 2100);
+  } catch (err) {
+    console.error(err);
+    setError("No se pudo actualizar la venta");
+
+    toast.dismiss(loadingId);
+
+    toast.error("Error al actualizar la venta", {
+      id: errorId,
+      duration: 3000,
+    });
+
+    setTimeout(() => {
+      toast.dismiss(errorId);
+    }, 3100);
+  } finally {
+    setConfirmingSaleId(null);
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#F0F2F5]">
@@ -238,12 +350,8 @@ const handleSendWhatsApp = (sale: Sale) => {
               : undefined
           }
           editLabel="Editar"
-          onDelete={
-            (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
-              ? () => handleCancelSale(selectedSale)
-              : undefined
-          }
-          deleteLabel="Anular"
+          onDelete={() => handleDeleteSale(selectedSale)}
+          deleteLabel="Eliminar"
         />
       ) : (
         <AppHeader title="Ventas" showBack />
@@ -280,7 +388,7 @@ const handleSendWhatsApp = (sale: Sale) => {
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
         onConfirm={handleConfirmSale}
-        onCancel={handleCancelSale}
+        onCancel={handleDeleteSale}
         onEdit={(sale) => {
           setEditingSale(sale);
           setDetailsSale(null);

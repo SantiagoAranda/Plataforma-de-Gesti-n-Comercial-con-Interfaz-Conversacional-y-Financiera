@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Archive, ArchiveRestore, X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -171,11 +171,8 @@ export default function MiNegocioPage() {
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
-  const [viewArchived, setViewArchived] = useState(false);
-
-  const initialItems = getInstantCache<Item[]>(`mi-negocio:items:ACTIVE`, 60_000);
-  const [items, setItems] = useState<Item[]>(initialItems ?? []);
-  const [loading, setLoading] = useState(!initialItems);
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creationId, setCreationId] = useState("");
@@ -186,7 +183,7 @@ export default function MiNegocioPage() {
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
-      const dbStatus = viewArchived ? 'INACTIVE' : 'ACTIVE';
+      const dbStatus = 'ACTIVE';
       const key = `mi-negocio:items:${dbStatus}`;
       const hasInstant = !!getInstantCache<Item[]>(key, 60_000);
       
@@ -195,7 +192,7 @@ export default function MiNegocioPage() {
       }
 
       const data = await getCached(key, 60_000, () => 
-        api<Item[]>(`/items?status=${dbStatus}&lightweight=true`)
+        api<Item[]>(`/items?status=ACTIVE&lightweight=true`)
       );
       setItems(data);
     } catch (err) {
@@ -203,7 +200,7 @@ export default function MiNegocioPage() {
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [viewArchived]);
+  }, []);
 
   useEffect(() => {
     setVisibleCount(12); // Reset count on filter change
@@ -495,9 +492,9 @@ export default function MiNegocioPage() {
     setSelectedItem(null);
   };
 
-  const handleToggleArchive = async (item: Item) => {
+  const handleDelete = async (item: Item) => {
     try {
-      const newStatus = item.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+      const newStatus = 'INACTIVE';
       await api(`/items/${item.id}/status`, {
         method: "PATCH",
         body: JSON.stringify({ status: newStatus }),
@@ -511,12 +508,12 @@ export default function MiNegocioPage() {
       invalidateCache("home:businessActivity");
 
       setToast({
-        message: newStatus === 'INACTIVE' ? "Producto archivado" : "Producto desarchivado",
+        message: "Producto eliminado",
         type: "success",
       });
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al cambiar estado", type: "error" });
+      setToast({ message: "Error al eliminar producto", type: "error" });
     }
     setTimeout(() => setToast(null), 2500);
   };
@@ -555,19 +552,16 @@ export default function MiNegocioPage() {
           title="Item seleccionado"
           onClose={() => setSelectedItem(null)}
           onEdit={() => handleStartEdit(selectedItem)}
-          onDelete={() => handleToggleArchive(selectedItem)}
-          deleteLabel={viewArchived ? "Desarchivar" : "Archivar"}
-          deleteIcon={viewArchived ? ArchiveRestore : Archive}
+          editLabel="Editar"
+          onDelete={() => handleDelete(selectedItem)}
+          deleteLabel="Eliminar"
+          deleteIcon={Trash2}
         />
       ) : (
         <AppHeader 
-          title={viewArchived ? "Archivados" : "Mi negocio"} 
+          title="Mi negocio" 
           showBack={true} 
-          onBack={viewArchived ? () => setViewArchived(false) : undefined}
           hrefBack="/home"
-          rightIcon={viewArchived ? <ArchiveRestore size={20} /> : <Archive size={20} />}
-          rightAriaLabel={viewArchived ? "Ver activos" : "Ver archivados"}
-          onRightClick={() => setViewArchived(!viewArchived)}
         />
       )}
 
@@ -577,7 +571,7 @@ export default function MiNegocioPage() {
         {loading && <div className="text-center py-10 text-neutral-500">Cargando...</div>}
         {!loading && items.length === 0 && (
           <div className="text-center py-10 text-neutral-400">
-            {viewArchived ? "No hay items archivados" : "No hay items creados"}
+            No hay items creados
           </div>
         )}
 

@@ -52,6 +52,11 @@ export function cancelSale(id: string, sourceType: string = "ORDER") {
     method: "PATCH",
   });
 }
+export function deleteSale(id: string, sourceType: string = "ORDER") {
+  return api<ApiOrder>(`/sales/${id}?sourceType=${sourceType}`, {
+    method: "DELETE",
+  });
+}
 export function updateSale(
   id: string,
   data: {

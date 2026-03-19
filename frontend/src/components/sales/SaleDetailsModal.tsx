@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Info, X, Check, Edit, Loader2, MoreVertical, AlertTriangle } from "lucide-react";
-import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
 import { getStatusStyles } from "@/src/lib/statusStyles";
@@ -73,61 +72,12 @@ export default function SaleDetailsModal({
   const styles = getStatusStyles(sale.status);
   const canConfirm = sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
 
-  const showConfirmation = (
-    title: string, 
-    actionLabel: string, 
-    onAction: () => void, 
-    variant: 'emerald' | 'rose' = 'emerald'
-  ) => {
-    toast.custom((t) => (
-      <div className={`${t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-2'} max-w-xs w-full bg-white shadow-2xl rounded-2xl border border-neutral-100 p-4 pointer-events-auto`}>
-        <div className="flex items-start gap-3">
-          <div className={`mt-0.5 h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${variant === 'rose' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
-            <AlertTriangle size={16} />
-          </div>
-          <div className="flex-1">
-            <p className="text-[13px] font-bold text-neutral-800 leading-tight mb-3">{title}</p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => toast.dismiss(t.id)}
-                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider hover:bg-neutral-100 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  toast.dismiss(t.id);
-                  onAction();
-                }}
-                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-bold uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
-              >
-                {actionLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    ), { id: 'sale-action-confirm', position: 'top-center' });
-  };
-
   const handleConfirmAction = () => {
-    if (!onConfirm || !sale) return;
-    showConfirmation(
-      "¿Deseás confirmar esta venta?",
-      "Confirmar",
-      () => onConfirm(sale),
-      'emerald'
-    );
+    if (onConfirm && sale) onConfirm(sale);
   };
 
   const handleCancelAction = () => {
-    if (!onCancel || !sale) return;
-    showConfirmation(
-      "¿Deseás anular esta venta?",
-      "Anular",
-      () => onCancel(sale),
-      'rose'
-    );
+    if (onCancel && sale) onCancel(sale);
   };
 
   return (
@@ -242,12 +192,13 @@ export default function SaleDetailsModal({
             </div>
 
             <div className="flex items-center gap-2">
-              {canConfirm && onCancel && (
+              {onCancel && (
                 <button 
                   onClick={handleCancelAction}
-                  className="h-10 px-4 rounded-full border border-rose-100 text-rose-500 font-bold text-[11px] uppercase tracking-widest hover:bg-rose-50 transition active:scale-95 whitespace-nowrap"
+                  disabled={confirming}
+                  className="h-10 px-4 rounded-full border border-rose-100 text-rose-500 font-bold text-[11px] uppercase tracking-widest hover:bg-rose-50 transition active:scale-95 whitespace-nowrap disabled:opacity-50"
                 >
-                  Anular
+                  Eliminar
                 </button>
               )}
 
