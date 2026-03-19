@@ -88,8 +88,8 @@ export default function SaleCard({
               {typeLabel(sale.type)}
             </p>
             {sale.origin && (
-              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
-                {sale.origin === "ORDEN PUBLICA" ? "Orden publica" : "Venta interna"}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${sale.origin === "PUBLIC_STORE" ? "bg-indigo-50 text-indigo-700" : "bg-neutral-100 text-neutral-600"}`}>
+                {sale.origin === "PUBLIC_STORE" ? "Tienda pública" : "Manual"}
               </span>
             )}
           </div>

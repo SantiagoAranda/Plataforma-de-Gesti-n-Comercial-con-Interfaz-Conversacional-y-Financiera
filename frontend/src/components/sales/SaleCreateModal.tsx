@@ -1,14 +1,13 @@
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
-import { X, Plus, Trash2, ChevronDown, Send } from "lucide-react";
+import { X, Plus, Trash2, Send } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
-import { listReservationAvailability } from "@/src/services/sales";
-import { formatLocalDateKey, formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
-import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
 
 type EditableItem = {
-  itemId?: string;
+  itemId: string;
   qty: number;
   name: string;
   price: number;
@@ -45,34 +44,32 @@ function ItemThumbnail() {
   );
 }
 
-export default function SaleEditModal({
+export default function SaleCreateModal({
   open,
-  sale,
   onClose,
   onSave,
 }: {
   open: boolean;
-  sale: Sale | null;
   onClose: () => void;
-  onSave: (updated: Sale) => void;
+  onSave: (data: {
+    customerName: string;
+    customerWhatsapp: string;
+    type: Sale["type"];
+    status: "PENDIENTE" | "CERRADO";
+    paymentMethod: "CASH" | "BANK_TRANSFER";
+    items: { itemId: string; quantity: number }[];
+  }) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState(""); 
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
-  const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
+  const [status, setStatus] = useState<"PENDIENTE" | "CERRADO">("PENDIENTE");
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [newItem, setNewItem] = useState<{itemId: string, qty: number}>({itemId: "", qty: 1});
-  const [scheduledDate, setScheduledDate] = useState("");
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [loadingAvailability, setLoadingAvailability] = useState(false);
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
-  const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
 
   const fetchItems = async () => {
     try {
@@ -93,93 +90,23 @@ export default function SaleEditModal({
   }, [open]);
 
   useEffect(() => {
-    if (!open || !sale) return;
-
-    setCustomerName(sale.customerName);
-    const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
-
-    if (rawPhone.length > 10) {
-      setCountryCode(rawPhone.slice(0, rawPhone.length - 10));
-      setPhoneNumber(rawPhone.slice(-10));
-    } else {
-      setCountryCode("57");
-      setPhoneNumber(rawPhone);
-    }
-    setType(sale.type);
-    setStatus(sale.status);
-    setPaymentMethod(sale.paymentMethod ?? "CASH");
+    if (!open) return;
+    setCustomerName("");
+    setCountryCode("57");
+    setPhoneNumber("");
+    setType("PRODUCTO");
+    setStatus("PENDIENTE");
+    setPaymentMethod("CASH");
+    setItems([]);
     setExpanded(false);
-    setNewItem({itemId: "", qty: 1});
-    setAvailabilityError(null);
-    setAvailableDates([]);
-    setAvailableSlots([]);
-
-    setItems(
-      sale.items.map((it) => ({
-        itemId: it.itemId || (it as any).id,
-        qty: sale.type === "SERVICIO" ? 1 : it.qty,
-        name: it.name,
-        price: it.price / (it.qty || 1),
-        durationMin: it.durationMin,
-      }))
-    );
-
-    const parts = parseLocalDateTimeParts(sale.scheduledAt);
-    if (sale.type === "SERVICIO" && parts) {
-      setScheduledDate(parts.date);
-      setScheduledTime(parts.time);
-    } else {
-      setScheduledDate("");
-      setScheduledTime("");
-    }
-  }, [open, sale]);
+    setNewItem({ itemId: "", qty: 1 });
+  }, [open]);
 
   const total = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
   }, [items]);
-  const isReservation = sale?.sourceType === "RESERVATION";
 
-  const loadReservationDates = async (monthDate: Date) => {
-    if (!isReservation) return;
-
-    try {
-      setLoadingAvailability(true);
-      setAvailabilityError(null);
-      const month = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-      const data = await listReservationAvailability(sale.id, { month });
-      setAvailableDates(data);
-    } catch (error: any) {
-      console.error(error);
-      setAvailabilityError("No se pudo cargar la disponibilidad");
-      setAvailableDates([]);
-    } finally {
-      setLoadingAvailability(false);
-    }
-  };
-
-  const loadReservationSlots = async (dateKey: string) => {
-    if (!isReservation) return;
-
-    try {
-      setLoadingAvailability(true);
-      setAvailabilityError(null);
-      const data = await listReservationAvailability(sale.id, { date: dateKey });
-      setAvailableSlots(data);
-    } catch (error: any) {
-      console.error(error);
-      setAvailabilityError("No se pudo cargar los horarios disponibles");
-      setAvailableSlots([]);
-    } finally {
-      setLoadingAvailability(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!reservationPickerOpen || !isReservation || !scheduledDate) return;
-    loadReservationSlots(scheduledDate);
-  }, [isReservation, reservationPickerOpen, scheduledDate]);
-
-  if (!open || !sale) return null;
+  if (!open) return null;
 
   const updateItemQty = (idx: number, qty: number) => {
     setItems((prev) =>
@@ -194,6 +121,10 @@ export default function SaleEditModal({
   const handleAddItem = () => {
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
+
+    if (items.length === 0) {
+      setType(bi.type === "SERVICE" ? "SERVICIO" : "PRODUCTO");
+    }
 
     setItems((prev) => [
       ...prev,
@@ -210,52 +141,39 @@ export default function SaleEditModal({
   };
 
   const handleSave = () => {
-    const cleanedName = customerName.trim();
-    if (!cleanedName) return;
-
-    let scheduledAt: string | undefined = undefined;
-    if (type === "SERVICIO") {
-      if (!scheduledDate || !scheduledTime) return;
-      scheduledAt = formatLocalDateTimeValue(scheduledDate, scheduledTime);
-    }
+    const cleanedName = customerName.trim() || "Cliente Local";
+    const cleanedWhatsapp = phoneNumber.trim().length > 0 ? `${countryCode}${phoneNumber}` : "0000000000";
 
     const cleanedItems = items
       .map((it) => ({
         itemId: it.itemId,
-        qty: normalizeQty(type, it.qty),
-        name: it.name.trim(),
-        price: (Number(it.price) || 0) * normalizeQty(type, it.qty),
-        durationMin: it.durationMin,
-      }))
-      .filter((it) => it.name.length > 0);
+        quantity: normalizeQty(type, it.qty),
+      }));
 
     if (cleanedItems.length === 0) return;
 
-    const updated: Sale = {
-      ...sale,
+    onSave({
       customerName: cleanedName,
-      customerWhatsapp:
-        phoneNumber.trim().length > 0
-          ? `${countryCode}${phoneNumber}`
-          : undefined,
+      customerWhatsapp: cleanedWhatsapp,
       type,
       status,
-      paymentMethod,
+      paymentMethod: paymentMethod || "CASH",
       items: cleanedItems,
-      scheduledAt,
-    };
-
-    onSave(updated);
-    onClose();
+    });
   };
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
-      <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
-        <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
+    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-end sm:p-0 backdrop-blur-sm">
+      <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] shadow-2xl overflow-hidden h-[90vh] sm:h-[85vh] relative animate-in slide-in-from-bottom-full duration-300 pb-safe">
+        {/* Drag handle hint */}
+        <div className="w-full flex justify-center pt-3 pb-1 bg-white absolute top-0 z-30 pointer-events-none">
+          <div className="w-12 h-1.5 rounded-full bg-neutral-200" />
+        </div>
+
+        <div className="px-5 pt-7 pb-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-             <h2 className="font-bold text-neutral-900 text-lg">Editar Pedido</h2>
-             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">#{sale.id?.slice(-6) || 'N/A'}</span>
+             <h2 className="font-bold text-neutral-900 text-lg">Nueva Venta</h2>
+             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Creación Manual</span>
           </div>
 
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500">
@@ -267,18 +185,19 @@ export default function SaleEditModal({
           <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-white">
             <div className="flex flex-col gap-0.5">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                Cliente
+                Cliente (Opcional)
               </span>
 
               <input
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Nombre del cliente"
+                className="rounded-lg border border-neutral-200 px-3 py-2 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-400 placeholder:font-medium"
               />
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                WhatsApp
+                WhatsApp (Opcional)
               </span>
 
               <PhoneSelector
@@ -291,19 +210,24 @@ export default function SaleEditModal({
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
               <div className="flex flex-col gap-0.5">
                 <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                  Tipo
+                  Estado Inicial
                 </span>
-                <span className="text-[12px] font-semibold text-neutral-600">
-                  {type === "PRODUCTO" ? "Directa" : "Servicio"}
-                </span>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as "PENDIENTE" | "CERRADO")}
+                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-neutral-700 outline-none bg-neutral-50 h-8"
+                >
+                  <option value="PENDIENTE">Pendiente</option>
+                  <option value="CERRADO">Cerrado</option>
+                </select>
               </div>
 
               <div className="flex flex-col gap-0.5 text-right">
                 <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                  Estado
+                  Tipo
                 </span>
-                <span className="text-[12px] font-semibold text-neutral-600">
-                  {status}
+                <span className="text-[12px] font-semibold text-neutral-600 truncate mt-1">
+                  {items.length === 0 ? "Seleccioná al agregar" : (type === "PRODUCTO" ? "Directa" : "Servicio")}
                 </span>
               </div>
             </div>
@@ -316,7 +240,7 @@ export default function SaleEditModal({
                   className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
                     paymentMethod === "CASH"
                       ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
                   }`}
                 >
                   Efectivo
@@ -327,7 +251,7 @@ export default function SaleEditModal({
                   className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
                     paymentMethod === "BANK_TRANSFER"
                       ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
                   }`}
                 >
                   Transferencia
@@ -336,35 +260,8 @@ export default function SaleEditModal({
             </div>
           </div>
 
-          {type === "SERVICIO" && (
-            <div className="rounded-xl border border-neutral-100 bg-white p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Turno</div>
-                  <div className="text-sm font-semibold text-neutral-800">
-                    {scheduledDate && scheduledTime ? `${scheduledDate} ${scheduledTime}` : "Sin turno"}
-                  </div>
-                </div>
-                {isReservation && (
-                  <button
-                    onClick={() => setReservationPickerOpen(true)}
-                    className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white"
-                  >
-                    Reprogramar
-                  </button>
-                )}
-              </div>
-              {loadingAvailability && (
-                <div className="text-xs text-neutral-400">Cargando disponibilidad...</div>
-              )}
-              {availabilityError && (
-                <div className="text-xs text-red-500">{availabilityError}</div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-3">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items cargados</span>
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
 
             <div className="space-y-2">
               {items.map((it, idx) => (
@@ -377,7 +274,7 @@ export default function SaleEditModal({
                     </div>
                   </div>
 
-                  {type === "PRODUCTO" && !isReservation && (
+                  {type === "PRODUCTO" && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
                       <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">-</button>
                       <span className="text-xs font-black text-neutral-700 w-3 text-center">{it.qty}</span>
@@ -385,20 +282,18 @@ export default function SaleEditModal({
                     </div>
                   )}
 
-                  {!isReservation && (
-                    <button
-                      onClick={() => removeItem(idx)}
-                      className="p-2 text-neutral-300 hover:text-rose-500 transition"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => removeItem(idx)}
+                    className="p-2 text-neutral-300 hover:text-rose-500 transition"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               ))}
 
               {items.length === 0 && (
-                <div className="text-center py-10 border-2 border-dashed border-neutral-100 rounded-2xl">
-                   <p className="text-[11px] font-bold text-neutral-300 uppercase italic">Sin productos en la lista</p>
+                <div className="text-center py-10 border-2 border-dashed border-neutral-200 bg-neutral-50 rounded-2xl">
+                   <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
                 </div>
               )}
             </div>
@@ -409,7 +304,7 @@ export default function SaleEditModal({
 
         <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2">
            <div className="relative">
-              {expanded && !isReservation && (
+              {expanded && (
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
@@ -418,12 +313,15 @@ export default function SaleEditModal({
                            <ItemSelector
                              value={newItem.itemId}
                              onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                             options={businessItems.filter(bi => bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE"))}
+                             options={businessItems.filter(bi => 
+                               items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                             )}
+                             placeholder="Elegí un item..."
                            />
                         </div>
                       </div>
 
-                      {type === "PRODUCTO" && (
+                      {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
                           <input
@@ -431,7 +329,7 @@ export default function SaleEditModal({
                             min="1"
                             value={newItem.qty}
                             onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
-                            className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
+                            className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition"
                           />
                         </div>
                       )}
@@ -441,7 +339,7 @@ export default function SaleEditModal({
                         disabled={!newItem.itemId}
                         className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
                       >
-                        Anadir a la lista
+                        Añadir a la lista
                       </button>
                    </div>
                 </div>
@@ -449,14 +347,12 @@ export default function SaleEditModal({
 
               <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
                  <div className="flex items-end gap-2">
-                    {!isReservation && (
-                      <button
-                        onClick={() => setExpanded(!expanded)}
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-                      >
-                        {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setExpanded(!expanded)}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95 border border-neutral-200/60"
+                    >
+                      {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                    </button>
 
                     <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
                        <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
@@ -465,7 +361,8 @@ export default function SaleEditModal({
 
                     <button
                       onClick={handleSave}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
+                      disabled={items.length === 0}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90 disabled:opacity-40 disabled:hover:bg-emerald-500"
                     >
                       <Send className="h-4 w-4" />
                     </button>
@@ -474,39 +371,10 @@ export default function SaleEditModal({
            </div>
 
            <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
-             Pulsa el icono de enviar para guardar cambios
+             Pulsa el icono de enviar para registrar la venta
            </div>
         </div>
       </div>
-
-      {isReservation && (
-        <ReservationDrawer
-          open={reservationPickerOpen}
-          onClose={() => setReservationPickerOpen(false)}
-          title={sale.items[0]?.name ?? "Reserva"}
-          subtitle="Selecciona una nueva fecha y horario disponibles"
-          timeSlots={availableSlots}
-          availableDates={availableDates}
-          selectedDateValue={scheduledDate || null}
-          initialFullName={customerName}
-          initialWhatsapp={
-            phoneNumber ? `${countryCode}${phoneNumber}` : ""
-          }
-          onMonthChange={loadReservationDates}
-          onDateChange={(date) => {
-            const key = formatLocalDateKey(date);
-            setScheduledDate(key);
-            loadReservationSlots(key);
-          }}
-          onConfirm={(data) => {
-            if (!data.date || !data.time) return;
-            const dateKey = formatLocalDateKey(data.date);
-            setScheduledDate(dateKey);
-            setScheduledTime(data.time);
-            setReservationPickerOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }

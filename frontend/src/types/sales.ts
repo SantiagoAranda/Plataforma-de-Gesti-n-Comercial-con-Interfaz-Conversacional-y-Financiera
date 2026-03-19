@@ -38,7 +38,7 @@ export interface Sale {
   // solo servicios
   scheduledAt?: string;
 
-  origin?: "ORDEN PUBLICA" | "VENTA INTERNA";
+  origin?: "MANUAL" | "PUBLIC_STORE";
 
   // fallback temporal
   businessWhatsapp?: string;

@@ -20,6 +20,7 @@ export interface UnifiedSaleDto {
   status: UnifiedStatus;
   createdAt: Date;
   scheduledAt?: string;
+  origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   items: Array<{
     name: string;
@@ -222,6 +223,7 @@ export class SalesService {
         customerWhatsapp: dto.customerWhatsapp,
         note: dto.note,
         paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+        origin: dto.origin ?? 'MANUAL',
         total,
         items: {
           create: orderItemsData,
@@ -283,6 +285,7 @@ export class SalesService {
       total: Number(o.total),
       status: this.mapOrderStatus(o.status),
       createdAt: o.createdAt,
+      origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       items: o.items.map((it) => ({
         name: it.itemNameSnapshot,
@@ -303,6 +306,7 @@ export class SalesService {
       status: this.mapReservationStatus(r.status),
       createdAt: r.createdAt,
       scheduledAt: this.toScheduledAt(r.date, r.startMinute),
+      origin: r.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: 'SERVICIO',
       items: [
         {

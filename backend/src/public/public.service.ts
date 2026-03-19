@@ -332,6 +332,7 @@ export class PublicService {
           startMinute,
           endMinute,
           status: 'PENDING',
+          origin: 'PUBLIC_STORE',
         },
       });
     });
@@ -367,6 +368,7 @@ export class PublicService {
       data: {
         businessId: business.id,
         status: 'SENT',
+        origin: 'PUBLIC_STORE',
         customerName: dto.customerName,
         customerWhatsapp: dto.customerWhatsapp,
         sentAt: new Date(),

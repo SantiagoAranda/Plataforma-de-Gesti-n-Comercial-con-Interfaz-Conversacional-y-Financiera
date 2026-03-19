@@ -64,6 +64,11 @@ enum Weekday {
   SUN
 }
 
+enum SaleOrigin {
+  MANUAL
+  PUBLIC_STORE
+}
+
 //
 // MODELOS CORE
 //
@@ -171,6 +176,7 @@ model Order {
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   status OrderStatus @default(DRAFT)
+  origin SaleOrigin  @default(MANUAL)
 
   // Cliente final sin registro
   customerName     String
@@ -248,6 +254,7 @@ model Reservation {
   item   Item   @relation(fields: [itemId], references: [id], onDelete: Restrict)
 
   status ReservationStatus @default(PENDING)
+  origin SaleOrigin        @default(MANUAL)
 
   // Cliente final sin registro
   customerName     String

@@ -19,6 +19,7 @@ export type ApiOrder = {
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   total: number;
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
+  origin?: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
@@ -40,6 +41,20 @@ export type ConfirmOrderResponse = {
 
 export function listSales() {
   return api<ApiOrder[]>("/sales");
+}
+
+export function createSale(data: {
+  customerName: string;
+  customerWhatsapp: string;
+  note?: string;
+  paymentMethod?: "CASH" | "BANK_TRANSFER";
+  origin?: "MANUAL" | "PUBLIC_STORE";
+  items: Array<{ itemId: string; quantity: number }>;
+}) {
+  return api<ApiOrder>("/sales", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 export function confirmSale(id: string, sourceType: string = "ORDER") {

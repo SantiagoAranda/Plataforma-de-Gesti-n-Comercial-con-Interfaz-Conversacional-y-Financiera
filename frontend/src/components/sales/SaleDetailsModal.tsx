@@ -148,7 +148,7 @@ export default function SaleDetailsModal({
             {sale.origin && (
               <div className="pt-3 border-t border-neutral-50">
                 <p className="text-[11px] text-neutral-500 font-medium italic">
-                  {sale.origin === "ORDEN PUBLICA" ? "Orden recibida desde el catálogo público" : "Venta generada manualmente desde el sistema"}
+                  {sale.origin === "PUBLIC_STORE" ? "Orden recibida desde el catálogo público" : "Venta generada manualmente desde el sistema"}
                 </p>
               </div>
             )}

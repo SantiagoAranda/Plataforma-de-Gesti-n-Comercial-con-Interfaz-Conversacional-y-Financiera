@@ -15,9 +15,11 @@ import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, cancelSale, deleteSale, updateSale, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, cancelSale, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
+import SaleCreateModal from "@/src/components/sales/SaleCreateModal";
+import { Plus } from "lucide-react";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   return {
@@ -28,6 +30,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     paymentMethod: order.paymentMethod,
     type: order.type,
     status: order.status as any, // Matches UnifiedStatus
+    origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
     items: order.items.map((it) => ({
@@ -54,6 +57,7 @@ export default function VentaPage() {
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDone = useRef(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
@@ -244,7 +248,36 @@ const handleSendWhatsApp = (sale: Sale) => {
     },
     "emerald"
   );
-}, [loadOrders]);
+ }, [loadOrders]);
+
+ const handleCreateSale = async (data: {
+    customerName: string;
+    customerWhatsapp: string;
+    type: Sale["type"];
+    status: "PENDIENTE" | "CERRADO";
+    paymentMethod: "CASH" | "BANK_TRANSFER";
+    items: { itemId: string; quantity: number }[];
+  }) => {
+    try {
+      const created = await createSale({
+        ...data,
+        origin: "MANUAL",
+      });
+
+      if (data.status === "CERRADO") {
+        await confirmSale(created.id, created.sourceType);
+      }
+
+      toast.success("Venta regitrada manualmente");
+      invalidateCache("home:sales");
+      invalidateCache("home:businessActivity");
+      await loadOrders();
+      setIsCreateOpen(false);
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al registrar la venta");
+    }
+  };
 
  const handleDeleteSale = useCallback(async (sale: Sale) => {
   showConfirmation(
@@ -472,6 +505,19 @@ const handleSendWhatsApp = (sale: Sale) => {
         sale={editingSale}
         onClose={() => setEditingSale(null)}
         onSave={handleSaveEditedSale}
+      />
+
+      <button
+        onClick={() => setIsCreateOpen(true)}
+        className="fixed bottom-[84px] left-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 shadow-[0_8px_30px_rgba(5,150,105,0.3)] text-white hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all"
+      >
+        <Plus size={28} strokeWidth={2.5} />
+      </button>
+
+      <SaleCreateModal
+        open={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onSave={handleCreateSale}
       />
     </div>
   );

@@ -33,6 +33,10 @@ export class CreateOrderDto {
   @IsIn(['CASH', 'BANK_TRANSFER'])
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
 
+  @IsOptional()
+  @IsIn(['MANUAL', 'PUBLIC_STORE'])
+  origin?: 'MANUAL' | 'PUBLIC_STORE';
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemInput)
