@@ -24,8 +24,8 @@ export interface Sale {
   id: string;
   sourceType: SourceType; // ORIGEN EXPLÍCITO
 
-  customerName: string;
-  customerWhatsapp?: string;
+  customerName: string | null;
+  customerWhatsapp: string | null;
   paymentMethod?: PaymentMethod;
 
   type: SaleType;
@@ -38,7 +38,7 @@ export interface Sale {
   // solo servicios
   scheduledAt?: string;
 
-  origin?: "MANUAL" | "PUBLIC_STORE";
+  origin: "MANUAL" | "PUBLIC_STORE";
 
   // fallback temporal
   businessWhatsapp?: string;

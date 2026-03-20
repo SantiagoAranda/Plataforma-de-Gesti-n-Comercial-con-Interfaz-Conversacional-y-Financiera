@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Plus, Trash2, ChevronDown, Send } from "lucide-react";
+import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
 import type { Sale } from "@/src/types/sales";
 import { listReservationAvailability } from "@/src/services/sales";
 import { formatLocalDateKey, formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
@@ -95,7 +96,7 @@ export default function SaleEditModal({
   useEffect(() => {
     if (!open || !sale) return;
 
-    setCustomerName(sale.customerName);
+    setCustomerName(sale.customerName || "");
     const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
 
     if (rawPhone.length > 10) {
@@ -237,7 +238,7 @@ export default function SaleEditModal({
       customerWhatsapp:
         phoneNumber.trim().length > 0
           ? `${countryCode}${phoneNumber}`
-          : undefined,
+          : null,
       type,
       status,
       paymentMethod,
@@ -294,7 +295,7 @@ export default function SaleEditModal({
                   Tipo
                 </span>
                 <span className="text-[12px] font-semibold text-neutral-600">
-                  {type === "PRODUCTO" ? "Directa" : "Servicio"}
+                  {type === "PRODUCTO" ? "Producto" : "Servicio"}
                 </span>
               </div>
 
@@ -302,9 +303,18 @@ export default function SaleEditModal({
                 <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
                   Estado
                 </span>
-                <span className="text-[12px] font-semibold text-neutral-600">
+                <span className="text-[12px] font-semibold text-neutral-600 lowercase first-letter:uppercase">
                   {status}
                 </span>
+              </div>
+
+              <div className="col-span-2 pt-2 border-t border-neutral-50">
+                 <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Origen de la venta</span>
+                    <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
+                      {getSaleOriginLabel(sale?.origin)}
+                    </span>
+                 </div>
               </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">

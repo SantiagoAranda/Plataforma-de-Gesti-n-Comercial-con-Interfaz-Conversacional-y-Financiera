@@ -3,19 +3,40 @@ import { getToken, removeToken } from "./auth";
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type ApiError = { status: number; message: string; details?: any };
+export class AppApiError extends Error {
+  status: number;
+  details?: any;
+  raw: string;
 
-async function parseError(res: Response): Promise<ApiError> {
+  constructor({ status, message, details, raw }: { status: number; message: string; details?: any; raw: string }) {
+    super(message);
+    this.name = "AppApiError";
+    this.status = status;
+    this.details = details;
+    this.raw = raw;
+  }
+}
+
+async function parseError(res: Response): Promise<AppApiError> {
+  const raw = await res.text();
   let details: any = null;
+  let message = res.statusText || `HTTP Error ${res.status}`;
+
   try {
-    details = await res.json();
+    if (raw) {
+      details = JSON.parse(raw);
+      if (details?.message) {
+        message = Array.isArray(details.message) ? details.message.join(" | ") : details.message;
+      }
+    }
   } catch {}
 
-  return {
+  return new AppApiError({
     status: res.status,
-    message: details?.message || res.statusText || "Request failed",
+    message,
     details,
-  };
+    raw,
+  });
 }
 
 export async function api<T>(

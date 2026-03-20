@@ -9,7 +9,7 @@ import type { Sale } from "@/src/types/sales";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import SalesList from "@/src/components/sales/SalesList";
-import SalesSearchBar from "@/src/components/sales/SalesSearchBar";
+import SalesChatComposer from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
@@ -18,10 +18,10 @@ import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, cancelSale, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
-import SaleCreateModal from "@/src/components/sales/SaleCreateModal";
 import { Plus } from "lucide-react";
 
 function mapOrderToSale(order: ApiOrder): Sale {
+  console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
   return {
     id: order.id,
     sourceType: order.sourceType, // ORIGEN EXPLÍCITO
@@ -147,7 +147,7 @@ export default function VentaPage() {
     if (!term) return result;
 
     return result.filter((s) => {
-      if (s.customerName.toLowerCase().includes(term)) return true;
+      if (s.customerName?.toLowerCase().includes(term)) return true;
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
   }, [q, sales, filterStatus]);
@@ -180,7 +180,7 @@ const handleSendWhatsApp = (sale: Sale) => {
 
   const msg = formatSaleMessage({
     businessName,
-    customerName: sale.customerName,
+    customerName: sale.customerName || "Cliente",
     type: sale.type,
     scheduledAt: sale.scheduledAt,
     items: sale.items,
@@ -250,19 +250,21 @@ const handleSendWhatsApp = (sale: Sale) => {
   );
  }, [loadOrders]);
 
- const handleCreateSale = async (data: {
-    customerName: string;
-    customerWhatsapp: string;
+  const handleCreateSale = async (data: {
+    customerName?: string;
+    customerWhatsapp?: string;
     type: Sale["type"];
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
-      const created = await createSale({
+      const payload = {
         ...data,
-        origin: "MANUAL",
-      });
+        origin: "MANUAL" as const,
+      };
+      console.log("Payload create sale:", payload);
+      const created = await createSale(payload);
 
       if (data.status === "CERRADO") {
         await confirmSale(created.id, created.sourceType);
@@ -273,9 +275,13 @@ const handleSendWhatsApp = (sale: Sale) => {
       invalidateCache("home:businessActivity");
       await loadOrders();
       setIsCreateOpen(false);
-    } catch (error) {
-      console.error(error);
-      toast.error("Error al registrar la venta");
+      setPendingSmoothScroll(true);
+    } catch (error: any) {
+      console.error("Error creating sale:", error);
+      console.error("Status:", error?.status);
+      console.error("Details:", error?.details);
+      console.error("Raw:", error?.raw);
+      toast.error(error?.message || "Error al registrar la venta");
     }
   };
 
@@ -356,8 +362,8 @@ const handleSendWhatsApp = (sale: Sale) => {
     toast.loading("Guardando cambios...", { id: loadingId });
 
     const dto = {
-      customerName: updated.customerName,
-      customerWhatsapp: updated.customerWhatsapp,
+      customerName: updated.customerName ?? undefined,
+      customerWhatsapp: updated.customerWhatsapp ?? undefined,
       paymentMethod: updated.paymentMethod,
       scheduledAt: updated.scheduledAt,
       items: updated.items
@@ -476,15 +482,11 @@ const handleSendWhatsApp = (sale: Sale) => {
         </div>
       </main>
 
-      <div className="shrink-0">
-        <SalesSearchBar value={q} onChange={setQ} onAction={() => {}} />
-      </div>
-
-      <SalesFilterModal
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        status={filterStatus}
-        onChange={setFilterStatus}
+      <SaleEditModal
+        open={!!editingSale}
+        sale={editingSale}
+        onClose={() => setEditingSale(null)}
+        onSave={handleSaveEditedSale}
       />
 
       <SaleDetailsModal
@@ -500,23 +502,12 @@ const handleSendWhatsApp = (sale: Sale) => {
         confirming={confirmingSaleId === detailsSale?.id}
       />
 
-      <SaleEditModal
-        open={!!editingSale}
-        sale={editingSale}
-        onClose={() => setEditingSale(null)}
-        onSave={handleSaveEditedSale}
-      />
-
-      <button
-        onClick={() => setIsCreateOpen(true)}
-        className="fixed bottom-[84px] left-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 shadow-[0_8px_30px_rgba(5,150,105,0.3)] text-white hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all"
-      >
-        <Plus size={28} strokeWidth={2.5} />
-      </button>
-
-      <SaleCreateModal
-        open={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+      <SalesChatComposer
+        expanded={isCreateOpen}
+        onOpenComposer={() => setIsCreateOpen(true)}
+        onCancelComposer={() => setIsCreateOpen(false)}
+        searchValue={q}
+        onSearchChange={setQ}
         onSave={handleCreateSale}
       />
     </div>

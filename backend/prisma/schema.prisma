@@ -179,8 +179,8 @@ model Order {
   origin SaleOrigin  @default(MANUAL)
 
   // Cliente final sin registro
-  customerName     String
-  customerWhatsapp String
+  customerName     String?
+  customerWhatsapp String?
   note             String?
   paymentMethod    PaymentMethod @default(CASH)
 
@@ -257,8 +257,8 @@ model Reservation {
   origin SaleOrigin        @default(MANUAL)
 
   // Cliente final sin registro
-  customerName     String
-  customerWhatsapp String
+  customerName     String?
+  customerWhatsapp String?
   note             String?
   paymentMethod    PaymentMethod @default(CASH)
 

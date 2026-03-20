@@ -53,8 +53,8 @@ export class ReservationsService {
       data: {
         businessId,
         itemId: dto.itemId,
-        customerName: dto.customerName,
-        customerWhatsapp: dto.customerWhatsapp,
+        customerName: dto.customerName?.trim() || null,
+        customerWhatsapp: dto.customerWhatsapp?.trim() || null,
         date: dateOnly,
         startMinute: dto.startMinute,
         endMinute: dto.endMinute,

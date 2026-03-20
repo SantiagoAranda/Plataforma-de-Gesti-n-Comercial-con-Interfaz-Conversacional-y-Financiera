@@ -5,6 +5,7 @@ import { Info, X, Check, Edit, Loader2, MoreVertical, AlertTriangle } from "luci
 
 import type { Sale } from "@/src/types/sales";
 import { getStatusStyles } from "@/src/lib/statusStyles";
+import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -30,7 +31,7 @@ function formatDateTime(iso?: string) {
 }
 
 function typeLabel(type: Sale["type"]) {
-  return type === "PRODUCTO" ? "Venta Directa" : "Servicio";
+  return type === "PRODUCTO" ? "Producto" : "Servicio";
 }
 
 function paymentMethodLabel(paymentMethod?: Sale["paymentMethod"]) {
@@ -107,7 +108,7 @@ export default function SaleDetailsModal({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Cliente</span>
-                <span className="text-sm font-semibold text-neutral-800">{sale.customerName}</span>
+                <span className="text-sm font-semibold text-neutral-800">{sale.customerName ?? "Sin nombre"}</span>
               </div>
               <div className="space-y-1 text-right">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">WhatsApp</span>
@@ -131,11 +132,17 @@ export default function SaleDetailsModal({
               </div>
             </div>
 
-            <div className="pt-3 border-t border-neutral-50">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Medio de pago</span>
-              <span className="text-sm font-semibold text-neutral-700">
-                {paymentMethodLabel(sale.paymentMethod)}
-              </span>
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-neutral-50">
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Medio de pago</span>
+                <span className="text-sm font-semibold text-neutral-700">
+                  {paymentMethodLabel(sale.paymentMethod)}
+                </span>
+              </div>
+              <div className="space-y-1 text-right">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Registrada</span>
+                <span className="text-sm font-semibold text-neutral-700">{formatDateTime(sale.createdAt)}</span>
+              </div>
             </div>
 
             {sale.type === "SERVICIO" && sale.scheduledAt && (
@@ -147,8 +154,12 @@ export default function SaleDetailsModal({
 
             {sale.origin && (
               <div className="pt-3 border-t border-neutral-50">
-                <p className="text-[11px] text-neutral-500 font-medium italic">
-                  {sale.origin === "PUBLIC_STORE" ? "Orden recibida desde el catálogo público" : "Venta generada manualmente desde el sistema"}
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block mb-1">Origen</span>
+                <span className="text-sm font-semibold text-neutral-700">
+                  {getSaleOriginLabel(sale.origin)}
+                </span>
+                <p className="text-[10px] text-neutral-500 mt-1 italic font-medium">
+                  {sale.origin === "PUBLIC_STORE" ? "Recibida desde el catálogo" : "Generada manualmente"}
                 </p>
               </div>
             )}

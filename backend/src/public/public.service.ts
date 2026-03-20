@@ -322,7 +322,7 @@ export class PublicService {
         throw new BadRequestException('Time slot already reserved or unavailable');
       }
 
-      return tx.reservation.create({
+      const reservation = await tx.reservation.create({
         data: {
           businessId: business.id,
           itemId,
@@ -335,6 +335,9 @@ export class PublicService {
           origin: 'PUBLIC_STORE',
         },
       });
+
+      console.log(`[PublicService] Created reservation origin: ${reservation.origin}`);
+      return reservation;
     });
   }
 
@@ -399,6 +402,8 @@ export class PublicService {
       },
       include: { items: true },
     });
+
+    console.log(`[PublicService] Created order origin: ${order.origin}`);
 
     const total = order.items.reduce(
       (acc, i) => acc + Number(i.lineTotal),

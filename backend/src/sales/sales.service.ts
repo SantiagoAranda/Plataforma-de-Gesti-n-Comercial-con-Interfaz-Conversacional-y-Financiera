@@ -13,8 +13,8 @@ export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
 export interface UnifiedSaleDto {
   id: string;
   sourceType: UnifiedSourceType;
-  customerName: string;
-  customerWhatsapp: string;
+  customerName: string | null;
+  customerWhatsapp: string | null;
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   total: number;
   status: UnifiedStatus;
@@ -194,11 +194,45 @@ export class SalesService {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    let total = 0;
+    this.ensureSingleItemType(itemsFromDb);
 
+    // BIFURCACIÓN SEGÚN TIPO
+    if (dto.type === 'SERVICIO') {
+      const item = itemsFromDb[0];
+      const now = new Date();
+      const dateOnly = new Date(now);
+      dateOnly.setHours(0, 0, 0, 0);
+
+      const startMinute = now.getHours() * 60 + now.getMinutes();
+      const duration = item.durationMinutes ?? 60;
+      const endMinute = startMinute + duration;
+
+      const reservation = await this.prisma.reservation.create({
+        data: {
+          businessId,
+          itemId: item.id,
+          customerName: dto.customerName?.trim() || null,
+          customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+          date: dateOnly,
+          startMinute,
+          endMinute,
+          status: 'PENDING',
+          origin: dto.origin ?? 'MANUAL',
+          paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+        },
+      });
+
+      // Mapear a un formato que el frontend entienda como una "venta" recién creada
+      return {
+        ...reservation,
+        sourceType: 'RESERVATION',
+      };
+    }
+
+    // LÓGICA PARA PRODUCTO (ORDER)
+    let total = 0;
     const orderItemsData = dto.items.map((input) => {
       const item = itemsFromDb.find((i) => i.id === input.itemId)!;
-
       const lineTotal = Number(item.price) * input.quantity;
       total += lineTotal;
 
@@ -214,17 +248,16 @@ export class SalesService {
       };
     });
 
-    this.ensureSingleItemType(itemsFromDb);
-
     const order = await this.prisma.order.create({
       data: {
         businessId,
-        customerName: dto.customerName,
-        customerWhatsapp: dto.customerWhatsapp,
+        customerName: dto.customerName?.trim() || null,
+        customerWhatsapp: dto.customerWhatsapp?.trim() || null,
         note: dto.note,
         paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
         origin: dto.origin ?? 'MANUAL',
         total,
+        status: 'SENT', // Estado inicial para órdenes manuales
         items: {
           create: orderItemsData,
         },
@@ -238,7 +271,12 @@ export class SalesService {
       },
     });
 
-    return order;
+    console.log(`[SalesService] Created order origin: ${order.origin}`);
+
+    return {
+      ...order,
+      sourceType: 'ORDER',
+    };
   }
 
   async findAll(businessId: string, options?: { includeArchived?: boolean }): Promise<UnifiedSaleDto[]> {
@@ -276,6 +314,10 @@ export class SalesService {
       }),
     ]);
 
+    console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
+    if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
+    if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
+
     const mappedOrders: UnifiedSaleDto[] = orders.map((o) => ({
       id: o.id,
       sourceType: 'ORDER',
@@ -305,8 +347,8 @@ export class SalesService {
       total: Number(r.item.price),
       status: this.mapReservationStatus(r.status),
       createdAt: r.createdAt,
-      scheduledAt: this.toScheduledAt(r.date, r.startMinute),
       origin: r.origin as 'MANUAL' | 'PUBLIC_STORE',
+      scheduledAt: this.toScheduledAt(r.date, r.startMinute),
       type: 'SERVICIO',
       items: [
         {
@@ -452,6 +494,8 @@ export class SalesService {
               include: { item: true },
             });
 
+      console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
+
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
       const shouldPostAccounting = existingMovements.length === 0;
       const movements = shouldPostAccounting
@@ -550,6 +594,7 @@ export class SalesService {
       total: price,
       updatedAt: res.updatedAt,
       createdAt: res.createdAt,
+      origin: res.origin,
       items: [
         {
           id: `virtual-oi-${res.id}`,

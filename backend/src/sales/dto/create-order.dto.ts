@@ -19,11 +19,13 @@ class OrderItemInput {
 }
 
 export class CreateOrderDto {
+  @IsOptional()
   @IsString()
-  customerName: string;
+  customerName?: string;
 
+  @IsOptional()
   @IsString()
-  customerWhatsapp: string;
+  customerWhatsapp?: string;
 
   @IsOptional()
   @IsString()
@@ -36,6 +38,14 @@ export class CreateOrderDto {
   @IsOptional()
   @IsIn(['MANUAL', 'PUBLIC_STORE'])
   origin?: 'MANUAL' | 'PUBLIC_STORE';
+
+  @IsString()
+  @IsIn(['PRODUCTO', 'SERVICIO'])
+  type: 'PRODUCTO' | 'SERVICIO';
+
+  @IsString()
+  @IsIn(['PENDIENTE', 'CERRADO'])
+  status: 'PENDIENTE' | 'CERRADO';
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -50,7 +50,8 @@ export function generateInvoicePdf(opts: {
     doc.text(`Negocio: ${businessName}`, 40, 120);
     if (businessPhone) doc.text(`Tel: ${businessPhone}`, 40, 135);
 
-    doc.text(`Cliente: ${sale.customerName}`, 40, 160);
+    const customerName = sale.customerName ?? "Sin nombre";
+    doc.text(`Cliente: ${customerName}`, 40, 160);
     doc.text(`Tipo: ${sale.type === "PRODUCTO" ? "Producto" : "Servicio"}`, 40, 175);
     doc.text(`Estado: ${sale.status}`, 40, 190);
 
@@ -89,6 +90,6 @@ export function generateInvoicePdf(opts: {
     doc.text("Nota: El pago se realiza fuera del sistema.", 40, finalY + 55);
 
     // Save
-    const safeCustomer = sale.customerName.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
+    const safeCustomer = (sale.customerName ?? "Cliente").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "_");
     doc.save(`Factura_${invoiceId}_${safeCustomer}.pdf`);
 }

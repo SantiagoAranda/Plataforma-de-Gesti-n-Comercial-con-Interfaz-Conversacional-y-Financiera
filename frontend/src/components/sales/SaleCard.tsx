@@ -7,6 +7,8 @@ import { useLongPress } from "@/src/components/shared/selection/useLongPress";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
 
+import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
+
 function typeLabel(type: Sale["type"]) {
   return type === "PRODUCTO" ? "Producto" : "Servicio";
 }
@@ -80,26 +82,25 @@ export default function SaleCard({
       <div className="flex justify-between items-start mb-3">
         <div>
           <h3 className="font-semibold text-gray-900 text-[15px] leading-tight text-left">
-            {sale.customerName}
+            {sale.customerName ?? "Sin nombre"}
           </h3>
-
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <p className="text-[11px] text-gray-500">
-              {typeLabel(sale.type)}
-            </p>
-            {sale.origin && (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${sale.origin === "PUBLIC_STORE" ? "bg-indigo-50 text-indigo-700" : "bg-neutral-100 text-neutral-600"}`}>
-                {sale.origin === "PUBLIC_STORE" ? "Tienda pública" : "Manual"}
-              </span>
-            )}
-          </div>
+          <p className="mt-1 text-[11px] text-gray-500">
+            {typeLabel(sale.type)}
+          </p>
         </div>
 
-        <span
-          className={`text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide ${styles.badge}`}
-        >
-          {styles.label}
-        </span>
+        <div className="flex items-center gap-2">
+          {sale.origin && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border ${getSaleOriginStyles(sale.origin)}`}>
+              {getSaleOriginLabel(sale.origin)}
+            </span>
+          )}
+          <span
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wide border ${styles.badge}`}
+          >
+            {styles.label}
+          </span>
+        </div>
       </div>
 
       {/* ITEMS */}

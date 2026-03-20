@@ -113,8 +113,10 @@ describe('Sales Flow (Integration)', () => {
       const result = await salesService.confirmOrder(businessId, order.id);
 
       // 3. Validations
-      expect(result.order.status).toBe(OrderStatus.COMPLETED);
-      expect(result.order.accountingPostedAt).not.toBeNull();
+      const confirmedOrder = result.order as any;
+      expect(confirmedOrder.status).toBe(OrderStatus.COMPLETED);
+      expect(confirmedOrder.accountingPostedAt).toBeDefined();
+      expect(confirmedOrder.accountingPostedAt).not.toBeNull();
       expect(result.accountingCreated).toBe(true);
 
       const movements = await prisma.accountingMovement.findMany({
@@ -337,9 +339,9 @@ describe('Sales Flow (Integration)', () => {
           });
 
           // Checking if detail contains "venta product" and "Detail Customer"
-          expect(movements[0].detail.toLowerCase()).toContain('venta');
-          expect(movements[0].detail.toLowerCase()).toContain('product');
-          expect(movements[0].detail).toContain('Detail Customer');
+          expect(movements[0]?.detail?.toLowerCase()).toContain('venta');
+          expect(movements[0]?.detail?.toLowerCase()).toContain('product');
+          expect(movements[0]?.detail).toContain('Detail Customer');
     });
   });
 });

@@ -11,15 +11,15 @@ export type ApiOrderItem = {
   };
 };
 
-export type ApiOrder = {
+export interface ApiOrder {
   id: string;
   sourceType: "ORDER" | "RESERVATION";
-  customerName: string;
-  customerWhatsapp: string;
+  customerName: string | null;
+  customerWhatsapp: string | null;
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   total: number;
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
-  origin?: "MANUAL" | "PUBLIC_STORE";
+  origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
@@ -44,8 +44,8 @@ export function listSales() {
 }
 
 export function createSale(data: {
-  customerName: string;
-  customerWhatsapp: string;
+  customerName?: string;
+  customerWhatsapp?: string;
   note?: string;
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   origin?: "MANUAL" | "PUBLIC_STORE";

@@ -4,11 +4,13 @@ export class CreateReservationDto {
   @IsString()
   itemId: string;
 
+  @IsOptional()
   @IsString()
-  customerName: string;
+  customerName?: string;
 
+  @IsOptional()
   @IsString()
-  customerWhatsapp: string;
+  customerWhatsapp?: string;
 
   @IsDateString()
   date: string;
