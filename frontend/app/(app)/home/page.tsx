@@ -173,7 +173,7 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen flex-col bg-white">
-      <AppHeader title={businessName} subtitle="Resumen general" />
+      <AppHeader title={businessName} subtitle="" />
 
       <main className="flex-1 overflow-y-auto pb-24">
         {loading && (

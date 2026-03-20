@@ -214,21 +214,27 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
 
   let activityText: string | null = null;
   if (latest) {
-    const detail = latest.detail?.trim();
+    let detail = latest.detail?.trim();
+
+    if (detail) {
+      detail = detail
+        .replace(/product/gi, "producto")
+        .replace(/service/gi, "servicio");
+    }
     const accountName = latest.pucName?.trim();
     const accountCode = latest.pucCode?.trim();
     const amount = Number.isFinite(latest.amount) ? formatCurrency(Math.abs(latest.amount)) : "";
 
     if (detail) {
-      activityText = `Actividad contable:  ${detail}`;
+      activityText = detail;
     } else if (accountName && amount) {
-      activityText = `Actividad contable:  ${accountName} por ${amount}`;
+      activityText = `${accountName} por ${amount}`;
     } else if (accountCode && amount) {
-      activityText = `Actividad contable: ${accountCode} por ${amount}`;
+      activityText = `${accountCode} por ${amount}`;
     } else if (accountName) {
-      activityText = `Actividad contable: ${accountName}`;
+      activityText = accountName;
     } else if (accountCode) {
-      activityText = `Actividad contable: ${accountCode}`;
+      activityText = accountCode;
     }
   }
 
