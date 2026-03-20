@@ -277,6 +277,7 @@ function AdminProductCard({
   return (
     <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
 
+      {/* Imagen */}
       <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
           <ItemImageViewer
@@ -288,34 +289,43 @@ function AdminProductCard({
         )}
       </div>
 
+      {/* Contenido */}
       <div className="p-3 flex flex-col gap-2">
-
+        {/* Nombre */}
         <div className="text-sm font-semibold line-clamp-2">
           {item.name}
         </div>
 
+        {/* Descripción 👇 NUEVO */}
+        {item.description && (
+          <div className="text-xs text-gray-500 line-clamp-2">
+            {item.description}
+          </div>
+        )}
+
+        {/* Precio */}
         <div className="text-emerald-600 font-bold text-sm">
           ${item.price.toFixed(2)}
         </div>
 
+        {/* Duración (servicios) */}
         {item.type === "SERVICE" && item.durationMinutes && (
           <div className="text-xs text-neutral-500">
             {item.durationMinutes} min
           </div>
         )}
 
+        {/* Estado */}
         <div>
           <span
-            className={`px-2 py-1 text-xs rounded-full font-semibold ${
-              item.status === "ACTIVE"
+            className={`px-2 py-1 text-xs rounded-full font-semibold ${item.status === "ACTIVE"
                 ? "bg-emerald-100 text-emerald-700"
                 : "bg-red-100 text-red-600"
-            }`}
+              }`}
           >
             {item.status === "ACTIVE" ? "Activo" : "Inactivo"}
           </span>
         </div>
-
       </div>
     </div>
   );

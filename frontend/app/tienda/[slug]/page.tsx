@@ -17,6 +17,7 @@ type Item = {
   name: string;
   price: number;
   type: ItemType;
+  description?: string;
   durationMinutes?: number;
   images?: { id: string; url: string }[];
 };
@@ -492,6 +493,8 @@ function ProductCard({
 }) {
   return (
     <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:-translate-y-1">
+
+      {/* Imagen */}
       <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
         {item.images?.[0]?.url && (
           <ItemImageViewer
@@ -503,15 +506,27 @@ function ProductCard({
         )}
       </div>
 
+      {/* Contenido */}
       <div className="p-3 flex flex-col gap-2">
+
+        {/* Nombre */}
         <div className="text-sm font-semibold line-clamp-2">
           {item.name}
         </div>
 
+        {/* Descripción (opcional) */}
+        {item.description && (
+          <div className="text-xs text-gray-500 line-clamp-2">
+            {item.description}
+          </div>
+        )}
+
+        {/* Precio */}
         <div className="text-emerald-600 font-bold text-sm">
           ${item.price.toFixed(2)}
         </div>
 
+        {/* Botón */}
         <button
           disabled={preview}
           onClick={onAction}
@@ -522,7 +537,7 @@ function ProductCard({
         >
           {item.type === "SERVICE"
             ? "Reservar"
-            : "Anadir al carrito"}
+            : "Añadir al carrito"}
         </button>
       </div>
     </div>
