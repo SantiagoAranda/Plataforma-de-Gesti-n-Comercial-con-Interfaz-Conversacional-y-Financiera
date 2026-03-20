@@ -12,6 +12,7 @@ import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
+import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -102,6 +103,27 @@ function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: strin
   return aS < bE && bS < aE;
 }
 
+function formatPriceInput(input: string) {
+  // Remove non-numeric except comma
+  let cleanValue = input.replace(/[^0-9,]/g, "");
+  
+  // Handle multiple commas
+  const parts = cleanValue.split(",");
+  if (parts.length > 2) {
+    cleanValue = parts[0] + "," + parts.slice(1).join("");
+  }
+  
+  // Thousands separator with dot
+  const [integerPart, decimalPart] = cleanValue.split(",");
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  
+  return decimalPart !== undefined ? `${formattedInteger},${decimalPart.slice(0, 2)}` : formattedInteger;
+}
+
+function parsePriceInput(formatted: string) {
+  return formatted.replace(/\./g, "").replace(",", ".");
+}
+
 function generateCreationId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -161,6 +183,7 @@ export default function MiNegocioPage() {
 
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [priceDisplay, setPriceDisplay] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
@@ -180,6 +203,7 @@ export default function MiNegocioPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [visibleCount, setVisibleCount] = useState(12);
+  const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -278,6 +302,7 @@ export default function MiNegocioPage() {
     setEditingItem(null);
     setName("");
     setPrice("");
+    setPriceDisplay("");
     setDescription("");
     setExistingImages([]);
     setNewImages([]);
@@ -440,6 +465,7 @@ export default function MiNegocioPage() {
     setEditingItem(fullItem);
     setName(fullItem.name);
     setPrice(String(fullItem.price));
+    setPriceDisplay(formatPriceInput(String(fullItem.price).replace(".", ",")));
     setDescription(fullItem.description ?? "");
     setExistingImages(fullItem.images ?? []);
     setNewImages([]);
@@ -551,9 +577,10 @@ export default function MiNegocioPage() {
           visible
           title="Item seleccionado"
           onClose={() => setSelectedItem(null)}
-          onEdit={() => handleStartEdit(selectedItem)}
+          onView={() => setItemForDetail(selectedItem)}
+          onEdit={() => handleStartEdit(selectedItem!)}
           editLabel="Editar"
-          onDelete={() => handleDelete(selectedItem)}
+          onDelete={() => handleDelete(selectedItem!)}
           deleteLabel="Eliminar"
           deleteIcon={Trash2}
         />
@@ -811,11 +838,14 @@ export default function MiNegocioPage() {
                   </span>
 
                   <input
-                    type="number"
-                    placeholder="0.00"
-                    value={price}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    value={priceDisplay}
                     onChange={(e) => {
-                      setPrice(e.target.value);
+                      const formatted = formatPriceInput(e.target.value);
+                      setPriceDisplay(formatted);
+                      setPrice(parsePriceInput(formatted));
                       setFormErrors((prev) => ({ ...prev, price: undefined }));
                     }}
                     className="flex-1 bg-transparent outline-none text-sm"
@@ -1073,20 +1103,26 @@ export default function MiNegocioPage() {
 
             {/* DESCRIPCION */}
             <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Descripción
+                </label>
+                <span className={`text-[10px] font-bold ${description.length >= 300 ? 'text-red-500' : 'text-neutral-400'}`}>
+                  {description.length}/300
+                </span>
+              </div>
 
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Descripción
-              </label>
+              <textarea
+                placeholder="Agrega una descripción..."
+                rows={3}
+                maxLength={300}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full rounded-xl border border-transparent bg-neutral-100 px-4 py-3 text-sm outline-none resize-none"
+              />
+            </div>
 
-              <div className="flex items-end gap-2">
-
-                <textarea
-                  placeholder="Detalles adicionales..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={1}
-                  className="flex-1 bg-neutral-100 rounded-2xl px-4 py-3 text-sm outline-none resize-none min-h-[42px] max-h-[120px]"
-                />
+            <div className="flex items-end gap-2">
 
                 <button
                   onClick={handleSend}
@@ -1099,12 +1135,8 @@ export default function MiNegocioPage() {
                 </button>
 
               </div>
-
             </div>
-
-          </div>
         )}
-
       </div>
 
             {/* MODAL ARCHIVAR */}
@@ -1181,7 +1213,21 @@ export default function MiNegocioPage() {
       )}
 
 
-      {/* TOAST */}
+        <ItemDetailModal 
+          item={itemForDetail as any}
+          open={!!itemForDetail}
+          onClose={() => setItemForDetail(null)}
+          onEdit={(i) => {
+            setItemForDetail(null);
+            handleStartEdit(i);
+          }}
+          onDelete={(i) => {
+            setItemForDetail(null);
+            handleDelete(i);
+          }}
+        />
+
+        {/* TOAST */}
       {toast && (
         <div
           className={`fixed bottom-6 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2 rounded-full shadow-lg animate-fade-in
