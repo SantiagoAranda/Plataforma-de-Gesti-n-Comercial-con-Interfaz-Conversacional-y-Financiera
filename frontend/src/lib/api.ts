@@ -67,13 +67,23 @@ export async function api<T>(
 
   // 🔥 Si el token expiró o es inválido
   if (res.status === 401) {
-    removeToken();
+    // 👉 SOLO si la request requería auth
+    if (auth) {
+      removeToken();
 
-    if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+
+      throw new AppApiError({
+        status: 401,
+        message: "Sesión expirada",
+        raw: "",
+      });
     }
 
-    throw new Error("Sesión expirada");
+    // 👉 login/register → NO redirigir
+    throw await parseError(res);
   }
 
   if (!res.ok) {
