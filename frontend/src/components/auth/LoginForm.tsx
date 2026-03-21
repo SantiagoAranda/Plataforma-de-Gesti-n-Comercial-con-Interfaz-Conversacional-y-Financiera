@@ -22,25 +22,24 @@ function EyeSlashIcon({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
-// ── Helper: traducir errores de red a español ──────────────────
+// ── translateError (igual que ya tenías bien) ─────────────────
 function translateError(err: unknown): string {
   if (!err || typeof err !== "object") {
     return "Ocurrió un error, intentá nuevamente";
   }
 
   const message =
-    "message" in err && typeof (err as { message?: unknown }).message === "string"
-      ? (err as { message: string }).message
+    "message" in err && typeof (err as any).message === "string"
+      ? (err as any).message
       : "";
 
   const status =
-    "status" in err && typeof (err as { status?: unknown }).status === "number"
-      ? (err as { status: number }).status
+    "status" in err && typeof (err as any).status === "number"
+      ? (err as any).status
       : 0;
 
   const lower = message.toLowerCase();
 
-  // 🔐 PRIORIDAD 1 — credenciales (MUY IMPORTANTE)
   if (
     status === 401 ||
     lower.includes("invalid credentials") ||
@@ -50,34 +49,28 @@ function translateError(err: unknown): string {
     return "Credenciales inválidas";
   }
 
-  // 🌐 PRIORIDAD 2 — conexión REAL
   if (
-    lower === "failed to fetch" || // exacto
+    lower === "failed to fetch" ||
     lower.includes("networkerror") ||
     lower.includes("network request failed")
   ) {
     return "Error de conexión. Verificá tu internet e intentá nuevamente.";
   }
 
-  // 🔴 servidor
   if (status >= 500) {
     return "Error del servidor. Intentá nuevamente más tarde.";
   }
 
-  // 🧼 evitar HTML
   if (lower.includes("<html") || lower.includes("<!doctype")) {
     return "Error del servidor";
   }
 
-  // 🟡 mensaje válido del backend
   if (message && message.length < 120 && !lower.includes("exception")) {
     return message;
   }
 
   return "Ocurrió un error, intentá nuevamente";
 }
-
-// ── Component ──────────────────────────────────────────────────
 export default function LoginForm() {
   const router = useRouter();
 
@@ -91,7 +84,6 @@ export default function LoginForm() {
     password?: string;
   }>({});
 
-  // ── Frontend validation ────────────────────────────
   const validate = (): boolean => {
     const errors: { email?: string; password?: string } = {};
 
@@ -109,7 +101,6 @@ export default function LoginForm() {
     return Object.keys(errors).length === 0;
   };
 
-  // ── Submit (lógica intacta) ────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -119,7 +110,6 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      // 🔹 limpiar cualquier sesión previa
       localStorage.removeItem("accessToken");
       localStorage.removeItem("businessName");
       localStorage.removeItem("user");
@@ -128,22 +118,17 @@ export default function LoginForm() {
         "/auth/login",
         {
           method: "POST",
-          body: JSON.stringify({
-            email,
-            password,
-          }),
+          body: JSON.stringify({ email, password }),
           auth: false,
         }
       );
 
-      // 🔹 guardar token
       localStorage.setItem("accessToken", data.accessToken);
 
       if (data.businessName?.trim()) {
         localStorage.setItem("businessName", data.businessName.trim());
       }
 
-      // 🔹 leer payload del JWT
       const payload = JSON.parse(atob(data.accessToken.split(".")[1]));
 
       const user = {
@@ -153,39 +138,75 @@ export default function LoginForm() {
 
       localStorage.setItem("user", JSON.stringify(user));
 
-      // 🔹 redirección según tipo de usuario
       if (user.role === "ADMIN" && !user.businessId) {
         router.push("/admin");
       } else {
         router.push("/home");
       }
     } catch (err: unknown) {
-      setError(translateError(err));
+      const msg = translateError(err);
+      const lower = msg.toLowerCase();
+
+      // conexión → global
+      if (lower.includes("conexión") || lower.includes("network")) {
+        setError(msg);
+        return;
+      }
+
+      setError("");
+
+      if (lower.includes("credenciales")) {
+        setFieldErrors({
+          email: " ",
+          password: "Credenciales incorrectas",
+        });
+      } else if (lower.includes("email")) {
+        setFieldErrors({
+          email: "Ingresá un email válido",
+        });
+      } else {
+        setFieldErrors({
+          password: "Ocurrió un error, intentá nuevamente",
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Helpers de estilo ──────────────────────────────
   const inputBase = `
     w-full bg-neutral-50 border rounded-xl px-4 py-3
     text-gray-800 placeholder-gray-400
     focus:outline-none focus:ring-2 transition
   `;
-  const inputOk = "border-neutral-300 focus:ring-emerald-600 focus:border-emerald-600";
-  const inputErr = "border-red-400 focus:ring-red-400 focus:border-red-400";
+  const inputOk = `
+  border-neutral-300
+  focus:ring-emerald-500
+  focus:border-emerald-500
+  focus:shadow-[0_0_0_2px_rgba(16,185,129,0.15)]
+`;
+  const inputErr = `
+  border-red-400
+  focus:ring-red-400
+  focus:border-red-400
+  animate-[shake_0.2s_ease-in-out]
+  shadow-[0_0_0_2px_rgba(239,68,68,0.2)]
+`;
 
   return (
+    // 🔥 FIX 1
     <form
+      noValidate
       onSubmit={handleSubmit}
       className="
-        w-full
-        bg-white
-        rounded-3xl
-        px-8 py-8
-        space-y-6
-        shadow-md
-      "
+    w-full
+    bg-white
+    rounded-3xl
+    px-8 py-8
+    space-y-6
+    shadow-lg
+    animate-[fadeIn_0.4s_ease-out]
+  "
     >
       <h1 className="text-2xl font-semibold text-center text-gray-900">
         Iniciar sesión
@@ -203,17 +224,21 @@ export default function LoginForm() {
           Email
         </label>
         <input
-          type="email"
+          // 🔥 FIX 2
+          type="text"
           placeholder="correo@ejemplo.com"
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
-            if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: undefined }));
+            if (fieldErrors.email)
+              setFieldErrors((p) => ({ ...p, email: undefined }));
           }}
           className={`${inputBase} ${fieldErrors.email ? inputErr : inputOk}`}
         />
         {fieldErrors.email && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>
+          <p className="text-xs text-red-500 mt-1">
+            {fieldErrors.email}
+          </p>
         )}
       </div>
 
@@ -222,6 +247,7 @@ export default function LoginForm() {
         <label className="block text-sm font-medium text-gray-700">
           Contraseña
         </label>
+
         <div className="relative">
           <input
             type={showPassword ? "text" : "password"}
@@ -229,21 +255,25 @@ export default function LoginForm() {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value);
-              if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: undefined }));
+              if (fieldErrors.password)
+                setFieldErrors((p) => ({ ...p, password: undefined }));
             }}
             className={`${inputBase} pr-12 ${fieldErrors.password ? inputErr : inputOk}`}
           />
+
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
           >
             {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
           </button>
         </div>
+
         {fieldErrors.password && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
+          <p className="text-xs text-red-500 mt-1">
+            {fieldErrors.password}
+          </p>
         )}
       </div>
 
@@ -251,18 +281,18 @@ export default function LoginForm() {
         type="submit"
         disabled={loading}
         className="
-          w-full
-          bg-emerald-600
-          text-white
-          py-3.5
-          rounded-xl
-          font-medium
-          shadow
-          hover:bg-emerald-700
-          active:scale-[0.98]
-          disabled:opacity-50
-          transition
-        "
+  w-full
+  bg-emerald-600
+  text-white
+  py-3.5
+  rounded-xl
+  font-medium
+  shadow-md
+  hover:bg-emerald-700
+  hover:shadow-lg
+  active:scale-[0.97]
+  transition-all
+"
       >
         {loading ? "Ingresando..." : "Ingresar"}
       </button>
