@@ -8,8 +8,22 @@ import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
-import ItemFormModal from "@/src/components/mi-negocio/ItemFormModal";
-import { Item } from "@/src/types/item";
+import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
+import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
+import { Item, ItemType, ItemImage, PendingImage, WeeklySchedule, FormErrors } from "@/src/types/item";
+import { 
+  generateCreationId, 
+  createInitialWeek, 
+  WEEKDAY_ENUM,
+  formatPriceInput,
+  parsePriceInput,
+  timeToMinutes,
+  minutesToTime
+} from "@/src/lib/itemHelpers";
+import { 
+  MAX_ITEM_IMAGES, 
+  MAX_ITEM_IMAGE_SIZE_BYTES 
+} from "@/src/lib/itemImages";
 
 
 export default function MiNegocioPage() {
@@ -17,12 +31,29 @@ export default function MiNegocioPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
+
+  // Composer / Form states
+  const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
+  const [type, setType] = useState<ItemType>("PRODUCT");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [priceDisplay, setPriceDisplay] = useState("");
+  const [description, setDescription] = useState("");
+  const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
+  const [newImages, setNewImages] = useState<PendingImage[]>([]);
+  const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [duration, setDuration] = useState(30);
+  const [durationInput, setDurationInput] = useState("30");
+  const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
+  const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -50,10 +81,209 @@ export default function MiNegocioPage() {
     fetchItems(true);
   }, [fetchItems]);
 
+  const resetForm = useCallback(() => {
+    setName("");
+    setPrice("");
+    setPriceDisplay("");
+    setDescription("");
+    setNewImages([]);
+    setExistingImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
+    setDuration(30);
+    setDurationInput("30");
+    setWeek(createInitialWeek());
+    setCurrentDayIndex(0);
+    setFormErrors({});
+    setType("PRODUCT");
+    setEditingItem(null);
+  }, []);
+
+  const handleToggleComposer = () => {
+    if (composerMode !== "closed") {
+      setComposerMode("closed");
+      resetForm();
+    } else {
+      setComposerMode("create");
+    }
+  };
+
   const handleStartEdit = (item: Item | null) => {
+    if (!item) {
+      setComposerMode("create");
+      resetForm();
+      return;
+    }
+    
     setEditingItem(item);
-    setIsOpen(true);
+    setComposerMode("edit");
     setSelectedItem(null);
+    
+    // Fill form
+    setType(item.type);
+    setName(item.name);
+    setPrice(String(item.price));
+    setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
+    setDescription(item.description ?? "");
+    setExistingImages(item.images ?? []);
+    setNewImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
+    setDuration(item.durationMinutes ?? 30);
+    setDurationInput(String(item.durationMinutes ?? 30));
+    
+    const nextWeek = createInitialWeek();
+    if (item.type === "SERVICE" && item.schedule?.length) {
+      nextWeek.forEach(d => { d.active = false; d.ranges = []; });
+      item.schedule.forEach(slot => {
+        const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
+        if (dayIdx !== -1) {
+          nextWeek[dayIdx].active = true;
+          nextWeek[dayIdx].ranges.push({
+            start: minutesToTime(slot.startMinute),
+            end: minutesToTime(slot.endMinute)
+          });
+        }
+      });
+    }
+    setWeek(nextWeek);
+    const firstActive = nextWeek.findIndex(d => d.active);
+    setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
+  };
+
+  const handleAddImages = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const selectedFiles = Array.from(files);
+    const totalImages = existingImages.length + newImages.length;
+    const availableSlots = MAX_ITEM_IMAGES - totalImages;
+
+    if (availableSlots <= 0) {
+      setImageError(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
+      return;
+    }
+
+    const nextPendingImages: PendingImage[] = [];
+    selectedFiles.slice(0, availableSlots).forEach((file) => {
+      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
+      nextPendingImages.push({
+        id: generateCreationId(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+      });
+    });
+    setNewImages((prev) => [...prev, ...nextPendingImages]);
+  };
+
+  const handleRemoveExistingImage = (id: string) => {
+    setExistingImages(prev => prev.filter(img => img.id !== id));
+    setRemovedImageIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  };
+
+  const handleRemoveNewImage = (id: string) => {
+    setNewImages(prev => {
+      const img = prev.find(i => i.id === id);
+      if (img) URL.revokeObjectURL(img.previewUrl);
+      return prev.filter(i => i.id !== id);
+    });
+  };
+
+  const handleSend = async () => {
+    const errors: FormErrors = {};
+    if (!name.trim()) errors.name = "El nombre es obligatorio";
+    if (!price || parseFloat(price) <= 0) errors.price = "El precio debe ser mayor a 0";
+    
+    if (type === "SERVICE") {
+      if (duration < 5) errors.duration = "Mínimo 5 min";
+      if (!week.some((d) => d.active && d.ranges.length > 0)) {
+        errors.schedule = "Selecciona al menos un día con horario";
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const schedule = type === "SERVICE" ? week.flatMap((day, dayIndex) => 
+        day.active ? day.ranges.map(r => ({
+          weekday: WEEKDAY_ENUM[dayIndex],
+          startMinute: timeToMinutes(r.start),
+          endMinute: timeToMinutes(r.end)
+        })) : []
+      ) : [];
+
+      const body = {
+        type,
+        name,
+        price: parseFloat(price),
+        description: description.trim() || null,
+        durationMinutes: type === "SERVICE" ? duration : null,
+        schedule,
+      };
+
+      let savedItem: Item;
+      if (editingItem) {
+        savedItem = await api<Item>(`/items/${editingItem.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+        for (const id of removedImageIds) {
+          await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
+        }
+        for (const img of newImages) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(img.file);
+          });
+          const dataUrl = await base64Promise;
+          await api(`/items/${editingItem.id}/images`, {
+            method: "POST",
+            body: JSON.stringify({ url: dataUrl }),
+          });
+        }
+        savedItem = await api<Item>(`/items/${editingItem.id}`);
+      } else {
+        const created = await api<Item>(`/items`, {
+          method: "POST",
+          body: JSON.stringify({ ...body, id: generateCreationId() }),
+        });
+        for (const img of newImages) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(img.file);
+          });
+          const dataUrl = await base64Promise;
+          await api(`/items/${created.id}/images`, {
+            method: "POST",
+            body: JSON.stringify({ url: dataUrl }),
+          });
+        }
+        savedItem = await api<Item>(`/items/${created.id}`);
+      }
+
+      invalidateCache("mi-negocio:items:ACTIVE");
+      invalidateCache("home:businessActivity");
+      
+      setItems(prev => {
+        const exists = prev.find(i => i.id === savedItem.id);
+        if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
+        return [savedItem, ...prev];
+      });
+      if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
+
+      setToast({ message: editingItem ? "Item actualizado" : "Item creado", type: "success" });
+      setComposerMode("closed");
+      resetForm();
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Error al guardar", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = async (item: Item) => {
@@ -121,38 +351,42 @@ export default function MiNegocioPage() {
         )}
       </main>
 
-      {/* PANEL INFERIOR FIJO */}
-      <div className="fixed bottom-0 left-0 right-0 z-20">
-        {!isOpen && (
-          <div className="bg-white border-t border-neutral-100 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] backdrop-blur-sm bg-white/90">
-            <button
-              onClick={() => handleStartEdit(null)}
-              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg active:scale-95 transition"
-            >
-              +
-            </button>
-            <div className="flex-1 bg-neutral-50 rounded-full px-4 py-2 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
-              Crear nuevo item...
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* MODAL DE FORMULARIO (NUEVO / EDITAR) */}
-      <ItemFormModal
-        open={isOpen}
-        editingItem={editingItem}
-        onClose={() => { setIsOpen(false); setEditingItem(null); }}
-        onSaved={(savedItem) => {
-          setItems(prev => {
-            const exists = prev.find(i => i.id === savedItem.id);
-            if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
-            return [savedItem, ...prev];
-          });
-          if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
-        }}
-        setToast={setToast}
-      />
+      {/* COMPONENTES DE CHAT COMPOSER */}
+      <MiNegocioChatComposer
+        mode={composerMode}
+        onToggle={handleToggleComposer}
+        description={description}
+        onDescriptionChange={setDescription}
+        onSubmit={handleSend}
+        isSubmitting={isSubmitting}
+        type={type}
+      >
+        <ItemFormContent
+          type={type}
+          setType={setType}
+          name={name}
+          setName={setName}
+          priceDisplay={priceDisplay}
+          setPriceDisplay={setPriceDisplay}
+          setPrice={setPrice}
+          durationInput={durationInput}
+          setDurationInput={setDurationInput}
+          setDuration={setDuration}
+          week={week}
+          setWeek={setWeek}
+          currentDayIndex={currentDayIndex}
+          setCurrentDayIndex={setCurrentDayIndex}
+          existingImages={existingImages}
+          newImages={newImages}
+          handleAddImages={handleAddImages}
+          handleRemoveExistingImage={handleRemoveExistingImage}
+          handleRemoveNewImage={handleRemoveNewImage}
+          formErrors={formErrors}
+          setFormErrors={setFormErrors}
+          imageError={imageError}
+          editingItem={!!editingItem}
+        />
+      </MiNegocioChatComposer>
 
       {/* MODAL DE DETALLES */}
       <ItemDetailModal 
