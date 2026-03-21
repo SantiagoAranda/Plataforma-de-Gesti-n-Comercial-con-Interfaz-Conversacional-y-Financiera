@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Send, X, Search } from "lucide-react";
 import { ItemType } from "@/src/types/item";
 
@@ -32,7 +32,16 @@ export function MiNegocioChatComposer({
   const isOpen = mode !== "closed";
   const label = mode === "edit" ? "Editar" : "Crear";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
   
+  const handleDescriptionChange = (val: string) => {
+    if (val.length <= 250) {
+      onDescriptionChange(val);
+    } else {
+      onDescriptionChange(val.slice(0, 250));
+    }
+  };
+
   const placeholders = {
     PRODUCT: mode === "edit" ? "Editar descripción del producto..." : "Describre el producto...",
     SERVICE: mode === "edit" ? "Editar descripción del servicio..." : "Describre el servicio...",
@@ -44,6 +53,11 @@ export function MiNegocioChatComposer({
     if (textarea && isOpen) {
       textarea.style.height = "auto";
       const scrollHeight = textarea.scrollHeight;
+      
+      // text-sm leading-relaxed gives ~22.75px per line. 2 lines is ~45.5px.
+      // 50px is a safe threshold for > 2 lines (i.e. 3 lines or more).
+      setIsExpanded(scrollHeight > 50);
+
       // Approximate 6 lines height (20px per line + padding)
       const maxRowsHeight = 20 * 6 + 12; 
       if (scrollHeight > maxRowsHeight) {
@@ -53,6 +67,8 @@ export function MiNegocioChatComposer({
         textarea.style.height = `${scrollHeight}px`;
         textarea.style.overflowY = "hidden";
       }
+    } else {
+      setIsExpanded(false);
     }
   }, [description, isOpen]);
 
@@ -86,8 +102,9 @@ export function MiNegocioChatComposer({
                   <textarea
                     ref={textareaRef}
                     rows={1}
+                    maxLength={250}
                     value={description}
-                    onChange={(e) => onDescriptionChange(e.target.value)}
+                    onChange={(e) => handleDescriptionChange(e.target.value)}
                     placeholder={placeholders[type]}
                     className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none resize-none leading-relaxed overflow-hidden py-0"
                   />
@@ -102,17 +119,24 @@ export function MiNegocioChatComposer({
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={onSubmit}
-                disabled={isSubmitting || (isOpen && !description.trim())}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition active:scale-95 ${
-                  isSubmitting || (isOpen && !description.trim()) ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
-                }`}
-                aria-label={label}
-              >
-                {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-white" />}
-              </button>
+              <div className="relative flex shrink-0 items-center justify-center">
+                {isOpen && isExpanded && (
+                  <span className="absolute -top-7 text-[10px] font-medium text-neutral-400 z-10 whitespace-nowrap">
+                    {description.length}/250
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={onSubmit}
+                  disabled={isSubmitting || (isOpen && !description.trim())}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition active:scale-95 ${
+                    isSubmitting || (isOpen && !description.trim()) ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
+                  }`}
+                  aria-label={label}
+                >
+                  {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-white" />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
