@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X, Clock } from "lucide-react";
+import { Trash2, X, Clock, Search } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -35,6 +35,7 @@ export default function MiNegocioPage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
@@ -80,6 +81,15 @@ export default function MiNegocioPage() {
     setVisibleCount(12); // Reset count on filter change
     fetchItems(true);
   }, [fetchItems]);
+
+  const filteredItems = items.filter(item => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(query) ||
+      (item.description && item.description.toLowerCase().includes(query))
+    );
+  });
 
   const resetForm = useCallback(() => {
     setName("");
@@ -329,7 +339,7 @@ export default function MiNegocioPage() {
         )}
         
         <div className="grid grid-cols-1 gap-4">
-          {items.slice(0, visibleCount).map((item) => (
+          {filteredItems.slice(0, visibleCount).map((item) => (
             <ItemCard
               key={item.id}
               item={item}
@@ -339,7 +349,19 @@ export default function MiNegocioPage() {
           ))}
         </div>
 
-        {items.length > visibleCount && (
+        {composerMode === "closed" && searchQuery.trim() !== "" && filteredItems.length === 0 && (
+          <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
+              <Search className="h-6 w-6 text-neutral-300" />
+            </div>
+            <h3 className="text-neutral-900 font-bold text-sm mb-1">No se encontraron productos o servicios</h3>
+            <p className="text-neutral-400 text-xs font-medium leading-relaxed">
+              Probá con otro nombre o descripción
+            </p>
+          </div>
+        )}
+
+        {filteredItems.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
             <button
               onClick={() => setVisibleCount((prev) => prev + 12)}
@@ -355,6 +377,8 @@ export default function MiNegocioPage() {
       <MiNegocioChatComposer
         mode={composerMode}
         onToggle={handleToggleComposer}
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
         description={description}
         onDescriptionChange={setDescription}
         onSubmit={handleSend}

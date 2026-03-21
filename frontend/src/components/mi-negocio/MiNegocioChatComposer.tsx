@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Plus, Send, X } from "lucide-react";
+import { Plus, Send, X, Search } from "lucide-react";
 import { ItemType } from "@/src/types/item";
 
 interface MiNegocioChatComposerProps {
   mode: "closed" | "create" | "edit";
   onToggle: () => void;
+  searchValue: string;
+  onSearchChange: (val: string) => void;
   description: string;
   onDescriptionChange: (val: string) => void;
   onSubmit: () => void;
@@ -18,6 +20,8 @@ interface MiNegocioChatComposerProps {
 export function MiNegocioChatComposer({
   mode,
   onToggle,
+  searchValue,
+  onSearchChange,
   description,
   onDescriptionChange,
   onSubmit,
@@ -90,10 +94,9 @@ export function MiNegocioChatComposer({
                 ) : (
                   <input
                     type="text"
-                    value={description ?? ""}
-                    onChange={(e) => onDescriptionChange(e.target.value)}
-                    placeholder="Crear nuevo ítem..."
-                    onFocus={() => onToggle()}
+                    value={searchValue}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    placeholder="Buscar producto o servicio..."
                     className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
                   />
                 )}
@@ -104,11 +107,11 @@ export function MiNegocioChatComposer({
                 onClick={onSubmit}
                 disabled={isSubmitting || (isOpen && !description.trim())}
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition active:scale-95 ${
-                  isSubmitting || (isOpen && !description.trim()) ? "bg-neutral-300 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
+                  isSubmitting || (isOpen && !description.trim()) ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
                 }`}
                 aria-label={label}
               >
-                <Send className="h-4 w-4" />
+                {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-emerald-500" />}
               </button>
             </div>
           </div>
