@@ -7,204 +7,22 @@ import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
-import {
-  formatBytesToMb,
-  MAX_ITEM_IMAGES,
-  MAX_ITEM_IMAGE_SIZE_BYTES,
-} from "@/src/lib/itemImages";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
+import ItemFormModal from "@/src/components/mi-negocio/ItemFormModal";
+import { Item } from "@/src/types/item";
 
-type ItemType = "PRODUCT" | "SERVICE";
-
-type Schedule = {
-  weekday: string;
-  startMinute: number;
-  endMinute: number;
-};
-
-type Item = {
-  id: string;
-  type: ItemType;
-  name: string;
-  price: number;
-  description?: string;
-  durationMinutes?: number;
-  schedule?: Schedule[];
-  images?: { id: string; url: string; order: number }[];
-  status: "ACTIVE" | "INACTIVE";
-};
-
-type TimeRange = {
-  start: string;
-  end: string;
-};
-
-type WeeklySchedule = {
-  day: string;
-  active: boolean;
-  ranges: TimeRange[];
-};
-
-type FormErrors = {
-  name?: string;
-  price?: string;
-  duration?: string;
-  schedule?: string;
-};
-
-type ItemImage = {
-  id: string;
-  url: string;
-  order: number;
-};
-
-type PendingImage = {
-  id: string;
-  file: File;
-  previewUrl: string;
-};
-
-const INITIAL_WEEK: WeeklySchedule[] = [
-  { day: "Lunes", active: true, ranges: [{ start: "08:00", end: "12:00" }] },
-  { day: "Martes", active: false, ranges: [] },
-  { day: "Miércoles", active: false, ranges: [] },
-  { day: "Jueves", active: false, ranges: [] },
-  { day: "Viernes", active: false, ranges: [] },
-  { day: "Sábado", active: false, ranges: [] },
-  { day: "Domingo", active: false, ranges: [] },
-];
-
-const WEEKDAY_ENUM = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-
-function createInitialWeek(): WeeklySchedule[] {
-  return INITIAL_WEEK.map((day) => ({
-    ...day,
-    ranges: day.ranges.map((range) => ({ ...range })),
-  }));
-}
-
-function timeToMinutes(time: string) {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function minutesToTime(min: number) {
-  const h = Math.floor(min / 60).toString().padStart(2, "0");
-  const m = (min % 60).toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  const aS = timeToMinutes(aStart);
-  const aE = timeToMinutes(aEnd);
-  const bS = timeToMinutes(bStart);
-  const bE = timeToMinutes(bEnd);
-
-  return aS < bE && bS < aE;
-}
-
-function formatPriceInput(input: string) {
-  // Remove non-numeric except comma
-  let cleanValue = input.replace(/[^0-9,]/g, "");
-  
-  // Handle multiple commas
-  const parts = cleanValue.split(",");
-  if (parts.length > 2) {
-    cleanValue = parts[0] + "," + parts.slice(1).join("");
-  }
-  
-  // Thousands separator with dot
-  const [integerPart, decimalPart] = cleanValue.split(",");
-  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  
-  return decimalPart !== undefined ? `${formattedInteger},${decimalPart.slice(0, 2)}` : formattedInteger;
-}
-
-function parsePriceInput(formatted: string) {
-  return formatted.replace(/\./g, "").replace(",", ".");
-}
-
-function generateCreationId() {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-
-  const bytes = new Uint8Array(16);
-
-  if (typeof globalThis.crypto?.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-
-  return [
-    hex.slice(0, 4).join(""),
-    hex.slice(4, 6).join(""),
-    hex.slice(6, 8).join(""),
-    hex.slice(8, 10).join(""),
-    hex.slice(10, 16).join(""),
-  ].join("-");
-}
-
-function revokePendingImages(images: PendingImage[]) {
-  images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("No se pudo leer la imagen."));
-    };
-
-    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function MiNegocioPage() {
-
-  const [type, setType] = useState<ItemType>("PRODUCT");
-  const [isOpen, setIsOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [priceDisplay, setPriceDisplay] = useState("");
-  const [description, setDescription] = useState("");
-  const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
-  const [newImages, setNewImages] = useState<PendingImage[]>([]);
-  const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
-  const [duration, setDuration] = useState(30);
-  const [durationInput, setDurationInput] = useState("30");
-
-  const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
-  const [currentDayIndex, setCurrentDayIndex] = useState(0);
 
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [creationId, setCreationId] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [visibleCount, setVisibleCount] = useState(12);
-  const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -232,1060 +50,155 @@ export default function MiNegocioPage() {
     fetchItems(true);
   }, [fetchItems]);
 
-  const totalImages = existingImages.length + newImages.length;
-
-  const handleAddImages = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-
-    const selectedFiles = Array.from(files);
-    const availableSlots = MAX_ITEM_IMAGES - totalImages;
-
-    if (availableSlots <= 0) {
-      setImageError(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
-      return;
-    }
-
-    const nextPendingImages: PendingImage[] = [];
-    const rejectedBySize: string[] = [];
-
-    selectedFiles.slice(0, availableSlots).forEach((file) => {
-      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) {
-        rejectedBySize.push(file.name);
-        return;
-      }
-
-      nextPendingImages.push({
-        id: generateCreationId(),
-        file,
-        previewUrl: URL.createObjectURL(file),
-      });
-    });
-
-    setNewImages((prev) => [...prev, ...nextPendingImages]);
-
-    const errors: string[] = [];
-
-    if (selectedFiles.length > availableSlots) {
-      errors.push(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
-    }
-
-    if (rejectedBySize.length > 0) {
-      errors.push(
-        `Cada imagen debe pesar como máximo ${formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)}.`
-      );
-    }
-
-    setImageError(errors.length > 0 ? errors.join(" ") : null);
-  };
-
-  const handleRemoveExistingImage = (imageId: string) => {
-    setExistingImages((prev) => prev.filter((image) => image.id !== imageId));
-    setRemovedImageIds((prev) =>
-      prev.includes(imageId) ? prev : [...prev, imageId]
-    );
-    setImageError(null);
-  };
-
-  const handleRemoveNewImage = (imageId: string) => {
-    setNewImages((prev) => {
-      const imageToRemove = prev.find((image) => image.id === imageId);
-      if (imageToRemove) {
-        URL.revokeObjectURL(imageToRemove.previewUrl);
-      }
-
-      return prev.filter((image) => image.id !== imageId);
-    });
-    setImageError(null);
-  };
-
-  const resetForm = () => {
-    revokePendingImages(newImages);
-    setEditingItem(null);
-    setName("");
-    setPrice("");
-    setPriceDisplay("");
-    setDescription("");
-    setExistingImages([]);
-    setNewImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setDuration(30);
-    setDurationInput("30");
-    setWeek(createInitialWeek());
-    setType("PRODUCT");
-    setFormErrors({});
-    setCreationId(generateCreationId());
-    setIsOpen(false);
-  };
-
-  const validateForm = () => {
-    const nextErrors: FormErrors = {};
-
-    if (!name.trim()) {
-      nextErrors.name = "El nombre es obligatorio.";
-    }
-
-    if (!price.trim() || !Number.isFinite(Number(price)) || Number(price) <= 0) {
-      nextErrors.price = "Ingresa un precio valido.";
-    }
-
-    if (type === "SERVICE") {
-      if (!Number.isFinite(duration) || duration < 5) {
-        nextErrors.duration = "La duracion debe ser de al menos 5 minutos.";
-      }
-
-      const hasSchedule = week.some((day) => day.active && day.ranges.length > 0);
-      if (!hasSchedule) {
-        nextErrors.schedule = "Define al menos un horario disponible.";
-      }
-    }
-
-    setFormErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
-
-  const handleSend = async () => {
-
-    if (isSubmitting) return;
-    if (!validateForm()) return;
-
-    setIsSubmitting(true);
-
-    let schedule: any[] = [];
-
-    if (type === "SERVICE") {
-      schedule = week
-        .map((d, index) => ({ ...d, index }))
-        .filter((d) => d.active && d.ranges.length > 0)
-        .flatMap((d) =>
-          d.ranges.map((r) => ({
-            weekday: WEEKDAY_ENUM[d.index],
-            startMinute: timeToMinutes(r.start),
-            endMinute: timeToMinutes(r.end),
-          }))
-        );
-    }
-
-    const payload = {
-      type,
-      name,
-      price: Number(price),
-      description: description || undefined,
-      durationMinutes: type === "SERVICE" ? Number(duration) : undefined,
-      schedule: type === "SERVICE" ? schedule : undefined,
-    };
-
-    try {
-
-      let savedItem: Item;
-
-      if (editingItem) {
-
-        savedItem = await api<Item>(`/items/${editingItem.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-
-      } else {
-
-        const createdItem = await api<Item>("/items", {
-          method: "POST",
-          body: JSON.stringify({
-            ...payload,
-            id: creationId,
-          }),
-        });
-
-        for (const image of newImages) {
-          const dataUrl = await fileToDataUrl(image.file);
-
-          await api(`/items/${createdItem.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
-          });
-        }
-
-        savedItem = await api<Item>(`/items/${createdItem.id}`);
-      }
-
-      if (editingItem) {
-        for (const imageId of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${imageId}`, {
-            method: "DELETE",
-          });
-        }
-
-        for (const image of newImages) {
-          const dataUrl = await fileToDataUrl(image.file);
-
-          await api(`/items/${editingItem.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
-          });
-        }
-
-        savedItem = await api<Item>(`/items/${editingItem.id}`);
-      }
-
-      setItems((prev) => {
-        if (editingItem) {
-          return prev.map((item) => (item.id === savedItem.id ? savedItem : item));
-        }
-
-        return [savedItem, ...prev];
-      });
-      setSelectedItem((prev) => (prev?.id === savedItem.id ? savedItem : prev));
-
-      invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
-      invalidateCache("home:businessActivity");
-
-      resetForm();
-      setIsOpen(false);
-
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Error al guardar item", type: "error" });
-      setTimeout(() => setToast(null), 2500);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleStartEdit = async (item: Item) => {
-    setFormErrors({});
-
-    // Traer el objeto completo desde la API porque el listado usa payload lightweight
-    let fullItem: Item = item;
-    try {
-      fullItem = await api<Item>(`/items/${item.id}`);
-    } catch (err) {
-      console.error('Error al cargar item completo:', err);
-      // Fallback: usar el objeto del listado (podría faltar scheduleWindows/imágenes)
-    }
-
-    setEditingItem(fullItem);
-    setName(fullItem.name);
-    setPrice(String(fullItem.price));
-    setPriceDisplay(formatPriceInput(String(fullItem.price).replace(".", ",")));
-    setDescription(fullItem.description ?? "");
-    setExistingImages(fullItem.images ?? []);
-    setNewImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setType(fullItem.type);
-    setDuration(fullItem.durationMinutes ?? 30);
-    setDurationInput(String(fullItem.durationMinutes ?? 30));
-    const nextWeek = createInitialWeek();
-
-    if (fullItem.type === "SERVICE" && fullItem.schedule?.length) {
-      nextWeek.forEach((day) => {
-        day.active = false;
-        day.ranges = [];
-      });
-
-      fullItem.schedule.forEach((slot) => {
-        const dayIndex = WEEKDAY_ENUM.indexOf(slot.weekday);
-        if (dayIndex === -1) return;
-
-        nextWeek[dayIndex].active = true;
-        nextWeek[dayIndex].ranges.push({
-          start: minutesToTime(slot.startMinute),
-          end: minutesToTime(slot.endMinute),
-        });
-      });
-
-      nextWeek.forEach((day) => {
-        if (day.ranges.length > 0) {
-          day.ranges = day.ranges.slice(-2);
-        }
-        if (day.ranges.length === 0) {
-          day.active = false;
-        }
-      });
-    } else if (fullItem.type === "SERVICE") {
-      nextWeek.forEach((day, index) => {
-        day.active = index === 0;
-        day.ranges = index === 0 ? [{ start: "08:00", end: "12:00" }] : [];
-      });
-    } else {
-      nextWeek.forEach((day) => {
-        day.active = false;
-        day.ranges = [];
-      });
-    }
-
-    setWeek(nextWeek);
-    const firstActiveIndex = nextWeek.findIndex(d => d.active);
-    setCurrentDayIndex(firstActiveIndex !== -1 ? firstActiveIndex : 0);
+  const handleStartEdit = (item: Item | null) => {
+    setEditingItem(item);
     setIsOpen(true);
     setSelectedItem(null);
   };
 
   const handleDelete = async (item: Item) => {
     try {
-      const newStatus = 'INACTIVE';
       await api(`/items/${item.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: "INACTIVE" }),
       });
-      
       setItems(prev => prev.filter(i => i.id !== item.id));
       setSelectedItem(null);
-
       invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
       invalidateCache("home:businessActivity");
-
-      setToast({
-        message: "Producto eliminado",
-        type: "success",
-      });
+      setToast({ message: "Item eliminado", type: "success" });
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al eliminar producto", type: "error" });
-    }
-    setTimeout(() => setToast(null), 2500);
-  };
-
-  const handleStatusUpdate = async (item: Item, newStatus: "ACTIVE" | "INACTIVE") => {
-    try {
-      await api(`/items/${item.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
-      });
-      
-      setItems(prev => prev.filter(i => i.id !== item.id));
-      setSelectedItem(null);
-
-      invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
-      invalidateCache("home:businessActivity");
-
-      setToast({
-        message: newStatus === 'INACTIVE' ? "Producto inhabilitado" : "Producto habilitado",
-        type: "success",
-      });
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Error al actualizar estado", type: "error" });
+      setToast({ message: "Error al eliminar", type: "error" });
     }
     setTimeout(() => setToast(null), 2500);
   };
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100">
-
       {selectedItem ? (
         <SelectionActionBar
           visible
           title="Item seleccionado"
           onClose={() => setSelectedItem(null)}
           onView={() => setItemForDetail(selectedItem)}
-          onEdit={() => handleStartEdit(selectedItem!)}
+          onEdit={() => handleStartEdit(selectedItem)}
           editLabel="Editar"
-          onDelete={() => handleDelete(selectedItem!)}
+          onDelete={() => setDeleteId(selectedItem.id)}
           deleteLabel="Eliminar"
           deleteIcon={Trash2}
         />
       ) : (
-        <AppHeader 
-          title="Mi negocio" 
-          showBack={true} 
-          hrefBack="/home"
-        />
+        <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
-      {/* LISTA DE ITEMS */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
-
-        {loading && <div className="text-center py-10 text-neutral-500">Cargando...</div>}
+        {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
-          <div className="text-center py-10 text-neutral-400">
-            No hay items creados
-          </div>
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">No hay items creados</div>
         )}
-
-        {items.slice(0, visibleCount).map((item) => (
-          <ItemCard
-            key={item.id}
-            item={item}
-            selected={selectedItem?.id === item.id}
-            onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
-            onOpen={() => handleStartEdit(item)}
-          />
-        ))}
+        
+        <div className="grid grid-cols-1 gap-4">
+          {items.slice(0, visibleCount).map((item) => (
+            <ItemCard
+              key={item.id}
+              item={item}
+              selected={selectedItem?.id === item.id}
+              onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+            />
+          ))}
+        </div>
 
         {items.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
             <button
               onClick={() => setVisibleCount((prev) => prev + 12)}
-              className="px-6 py-2.5 bg-white border border-neutral-200 text-neutral-600 font-medium rounded-full shadow-sm active:scale-95 transition-transform text-sm"
+              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-bold rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
             >
               Cargar más
             </button>
           </div>
         )}
-
       </main>
-      {/* PANEL INFERIOR */}
+
+      {/* PANEL INFERIOR FIJO */}
       <div className="fixed bottom-0 left-0 right-0 z-20">
-
         {!isOpen && (
-          <div className="bg-white border-t border-neutral-200 px-4 py-3 flex items-center gap-3 shadow-md">
-
+          <div className="bg-white border-t border-neutral-100 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] backdrop-blur-sm bg-white/90">
             <button
-              onClick={() => {
-                resetForm();
-                setType("PRODUCT"); // extra: siempre inicia en producto
-                setIsOpen(true);
-              }}
-              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg"
+              onClick={() => handleStartEdit(null)}
+              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg active:scale-95 transition"
             >
               +
             </button>
-
-            <div className="flex-1 bg-neutral-100 rounded-full px-4 py-2 text-sm text-neutral-500">
+            <div className="flex-1 bg-neutral-50 rounded-full px-4 py-2 text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
               Crear nuevo item...
             </div>
-
           </div>
-        )}
-
-        {isOpen && (
-          <div className="bg-white rounded-t-3xl border-t border-neutral-200 px-4 pt-4 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[85vh] overflow-y-auto space-y-6">
-            
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-neutral-900">
-                {editingItem ? "Editar item" : "Nuevo item"}
-              </h2>
-              <button 
-                onClick={resetForm}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 transition"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* TOGGLE PRODUCTO / SERVICIO */}
-            <div className="flex bg-neutral-100 rounded-full p-1">
-
-              <button
-                disabled={!!editingItem}
-                onClick={() => {
-                  setType("PRODUCT");
-                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
-                }}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "PRODUCT"
-                    ? "bg-white text-green-600 shadow-sm"
-                    : "text-neutral-500"
-                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                Producto
-              </button>
-
-              <button
-                disabled={!!editingItem}
-                onClick={() => {
-                  setType("SERVICE");
-                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
-                }}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "SERVICE"
-                    ? "bg-white text-green-600 shadow-sm"
-                    : "text-neutral-500"
-                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                Servicio
-              </button>
-
-            </div>
-
-
-            {/* FOTO */}
-            <div>
-
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Fotos
-              </label>
-
-              <p className="mb-3 text-xs text-neutral-500">
-                Hasta {MAX_ITEM_IMAGES} imágenes. Máximo {formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)} por imagen.
-                {editingItem ? " Las imágenes actuales se conservan si no las eliminas." : ""}
-              </p>
-
-              <div className="flex flex-wrap gap-3">
-
-                <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl ${
-                  totalImages >= MAX_ITEM_IMAGES
-                    ? "border-neutral-300 text-neutral-300 cursor-not-allowed"
-                    : "border-green-500 text-green-600"
-                }`}>
-                  +
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    disabled={totalImages >= MAX_ITEM_IMAGES}
-                    onChange={(e) => {
-                      handleAddImages(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-
-                {existingImages.map((image) => (
-                  <div
-                    key={image.id}
-                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
-                  >
-                    <img
-                      src={image.url}
-                      alt="Imagen actual"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveExistingImage(image.id)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Eliminar imagen actual"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-
-                {newImages.map((image) => (
-                  <div
-                    key={image.id}
-                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
-                  >
-                    <img
-                      src={image.previewUrl}
-                      alt={image.file.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveNewImage(image.id)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Eliminar imagen nueva"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-
-              </div>
-
-              <p className="mt-3 text-xs text-neutral-500">
-                {totalImages} de {MAX_ITEM_IMAGES} imágenes seleccionadas.
-              </p>
-
-              {imageError && (
-                <p className="mt-2 text-xs font-medium text-red-500">{imageError}</p>
-              )}
-
-            </div>
-
-
-            {/* NOMBRE */}
-            <div>
-
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                {type === "PRODUCT" ? "Nombre del producto" : "Nombre del servicio"} <span className="text-red-500">*</span>
-              </label>
-
-              <input
-                placeholder={type === "PRODUCT" ? "Nombre del producto" : "Nombre del servicio"}
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setFormErrors((prev) => ({ ...prev, name: undefined }));
-                }}
-                className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
-                  formErrors.name
-                    ? "border-red-300 bg-red-50 text-red-900"
-                    : "border-transparent bg-neutral-100"
-                }`}
-              />
-
-              {formErrors.name && (
-                <p className="mt-2 text-xs font-medium text-red-500">{formErrors.name}</p>
-              )}
-
-            </div>
-
-
-            {/* PRECIO + DURACION */}
-            <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
-
-              {/* PRECIO */}
-              <div>
-
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Precio <span className="text-red-500">*</span>
-                </label>
-
-                <div
-                  className={`flex h-[44px] items-center rounded-xl border px-4 ${
-                    formErrors.price
-                      ? "border-red-300 bg-red-50"
-                      : "border-transparent bg-neutral-100"
-                  }`}
-                >
-
-                  <span className="text-neutral-500 text-sm mr-2">
-                    $
-                  </span>
-
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    value={priceDisplay}
-                    onChange={(e) => {
-                      const formatted = formatPriceInput(e.target.value);
-                      setPriceDisplay(formatted);
-                      setPrice(parsePriceInput(formatted));
-                      setFormErrors((prev) => ({ ...prev, price: undefined }));
-                    }}
-                    className="flex-1 bg-transparent outline-none text-sm"
-                  />
-
-                </div>
-
-                {formErrors.price && (
-                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.price}</p>
-                )}
-
-              </div>
-
-
-              {/* DURACION */}
-              {type === "SERVICE" && (
-                <div>
-
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                    Duración
-                  </label>
-
-                  <div className="relative">
-
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={durationInput}
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/[^0-9]/g, "");
-                        setDurationInput(val);
-                        if (val !== "" && !isNaN(Number(val))) {
-                          setDuration(Number(val));
-                        }
-                        setFormErrors((prev) => ({ ...prev, duration: undefined }));
-                      }}
-                      onBlur={() => {
-                        // Al perder foco, normalizar duracion minima
-                        const num = Number(durationInput);
-                        if (!durationInput || isNaN(num) || num < 5) {
-                           setDuration(5);
-                           setDurationInput("5");
-                        } else {
-                           setDuration(num);
-                           setDurationInput(String(num));
-                        }
-                      }}
-                      className={`w-full rounded-xl border pl-3 pr-10 py-3 text-sm outline-none ${
-                        formErrors.duration
-                          ? "border-red-300 bg-red-50 text-red-900"
-                          : "border-transparent bg-neutral-100"
-                      }`}
-                    />
-
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 text-sm">
-                      min
-                    </span>
-
-                  </div>
-
-                  {formErrors.duration && (
-                    <p className="mt-2 text-xs font-medium text-red-500">{formErrors.duration}</p>
-                  )}
-
-                </div>
-              )}
-
-            </div>
-
-
-            {/* HORARIOS */}
-            {type === "SERVICE" && (
-              <div>
-
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Horarios disponibles <span className="text-red-500">*</span>
-                </label>
-
-                {/* DIAS */}
-                <div className="flex justify-between gap-1 mb-3">
-
-                  {week.map((day, i) => (
-
-                    <button
-                      key={day.day}
-                      onClick={() => {
-
-                        const copy = week.map(d => ({ ...d, ranges: [...d.ranges] }));
-
-                        copy[i].active = !copy[i].active;
-
-                        if (copy[i].active && copy[i].ranges.length === 0) {
-                          copy[i].ranges = [{ start: "08:00", end: "12:00" }];
-                        }
-
-                        if (!copy[i].active) {
-                          copy[i].ranges = [];
-                        }
-
-                        setWeek(copy);
-
-                        // Si el día actual se desactivó, mover el índice al primer día activo disponible
-                        if (!copy[i].active && i === currentDayIndex) {
-                          const firstActiveIndex = copy.findIndex(d => d.active);
-                          if (firstActiveIndex !== -1) {
-                            setCurrentDayIndex(firstActiveIndex);
-                          }
-                        } else if (copy[i].active) {
-                          // Si se activó un día, podemos movernos a él si no había ninguno activo
-                          const activeCount = copy.filter(d => d.active).length;
-                          if (activeCount === 1) {
-                            setCurrentDayIndex(i);
-                          }
-                        }
-
-                        setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-
-                      }}
-                      className={`flex-1 h-8 rounded-full text-[11px] font-semibold transition
-                      ${
-                        day.active
-                          ? "bg-green-600 text-white"
-                          : "bg-neutral-200 text-neutral-600"
-                      }`}
-                    >
-                      {day.day.slice(0, 2).toUpperCase()}
-                    </button>
-
-                  ))}
-
-                </div>
-
-
-                {/* HEADER DIA / RANGOS CONTAINER */}
-                {!week.some(d => d.active) ? (
-                  <div className="flex flex-col items-center justify-center p-8 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
-                    <Clock size={20} className="text-neutral-300 mb-2" />
-                    <p className="text-xs font-medium text-neutral-400">Selecciona un día</p>
-                  </div>
-                ) : (
-                  <>
-                    {/* HEADER DIA */}
-                    <div className="flex items-center justify-between mb-2">
-
-                      <button
-                        onClick={() => {
-                          const activeIndices = week.map((d, i) => d.active ? i : -1).filter(i => i !== -1);
-                          if (activeIndices.length <= 1) return;
-                          const currentPos = activeIndices.indexOf(currentDayIndex);
-                          const nextPos = (currentPos - 1 + activeIndices.length) % activeIndices.length;
-                          setCurrentDayIndex(activeIndices[nextPos]);
-                        }}
-                        disabled={week.filter(d => d.active).length <= 1}
-                        className="w-10 h-10 flex items-center justify-center text-neutral-400 text-lg disabled:opacity-20"
-                      >
-                        ‹
-                      </button>
-
-                      <p className="text-sm font-semibold text-neutral-700">
-                        {week[currentDayIndex].day}
-                      </p>
-
-                      <button
-                        onClick={() => {
-                          const activeIndices = week.map((d, i) => d.active ? i : -1).filter(i => i !== -1);
-                          if (activeIndices.length <= 1) return;
-                          const currentPos = activeIndices.indexOf(currentDayIndex);
-                          const nextPos = (currentPos + 1) % activeIndices.length;
-                          setCurrentDayIndex(activeIndices[nextPos]);
-                        }}
-                        disabled={week.filter(d => d.active).length <= 1}
-                        className="w-10 h-10 flex items-center justify-center text-neutral-400 text-lg disabled:opacity-20"
-                      >
-                        ›
-                      </button>
-
-                    </div>
-
-
-                    {/* RANGOS */}
-                    <div
-                      className={`rounded-2xl border p-4 space-y-3 shadow-sm ${
-                        formErrors.schedule
-                          ? "border-red-200 bg-red-50"
-                          : "border-neutral-100 bg-neutral-50"
-                      }`}
-                    >
-
-                      {week[currentDayIndex].active &&
-                        week[currentDayIndex].ranges.map((range, rIndex) => (
-
-                          <div
-                            key={rIndex}
-                            className="flex items-center gap-3"
-                          >
-
-                            <input
-                              type="time"
-                              value={range.start}
-                              onChange={(e) => {
-
-                                const copy = [...week];
-                                const newStart = e.target.value;
-                                const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                                const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                                  if (i === rIndex) return false;
-                                  return rangesOverlap(newStart, currentRange.end, r.start, r.end);
-                                });
-
-                                if (!overlap) {
-                                  copy[currentDayIndex].ranges[rIndex].start = newStart;
-                                  setWeek(copy);
-                                  setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                                }
-
-                              }}
-                              className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                            />
-
-                            <span className="text-neutral-300 text-sm">—</span>
-
-                            <input
-                              type="time"
-                              value={range.end}
-                              onChange={(e) => {
-
-                                const copy = [...week];
-                                const newEnd = e.target.value;
-                                const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                                const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                                  if (i === rIndex) return false;
-                                  return rangesOverlap(currentRange.start, newEnd, r.start, r.end);
-                                });
-
-                                if (!overlap) {
-                                  copy[currentDayIndex].ranges[rIndex].end = newEnd;
-                                  setWeek(copy);
-                                  setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                                }
-
-                              }}
-                              className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                            />
-
-                            <button
-                              onClick={() => {
-                                const copy = [...week];
-                                copy[currentDayIndex].ranges.splice(rIndex, 1);
-                                setWeek(copy);
-                                setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                              }}
-                              className="ml-auto text-neutral-400 hover:text-red-500 transition"
-                            >
-                              ✕
-                            </button>
-
-                          </div>
-
-                        ))}
-
-                      {week[currentDayIndex].active &&
-                        week[currentDayIndex].ranges.length < 2 && (
-
-                          <button
-                            onClick={() => {
-
-                              const copy = [...week];
-                              const ranges = copy[currentDayIndex].ranges;
-
-                              if (ranges.length === 0) {
-                                ranges.push({ start: "08:00", end: "12:00" });
-                              } else if (ranges.length === 1) {
-                                ranges.push({ start: "14:00", end: "18:00" });
-                              }
-
-                              setWeek(copy);
-                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-
-                            }}
-                            className="text-green-600 text-xs font-semibold mt-2"
-                          >
-                            + Agregar horario
-                          </button>
-
-                        )}
-
-                    </div>
-                  </>
-                )}
-
-                {formErrors.schedule && (
-                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.schedule}</p>
-                )}
-
-              </div>
-            )}
-
-
-            {/* DESCRIPCION */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-                  Descripción
-                </label>
-                <span className={`text-[10px] font-bold ${description.length >= 300 ? 'text-red-500' : 'text-neutral-400'}`}>
-                  {description.length}/300
-                </span>
-              </div>
-
-              <textarea
-                placeholder="Agrega una descripción..."
-                rows={3}
-                maxLength={300}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full rounded-xl border border-transparent bg-neutral-100 px-4 py-3 text-sm outline-none resize-none"
-              />
-            </div>
-
-            <div className="flex items-end gap-2">
-
-                <button
-                  onClick={handleSend}
-                  disabled={isSubmitting}
-                  className={`w-11 h-11 rounded-full bg-green-600 text-white shadow-md flex items-center justify-center active:scale-95 transition ${
-                    isSubmitting ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  {isSubmitting ? "..." : "➤"}
-                </button>
-
-              </div>
-            </div>
         )}
       </div>
 
-            {/* MODAL ARCHIVAR */}
+      {/* MODAL DE FORMULARIO (NUEVO / EDITAR) */}
+      <ItemFormModal
+        open={isOpen}
+        editingItem={editingItem}
+        onClose={() => { setIsOpen(false); setEditingItem(null); }}
+        onSaved={(savedItem) => {
+          setItems(prev => {
+            const exists = prev.find(i => i.id === savedItem.id);
+            if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
+            return [savedItem, ...prev];
+          });
+          if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
+        }}
+        setToast={setToast}
+      />
+
+      {/* MODAL DE DETALLES */}
+      <ItemDetailModal 
+        item={itemForDetail}
+        open={!!itemForDetail}
+        onClose={() => setItemForDetail(null)}
+        onEdit={(i) => { setItemForDetail(null); handleStartEdit(i); }}
+        onDelete={(i) => { setItemForDetail(null); setDeleteId(i.id); }}
+      />
+
+      {/* MODAL ELIMINAR (CONFIRMACION) */}
       {deleteId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-
-          <div className="bg-white rounded-2xl p-6 w-[90%] max-w-xs shadow-lg">
-
-            <h3 className="text-base font-semibold text-neutral-900 mb-2">
-              Archivar producto
-            </h3>
-
-            <p className="text-sm text-neutral-500 mb-5">
-              Este producto dejará de aparecer en la tienda.
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-neutral-900 mb-2">¿Eliminar item?</h3>
+            <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
+              Esta acción ocultará el item de tu catálogo activo. Podrás recuperarlo luego si es necesario.
             </p>
-
-            <div className="flex justify-end gap-3">
-
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  const target = items.find(i => i.id === deleteId);
+                  if (target) handleDelete(target);
+                  setDeleteId(null);
+                }}
+                className="w-full py-3 rounded-xl bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-100 active:scale-95 transition"
+              >
+                Eliminar definitivamente
+              </button>
               <button
                 onClick={() => setDeleteId(null)}
-                className="px-4 py-2 text-sm rounded-lg bg-neutral-100 hover:bg-neutral-200"
+                className="w-full py-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-bold active:scale-95 transition"
               >
                 Cancelar
               </button>
-
-              <button
-                onClick={async () => {
-
-                  if (!deleteId) return;
-
-                  try {
-
-                    await api(`/items/${deleteId}`, {
-                      method: "DELETE",
-                    });
-
-                    setItems((prev) =>
-                      prev.filter((item) => item.id !== deleteId)
-                    );
-
-                    setToast({
-                      message: "Producto archivado",
-                      type: "success",
-                    });
-
-                  } catch (err) {
-
-                    console.error(err);
-
-                    setToast({
-                      message: "No se pudo archivar el producto",
-                      type: "error",
-                    });
-
-                  }
-
-                  setDeleteId(null);
-
-                  setTimeout(() => {
-                    setToast(null);
-                  }, 2500);
-
-                }}
-                className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600"
-              >
-                Archivar
-              </button>
-
             </div>
-
           </div>
-
         </div>
       )}
 
-
-        <ItemDetailModal 
-          item={itemForDetail as any}
-          open={!!itemForDetail}
-          onClose={() => setItemForDetail(null)}
-          onEdit={(i) => {
-            setItemForDetail(null);
-            handleStartEdit(i);
-          }}
-          onDelete={(i) => {
-            setItemForDetail(null);
-            handleDelete(i);
-          }}
-        />
-
-        {/* TOAST */}
+      {/* TOAST DE NOTIFICACIÓN */}
       {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2 rounded-full shadow-lg animate-fade-in
-          ${toast.type === "success" ? "bg-green-600" : "bg-red-600"}`}
-        >
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}>
           {toast.message}
         </div>
       )}
-
     </div>
   );
 }

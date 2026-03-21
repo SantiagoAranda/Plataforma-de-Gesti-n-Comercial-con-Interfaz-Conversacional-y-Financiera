@@ -1,3 +1,5 @@
+"use client";
+
 import { memo, useState } from "react";
 import { api } from "@/src/lib/api";
 import { getCached } from "@/src/lib/cache";

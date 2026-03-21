@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { X, Edit, Trash2, Tag, Clock, Calendar, Info } from "lucide-react";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
@@ -6,6 +8,8 @@ import { formatFullDate } from "@/src/lib/datetime";
 import { api } from "@/src/lib/api";
 
 import { groupScheduleByDay, formatActiveDaysCompact } from "@/src/lib/availability";
+
+import { ItemPanelLayout } from "./ItemPanelLayout";
 
 interface Item {
   id: string;
@@ -60,32 +64,13 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
   const groupedSchedule = displayItem.type === "SERVICE" ? groupScheduleByDay(displayItem.schedule) : [];
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm transition-opacity">
-      <div 
-        className="w-full sm:max-w-md flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] sm:h-auto animate-in slide-in-from-bottom-full duration-300"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* HEADER */}
-        <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
-          <div className="flex flex-col">
-            <h2 className="font-bold text-neutral-900 text-lg">
-              {item.type === "SERVICE" ? "Detalle del servicio" : "Detalle del ítem"}
-            </h2>
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
-              #{item.id.slice(-6).toUpperCase()}
-            </span>
-          </div>
-
-          <button
-            onClick={onClose}
-            className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/30">
+    <ItemPanelLayout
+      open={open}
+      onClose={onClose}
+      title={displayItem.type === "SERVICE" ? "Detalle del servicio" : "Detalle del producto"}
+      subtitle={`#${displayItem.id.slice(-6).toUpperCase()}`}
+    >
+      <div className="space-y-6">
           
           {/* IMAGE SECTION ... (omitting for brevity in TargetContent if possible, but I'll include the whole block for safety) */}
           {imageCount > 0 ? (
@@ -200,7 +185,6 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
              </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ItemPanelLayout>
   );
 }
