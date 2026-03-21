@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Trash2, X, Clock, Search } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Trash2, X, Clock, Search, ArrowDown, Calendar as CalendarIcon } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -36,6 +36,8 @@ export default function MiNegocioPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
@@ -69,7 +71,11 @@ export default function MiNegocioPage() {
       const data = await getCached(key, 60_000, () => 
         api<Item[]>(`/items?status=ACTIVE&lightweight=true`)
       );
-      setItems(data);
+      // Sort oldest to newest (newest at bottom)
+      const sorted = [...data].sort((a, b) => 
+        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+      );
+      setItems(sorted);
     } catch (err) {
       console.error(err);
     } finally {
@@ -197,6 +203,17 @@ export default function MiNegocioPage() {
     });
   };
 
+  // Iniciar scroll abajo al cargar
+  useEffect(() => {
+    if (!loading && items.length > 0) {
+      // Pequeño timeout para asegurar que el DOM de las cards esté renderizado
+      const timer = setTimeout(() => {
+        scrollToBottom(true);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, items.length]);
+
   const handleSend = async () => {
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
@@ -281,7 +298,7 @@ export default function MiNegocioPage() {
       setItems(prev => {
         const exists = prev.find(i => i.id === savedItem.id);
         if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
-        return [savedItem, ...prev];
+        return [...prev, savedItem]; // Add to end (bottm)
       });
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
@@ -314,6 +331,44 @@ export default function MiNegocioPage() {
     setTimeout(() => setToast(null), 2500);
   };
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    setShowScrollBottom(scrollTop + clientHeight < scrollHeight - 400);
+  };
+
+  const scrollToBottom = (instant = false) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: instant ? "auto" : "smooth"
+      });
+    }
+  };
+
+  const groupedItems = useMemo(() => {
+    const groups: { dateLabel: string; items: Item[] }[] = [];
+    const itemsToGroup = filteredItems.slice(0, visibleCount);
+    
+    itemsToGroup.forEach(item => {
+      const date = new Date(item.createdAt || Date.now());
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+
+      let label = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+      if (date.toDateString() === now.toDateString()) label = "HOY";
+      else if (date.toDateString() === yesterday.toDateString()) label = "AYER";
+      
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.dateLabel === label) {
+        lastGroup.items.push(item);
+      } else {
+        groups.push({ dateLabel: label, items: [item] });
+      }
+    });
+    return groups;
+  }, [filteredItems, visibleCount]);
+
   return (
     <div className="flex flex-col h-screen bg-neutral-100">
       {selectedItem ? (
@@ -332,22 +387,39 @@ export default function MiNegocioPage() {
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
+      <main 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-8 pb-28 scroll-smooth"
+      >
         {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
           <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">No hay items creados</div>
         )}
         
-        <div className="grid grid-cols-1 gap-4">
-          {filteredItems.slice(0, visibleCount).map((item) => (
-            <ItemCard
-              key={item.id}
-              item={item}
-              selected={selectedItem?.id === item.id}
-              onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
-            />
-          ))}
-        </div>
+        {groupedItems.map((group, gIdx) => (
+          <div key={group.dateLabel} className="space-y-4">
+            {/* DATE SEPARATOR */}
+            <div className="flex items-center gap-4 py-2">
+              <div className="h-[1px] flex-1 bg-neutral-200" />
+              <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
+                {group.dateLabel}
+              </span>
+              <div className="h-[1px] flex-1 bg-neutral-200" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {group.items.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  selected={selectedItem?.id === item.id}
+                  onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
 
         {composerMode === "closed" && searchQuery.trim() !== "" && filteredItems.length === 0 && (
           <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
@@ -449,6 +521,17 @@ export default function MiNegocioPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* BAF - IR AL ÚLTIMO (BOTÓN FLOTANTE) */}
+      {showScrollBottom && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="fixed bottom-24 right-6 z-40 bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
+          aria-label="Ir al final"
+        >
+          <ArrowDown size={20} strokeWidth={2.5} />
+        </button>
       )}
 
       {/* TOAST DE NOTIFICACIÓN */}

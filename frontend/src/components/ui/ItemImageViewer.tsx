@@ -137,7 +137,7 @@ export function ItemImageViewer({
 
       {isMounted && isOpen && createPortal(
         <div
-          className="fixed inset-0 z-[80] bg-black/90 px-4 py-6"
+          className="fixed inset-0 z-[10000] bg-black/90 px-4 py-6"
           onMouseDown={(event) => {
             event.preventDefault();
             event.stopPropagation();

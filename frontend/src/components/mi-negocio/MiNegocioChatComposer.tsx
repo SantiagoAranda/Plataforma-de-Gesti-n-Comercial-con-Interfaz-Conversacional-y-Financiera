@@ -111,7 +111,7 @@ export function MiNegocioChatComposer({
                 }`}
                 aria-label={label}
               >
-                {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-emerald-500" />}
+                {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-white" />}
               </button>
             </div>
           </div>
