@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Trash2, X } from "lucide-react";
+import { Trash2, X, Clock } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -190,6 +190,7 @@ export default function MiNegocioPage() {
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [duration, setDuration] = useState(30);
+  const [durationInput, setDurationInput] = useState("30");
 
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
@@ -309,6 +310,7 @@ export default function MiNegocioPage() {
     setRemovedImageIds([]);
     setImageError(null);
     setDuration(30);
+    setDurationInput("30");
     setWeek(createInitialWeek());
     setType("PRODUCT");
     setFormErrors({});
@@ -473,6 +475,7 @@ export default function MiNegocioPage() {
     setImageError(null);
     setType(fullItem.type);
     setDuration(fullItem.durationMinutes ?? 30);
+    setDurationInput(String(fullItem.durationMinutes ?? 30));
     const nextWeek = createInitialWeek();
 
     if (fullItem.type === "SERVICE" && fullItem.schedule?.length) {
@@ -513,7 +516,8 @@ export default function MiNegocioPage() {
     }
 
     setWeek(nextWeek);
-    setCurrentDayIndex(0);
+    const firstActiveIndex = nextWeek.findIndex(d => d.active);
+    setCurrentDayIndex(firstActiveIndex !== -1 ? firstActiveIndex : 0);
     setIsOpen(true);
     setSelectedItem(null);
   };
@@ -791,11 +795,11 @@ export default function MiNegocioPage() {
             <div>
 
               <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Nombre <span className="text-red-500">*</span>
+                {type === "PRODUCT" ? "Nombre del producto" : "Nombre del servicio"} <span className="text-red-500">*</span>
               </label>
 
               <input
-                placeholder="Nombre del servicio"
+                placeholder={type === "PRODUCT" ? "Nombre del producto" : "Nombre del servicio"}
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value);
@@ -871,13 +875,27 @@ export default function MiNegocioPage() {
                   <div className="relative">
 
                     <input
-                      type="number"
-                      min={5}
-                      step={5}
-                      value={duration}
+                      type="text"
+                      inputMode="numeric"
+                      value={durationInput}
                       onChange={(e) => {
-                        setDuration(Number(e.target.value));
+                        const val = e.target.value.replace(/[^0-9]/g, "");
+                        setDurationInput(val);
+                        if (val !== "" && !isNaN(Number(val))) {
+                          setDuration(Number(val));
+                        }
                         setFormErrors((prev) => ({ ...prev, duration: undefined }));
+                      }}
+                      onBlur={() => {
+                        // Al perder foco, normalizar duracion minima
+                        const num = Number(durationInput);
+                        if (!durationInput || isNaN(num) || num < 5) {
+                           setDuration(5);
+                           setDurationInput("5");
+                        } else {
+                           setDuration(num);
+                           setDurationInput(String(num));
+                        }
                       }}
                       className={`w-full rounded-xl border pl-3 pr-10 py-3 text-sm outline-none ${
                         formErrors.duration
@@ -932,6 +950,21 @@ export default function MiNegocioPage() {
                         }
 
                         setWeek(copy);
+
+                        // Si el día actual se desactivó, mover el índice al primer día activo disponible
+                        if (!copy[i].active && i === currentDayIndex) {
+                          const firstActiveIndex = copy.findIndex(d => d.active);
+                          if (firstActiveIndex !== -1) {
+                            setCurrentDayIndex(firstActiveIndex);
+                          }
+                        } else if (copy[i].active) {
+                          // Si se activó un día, podemos movernos a él si no había ninguno activo
+                          const activeCount = copy.filter(d => d.active).length;
+                          if (activeCount === 1) {
+                            setCurrentDayIndex(i);
+                          }
+                        }
+
                         setFormErrors((prev) => ({ ...prev, schedule: undefined }));
 
                       }}
@@ -950,148 +983,164 @@ export default function MiNegocioPage() {
                 </div>
 
 
-                {/* HEADER DIA */}
-                <div className="flex items-center justify-between mb-2">
-
-                  <button
-                    onClick={() =>
-                      setCurrentDayIndex(
-                        currentDayIndex === 0 ? 6 : currentDayIndex - 1
-                      )
-                    }
-                    className="text-neutral-400 text-lg"
-                  >
-                    ‹
-                  </button>
-
-                  <p className="text-sm font-semibold text-neutral-700">
-                    {week[currentDayIndex].day}
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      setCurrentDayIndex(
-                        currentDayIndex === 6 ? 0 : currentDayIndex + 1
-                      )
-                    }
-                    className="text-neutral-400 text-lg"
-                  >
-                    ›
-                  </button>
-
-                </div>
-
-
-                {/* RANGOS */}
-                <div
-                  className={`rounded-2xl border p-4 space-y-3 shadow-sm ${
-                    formErrors.schedule
-                      ? "border-red-200 bg-red-50"
-                      : "border-neutral-100 bg-neutral-50"
-                  }`}
-                >
-
-                  {week[currentDayIndex].active &&
-                    week[currentDayIndex].ranges.map((range, rIndex) => (
-
-                      <div
-                        key={rIndex}
-                        className="flex items-center gap-3"
-                      >
-
-                        <input
-                          type="time"
-                          value={range.start}
-                          onChange={(e) => {
-
-                            const copy = [...week];
-                            const newStart = e.target.value;
-                            const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                              if (i === rIndex) return false;
-                              return rangesOverlap(newStart, currentRange.end, r.start, r.end);
-                            });
-
-                            if (!overlap) {
-                              copy[currentDayIndex].ranges[rIndex].start = newStart;
-                              setWeek(copy);
-                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                            }
-
-                          }}
-                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                        />
-
-                        <span className="text-neutral-300 text-sm">—</span>
-
-                        <input
-                          type="time"
-                          value={range.end}
-                          onChange={(e) => {
-
-                            const copy = [...week];
-                            const newEnd = e.target.value;
-                            const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                              if (i === rIndex) return false;
-                              return rangesOverlap(currentRange.start, newEnd, r.start, r.end);
-                            });
-
-                            if (!overlap) {
-                              copy[currentDayIndex].ranges[rIndex].end = newEnd;
-                              setWeek(copy);
-                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                            }
-
-                          }}
-                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                        />
-
-                        <button
-                          onClick={() => {
-                            const copy = [...week];
-                            copy[currentDayIndex].ranges.splice(rIndex, 1);
-                            setWeek(copy);
-                            setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                          }}
-                          className="ml-auto text-neutral-400 hover:text-red-500 transition"
-                        >
-                          ✕
-                        </button>
-
-                      </div>
-
-                    ))}
-
-                  {week[currentDayIndex].active &&
-                    week[currentDayIndex].ranges.length < 2 && (
+                {/* HEADER DIA / RANGOS CONTAINER */}
+                {!week.some(d => d.active) ? (
+                  <div className="flex flex-col items-center justify-center p-8 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
+                    <Clock size={20} className="text-neutral-300 mb-2" />
+                    <p className="text-xs font-medium text-neutral-400">Selecciona un día</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* HEADER DIA */}
+                    <div className="flex items-center justify-between mb-2">
 
                       <button
                         onClick={() => {
-
-                          const copy = [...week];
-                          const ranges = copy[currentDayIndex].ranges;
-
-                          if (ranges.length === 0) {
-                            ranges.push({ start: "08:00", end: "12:00" });
-                          } else if (ranges.length === 1) {
-                            ranges.push({ start: "14:00", end: "18:00" });
-                          }
-
-                          setWeek(copy);
-                          setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-
+                          const activeIndices = week.map((d, i) => d.active ? i : -1).filter(i => i !== -1);
+                          if (activeIndices.length <= 1) return;
+                          const currentPos = activeIndices.indexOf(currentDayIndex);
+                          const nextPos = (currentPos - 1 + activeIndices.length) % activeIndices.length;
+                          setCurrentDayIndex(activeIndices[nextPos]);
                         }}
-                        className="text-green-600 text-xs font-semibold mt-2"
+                        disabled={week.filter(d => d.active).length <= 1}
+                        className="w-10 h-10 flex items-center justify-center text-neutral-400 text-lg disabled:opacity-20"
                       >
-                        + Agregar horario
+                        ‹
                       </button>
 
-                    )}
+                      <p className="text-sm font-semibold text-neutral-700">
+                        {week[currentDayIndex].day}
+                      </p>
 
-                </div>
+                      <button
+                        onClick={() => {
+                          const activeIndices = week.map((d, i) => d.active ? i : -1).filter(i => i !== -1);
+                          if (activeIndices.length <= 1) return;
+                          const currentPos = activeIndices.indexOf(currentDayIndex);
+                          const nextPos = (currentPos + 1) % activeIndices.length;
+                          setCurrentDayIndex(activeIndices[nextPos]);
+                        }}
+                        disabled={week.filter(d => d.active).length <= 1}
+                        className="w-10 h-10 flex items-center justify-center text-neutral-400 text-lg disabled:opacity-20"
+                      >
+                        ›
+                      </button>
+
+                    </div>
+
+
+                    {/* RANGOS */}
+                    <div
+                      className={`rounded-2xl border p-4 space-y-3 shadow-sm ${
+                        formErrors.schedule
+                          ? "border-red-200 bg-red-50"
+                          : "border-neutral-100 bg-neutral-50"
+                      }`}
+                    >
+
+                      {week[currentDayIndex].active &&
+                        week[currentDayIndex].ranges.map((range, rIndex) => (
+
+                          <div
+                            key={rIndex}
+                            className="flex items-center gap-3"
+                          >
+
+                            <input
+                              type="time"
+                              value={range.start}
+                              onChange={(e) => {
+
+                                const copy = [...week];
+                                const newStart = e.target.value;
+                                const currentRange = copy[currentDayIndex].ranges[rIndex];
+
+                                const overlap = copy[currentDayIndex].ranges.some((r, i) => {
+                                  if (i === rIndex) return false;
+                                  return rangesOverlap(newStart, currentRange.end, r.start, r.end);
+                                });
+
+                                if (!overlap) {
+                                  copy[currentDayIndex].ranges[rIndex].start = newStart;
+                                  setWeek(copy);
+                                  setFormErrors((prev) => ({ ...prev, schedule: undefined }));
+                                }
+
+                              }}
+                              className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
+                            />
+
+                            <span className="text-neutral-300 text-sm">—</span>
+
+                            <input
+                              type="time"
+                              value={range.end}
+                              onChange={(e) => {
+
+                                const copy = [...week];
+                                const newEnd = e.target.value;
+                                const currentRange = copy[currentDayIndex].ranges[rIndex];
+
+                                const overlap = copy[currentDayIndex].ranges.some((r, i) => {
+                                  if (i === rIndex) return false;
+                                  return rangesOverlap(currentRange.start, newEnd, r.start, r.end);
+                                });
+
+                                if (!overlap) {
+                                  copy[currentDayIndex].ranges[rIndex].end = newEnd;
+                                  setWeek(copy);
+                                  setFormErrors((prev) => ({ ...prev, schedule: undefined }));
+                                }
+
+                              }}
+                              className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
+                            />
+
+                            <button
+                              onClick={() => {
+                                const copy = [...week];
+                                copy[currentDayIndex].ranges.splice(rIndex, 1);
+                                setWeek(copy);
+                                setFormErrors((prev) => ({ ...prev, schedule: undefined }));
+                              }}
+                              className="ml-auto text-neutral-400 hover:text-red-500 transition"
+                            >
+                              ✕
+                            </button>
+
+                          </div>
+
+                        ))}
+
+                      {week[currentDayIndex].active &&
+                        week[currentDayIndex].ranges.length < 2 && (
+
+                          <button
+                            onClick={() => {
+
+                              const copy = [...week];
+                              const ranges = copy[currentDayIndex].ranges;
+
+                              if (ranges.length === 0) {
+                                ranges.push({ start: "08:00", end: "12:00" });
+                              } else if (ranges.length === 1) {
+                                ranges.push({ start: "14:00", end: "18:00" });
+                              }
+
+                              setWeek(copy);
+                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
+
+                            }}
+                            className="text-green-600 text-xs font-semibold mt-2"
+                          >
+                            + Agregar horario
+                          </button>
+
+                        )}
+
+                    </div>
+                  </>
+                )}
 
                 {formErrors.schedule && (
                   <p className="mt-2 text-xs font-medium text-red-500">{formErrors.schedule}</p>

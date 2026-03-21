@@ -1,9 +1,11 @@
-"use client";
-
+import { useState, useEffect } from "react";
 import { X, Edit, Trash2, Tag, Clock, Calendar, Info } from "lucide-react";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney } from "@/src/lib/formatters";
 import { formatFullDate } from "@/src/lib/datetime";
+import { api } from "@/src/lib/api";
+
+import { groupScheduleByDay, formatActiveDaysCompact } from "@/src/lib/availability";
 
 interface Item {
   id: string;
@@ -12,6 +14,7 @@ interface Item {
   description?: string;
   type?: "PRODUCT" | "SERVICE";
   durationMinutes?: number;
+  schedule?: any[];
   createdAt?: string;
   images?: { id: string; url: string; order: number }[];
   status?: string;
@@ -26,10 +29,35 @@ interface ItemDetailModalProps {
 }
 
 export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete }: ItemDetailModalProps) {
+  const [fullItem, setFullItem] = useState<Item | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open && item?.id && item.type === "SERVICE") {
+      // Si no tiene schedule o duration, hidratamos
+      if (!item.schedule || item.schedule.length === 0) {
+        setLoading(true);
+        api<Item>(`/items/${item.id}`)
+          .then(res => setFullItem(res))
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      } else {
+        setFullItem(null);
+      }
+    } else {
+      setFullItem(null);
+      setLoading(false);
+    }
+  }, [open, item?.id, item?.type, item?.schedule]);
+
   if (!open || !item) return null;
 
-  const images = item.images ?? [];
+  const displayItem = fullItem ?? item;
+  const images = displayItem.images ?? [];
   const imageCount = images.length;
+  
+  const activeDays = displayItem.type === "SERVICE" ? formatActiveDaysCompact(displayItem.schedule) : "";
+  const groupedSchedule = displayItem.type === "SERVICE" ? groupScheduleByDay(displayItem.schedule) : [];
 
   return (
     <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm transition-opacity">
@@ -40,7 +68,9 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
         {/* HEADER */}
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-            <h2 className="font-bold text-neutral-900 text-lg">Detalle del ítem</h2>
+            <h2 className="font-bold text-neutral-900 text-lg">
+              {item.type === "SERVICE" ? "Detalle del servicio" : "Detalle del ítem"}
+            </h2>
             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">
               #{item.id.slice(-6).toUpperCase()}
             </span>
@@ -57,7 +87,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
         {/* CONTENT */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/30">
           
-          {/* IMAGE SECTION */}
+          {/* IMAGE SECTION ... (omitting for brevity in TargetContent if possible, but I'll include the whole block for safety) */}
           {imageCount > 0 ? (
             <div className="rounded-2xl overflow-hidden border border-neutral-100 bg-white shadow-sm aspect-square w-full">
               <ItemImageViewer
@@ -78,7 +108,9 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
           {/* MAIN INFO GRID */}
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="space-y-1">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Nombre</span>
+              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">
+                {item.type === "PRODUCT" ? "Nombre del producto" : "Nombre"}
+              </span>
               <h3 className="text-base font-bold text-neutral-900 leading-tight">{item.name}</h3>
             </div>
 
@@ -98,11 +130,51 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
               </div>
             </div>
 
-            {item.type === "SERVICE" && item.durationMinutes && (
-              <div className="pt-3 border-t border-neutral-50 flex items-center gap-2">
-                <Clock size={14} className="text-neutral-400" />
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
-                <span className="text-sm font-semibold text-neutral-700">{item.durationMinutes} min</span>
+            {displayItem.type === "SERVICE" && (
+              <div className="pt-3 border-t border-neutral-50 space-y-4">
+                <div className="flex items-center gap-2">
+                  <Clock size={14} className="text-neutral-400" />
+                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
+                  <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes} min</span>
+                </div>
+
+                {activeDays && (
+                  <div className="flex items-start gap-2 pt-3 border-t border-neutral-50">
+                    <Calendar size={14} className="text-neutral-400 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Días disponibles:</span>
+                      <span className="text-sm font-semibold text-neutral-700">{activeDays}</span>
+                    </div>
+                  </div>
+                )}
+
+                {groupedSchedule.length > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-neutral-50">
+                    <div className="flex items-center gap-2">
+                      <Info size={14} className="text-neutral-400" />
+                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Horarios disponibles:</span>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 pl-6">
+                      {groupedSchedule.map((group) => (
+                        <div key={group.day} className="flex flex-col bg-neutral-50/50 p-2 rounded-xl border border-neutral-100">
+                          <span className="text-[11px] font-bold text-neutral-700">{group.label}</span>
+                          <div className="flex flex-wrap gap-x-2">
+                            {group.ranges.map((range, idx) => (
+                              <span key={idx} className="text-xs text-neutral-500 font-medium">{range}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {loading && (
+                    <div className="py-4 flex justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-emerald-500" />
+                    </div>
+                )}
               </div>
             )}
           </div>

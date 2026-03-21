@@ -15,10 +15,14 @@ type Props = {
   onOpen?: () => void;
 };
 
+import { formatActiveDaysCompact } from "@/src/lib/availability";
+
 function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
   const [hydratedImages, setHydratedImages] = useState<any[] | null>(null);
   const currentImages = hydratedImages ?? item.images ?? [];
   const imageCount = item._count?.images ?? currentImages.length;
+
+  const activeDays = item.type === "SERVICE" ? formatActiveDaysCompact(item.schedule) : "";
 
   return (
     <div className="relative group">
@@ -63,9 +67,16 @@ function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
 
           {/* DURATION (IF SERVICE) */}
           {item.type === "SERVICE" && (
-            <div className="flex items-center gap-1.5 text-neutral-500 text-[10px] font-medium">
-              <span>🕒</span>
-              <span>{item.durationMinutes} min</span>
+            <div className="flex items-center justify-between gap-1.5 w-full text-[10px] font-medium">
+              <div className="flex items-center gap-1.5 text-neutral-500">
+                <span>🕒</span>
+                <span>{item.durationMinutes} min</span>
+              </div>
+              {activeDays && (
+                <span className="text-neutral-700 font-semibold italic">
+                  {activeDays}
+                </span>
+              )}
             </div>
           )}
 
