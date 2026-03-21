@@ -12,6 +12,7 @@ type GalleryImage = {
 type Props = {
   images?: GalleryImage[];
   name: string;
+  description?: string;
   containerClassName?: string;
   imageClassName?: string;
   emptyClassName?: string;
@@ -23,6 +24,7 @@ type Props = {
 export function ItemImageViewer({
   images = [],
   name,
+  description,
   containerClassName = "",
   imageClassName = "",
   emptyClassName = "",
@@ -166,7 +168,7 @@ export function ItemImageViewer({
           </button>
 
           <div
-            className="mx-auto flex h-full w-full max-w-5xl flex-col justify-center"
+            className="mx-auto flex h-full w-full max-w-2xl flex-col justify-center items-center gap-6"
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -176,7 +178,8 @@ export function ItemImageViewer({
               event.stopPropagation();
             }}
           >
-            <div className="relative flex min-h-0 flex-1 items-center justify-center">
+            {/* IMAGE AREA */}
+            <div className="relative flex min-h-0 items-center justify-center w-full">
               {images.length > 1 && (
                 <button
                   type="button"
@@ -189,18 +192,25 @@ export function ItemImageViewer({
                     event.stopPropagation();
                     showPrevious();
                   }}
-                  className="absolute left-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur md:left-4"
+                  className="absolute left-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur md:-left-16"
                   aria-label="Imagen anterior"
                 >
                   <ChevronLeft size={22} />
                 </button>
               )}
 
-              <img
-                src={images[currentIndex].url}
-                alt={`${name} ${currentIndex + 1}`}
-                className="max-h-full max-w-full rounded-2xl object-contain"
-              />
+              <div className="relative group max-h-full">
+                <img
+                  src={images[currentIndex].url}
+                  alt={`${name} ${currentIndex + 1}`}
+                  className="max-h-[65vh] w-auto rounded-2xl object-contain shadow-2xl"
+                />
+
+                {/* PAGINATION PILL - ATTACHED TO IMAGE */}
+                <div className="absolute bottom-3 right-3 backdrop-blur-md bg-black/40 text-white rounded-full px-3 py-1 text-[11px] font-bold border border-white/10 pointer-events-none">
+                  {currentIndex + 1} / {images.length}
+                </div>
+              </div>
 
               {images.length > 1 && (
                 <button
@@ -214,7 +224,7 @@ export function ItemImageViewer({
                     event.stopPropagation();
                     showNext();
                   }}
-                  className="absolute right-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur md:right-4"
+                  className="absolute right-0 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur md:-right-16"
                   aria-label="Siguiente imagen"
                 >
                   <ChevronRight size={22} />
@@ -222,13 +232,26 @@ export function ItemImageViewer({
               )}
             </div>
 
-            <div className="mt-4 flex items-center justify-between text-sm text-white/80">
-              <span className="truncate pr-4 font-medium">{name}</span>
-              <span>{currentIndex + 1} / {images.length}</span>
+            {/* INFO AREA: NAME & DESCRIPTION */}
+            <div className="w-full flex flex-col gap-2 px-2 shrink-0">
+              <h3 className="text-lg font-bold text-white leading-tight">
+                {name}
+              </h3>
+
+              {description && (
+                <div className="relative group">
+                  <div className="max-h-[72px] overflow-y-auto pr-3 custom-scrollbar text-sm text-white/70 leading-relaxed font-normal relative z-10 pb-2">
+                    {description}
+                  </div>
+                  {/* FADE INDICATOR */}
+                  <div className="absolute bottom-0 left-0 right-3 h-6 bg-gradient-to-t from-black/90 to-transparent pointer-events-none z-20 opacity-80" />
+                </div>
+              )}
             </div>
 
+            {/* THUMBNAILS AREA */}
             {images.length > 1 && (
-              <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-2 overflow-x-auto pb-1 max-w-full px-2 shrink-0">
                 {images.map((image, index) => (
                   <button
                     key={image.id ?? image.url}
@@ -242,8 +265,8 @@ export function ItemImageViewer({
                       event.stopPropagation();
                       openAt(index);
                     }}
-                    className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border ${
-                      index === currentIndex ? "border-white" : "border-white/20"
+                    className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border transition-all ${
+                      index === currentIndex ? "border-white scale-105" : "border-white/20 hover:border-white/40"
                     }`}
                     aria-label={`Ver imagen ${index + 1}`}
                   >
