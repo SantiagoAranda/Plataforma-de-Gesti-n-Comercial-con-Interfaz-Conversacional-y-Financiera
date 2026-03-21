@@ -131,10 +131,13 @@ export class ItemsService {
             orderBy: { order: 'asc' },
             select: { id: true, url: true, order: true },
           },
+          scheduleWindows: {
+            select: { weekday: true, startMinute: true, endMinute: true }
+          },
         },
       });
       // Normalizar al mismo shape que el full para compatibilidad con el frontend
-      return items.map((item) => ({ ...item, schedule: [] }));
+      return items.map((item) => this.mapItemWithSchedule(item));
     }
 
     const items = await this.prisma.item.findMany({

@@ -9,6 +9,7 @@ type Props = {
   onOpen?: () => void;
   children: ReactNode;
   className?: string;
+  disableOpenOnClick?: boolean;
 };
 
 export function SelectableCard({
@@ -17,6 +18,7 @@ export function SelectableCard({
   onOpen,
   children,
   className = "",
+  disableOpenOnClick = false,
 }: Props) {
   const { handlers, consumeLongPress } = useLongPress({
     onLongPress: onSelect,
@@ -30,8 +32,7 @@ export function SelectableCard({
       return;
     }
 
-    if (selected) return;
-
+    if (selected || disableOpenOnClick) return;
     onOpen?.();
   };
 

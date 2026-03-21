@@ -1,185 +1,62 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Trash2, X } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Trash2, X, Clock, Search, ArrowDown, Calendar as CalendarIcon } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
-import {
-  formatBytesToMb,
-  MAX_ITEM_IMAGES,
-  MAX_ITEM_IMAGE_SIZE_BYTES,
+import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
+import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
+import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
+import { Item, ItemType, ItemImage, PendingImage, WeeklySchedule, FormErrors } from "@/src/types/item";
+import { 
+  generateCreationId, 
+  createInitialWeek, 
+  WEEKDAY_ENUM,
+  formatPriceInput,
+  parsePriceInput,
+  timeToMinutes,
+  minutesToTime
+} from "@/src/lib/itemHelpers";
+import { 
+  MAX_ITEM_IMAGES, 
+  MAX_ITEM_IMAGE_SIZE_BYTES 
 } from "@/src/lib/itemImages";
 
-type ItemType = "PRODUCT" | "SERVICE";
-
-type Schedule = {
-  weekday: string;
-  startMinute: number;
-  endMinute: number;
-};
-
-type Item = {
-  id: string;
-  type: ItemType;
-  name: string;
-  price: number;
-  description?: string;
-  durationMinutes?: number;
-  schedule?: Schedule[];
-  images?: { id: string; url: string; order: number }[];
-  status: "ACTIVE" | "INACTIVE";
-};
-
-type TimeRange = {
-  start: string;
-  end: string;
-};
-
-type WeeklySchedule = {
-  day: string;
-  active: boolean;
-  ranges: TimeRange[];
-};
-
-type FormErrors = {
-  name?: string;
-  price?: string;
-  duration?: string;
-  schedule?: string;
-};
-
-type ItemImage = {
-  id: string;
-  url: string;
-  order: number;
-};
-
-type PendingImage = {
-  id: string;
-  file: File;
-  previewUrl: string;
-};
-
-const INITIAL_WEEK: WeeklySchedule[] = [
-  { day: "Lunes", active: true, ranges: [{ start: "08:00", end: "12:00" }] },
-  { day: "Martes", active: false, ranges: [] },
-  { day: "Miércoles", active: false, ranges: [] },
-  { day: "Jueves", active: false, ranges: [] },
-  { day: "Viernes", active: false, ranges: [] },
-  { day: "Sábado", active: false, ranges: [] },
-  { day: "Domingo", active: false, ranges: [] },
-];
-
-const WEEKDAY_ENUM = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-
-function createInitialWeek(): WeeklySchedule[] {
-  return INITIAL_WEEK.map((day) => ({
-    ...day,
-    ranges: day.ranges.map((range) => ({ ...range })),
-  }));
-}
-
-function timeToMinutes(time: string) {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function minutesToTime(min: number) {
-  const h = Math.floor(min / 60).toString().padStart(2, "0");
-  const m = (min % 60).toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  const aS = timeToMinutes(aStart);
-  const aE = timeToMinutes(aEnd);
-  const bS = timeToMinutes(bStart);
-  const bE = timeToMinutes(bEnd);
-
-  return aS < bE && bS < aE;
-}
-
-function generateCreationId() {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-
-  const bytes = new Uint8Array(16);
-
-  if (typeof globalThis.crypto?.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-
-  return [
-    hex.slice(0, 4).join(""),
-    hex.slice(4, 6).join(""),
-    hex.slice(6, 8).join(""),
-    hex.slice(8, 10).join(""),
-    hex.slice(10, 16).join(""),
-  ].join("-");
-}
-
-function revokePendingImages(images: PendingImage[]) {
-  images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-
-      reject(new Error("No se pudo leer la imagen."));
-    };
-
-    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function MiNegocioPage() {
 
-  const [type, setType] = useState<ItemType>("PRODUCT");
-  const [isOpen, setIsOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [items, setItems] = useState<Item[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(12);
+  const [searchQuery, setSearchQuery] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
 
+  // Composer / Form states
+  const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
+  const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [priceDisplay, setPriceDisplay] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [duration, setDuration] = useState(30);
-
+  const [durationInput, setDurationInput] = useState("30");
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
-
-  const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [creationId, setCreationId] = useState("");
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [visibleCount, setVisibleCount] = useState(12);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -194,7 +71,11 @@ export default function MiNegocioPage() {
       const data = await getCached(key, 60_000, () => 
         api<Item[]>(`/items?status=ACTIVE&lightweight=true`)
       );
-      setItems(data);
+      // Sort oldest to newest (newest at bottom)
+      const sorted = [...data].sort((a, b) => 
+        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+      );
+      setItems(sorted);
     } catch (err) {
       console.error(err);
     } finally {
@@ -207,12 +88,89 @@ export default function MiNegocioPage() {
     fetchItems(true);
   }, [fetchItems]);
 
-  const totalImages = existingImages.length + newImages.length;
+  const filteredItems = items.filter(item => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(query) ||
+      (item.description && item.description.toLowerCase().includes(query))
+    );
+  });
+
+  const resetForm = useCallback(() => {
+    setName("");
+    setPrice("");
+    setPriceDisplay("");
+    setDescription("");
+    setNewImages([]);
+    setExistingImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
+    setDuration(30);
+    setDurationInput("30");
+    setWeek(createInitialWeek());
+    setCurrentDayIndex(0);
+    setFormErrors({});
+    setType("PRODUCT");
+    setEditingItem(null);
+  }, []);
+
+  const handleToggleComposer = () => {
+    if (composerMode !== "closed") {
+      setComposerMode("closed");
+      resetForm();
+    } else {
+      setComposerMode("create");
+    }
+  };
+
+  const handleStartEdit = (item: Item | null) => {
+    if (!item) {
+      setComposerMode("create");
+      resetForm();
+      return;
+    }
+    
+    setEditingItem(item);
+    setComposerMode("edit");
+    setSelectedItem(null);
+    
+    // Fill form
+    setType(item.type);
+    setName(item.name);
+    setPrice(String(item.price));
+    setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
+    setDescription(item.description ?? "");
+    setExistingImages(item.images ?? []);
+    setNewImages([]);
+    setRemovedImageIds([]);
+    setImageError(null);
+    setDuration(item.durationMinutes ?? 30);
+    setDurationInput(String(item.durationMinutes ?? 30));
+    
+    const nextWeek = createInitialWeek();
+    if (item.type === "SERVICE" && item.schedule?.length) {
+      nextWeek.forEach(d => { d.active = false; d.ranges = []; });
+      item.schedule.forEach(slot => {
+        const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
+        if (dayIdx !== -1) {
+          nextWeek[dayIdx].active = true;
+          nextWeek[dayIdx].ranges.push({
+            start: minutesToTime(slot.startMinute),
+            end: minutesToTime(slot.endMinute)
+          });
+        }
+      });
+    }
+    setWeek(nextWeek);
+    const firstActive = nextWeek.findIndex(d => d.active);
+    setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
+  };
 
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-
     const selectedFiles = Array.from(files);
+    const totalImages = existingImages.length + newImages.length;
     const availableSlots = MAX_ITEM_IMAGES - totalImages;
 
     if (availableSlots <= 0) {
@@ -221,976 +179,367 @@ export default function MiNegocioPage() {
     }
 
     const nextPendingImages: PendingImage[] = [];
-    const rejectedBySize: string[] = [];
-
     selectedFiles.slice(0, availableSlots).forEach((file) => {
-      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) {
-        rejectedBySize.push(file.name);
-        return;
-      }
-
+      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
       nextPendingImages.push({
         id: generateCreationId(),
         file,
         previewUrl: URL.createObjectURL(file),
       });
     });
-
     setNewImages((prev) => [...prev, ...nextPendingImages]);
-
-    const errors: string[] = [];
-
-    if (selectedFiles.length > availableSlots) {
-      errors.push(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
-    }
-
-    if (rejectedBySize.length > 0) {
-      errors.push(
-        `Cada imagen debe pesar como máximo ${formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)}.`
-      );
-    }
-
-    setImageError(errors.length > 0 ? errors.join(" ") : null);
   };
 
-  const handleRemoveExistingImage = (imageId: string) => {
-    setExistingImages((prev) => prev.filter((image) => image.id !== imageId));
-    setRemovedImageIds((prev) =>
-      prev.includes(imageId) ? prev : [...prev, imageId]
-    );
-    setImageError(null);
+  const handleRemoveExistingImage = (id: string) => {
+    setExistingImages(prev => prev.filter(img => img.id !== id));
+    setRemovedImageIds(prev => prev.includes(id) ? prev : [...prev, id]);
   };
 
-  const handleRemoveNewImage = (imageId: string) => {
-    setNewImages((prev) => {
-      const imageToRemove = prev.find((image) => image.id === imageId);
-      if (imageToRemove) {
-        URL.revokeObjectURL(imageToRemove.previewUrl);
-      }
-
-      return prev.filter((image) => image.id !== imageId);
+  const handleRemoveNewImage = (id: string) => {
+    setNewImages(prev => {
+      const img = prev.find(i => i.id === id);
+      if (img) URL.revokeObjectURL(img.previewUrl);
+      return prev.filter(i => i.id !== id);
     });
-    setImageError(null);
   };
 
-  const resetForm = () => {
-    revokePendingImages(newImages);
-    setEditingItem(null);
-    setName("");
-    setPrice("");
-    setDescription("");
-    setExistingImages([]);
-    setNewImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setDuration(30);
-    setWeek(createInitialWeek());
-    setType("PRODUCT");
-    setFormErrors({});
-    setCreationId(generateCreationId());
-    setIsOpen(false);
-  };
-
-  const validateForm = () => {
-    const nextErrors: FormErrors = {};
-
-    if (!name.trim()) {
-      nextErrors.name = "El nombre es obligatorio.";
+  // Iniciar scroll abajo al cargar
+  useEffect(() => {
+    if (!loading && items.length > 0) {
+      // Pequeño timeout para asegurar que el DOM de las cards esté renderizado
+      const timer = setTimeout(() => {
+        scrollToBottom(true);
+      }, 100);
+      return () => clearTimeout(timer);
     }
-
-    if (!price.trim() || !Number.isFinite(Number(price)) || Number(price) <= 0) {
-      nextErrors.price = "Ingresa un precio valido.";
-    }
-
-    if (type === "SERVICE") {
-      if (!Number.isFinite(duration) || duration < 5) {
-        nextErrors.duration = "La duracion debe ser de al menos 5 minutos.";
-      }
-
-      const hasSchedule = week.some((day) => day.active && day.ranges.length > 0);
-      if (!hasSchedule) {
-        nextErrors.schedule = "Define al menos un horario disponible.";
-      }
-    }
-
-    setFormErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  };
+  }, [loading, items.length]);
 
   const handleSend = async () => {
-
-    if (isSubmitting) return;
-    if (!validateForm()) return;
-
-    setIsSubmitting(true);
-
-    let schedule: any[] = [];
-
+    const errors: FormErrors = {};
+    if (!name.trim()) errors.name = "El nombre es obligatorio";
+    if (!price || parseFloat(price) <= 0) errors.price = "El precio debe ser mayor a 0";
+    
     if (type === "SERVICE") {
-      schedule = week
-        .map((d, index) => ({ ...d, index }))
-        .filter((d) => d.active && d.ranges.length > 0)
-        .flatMap((d) =>
-          d.ranges.map((r) => ({
-            weekday: WEEKDAY_ENUM[d.index],
-            startMinute: timeToMinutes(r.start),
-            endMinute: timeToMinutes(r.end),
-          }))
-        );
+      if (duration < 5) errors.duration = "Mínimo 5 min";
+      if (!week.some((d) => d.active && d.ranges.length > 0)) {
+        errors.schedule = "Selecciona al menos un día con horario";
+      }
     }
 
-    const payload = {
-      type,
-      name,
-      price: Number(price),
-      description: description || undefined,
-      durationMinutes: type === "SERVICE" ? Number(duration) : undefined,
-      schedule: type === "SERVICE" ? schedule : undefined,
-    };
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
 
+    setIsSubmitting(true);
     try {
+      const schedule = type === "SERVICE" ? week.flatMap((day, dayIndex) => 
+        day.active ? day.ranges.map(r => ({
+          weekday: WEEKDAY_ENUM[dayIndex],
+          startMinute: timeToMinutes(r.start),
+          endMinute: timeToMinutes(r.end)
+        })) : []
+      ) : [];
+
+      const body = {
+        type,
+        name,
+        price: parseFloat(price),
+        description: description.trim() || null,
+        durationMinutes: type === "SERVICE" ? duration : null,
+        schedule,
+      };
 
       let savedItem: Item;
-
       if (editingItem) {
-
         savedItem = await api<Item>(`/items/${editingItem.id}`, {
           method: "PATCH",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(body),
         });
-
-      } else {
-
-        const createdItem = await api<Item>("/items", {
-          method: "POST",
-          body: JSON.stringify({
-            ...payload,
-            id: creationId,
-          }),
-        });
-
-        for (const image of newImages) {
-          const dataUrl = await fileToDataUrl(image.file);
-
-          await api(`/items/${createdItem.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
-          });
+        for (const id of removedImageIds) {
+          await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
         }
-
-        savedItem = await api<Item>(`/items/${createdItem.id}`);
-      }
-
-      if (editingItem) {
-        for (const imageId of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${imageId}`, {
-            method: "DELETE",
+        for (const img of newImages) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(img.file);
           });
-        }
-
-        for (const image of newImages) {
-          const dataUrl = await fileToDataUrl(image.file);
-
+          const dataUrl = await base64Promise;
           await api(`/items/${editingItem.id}/images`, {
             method: "POST",
             body: JSON.stringify({ url: dataUrl }),
           });
         }
-
         savedItem = await api<Item>(`/items/${editingItem.id}`);
+      } else {
+        const created = await api<Item>(`/items`, {
+          method: "POST",
+          body: JSON.stringify({ ...body, id: generateCreationId() }),
+        });
+        for (const img of newImages) {
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(img.file);
+          });
+          const dataUrl = await base64Promise;
+          await api(`/items/${created.id}/images`, {
+            method: "POST",
+            body: JSON.stringify({ url: dataUrl }),
+          });
+        }
+        savedItem = await api<Item>(`/items/${created.id}`);
       }
 
-      setItems((prev) => {
-        if (editingItem) {
-          return prev.map((item) => (item.id === savedItem.id ? savedItem : item));
-        }
-
-        return [savedItem, ...prev];
-      });
-      setSelectedItem((prev) => (prev?.id === savedItem.id ? savedItem : prev));
-
       invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
       invalidateCache("home:businessActivity");
+      
+      setItems(prev => {
+        const exists = prev.find(i => i.id === savedItem.id);
+        if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
+        return [...prev, savedItem]; // Add to end (bottm)
+      });
+      if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
+      setToast({ message: editingItem ? "Item actualizado" : "Item creado", type: "success" });
+      setComposerMode("closed");
       resetForm();
-      setIsOpen(false);
-
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al guardar item", type: "error" });
-      setTimeout(() => setToast(null), 2500);
+      setToast({ message: "Error al guardar", type: "error" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleStartEdit = async (item: Item) => {
-    setFormErrors({});
-
-    // Traer el objeto completo desde la API porque el listado usa payload lightweight
-    let fullItem: Item = item;
-    try {
-      fullItem = await api<Item>(`/items/${item.id}`);
-    } catch (err) {
-      console.error('Error al cargar item completo:', err);
-      // Fallback: usar el objeto del listado (podría faltar scheduleWindows/imágenes)
-    }
-
-    setEditingItem(fullItem);
-    setName(fullItem.name);
-    setPrice(String(fullItem.price));
-    setDescription(fullItem.description ?? "");
-    setExistingImages(fullItem.images ?? []);
-    setNewImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setType(fullItem.type);
-    setDuration(fullItem.durationMinutes ?? 30);
-    const nextWeek = createInitialWeek();
-
-    if (fullItem.type === "SERVICE" && fullItem.schedule?.length) {
-      nextWeek.forEach((day) => {
-        day.active = false;
-        day.ranges = [];
-      });
-
-      fullItem.schedule.forEach((slot) => {
-        const dayIndex = WEEKDAY_ENUM.indexOf(slot.weekday);
-        if (dayIndex === -1) return;
-
-        nextWeek[dayIndex].active = true;
-        nextWeek[dayIndex].ranges.push({
-          start: minutesToTime(slot.startMinute),
-          end: minutesToTime(slot.endMinute),
-        });
-      });
-
-      nextWeek.forEach((day) => {
-        if (day.ranges.length > 0) {
-          day.ranges = day.ranges.slice(-2);
-        }
-        if (day.ranges.length === 0) {
-          day.active = false;
-        }
-      });
-    } else if (fullItem.type === "SERVICE") {
-      nextWeek.forEach((day, index) => {
-        day.active = index === 0;
-        day.ranges = index === 0 ? [{ start: "08:00", end: "12:00" }] : [];
-      });
-    } else {
-      nextWeek.forEach((day) => {
-        day.active = false;
-        day.ranges = [];
-      });
-    }
-
-    setWeek(nextWeek);
-    setCurrentDayIndex(0);
-    setIsOpen(true);
-    setSelectedItem(null);
-  };
-
   const handleDelete = async (item: Item) => {
     try {
-      const newStatus = 'INACTIVE';
       await api(`/items/${item.id}/status`, {
         method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: "INACTIVE" }),
       });
-      
       setItems(prev => prev.filter(i => i.id !== item.id));
       setSelectedItem(null);
-
       invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
       invalidateCache("home:businessActivity");
-
-      setToast({
-        message: "Producto eliminado",
-        type: "success",
-      });
+      setToast({ message: "Item eliminado", type: "success" });
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al eliminar producto", type: "error" });
+      setToast({ message: "Error al eliminar", type: "error" });
     }
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleStatusUpdate = async (item: Item, newStatus: "ACTIVE" | "INACTIVE") => {
-    try {
-      await api(`/items/${item.id}/status`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: newStatus }),
-      });
-      
-      setItems(prev => prev.filter(i => i.id !== item.id));
-      setSelectedItem(null);
-
-      invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("mi-negocio:items:INACTIVE");
-      invalidateCache("home:businessActivity");
-
-      setToast({
-        message: newStatus === 'INACTIVE' ? "Producto inhabilitado" : "Producto habilitado",
-        type: "success",
-      });
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Error al actualizar estado", type: "error" });
-    }
-    setTimeout(() => setToast(null), 2500);
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    setShowScrollBottom(scrollTop + clientHeight < scrollHeight - 400);
   };
+
+  const scrollToBottom = (instant = false) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: instant ? "auto" : "smooth"
+      });
+    }
+  };
+
+  const groupedItems = useMemo(() => {
+    const groups: { dateLabel: string; items: Item[] }[] = [];
+    const itemsToGroup = filteredItems.slice(0, visibleCount);
+    
+    itemsToGroup.forEach(item => {
+      const date = new Date(item.createdAt || Date.now());
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+
+      let label = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+      if (date.toDateString() === now.toDateString()) label = "HOY";
+      else if (date.toDateString() === yesterday.toDateString()) label = "AYER";
+      
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.dateLabel === label) {
+        lastGroup.items.push(item);
+      } else {
+        groups.push({ dateLabel: label, items: [item] });
+      }
+    });
+    return groups;
+  }, [filteredItems, visibleCount]);
 
   return (
     <div className="flex flex-col h-screen bg-neutral-100">
-
       {selectedItem ? (
         <SelectionActionBar
           visible
           title="Item seleccionado"
           onClose={() => setSelectedItem(null)}
+          onView={() => setItemForDetail(selectedItem)}
           onEdit={() => handleStartEdit(selectedItem)}
           editLabel="Editar"
-          onDelete={() => handleDelete(selectedItem)}
+          onDelete={() => setDeleteId(selectedItem.id)}
           deleteLabel="Eliminar"
           deleteIcon={Trash2}
         />
       ) : (
-        <AppHeader 
-          title="Mi negocio" 
-          showBack={true} 
-          hrefBack="/home"
-        />
+        <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
-      {/* LISTA DE ITEMS */}
-      <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-28">
-
-        {loading && <div className="text-center py-10 text-neutral-500">Cargando...</div>}
+      <main 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-8 pb-28 scroll-smooth"
+      >
+        {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
-          <div className="text-center py-10 text-neutral-400">
-            No hay items creados
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">No hay items creados</div>
+        )}
+        
+        {groupedItems.map((group, gIdx) => (
+          <div key={group.dateLabel} className="space-y-4">
+            {/* DATE SEPARATOR */}
+            <div className="flex items-center gap-4 py-2">
+              <div className="h-[1px] flex-1 bg-neutral-200" />
+              <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
+                {group.dateLabel}
+              </span>
+              <div className="h-[1px] flex-1 bg-neutral-200" />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              {group.items.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  selected={selectedItem?.id === item.id}
+                  onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {composerMode === "closed" && searchQuery.trim() !== "" && filteredItems.length === 0 && (
+          <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
+            <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
+              <Search className="h-6 w-6 text-neutral-300" />
+            </div>
+            <h3 className="text-neutral-900 font-bold text-sm mb-1">No se encontraron productos o servicios</h3>
+            <p className="text-neutral-400 text-xs font-medium leading-relaxed">
+              Probá con otro nombre o descripción
+            </p>
           </div>
         )}
 
-        {items.slice(0, visibleCount).map((item) => (
-          <ItemCard
-            key={item.id}
-            item={item}
-            selected={selectedItem?.id === item.id}
-            onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
-            onOpen={() => handleStartEdit(item)}
-          />
-        ))}
-
-        {items.length > visibleCount && (
+        {filteredItems.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
             <button
               onClick={() => setVisibleCount((prev) => prev + 12)}
-              className="px-6 py-2.5 bg-white border border-neutral-200 text-neutral-600 font-medium rounded-full shadow-sm active:scale-95 transition-transform text-sm"
+              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-bold rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
             >
               Cargar más
             </button>
           </div>
         )}
-
       </main>
-      {/* PANEL INFERIOR */}
-      <div className="fixed bottom-0 left-0 right-0 z-20">
 
-        {!isOpen && (
-          <div className="bg-white border-t border-neutral-200 px-4 py-3 flex items-center gap-3 shadow-md">
-
-            <button
-              onClick={() => {
-                resetForm();
-                setType("PRODUCT"); // extra: siempre inicia en producto
-                setIsOpen(true);
-              }}
-              className="w-12 h-12 rounded-full bg-green-600 text-white flex items-center justify-center text-2xl shadow-lg"
-            >
-              +
-            </button>
-
-            <div className="flex-1 bg-neutral-100 rounded-full px-4 py-2 text-sm text-neutral-500">
-              Crear nuevo item...
-            </div>
-
-          </div>
-        )}
-
-        {isOpen && (
-          <div className="bg-white rounded-t-3xl border-t border-neutral-200 px-4 pt-4 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] max-h-[85vh] overflow-y-auto space-y-6">
-            
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-neutral-900">
-                {editingItem ? "Editar item" : "Nuevo item"}
-              </h2>
-              <button 
-                onClick={resetForm}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-neutral-100 text-neutral-500 hover:bg-neutral-200 transition"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* TOGGLE PRODUCTO / SERVICIO */}
-            <div className="flex bg-neutral-100 rounded-full p-1">
-
-              <button
-                disabled={!!editingItem}
-                onClick={() => {
-                  setType("PRODUCT");
-                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
-                }}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "PRODUCT"
-                    ? "bg-white text-green-600 shadow-sm"
-                    : "text-neutral-500"
-                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                Producto
-              </button>
-
-              <button
-                disabled={!!editingItem}
-                onClick={() => {
-                  setType("SERVICE");
-                  setFormErrors((prev) => ({ ...prev, duration: undefined, schedule: undefined }));
-                }}
-                className={`flex-1 py-2 rounded-full text-sm font-medium transition ${
-                  type === "SERVICE"
-                    ? "bg-white text-green-600 shadow-sm"
-                    : "text-neutral-500"
-                } ${editingItem ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                Servicio
-              </button>
-
-            </div>
-
-
-            {/* FOTO */}
-            <div>
-
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Fotos
-              </label>
-
-              <p className="mb-3 text-xs text-neutral-500">
-                Hasta {MAX_ITEM_IMAGES} imágenes. Máximo {formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)} por imagen.
-                {editingItem ? " Las imágenes actuales se conservan si no las eliminas." : ""}
-              </p>
-
-              <div className="flex flex-wrap gap-3">
-
-                <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl ${
-                  totalImages >= MAX_ITEM_IMAGES
-                    ? "border-neutral-300 text-neutral-300 cursor-not-allowed"
-                    : "border-green-500 text-green-600"
-                }`}>
-                  +
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    disabled={totalImages >= MAX_ITEM_IMAGES}
-                    onChange={(e) => {
-                      handleAddImages(e.target.files);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-
-                {existingImages.map((image) => (
-                  <div
-                    key={image.id}
-                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
-                  >
-                    <img
-                      src={image.url}
-                      alt="Imagen actual"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveExistingImage(image.id)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Eliminar imagen actual"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-
-                {newImages.map((image) => (
-                  <div
-                    key={image.id}
-                    className="relative w-20 h-20 rounded-2xl overflow-hidden"
-                  >
-                    <img
-                      src={image.previewUrl}
-                      alt={image.file.name}
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveNewImage(image.id)}
-                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"
-                      aria-label="Eliminar imagen nueva"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-
-              </div>
-
-              <p className="mt-3 text-xs text-neutral-500">
-                {totalImages} de {MAX_ITEM_IMAGES} imágenes seleccionadas.
-              </p>
-
-              {imageError && (
-                <p className="mt-2 text-xs font-medium text-red-500">{imageError}</p>
-              )}
-
-            </div>
-
-
-            {/* NOMBRE */}
-            <div>
-
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Nombre <span className="text-red-500">*</span>
-              </label>
-
-              <input
-                placeholder="Nombre del servicio"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setFormErrors((prev) => ({ ...prev, name: undefined }));
-                }}
-                className={`w-full rounded-xl border px-4 py-3 text-sm outline-none ${
-                  formErrors.name
-                    ? "border-red-300 bg-red-50 text-red-900"
-                    : "border-transparent bg-neutral-100"
-                }`}
-              />
-
-              {formErrors.name && (
-                <p className="mt-2 text-xs font-medium text-red-500">{formErrors.name}</p>
-              )}
-
-            </div>
-
-
-            {/* PRECIO + DURACION */}
-            <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
-
-              {/* PRECIO */}
-              <div>
-
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Precio <span className="text-red-500">*</span>
-                </label>
-
-                <div
-                  className={`flex h-[44px] items-center rounded-xl border px-4 ${
-                    formErrors.price
-                      ? "border-red-300 bg-red-50"
-                      : "border-transparent bg-neutral-100"
-                  }`}
-                >
-
-                  <span className="text-neutral-500 text-sm mr-2">
-                    $
-                  </span>
-
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={price}
-                    onChange={(e) => {
-                      setPrice(e.target.value);
-                      setFormErrors((prev) => ({ ...prev, price: undefined }));
-                    }}
-                    className="flex-1 bg-transparent outline-none text-sm"
-                  />
-
-                </div>
-
-                {formErrors.price && (
-                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.price}</p>
-                )}
-
-              </div>
-
-
-              {/* DURACION */}
-              {type === "SERVICE" && (
-                <div>
-
-                  <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                    Duración
-                  </label>
-
-                  <div className="relative">
-
-                    <input
-                      type="number"
-                      min={5}
-                      step={5}
-                      value={duration}
-                      onChange={(e) => {
-                        setDuration(Number(e.target.value));
-                        setFormErrors((prev) => ({ ...prev, duration: undefined }));
-                      }}
-                      className={`w-full rounded-xl border pl-3 pr-10 py-3 text-sm outline-none ${
-                        formErrors.duration
-                          ? "border-red-300 bg-red-50 text-red-900"
-                          : "border-transparent bg-neutral-100"
-                      }`}
-                    />
-
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 text-sm">
-                      min
-                    </span>
-
-                  </div>
-
-                  {formErrors.duration && (
-                    <p className="mt-2 text-xs font-medium text-red-500">{formErrors.duration}</p>
-                  )}
-
-                </div>
-              )}
-
-            </div>
-
-
-            {/* HORARIOS */}
-            {type === "SERVICE" && (
-              <div>
-
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                  Horarios disponibles <span className="text-red-500">*</span>
-                </label>
-
-                {/* DIAS */}
-                <div className="flex justify-between gap-1 mb-3">
-
-                  {week.map((day, i) => (
-
-                    <button
-                      key={day.day}
-                      onClick={() => {
-
-                        const copy = week.map(d => ({ ...d, ranges: [...d.ranges] }));
-
-                        copy[i].active = !copy[i].active;
-
-                        if (copy[i].active && copy[i].ranges.length === 0) {
-                          copy[i].ranges = [{ start: "08:00", end: "12:00" }];
-                        }
-
-                        if (!copy[i].active) {
-                          copy[i].ranges = [];
-                        }
-
-                        setWeek(copy);
-                        setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-
-                      }}
-                      className={`flex-1 h-8 rounded-full text-[11px] font-semibold transition
-                      ${
-                        day.active
-                          ? "bg-green-600 text-white"
-                          : "bg-neutral-200 text-neutral-600"
-                      }`}
-                    >
-                      {day.day.slice(0, 2).toUpperCase()}
-                    </button>
-
-                  ))}
-
-                </div>
-
-
-                {/* HEADER DIA */}
-                <div className="flex items-center justify-between mb-2">
-
-                  <button
-                    onClick={() =>
-                      setCurrentDayIndex(
-                        currentDayIndex === 0 ? 6 : currentDayIndex - 1
-                      )
-                    }
-                    className="text-neutral-400 text-lg"
-                  >
-                    ‹
-                  </button>
-
-                  <p className="text-sm font-semibold text-neutral-700">
-                    {week[currentDayIndex].day}
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      setCurrentDayIndex(
-                        currentDayIndex === 6 ? 0 : currentDayIndex + 1
-                      )
-                    }
-                    className="text-neutral-400 text-lg"
-                  >
-                    ›
-                  </button>
-
-                </div>
-
-
-                {/* RANGOS */}
-                <div
-                  className={`rounded-2xl border p-4 space-y-3 shadow-sm ${
-                    formErrors.schedule
-                      ? "border-red-200 bg-red-50"
-                      : "border-neutral-100 bg-neutral-50"
-                  }`}
-                >
-
-                  {week[currentDayIndex].active &&
-                    week[currentDayIndex].ranges.map((range, rIndex) => (
-
-                      <div
-                        key={rIndex}
-                        className="flex items-center gap-3"
-                      >
-
-                        <input
-                          type="time"
-                          value={range.start}
-                          onChange={(e) => {
-
-                            const copy = [...week];
-                            const newStart = e.target.value;
-                            const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                              if (i === rIndex) return false;
-                              return rangesOverlap(newStart, currentRange.end, r.start, r.end);
-                            });
-
-                            if (!overlap) {
-                              copy[currentDayIndex].ranges[rIndex].start = newStart;
-                              setWeek(copy);
-                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                            }
-
-                          }}
-                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                        />
-
-                        <span className="text-neutral-300 text-sm">—</span>
-
-                        <input
-                          type="time"
-                          value={range.end}
-                          onChange={(e) => {
-
-                            const copy = [...week];
-                            const newEnd = e.target.value;
-                            const currentRange = copy[currentDayIndex].ranges[rIndex];
-
-                            const overlap = copy[currentDayIndex].ranges.some((r, i) => {
-                              if (i === rIndex) return false;
-                              return rangesOverlap(currentRange.start, newEnd, r.start, r.end);
-                            });
-
-                            if (!overlap) {
-                              copy[currentDayIndex].ranges[rIndex].end = newEnd;
-                              setWeek(copy);
-                              setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                            }
-
-                          }}
-                          className="bg-white border border-neutral-200 rounded-xl px-3 py-2 text-sm h-10 flex-1"
-                        />
-
-                        <button
-                          onClick={() => {
-                            const copy = [...week];
-                            copy[currentDayIndex].ranges.splice(rIndex, 1);
-                            setWeek(copy);
-                            setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-                          }}
-                          className="ml-auto text-neutral-400 hover:text-red-500 transition"
-                        >
-                          ✕
-                        </button>
-
-                      </div>
-
-                    ))}
-
-                  {week[currentDayIndex].active &&
-                    week[currentDayIndex].ranges.length < 2 && (
-
-                      <button
-                        onClick={() => {
-
-                          const copy = [...week];
-                          const ranges = copy[currentDayIndex].ranges;
-
-                          if (ranges.length === 0) {
-                            ranges.push({ start: "08:00", end: "12:00" });
-                          } else if (ranges.length === 1) {
-                            ranges.push({ start: "14:00", end: "18:00" });
-                          }
-
-                          setWeek(copy);
-                          setFormErrors((prev) => ({ ...prev, schedule: undefined }));
-
-                        }}
-                        className="text-green-600 text-xs font-semibold mt-2"
-                      >
-                        + Agregar horario
-                      </button>
-
-                    )}
-
-                </div>
-
-                {formErrors.schedule && (
-                  <p className="mt-2 text-xs font-medium text-red-500">{formErrors.schedule}</p>
-                )}
-
-              </div>
-            )}
-
-
-            {/* DESCRIPCION */}
-            <div>
-
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400 mb-2 block">
-                Descripción
-              </label>
-
-              <div className="flex items-end gap-2">
-
-                <textarea
-                  placeholder="Detalles adicionales..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={1}
-                  className="flex-1 bg-neutral-100 rounded-2xl px-4 py-3 text-sm outline-none resize-none min-h-[42px] max-h-[120px]"
-                />
-
-                <button
-                  onClick={handleSend}
-                  disabled={isSubmitting}
-                  className={`w-11 h-11 rounded-full bg-green-600 text-white shadow-md flex items-center justify-center active:scale-95 transition ${
-                    isSubmitting ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  {isSubmitting ? "..." : "➤"}
-                </button>
-
-              </div>
-
-            </div>
-
-          </div>
-        )}
-
-      </div>
-
-            {/* MODAL ARCHIVAR */}
+      {/* COMPONENTES DE CHAT COMPOSER */}
+      <MiNegocioChatComposer
+        mode={composerMode}
+        onToggle={handleToggleComposer}
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        description={description}
+        onDescriptionChange={setDescription}
+        onSubmit={handleSend}
+        isSubmitting={isSubmitting}
+        type={type}
+      >
+        <ItemFormContent
+          type={type}
+          setType={setType}
+          name={name}
+          setName={setName}
+          priceDisplay={priceDisplay}
+          setPriceDisplay={setPriceDisplay}
+          setPrice={setPrice}
+          durationInput={durationInput}
+          setDurationInput={setDurationInput}
+          setDuration={setDuration}
+          week={week}
+          setWeek={setWeek}
+          currentDayIndex={currentDayIndex}
+          setCurrentDayIndex={setCurrentDayIndex}
+          existingImages={existingImages}
+          newImages={newImages}
+          handleAddImages={handleAddImages}
+          handleRemoveExistingImage={handleRemoveExistingImage}
+          handleRemoveNewImage={handleRemoveNewImage}
+          formErrors={formErrors}
+          setFormErrors={setFormErrors}
+          imageError={imageError}
+          editingItem={!!editingItem}
+        />
+      </MiNegocioChatComposer>
+
+      {/* MODAL DE DETALLES */}
+      <ItemDetailModal 
+        item={itemForDetail}
+        open={!!itemForDetail}
+        onClose={() => setItemForDetail(null)}
+        onEdit={(i) => { setItemForDetail(null); handleStartEdit(i); }}
+        onDelete={(i) => { setItemForDetail(null); setDeleteId(i.id); }}
+      />
+
+      {/* MODAL ELIMINAR (CONFIRMACION) */}
       {deleteId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-
-          <div className="bg-white rounded-2xl p-6 w-[90%] max-w-xs shadow-lg">
-
-            <h3 className="text-base font-semibold text-neutral-900 mb-2">
-              Archivar producto
-            </h3>
-
-            <p className="text-sm text-neutral-500 mb-5">
-              Este producto dejará de aparecer en la tienda.
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-neutral-900 mb-2">¿Eliminar item?</h3>
+            <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
+              Esta acción ocultará el item de tu catálogo activo. Podrás recuperarlo luego si es necesario.
             </p>
-
-            <div className="flex justify-end gap-3">
-
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  const target = items.find(i => i.id === deleteId);
+                  if (target) handleDelete(target);
+                  setDeleteId(null);
+                }}
+                className="w-full py-3 rounded-xl bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-100 active:scale-95 transition"
+              >
+                Eliminar definitivamente
+              </button>
               <button
                 onClick={() => setDeleteId(null)}
-                className="px-4 py-2 text-sm rounded-lg bg-neutral-100 hover:bg-neutral-200"
+                className="w-full py-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-bold active:scale-95 transition"
               >
                 Cancelar
               </button>
-
-              <button
-                onClick={async () => {
-
-                  if (!deleteId) return;
-
-                  try {
-
-                    await api(`/items/${deleteId}`, {
-                      method: "DELETE",
-                    });
-
-                    setItems((prev) =>
-                      prev.filter((item) => item.id !== deleteId)
-                    );
-
-                    setToast({
-                      message: "Producto archivado",
-                      type: "success",
-                    });
-
-                  } catch (err) {
-
-                    console.error(err);
-
-                    setToast({
-                      message: "No se pudo archivar el producto",
-                      type: "error",
-                    });
-
-                  }
-
-                  setDeleteId(null);
-
-                  setTimeout(() => {
-                    setToast(null);
-                  }, 2500);
-
-                }}
-                className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600"
-              >
-                Archivar
-              </button>
-
             </div>
-
           </div>
-
         </div>
       )}
 
-
-      {/* TOAST */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2 rounded-full shadow-lg animate-fade-in
-          ${toast.type === "success" ? "bg-green-600" : "bg-red-600"}`}
+      {/* BAF - IR AL ÚLTIMO (BOTÓN FLOTANTE) */}
+      {showScrollBottom && (
+        <button
+          onClick={() => scrollToBottom()}
+          className="fixed bottom-24 right-6 z-40 bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
+          aria-label="Ir al final"
         >
+          <ArrowDown size={20} strokeWidth={2.5} />
+        </button>
+      )}
+
+      {/* TOAST DE NOTIFICACIÓN */}
+      {toast && (
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}>
           {toast.message}
         </div>
       )}
-
     </div>
   );
 }
