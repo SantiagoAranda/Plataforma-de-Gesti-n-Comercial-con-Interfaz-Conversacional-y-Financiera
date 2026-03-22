@@ -390,7 +390,7 @@ export default function MiNegocioPage() {
       <main 
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-8 pb-28 scroll-smooth"
+        className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 space-y-8 pb-28 scroll-smooth"
       >
         {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (

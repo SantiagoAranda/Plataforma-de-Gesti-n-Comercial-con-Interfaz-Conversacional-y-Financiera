@@ -19,6 +19,7 @@ type Props = {
   rightIcon?: ReactNode;
   rightAriaLabel?: string;
   onRightClick?: () => void;
+  showLogout?: boolean;
 };
 
 export default function AppHeader({
@@ -30,6 +31,7 @@ export default function AppHeader({
   rightIcon,
   rightAriaLabel = "Accion",
   onRightClick,
+  showLogout = true,
 }: Props) {
   const router = useRouter();
   const isMainView = !showBack;
@@ -80,7 +82,7 @@ export default function AppHeader({
               {rightIcon}
             </button>
           )}
-          {isMainView && <LogoutButton />}
+          {isMainView && showLogout && <LogoutButton />}
         </div>
       </div>
     </header>

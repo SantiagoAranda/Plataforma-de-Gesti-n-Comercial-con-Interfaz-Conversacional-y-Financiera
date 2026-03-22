@@ -79,7 +79,7 @@ export function MiNegocioChatComposer({
           {/* EXPANDABLE CONTENT */}
           {isOpen && (
             <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10">
-              <div className="max-h-[min(65vh,520px)] overflow-y-auto rounded-[28px] border border-black/5 bg-white p-5 shadow-[0_18px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom-4 duration-300">
+              <div className="max-h-[min(65vh,520px)] overflow-y-auto custom-scrollbar rounded-[28px] border border-black/5 bg-white p-5 shadow-[0_18px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom-4 duration-300">
                 {children}
               </div>
             </div>

@@ -196,7 +196,7 @@ export default function ReservationDrawer({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 pt-4">
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4">
             <div className="mb-4">
               <div className="text-2xl font-semibold">
                 Selecciona una fecha

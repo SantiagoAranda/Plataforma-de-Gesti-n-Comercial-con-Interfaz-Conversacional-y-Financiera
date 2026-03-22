@@ -7,6 +7,7 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
+import AppHeader from "@/src/components/layout/AppHeader";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -30,6 +31,7 @@ export default function PublicStorePage() {
   const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
+  const [businessName, setBusinessName] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -63,6 +65,10 @@ export default function PublicStorePage() {
 
         const data = await res.json();
         const itemsList = Array.isArray(data?.data) ? data.data : [];
+
+        if (data?.business?.name) {
+          setBusinessName(data.business.name);
+        }
 
         setItems(
           itemsList.map((item: any) => ({
@@ -288,11 +294,14 @@ export default function PublicStorePage() {
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
+      <AppHeader title={businessName || "Cargando..."} showBack={false} showLogout={false} />
+
       {preview && (
         <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
           Modo administrador - vista previa de la tienda
         </div>
       )}
+
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
         <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
           <Search className="h-5 w-5 text-black/40" />

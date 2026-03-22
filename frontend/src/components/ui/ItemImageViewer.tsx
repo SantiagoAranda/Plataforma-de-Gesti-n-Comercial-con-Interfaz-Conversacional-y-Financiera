@@ -139,7 +139,7 @@ export function ItemImageViewer({
 
       {isMounted && isOpen && createPortal(
         <div
-          className="fixed inset-0 z-[10000] bg-black/90 px-4 py-6"
+          className="fixed inset-0 z-[10000] bg-black/98 px-4 py-8"
           onMouseDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -168,7 +168,7 @@ export function ItemImageViewer({
           </button>
 
           <div
-            className="mx-auto flex h-full w-full max-w-2xl flex-col justify-center items-center gap-6"
+            className="mx-auto flex h-full w-full max-w-2xl flex-col justify-center items-center gap-8"
             onMouseDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -233,18 +233,18 @@ export function ItemImageViewer({
             </div>
 
             {/* INFO AREA: NAME & DESCRIPTION */}
-            <div className="w-full flex flex-col gap-2 px-2 shrink-0">
-              <h3 className="text-lg font-bold text-white leading-tight">
+            <div className="w-full flex flex-col gap-3 px-2 shrink-0">
+              <h3 className="text-xl font-bold text-white tracking-tight leading-tight">
                 {name}
               </h3>
 
               {description && (
                 <div className="relative group">
-                  <div className="max-h-[72px] overflow-y-auto pr-3 custom-scrollbar text-sm text-white/70 leading-relaxed font-normal relative z-10 pb-2">
+                  <div className="max-h-[80px] overflow-y-auto pr-4 custom-scrollbar text-[15px] text-white/80 leading-relaxed font-normal relative z-10 pb-4">
                     {description}
                   </div>
                   {/* FADE INDICATOR */}
-                  <div className="absolute bottom-0 left-0 right-3 h-6 bg-gradient-to-t from-black/90 to-transparent pointer-events-none z-20 opacity-80" />
+                  <div className="absolute bottom-0 left-0 right-4 h-12 bg-gradient-to-t from-black via-black/50 to-transparent pointer-events-none z-20" />
                 </div>
               )}
             </div>
