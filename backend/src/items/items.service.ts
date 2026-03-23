@@ -272,9 +272,17 @@ async addImage(businessId: string, itemId: string, dto: AddItemImageDto) {
 
   // si por algún motivo el order choca, Prisma tirará error por unique(itemId, order)
   return this.prisma.itemImage.create({
-    data: { itemId, url: dto.url, order: nextOrder },
+    data: {
+      itemId,
+      url: dto.url,
+      pathname: dto.pathname,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+      order: nextOrder,
+    },
   });
 }
+
 async deleteImage(businessId: string, itemId: string, imageId: string) {
   const item = await this.prisma.item.findFirst({ where: { id: itemId, businessId } });
   if (!item) throw new NotFoundException("Item not found");

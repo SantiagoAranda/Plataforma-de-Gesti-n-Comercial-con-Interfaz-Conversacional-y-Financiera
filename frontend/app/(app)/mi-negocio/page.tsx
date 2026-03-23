@@ -260,15 +260,28 @@ export default function MiNegocioPage() {
           await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
         }
         for (const img of newImages) {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-          const dataUrl = await base64Promise;
+          const formData = new FormData();
+          formData.append("file", img.file);
+
+          const uploadRes = await fetch(
+            `/api/blob/upload?filename=${encodeURIComponent(img.file.name)}`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          if (!uploadRes.ok) throw new Error("Error al subir imagen");
+          const blob = await uploadRes.json();
+
           await api(`/items/${editingItem.id}/images`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: JSON.stringify({
+              url: blob.url,
+              pathname: blob.pathname,
+              mimeType: blob.mimeType,
+              sizeBytes: blob.sizeBytes,
+            }),
           });
         }
         savedItem = await api<Item>(`/items/${editingItem.id}`);
@@ -278,19 +291,33 @@ export default function MiNegocioPage() {
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
         for (const img of newImages) {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-          const dataUrl = await base64Promise;
+          const formData = new FormData();
+          formData.append("file", img.file);
+
+          const uploadRes = await fetch(
+            `/api/blob/upload?filename=${encodeURIComponent(img.file.name)}`,
+            {
+              method: "POST",
+              body: formData,
+            }
+          );
+
+          if (!uploadRes.ok) throw new Error("Error al subir imagen");
+          const blob = await uploadRes.json();
+
           await api(`/items/${created.id}/images`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: JSON.stringify({
+              url: blob.url,
+              pathname: blob.pathname,
+              mimeType: blob.mimeType,
+              sizeBytes: blob.sizeBytes,
+            }),
           });
         }
         savedItem = await api<Item>(`/items/${created.id}`);
       }
+
 
       invalidateCache("mi-negocio:items:ACTIVE");
       invalidateCache("home:businessActivity");

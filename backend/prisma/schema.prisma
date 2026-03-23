@@ -153,8 +153,11 @@ model ItemImage {
   itemId String
   item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  url   String
-  order Int
+  url       String
+  pathname  String?
+  mimeType  String?
+  sizeBytes Int?
+  order     Int
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
