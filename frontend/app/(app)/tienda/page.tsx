@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
-import { Search, Share2 } from "lucide-react";
+import { Search, Share2, CheckCheck, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
@@ -275,56 +275,62 @@ function AdminProductCard({
   };
 
   return (
-    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md">
+    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md h-full">
 
       {/* Imagen */}
-      <div className="aspect-square bg-gray-100 overflow-hidden rounded-t-xl">
+      <div className="aspect-[4/3] bg-neutral-50 overflow-hidden rounded-t-xl relative shrink-0">
         {item.images?.[0]?.url && (
           <ItemImageViewer
             images={item.images}
             name={item.name}
-            containerClassName="h-full w-full rounded-t-xl"
+            description={item.description}
+            containerClassName="h-full w-full rounded-t-xl flex items-center justify-center cursor-pointer"
             imageClassName="h-full w-full object-cover"
           />
         )}
+        
+        {/* Overlays */}
+        <div className="absolute top-2 left-2 right-2 flex justify-between items-start pointer-events-none z-10">
+          <span className={`backdrop-blur-md bg-white/70 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm ${item.type === 'SERVICE' ? 'text-blue-700' : 'text-orange-700'}`}>
+            {item.type === 'SERVICE' ? 'Servicio' : 'Producto'}
+          </span>
+
+          {item.type === 'SERVICE' && item.durationMinutes && (
+            <span className="backdrop-blur-md bg-white/70 text-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm leading-none">
+              {item.durationMinutes} min
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Contenido */}
-      <div className="p-3 flex flex-col gap-2">
+      <div className="p-3 flex flex-col gap-2 flex-1 relative">
         {/* Nombre */}
-        <div className="text-sm font-semibold line-clamp-2">
+        <div className="text-sm font-semibold text-neutral-900 line-clamp-1">
           {item.name}
         </div>
 
-        {/* Descripción 👇 NUEVO */}
-        {item.description && (
-          <div className="text-xs text-gray-500 line-clamp-2">
-            {item.description}
-          </div>
-        )}
-
-        {/* Precio */}
-        <div className="text-emerald-600 font-bold text-sm">
-          ${item.price.toFixed(2)}
+        {/* Descripción */}
+        <div className="flex-1">
+          {item.description && (
+            <p className="text-[11px] text-neutral-500 leading-snug line-clamp-2">
+              {item.description}
+            </p>
+          )}
         </div>
 
-        {/* Duración (servicios) */}
-        {item.type === "SERVICE" && item.durationMinutes && (
-          <div className="text-xs text-neutral-500">
-            {item.durationMinutes} min
-          </div>
-        )}
-
-        {/* Estado */}
-        <div>
-          <span
-            className={`px-2 py-1 text-xs rounded-full font-semibold ${item.status === "ACTIVE"
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-red-100 text-red-600"
-              }`}
-          >
-            {item.status === "ACTIVE" ? "Activo" : "Inactivo"}
+        {/* Precio y Estado */}
+        <div className="mt-auto pt-1 flex items-center justify-between">
+          <span className="text-emerald-600 font-bold text-sm">
+            ${item.price.toFixed(2)}
           </span>
+          <div className="flex items-center gap-1" title={item.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}>
+            {item.status === 'ACTIVE' ? (
+              <CheckCheck className="w-[18px] h-[18px] text-emerald-500" />
+            ) : (
+              <Check className="w-[18px] h-[18px] text-neutral-400" />
+            )}
+          </div>
         </div>
       </div>
     </div>

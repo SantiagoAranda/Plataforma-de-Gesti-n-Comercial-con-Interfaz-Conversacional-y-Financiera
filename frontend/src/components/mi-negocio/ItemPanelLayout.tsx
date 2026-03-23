@@ -49,7 +49,7 @@ export function ItemPanelLayout({
         </div>
 
         {/* CONTENT (SCROLLABLE) */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/10">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6 bg-neutral-50/10">
           {children}
         </div>
 
