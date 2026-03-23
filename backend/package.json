@@ -9,7 +9,6 @@
   
   "scripts": {
     "build": "prisma generate && nest build",
-    // "build": "npx prisma generate && npx nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
