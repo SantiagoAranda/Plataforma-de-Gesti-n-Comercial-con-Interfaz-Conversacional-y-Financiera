@@ -24,6 +24,8 @@ import {
   MAX_ITEM_IMAGES, 
   MAX_ITEM_IMAGE_SIZE_BYTES 
 } from "@/src/lib/itemImages";
+import imageCompression from 'browser-image-compression';
+
 
 
 export default function MiNegocioPage() {
@@ -167,7 +169,7 @@ export default function MiNegocioPage() {
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
   };
 
-  const handleAddImages = (files: FileList | null) => {
+  const handleAddImages = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const selectedFiles = Array.from(files);
     const totalImages = existingImages.length + newImages.length;
@@ -178,17 +180,43 @@ export default function MiNegocioPage() {
       return;
     }
 
+    setImageError(null);
+    const options = {
+      maxSizeMB: 2,
+      maxWidthOrHeight: 1600,
+      useWebWorker: true,
+    };
+
     const nextPendingImages: PendingImage[] = [];
-    selectedFiles.slice(0, availableSlots).forEach((file) => {
-      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
-      nextPendingImages.push({
-        id: generateCreationId(),
-        file,
-        previewUrl: URL.createObjectURL(file),
-      });
-    });
+    const filesToProcess = selectedFiles.slice(0, availableSlots);
+
+    for (const file of filesToProcess) {
+      try {
+        // Compresión
+        const compressedBlob = await imageCompression(file, options);
+        
+        // Validar tamaño final (2MB)
+        if (compressedBlob.size > 2 * 1024 * 1024) {
+          setImageError(`La imagen ${file.name} es demasiado grande incluso comprimida.`);
+          continue;
+        }
+
+        const compressedFile = new File([compressedBlob], file.name, { type: file.type });
+
+        nextPendingImages.push({
+          id: generateCreationId(),
+          file: compressedFile,
+          previewUrl: URL.createObjectURL(compressedFile),
+        });
+      } catch (err) {
+        console.error("Error comprimiendo imagen:", err);
+        setImageError("Error al procesar algunas imágenes.");
+      }
+    }
+
     setNewImages((prev) => [...prev, ...nextPendingImages]);
   };
+
 
   const handleRemoveExistingImage = (id: string) => {
     setExistingImages(prev => prev.filter(img => img.id !== id));
@@ -256,22 +284,38 @@ export default function MiNegocioPage() {
           method: "PATCH",
           body: JSON.stringify(body),
         });
+        // Deletion Coordinated (Storage -> DB)
         for (const id of removedImageIds) {
+          const imgToDelete = editingItem.images?.find(img => img.id === id);
+          if (imgToDelete?.url) {
+            // 1. Borrado físico en Vercel Blob via Next Route
+            const storageDeleteRes = await fetch(`/api/blob/upload?url=${encodeURIComponent(imgToDelete.url)}`, {
+              method: "DELETE",
+            });
+            
+            if (!storageDeleteRes.ok) {
+              const errData = await storageDeleteRes.json();
+              throw new Error(`Error al borrar imagen del storage: ${errData.error || 'Unknown'}`);
+            }
+          }
+          // 2. Borrado de metadata en NestJS
           await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
         }
+
+        // Upload new images (already compressed in handleAddImages)
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
 
-          const uploadRes = await fetch(
-            `/api/blob/upload?filename=${encodeURIComponent(img.file.name)}`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
+          const uploadRes = await fetch("/api/blob/upload", {
+            method: "POST",
+            body: formData,
+          });
 
-          if (!uploadRes.ok) throw new Error("Error al subir imagen");
+          if (!uploadRes.ok) {
+            const errData = await uploadRes.json();
+            throw new Error(`Error al subir imagen: ${errData.error || 'Unknown'}`);
+          }
           const blob = await uploadRes.json();
 
           await api(`/items/${editingItem.id}/images`, {
@@ -285,24 +329,27 @@ export default function MiNegocioPage() {
           });
         }
         savedItem = await api<Item>(`/items/${editingItem.id}`);
+
       } else {
         const created = await api<Item>(`/items`, {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
+        
+        // Upload new images (already compressed in handleAddImages)
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
 
-          const uploadRes = await fetch(
-            `/api/blob/upload?filename=${encodeURIComponent(img.file.name)}`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
+          const uploadRes = await fetch("/api/blob/upload", {
+            method: "POST",
+            body: formData,
+          });
 
-          if (!uploadRes.ok) throw new Error("Error al subir imagen");
+          if (!uploadRes.ok) {
+            const errData = await uploadRes.json();
+            throw new Error(`Error al subir imagen: ${errData.error || 'Unknown'}`);
+          }
           const blob = await uploadRes.json();
 
           await api(`/items/${created.id}/images`, {
@@ -317,6 +364,7 @@ export default function MiNegocioPage() {
         }
         savedItem = await api<Item>(`/items/${created.id}`);
       }
+
 
 
       invalidateCache("mi-negocio:items:ACTIVE");

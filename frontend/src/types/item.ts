@@ -14,7 +14,8 @@ export type Item = {
   description?: string;
   durationMinutes?: number;
   schedule?: Schedule[];
-  images?: { id: string; url: string; order: number }[];
+  images?: ItemImage[];
+
   status: "ACTIVE" | "INACTIVE";
   createdAt?: string;
   updatedAt?: string;
@@ -42,8 +43,12 @@ export type FormErrors = {
 export type ItemImage = {
   id: string;
   url: string;
+  pathname?: string;
+  mimeType?: string;
+  sizeBytes?: number;
   order: number;
 };
+
 
 export type PendingImage = {
   id: string;

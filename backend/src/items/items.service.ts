@@ -260,10 +260,18 @@ async remove(businessId: string, id: string) {
 }
 
 async addImage(businessId: string, itemId: string, dto: AddItemImageDto) {
-  const item = await this.prisma.item.findFirst({ where: { id: itemId, businessId } });
+  const item = await this.prisma.item.findFirst({
+    where: { id: itemId, businessId },
+    include: { _count: { select: { images: true } } },
+  });
   if (!item) throw new NotFoundException("Item not found");
 
+  if (item._count.images >= 5) {
+    throw new BadRequestException("El límite máximo de imágenes por item es 5");
+  }
+
   const nextOrder =
+
     dto.order ??
     ((await this.prisma.itemImage.aggregate({
       where: { itemId },

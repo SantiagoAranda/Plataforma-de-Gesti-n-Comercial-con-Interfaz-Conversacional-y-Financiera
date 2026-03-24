@@ -1,27 +1,29 @@
 import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
 
+const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const { searchParams } = new URL(request.url);
-    const filename = searchParams.get('filename');
-
-    if (!filename) {
-      return NextResponse.json({ error: 'Filename is required' }, { status: 400 });
-    }
-
-    // El body debe ser el archivo binario directamente o via form-data
-    // Para simplificar desde el cliente, podemos enviar el archivo directamente en el body o via multipart
-    // Si usamos multipart/form-data:
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
     if (!file) {
-      return NextResponse.json({ error: 'File is required' }, { status: 400 });
+      return NextResponse.json({ error: 'No se encontró el archivo' }, { status: 400 });
     }
 
+    // Validar tamaño (2MB)
+    if (file.size > MAX_SIZE) {
+      return NextResponse.json({ error: 'El archivo excede el límite de 2MB' }, { status: 400 });
+    }
 
-    const safeName = filename
+    // Validar tipo MIME
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return NextResponse.json({ error: 'Tipo de archivo no permitido. Solo JPEG, PNG, WEBP y GIF.' }, { status: 400 });
+    }
+
+    const safeName = file.name
       .toLowerCase()
       .replace(/\s+/g, '-')
       .replace(/[^a-z0-9._-]/g, '');
@@ -40,6 +42,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       sizeBytes: file.size,
     });
   } catch (error) {
+
     console.error('Blob upload error:', error);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
   }
