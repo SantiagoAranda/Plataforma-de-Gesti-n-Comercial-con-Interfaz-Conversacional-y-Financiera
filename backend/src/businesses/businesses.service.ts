@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Business } from '@prisma/client';
-import slugify from 'slugify';
+import { generateSlug } from '../common/utils/slug.util';
 
 @Injectable()
 export class BusinessesService {
@@ -12,31 +12,21 @@ export class BusinessesService {
     fiscalId: string;
     phoneWhatsapp: string;
   }): Promise<Business> {
-    const baseSlug = slugify(data.name, {
-      lower: true,
-      strict: true,
-      trim: true,
+    // ✅ Diagnóstico: Log de nombre antes de guardar
+    console.log(`[BusinessesService] Creating business: "${data.name}"`);
+    console.log(`[BusinessesService] Name Hex: ${Buffer.from(data.name).toString('hex')}`);
+
+    const slug = await generateSlug(data.name, async (s) => {
+      const existing = await this.prisma.business.findUnique({ where: { slug: s } });
+      return !existing;
     });
-
-    let slug = baseSlug;
-    let counter = 1;
-
-    while (
-      await this.prisma.business.findUnique({
-        where: { slug },
-      })
-    ) {
-      slug = `${baseSlug}-${counter}`;
-      counter++;
-    }
+    console.log(`[BusinessesService] Generated slug: "${slug}"`);
 
     try {
       return await this.prisma.business.create({
         data: {
-          name: data.name,
+          ...data,
           slug,
-          fiscalId: data.fiscalId,
-          phoneWhatsapp: data.phoneWhatsapp,
           status: 'ACTIVE',
         },
       });

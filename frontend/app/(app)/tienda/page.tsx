@@ -47,23 +47,18 @@ export default function MiTiendaPage() {
   };
 
   const handleShareStore = async () => {
-    const businessName = localStorage.getItem("businessName");
+    const slug = localStorage.getItem("businessSlug");
+    const businessName = localStorage.getItem("businessName") || "Mi Tienda";
 
-    if (!businessName) {
+    if (!slug) {
       notify({
         type: "error",
-        message: "No se encontró el nombre del negocio",
+        message: "No se encontró el identificador de la tienda. Intentá re-ingresar.",
       });
       return;
     }
 
-    const slug = businessName
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, "-");
-
-    const url = `${window.location.origin}/tienda/${slug}`;
+    const url = `${window.location.origin}/tienda/${encodeURIComponent(slug)}`;
 
     try {
       if (navigator.share) {

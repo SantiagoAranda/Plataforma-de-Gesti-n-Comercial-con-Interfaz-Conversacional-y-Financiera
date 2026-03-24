@@ -114,7 +114,11 @@ export default function LoginForm() {
       localStorage.removeItem("businessName");
       localStorage.removeItem("user");
 
-      const data = await api<{ accessToken: string; businessName?: string }>(
+      const data = await api<{ 
+        accessToken: string; 
+        businessName?: string; 
+        businessSlug?: string 
+      }>(
         "/auth/login",
         {
           method: "POST",
@@ -127,6 +131,9 @@ export default function LoginForm() {
 
       if (data.businessName?.trim()) {
         localStorage.setItem("businessName", data.businessName.trim());
+      }
+      if (data.businessSlug?.trim()) {
+        localStorage.setItem("businessSlug", data.businessSlug.trim());
       }
 
       const payload = JSON.parse(atob(data.accessToken.split(".")[1]));

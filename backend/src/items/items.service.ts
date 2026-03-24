@@ -24,9 +24,12 @@ export class ItemsService {
   async create(businessId: string, dto: CreateItemDto) {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        console.log(`[ItemsService] Creating item: "${dto.name}"`);
+        console.log(`[ItemsService] Name Hex: ${Buffer.from(dto.name).toString('hex')}`);
+
         const item = await tx.item.create({
           data: {
-            id: dto.id, // Prisma usará uuid() si es undefined
+            id: dto.id,
             businessId,
             type: dto.type,
             name: dto.name,
@@ -200,6 +203,11 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
           dto.durationMinutes === undefined && dto.type === undefined ? undefined : nextDuration,
       },
     });
+
+    if (dto.name) {
+      console.log(`[ItemsService] Updated item name: "${dto.name}"`);
+      console.log(`[ItemsService] Name Hex: ${Buffer.from(dto.name).toString('hex')}`);
+    }
 
     const shouldReplaceSchedule = dto.schedule !== undefined || nextType !== "SERVICE";
     if (shouldReplaceSchedule) {

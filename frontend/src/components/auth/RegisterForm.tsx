@@ -163,9 +163,12 @@ export default function RegisterForm() {
         throw new Error(data.message || "Error al registrarse");
       }
 
-      // Guardar token automáticamente
+      // Guardar sesión
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("businessName", businessName.trim());
+      if (data.businessSlug) {
+        localStorage.setItem("businessSlug", data.businessSlug);
+      }
 
       // Redirigir a home privada
       router.push("/home");

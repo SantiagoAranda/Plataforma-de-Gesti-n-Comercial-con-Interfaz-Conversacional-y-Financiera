@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Search, ShoppingBag } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
@@ -28,6 +28,7 @@ export default function PublicStorePage() {
   const slug = typeof params?.slug === "string" ? params.slug : "";
   const searchParams = useSearchParams();
   const preview = searchParams.get("preview") === "true";
+  const router = useRouter();
   const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
@@ -64,6 +65,14 @@ export default function PublicStorePage() {
         if (!res.ok) throw new Error("Error loading items");
 
         const data = await res.json();
+        
+        // Redirección Canónica
+        if (data?.business?.slug && data.business.slug !== slug) {
+          const params = new URLSearchParams(searchParams.toString());
+          router.replace(`/tienda/${data.business.slug}${params.toString() ? `?${params.toString()}` : ''}`);
+          return;
+        }
+
         const itemsList = Array.isArray(data?.data) ? data.data : [];
 
         if (data?.business?.name) {
