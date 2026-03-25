@@ -6,6 +6,7 @@ import { Search, Share2, CheckCheck, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
+import { formatPriceInput } from "@/src/lib/itemHelpers";
 
 type Item = {
   id: string;
@@ -317,7 +318,9 @@ function AdminProductCard({
         {/* Precio y Estado */}
         <div className="mt-auto pt-1 flex items-center justify-between">
           <span className="text-emerald-600 font-bold text-sm">
-            ${item.price.toFixed(2)}
+            ${formatPriceInput(
+              Number(item.price).toFixed(2).replace(".", ",")
+            )}
           </span>
           <div className="flex items-center gap-1" title={item.status === 'ACTIVE' ? 'Activo' : 'Inactivo'}>
             {item.status === 'ACTIVE' ? (

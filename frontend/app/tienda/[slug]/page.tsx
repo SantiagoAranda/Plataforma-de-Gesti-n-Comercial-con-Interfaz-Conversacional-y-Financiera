@@ -7,7 +7,14 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
+import { formatPriceInput } from "@/src/lib/itemHelpers";
 import AppHeader from "@/src/components/layout/AppHeader";
+
+const formatPrice = (value: number) => {
+  return formatPriceInput(
+    value.toFixed(2).replace(".", ",")
+  );
+};
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -395,7 +402,7 @@ export default function PublicStorePage() {
                     {item.name}
                   </div>
                   <div className="text-sm text-gray-500">
-                    ${item.price.toFixed(2)}
+                    ${formatPrice(item.price)}
                   </div>
                 </div>
 
@@ -428,7 +435,7 @@ export default function PublicStorePage() {
 
             <div className="flex justify-between font-semibold mt-4">
               <span>Total</span>
-              <span>${cartTotal.toFixed(2)}</span>
+              <span>${formatPrice(cartTotal)}</span>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -557,7 +564,7 @@ function ProductCard({
 
         {/* Precio */}
         <div className="text-emerald-600 font-bold text-sm mt-auto pt-1">
-          ${item.price.toFixed(2)}
+          ${formatPrice(item.price)}
         </div>
 
         {/* Botón */}
