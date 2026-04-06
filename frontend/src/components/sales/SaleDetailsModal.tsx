@@ -9,13 +9,13 @@ import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
-    minimumFractionDigits: 0,
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
 
 function calcTotal(sale: Sale) {
-  return sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
+  return sale.items.reduce((acc, it) => acc + ((it.price ?? 0) * (it.qty ?? 1)), 0);
 }
 
 function formatDateTime(iso?: string) {

@@ -6,6 +6,7 @@ import type { Sale } from "@/src/types/sales";
 import { useLongPress } from "@/src/components/shared/selection/useLongPress";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
+import { formatMoney } from "@/src/lib/formatters";
 
 import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
 
@@ -14,7 +15,10 @@ function typeLabel(type: Sale["type"]) {
 }
 
 function calcTotal(sale: Sale) {
-  return sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
+  return sale.items.reduce(
+    (acc, it) => acc + ((it.price ?? 0) * (it.qty ?? 1)),
+    0
+  );
 }
 
 function formatTime(iso?: string) {
@@ -115,7 +119,7 @@ export default function SaleCard({
             </span>
 
             <span className="font-medium text-gray-800">
-              ${it.price.toFixed(2)}
+              ${formatMoney(it.price)}
             </span>
           </div>
         ))}
@@ -128,7 +132,7 @@ export default function SaleCard({
         </span>
 
         <span className="text-xl font-extrabold text-gray-900">
-          ${total.toFixed(2)}
+          ${formatMoney(total)}
         </span>
       </div>
 
