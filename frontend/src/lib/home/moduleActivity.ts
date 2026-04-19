@@ -6,7 +6,7 @@ import {
 } from "@/src/lib/businessDate";
 
 export type ModuleActivitySummary = {
-  module: "BUSINESS" | "SALES" | "ACCOUNTING";
+  module: "BUSINESS" | "SALES" | "ACCOUNTING" | "INVENTORY";
   title: string;
   subtitle: string;
   lastActivityAt?: string | null;
@@ -246,5 +246,22 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
     isRecent: isRecentActivity(lastActivityAt),
     href: "/contabilidad",
     accent: "amber",
+  };
+}
+
+export function mapInventoryActivity(latest: BusinessItem | null): ModuleActivitySummary {
+  const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt) : null;
+  const productName = latest?.type === "PRODUCT" ? latest.name?.trim() : "";
+
+  return {
+    module: "INVENTORY",
+    title: "Inventario",
+    subtitle: productName
+      ? ` Control de stock para "${productName}"`
+      : " Stock, costo promedio y kardex",
+    lastActivityAt,
+    isRecent: isRecentActivity(lastActivityAt),
+    href: "/inventario",
+    accent: "green",
   };
 }

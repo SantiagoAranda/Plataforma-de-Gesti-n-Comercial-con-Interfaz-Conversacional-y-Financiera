@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Building2, Calculator, ShoppingBag } from "lucide-react";
+import { Building2, Calculator, PackageSearch, ShoppingBag } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import AppHeader from "../../../src/components/layout/AppHeader";
@@ -14,6 +14,7 @@ import {
   formatActivityTime,
   mapAccountingActivity,
   mapBusinessActivity,
+  mapInventoryActivity,
   mapSalesActivity,
 } from "../../../src/lib/home/moduleActivity";
 import { api } from "../../../src/lib/api";
@@ -26,6 +27,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  INVENTORY: <PackageSearch className="h-5 w-5" />,
 };
 
 export default function HomePage() {
@@ -165,6 +167,7 @@ export default function HomePage() {
   const summaries = useMemo(
     () => [
       mapBusinessActivity(businessLatest.item),
+      mapInventoryActivity(businessLatest.item),
       mapSalesActivity(orders),
       mapAccountingActivity(movements),
     ],
