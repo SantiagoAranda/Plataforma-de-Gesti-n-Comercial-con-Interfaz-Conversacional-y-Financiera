@@ -14,6 +14,9 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { PublicModule } from './public/public.module';
 import { MovementsModule } from './movements/movements.module';
 import { AccountingModule } from './accounting/accounting.module';
+import { IngredientsModule } from './ingredients/ingredients.module';
+import { RecipesModule } from './recipes/recipes.module';
+import { InventoryModule } from './inventory/inventory.module';
 
 
 
@@ -33,6 +36,9 @@ import { AccountingModule } from './accounting/accounting.module';
     PublicModule,
     MovementsModule,
     AccountingModule,
+    IngredientsModule,
+    RecipesModule,
+    InventoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

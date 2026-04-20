@@ -11,13 +11,17 @@ import {
 } from "class-validator";
 import { Transform } from "class-transformer";
 import { Type } from "class-transformer";
-import { ItemType } from '@prisma/client';
+import { InventoryMode, ItemType } from '@prisma/client';
 import { ScheduleInput } from "./create-item.dto";
 
 export class UpdateItemDto {
     @IsOptional()
     @IsEnum(ItemType)
     type?: ItemType;
+
+    @IsOptional()
+    @IsEnum(InventoryMode)
+    inventoryMode?: InventoryMode;
 
     @IsOptional()
     @IsString()

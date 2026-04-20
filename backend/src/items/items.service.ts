@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service"; // ajustá si ya lo tenés distinto
 import { UpdateItemDto } from "./dto/update-item.dto";
-import { ItemStatus } from '@prisma/client';
+import { InventoryMode, ItemStatus, Prisma } from '@prisma/client';
 import { AddItemImageDto } from "./dto/add-item-image.dto";
 import { CreateItemDto } from "./dto/create-item.dto";
 
@@ -32,6 +32,7 @@ export class ItemsService {
             id: dto.id,
             businessId,
             type: dto.type,
+            inventoryMode: this.resolveInventoryMode(dto.type, dto.inventoryMode),
             name: dto.name,
             price: dto.price,
             description: dto.description,
@@ -68,7 +69,11 @@ export class ItemsService {
       });
     } catch (error) {
       // Si el error es una colisión de ID único (P2002)
-      if (error.code === 'P2002' && dto.id) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        dto.id
+      ) {
         // Buscamos el item existente para validar que pertenezca al mismo negocio
         const existingItem = await this.prisma.item.findUnique({
           where: { id: dto.id },
@@ -122,6 +127,7 @@ export class ItemsService {
           price: true,
           type: true,
           status: true,
+          inventoryMode: true,
           description: true,
           durationMinutes: true,
           createdAt: true,
@@ -180,6 +186,10 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
   if (!existing) throw new NotFoundException("Item not found");
 
   const nextType = dto.type ?? existing.type;
+  const nextInventoryMode = this.resolveInventoryMode(
+    nextType,
+    dto.inventoryMode ?? existing.inventoryMode,
+  );
 
   // si queda como SERVICE, durationMinutes no puede quedar null/undefined
   const nextDuration =
@@ -196,6 +206,7 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
       where: { id },
       data: {
         type: dto.type,
+        inventoryMode: dto.inventoryMode === undefined && dto.type === undefined ? undefined : nextInventoryMode,
         name: dto.name,
         price: dto.price,
         description: dto.description === undefined ? undefined : (dto.description ?? null),
@@ -292,6 +303,19 @@ async deleteImage(businessId: string, itemId: string, imageId: string) {
 
   await this.prisma.itemImage.delete({ where: { id: imageId } });
   return { ok: true };
-}
+  }
+
+  private resolveInventoryMode(
+    type: 'PRODUCT' | 'SERVICE',
+    inventoryMode?: InventoryMode | null,
+  ) {
+    const nextInventoryMode = inventoryMode ?? InventoryMode.NONE;
+
+    if (type === 'SERVICE' && nextInventoryMode !== InventoryMode.NONE) {
+      throw new BadRequestException('SERVICE items must use inventoryMode NONE');
+    }
+
+    return nextInventoryMode;
+  }
 
 }

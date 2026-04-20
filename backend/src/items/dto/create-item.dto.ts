@@ -10,16 +10,16 @@ import {
 
 import { Type } from 'class-transformer';
 
-import { ItemType, Weekday } from '@prisma/client';
+import { InventoryMode, ItemType, Weekday } from '@prisma/client';
 export class ScheduleInput {
   @IsEnum(Weekday)
-  weekday: Weekday;
+  weekday!: Weekday;
 
   @IsNumber()
-  startMinute: number;
+  startMinute!: number;
 
   @IsNumber()
-  endMinute: number;
+  endMinute!: number;
 }
 
 export class CreateItemDto {
@@ -28,13 +28,17 @@ export class CreateItemDto {
   id?: string;
 
   @IsEnum(ItemType)
-  type: ItemType;
+  type!: ItemType;
+
+  @IsOptional()
+  @IsEnum(InventoryMode)
+  inventoryMode?: InventoryMode;
 
   @IsString()
-  name: string;
+  name!: string;
 
   @IsNumber()
-  price: number;
+  price!: number;
 
   @IsOptional()
   @IsString()
