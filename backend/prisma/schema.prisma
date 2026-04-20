@@ -153,8 +153,11 @@ model ItemImage {
   itemId String
   item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
-  url   String
-  order Int
+  url       String
+  pathname  String?
+  mimeType  String?
+  sizeBytes Int?
+  order     Int
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -194,7 +197,7 @@ model Order {
   pdfGeneratedAt DateTime?
   documentNumber String?
 
-  items OrderItem[]
+  items              OrderItem[]
   accountingPostedAt DateTime?
 
   archived Boolean @default(false)
@@ -390,22 +393,22 @@ enum MovementNature {
 }
 
 model AccountingMovement {
-  id              String                       @id @default(cuid())
-  businessId      String
-  pucCuentaCode   String?                      @db.VarChar(4)
-  pucSubcuentaId  String?
-  amount          Decimal                      @db.Decimal(18, 2)
-  nature          MovementNature              @default(DEBIT)
-  date            DateTime
-  detail          String?
-  originType      AccountingMovementOriginType
-  originId        String?
-  createdAt       DateTime                    @default(now())
-  updatedAt       DateTime                    @updatedAt
+  id             String                       @id @default(cuid())
+  businessId     String
+  pucCuentaCode  String?                      @db.VarChar(4)
+  pucSubcuentaId String?
+  amount         Decimal                      @db.Decimal(18, 2)
+  nature         MovementNature               @default(DEBIT)
+  date           DateTime
+  detail         String?
+  originType     AccountingMovementOriginType
+  originId       String?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
 
-  business        Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  pucCuenta       PucCuenta?                  @relation(fields: [pucCuentaCode], references: [code])
-  pucSubcuenta    PucSubcuenta?               @relation(fields: [pucSubcuentaId], references: [code])
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pucCuenta    PucCuenta?    @relation(fields: [pucCuentaCode], references: [code])
+  pucSubcuenta PucSubcuenta? @relation(fields: [pucSubcuentaId], references: [code])
 
   @@index([businessId, date])
   @@index([pucCuentaCode])
