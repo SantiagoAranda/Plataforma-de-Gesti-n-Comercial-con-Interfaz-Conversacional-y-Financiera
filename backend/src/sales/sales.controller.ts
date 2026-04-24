@@ -18,6 +18,7 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { AddOrderItemDto } from "./dto/add-order-item.dto";
 import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
+import { ReverseOrderDto } from './dto/reverse-order.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('sales')
@@ -72,6 +73,11 @@ export class SalesController {
     @Query('sourceType') sourceType?: any,
   ) {
     return this.salesService.cancel(req.user.businessId, id, sourceType);
+  }
+
+  @Post(':id/reverse')
+  reverse(@Req() req: any, @Param('id') id: string, @Body() dto: ReverseOrderDto) {
+    return this.salesService.reverseConfirmedOrder(req.user.businessId, id, dto);
   }
 
   @Post(":id/items")

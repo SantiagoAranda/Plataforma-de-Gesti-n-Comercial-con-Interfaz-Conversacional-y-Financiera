@@ -1,11 +1,18 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Weekday } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { OrderStatus, Prisma, Weekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { ReverseOrderDto } from './dto/reverse-order.dto';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -35,6 +42,7 @@ export class SalesService {
   constructor(
     private prisma: PrismaService,
     private accountingService: AccountingService,
+    private inventoryService: InventoryService,
   ) { }
 
   private parseDateOnly(value: string) {
@@ -244,6 +252,7 @@ export class SalesService {
         lineTotal,
         itemNameSnapshot: item.name,
         itemTypeSnapshot: item.type,
+        inventoryModeSnapshot: item.inventoryMode,
         durationMinutesSnapshot: item.durationMinutes,
       };
     });
@@ -405,52 +414,78 @@ export class SalesService {
         throw new BadRequestException('Order must contain at least one item');
       if (order.status === 'CANCELLED')
         throw new BadRequestException('Cancelled orders cannot be confirmed');
-      if (order.accountingPostedAt)
-        return { order, accountingCreated: false, alreadyPosted: true };
+      if (order.accountingPostedAt && order.inventoryPostedAt)
+        return {
+          order,
+          accountingCreated: false,
+          inventoryCreated: false,
+          alreadyPosted: true,
+        };
 
       const confirmableStatuses: OrderStatus[] = ['DRAFT', 'SENT', 'COMPLETED'];
       if (!confirmableStatuses.includes(order.status))
         throw new BadRequestException('Order cannot be confirmed');
 
       const postingDate = new Date();
-      const claim = await tx.order.updateMany({
-        where: {
-          id,
-          businessId,
-          accountingPostedAt: null,
-          status: { in: confirmableStatuses },
-        },
-        data: {
-          status: 'COMPLETED',
-          accountingPostedAt: postingDate,
-        },
-      });
-
-      if (claim.count === 0) {
-        const currentOrder = await tx.order.findFirst({
-          where: { id, businessId },
-          include: { items: { include: { item: true } } },
+      if (!order.accountingPostedAt) {
+        const claim = await tx.order.updateMany({
+          where: {
+            id,
+            businessId,
+            accountingPostedAt: null,
+            status: { in: confirmableStatuses },
+          },
+          data: {
+            status: 'COMPLETED',
+            accountingPostedAt: postingDate,
+          },
         });
-        if (!currentOrder) throw new NotFoundException('Order not found');
-        return {
-          order: currentOrder,
-          accountingCreated: false,
-          alreadyPosted: Boolean(currentOrder.accountingPostedAt),
-        };
+
+        if (claim.count === 0) {
+          const currentOrder = await tx.order.findFirst({
+            where: { id, businessId },
+            include: { items: { include: { item: true } } },
+          });
+          if (!currentOrder) throw new NotFoundException('Order not found');
+          return {
+            order: currentOrder,
+            accountingCreated: false,
+            inventoryCreated: Boolean(currentOrder.inventoryPostedAt),
+            alreadyPosted: Boolean(
+              currentOrder.accountingPostedAt && currentOrder.inventoryPostedAt,
+            ),
+          };
+        }
+      } else if (order.status !== 'COMPLETED') {
+        await tx.order.update({
+          where: { id },
+          data: { status: 'COMPLETED' },
+        });
       }
 
       const finalizedOrder = {
         ...order,
         status: 'COMPLETED' as const,
-        accountingPostedAt: postingDate,
+        accountingPostedAt: order.accountingPostedAt ?? postingDate,
         updatedAt: postingDate,
       };
 
-      const movements = await this.accountingService.postOrderMovements(
-        tx,
-        businessId,
-        finalizedOrder as any,
-      );
+      const inventoryMovements = order.inventoryPostedAt
+        ? []
+        : await this.inventoryService.applyInventoryConsumptionForOrder(
+            tx,
+            businessId,
+            finalizedOrder as any,
+            postingDate,
+          );
+
+      const movements = order.accountingPostedAt
+        ? []
+        : await this.accountingService.postOrderMovements(
+            tx,
+            businessId,
+            finalizedOrder as any,
+          );
 
       const updatedOrder = await tx.order.findUniqueOrThrow({
         where: { id },
@@ -459,10 +494,14 @@ export class SalesService {
 
       return {
         order: updatedOrder,
-        accountingCreated: true,
+        accountingCreated: !order.accountingPostedAt,
+        inventoryCreated: !order.inventoryPostedAt,
         alreadyPosted: false,
+        inventoryMovements,
         movements,
       };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
 
@@ -663,6 +702,7 @@ export class SalesService {
           quantity: dto.quantity,
           itemNameSnapshot: item.name,
           itemTypeSnapshot: item.type,
+          inventoryModeSnapshot: item.inventoryMode,
           durationMinutesSnapshot: item.durationMinutes,
           unitPrice,
           lineTotal,
@@ -808,6 +848,67 @@ export class SalesService {
     });
   }
 
+  async reverseConfirmedOrder(businessId: string, id: string, dto: ReverseOrderDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, businessId },
+        include: {
+          items: { include: { item: true } },
+        },
+      });
+
+      if (!order) throw new NotFoundException('Order not found');
+      if (order.status === 'CANCELLED') {
+        throw new BadRequestException('Cancelled orders cannot be reversed');
+      }
+      if (order.status !== 'COMPLETED') {
+        throw new BadRequestException('Only completed orders can be reversed');
+      }
+      if (!order.inventoryPostedAt) {
+        throw new BadRequestException('Order inventory was not posted');
+      }
+
+      const existingReturn = await tx.inventoryMovement.findMany({
+        where: {
+          businessId,
+          orderId: id,
+          type: 'SALE_RETURN',
+        },
+        take: 1,
+        select: { id: true },
+      });
+
+      if (existingReturn.length) {
+        throw new ConflictException('Order inventory already reversed');
+      }
+
+      const reversalMovements =
+        await this.inventoryService.reverseInventoryConsumptionForOrder(
+          tx,
+          businessId,
+          { orderId: id, reason: dto.reason },
+        );
+
+      const updatedOrder = await tx.order.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+        },
+        include: {
+          items: { include: { item: true } },
+        },
+      });
+
+      return {
+        order: updatedOrder,
+        inventoryReversed: reversalMovements.length > 0,
+        reversalMovements,
+      };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+
   async remove(
     businessId: string,
     id: string,
@@ -911,6 +1012,7 @@ export class SalesService {
             lineTotal,
             itemNameSnapshot: item.name,
             itemTypeSnapshot: item.type,
+            inventoryModeSnapshot: item.inventoryMode,
             durationMinutesSnapshot: item.durationMinutes,
           };
         });

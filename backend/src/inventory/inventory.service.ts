@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   Ingredient,
   InventoryMovementType,
@@ -15,6 +20,30 @@ import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
 type InventoryRequirement = {
   ingredientId: string;
   quantity: Prisma.Decimal;
+};
+
+type OrderItemForInventory = {
+  id: string;
+  itemId: string;
+  quantity: number;
+  itemNameSnapshot: string;
+  itemTypeSnapshot: string;
+  inventoryModeSnapshot?: string | null;
+  item?: {
+    inventoryMode?: string | null;
+  } | null;
+};
+
+type OrderForInventory = {
+  id: string;
+  inventoryPostedAt?: Date | null;
+  items: OrderItemForInventory[];
+};
+
+type OrderIngredientConsumption = InventoryRequirement & {
+  orderItemId: string;
+  itemId: string;
+  itemName: string;
 };
 
 type ApplyInventoryMovementInput = {
@@ -193,6 +222,10 @@ export class InventoryService {
     const consolidated = this.consolidateRequirements(consumptions);
     const ingredientIds = consolidated.map((item) => item.ingredientId);
 
+    if (ingredientIds.length === 0) {
+      return { ok: true, requirements: consolidated };
+    }
+
     const ingredients = await tx.ingredient.findMany({
       where: {
         businessId,
@@ -227,6 +260,251 @@ export class InventoryService {
     }
 
     return { ok: true, requirements: consolidated };
+  }
+
+  async applyInventoryConsumptionForOrder(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    order: OrderForInventory,
+    occurredAt: Date = new Date(),
+  ) {
+    if (order.inventoryPostedAt) {
+      return [];
+    }
+
+    const consumptions = await this.expandOrderItemsToIngredients(
+      tx,
+      businessId,
+      order.items,
+    );
+    await this.validateStockAvailability(businessId, consumptions, tx);
+
+    const movements = [];
+    for (const consumption of consumptions) {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
+        ingredientId: consumption.ingredientId,
+        type: 'SALE',
+        quantity: consumption.quantity,
+        referenceType: 'ORDER_ITEM',
+        orderId: order.id,
+        orderItemId: consumption.orderItemId,
+        detail: `Sale item ${consumption.itemName}`,
+      });
+      movements.push(movement);
+    }
+
+    await tx.order.update({
+      where: { id: order.id },
+      data: { inventoryPostedAt: occurredAt },
+    });
+
+    return movements;
+  }
+
+  async reverseInventoryConsumptionForOrder(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    input: { orderId: string; reason?: string },
+  ) {
+    const saleMovements = await tx.inventoryMovement.findMany({
+      where: {
+        businessId,
+        orderId: input.orderId,
+        type: 'SALE',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!saleMovements.length) {
+      const existingReturn = await tx.inventoryMovement.findMany({
+        where: {
+          businessId,
+          orderId: input.orderId,
+          type: 'SALE_RETURN',
+        },
+        take: 1,
+        select: { id: true },
+      });
+
+      if (existingReturn.length) {
+        throw new ConflictException('Order inventory already reversed');
+      }
+
+      return [];
+    }
+
+    const existingReturns = await tx.inventoryMovement.findMany({
+      where: {
+        businessId,
+        orderId: input.orderId,
+        type: 'SALE_RETURN',
+      },
+      select: {
+        ingredientId: true,
+        orderItemId: true,
+      },
+    });
+
+    const movementKey = (m: { ingredientId: string; orderItemId: string | null }) =>
+      `${m.ingredientId}::${m.orderItemId ?? 'null'}`;
+
+    const existingKeys = new Set(existingReturns.map(movementKey));
+    const saleKeys = saleMovements.map(movementKey);
+
+    if (existingKeys.size) {
+      const allAlreadyReturned = saleKeys.every((key) => existingKeys.has(key));
+      throw new ConflictException(
+        allAlreadyReturned
+          ? 'Order inventory already reversed'
+          : 'Order inventory reversal is partially applied',
+      );
+    }
+
+    const ingredientIds = Array.from(
+      new Set(saleMovements.map((movement) => movement.ingredientId)),
+    );
+
+    const ingredients = await tx.ingredient.findMany({
+      where: {
+        businessId,
+        id: { in: ingredientIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        currentStock: true,
+        averageCost: true,
+      },
+    });
+
+    if (ingredients.length !== ingredientIds.length) {
+      throw new NotFoundException('Ingredient not found for return movement');
+    }
+
+    const ingredientState = new Map(
+      ingredients.map((ingredient) => [
+        ingredient.id,
+        {
+          name: ingredient.name,
+          currentStock: this.decimal(ingredient.currentStock),
+          averageCost: this.decimal(ingredient.averageCost),
+        },
+      ]),
+    );
+
+    const detail =
+      input.reason?.trim() || 'Sale return generated from order reversal';
+
+    const created = [];
+    for (const movement of saleMovements) {
+      const state = ingredientState.get(movement.ingredientId);
+      if (!state) {
+        throw new NotFoundException(
+          `Ingredient not found for return movement (${movement.ingredientId})`,
+        );
+      }
+
+      const key = movementKey(movement);
+      if (existingKeys.has(key)) {
+        continue;
+      }
+
+      const quantity = this.decimal(movement.quantity);
+      const stockAfter = state.currentStock.add(quantity);
+
+      const createdMovement = await tx.inventoryMovement.create({
+        data: {
+          businessId,
+          ingredientId: movement.ingredientId,
+          type: 'SALE_RETURN',
+          quantity,
+          unitCost: movement.unitCost,
+          totalValue: movement.totalValue,
+          stockAfter,
+          averageCostAfter: state.averageCost,
+          referenceType: 'ORDER_ITEM',
+          referenceId: null,
+          orderId: movement.orderId,
+          orderItemId: movement.orderItemId,
+          detail,
+        },
+      });
+
+      await tx.ingredient.update({
+        where: { id: movement.ingredientId },
+        data: {
+          currentStock: stockAfter,
+        },
+      });
+
+      state.currentStock = stockAfter;
+      existingKeys.add(key);
+      created.push(createdMovement);
+    }
+
+    return created;
+  }
+
+  async expandOrderItemsToIngredients(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    orderItems: OrderItemForInventory[],
+  ): Promise<OrderIngredientConsumption[]> {
+    const consumptions: OrderIngredientConsumption[] = [];
+
+    for (const orderItem of orderItems) {
+      if (orderItem.itemTypeSnapshot === 'SERVICE') {
+        continue;
+      }
+
+      const inventoryMode =
+        orderItem.inventoryModeSnapshot ?? orderItem.item?.inventoryMode ?? 'NONE';
+
+      if (inventoryMode === 'NONE') {
+        continue;
+      }
+
+      if (!['SIMPLE', 'RECIPE_BASED'].includes(inventoryMode)) {
+        throw new BadRequestException('Item cannot consume inventory');
+      }
+
+      const recipe = await tx.recipe.findMany({
+        where: {
+          businessId,
+          itemId: orderItem.itemId,
+        },
+        include: {
+          ingredient: {
+            select: { id: true },
+          },
+        },
+      });
+      const mandatoryLines = recipe.filter((line) => !line.isOptional);
+
+      if (inventoryMode === 'SIMPLE' && mandatoryLines.length !== 1) {
+        throw new BadRequestException(
+          `Recipe not found for item ${orderItem.itemNameSnapshot}`,
+        );
+      }
+
+      if (inventoryMode === 'RECIPE_BASED' && mandatoryLines.length < 1) {
+        throw new BadRequestException(
+          `Recipe not found for item ${orderItem.itemNameSnapshot}`,
+        );
+      }
+
+      for (const line of mandatoryLines) {
+        consumptions.push({
+          orderItemId: orderItem.id,
+          itemId: orderItem.itemId,
+          itemName: orderItem.itemNameSnapshot,
+          ingredientId: line.ingredientId,
+          quantity: this.decimal(line.quantityRequired).mul(orderItem.quantity),
+        });
+      }
+    }
+
+    return consumptions;
   }
 
   async applyInventoryMovement(
