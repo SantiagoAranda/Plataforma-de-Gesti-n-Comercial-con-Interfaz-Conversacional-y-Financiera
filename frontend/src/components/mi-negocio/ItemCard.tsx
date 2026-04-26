@@ -93,11 +93,6 @@ function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
 
           {/* FOOTER: PILL LEFT, DATE RIGHT */}
           <div className="mt-auto pt-2 flex items-center justify-between gap-4">
-            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
-              item.type === 'SERVICE' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
-            }`}>
-              {item.type === 'SERVICE' ? 'Servicio' : 'Producto'}
-            </span>
 
             <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap">
               {formatCompactDate(item.createdAt)}

@@ -130,6 +130,7 @@ export default function ContabilidadPage() {
   const [form, setForm] = useState<AccountingFormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<AccountingFormErrors>({});
   const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -144,13 +145,12 @@ export default function ContabilidadPage() {
     });
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (searchQuery?: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await listMovements();
-
+      const data = await listMovements({ search: searchQuery || undefined });
       setMovements(data ?? []);
     } catch (err) {
       console.error(err);
@@ -161,8 +161,15 @@ export default function ContabilidadPage() {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchText.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  useEffect(() => {
+    refresh(debouncedSearch);
+  }, [debouncedSearch, refresh]);
 
   const resetForm = useCallback(() => {
     setForm({
@@ -267,7 +274,7 @@ export default function ContabilidadPage() {
       try {
         await deleteMovement(id);
         setSelectedMovement(null);
-        await refresh();
+        await refresh(debouncedSearch);
       } catch (err: any) {
         console.error(err);
         setError(
@@ -282,7 +289,7 @@ export default function ContabilidadPage() {
 
   const handleComposerSubmit = useCallback(async () => {
     if (!composerOpen) {
-      await refresh();
+      await refresh(debouncedSearch);
       return;
     }
 
@@ -333,7 +340,7 @@ export default function ContabilidadPage() {
 
       setComposerOpen(false);
       resetForm();
-      await refresh();
+      await refresh(debouncedSearch);
     } catch (err: any) {
       console.error("Error guardando movimiento:", err);
       console.error("status:", err?.status);
@@ -349,29 +356,7 @@ export default function ContabilidadPage() {
   }, [composerOpen, form, refresh, resetForm, validateForm]);
 
 
-  const displayMovements = useMemo(() => {
-    const normalizedSearch = searchText.trim().toLowerCase();
-    const filteredMovements = normalizedSearch
-      ? movements.filter((movement) => {
-          const haystack = [
-            movement.pucCode,
-            movement.pucName,
-            movement.detail ?? "",
-            movement.originType,
-          ]
-            .join(" ")
-            .toLowerCase();
-
-          return haystack.includes(normalizedSearch);
-        })
-      : movements;
-
-    return [...filteredMovements].sort((a, b) => {
-      const timeDiff = movementTimestamp(a) - movementTimestamp(b);
-      if (timeDiff !== 0) return timeDiff;
-      return a.id.localeCompare(b.id);
-    });
-  }, [movements, searchText]);
+  const displayMovements = movements;
 
   const isEmpty = useMemo(
     () => !loading && displayMovements.length === 0,

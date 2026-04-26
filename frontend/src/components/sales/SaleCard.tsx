@@ -11,7 +11,7 @@ import { formatMoney } from "@/src/lib/formatters";
 import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
 
 function typeLabel(type: Sale["type"]) {
-  return type === "PRODUCTO" ? "Producto" : "Servicio";
+  return "";
 }
 
 function calcTotal(sale: Sale) {
@@ -89,7 +89,6 @@ export default function SaleCard({
             {sale.customerName ?? "Sin nombre"}
           </h3>
           <p className="mt-1 text-[11px] text-gray-500">
-            {typeLabel(sale.type)}
           </p>
         </div>
 

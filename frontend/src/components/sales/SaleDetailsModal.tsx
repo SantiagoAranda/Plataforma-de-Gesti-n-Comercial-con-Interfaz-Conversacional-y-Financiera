@@ -31,7 +31,7 @@ function formatDateTime(iso?: string) {
 }
 
 function typeLabel(type: Sale["type"]) {
-  return type === "PRODUCTO" ? "Producto" : "Servicio";
+  return "";
 }
 
 function paymentMethodLabel(paymentMethod?: Sale["paymentMethod"]) {
@@ -119,10 +119,6 @@ export default function SaleDetailsModal({
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-neutral-50">
-              <div className="space-y-1">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Tipo</span>
-                <span className="text-sm font-semibold text-neutral-700">{typeLabel(sale.type)}</span>
-              </div>
               <div className="space-y-1 text-right">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Estado</span>
                 <div className="flex items-center justify-end gap-1.5">

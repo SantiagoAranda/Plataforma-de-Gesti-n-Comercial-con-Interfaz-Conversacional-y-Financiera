@@ -291,12 +291,6 @@ export default function SaleEditModal({
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                  Tipo
-                </span>
-                <span className="text-[12px] font-semibold text-neutral-600">
-                  {type === "PRODUCTO" ? "Producto" : "Servicio"}
-                </span>
               </div>
 
               <div className="flex flex-col gap-0.5 text-right">
@@ -423,7 +417,7 @@ export default function SaleEditModal({
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Producto / Servicio</span>
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Item</span>
                         <div className="relative">
                            <ItemSelector
                              value={newItem.itemId}
