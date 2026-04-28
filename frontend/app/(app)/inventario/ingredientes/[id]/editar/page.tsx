@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -9,9 +9,9 @@ import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { getErrorMessage } from "@/src/lib/errors";
 import { getIngredient, updateIngredient, type Ingredient } from "@/src/services/inventory";
 
-export default function EditarIngredientePage({ params }: { params: { id: string } }) {
+export default function EditarIngredientePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
-  const ingredientId = params.id;
+  const { id: ingredientId } = use(params);
 
   const [loading, setLoading] = useState(true);
   const [ingredient, setIngredient] = useState<Ingredient | null>(null);

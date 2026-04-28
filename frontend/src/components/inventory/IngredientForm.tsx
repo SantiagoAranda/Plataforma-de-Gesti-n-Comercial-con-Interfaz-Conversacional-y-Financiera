@@ -17,17 +17,34 @@ type SubmitValues = {
 
 type Props = {
   initial?: Ingredient | null;
+  defaults?: Partial<Omit<SubmitValues, "status">>;
   mode: "create" | "edit";
   onSubmit: (values: SubmitValues) => Promise<void>;
   submitting?: boolean;
+  onCancel?: () => void;
+  cancelLabel?: string;
 };
 
-export function IngredientForm({ initial, mode, onSubmit, submitting }: Props) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [consumptionUnit, setConsumptionUnit] = useState(initial?.consumptionUnit ?? "");
-  const [purchaseUnit, setPurchaseUnit] = useState(initial?.purchaseUnit ?? "");
+export function IngredientForm({
+  initial,
+  defaults,
+  mode,
+  onSubmit,
+  submitting,
+  onCancel,
+  cancelLabel = "Cancelar",
+}: Props) {
+  const [name, setName] = useState(initial?.name ?? defaults?.name ?? "");
+  const [consumptionUnit, setConsumptionUnit] = useState(
+    initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "",
+  );
+  const [purchaseUnit, setPurchaseUnit] = useState(
+    initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "",
+  );
   const [factor, setFactor] = useState(
-    initial?.purchaseToConsumptionFactor?.toString?.() ?? "",
+    initial?.purchaseToConsumptionFactor?.toString?.() ??
+      defaults?.purchaseToConsumptionFactor?.toString?.() ??
+      "",
   );
   const [status, setStatus] = useState<IngredientStatus>(initial?.status ?? "ACTIVE");
 
@@ -152,13 +169,32 @@ export function IngredientForm({ initial, mode, onSubmit, submitting }: Props) {
         </div>
       )}
 
-      <button
-        type="submit"
-        disabled={!canSubmit || !!submitting}
-        className="h-12 w-full rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
-      >
-        {submitting ? "Guardando..." : mode === "create" ? "Crear ingrediente" : "Guardar cambios"}
-      </button>
+      {onCancel ? (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-12 rounded-2xl bg-neutral-100 text-sm font-black text-neutral-600 transition active:scale-[0.99]"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit || !!submitting}
+            className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+          >
+            {submitting ? "Guardando..." : mode === "create" ? "Crear" : "Guardar"}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="submit"
+          disabled={!canSubmit || !!submitting}
+          className="h-12 w-full rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+        >
+          {submitting ? "Guardando..." : mode === "create" ? "Crear ingrediente" : "Guardar cambios"}
+        </button>
+      )}
     </form>
   );
 }

@@ -8,9 +8,10 @@ import type { InventorySummaryIngredient } from "@/src/services/inventory";
 type Props = {
   ingredients: InventorySummaryIngredient[];
   onSelect: (ingredientId: string) => void;
+  layout?: "list" | "chat";
 };
 
-export function IngredientList({ ingredients, onSelect }: Props) {
+export function IngredientList({ ingredients, onSelect, layout = "list" }: Props) {
   if (!ingredients.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
@@ -26,7 +27,7 @@ export function IngredientList({ ingredients, onSelect }: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className={layout === "chat" ? "flex flex-col-reverse gap-3" : "space-y-3"}>
       {ingredients.map((it) => {
         const currentStock = parseNumber(it.currentStock);
         const averageCost = parseNumber(it.averageCost);

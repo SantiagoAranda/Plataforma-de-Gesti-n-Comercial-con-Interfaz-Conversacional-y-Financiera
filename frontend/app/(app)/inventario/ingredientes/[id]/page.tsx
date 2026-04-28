@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, PencilLine, Power, RefreshCcw } from "lucide-react";
 import toast from "react-hot-toast";
@@ -12,9 +12,9 @@ import { MovementForm } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
 
-export default function IngredienteDetailPage({ params }: { params: { id: string } }) {
+export default function IngredienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
-  const ingredientId = params.id;
+  const { id: ingredientId } = use(params);
   const [loading, setLoading] = useState(true);
   const [ingredient, setIngredient] = useState<Ingredient | null>(null);
   const [error, setError] = useState<string | null>(null);

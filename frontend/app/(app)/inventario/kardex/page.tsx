@@ -6,8 +6,18 @@ import toast from "react-hot-toast";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { getErrorMessage } from "@/src/lib/errors";
-import { listIngredients, listKardex, type Ingredient, type InventoryMovement } from "@/src/services/inventory";
+import {
+  listIngredients,
+  listKardex,
+  type Ingredient,
+  type InventoryMovement,
+} from "@/src/services/inventory";
 import { KardexList } from "@/src/components/inventory/KardexList";
+import {
+  InventoryChatActionBar,
+  type InventoryChatMenuAction,
+} from "@/src/components/inventory/InventoryChatActionBar";
+import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 
 export default function KardexPage() {
   const router = useRouter();
@@ -22,6 +32,9 @@ export default function KardexPage() {
 
   const [loadingKardex, setLoadingKardex] = useState(false);
   const [kardex, setKardex] = useState<InventoryMovement[]>([]);
+
+  const [chatValue, setChatValue] = useState("");
+  const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -39,6 +52,12 @@ export default function KardexPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const filteredIngredients = useMemo(() => {
+    const q = chatValue.trim().toLowerCase();
+    if (!q) return ingredients;
+    return ingredients.filter((i) => i.name.toLowerCase().includes(q));
+  }, [ingredients, chatValue]);
 
   const selectedIngredient = useMemo(
     () => ingredients.find((i) => i.id === ingredientId) ?? null,
@@ -67,13 +86,40 @@ export default function KardexPage() {
     void loadKardex();
   }, [loadKardex]);
 
+  const visibleMovements = useMemo(() => {
+    const q = chatValue.trim().toLowerCase();
+    if (!q) return kardex;
+    return kardex.filter((m) => {
+      const t = m.type?.toLowerCase?.() ?? "";
+      const d = m.detail?.toLowerCase?.() ?? "";
+      const r = m.referenceId?.toLowerCase?.() ?? "";
+      return t.includes(q) || d.includes(q) || r.includes(q);
+    });
+  }, [kardex, chatValue]);
+
+  const handlePickAction = (action: InventoryChatMenuAction) => {
+    if (action === "INGREDIENTES") {
+      router.push("/inventario/ingredientes");
+      return;
+    }
+    if (action === "KARDEX") {
+      router.push("/inventario/kardex");
+      return;
+    }
+    if (action === "RECETAS") {
+      router.push("/inventario/recetas");
+      return;
+    }
+    setPurchaseReturnOpen(true);
+  };
+
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
         <AppHeader title="Kardex" showBack hrefBack="/inventario" />
       </div>
 
-      <main className="min-h-0 flex-1 overflow-y-auto pb-24">
+      <main className="min-h-0 flex-1 overflow-y-auto pb-44">
         <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
           {loading ? (
             <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
@@ -94,7 +140,7 @@ export default function KardexPage() {
                 className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
               >
                 <option value="">Seleccionar...</option>
-                {ingredients.map((ing) => (
+                {filteredIngredients.map((ing) => (
                   <option key={ing.id} value={ing.id}>
                     {ing.name}
                   </option>
@@ -148,10 +194,37 @@ export default function KardexPage() {
               Cargando movimientos...
             </div>
           ) : (
-            <KardexList movements={kardex} />
+            <KardexList movements={visibleMovements} layout="chat" />
           )}
         </div>
       </main>
+
+      <InventoryChatActionBar
+        value={chatValue}
+        onChange={setChatValue}
+        onSubmit={() => toast("Usá el menú + para seleccionar una acción")}
+        onPickAction={handlePickAction}
+        placeholder="Buscar movimiento o ingrediente..."
+        helperText="Escribí para filtrar. Usá el + para navegar."
+      />
+
+      <ItemPanelLayout
+        open={purchaseReturnOpen}
+        title="Devolución de compras"
+        subtitle="Próximamente"
+        onClose={() => setPurchaseReturnOpen(false)}
+      >
+        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
+          Devolución de compras estará disponible próximamente
+        </div>
+        <button
+          type="button"
+          onClick={() => setPurchaseReturnOpen(false)}
+          className="h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99]"
+        >
+          Entendido
+        </button>
+      </ItemPanelLayout>
     </div>
   );
 }
