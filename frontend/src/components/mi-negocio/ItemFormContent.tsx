@@ -116,7 +116,7 @@ export function ItemFormContent({
 
       {/* NOMBRE */}
       <div className="space-y-2">
-        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">{type === "PRODUCT" ? "Nombre del producto" : "Nombre del servicio"}</label>
+        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Nombre</label>
         <input
           placeholder={type === "PRODUCT" ? "Ej: Hamburguesa Simple" : "Ej: Corte de Cabello"}
           value={name}

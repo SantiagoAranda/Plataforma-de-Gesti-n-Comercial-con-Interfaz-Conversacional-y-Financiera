@@ -26,6 +26,7 @@ export interface ApiOrder {
   items: Array<{
     name: string;
     qty: number;
+    unitPrice: number;
     price: number;
     itemId: string;
     durationMin?: number | null;

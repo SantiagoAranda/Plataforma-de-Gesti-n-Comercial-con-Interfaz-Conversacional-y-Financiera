@@ -67,7 +67,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
     <ItemPanelLayout
       open={open}
       onClose={onClose}
-      title={displayItem.type === "SERVICE" ? "Detalle del servicio" : "Detalle del producto"}
+      title="Detalle"
       subtitle={`#${displayItem.id.slice(-6).toUpperCase()}`}
     >
       <div className="space-y-6">
@@ -93,9 +93,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
           {/* MAIN INFO GRID */}
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="space-y-1">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">
-                {item.type === "PRODUCT" ? "Nombre del producto" : "Nombre"}
-              </span>
+                Nombre
               <h3 className="text-base font-bold text-neutral-900 leading-tight">{item.name}</h3>
             </div>
 
@@ -103,15 +101,6 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
               <div className="space-y-1">
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Precio</span>
                 <span className="text-lg font-black text-emerald-600">${formatMoney(item.price)}</span>
-              </div>
-              <div className="space-y-1 text-right">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Tipo</span>
-                <div className="flex items-center justify-end gap-1.5">
-                  <span className={`h-2 w-2 rounded-full ${item.type === 'SERVICE' ? 'bg-blue-500' : 'bg-orange-500'}`} />
-                  <span className="text-sm font-semibold text-neutral-700">
-                    {item.type === "SERVICE" ? "Servicio" : "Producto"}
-                  </span>
-                </div>
               </div>
             </div>
 

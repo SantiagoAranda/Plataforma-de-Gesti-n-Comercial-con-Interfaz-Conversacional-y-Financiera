@@ -295,7 +295,7 @@ export default function SalesChatComposer({
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-neutral-800 text-xs truncate">{it.name}</div>
                           <div className="flex items-center gap-1 text-[9px] font-bold text-neutral-400 uppercase mt-0.5">
-                             {it.qty} unid. • ${formatMoney(it.price * it.qty)}
+                             {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                           </div>
                         </div>
 

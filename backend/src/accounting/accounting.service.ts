@@ -409,15 +409,24 @@ export class AccountingService {
     if (q.originType) where.originType = q.originType;
     if (q.search) {
       if (!where.AND) where.AND = [];
-      (where.AND as Prisma.AccountingMovementWhereInput[]).push({
-        OR: [
-          { detail: { contains: q.search, mode: 'insensitive' } },
-          { pucSubcuenta: { code: { contains: q.search } } },
-          { pucSubcuenta: { name: { contains: q.search, mode: 'insensitive' } } },
-          { pucCuenta: { code: { contains: q.search } } },
-          { pucCuenta: { name: { contains: q.search, mode: 'insensitive' } } },
-        ],
-      });
+      const search = q.search.trim();
+      const isNumeric = /^\d+$/.test(search);
+      const searchFilter: Prisma.AccountingMovementWhereInput = isNumeric
+        ? {
+            OR: [
+              { pucCuentaCode: { startsWith: search } },
+              { pucSubcuentaId: { startsWith: search } },
+            ],
+          }
+        : {
+            OR: [
+              { detail: { contains: search, mode: 'insensitive' } },
+              { pucCuenta: { name: { contains: search, mode: 'insensitive' } } },
+              { pucSubcuenta: { name: { contains: search, mode: 'insensitive' } } },
+            ],
+          };
+
+      (where.AND as Prisma.AccountingMovementWhereInput[]).push(searchFilter);
     }
 
     const movements = await this.prisma.accountingMovement.findMany({

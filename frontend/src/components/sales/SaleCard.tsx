@@ -11,14 +11,12 @@ import { formatMoney } from "@/src/lib/formatters";
 import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
 
 function typeLabel(type: Sale["type"]) {
-  return type === "PRODUCTO" ? "Producto" : "Servicio";
+  return "";
 }
 
 function calcTotal(sale: Sale) {
-  return sale.items.reduce(
-    (acc, it) => acc + ((it.price ?? 0) * (it.qty ?? 1)),
-    0
-  );
+  if (sale.total !== undefined) return sale.total;
+  return sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
 }
 
 function formatTime(iso?: string) {
@@ -89,7 +87,6 @@ export default function SaleCard({
             {sale.customerName ?? "Sin nombre"}
           </h3>
           <p className="mt-1 text-[11px] text-gray-500">
-            {typeLabel(sale.type)}
           </p>
         </div>
 

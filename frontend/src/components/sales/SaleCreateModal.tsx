@@ -223,12 +223,6 @@ export default function SaleCreateModal({
               </div>
 
               <div className="flex flex-col gap-0.5 text-right">
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                  Tipo
-                </span>
-                <span className="text-[12px] font-semibold text-neutral-600 truncate mt-1">
-                  {items.length === 0 ? "Seleccioná al agregar" : (type === "PRODUCTO" ? "Directa" : "Servicio")}
-                </span>
               </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">
@@ -270,7 +264,7 @@ export default function SaleCreateModal({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
-                       {it.qty} unidades - ${formatMoney(it.price * it.qty)}
+                       {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
 
@@ -308,7 +302,7 @@ export default function SaleCreateModal({
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Producto / Servicio</span>
+                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Item</span>
                         <div className="relative">
                            <ItemSelector
                              value={newItem.itemId}

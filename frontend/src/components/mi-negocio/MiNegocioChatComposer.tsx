@@ -43,8 +43,8 @@ export function MiNegocioChatComposer({
   };
 
   const placeholders = {
-    PRODUCT: mode === "edit" ? "Editar descripción del producto..." : "Describre el producto...",
-    SERVICE: mode === "edit" ? "Editar descripción del servicio..." : "Describre el servicio...",
+    PRODUCT: mode === "edit" ? "Editar descripción (opcional)..." : "Descripción (opcional)",
+    SERVICE: mode === "edit" ? "Editar descripción (opcional)..." : "Descripción (opcional)",
   };
 
   // Autosize effect
@@ -128,9 +128,9 @@ export function MiNegocioChatComposer({
                 <button
                   type="button"
                   onClick={onSubmit}
-                  disabled={isSubmitting || (isOpen && !description.trim())}
+                  disabled={isSubmitting}
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition active:scale-95 ${
-                    isSubmitting || (isOpen && !description.trim()) ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
+                    isSubmitting ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
                   }`}
                   aria-label={label}
                 >

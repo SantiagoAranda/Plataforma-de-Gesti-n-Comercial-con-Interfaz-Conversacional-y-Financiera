@@ -312,7 +312,7 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
           <span className={`text-[9px] font-bold ${description.length >= 300 ? 'text-red-500' : 'text-neutral-400'}`}>{description.length}/300</span>
         </div>
         <textarea
-          placeholder="Describe tu producto o servicio..." rows={4} maxLength={300} value={description}
+          placeholder="Descripción (opcional)" rows={4} maxLength={300} value={description}
           onChange={(e) => setDescription(e.target.value)}
           className="w-full rounded-2xl border border-neutral-100 bg-white p-4 text-sm shadow-sm outline-none resize-none focus:border-green-500 transition"
         />

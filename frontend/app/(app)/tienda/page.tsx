@@ -287,9 +287,6 @@ function AdminProductCard({
         
         {/* Overlays */}
         <div className="absolute top-2 left-2 right-2 flex justify-between items-start pointer-events-none z-10">
-          <span className={`backdrop-blur-md bg-white/70 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm ${item.type === 'SERVICE' ? 'text-blue-700' : 'text-orange-700'}`}>
-            {item.type === 'SERVICE' ? 'Servicio' : 'Producto'}
-          </span>
 
           {item.type === 'SERVICE' && item.durationMinutes && (
             <span className="backdrop-blur-md bg-white/70 text-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm leading-none">

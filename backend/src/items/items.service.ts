@@ -35,7 +35,7 @@ export class ItemsService {
             inventoryMode: this.resolveInventoryMode(dto.type, dto.inventoryMode),
             name: dto.name,
             price: dto.price,
-            description: dto.description,
+            description: dto.description?.trim() || null,
             durationMinutes: dto.durationMinutes,
           },
         });
@@ -209,7 +209,7 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
         inventoryMode: dto.inventoryMode === undefined && dto.type === undefined ? undefined : nextInventoryMode,
         name: dto.name,
         price: dto.price,
-        description: dto.description === undefined ? undefined : (dto.description ?? null),
+        description: dto.description === undefined ? undefined : (dto.description?.trim() || null),
         durationMinutes:
           dto.durationMinutes === undefined && dto.type === undefined ? undefined : nextDuration,
       },

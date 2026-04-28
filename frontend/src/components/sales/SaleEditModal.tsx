@@ -40,7 +40,7 @@ function ItemThumbnail() {
   return (
     <div className="h-9 w-9 shrink-0 rounded-lg bg-neutral-100 flex items-center justify-center overflow-hidden border border-neutral-200">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+        <path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />
       </svg>
     </div>
   );
@@ -59,14 +59,14 @@ export default function SaleEditModal({
 }) {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
-  const [phoneNumber, setPhoneNumber] = useState(""); 
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
   const [status, setStatus] = useState<Sale["status"]>("PENDIENTE");
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const [newItem, setNewItem] = useState<{itemId: string, qty: number}>({itemId: "", qty: 1});
+  const [newItem, setNewItem] = useState<{ itemId: string, qty: number }>({ itemId: "", qty: 1 });
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -110,7 +110,7 @@ export default function SaleEditModal({
     setStatus(sale.status);
     setPaymentMethod(sale.paymentMethod ?? "CASH");
     setExpanded(false);
-    setNewItem({itemId: "", qty: 1});
+    setNewItem({ itemId: "", qty: 1 });
     setAvailabilityError(null);
     setAvailableDates([]);
     setAvailableSlots([]);
@@ -120,7 +120,7 @@ export default function SaleEditModal({
         itemId: it.itemId || (it as any).id,
         qty: sale.type === "SERVICIO" ? 1 : it.qty,
         name: it.name,
-        price: it.price / (it.qty || 1),
+        price: it.unitPrice, // Store unit price here as it's an "editable item"
         durationMin: it.durationMin,
       }))
     );
@@ -207,7 +207,7 @@ export default function SaleEditModal({
       },
     ]);
     setExpanded(false);
-    setNewItem({itemId: "", qty: 1});
+    setNewItem({ itemId: "", qty: 1 });
   };
 
   const handleSave = () => {
@@ -242,7 +242,10 @@ export default function SaleEditModal({
       type,
       status,
       paymentMethod,
-      items: cleanedItems,
+      items: cleanedItems.map(item => ({
+        ...item,
+        unitPrice: item.price / item.qty,
+      })),
       scheduledAt,
     };
 
@@ -255,8 +258,8 @@ export default function SaleEditModal({
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-             <h2 className="font-bold text-neutral-900 text-lg">Editar Pedido</h2>
-             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">#{sale.id?.slice(-6) || 'N/A'}</span>
+            <h2 className="font-bold text-neutral-900 text-lg">Editar Pedido</h2>
+            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">#{sale.id?.slice(-6) || 'N/A'}</span>
           </div>
 
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500">
@@ -291,12 +294,6 @@ export default function SaleEditModal({
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
-                  Tipo
-                </span>
-                <span className="text-[12px] font-semibold text-neutral-600">
-                  {type === "PRODUCTO" ? "Producto" : "Servicio"}
-                </span>
               </div>
 
               <div className="flex flex-col gap-0.5 text-right">
@@ -309,12 +306,12 @@ export default function SaleEditModal({
               </div>
 
               <div className="col-span-2 pt-2 border-t border-neutral-50">
-                 <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Origen de la venta</span>
-                    <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
-                      {getSaleOriginLabel(sale?.origin)}
-                    </span>
-                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Origen de la venta</span>
+                  <span className="text-[11px] font-bold text-neutral-700 bg-neutral-100 px-2 py-0.5 rounded-md">
+                    {getSaleOriginLabel(sale?.origin)}
+                  </span>
+                </div>
               </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">
@@ -323,22 +320,20 @@ export default function SaleEditModal({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("CASH")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
-                    paymentMethod === "CASH"
-                      ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
-                  }`}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${paymentMethod === "CASH"
+                    ? "bg-emerald-500 text-white"
+                    : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                    }`}
                 >
                   Efectivo
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
-                    paymentMethod === "BANK_TRANSFER"
-                      ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700"
-                  }`}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${paymentMethod === "BANK_TRANSFER"
+                    ? "bg-emerald-500 text-white"
+                    : "border border-neutral-200 bg-neutral-50 text-neutral-700"
+                    }`}
                 >
                   Transferencia
                 </button>
@@ -383,7 +378,7 @@ export default function SaleEditModal({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
-                       {it.qty} unidades - ${formatMoney(it.price * it.qty)}
+                      {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
 
@@ -408,7 +403,7 @@ export default function SaleEditModal({
 
               {items.length === 0 && (
                 <div className="text-center py-10 border-2 border-dashed border-neutral-100 rounded-2xl">
-                   <p className="text-[11px] font-bold text-neutral-300 uppercase italic">Sin productos en la lista</p>
+                  <p className="text-[11px] font-bold text-neutral-300 uppercase italic">Sin productos en la lista</p>
                 </div>
               )}
             </div>
@@ -418,74 +413,74 @@ export default function SaleEditModal({
         </div>
 
         <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2">
-           <div className="relative">
-              {expanded && !isReservation && (
-                <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
-                   <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Producto / Servicio</span>
-                        <div className="relative">
-                           <ItemSelector
-                             value={newItem.itemId}
-                             onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                             options={businessItems.filter(bi => bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE"))}
-                           />
-                        </div>
-                      </div>
-
-                      {type === "PRODUCTO" && (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={newItem.qty}
-                            onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
-                            className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
-                          />
-                        </div>
-                      )}
-
-                      <button
-                        onClick={handleAddItem}
-                        disabled={!newItem.itemId}
-                        className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
-                      >
-                        Anadir a la lista
-                      </button>
-                   </div>
-                </div>
-              )}
-
-              <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
-                 <div className="flex items-end gap-2">
-                    {!isReservation && (
-                      <button
-                        onClick={() => setExpanded(!expanded)}
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-                      >
-                        {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
-                      </button>
-                    )}
-
-                    <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
-                       <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
-                       <span className="text-lg font-black text-neutral-900">${formatMoney(total)}</span>
+          <div className="relative">
+            {expanded && !isReservation && (
+              <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Item</span>
+                    <div className="relative">
+                      <ItemSelector
+                        value={newItem.itemId}
+                        onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
+                        options={businessItems.filter(bi => bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE"))}
+                      />
                     </div>
+                  </div>
 
-                    <button
-                      onClick={handleSave}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
-                    >
-                      <Send className="h-4 w-4" />
-                    </button>
-                 </div>
+                  {type === "PRODUCTO" && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
+                      <input
+                        type="number"
+                        min="1"
+                        value={newItem.qty}
+                        onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
+                        className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleAddItem}
+                    disabled={!newItem.itemId}
+                    className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
+                  >
+                    Anadir a la lista
+                  </button>
+                </div>
               </div>
-           </div>
+            )}
 
-           <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
-             Pulsa el icono de enviar para guardar cambios
-           </div>
+            <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
+              <div className="flex items-end gap-2">
+                {!isReservation && (
+                  <button
+                    onClick={() => setExpanded(!expanded)}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
+                  >
+                    {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                  </button>
+                )}
+
+                <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
+                  <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
+                  <span className="text-lg font-black text-neutral-900">${formatMoney(total)}</span>
+                </div>
+
+                <button
+                  onClick={handleSave}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
+            Pulsa el icono de enviar para guardar cambios
+          </div>
         </div>
       </div>
 
