@@ -22,24 +22,37 @@ import { Plus } from "lucide-react";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
+
+  const items = order.items.map((it) => {
+    const unitPrice = it.unitPrice ?? it.price;
+
+    return {
+      itemId: it.itemId,
+      qty: it.qty,
+      name: it.name,
+      unitPrice,
+      price: unitPrice,
+      durationMin: it.durationMin,
+    };
+  });
+
+  const total =
+    order.total ??
+    items.reduce((sum, it) => sum + it.unitPrice * it.qty, 0);
+
   return {
     id: order.id,
-    sourceType: order.sourceType, // ORIGEN EXPLÍCITO
+    sourceType: order.sourceType,
     customerName: order.customerName,
     customerWhatsapp: order.customerWhatsapp,
     paymentMethod: order.paymentMethod,
     type: order.type,
-    status: order.status as any, // Matches UnifiedStatus
+    status: order.status as any,
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
-    items: order.items.map((it) => ({
-      itemId: it.itemId,
-      qty: it.qty,
-      name: it.name,
-      price: it.price,
-      durationMin: it.durationMin,
-    })),
+    total,
+    items,
   };
 }
 
@@ -70,9 +83,9 @@ export default function VentaPage() {
   }, []);
 
   const showConfirmation = (
-    title: string, 
-    actionLabel: string, 
-    onAction: () => void, 
+    title: string,
+    actionLabel: string,
+    onAction: () => void,
     variant: 'emerald' | 'rose' = 'emerald'
   ) => {
     toast.custom((t) => (
@@ -172,83 +185,83 @@ export default function VentaPage() {
 
   const businessName = typeof window !== "undefined" ? localStorage.getItem("businessName") || "Mi Negocio" : "Mi Negocio";
 
-const handleSendWhatsApp = (sale: Sale) => {
-  if (!sale.customerWhatsapp) {
-    alert("El cliente no tiene número de WhatsApp");
-    return;
-  }
+  const handleSendWhatsApp = (sale: Sale) => {
+    if (!sale.customerWhatsapp) {
+      alert("El cliente no tiene número de WhatsApp");
+      return;
+    }
 
-  const msg = formatSaleMessage({
-    businessName,
-    customerName: sale.customerName || "Cliente",
-    type: sale.type,
-    scheduledAt: sale.scheduledAt,
-    items: sale.items,
-  });
+    const msg = formatSaleMessage({
+      businessName,
+      customerName: sale.customerName || "Cliente",
+      type: sale.type,
+      scheduledAt: sale.scheduledAt,
+      items: sale.items,
+    });
 
-  const url = buildWhatsAppUrl(sale.customerWhatsapp, msg);
+    const url = buildWhatsAppUrl(sale.customerWhatsapp, msg);
 
-  window.open(url, "_blank");
-};
+    window.open(url, "_blank");
+  };
 
   const handleConfirmSale = useCallback(async (sale: Sale) => {
-  showConfirmation(
-    "¿Deseás confirmar esta venta?",
-    "Confirmar",
-    async () => {
-      const loadingId = "sale-confirm-loading";
-      const successId = "sale-confirm-success";
-      const errorId = "sale-confirm-error";
+    showConfirmation(
+      "¿Deseás confirmar esta venta?",
+      "Confirmar",
+      async () => {
+        const loadingId = "sale-confirm-loading";
+        const successId = "sale-confirm-success";
+        const errorId = "sale-confirm-error";
 
-      try {
-        setConfirmingSaleId(sale.id);
-        setError(null);
+        try {
+          setConfirmingSaleId(sale.id);
+          setError(null);
 
-        toast.dismiss(loadingId);
-        toast.dismiss(successId);
-        toast.dismiss(errorId);
-
-        toast.loading("Confirmando venta...", { id: loadingId });
-
-        await confirmSale(sale.id, sale.sourceType);
-
-        invalidateCache("home:sales");
-        await loadOrders();
-
-        setDetailsSale(null);
-
-        toast.dismiss(loadingId);
-
-        toast.success("Venta confirmada", {
-          id: successId,
-          duration: 2000,
-        });
-
-        setTimeout(() => {
+          toast.dismiss(loadingId);
           toast.dismiss(successId);
-        }, 2100);
-      } catch (err) {
-        console.error(err);
-        setError("No se pudo finalizar la venta");
-        await loadOrders();
-
-        toast.dismiss(loadingId);
-
-        toast.error("Error al confirmar venta", {
-          id: errorId,
-          duration: 3000,
-        });
-
-        setTimeout(() => {
           toast.dismiss(errorId);
-        }, 3100);
-      } finally {
-        setConfirmingSaleId(null);
-      }
-    },
-    "emerald"
-  );
- }, [loadOrders]);
+
+          toast.loading("Confirmando venta...", { id: loadingId });
+
+          await confirmSale(sale.id, sale.sourceType);
+
+          invalidateCache("home:sales");
+          await loadOrders();
+
+          setDetailsSale(null);
+
+          toast.dismiss(loadingId);
+
+          toast.success("Venta confirmada", {
+            id: successId,
+            duration: 2000,
+          });
+
+          setTimeout(() => {
+            toast.dismiss(successId);
+          }, 2100);
+        } catch (err) {
+          console.error(err);
+          setError("No se pudo finalizar la venta");
+          await loadOrders();
+
+          toast.dismiss(loadingId);
+
+          toast.error("Error al confirmar venta", {
+            id: errorId,
+            duration: 3000,
+          });
+
+          setTimeout(() => {
+            toast.dismiss(errorId);
+          }, 3100);
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "emerald"
+    );
+  }, [loadOrders]);
 
   const handleCreateSale = async (data: {
     customerName?: string;
@@ -285,168 +298,168 @@ const handleSendWhatsApp = (sale: Sale) => {
     }
   };
 
- const handleDeleteSale = useCallback(async (sale: Sale) => {
-  showConfirmation(
-    "¿Deseás eliminar esta venta?",
-    "Eliminar",
-    async () => {
-      const loadingId = "sale-delete-loading";
-      const successId = "sale-delete-success";
-      const errorId = "sale-delete-error";
+  const handleDeleteSale = useCallback(async (sale: Sale) => {
+    showConfirmation(
+      "¿Deseás eliminar esta venta?",
+      "Eliminar",
+      async () => {
+        const loadingId = "sale-delete-loading";
+        const successId = "sale-delete-success";
+        const errorId = "sale-delete-error";
 
-      try {
-        setConfirmingSaleId(sale.id);
-        setError(null);
+        try {
+          setConfirmingSaleId(sale.id);
+          setError(null);
 
-        toast.dismiss(loadingId);
-        toast.dismiss(successId);
-        toast.dismiss(errorId);
-
-        toast.loading("Eliminando venta...", { id: loadingId });
-
-        await deleteSale(sale.id, sale.sourceType);
-
-        invalidateCache("home:sales");
-        invalidateCache("home:businessActivity");
-
-        await loadOrders();
-
-        if (detailsSale?.id === sale.id) setDetailsSale(null);
-        setSelectedSale(null);
-
-        toast.dismiss(loadingId);
-
-        toast.success("Venta eliminada", {
-          id: successId,
-          duration: 2000,
-        });
-
-        setTimeout(() => {
+          toast.dismiss(loadingId);
           toast.dismiss(successId);
-        }, 2100);
-      } catch (err) {
-        console.error(err);
-        setError("No se pudo eliminar la venta");
-
-        toast.dismiss(loadingId);
-
-        toast.error("Error al eliminar venta", {
-          id: errorId,
-          duration: 3000,
-        });
-
-        setTimeout(() => {
           toast.dismiss(errorId);
-        }, 3100);
-      } finally {
-        setConfirmingSaleId(null);
-      }
-    },
-    "rose"
-  );
-}, [detailsSale, loadOrders]);
+
+          toast.loading("Eliminando venta...", { id: loadingId });
+
+          await deleteSale(sale.id, sale.sourceType);
+
+          invalidateCache("home:sales");
+          invalidateCache("home:businessActivity");
+
+          await loadOrders();
+
+          if (detailsSale?.id === sale.id) setDetailsSale(null);
+          setSelectedSale(null);
+
+          toast.dismiss(loadingId);
+
+          toast.success("Venta eliminada", {
+            id: successId,
+            duration: 2000,
+          });
+
+          setTimeout(() => {
+            toast.dismiss(successId);
+          }, 2100);
+        } catch (err) {
+          console.error(err);
+          setError("No se pudo eliminar la venta");
+
+          toast.dismiss(loadingId);
+
+          toast.error("Error al eliminar venta", {
+            id: errorId,
+            duration: 3000,
+          });
+
+          setTimeout(() => {
+            toast.dismiss(errorId);
+          }, 3100);
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "rose"
+    );
+  }, [detailsSale, loadOrders]);
 
   const handleSaveEditedSale = async (updated: Sale) => {
-  const loadingId = "sale-edit-loading";
-  const successId = "sale-edit-success";
-  const errorId = "sale-edit-error";
+    const loadingId = "sale-edit-loading";
+    const successId = "sale-edit-success";
+    const errorId = "sale-edit-error";
 
-  try {
-    setConfirmingSaleId(updated.id);
-    setError(null);
+    try {
+      setConfirmingSaleId(updated.id);
+      setError(null);
 
-    toast.dismiss(loadingId);
-    toast.dismiss(successId);
-    toast.dismiss(errorId);
-
-    toast.loading("Guardando cambios...", { id: loadingId });
-
-    const dto = {
-      customerName: updated.customerName ?? undefined,
-      customerWhatsapp: updated.customerWhatsapp ?? undefined,
-      paymentMethod: updated.paymentMethod,
-      scheduledAt: updated.scheduledAt,
-      items: updated.items
-        .filter((it) => it.itemId)
-        .map((it) => ({
-          itemId: it.itemId!,
-          quantity: it.qty,
-        })),
-    };
-
-    await updateSale(updated.id, dto, updated.sourceType);
-
-    invalidateCache("home:sales");
-    await loadOrders();
-
-    setEditingSale(null);
-    if (detailsSale?.id === updated.id) {
-      setDetailsSale(null);
-    }
-
-    toast.dismiss(loadingId);
-
-    toast.success("Venta actualizada", {
-      id: successId,
-      duration: 2000,
-    });
-
-    setTimeout(() => {
+      toast.dismiss(loadingId);
       toast.dismiss(successId);
-    }, 2100);
-  } catch (err) {
-    console.error(err);
-    setError("No se pudo actualizar la venta");
-
-    toast.dismiss(loadingId);
-
-    toast.error("Error al actualizar la venta", {
-      id: errorId,
-      duration: 3000,
-    });
-
-    setTimeout(() => {
       toast.dismiss(errorId);
-    }, 3100);
-  } finally {
-    setConfirmingSaleId(null);
-  }
-};
+
+      toast.loading("Guardando cambios...", { id: loadingId });
+
+      const dto = {
+        customerName: updated.customerName ?? undefined,
+        customerWhatsapp: updated.customerWhatsapp ?? undefined,
+        paymentMethod: updated.paymentMethod,
+        scheduledAt: updated.scheduledAt,
+        items: updated.items
+          .filter((it) => it.itemId)
+          .map((it) => ({
+            itemId: it.itemId!,
+            quantity: it.qty,
+          })),
+      };
+
+      await updateSale(updated.id, dto, updated.sourceType);
+
+      invalidateCache("home:sales");
+      await loadOrders();
+
+      setEditingSale(null);
+      if (detailsSale?.id === updated.id) {
+        setDetailsSale(null);
+      }
+
+      toast.dismiss(loadingId);
+
+      toast.success("Venta actualizada", {
+        id: successId,
+        duration: 2000,
+      });
+
+      setTimeout(() => {
+        toast.dismiss(successId);
+      }, 2100);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo actualizar la venta");
+
+      toast.dismiss(loadingId);
+
+      toast.error("Error al actualizar la venta", {
+        id: errorId,
+        duration: 3000,
+      });
+
+      setTimeout(() => {
+        toast.dismiss(errorId);
+      }, 3100);
+    } finally {
+      setConfirmingSaleId(null);
+    }
+  };
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
-      {selectedSale ? (
-        <SelectionActionBar
-          visible
-          title="Venta seleccionada"
-          onClose={() => setSelectedSale(null)}
-          onView={() => {
-            setDetailsSale(selectedSale);
-            setSelectedSale(null);
-          }}
-          viewLabel="Ver detalles"
-          onEdit={
-            (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
-              ? () => {
+        {selectedSale ? (
+          <SelectionActionBar
+            visible
+            title="Venta seleccionada"
+            onClose={() => setSelectedSale(null)}
+            onView={() => {
+              setDetailsSale(selectedSale);
+              setSelectedSale(null);
+            }}
+            viewLabel="Ver detalles"
+            onEdit={
+              (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+                ? () => {
                   setEditingSale(selectedSale);
                   setSelectedSale(null);
                 }
-              : undefined
-          }
-          editLabel="Editar"
-          onDelete={() => handleDeleteSale(selectedSale)}
-          deleteLabel="Eliminar"
-        />
-      ) : (
-        <AppHeader 
-          title="Ventas" 
-          showBack 
-          rightIcon={<Filter size={20} />}
-          onRightClick={() => setFilterOpen(true)}
-          rightAriaLabel="Filtrar estado"
-        />
-      )}
+                : undefined
+            }
+            editLabel="Editar"
+            onDelete={() => handleDeleteSale(selectedSale)}
+            deleteLabel="Eliminar"
+          />
+        ) : (
+          <AppHeader
+            title="Ventas"
+            showBack
+            rightIcon={<Filter size={20} />}
+            onRightClick={() => setFilterOpen(true)}
+            rightAriaLabel="Filtrar estado"
+          />
+        )}
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden relative">
