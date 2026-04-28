@@ -25,6 +25,7 @@ export interface UnifiedSaleDto {
   items: Array<{
     name: string;
     qty: number;
+    unitPrice: number;
     price: number;
     itemId: string;
     durationMin?: number | null;
@@ -332,6 +333,7 @@ export class SalesService {
       items: o.items.map((it) => ({
         name: it.itemNameSnapshot,
         qty: it.quantity,
+        unitPrice: Number(it.unitPrice),
         price: Number(it.lineTotal),
         itemId: it.itemId,
         durationMin: it.durationMinutesSnapshot ?? null,
@@ -354,6 +356,7 @@ export class SalesService {
         {
           name: r.item.name,
           qty: 1,
+          unitPrice: Number(r.item.price),
           price: Number(r.item.price),
           itemId: r.itemId,
           durationMin: r.item.durationMinutes ?? null,
@@ -604,7 +607,7 @@ export class SalesService {
           itemTypeSnapshot: 'SERVICE',
           durationMinutesSnapshot: res.item.durationMinutes,
           unitPrice: price,
-          lineTotal: price,
+          price: price,
           item: res.item,
         },
       ],

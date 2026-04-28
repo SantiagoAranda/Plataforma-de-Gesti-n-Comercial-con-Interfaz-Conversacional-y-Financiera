@@ -264,7 +264,7 @@ export default function SaleCreateModal({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
                     <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
-                       {it.qty} unidades - ${formatMoney(it.price * it.qty)}
+                       {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
 

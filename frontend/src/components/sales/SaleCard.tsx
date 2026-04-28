@@ -15,10 +15,8 @@ function typeLabel(type: Sale["type"]) {
 }
 
 function calcTotal(sale: Sale) {
-  return sale.items.reduce(
-    (acc, it) => acc + ((it.price ?? 0) * (it.qty ?? 1)),
-    0
-  );
+  if (sale.total !== undefined) return sale.total;
+  return sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
 }
 
 function formatTime(iso?: string) {

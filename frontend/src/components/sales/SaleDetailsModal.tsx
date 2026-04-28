@@ -15,7 +15,8 @@ function formatMoney(n: number) {
 }
 
 function calcTotal(sale: Sale) {
-  return sale.items.reduce((acc, it) => acc + ((it.price ?? 0) * (it.qty ?? 1)), 0);
+  if (sale.total !== undefined) return sale.total;
+  return sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
 }
 
 function formatDateTime(iso?: string) {
@@ -172,7 +173,7 @@ export default function SaleDetailsModal({
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
                     <div className="text-[10px] font-bold text-neutral-400 uppercase">
-                      {it.qty} unidades {it.durationMin ? `• ${it.durationMin} min` : ''}
+                      {it.qty} unidades x ${formatMoney(it.unitPrice)} {it.durationMin ? `• ${it.durationMin} min` : ''}
                     </div>
                   </div>
                   <div className="text-sm font-black text-neutral-900">
