@@ -9,8 +9,18 @@ import { SelectionActionBar } from "@/src/components/shared/selection/SelectionA
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
-import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
-import { Item, ItemType, ItemImage, PendingImage, WeeklySchedule, FormErrors } from "@/src/types/item";
+import {
+  ItemFormContent,
+} from "@/src/components/mi-negocio/ItemFormContent";
+import {
+  Item,
+  ItemType,
+  ItemImage,
+  PendingImage,
+  WeeklySchedule,
+  FormErrors,
+  ItemInventoryMode,
+} from "@/src/types/item";
 import { 
   generateCreationId, 
   createInitialWeek, 
@@ -57,6 +67,10 @@ export default function MiNegocioPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+
+  // Inventory (PRODUCT only)
+  const [inventoryMode, setInventoryMode] =
+    useState<ItemInventoryMode>("NONE");
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -112,6 +126,7 @@ export default function MiNegocioPage() {
     setCurrentDayIndex(0);
     setFormErrors({});
     setType("PRODUCT");
+    setInventoryMode("NONE");
     setEditingItem(null);
   }, []);
 
@@ -137,6 +152,9 @@ export default function MiNegocioPage() {
     
     // Fill form
     setType(item.type);
+    const nextInventoryMode: ItemInventoryMode =
+      item.type === "SERVICE" ? "NONE" : (item.inventoryMode ?? "NONE");
+    setInventoryMode(nextInventoryMode);
     setName(item.name);
     setPrice(String(item.price));
     setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
@@ -226,6 +244,13 @@ export default function MiNegocioPage() {
       }
     }
 
+    if (type === "SERVICE" && inventoryMode !== "NONE") {
+      // UX rule: services never affect inventory
+      setInventoryMode("NONE");
+    }
+
+    // Mi Negocio no configura recetas ni stock. Eso se gestiona desde Inventario.
+
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
@@ -247,6 +272,7 @@ export default function MiNegocioPage() {
         price: parseFloat(price),
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? duration : null,
+        inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
       };
 
@@ -460,6 +486,8 @@ export default function MiNegocioPage() {
         <ItemFormContent
           type={type}
           setType={setType}
+          inventoryMode={inventoryMode}
+          setInventoryMode={setInventoryMode}
           name={name}
           setName={setName}
           priceDisplay={priceDisplay}

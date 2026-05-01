@@ -52,12 +52,26 @@ export function RecipeEditor({
     [items, selectedItemId],
   );
 
+  const isSimple = selectedItem?.inventoryMode === "SIMPLE";
+
   const filteredItems = useMemo(() => {
     const q = effectiveSearch.trim().toLowerCase();
     return items
       .filter((i) => i.type === "PRODUCT")
+      .filter((i) => i.inventoryMode && i.inventoryMode !== "NONE")
       .filter((i) => !q || i.name.toLowerCase().includes(q));
   }, [items, effectiveSearch]);
+
+  const normalizeSimpleLines = (input: RecipeLine[]) => {
+    const base = input.find((l) => !l.isOptional) ?? input[0] ?? null;
+    return [
+      {
+        ingredientId: base?.ingredientId ?? "",
+        quantityRequired: 1,
+        isOptional: false,
+      },
+    ] satisfies RecipeLine[];
+  };
 
   useEffect(() => {
     (async () => {
@@ -98,6 +112,15 @@ export function RecipeEditor({
       }
     })();
   }, [selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedItemId || !selectedItem) return;
+    if (selectedItem.type !== "PRODUCT") return;
+
+    if (selectedItem.inventoryMode === "SIMPLE") {
+      setLines((prev) => normalizeSimpleLines(prev));
+    }
+  }, [selectedItemId, selectedItem]);
 
   const ingredientName = (ingredientId: string) =>
     ingredients.find((i) => i.id === ingredientId)?.name ?? "Ingrediente";
@@ -147,13 +170,22 @@ export function RecipeEditor({
       toast.dismiss(successId);
       toast.loading("Guardando receta...", { id: loadingId });
 
-      const payload = {
-        lines: lines.map((l) => ({
-          ingredientId: l.ingredientId,
-          quantityRequired: l.quantityRequired,
-          isOptional: !!l.isOptional,
-        })),
-      };
+      const normalizedLines =
+        selectedItem?.inventoryMode === "SIMPLE"
+          ? [
+              {
+                ingredientId: lines[0]?.ingredientId ?? "",
+                quantityRequired: 1,
+                isOptional: false,
+              },
+            ]
+          : lines.map((l) => ({
+              ingredientId: l.ingredientId,
+              quantityRequired: l.quantityRequired,
+              isOptional: !!l.isOptional,
+            }));
+
+      const payload = { lines: normalizedLines };
 
       const updated = await replaceRecipe(selectedItemId, payload);
       setLines(updated ?? payload.lines);
@@ -223,8 +255,12 @@ export function RecipeEditor({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Receta</p>
-          <p className="mt-1 text-sm font-bold text-neutral-900">Líneas: {lines.length}</p>
+                    <p className="mt-1 text-sm font-bold text-neutral-900">
+            Líneas: {isSimple ? (lines.length ? 1 : 0) : lines.length}
+          </p>
         </div>
+
+        {!isSimple && (
         <button
           type="button"
           onClick={() =>
@@ -239,24 +275,41 @@ export function RecipeEditor({
         >
           <Plus className="h-4 w-4" />
         </button>
+        )}
       </div>
 
       {loadingRecipe ? (
         <div className="mt-4 text-center text-neutral-400">Cargando receta...</div>
       ) : (
         <div className="mt-4 space-y-3">
-          {lines.map((line, idx) => (
+                                        {isSimple && (
+            <div className="rounded-2xl bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-600">
+              En modo <span className="font-bold">SIMPLE</span>, este producto se vincula a un único insumo.
+              La cantidad consumida por venta se define automáticamente en 1.
+            </div>
+          )}
+
+          {(isSimple ? lines.slice(0, 1) : lines).map(
+            (line, idx) => (
             <div key={`${line.ingredientId}:${idx}`} className="rounded-2xl border border-neutral-100 bg-white p-3">
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ingrediente</p>
                   <select
                     value={line.ingredientId}
-                    onChange={(e) =>
-                      setLines((prev) =>
-                        prev.map((l, i) => (i === idx ? { ...l, ingredientId: e.target.value } : l)),
-                      )
-                    }
+	                    onChange={(e) =>
+	                      setLines((prev) => {
+	                        if (isSimple) {
+	                          const next = normalizeSimpleLines(prev);
+	                          next[0] = { ...next[0], ingredientId: e.target.value };
+	                          return next;
+	                        }
+
+	                        return prev.map((l, i) =>
+	                          i === idx ? { ...l, ingredientId: e.target.value } : l,
+	                        );
+	                      })
+	                    }
                     className="mt-2 w-full rounded-xl border border-neutral-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500"
                   >
                     <option value="">Seleccionar...</option>
@@ -276,46 +329,59 @@ export function RecipeEditor({
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Cantidad</p>
                   <input
-                    value={String(line.quantityRequired ?? "")}
+                    value={
+                      selectedItem?.inventoryMode === "SIMPLE"
+                        ? "1"
+                        : String(line.quantityRequired ?? "")
+                    }
                     onChange={(e) => {
+                      if (selectedItem?.inventoryMode === "SIMPLE") return;
                       const num = parseNumber(e.target.value);
                       setLines((prev) =>
                         prev.map((l, i) => (i === idx ? { ...l, quantityRequired: num } : l)),
                       );
                     }}
                     inputMode="decimal"
-                    className="mt-2 w-full rounded-xl border border-neutral-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500"
+                    disabled={selectedItem?.inventoryMode === "SIMPLE"}
+                    className="mt-2 w-full rounded-xl border border-neutral-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500 disabled:opacity-60"
                   />
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setLines((prev) =>
-                      prev.map((l, i) => (i === idx ? { ...l, isOptional: !l.isOptional } : l)),
-                    )
-                  }
-                  className={cn(
-                    "h-9 rounded-full px-4 text-[10px] font-black uppercase tracking-widest transition",
-                    line.isOptional ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800",
-                  )}
-                >
-                  {line.isOptional ? "Opcional" : "Obligatorio"}
-                </button>
+                                          <div className="mt-3 flex items-center justify-between gap-2">
+                {!isSimple ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setLines((prev) =>
+                          prev.map((l, i) => (i === idx ? { ...l, isOptional: !l.isOptional } : l)),
+                        )
+                      }
+                      className={cn(
+                        "h-9 rounded-full px-4 text-[10px] font-black uppercase tracking-widest transition",
+                        line.isOptional ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800",
+                      )}
+                    >
+                      {line.isOptional ? "Opcional" : "Obligatorio"}
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}
-                  className="grid h-9 w-9 place-items-center rounded-full bg-rose-50 text-rose-600 active:scale-95"
-                  aria-label="Eliminar línea"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))}
+                      className="grid h-9 w-9 place-items-center rounded-full bg-rose-50 text-rose-600 active:scale-95"
+                      aria-label="Eliminar línea"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : (
+                  <div className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Única línea</div>
+                )}
               </div>
             </div>
-          ))}
+          ),
+          )}
 
           {!lines.length && (
             <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">

@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
 import { CreateInventoryPurchaseDto } from './dto/create-inventory-purchase.dto';
+import { CreateInventoryPurchaseReturnDto } from './dto/create-inventory-purchase-return.dto';
 import { InventoryKardexQueryDto } from './dto/inventory-kardex.query.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
 
@@ -76,10 +77,33 @@ export class InventoryService {
   }
 
   async registerPurchase(businessId: string, dto: CreateInventoryPurchaseDto) {
+    return this.runInventoryTransaction(async (tx) => {
+      const { quantity, unitCost } = await this.resolvePurchaseInput(
+        tx,
+        businessId,
+        dto,
+      );
+
+      return this.applyInventoryMovement(tx, businessId, {
+        ingredientId: dto.ingredientId,
+        type: 'PURCHASE',
+        quantity,
+        unitCost,
+        referenceType: 'PURCHASE_MANUAL',
+        referenceId: dto.referenceId ?? null,
+        detail: dto.detail ?? null,
+      });
+    });
+  }
+
+  async registerPurchaseReturn(
+    businessId: string,
+    dto: CreateInventoryPurchaseReturnDto,
+  ) {
     return this.runInventoryTransaction((tx) =>
       this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
-        type: 'PURCHASE',
+        type: 'PURCHASE_RETURN',
         quantity: dto.quantity,
         unitCost: dto.unitCost,
         referenceType: 'PURCHASE_MANUAL',
@@ -529,30 +553,35 @@ export class InventoryService {
 
     const previousStock = this.decimal(ingredient.currentStock);
     const previousAverageCost = this.decimal(ingredient.averageCost);
-    const isInput = this.isInputMovement(input.type);
 
-    const unitCost = isInput
-      ? this.resolveInputUnitCost(input, previousAverageCost)
-      : previousAverageCost;
+    const stockIncrease = this.isStockIncrease(input.type);
+    const stockAfter = stockIncrease
+      ? previousStock.add(quantity)
+      : previousStock.sub(quantity);
+
+    if (stockAfter.lt(0)) {
+      throw new BadRequestException(
+        `Insufficient stock for ingredient ${ingredient.name}`,
+      );
+    }
+
+    const unitCost = this.resolveMovementUnitCost(input, previousAverageCost);
 
     if (unitCost.lt(0)) {
       throw new BadRequestException('unitCost cannot be negative');
     }
 
-    const stockAfter = isInput ? previousStock.add(quantity) : previousStock.sub(quantity);
-
-    if (stockAfter.lt(0)) {
-      throw new BadRequestException(`Insufficient stock for ingredient ${ingredient.name}`);
-    }
-
     const totalValue = quantity.mul(unitCost).toDecimalPlaces(6);
-    const averageCostAfter = isInput
-      ? this.calculateWeightedAverageCost(
+
+    const averageCostAfter = this.recalculatesAverageCost(input.type)
+      ? this.calculateAverageCostAfter({
+          type: input.type,
           previousStock,
           previousAverageCost,
           quantity,
-          totalValue,
-        )
+          unitCost,
+          stockAfter,
+        })
       : previousAverageCost;
 
     const movement = await tx.inventoryMovement.create({
@@ -626,28 +655,73 @@ export class InventoryService {
       .toDecimalPlaces(6);
   }
 
-  private resolveInputUnitCost(
+  private resolveMovementUnitCost(
     input: ApplyInventoryMovementInput,
-    fallbackCost: Prisma.Decimal,
+    previousAverageCost: Prisma.Decimal,
   ) {
-    if (input.unitCost !== undefined && input.unitCost !== null) {
+    const requiresUnitCost = [
+      'INVENTORY_INITIAL',
+      'PURCHASE',
+      'PURCHASE_RETURN',
+      'ADJUSTMENT_POSITIVE',
+    ].includes(input.type);
+
+    if (requiresUnitCost) {
+      if (input.unitCost === undefined || input.unitCost === null) {
+        throw new BadRequestException('unitCost is required for this movement');
+      }
       return this.decimal(input.unitCost);
     }
 
-    if (input.type === 'ADJUSTMENT_POSITIVE') {
-      return fallbackCost;
-    }
-
-    throw new BadRequestException('unitCost is required for this movement');
+    // SALE / SALE_RETURN / ADJUSTMENT_NEGATIVE use the current weighted average cost.
+    return previousAverageCost;
   }
 
-  private isInputMovement(type: InventoryMovementType) {
+  private isStockIncrease(type: InventoryMovementType) {
+    return ['INVENTORY_INITIAL', 'PURCHASE', 'SALE_RETURN', 'ADJUSTMENT_POSITIVE'].includes(
+      type,
+    );
+  }
+
+  private recalculatesAverageCost(type: InventoryMovementType) {
     return [
       'INVENTORY_INITIAL',
       'PURCHASE',
-      'SALE_RETURN',
+      'PURCHASE_RETURN',
       'ADJUSTMENT_POSITIVE',
     ].includes(type);
+  }
+
+  private calculateAverageCostAfter(input: {
+    type: InventoryMovementType;
+    previousStock: Prisma.Decimal;
+    previousAverageCost: Prisma.Decimal;
+    quantity: Prisma.Decimal;
+    unitCost: Prisma.Decimal;
+    stockAfter: Prisma.Decimal;
+  }) {
+    if (input.stockAfter.eq(0)) {
+      return this.decimal(0);
+    }
+
+    if (input.type === 'PURCHASE_RETURN') {
+      // Purchase return is a stock decrease but it must recalculate the weighted average using:
+      // newAvg = (previousStock * previousAvg - qty * returnUnitCost) / newStock
+      return input.previousStock
+        .mul(input.previousAverageCost)
+        .sub(input.quantity.mul(input.unitCost))
+        .div(input.stockAfter)
+        .toDecimalPlaces(6);
+    }
+
+    // Standard weighted average recomputation for stock increases that carry cost.
+    const inputTotalValue = input.quantity.mul(input.unitCost).toDecimalPlaces(6);
+    return this.calculateWeightedAverageCost(
+      input.previousStock,
+      input.previousAverageCost,
+      input.quantity,
+      inputTotalValue,
+    );
   }
 
   private requiresDetail(type: InventoryMovementType) {
@@ -656,6 +730,67 @@ export class InventoryService {
 
   private decimal(value: number | string | Prisma.Decimal) {
     return new Prisma.Decimal(value);
+  }
+
+  private async resolvePurchaseInput(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    dto: CreateInventoryPurchaseDto,
+  ): Promise<{ quantity: Prisma.Decimal; unitCost: Prisma.Decimal }> {
+    const legacyTouched = dto.quantity !== undefined || dto.unitCost !== undefined;
+    const purchaseTouched =
+      dto.purchaseQuantity !== undefined || dto.purchaseUnitCost !== undefined;
+
+    if (legacyTouched && purchaseTouched) {
+      throw new BadRequestException(
+        'Provide either quantity/unitCost or purchaseQuantity/purchaseUnitCost, not both',
+      );
+    }
+
+    if (legacyTouched) {
+      if (dto.quantity === undefined || dto.unitCost === undefined) {
+        throw new BadRequestException('quantity and unitCost are required together');
+      }
+
+      return {
+        quantity: this.decimal(dto.quantity),
+        unitCost: this.decimal(dto.unitCost),
+      };
+    }
+
+    if (purchaseTouched) {
+      if (dto.purchaseQuantity === undefined || dto.purchaseUnitCost === undefined) {
+        throw new BadRequestException(
+          'purchaseQuantity and purchaseUnitCost are required together',
+        );
+      }
+
+      const ingredient = await this.loadIngredientOrThrow(
+        tx,
+        businessId,
+        dto.ingredientId,
+      );
+
+      const factor = this.decimal(ingredient.purchaseToConsumptionFactor);
+      if (factor.lte(0)) {
+        throw new BadRequestException('purchaseToConsumptionFactor must be greater than zero');
+      }
+
+      const purchaseQuantity = this.decimal(dto.purchaseQuantity);
+      const purchaseUnitCost = this.decimal(dto.purchaseUnitCost);
+
+      const consumptionQuantity = purchaseQuantity.mul(factor).toDecimalPlaces(6);
+      const unitCostPerConsumption = purchaseUnitCost.div(factor).toDecimalPlaces(6);
+
+      return {
+        quantity: consumptionQuantity,
+        unitCost: unitCostPerConsumption,
+      };
+    }
+
+    throw new BadRequestException(
+      'Provide quantity/unitCost or purchaseQuantity/purchaseUnitCost',
+    );
   }
 
   private parseDate(value: string, boundary: 'from' | 'to') {

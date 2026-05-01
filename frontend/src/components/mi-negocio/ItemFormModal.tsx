@@ -15,7 +15,8 @@ import {
   ItemImage, 
   PendingImage, 
   WeeklySchedule, 
-  FormErrors 
+  FormErrors,
+  ItemInventoryMode,
 } from "@/src/types/item";
 import { 
   generateCreationId, 
@@ -74,12 +75,20 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
 
+  const [inventoryMode, setInventoryMode] =
+    useState<ItemInventoryMode>("NONE");
+
   const totalImages = existingImages.length + newImages.length;
 
   // Sync with editingItem
   useEffect(() => {
     if (editingItem) {
       setType(editingItem.type);
+      setInventoryMode(
+        editingItem.type === "SERVICE"
+          ? "NONE"
+          : (editingItem.inventoryMode ?? "NONE"),
+      );
       setName(editingItem.name);
       setPrice(String(editingItem.price));
       setPriceDisplay(formatPriceInput(String(editingItem.price).replace(".", ",")));
@@ -125,6 +134,7 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
     setImageError(null);
     setDuration(30);
     setDurationInput("30");
+    setInventoryMode("NONE");
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -210,6 +220,7 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         price: parseFloat(price),
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? duration : null,
+        inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
       };
 
@@ -282,6 +293,8 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
       <ItemFormContent 
         type={type}
         setType={setType}
+        inventoryMode={inventoryMode}
+        setInventoryMode={setInventoryMode}
         name={name}
         setName={setName}
         priceDisplay={priceDisplay}

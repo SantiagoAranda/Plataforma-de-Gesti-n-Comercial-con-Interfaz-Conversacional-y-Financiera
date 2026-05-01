@@ -40,6 +40,7 @@ export type FormErrors = {
   price?: string;
   duration?: string;
   schedule?: string;
+  inventory?: string;
 };
 
 export type ItemImage = {

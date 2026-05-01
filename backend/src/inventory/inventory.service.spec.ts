@@ -93,6 +93,130 @@ describe('InventoryService', () => {
     expect(tx.ingredient.update).not.toHaveBeenCalled();
   });
 
+  it('requires unitCost for positive adjustments', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(3),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'ADJUSTMENT_POSITIVE',
+        quantity: 1,
+        referenceType: 'MANUAL',
+        detail: 'found extra stock',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('uses weighted average cost on negative adjustments without recalculating', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.applyInventoryMovement(tx as any, businessId, {
+      ingredientId,
+      type: 'ADJUSTMENT_NEGATIVE',
+      quantity: 2,
+      referenceType: 'MANUAL',
+      detail: 'waste',
+    });
+
+    expect(movement.unitCost.toString()).toBe('3');
+    expect(movement.averageCostAfter.toString()).toBe('3');
+  });
+
+  it('converts purchaseQuantity into consumption units using purchaseToConsumptionFactor', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      purchaseToConsumptionFactor: new Prisma.Decimal(6),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: 2,
+      purchaseUnitCost: 12,
+      detail: 'buy packs',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('12');
+    expect(movement.unitCost.toString()).toBe('2');
+    expect(movement.totalValue.toString()).toBe('24');
+    expect(movement.stockAfter.toString()).toBe('12');
+    expect(movement.averageCostAfter.toString()).toBe('2');
+  });
+
+  it('creates PURCHASE_RETURN movement, decreases stock, and recalculates average cost using return unitCost', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchaseReturn(businessId, {
+      ingredientId,
+      quantity: 4,
+      unitCost: 2,
+      detail: 'return to supplier',
+    } as any);
+
+    expect(movement.type).toBe('PURCHASE_RETURN');
+    expect(movement.stockAfter.toString()).toBe('6');
+    expect(movement.averageCostAfter.toString()).toBe('3.666667');
+  });
+
+  it('blocks PURCHASE_RETURN when stock is insufficient', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(3),
+    });
+
+    await expect(
+      service.registerPurchaseReturn(businessId, {
+        ingredientId,
+        quantity: 3,
+        unitCost: 2,
+      } as any),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
   it('consumes stock and creates SALE movement for SIMPLE item sales', async () => {
     const { service, tx } = createService();
     tx.recipe.findMany.mockResolvedValue([

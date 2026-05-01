@@ -84,6 +84,14 @@ export type CreateInventoryPurchaseDto = {
   detail?: string;
 };
 
+export type CreateInventoryPurchaseReturnDto = {
+  ingredientId: string;
+  quantity: number;
+  unitCost: number;
+  referenceId?: string;
+  detail?: string;
+};
+
 export type CreateInventoryAdjustmentDto = {
   ingredientId: string;
   quantity: number;
@@ -147,6 +155,13 @@ export function registerInitial(dto: CreateInventoryInitialDto) {
 
 export function registerPurchase(dto: CreateInventoryPurchaseDto) {
   return api<InventoryMovement>(`/inventory/purchase`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function registerPurchaseReturn(dto: CreateInventoryPurchaseReturnDto) {
+  return api<InventoryMovement>(`/inventory/purchase-return`, {
     method: "POST",
     body: JSON.stringify(dto),
   });

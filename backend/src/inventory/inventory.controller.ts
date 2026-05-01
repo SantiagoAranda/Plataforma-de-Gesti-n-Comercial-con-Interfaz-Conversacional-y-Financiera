@@ -4,6 +4,7 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
 import { CreateInventoryPurchaseDto } from './dto/create-inventory-purchase.dto';
+import { CreateInventoryPurchaseReturnDto } from './dto/create-inventory-purchase-return.dto';
 import { InventoryKardexQueryDto } from './dto/inventory-kardex.query.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
 import { InventoryService } from './inventory.service';
@@ -21,6 +22,14 @@ export class InventoryController {
   @Post('purchase')
   registerPurchase(@Req() req: any, @Body() dto: CreateInventoryPurchaseDto) {
     return this.inventoryService.registerPurchase(req.user.businessId, dto);
+  }
+
+  @Post('purchase-return')
+  registerPurchaseReturn(
+    @Req() req: any,
+    @Body() dto: CreateInventoryPurchaseReturnDto,
+  ) {
+    return this.inventoryService.registerPurchaseReturn(req.user.businessId, dto);
   }
 
   @Post('adjustments/positive')

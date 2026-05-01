@@ -6,7 +6,8 @@ import {
   ItemImage, 
   PendingImage, 
   WeeklySchedule, 
-  FormErrors 
+  FormErrors,
+  ItemInventoryMode,
 } from "@/src/types/item";
 import { 
   formatPriceInput, 
@@ -20,6 +21,8 @@ import {
 interface ItemFormContentProps {
   type: ItemType;
   setType: (type: ItemType) => void;
+  inventoryMode: ItemInventoryMode;
+  setInventoryMode: (mode: ItemInventoryMode) => void;
   name: string;
   setName: (name: string) => void;
   priceDisplay: string;
@@ -46,6 +49,8 @@ interface ItemFormContentProps {
 export function ItemFormContent({
   type,
   setType,
+  inventoryMode,
+  setInventoryMode,
   name,
   setName,
   priceDisplay,
@@ -76,13 +81,20 @@ export function ItemFormContent({
       {!editingItem && (
         <div className="flex bg-neutral-100 rounded-full p-1">
           <button
-            onClick={() => { setType("PRODUCT"); setFormErrors(p => ({ ...p, schedule: undefined })); }}
+            onClick={() => {
+              setType("PRODUCT");
+              setFormErrors((p) => ({ ...p, schedule: undefined }));
+            }}
             className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "PRODUCT" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
           >
             Producto
           </button>
           <button
-            onClick={() => { setType("SERVICE"); setFormErrors(p => ({ ...p, schedule: undefined })); }}
+            onClick={() => {
+              setType("SERVICE");
+              setInventoryMode("NONE");
+              setFormErrors((p) => ({ ...p, schedule: undefined }));
+            }}
             className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "SERVICE" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
           >
             Servicio
@@ -166,6 +178,66 @@ export function ItemFormContent({
           </div>
         )}
       </div>
+
+      {/* INVENTARIO (PRODUCT ONLY) */}
+      {type === "PRODUCT" && (
+        <div className="space-y-4">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+            Inventario
+          </label>
+
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setInventoryMode("NONE");
+                setFormErrors((p) => ({ ...p, inventory: undefined }));
+              }}
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                inventoryMode === "NONE"
+                  ? "border-green-500 bg-green-50/50"
+                  : "border-neutral-100 bg-white shadow-sm"
+              }`}
+            >
+              No controla stock
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInventoryMode("SIMPLE");
+                setFormErrors((p) => ({ ...p, inventory: undefined }));
+              }}
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                inventoryMode === "SIMPLE"
+                  ? "border-green-500 bg-green-50/50"
+                  : "border-neutral-100 bg-white shadow-sm"
+              }`}
+            >
+              Producto simple
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInventoryMode("RECIPE_BASED");
+                setFormErrors((p) => ({ ...p, inventory: undefined }));
+              }}
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                inventoryMode === "RECIPE_BASED"
+                  ? "border-green-500 bg-green-50/50"
+                  : "border-neutral-100 bg-white shadow-sm"
+              }`}
+            >
+              Producto compuesto / receta
+            </button>
+          </div>
+
+          {formErrors.inventory && (
+            <p className="text-[10px] font-bold text-red-500 uppercase">
+              {formErrors.inventory}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* HORARIOS (SERVICE ONLY) */}
       {type === "SERVICE" && (
