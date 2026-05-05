@@ -7,13 +7,14 @@ import { cn } from "@/src/lib/utils";
 
 export type InventoryChatMenuAction = "INGREDIENTES" | "KARDEX" | "RECETAS" | "PURCHASE_RETURN";
 
-type Props = {
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-  onPickAction: (action: InventoryChatMenuAction) => void;
+export type InventoryChatActionBarProps = {
+  value?: string;
+  onChange?: (value: string) => void;
+  onSubmit?: () => void;
+  onPickAction?: (action: InventoryChatMenuAction) => void;
   placeholder?: string;
   helperText?: string | null;
+  onCreateIngredient?: () => void;
 };
 
 const MENU: Array<{
@@ -35,13 +36,20 @@ export function InventoryChatActionBar({
   onPickAction,
   placeholder,
   helperText,
-}: Props) {
+  onCreateIngredient,
+}: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [internalValue, setInternalValue] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const effectiveValue = value ?? internalValue;
+  const handleChange = onChange ?? setInternalValue;
+  const handleSubmit = onSubmit ?? (() => {});
+  const handlePick = onPickAction ?? (() => {});
+
   const rightIcon = useMemo(() => {
-    return value.trim() ? Send : Search;
-  }, [value]);
+    return effectiveValue.trim() ? Send : Search;
+  }, [effectiveValue]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -52,6 +60,10 @@ export function InventoryChatActionBar({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (onCreateIngredient !== undefined && menuOpen) setMenuOpen(false);
+  }, [menuOpen, onCreateIngredient]);
 
   const RightIcon = rightIcon;
 
@@ -70,7 +82,7 @@ export function InventoryChatActionBar({
 
       <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2">
         <div className="relative">
-          {menuOpen && (
+          {menuOpen && onCreateIngredient === undefined && (
             <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3 shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-bottom-4 duration-200">
               <div className="space-y-2">
                 {MENU.map((item) => {
@@ -81,7 +93,7 @@ export function InventoryChatActionBar({
                       type="button"
                       onClick={() => {
                         setMenuOpen(false);
-                        onPickAction(item.action);
+                        handlePick(item.action);
                       }}
                       className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition active:scale-[0.99] hover:bg-neutral-50"
                     >
@@ -110,22 +122,38 @@ export function InventoryChatActionBar({
             <div className="flex items-end gap-2">
               <button
                 type="button"
-                onClick={() => setMenuOpen((v) => !v)}
+                onClick={() => {
+                  if (onCreateIngredient) {
+                    onCreateIngredient();
+                    return;
+                  }
+                  setMenuOpen((v) => !v);
+                }}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95 border border-neutral-200/60"
-                aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
+                aria-label={
+                  onCreateIngredient
+                    ? "Crear ingrediente"
+                    : menuOpen
+                      ? "Cerrar menú"
+                      : "Abrir menú"
+                }
               >
-                {menuOpen ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                {menuOpen && onCreateIngredient === undefined ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Plus className="h-5 w-5" />
+                )}
               </button>
 
               <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center">
                 <input
                   ref={inputRef}
-                  value={value}
-                  onChange={(e) => onChange(e.target.value)}
+                  value={effectiveValue}
+                  onChange={(e) => handleChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      onSubmit();
+                      handleSubmit();
                     }
                   }}
                   placeholder={placeholder ?? "Buscar o crear en inventario..."}
@@ -135,7 +163,7 @@ export function InventoryChatActionBar({
 
               <button
                 type="button"
-                onClick={onSubmit}
+                onClick={handleSubmit}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
                 aria-label="Buscar o crear"
               >
