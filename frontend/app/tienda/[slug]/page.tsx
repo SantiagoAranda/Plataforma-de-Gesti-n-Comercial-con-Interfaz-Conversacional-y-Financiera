@@ -5,11 +5,11 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
-  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
   Search,
-  ShieldCheck,
   ShoppingBag,
-  Truck,
   X,
 } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
@@ -19,9 +19,17 @@ import { formatPriceInput } from "@/src/lib/itemHelpers";
 import AppHeader from "@/src/components/layout/AppHeader";
 
 const formatPrice = (value: number) => {
-  return formatPriceInput(
-    value.toFixed(2).replace(".", ",")
-  );
+  return formatPriceInput(value.toFixed(2).replace(".", ","));
+};
+
+const formatCop = (value: number) => {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const formatted = new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(safeValue);
+  return formatted.replace("COP", "$").replace(/\s+/g, "");
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -356,7 +364,7 @@ export default function PublicStorePage() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
+      <main className="mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
         <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
           <Search className="h-5 w-5 text-black/40" />
           <input
@@ -389,16 +397,17 @@ export default function PublicStorePage() {
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
-          <div className="mt-5 grid grid-cols-2 gap-4">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6">
             {filtered.map((item) => (
               <ProductCard
                 key={item.id}
                 item={item}
                 preview={preview}
-                onAction={() =>
-                  item.type === "SERVICE"
-                    ? setSelectedService(item)
-                    : setSelectedProduct(item)
+                onOpen={() =>
+                  item.type === "SERVICE" ? setSelectedService(item) : setSelectedProduct(item)
+                }
+                onPlus={() =>
+                  item.type === "SERVICE" ? setSelectedService(item) : addToCart(item.id)
                 }
               />
             ))}
@@ -567,87 +576,110 @@ export default function PublicStorePage() {
 
 function ProductCard({
   item,
-  onAction,
+  onOpen,
+  onPlus,
   preview,
 }: {
   item: Item;
-  onAction: () => void;
+  onOpen: () => void;
+  onPlus: () => void;
   preview?: boolean;
 }) {
+  const images = item.images ?? [];
+  const imageCount = images.length;
+  const showCarousel = imageCount > 1;
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [item.id]);
+
+  useEffect(() => {
+    if (!showCarousel) return;
+
+    const id = window.setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % imageCount);
+    }, 3000);
+
+    return () => window.clearInterval(id);
+  }, [showCarousel, imageCount]);
+
   return (
-    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:-translate-y-1 h-full">
+    <div className="flex flex-col">
+      <div className="relative overflow-hidden rounded-3xl bg-neutral-100 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)]">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onOpen}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpen();
+            }
+          }}
+          className="block w-full cursor-pointer"
+          aria-label={`Ver ${item.name}`}
+        >
+          <div className="aspect-square w-full">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={item.name}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="h-full w-full bg-neutral-200" />
+            )}
+          </div>
 
-      {/* Imagen */}
-      <div className="aspect-[4/3] bg-neutral-50 overflow-hidden rounded-t-xl relative shrink-0">
-        {item.images?.[0]?.url ? (
-          <button
-            type="button"
-            onClick={onAction}
-            className="h-full w-full"
-            aria-label={`Ver ${item.name}`}
-          >
-            <img
-              src={item.images[0].url}
-              alt={item.name}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onAction}
-            className="h-full w-full bg-neutral-100"
-            aria-label={`Ver ${item.name}`}
-          />
-        )}
-        
-        {/* Overlays */}
-        <div className="absolute top-2 left-2 right-2 flex justify-between items-start pointer-events-none z-10">
-
-          {item.type === 'SERVICE' && item.durationMinutes && (
-            <span className="backdrop-blur-md bg-white/70 text-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm leading-none">
-              {item.durationMinutes} min
-            </span>
+          {showCarousel && (
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setCurrentImageIndex(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
           )}
         </div>
+
+        <button
+          type="button"
+          disabled={preview}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onPlus();
+          }}
+          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.18)] transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
+        >
+          <Plus className="h-5 w-5" />
+        </button>
       </div>
 
-      {/* Contenido */}
-      <div className="p-3 flex flex-col gap-2 flex-1 relative">
-
-        {/* Nombre */}
-        <div className="text-sm font-semibold text-neutral-900 line-clamp-1">
+      <div className="mt-3 space-y-1 px-1">
+        <div className="truncate text-[14px] font-bold text-slate-950">
           {item.name}
         </div>
-
-        {/* Descripción */}
-        <div className="flex-1">
-          {item.description && (
-            <p className="text-[11px] text-neutral-500 leading-snug line-clamp-2">
-              {item.description}
-            </p>
-          )}
+        <div className="text-[15px] font-black text-emerald-600">
+          {formatCop(item.price)}
         </div>
-
-        {/* Precio */}
-        <div className="text-emerald-600 font-bold text-sm mt-auto pt-1">
-          ${formatPrice(item.price)}
-        </div>
-
-        {/* Botón */}
-        <button
-          disabled={preview}
-          onClick={onAction}
-          className={`mt-2 text-xs py-2 rounded-lg font-semibold ${preview
-              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-              : "bg-emerald-600 text-white"
-            }`}
-        >
-          {item.type === "SERVICE"
-            ? "Reservar"
-            : "Ver"}
-        </button>
       </div>
     </div>
   );
@@ -668,6 +700,35 @@ function ProductDetailOverlay({
   onClose: () => void;
   onPrimaryAction: () => void;
 }) {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const images = item?.images ?? [];
+  const imageCount = images.length;
+  const showCarousel = imageCount > 1;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [item?.id]);
+
+  const goToIndex = (index: number) => {
+    if (!showCarousel) return;
+    const clamped = Math.max(0, Math.min(index, imageCount - 1));
+    setCurrentImageIndex(clamped);
+  };
+
+  const goPrev = () => goToIndex((currentImageIndex - 1 + imageCount) % imageCount);
+  const goNext = () => goToIndex((currentImageIndex + 1) % imageCount);
+
+  useEffect(() => {
+    if (!open || !showCarousel) return;
+
+    const id = window.setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % imageCount);
+    }, 3000);
+
+    return () => window.clearInterval(id);
+  }, [open, showCarousel, imageCount]);
+
   if (!open || !item) return null;
 
   return (
@@ -695,6 +756,10 @@ function ProductDetailOverlay({
             businessName={businessName}
             preview={preview}
             onPrimaryAction={onPrimaryAction}
+            currentImageIndex={currentImageIndex}
+            onSelectImage={goToIndex}
+            onPrev={goPrev}
+            onNext={goNext}
           />
         </div>
 
@@ -776,7 +841,13 @@ function ProductDetailOverlay({
 
           {/* RIGHT: image only */}
           <div className="flex-1 bg-white">
-            <DesktopProductImage item={item} />
+            <DesktopProductImage
+              item={item}
+              currentImageIndex={currentImageIndex}
+              onSelectImage={goToIndex}
+              onPrev={goPrev}
+              onNext={goNext}
+            />
           </div>
         </div>
       </div>
@@ -784,26 +855,93 @@ function ProductDetailOverlay({
   );
 }
 
-function DesktopProductImage({ item }: { item: Item }) {
-  const imageUrl = item.images?.[0]?.url;
+function DesktopProductImage({
+  item,
+  currentImageIndex,
+  onSelectImage,
+  onPrev,
+  onNext,
+}: {
+  item: Item;
+  currentImageIndex: number;
+  onSelectImage: (index: number) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const images = item.images ?? [];
+  const showCarousel = images.length > 1;
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
 
   return (
     <div className="h-full w-full overflow-hidden bg-neutral-100">
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt={item.name}
-          className="h-full w-full object-cover"
-          draggable={false}
-        />
-      ) : (
-        <div className="h-full w-full bg-neutral-200" />
-      )}
+      <div className="relative h-full w-full">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={item.name}
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div className="h-full w-full bg-neutral-200" />
+        )}
+
+        {showCarousel && (
+          <>
+            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-detail-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSelectImage(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onPrev();
+              }}
+              className="absolute left-4 top-1/2 z-10 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Imagen anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onNext();
+              }}
+              className="absolute right-4 top-1/2 z-10 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Siguiente imagen"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-function BenefitsList() {
+/* function BenefitsList() {
   return (
     <div className="space-y-6 pt-2">
       <div className="h-px w-full bg-white/10" />
@@ -851,18 +989,30 @@ function BenefitRow({
   );
 }
 
+} */
+
 function ReelLikeProductView({
   item,
   businessName,
   preview,
   onPrimaryAction,
+  currentImageIndex,
+  onSelectImage,
+  onPrev,
+  onNext,
 }: {
   item: Item;
   businessName: string;
   preview: boolean;
   onPrimaryAction: () => void;
+  currentImageIndex: number;
+  onSelectImage: (index: number) => void;
+  onPrev: () => void;
+  onNext: () => void;
 }) {
-  const imageUrl = item.images?.[0]?.url;
+  const images = item.images ?? [];
+  const showCarousel = images.length > 1;
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
@@ -880,6 +1030,49 @@ function ReelLikeProductView({
             <div className="h-full w-full bg-neutral-200" />
           )}
         </div>
+
+        {showCarousel && (
+          <>
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-mobile-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSelectImage(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={onPrev}
+              className="absolute left-3 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Imagen anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onNext}
+              className="absolute right-3 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Siguiente imagen"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* FOOTER (full width bar, no rounded “card”) */}
