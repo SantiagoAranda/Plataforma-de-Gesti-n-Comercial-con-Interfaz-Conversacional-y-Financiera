@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Store,
   Plus,
   Search,
   ShoppingBag,
@@ -16,7 +17,6 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
-import AppHeader from "@/src/components/layout/AppHeader";
 
 const formatPrice = (value: number) => {
   return formatPriceInput(value.toFixed(2).replace(".", ","));
@@ -74,6 +74,8 @@ export default function PublicStorePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
 
   const [category, setCategory] = useState<string>("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const closeProductDetail = () => setSelectedProduct(null);
 
@@ -307,13 +309,28 @@ export default function PublicStorePage() {
     [cart]
   );
 
-  const filtered = useMemo(
-    () =>
-      items.filter((i) =>
-        i.name.toLowerCase().includes(query.toLowerCase())
-      ),
-    [items, query]
-  );
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+
+    return items.filter((i) => {
+      const name = i.name?.toLowerCase() ?? "";
+      const desc = i.description?.toLowerCase() ?? "";
+      const typeLabel = i.type === "SERVICE" ? "servicio" : "producto";
+
+      return (
+        name.includes(q) ||
+        desc.includes(q) ||
+        typeLabel.includes(q)
+      );
+    });
+  }, [items, query]);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [isSearchOpen]);
 
   const handleConfirmOrder = async () => {
     if (preview) {
@@ -356,7 +373,96 @@ export default function PublicStorePage() {
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
-      <AppHeader title={businessName || "Cargando..."} showBack={false} showLogout={false} />
+      <header
+        className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70">
+              <Store className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[16px] font-bold text-slate-950">
+                {businessName || "Tienda"}
+              </div>
+              <div className="truncate text-[12px] font-medium text-slate-500">
+                Catálogo
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Buscar"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCartModal(true)}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Carrito"
+            >
+              <ShoppingBag className="h-5 w-5" />
+              {cartCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-black text-white shadow-sm">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+          {isSearchOpen && (
+            <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
+              <Search className="h-5 w-5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="w-full bg-transparent text-sm outline-none text-slate-900 placeholder:text-slate-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setIsSearchOpen(false);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95"
+                aria-label="Cerrar búsqueda"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {["", "PRODUCT", "SERVICE"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setCategory(type)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
+                  ? "bg-[#11d473] text-white ring-emerald-200"
+                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                  }`}
+              >
+                {type === ""
+                  ? "Todo"
+                  : type === "PRODUCT"
+                    ? "Productos"
+                    : "Servicios"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
 
       {preview && (
         <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
@@ -365,35 +471,6 @@ export default function PublicStorePage() {
       )}
 
       <main className="mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
-        <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
-          <Search className="h-5 w-5 text-black/40" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar..."
-            className="w-full bg-transparent text-sm outline-none"
-          />
-        </div>
-
-        <div className="mt-4 flex gap-3">
-          {["", "PRODUCT", "SERVICE"].map((type) => (
-            <button
-              key={type}
-              onClick={() => setCategory(type)}
-              className={`px-4 py-2 rounded-full text-sm ${category === type
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white"
-                }`}
-            >
-              {type === ""
-                ? "Todo"
-                : type === "PRODUCT"
-                  ? "Productos"
-                  : "Servicios"}
-            </button>
-          ))}
-        </div>
-
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
@@ -415,17 +492,7 @@ export default function PublicStorePage() {
         )}
       </main>
 
-      {cartCount > 0 && (
-        <button
-          onClick={() => setShowCartModal(true)}
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl flex items-center justify-center"
-        >
-          <ShoppingBag />
-          <span className="absolute -top-1 -right-1 bg-white text-emerald-600 text-xs font-bold rounded-full px-2">
-            {cartCount}
-          </span>
-        </button>
-      )}
+      {/* Cart entry now lives in the header */}
 
       {showCartModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">

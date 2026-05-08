@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import {
   ArrowLeft,
@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import AppHeader from "@/src/components/layout/AppHeader";
+import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 
 const formatCop = (value: number) => {
@@ -43,12 +43,16 @@ type Item = {
 
 export default function MiTiendaPage() {
   const { notify } = useNotification();
+  const router = useRouter();
 
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [businessName, setBusinessName] = useState("Mi Tienda");
+  const [category, setCategory] = useState<"" | "PRODUCT" | "SERVICE">("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const closeProductDetail = () => setSelectedProduct(null);
 
@@ -215,27 +219,122 @@ export default function MiTiendaPage() {
     }
   }, []);
 
-  const filtered = items.filter((i) =>
-    i.name.toLowerCase().includes(query.toLowerCase())
-  );
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [isSearchOpen]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return items.filter((i) => {
+      if (category && i.type !== category) return false;
+      if (!q) return true;
+
+      const name = i.name?.toLowerCase() ?? "";
+      const desc = i.description?.toLowerCase() ?? "";
+      const typeLabel = i.type === "SERVICE" ? "servicio" : "producto";
+
+      return name.includes(q) || desc.includes(q) || typeLabel.includes(q);
+    });
+  }, [items, query, category]);
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
-      <AppHeader title="Mi Tienda" showBack />
+      <header
+        className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/home")}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Volver"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
 
-      <main className="mx-auto w-full max-w-[420px] px-4 pb-20 pt-4">
+            <div className="min-w-0">
+              <div className="truncate text-[16px] font-bold text-slate-950">
+                {businessName}
+              </div>
+              <div className="truncate text-[12px] font-medium text-slate-500">
+                Catálogo
+              </div>
+            </div>
+          </div>
 
-        {/* Buscador */}
-        <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
-          <Search className="h-5 w-5 text-black/40" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar productos..."
-            className="w-full bg-transparent text-sm outline-none"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Buscar"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareStore}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Compartir tienda"
+            >
+              <Share2 className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
+        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+          {isSearchOpen && (
+            <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
+              <Search className="h-5 w-5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar productos..."
+                className="w-full bg-transparent text-sm outline-none text-slate-900 placeholder:text-slate-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setIsSearchOpen(false);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95"
+                aria-label="Cerrar búsqueda"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {["", "PRODUCT", "SERVICE"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setCategory(type as "" | "PRODUCT" | "SERVICE")}
+                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
+                  ? "bg-[#11d473] text-white ring-emerald-200"
+                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                  }`}
+              >
+                {type === ""
+                  ? "Todo"
+                  : type === "PRODUCT"
+                    ? "Productos"
+                    : "Servicios"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-[420px] px-4 pb-32 pt-4">
         {loading ? (
           <p className="text-center text-neutral-400 mt-6">
             Cargando productos...
@@ -260,14 +359,7 @@ export default function MiTiendaPage() {
         )}
       </main>
 
-      {/* Botón compartir tienda */}
-      <button
-        onClick={handleShareStore}
-        title="Compartir mi tienda"
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl flex items-center justify-center"
-      >
-        <Share2 />
-      </button>
+      <BottomNav active="tienda" />
 
       <PrivateProductDetailOverlay
         open={!!selectedProduct}
