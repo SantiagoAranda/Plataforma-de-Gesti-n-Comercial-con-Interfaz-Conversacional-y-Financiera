@@ -2,11 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Search, ShoppingBag } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  ShoppingBag,
+  Truck,
+  X,
+} from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
-import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import AppHeader from "@/src/components/layout/AppHeader";
 
@@ -27,6 +35,7 @@ type Item = {
   type: ItemType;
   description?: string;
   durationMinutes?: number;
+  previousPrice?: number | null;
   images?: { id: string; url: string }[];
 };
 
@@ -47,6 +56,7 @@ export default function PublicStorePage() {
   const [showCartModal, setShowCartModal] = useState(false);
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
@@ -56,6 +66,26 @@ export default function PublicStorePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
 
   const [category, setCategory] = useState<string>("");
+
+  const closeProductDetail = () => setSelectedProduct(null);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedProduct]);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeProductDetail();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedProduct]);
 
   useEffect(() => {
     if (!slug) {
@@ -90,6 +120,14 @@ export default function PublicStorePage() {
           itemsList.map((item: any) => ({
             ...item,
             price: Number(item.price || 0),
+            previousPrice:
+              item.previousPrice != null
+                ? Number(item.previousPrice)
+                : item.compareAtPrice != null
+                  ? Number(item.compareAtPrice)
+                  : item.originalPrice != null
+                    ? Number(item.originalPrice)
+                    : null,
           }))
         );
       } catch (error) {
@@ -360,7 +398,7 @@ export default function PublicStorePage() {
                 onAction={() =>
                   item.type === "SERVICE"
                     ? setSelectedService(item)
-                    : addToCart(item.id)
+                    : setSelectedProduct(item)
                 }
               />
             ))}
@@ -503,6 +541,26 @@ export default function PublicStorePage() {
         onMonthChange={handleMonthChange}
         onConfirm={handleReserve}
       />
+
+      <ProductDetailOverlay
+        open={!!selectedProduct}
+        item={selectedProduct}
+        businessName={businessName}
+        preview={preview}
+        onClose={closeProductDetail}
+        onPrimaryAction={() => {
+          if (!selectedProduct) return;
+          if (preview) {
+            notify({
+              type: "info",
+              message: "Modo administrador: las compras estan deshabilitadas",
+            });
+            return;
+          }
+          addToCart(selectedProduct.id);
+          closeProductDetail();
+        }}
+      />
     </div>
   );
 }
@@ -521,13 +579,26 @@ function ProductCard({
 
       {/* Imagen */}
       <div className="aspect-[4/3] bg-neutral-50 overflow-hidden rounded-t-xl relative shrink-0">
-        {item.images?.[0]?.url && (
-          <ItemImageViewer
-            images={item.images}
-            name={item.name}
-            description={item.description}
-            containerClassName="h-full w-full rounded-t-xl flex items-center justify-center cursor-pointer"
-            imageClassName="h-full w-full object-cover"
+        {item.images?.[0]?.url ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="h-full w-full"
+            aria-label={`Ver ${item.name}`}
+          >
+            <img
+              src={item.images[0].url}
+              alt={item.name}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onAction}
+            className="h-full w-full bg-neutral-100"
+            aria-label={`Ver ${item.name}`}
           />
         )}
         
@@ -575,8 +646,295 @@ function ProductCard({
         >
           {item.type === "SERVICE"
             ? "Reservar"
-            : "Añadir al carrito"}
+            : "Ver"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function ProductDetailOverlay({
+  open,
+  item,
+  businessName,
+  preview,
+  onClose,
+  onPrimaryAction,
+}: {
+  open: boolean;
+  item: Item | null;
+  businessName: string;
+  preview: boolean;
+  onClose: () => void;
+  onPrimaryAction: () => void;
+}) {
+  if (!open || !item) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm">
+      <button
+        type="button"
+        className="absolute inset-0"
+        onClick={onClose}
+        aria-label="Cerrar detalle"
+      />
+
+      <div className="relative h-[100dvh] w-full">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute left-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/70 text-slate-900 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white/90 md:hidden"
+          aria-label="Cerrar"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="h-full w-full md:hidden">
+          <ReelLikeProductView
+            item={item}
+            businessName={businessName}
+            preview={preview}
+            onPrimaryAction={onPrimaryAction}
+          />
+        </div>
+
+        <div className="hidden h-full md:flex">
+          {/* LEFT: commercial info */}
+          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
+            <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+              <div className="max-w-2xl space-y-8 text-slate-900">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver a la tienda
+                </button>
+
+                <div className="space-y-2">
+                  <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]">
+                    {item.name}
+                  </h1>
+                  {businessName && (
+                    <div className="text-base font-medium text-slate-600">
+                      {businessName}
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-px w-full bg-black/5" />
+
+                <div className="flex flex-wrap items-end justify-between gap-8">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      PRECIO ESPECIAL
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <div className="text-4xl font-black tracking-tight text-slate-900">
+                        ${formatPrice(item.price)}
+                      </div>
+                      {item.previousPrice != null &&
+                        Number.isFinite(item.previousPrice) &&
+                        item.previousPrice > item.price && (
+                          <div className="text-base text-slate-400 line-through">
+                            ${formatPrice(item.previousPrice)}
+                          </div>
+                        )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={preview}
+                    onClick={onPrimaryAction}
+                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ShoppingBag className="h-4 w-4" />
+                    Comprar
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="h-px w-full bg-black/5" />
+
+                {item.description && (
+                  <div className="space-y-3">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      Descripción
+                    </div>
+                    <p className="text-[16px] leading-relaxed text-slate-600 whitespace-pre-wrap">
+                      {item.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* <BenefitsList /> */}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: image only */}
+          <div className="flex-1 bg-white">
+            <DesktopProductImage item={item} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesktopProductImage({ item }: { item: Item }) {
+  const imageUrl = item.images?.[0]?.url;
+
+  return (
+    <div className="h-full w-full overflow-hidden bg-neutral-100">
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={item.name}
+          className="h-full w-full object-cover"
+          draggable={false}
+        />
+      ) : (
+        <div className="h-full w-full bg-neutral-200" />
+      )}
+    </div>
+  );
+}
+
+function BenefitsList() {
+  return (
+    <div className="space-y-6 pt-2">
+      <div className="h-px w-full bg-white/10" />
+
+      <div className="space-y-5">
+        <BenefitRow
+          icon={<ShieldCheck className="h-5 w-5 text-white/70" />}
+          title="Compra segura"
+          subtitle="Tus datos están protegidos"
+        />
+        <BenefitRow
+          icon={<Truck className="h-5 w-5 text-white/70" />}
+          title="Envío rápido"
+          subtitle="Recibe tu pedido en tiempo récord"
+        />
+        <BenefitRow
+          icon={<RotateCcw className="h-5 w-5 text-white/70" />}
+          title="Devoluciones"
+          subtitle="30 días para cambios y devoluciones"
+        />
+      </div>
+    </div>
+  );
+}
+
+function BenefitRow({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="text-sm text-white/55">{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+function ReelLikeProductView({
+  item,
+  businessName,
+  preview,
+  onPrimaryAction,
+}: {
+  item: Item;
+  businessName: string;
+  preview: boolean;
+  onPrimaryAction: () => void;
+}) {
+  const imageUrl = item.images?.[0]?.url;
+
+  return (
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
+      {/* IMAGE (full-bleed, no margins, no radius) */}
+      <div className="relative w-full bg-neutral-100">
+        <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={item.name}
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            <div className="h-full w-full bg-neutral-200" />
+          )}
+        </div>
+      </div>
+
+      {/* FOOTER (full width bar, no rounded “card”) */}
+      <div className="flex w-full flex-wrap items-center justify-between gap-6 bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            PRECIO ESPECIAL
+          </div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="text-3xl font-black tracking-tight text-slate-900">
+              ${formatPrice(item.price)}
+            </div>
+            {item.previousPrice != null &&
+              Number.isFinite(item.previousPrice) &&
+              item.previousPrice > item.price && (
+                <div className="ml-3 text-base text-slate-400 line-through">
+                  ${formatPrice(item.previousPrice)}
+                </div>
+              )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={preview}
+          onClick={onPrimaryAction}
+          className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          Comprar
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* DESCRIPTION (padding only here; no heavy card) */}
+      <div className="mx-auto min-h-0 w-full max-w-md overflow-y-auto px-4 pb-6 pt-4 custom-scrollbar">
+        <div className="space-y-2 text-slate-900">
+          {businessName && (
+            <div className="text-xs font-semibold text-slate-600">
+              {businessName}
+            </div>
+          )}
+
+          {item.description && (
+            <p className="text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap">
+              {item.description}
+            </p>
+          )}
+        </div>
+
+        {/*
+        <div className="pt-6">
+          <BenefitsList />
+        </div>
+        */}
       </div>
     </div>
   );
