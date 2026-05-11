@@ -7,9 +7,11 @@ type Props = {
   preview: string;
   time: string;
   active?: boolean;
+  selected?: boolean;
   icon: ReactNode;
   accent?: "blue" | "green" | "amber";
   onClick?: () => void;
+  className?: string;
 };
 
 const accentStyles: Record<NonNullable<Props["accent"]>, string> = {
@@ -23,14 +25,20 @@ function ThreadItem({
   preview,
   time,
   active,
+  selected,
   icon,
   accent = "blue",
   onClick,
+  className,
 }: Props) {
   return (
     <div
       onClick={onClick}
-      className="flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-4 py-3 hover:bg-neutral-50"
+      className={cn(
+        "flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-4 py-3 hover:bg-neutral-50",
+        selected && "bg-emerald-50/70",
+        className,
+      )}
     >
       <div
         className={cn(
