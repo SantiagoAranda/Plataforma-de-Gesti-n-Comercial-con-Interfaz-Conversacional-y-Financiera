@@ -166,7 +166,7 @@ export default function SalesChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4">
+    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
@@ -295,7 +295,7 @@ export default function SalesChatComposer({
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-neutral-800 text-xs truncate">{it.name}</div>
                           <div className="flex items-center gap-1 text-[9px] font-bold text-neutral-400 uppercase mt-0.5">
-                             {it.qty} unid. • ${formatMoney(it.price * it.qty)}
+                             {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                           </div>
                         </div>
 

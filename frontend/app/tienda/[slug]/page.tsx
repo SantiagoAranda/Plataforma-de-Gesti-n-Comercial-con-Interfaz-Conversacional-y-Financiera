@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Search, ShoppingBag } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Store,
+  Plus,
+  Search,
+  ShoppingBag,
+  X,
+} from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
-import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
-import AppHeader from "@/src/components/layout/AppHeader";
 
 const formatPrice = (value: number) => {
-  return formatPriceInput(
-    value.toFixed(2).replace(".", ",")
-  );
+  return formatPriceInput(value.toFixed(2).replace(".", ","));
+};
+
+const formatCop = (value: number) => {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const formatted = new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  }).format(safeValue);
+  return formatted.replace("COP", "$").replace(/\s+/g, "");
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -27,6 +43,7 @@ type Item = {
   type: ItemType;
   description?: string;
   durationMinutes?: number;
+  previousPrice?: number | null;
   images?: { id: string; url: string }[];
 };
 
@@ -47,6 +64,7 @@ export default function PublicStorePage() {
   const [showCartModal, setShowCartModal] = useState(false);
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
@@ -56,6 +74,28 @@ export default function PublicStorePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
 
   const [category, setCategory] = useState<string>("");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+
+  const closeProductDetail = () => setSelectedProduct(null);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedProduct]);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeProductDetail();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedProduct]);
 
   useEffect(() => {
     if (!slug) {
@@ -90,6 +130,14 @@ export default function PublicStorePage() {
           itemsList.map((item: any) => ({
             ...item,
             price: Number(item.price || 0),
+            previousPrice:
+              item.previousPrice != null
+                ? Number(item.previousPrice)
+                : item.compareAtPrice != null
+                  ? Number(item.compareAtPrice)
+                  : item.originalPrice != null
+                    ? Number(item.originalPrice)
+                    : null,
           }))
         );
       } catch (error) {
@@ -261,13 +309,28 @@ export default function PublicStorePage() {
     [cart]
   );
 
-  const filtered = useMemo(
-    () =>
-      items.filter((i) =>
-        i.name.toLowerCase().includes(query.toLowerCase())
-      ),
-    [items, query]
-  );
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+
+    return items.filter((i) => {
+      const name = i.name?.toLowerCase() ?? "";
+      const desc = i.description?.toLowerCase() ?? "";
+      const typeLabel = i.type === "SERVICE" ? "servicio" : "producto";
+
+      return (
+        name.includes(q) ||
+        desc.includes(q) ||
+        typeLabel.includes(q)
+      );
+    });
+  }, [items, query]);
+
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [isSearchOpen]);
 
   const handleConfirmOrder = async () => {
     if (preview) {
@@ -310,7 +373,96 @@ export default function PublicStorePage() {
 
   return (
     <div className="min-h-dvh bg-[#F7FAF8]">
-      <AppHeader title={businessName || "Cargando..."} showBack={false} showLogout={false} />
+      <header
+        className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70">
+              <Store className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-[16px] font-bold text-slate-950">
+                {businessName || "Tienda"}
+              </div>
+              <div className="truncate text-[12px] font-medium text-slate-500">
+                Catálogo
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Buscar"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowCartModal(true)}
+              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              aria-label="Carrito"
+            >
+              <ShoppingBag className="h-5 w-5" />
+              {cartCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-black text-white shadow-sm">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+          {isSearchOpen && (
+            <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
+              <Search className="h-5 w-5 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="w-full bg-transparent text-sm outline-none text-slate-900 placeholder:text-slate-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setIsSearchOpen(false);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95"
+                aria-label="Cerrar búsqueda"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {["", "PRODUCT", "SERVICE"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setCategory(type)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
+                  ? "bg-[#11d473] text-white ring-emerald-200"
+                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                  }`}
+              >
+                {type === ""
+                  ? "Todo"
+                  : type === "PRODUCT"
+                    ? "Productos"
+                    : "Servicios"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
 
       {preview && (
         <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
@@ -318,49 +470,21 @@ export default function PublicStorePage() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
-        <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
-          <Search className="h-5 w-5 text-black/40" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar..."
-            className="w-full bg-transparent text-sm outline-none"
-          />
-        </div>
-
-        <div className="mt-4 flex gap-3">
-          {["", "PRODUCT", "SERVICE"].map((type) => (
-            <button
-              key={type}
-              onClick={() => setCategory(type)}
-              className={`px-4 py-2 rounded-full text-sm ${category === type
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white"
-                }`}
-            >
-              {type === ""
-                ? "Todo"
-                : type === "PRODUCT"
-                  ? "Productos"
-                  : "Servicios"}
-            </button>
-          ))}
-        </div>
-
+      <main className="mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
-          <div className="mt-5 grid grid-cols-2 gap-4">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6">
             {filtered.map((item) => (
               <ProductCard
                 key={item.id}
                 item={item}
                 preview={preview}
-                onAction={() =>
-                  item.type === "SERVICE"
-                    ? setSelectedService(item)
-                    : addToCart(item.id)
+                onOpen={() =>
+                  item.type === "SERVICE" ? setSelectedService(item) : setSelectedProduct(item)
+                }
+                onPlus={() =>
+                  item.type === "SERVICE" ? setSelectedService(item) : addToCart(item.id)
                 }
               />
             ))}
@@ -368,17 +492,7 @@ export default function PublicStorePage() {
         )}
       </main>
 
-      {cartCount > 0 && (
-        <button
-          onClick={() => setShowCartModal(true)}
-          className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-emerald-600 text-white shadow-xl flex items-center justify-center"
-        >
-          <ShoppingBag />
-          <span className="absolute -top-1 -right-1 bg-white text-emerald-600 text-xs font-bold rounded-full px-2">
-            {cartCount}
-          </span>
-        </button>
-      )}
+      {/* Cart entry now lives in the header */}
 
       {showCartModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -503,83 +617,584 @@ export default function PublicStorePage() {
         onMonthChange={handleMonthChange}
         onConfirm={handleReserve}
       />
+
+      <ProductDetailOverlay
+        open={!!selectedProduct}
+        item={selectedProduct}
+        businessName={businessName}
+        preview={preview}
+        onClose={closeProductDetail}
+        onPrimaryAction={() => {
+          if (!selectedProduct) return;
+          if (preview) {
+            notify({
+              type: "info",
+              message: "Modo administrador: las compras estan deshabilitadas",
+            });
+            return;
+          }
+          addToCart(selectedProduct.id);
+          closeProductDetail();
+        }}
+      />
     </div>
   );
 }
 
 function ProductCard({
   item,
-  onAction,
+  onOpen,
+  onPlus,
   preview,
 }: {
   item: Item;
-  onAction: () => void;
+  onOpen: () => void;
+  onPlus: () => void;
   preview?: boolean;
 }) {
+  const images = item.images ?? [];
+  const imageCount = images.length;
+  const showCarousel = imageCount > 1;
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [item.id]);
+
+  useEffect(() => {
+    if (!showCarousel) return;
+
+    const id = window.setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % imageCount);
+    }, 3000);
+
+    return () => window.clearInterval(id);
+  }, [showCarousel, imageCount]);
+
   return (
-    <div className="flex flex-col rounded-xl bg-white shadow-sm ring-1 ring-black/5 transition hover:shadow-md hover:-translate-y-1 h-full">
+    <div className="flex flex-col">
+      <div className="relative overflow-hidden rounded-3xl bg-neutral-100 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)]">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onOpen}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpen();
+            }
+          }}
+          className="block w-full cursor-pointer"
+          aria-label={`Ver ${item.name}`}
+        >
+          <div className="aspect-square w-full">
+            {imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={item.name}
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="h-full w-full bg-neutral-200" />
+            )}
+          </div>
 
-      {/* Imagen */}
-      <div className="aspect-[4/3] bg-neutral-50 overflow-hidden rounded-t-xl relative shrink-0">
-        {item.images?.[0]?.url && (
-          <ItemImageViewer
-            images={item.images}
-            name={item.name}
-            description={item.description}
-            containerClassName="h-full w-full rounded-t-xl flex items-center justify-center cursor-pointer"
-            imageClassName="h-full w-full object-cover"
-          />
-        )}
-        
-        {/* Overlays */}
-        <div className="absolute top-2 left-2 right-2 flex justify-between items-start pointer-events-none z-10">
-          <span className={`backdrop-blur-md bg-white/70 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-sm ${item.type === 'SERVICE' ? 'text-blue-700' : 'text-orange-700'}`}>
-            {item.type === 'SERVICE' ? 'Servicio' : 'Producto'}
-          </span>
-
-          {item.type === 'SERVICE' && item.durationMinutes && (
-            <span className="backdrop-blur-md bg-white/70 text-neutral-800 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm leading-none">
-              {item.durationMinutes} min
-            </span>
+          {showCarousel && (
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setCurrentImageIndex(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
           )}
         </div>
+
+        <button
+          type="button"
+          disabled={preview}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onPlus();
+          }}
+          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.18)] transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
+        >
+          <Plus className="h-5 w-5" />
+        </button>
       </div>
 
-      {/* Contenido */}
-      <div className="p-3 flex flex-col gap-2 flex-1 relative">
-
-        {/* Nombre */}
-        <div className="text-sm font-semibold text-neutral-900 line-clamp-1">
+      <div className="mt-3 space-y-1 px-1">
+        <div className="truncate text-[14px] font-bold text-slate-950">
           {item.name}
         </div>
+        <div className="text-[15px] font-black text-emerald-600">
+          {formatCop(item.price)}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Descripción */}
-        <div className="flex-1">
+function ProductDetailOverlay({
+  open,
+  item,
+  businessName,
+  preview,
+  onClose,
+  onPrimaryAction,
+}: {
+  open: boolean;
+  item: Item | null;
+  businessName: string;
+  preview: boolean;
+  onClose: () => void;
+  onPrimaryAction: () => void;
+}) {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  const images = item?.images ?? [];
+  const imageCount = images.length;
+  const showCarousel = imageCount > 1;
+
+  useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [item?.id]);
+
+  const goToIndex = (index: number) => {
+    if (!showCarousel) return;
+    const clamped = Math.max(0, Math.min(index, imageCount - 1));
+    setCurrentImageIndex(clamped);
+  };
+
+  const goPrev = () => goToIndex((currentImageIndex - 1 + imageCount) % imageCount);
+  const goNext = () => goToIndex((currentImageIndex + 1) % imageCount);
+
+  useEffect(() => {
+    if (!open || !showCarousel) return;
+
+    const id = window.setInterval(() => {
+      setCurrentImageIndex((prev) => (prev + 1) % imageCount);
+    }, 3000);
+
+    return () => window.clearInterval(id);
+  }, [open, showCarousel, imageCount]);
+
+  if (!open || !item) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm">
+      <button
+        type="button"
+        className="absolute inset-0"
+        onClick={onClose}
+        aria-label="Cerrar detalle"
+      />
+
+      <div className="relative h-[100dvh] w-full">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute left-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/70 text-slate-900 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white/90 md:hidden"
+          aria-label="Cerrar"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <div className="h-full w-full md:hidden">
+          <ReelLikeProductView
+            item={item}
+            businessName={businessName}
+            preview={preview}
+            onPrimaryAction={onPrimaryAction}
+            currentImageIndex={currentImageIndex}
+            onSelectImage={goToIndex}
+            onPrev={goPrev}
+            onNext={goNext}
+          />
+        </div>
+
+        <div className="hidden h-full md:flex">
+          {/* LEFT: commercial info */}
+          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
+            <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
+              <div className="max-w-2xl space-y-8 text-slate-900">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver a la tienda
+                </button>
+
+                <div className="space-y-2">
+                  <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]">
+                    {item.name}
+                  </h1>
+                  {businessName && (
+                    <div className="text-base font-medium text-slate-600">
+                      {businessName}
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-px w-full bg-black/5" />
+
+                <div className="flex flex-wrap items-end justify-between gap-8">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      PRECIO ESPECIAL
+                    </div>
+                    <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <div className="text-4xl font-black tracking-tight text-slate-900">
+                        ${formatPrice(item.price)}
+                      </div>
+                      {item.previousPrice != null &&
+                        Number.isFinite(item.previousPrice) &&
+                        item.previousPrice > item.price && (
+                          <div className="text-base text-slate-400 line-through">
+                            ${formatPrice(item.previousPrice)}
+                          </div>
+                        )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={preview}
+                    onClick={onPrimaryAction}
+                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ShoppingBag className="h-4 w-4" />
+                    Comprar
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="h-px w-full bg-black/5" />
+
+                {item.description && (
+                  <div className="space-y-3">
+                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                      Descripción
+                    </div>
+                    <p className="text-[16px] leading-relaxed text-slate-600 whitespace-pre-wrap">
+                      {item.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* <BenefitsList /> */}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: image only */}
+          <div className="flex-1 bg-white">
+            <DesktopProductImage
+              item={item}
+              currentImageIndex={currentImageIndex}
+              onSelectImage={goToIndex}
+              onPrev={goPrev}
+              onNext={goNext}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesktopProductImage({
+  item,
+  currentImageIndex,
+  onSelectImage,
+  onPrev,
+  onNext,
+}: {
+  item: Item;
+  currentImageIndex: number;
+  onSelectImage: (index: number) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const images = item.images ?? [];
+  const showCarousel = images.length > 1;
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+
+  return (
+    <div className="h-full w-full overflow-hidden bg-neutral-100">
+      <div className="relative h-full w-full">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={item.name}
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
+        ) : (
+          <div className="h-full w-full bg-neutral-200" />
+        )}
+
+        {showCarousel && (
+          <>
+            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-detail-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSelectImage(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onPrev();
+              }}
+              className="absolute left-4 top-1/2 z-10 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Imagen anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onNext();
+              }}
+              className="absolute right-4 top-1/2 z-10 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Siguiente imagen"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* function BenefitsList() {
+  return (
+    <div className="space-y-6 pt-2">
+      <div className="h-px w-full bg-white/10" />
+
+      <div className="space-y-5">
+        <BenefitRow
+          icon={<ShieldCheck className="h-5 w-5 text-white/70" />}
+          title="Compra segura"
+          subtitle="Tus datos están protegidos"
+        />
+        <BenefitRow
+          icon={<Truck className="h-5 w-5 text-white/70" />}
+          title="Envío rápido"
+          subtitle="Recibe tu pedido en tiempo récord"
+        />
+        <BenefitRow
+          icon={<RotateCcw className="h-5 w-5 text-white/70" />}
+          title="Devoluciones"
+          subtitle="30 días para cambios y devoluciones"
+        />
+      </div>
+    </div>
+  );
+}
+
+function BenefitRow({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="flex items-start gap-4">
+      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-white">{title}</div>
+        <div className="text-sm text-white/55">{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+} */
+
+function ReelLikeProductView({
+  item,
+  businessName,
+  preview,
+  onPrimaryAction,
+  currentImageIndex,
+  onSelectImage,
+  onPrev,
+  onNext,
+}: {
+  item: Item;
+  businessName: string;
+  preview: boolean;
+  onPrimaryAction: () => void;
+  currentImageIndex: number;
+  onSelectImage: (index: number) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const images = item.images ?? [];
+  const showCarousel = images.length > 1;
+  const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+
+  return (
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
+      {/* IMAGE (full-bleed, no margins, no radius) */}
+      <div className="relative w-full bg-neutral-100">
+        <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={item.name}
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            <div className="h-full w-full bg-neutral-200" />
+          )}
+        </div>
+
+        {showCarousel && (
+          <>
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => (
+                <button
+                  key={image.id ?? `${item.id}-mobile-seg-${index}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onSelectImage(index);
+                  }}
+                  className={[
+                    "h-0.5 flex-1 rounded-full",
+                    index === currentImageIndex
+                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                  ].join(" ")}
+                  aria-label={`Imagen ${index + 1}`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={onPrev}
+              className="absolute left-3 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Imagen anterior"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={onNext}
+              className="absolute right-3 top-1/2 z-10 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-slate-950 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white"
+              aria-label="Siguiente imagen"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* FOOTER (full width bar, no rounded “card”) */}
+      <div className="flex w-full flex-wrap items-center justify-between gap-6 bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            PRECIO ESPECIAL
+          </div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <div className="text-3xl font-black tracking-tight text-slate-900">
+              ${formatPrice(item.price)}
+            </div>
+            {item.previousPrice != null &&
+              Number.isFinite(item.previousPrice) &&
+              item.previousPrice > item.price && (
+                <div className="ml-3 text-base text-slate-400 line-through">
+                  ${formatPrice(item.previousPrice)}
+                </div>
+              )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={preview}
+          onClick={onPrimaryAction}
+          className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          Comprar
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* DESCRIPTION (padding only here; no heavy card) */}
+      <div className="mx-auto min-h-0 w-full max-w-md overflow-y-auto px-4 pb-6 pt-4 custom-scrollbar">
+        <div className="space-y-2 text-slate-900">
+          {businessName && (
+            <div className="text-xs font-semibold text-slate-600">
+              {businessName}
+            </div>
+          )}
+
           {item.description && (
-            <p className="text-[11px] text-neutral-500 leading-snug line-clamp-2">
+            <p className="text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap">
               {item.description}
             </p>
           )}
         </div>
 
-        {/* Precio */}
-        <div className="text-emerald-600 font-bold text-sm mt-auto pt-1">
-          ${formatPrice(item.price)}
+        {/*
+        <div className="pt-6">
+          <BenefitsList />
         </div>
-
-        {/* Botón */}
-        <button
-          disabled={preview}
-          onClick={onAction}
-          className={`mt-2 text-xs py-2 rounded-lg font-semibold ${preview
-              ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-              : "bg-emerald-600 text-white"
-            }`}
-        >
-          {item.type === "SERVICE"
-            ? "Reservar"
-            : "Añadir al carrito"}
-        </button>
+        */}
       </div>
     </div>
   );

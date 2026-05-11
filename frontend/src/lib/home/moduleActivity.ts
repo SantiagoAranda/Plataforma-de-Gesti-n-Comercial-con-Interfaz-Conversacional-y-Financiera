@@ -37,6 +37,7 @@ export type ApiOrder = {
   customerWhatsapp?: string;
   status: "DRAFT" | "SENT" | "COMPLETED" | "CANCELLED";
   createdAt: string;
+  total?: number;
   items: ApiOrderItem[];
 };
 
@@ -174,7 +175,7 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
 
   let activityText: string | null = null;
   if (latest) {
-    const total = latest.items.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
+    const total = latest.total ?? latest.items.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
     const statusLabel: Record<ApiOrder["status"], string> = {
       DRAFT: "Pedido en borrador",
       SENT: "Pedido pendiente de cierre",

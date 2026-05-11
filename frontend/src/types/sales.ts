@@ -13,6 +13,9 @@ export interface SaleItem {
   qty: number;
   name: string;
 
+  // Precio unitario
+  unitPrice: number;
+
   // precio TOTAL de este item (qty * precio unitario)
   price: number;
 
@@ -32,6 +35,9 @@ export interface Sale {
   status: SaleStatus;
 
   items: SaleItem[];
+
+  // Total de la orden calculado en backend
+  total: number;
 
   createdAt: string; // ISO
 

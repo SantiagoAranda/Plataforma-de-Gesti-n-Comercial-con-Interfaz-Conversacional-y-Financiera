@@ -7,6 +7,7 @@ function money(n: number) {
 }
 
 function calcTotal(sale: Sale) {
+    if (sale.total !== undefined) return sale.total;
     return sale.items.reduce((acc, it) => acc + it.price, 0);
 }
 
@@ -59,19 +60,21 @@ export function generateInvoicePdf(opts: {
     const rows = sale.items.map((it) => [
         sale.type === "PRODUCTO" ? String(it.qty) : "1",
         it.name,
+        `${currencySymbol}${money(it.unitPrice)}`,
         `${currencySymbol}${money(it.price)}`,
     ]);
 
     autoTable(doc, {
         startY: 220,
-        head: [["CANT.", "DESCRIPCIÓN", "PRECIO"]],
+        head: [["CANT.", "DESCRIPCIÓN", "P. UNIT.", "SUBTOTAL"]],
         body: rows,
         styles: { font: "helvetica", fontSize: 10, cellPadding: 6 },
         headStyles: { fillColor: [245, 245, 245], textColor: 20 },
         columnStyles: {
-            0: { halign: "center", cellWidth: 60 },
-            1: { cellWidth: 360 },
-            2: { halign: "right", cellWidth: 100 },
+            0: { halign: "center", cellWidth: 50 },
+            1: { cellWidth: 300 },
+            2: { halign: "right", cellWidth: 80 },
+            3: { halign: "right", cellWidth: 90 },
         },
         theme: "grid",
     });
