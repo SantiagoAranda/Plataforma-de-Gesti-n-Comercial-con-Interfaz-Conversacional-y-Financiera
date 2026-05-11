@@ -1,10 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Home, LineChart, Store } from "lucide-react";
+
+import { cn } from "@/src/lib/utils";
+import { BOTTOM_NAV_ITEMS, type BottomNavKey } from "./navItems";
 
 type BottomNavProps = {
-  active: "home" | "movimientos" | "tienda";
+  active: BottomNavKey;
 };
 
 export default function BottomNav({ active }: BottomNavProps) {
@@ -17,10 +19,13 @@ export default function BottomNav({ active }: BottomNavProps) {
 
   return (
     <nav
-      className="
+      className={cn(
+        "lg:hidden",
+        `
         fixed inset-x-0 bottom-0 z-50
         pointer-events-none
-      "
+      `,
+      )}
       style={{
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
@@ -36,32 +41,16 @@ export default function BottomNav({ active }: BottomNavProps) {
             border border-neutral-200
           "
         >
-          {/* HOME */}
-          <div
-            className={`${baseItem} ${active === "home" ? activeItem : inactiveItem}`}
-            onClick={() => router.push("/home")}
-          >
-            <Home className="h-5 w-5" />
-            <span>Home</span>
-          </div>
-
-          {/* MOVIMIENTOS */}
-          <div
-            className={`${baseItem} ${active === "movimientos" ? activeItem : inactiveItem}`}
-            onClick={() => router.push("/movimientos")}
-          >
-            <LineChart className="h-5 w-5" />
-            <span>Movimientos</span>
-          </div>
-
-          {/* TIENDA */}
-          <div
-            className={`${baseItem} ${active === "tienda" ? activeItem : inactiveItem}`}
-            onClick={() => router.push("/tienda")}
-          >
-            <Store className="h-5 w-5" />
-            <span>Mi Tienda</span>
-          </div>
+          {BOTTOM_NAV_ITEMS.map(({ key, href, label, Icon }) => (
+            <div
+              key={key}
+              className={cn(baseItem, active === key ? activeItem : inactiveItem)}
+              onClick={() => router.push(href)}
+            >
+              <Icon className="h-5 w-5" />
+              <span>{label}</span>
+            </div>
+          ))}
         </div>
       </div>
     </nav>

@@ -241,12 +241,12 @@ export default function MiTiendaPage() {
   }, [items, query, category]);
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8]">
+    <div className="min-h-dvh bg-[#F7FAF8] w-full min-w-0 overflow-x-hidden">
       <header
         className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-full items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -288,7 +288,7 @@ export default function MiTiendaPage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+        <div className="mx-auto w-full max-w-[420px] lg:max-w-full px-4 lg:px-6 pb-3 space-y-3">
           {isSearchOpen && (
             <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
               <Search className="h-5 w-5 text-slate-400" />
@@ -334,7 +334,7 @@ export default function MiTiendaPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[420px] px-4 pb-32 pt-4">
+      <main className="mx-auto w-full max-w-[420px] lg:max-w-full px-4 lg:px-6 pb-32 pt-4">
         {loading ? (
           <p className="text-center text-neutral-400 mt-6">
             Cargando productos...
@@ -344,7 +344,7 @@ export default function MiTiendaPage() {
             No hay productos cargados
           </p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 lg:gap-x-4 lg:gap-y-5">
             {filtered.map((item) => (
               <AdminProductCard
                 key={item.id}
@@ -455,7 +455,7 @@ function AdminProductCard({
       aria-label={`Ver detalle de ${item.name}`}
     >
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)] cursor-pointer">
-        <div className="aspect-square w-full">
+        <div className="aspect-square w-full lg:aspect-auto lg:h-[220px]">
           {imageUrl ? (
             <img
               src={imageUrl}
@@ -551,7 +551,7 @@ function PrivateProductDetailOverlay({
   if (!open || !item) return null;
 
   return (
-    <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm lg:left-[408px]">
       <button
         type="button"
         className="absolute inset-0"
@@ -674,8 +674,8 @@ function PrivateProductDetailOverlay({
         </div>
 
         {/* DESKTOP */}
-        <div className="hidden h-full md:flex">
-          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
+        <div className="hidden h-full md:flex md:flex-col xl:flex-row">
+          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-6 py-8 lg:px-8 lg:py-10 xl:px-12">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className="max-w-2xl space-y-8 text-slate-900">
                 <button
@@ -727,8 +727,8 @@ function PrivateProductDetailOverlay({
             </div>
           </div>
 
-          <div className="flex-1 bg-white">
-            <div className="relative h-full w-full bg-neutral-100">
+          <div className="bg-white xl:flex-1">
+            <div className="relative w-full bg-neutral-100 md:h-[44vh] xl:h-full">
               {imageUrl ? (
                 <img
                   src={imageUrl}
