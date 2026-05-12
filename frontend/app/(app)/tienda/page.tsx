@@ -18,6 +18,7 @@ import {
 import { useRouter } from "next/navigation";
 import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
+import { readBusinessProfile } from "@/src/lib/businessProfile";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -50,6 +51,7 @@ export default function MiTiendaPage() {
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [businessName, setBusinessName] = useState("Mi Tienda");
+  const [businessSubtitle, setBusinessSubtitle] = useState("");
   const [category, setCategory] = useState<"" | "PRODUCT" | "SERVICE">("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -214,6 +216,9 @@ export default function MiTiendaPage() {
     try {
       const name = localStorage.getItem("businessName");
       if (name) setBusinessName(name);
+
+      const profile = readBusinessProfile();
+      if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
     } catch {
       // ignore
     }
@@ -261,7 +266,15 @@ export default function MiTiendaPage() {
               <div className="truncate text-[16px] font-bold text-slate-950">
                 {businessName}
               </div>
-              <div className="truncate text-[12px] font-medium text-slate-500">
+              {businessSubtitle?.trim() && (
+                <div className="truncate text-[12px] font-medium text-slate-500">
+                  {businessSubtitle.trim()}
+                </div>
+              )}
+              <div
+                className="truncate text-[12px] font-medium text-slate-500"
+                style={businessSubtitle?.trim() ? { display: "none" } : undefined}
+              >
                 Catálogo
               </div>
             </div>

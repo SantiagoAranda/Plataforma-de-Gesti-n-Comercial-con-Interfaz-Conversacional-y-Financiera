@@ -12,6 +12,7 @@ import {
   formatActivityTime,
 } from "../../../src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "../../../src/lib/home/useHomeModuleSummaries";
+import { readBusinessProfile } from "../../../src/lib/businessProfile";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
@@ -23,6 +24,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
 export default function HomePage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("Mi Negocio");
+  const [businessSubtitle, setBusinessSubtitle] = useState("");
   const { summaries, loading, error } = useHomeModuleSummaries();
 
   useEffect(() => {
@@ -43,11 +45,9 @@ export default function HomePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storedBusinessName = localStorage.getItem("businessName");
-    if (storedBusinessName?.trim()) {
-      setBusinessName(storedBusinessName.trim());
-      return;
-    }
+    const profile = readBusinessProfile();
+    if (profile.name?.trim()) setBusinessName(profile.name.trim());
+    if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
 
     const storedUser = localStorage.getItem("user");
     if (!storedUser) return;
@@ -68,7 +68,7 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen flex-col bg-white">
-      <AppHeader title={businessName} subtitle="" />
+      <AppHeader title={businessName} subtitle={businessSubtitle || ""} />
 
       <main className="flex-1 overflow-y-auto pb-24">
         <div className="hidden h-full items-center justify-center px-6 py-10 lg:flex">

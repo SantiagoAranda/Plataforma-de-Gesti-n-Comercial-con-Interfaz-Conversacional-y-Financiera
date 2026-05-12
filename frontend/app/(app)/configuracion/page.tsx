@@ -4,19 +4,25 @@ import AppHeader from "@/src/components/layout/AppHeader";
 
 export default function ConfiguracionPage() {
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
-      <div className="shrink-0">
-        <AppHeader title="Configuración" showBack hrefBack="/home" />
-      </div>
+    <div className="flex h-screen flex-col bg-white">
+      <AppHeader
+        title="Configuración"
+        subtitle="Ajustes del sistema"
+        showBack
+        hrefBack="/home"
+      />
 
-      <main className="min-h-0 flex-1 overflow-y-auto pb-24">
-        <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-          <div className="rounded-3xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm ring-1 ring-black/5">
-            Pantalla en construcción.
+      <main className="flex-1 overflow-y-auto px-4 py-5 pb-10">
+        <div className="mx-auto w-full max-w-xl">
+          <div className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+            <p className="text-sm font-semibold text-neutral-900">Footer</p>
+            <p className="mt-2 text-sm text-neutral-500">
+              Próximamente vas a poder configurar la información del pie de
+              página de tu tienda.
+            </p>
           </div>
         </div>
       </main>
     </div>
   );
 }
-
