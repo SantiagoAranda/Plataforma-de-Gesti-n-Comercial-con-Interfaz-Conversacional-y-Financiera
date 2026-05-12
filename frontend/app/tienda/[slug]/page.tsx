@@ -17,6 +17,7 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
+import { readBusinessProfile } from "@/src/lib/businessProfile";
 
 const formatPrice = (value: number) => {
   return formatPriceInput(value.toFixed(2).replace(".", ","));
@@ -57,6 +58,7 @@ export default function PublicStorePage() {
 
   const [items, setItems] = useState<Item[]>([]);
   const [businessName, setBusinessName] = useState("");
+  const [businessSubtitle, setBusinessSubtitle] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -78,6 +80,13 @@ export default function PublicStorePage() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const closeProductDetail = () => setSelectedProduct(null);
+
+  useEffect(() => {
+    try {
+      const profile = readBusinessProfile();
+      if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
+    } catch {}
+  }, []);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -386,7 +395,15 @@ export default function PublicStorePage() {
               <div className="truncate text-[16px] font-bold text-slate-950">
                 {businessName || "Tienda"}
               </div>
-              <div className="truncate text-[12px] font-medium text-slate-500">
+              {businessSubtitle?.trim() && (
+                <div className="truncate text-[12px] font-medium text-slate-500">
+                  {businessSubtitle.trim()}
+                </div>
+              )}
+              <div
+                className="truncate text-[12px] font-medium text-slate-500"
+                style={businessSubtitle?.trim() ? { display: "none" } : undefined}
+              >
                 Catálogo
               </div>
             </div>

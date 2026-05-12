@@ -3,22 +3,13 @@
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { logoutAndRedirect } from "@/src/lib/auth/logout";
+
 export default function LogoutButton() {
   const router = useRouter();
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem("token");
-      localStorage.removeItem("session");
-      localStorage.removeItem("user");
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("businessName");
-
-      document.cookie = "token=; Max-Age=0; path=/";
-      router.push("/login");
-    } catch (error) {
-      console.error("Error al cerrar sesion", error);
-    }
+    logoutAndRedirect((href) => router.push(href));
   };
 
   return (
