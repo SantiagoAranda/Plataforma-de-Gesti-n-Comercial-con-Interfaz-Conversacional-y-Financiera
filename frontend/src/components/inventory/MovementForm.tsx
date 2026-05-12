@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
 import type { Ingredient } from "@/src/services/inventory";
@@ -32,6 +32,7 @@ const ACTIONS: Array<{ label: string; value: MovementAction }> = [
 type Props = {
   ingredient: Ingredient;
   onSuccess?: () => void;
+  initialAction?: MovementAction;
 };
 
 function toNumber(value: string) {
@@ -40,8 +41,8 @@ function toNumber(value: string) {
   return Number.isFinite(num) ? num : NaN;
 }
 
-export function MovementForm({ ingredient, onSuccess }: Props) {
-  const [action, setAction] = useState<MovementAction>("PURCHASE");
+export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
+  const [action, setAction] = useState<MovementAction>(initialAction ?? "PURCHASE");
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [detail, setDetail] = useState("");
@@ -56,6 +57,11 @@ export function MovementForm({ ingredient, onSuccess }: Props) {
   const allowsUnitCost = needsUnitCost;
   const needsDetail = action === "ADJUSTMENT_POSITIVE" || action === "ADJUSTMENT_NEGATIVE";
   const allowsReferenceId = action === "PURCHASE" || action === "PURCHASE_RETURN";
+
+  useEffect(() => {
+    if (!initialAction) return;
+    setAction(initialAction);
+  }, [initialAction]);
 
   const parsedQuantity = useMemo(() => toNumber(quantity), [quantity]);
   const parsedUnitCost = useMemo(() => toNumber(unitCost), [unitCost]);

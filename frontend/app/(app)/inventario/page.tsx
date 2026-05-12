@@ -26,6 +26,7 @@ import {
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { IngredientList } from "@/src/components/inventory/IngredientList";
+import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { DateSeparator } from "@/src/components/shared/DateSeparator";
 import type { Item } from "@/src/types/item";
@@ -420,9 +421,12 @@ export default function InventarioPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
-  const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
   const [prefillIngredientName, setPrefillIngredientName] = useState("");
   const [creatingIngredient, setCreatingIngredient] = useState(false);
+
+  const [movementSheetOpen, setMovementSheetOpen] = useState(false);
+  const [movementIngredientId, setMovementIngredientId] = useState<string>("");
+  const [movementInitialAction, setMovementInitialAction] = useState<MovementAction>("PURCHASE");
 
   const loadData = useCallback(async () => {
     try {
@@ -531,6 +535,23 @@ export default function InventarioPage() {
     void loadKardex();
   }, [activeScreen, loadKardex]);
 
+  const movementTitle: Record<MovementAction, string> = {
+    INITIAL: "Inventario inicial",
+    PURCHASE: "Registrar compra",
+    PURCHASE_RETURN: "Devolución de compra",
+    ADJUSTMENT_POSITIVE: "Ajuste positivo",
+    ADJUSTMENT_NEGATIVE: "Ajuste negativo",
+  };
+
+  const openMovementSheet = useCallback(
+    (action: MovementAction) => {
+      setMovementInitialAction(action);
+      setMovementSheetOpen(true);
+      setMovementIngredientId((prev) => prev || summary[0]?.id || "");
+    },
+    [summary],
+  );
+
   const handlePickAction = (action: InventoryChatMenuAction) => {
     if (action === "INGREDIENTES") {
       router.push("/inventario/ingredientes");
@@ -544,7 +565,6 @@ export default function InventarioPage() {
       router.push("/inventario/recetas");
       return;
     }
-    setPurchaseReturnOpen(true);
   };
 
   const handleCreateIngredient = useCallback(() => {
@@ -633,6 +653,12 @@ export default function InventarioPage() {
         onChange={setSearchQuery}
         placeholder={getInventorySearchPlaceholder(activeScreen)}
         onCreateIngredient={handleCreateIngredient}
+        onPickAction={handlePickAction}
+        onRegisterPurchase={() => openMovementSheet("PURCHASE")}
+        onRegisterPurchaseReturn={() => openMovementSheet("PURCHASE_RETURN")}
+        onRegisterPositiveAdjustment={() => openMovementSheet("ADJUSTMENT_POSITIVE")}
+        onRegisterNegativeAdjustment={() => openMovementSheet("ADJUSTMENT_NEGATIVE")}
+        onRegisterInitial={() => openMovementSheet("INITIAL")}
       />
 
       {/* Modals */}
@@ -677,21 +703,52 @@ export default function InventarioPage() {
       </ItemPanelLayout>
 
       <ItemPanelLayout
-        open={purchaseReturnOpen}
-        title="Devolución de compras"
-        subtitle="Próximamente"
-        onClose={() => setPurchaseReturnOpen(false)}
+        open={movementSheetOpen}
+        title={movementTitle[movementInitialAction]}
+        subtitle="Registrar movimiento"
+        onClose={() => setMovementSheetOpen(false)}
       >
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
-          Devolución de compras estará disponible próximamente
-        </div>
-        <button
-          type="button"
-          onClick={() => setPurchaseReturnOpen(false)}
-          className="h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99]"
-        >
-          Entendido
-        </button>
+        {summary.length === 0 ? (
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
+            No hay ingredientes activos para registrar movimientos.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                Ingrediente
+              </p>
+              <select
+                value={movementIngredientId || summary[0]?.id || ""}
+                onChange={(e) => setMovementIngredientId(e.target.value)}
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              >
+                {summary.map((ing) => (
+                  <option key={ing.id} value={ing.id}>
+                    {ing.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(() => {
+              const selected =
+                summary.find((s) => s.id === (movementIngredientId || summary[0]?.id)) ?? null;
+              if (!selected) return null;
+              return (
+                <MovementForm
+                  ingredient={selected}
+                  initialAction={movementInitialAction}
+                  onSuccess={async () => {
+                    setMovementSheetOpen(false);
+                    setSearchQuery("");
+                    await loadData();
+                  }}
+                />
+              );
+            })()}
+          </div>
+        )}
       </ItemPanelLayout>
     </div>
   );
