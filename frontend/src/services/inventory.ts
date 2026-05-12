@@ -76,13 +76,31 @@ export type CreateInventoryInitialDto = {
   detail?: string;
 };
 
-export type CreateInventoryPurchaseDto = {
+export type CreateInventoryPurchaseBaseDto = {
   ingredientId: string;
-  quantity: number;
-  unitCost: number;
   referenceId?: string;
   detail?: string;
 };
+
+export type CreateInventoryPurchaseLegacyDto = CreateInventoryPurchaseBaseDto & {
+  // Legacy mode: quantity + unitCost represent values in consumption units.
+  quantity: number;
+  unitCost: number;
+  purchaseQuantity?: never;
+  purchaseUnitCost?: never;
+};
+
+export type CreateInventoryPurchaseByUnitDto = CreateInventoryPurchaseBaseDto & {
+  // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
+  purchaseQuantity: number;
+  purchaseUnitCost: number;
+  quantity?: never;
+  unitCost?: never;
+};
+
+export type CreateInventoryPurchaseDto =
+  | CreateInventoryPurchaseLegacyDto
+  | CreateInventoryPurchaseByUnitDto;
 
 export type CreateInventoryPurchaseReturnDto = {
   ingredientId: string;

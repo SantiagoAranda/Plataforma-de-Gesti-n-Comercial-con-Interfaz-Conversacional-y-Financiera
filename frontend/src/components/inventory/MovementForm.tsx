@@ -9,15 +9,22 @@ import {
   registerNegativeAdjustment,
   registerPositiveAdjustment,
   registerPurchase,
+  registerPurchaseReturn,
 } from "@/src/services/inventory";
 import { getErrorMessage } from "@/src/lib/errors";
 import { cn } from "@/src/lib/utils";
 
-export type MovementAction = "INITIAL" | "PURCHASE" | "ADJUSTMENT_POSITIVE" | "ADJUSTMENT_NEGATIVE";
+export type MovementAction =
+  | "INITIAL"
+  | "PURCHASE"
+  | "PURCHASE_RETURN"
+  | "ADJUSTMENT_POSITIVE"
+  | "ADJUSTMENT_NEGATIVE";
 
 const ACTIONS: Array<{ label: string; value: MovementAction }> = [
   { label: "Inicial", value: "INITIAL" },
   { label: "Compra", value: "PURCHASE" },
+  { label: "Dev. compra", value: "PURCHASE_RETURN" },
   { label: "Ajuste +", value: "ADJUSTMENT_POSITIVE" },
   { label: "Ajuste -", value: "ADJUSTMENT_NEGATIVE" },
 ];
@@ -41,10 +48,14 @@ export function MovementForm({ ingredient, onSuccess }: Props) {
   const [referenceId, setReferenceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const needsUnitCost = action === "INITIAL" || action === "PURCHASE";
-  const allowsUnitCost = action === "INITIAL" || action === "PURCHASE" || action === "ADJUSTMENT_POSITIVE";
+  const needsUnitCost =
+    action === "INITIAL" ||
+    action === "PURCHASE" ||
+    action === "PURCHASE_RETURN" ||
+    action === "ADJUSTMENT_POSITIVE";
+  const allowsUnitCost = needsUnitCost;
   const needsDetail = action === "ADJUSTMENT_POSITIVE" || action === "ADJUSTMENT_NEGATIVE";
-  const allowsReferenceId = action === "PURCHASE";
+  const allowsReferenceId = action === "PURCHASE" || action === "PURCHASE_RETURN";
 
   const parsedQuantity = useMemo(() => toNumber(quantity), [quantity]);
   const parsedUnitCost = useMemo(() => toNumber(unitCost), [unitCost]);
@@ -82,11 +93,19 @@ export function MovementForm({ ingredient, onSuccess }: Props) {
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
+      } else if (action === "PURCHASE_RETURN") {
+        await registerPurchaseReturn({
+          ingredientId: ingredient.id,
+          quantity: parsedQuantity,
+          unitCost: parsedUnitCost,
+          referenceId: referenceId.trim() || undefined,
+          detail: detail.trim() || undefined,
+        });
       } else if (action === "ADJUSTMENT_POSITIVE") {
         await registerPositiveAdjustment({
           ingredientId: ingredient.id,
           quantity: parsedQuantity,
-          unitCost: Number.isFinite(parsedUnitCost) ? parsedUnitCost : undefined,
+          unitCost: parsedUnitCost,
           detail: detail.trim(),
         });
       } else {
@@ -170,7 +189,7 @@ export function MovementForm({ ingredient, onSuccess }: Props) {
             value={unitCost}
             onChange={(e) => setUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
             inputMode="decimal"
-            placeholder={allowsUnitCost ? (needsUnitCost ? "0" : "(opcional)") : "No aplica"}
+            placeholder={allowsUnitCost ? "0" : "No aplica"}
             disabled={!allowsUnitCost}
             className={cn(
               "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm",
@@ -179,11 +198,6 @@ export function MovementForm({ ingredient, onSuccess }: Props) {
                 : "border-neutral-100 bg-neutral-50 text-neutral-400",
             )}
           />
-          {action === "ADJUSTMENT_POSITIVE" && (
-            <p className="text-[11px] font-medium text-neutral-400">
-              Si lo dejas vac&iacute;o, se usar&aacute; el costo promedio actual.
-            </p>
-          )}
         </div>
       </div>
 

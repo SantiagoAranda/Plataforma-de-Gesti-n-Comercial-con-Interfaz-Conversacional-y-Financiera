@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Calculator, ShoppingBag } from "lucide-react";
+import { Building2, Calculator, PackageSearch, ShoppingBag } from "lucide-react";
 
 import ThreadItem from "@/src/components/chat/ThreadItem";
 import { formatActivityTime, type ModuleActivitySummary } from "@/src/lib/home/moduleActivity";
@@ -23,6 +23,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  INVENTORY: <PackageSearch className="h-5 w-5" />,
 };
 
 export default function DesktopModulePanel() {
