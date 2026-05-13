@@ -11,6 +11,7 @@ import {
   listKardex,
   type Ingredient,
   type InventoryMovement,
+  type InventoryMovementType,
 } from "@/src/services/inventory";
 import { KardexList } from "@/src/components/inventory/KardexList";
 import {
@@ -29,6 +30,7 @@ export default function KardexPage() {
   const [ingredientId, setIngredientId] = useState<string>(initialIngredientId ?? "");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [movementType, setMovementType] = useState<InventoryMovementType | "all">("all");
 
   const [loadingKardex, setLoadingKardex] = useState(false);
   const [kardex, setKardex] = useState<InventoryMovement[]>([]);
@@ -42,7 +44,6 @@ export default function KardexPage() {
         setLoading(true);
         const data = await listIngredients({ status: "ACTIVE" });
         setIngredients(data ?? []);
-        if (!ingredientId && data?.[0]?.id) setIngredientId(data[0].id);
       } catch (err) {
         console.error(err);
         toast.error(getErrorMessage(err, "No se pudo cargar ingredientes"));
@@ -88,14 +89,28 @@ export default function KardexPage() {
 
   const visibleMovements = useMemo(() => {
     const q = chatValue.trim().toLowerCase();
-    if (!q) return kardex;
-    return kardex.filter((m) => {
+
+    return kardex
+      .filter((m) => (movementType === "all" ? true : m.type === movementType))
+      .filter((m) => {
+        if (!q) return true;
       const t = m.type?.toLowerCase?.() ?? "";
       const d = m.detail?.toLowerCase?.() ?? "";
       const r = m.referenceId?.toLowerCase?.() ?? "";
       return t.includes(q) || d.includes(q) || r.includes(q);
-    });
-  }, [kardex, chatValue]);
+      });
+  }, [kardex, chatValue, movementType]);
+
+  const movementTypeOptions: Array<{ value: InventoryMovementType | "all"; label: string }> = [
+    { value: "all", label: "Todos" },
+    { value: "INVENTORY_INITIAL", label: "Inventario inicial" },
+    { value: "PURCHASE", label: "Compra" },
+    { value: "PURCHASE_RETURN", label: "Devolución compra" },
+    { value: "SALE", label: "Venta" },
+    { value: "SALE_RETURN", label: "Devolución venta" },
+    { value: "ADJUSTMENT_POSITIVE", label: "Ajuste +" },
+    { value: "ADJUSTMENT_NEGATIVE", label: "Ajuste -" },
+  ];
 
   const handlePickAction = (action: InventoryChatMenuAction) => {
     if (action === "INGREDIENTES") {
@@ -178,6 +193,33 @@ export default function KardexPage() {
                 </div>
               </div>
 
+              <div className="mt-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                  Tipo de movimiento
+                </p>
+                <div className="mt-2 -mx-4 overflow-x-auto px-4">
+                  <div className="flex w-max gap-2 pb-1">
+                    {movementTypeOptions.map((opt) => {
+                      const active = movementType === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setMovementType(opt.value)}
+                          className={
+                            active
+                              ? "h-9 rounded-full bg-neutral-900 px-4 text-[10px] font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
+                              : "h-9 rounded-full bg-neutral-100 px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                          }
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={() => void loadKardex()}
@@ -192,6 +234,10 @@ export default function KardexPage() {
           {loadingKardex ? (
             <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
               Cargando movimientos...
+            </div>
+          ) : !ingredientId ? (
+            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
+              Seleccioná un insumo para ver sus movimientos.
             </div>
           ) : (
             <KardexList movements={visibleMovements} layout="chat" />
