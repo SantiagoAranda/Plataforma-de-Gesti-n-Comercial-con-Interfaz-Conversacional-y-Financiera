@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 
 import AppHeader from "@/src/components/layout/AppHeader";
@@ -14,9 +14,15 @@ import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 
 export default function RecetasPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [itemId, setItemId] = useState<string | null>(null);
   const [chatValue, setChatValue] = useState("");
   const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
+
+  useEffect(() => {
+    const id = searchParams?.get("itemId");
+    if (id) setItemId(id);
+  }, [searchParams]);
 
   const handlePickAction = (action: InventoryChatMenuAction) => {
     if (action === "INGREDIENTES") {

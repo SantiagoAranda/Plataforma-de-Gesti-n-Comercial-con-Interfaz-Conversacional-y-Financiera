@@ -356,6 +356,11 @@ function InventoryHomeActual({
   summary: InventorySummaryIngredient[];
   products: ComposedProduct[];
 }) {
+  const router = useRouter();
+  const visibleProducts = products.filter(
+    (p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED",
+  );
+
   return (
     <>
       {loading && (
@@ -377,24 +382,24 @@ function InventoryHomeActual({
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-xs font-black uppercase tracking-widest text-neutral-400">
-                Recetas
+                Productos con inventario
               </p>
             </div>
 
             <div className="space-y-3">
-              {products.map((product) => (
+              {visibleProducts.map((product) => (
                 <ProductInventoryFeedItem
                   key={product.itemId}
                   product={product}
                   onClick={() => {
-                    // Por ahora, sin acción desde el Home.
+                    router.push(`/inventario/recetas?itemId=${product.itemId}`);
                   }}
                 />
               ))}
 
-              {products.length === 0 && (
+              {visibleProducts.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-neutral-200 bg-white/70 p-6 text-center text-sm text-neutral-400">
-                  Todavía no hay recetas configuradas.
+                  Todavía no hay productos con inventario.
                 </div>
               )}
             </div>
