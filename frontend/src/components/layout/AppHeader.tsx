@@ -1,14 +1,10 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogOut, MoreVertical, Settings, UserCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-const LogoutButton = dynamic(
-  () => import("@/src/components/auth/LogoutButton"),
-  { ssr: false },
-);
+import { logoutAndRedirect } from "@/src/lib/auth/logout";
 
 type Props = {
   title: string;
@@ -35,6 +31,23 @@ export default function AppHeader({
 }: Props) {
   const router = useRouter();
   const isMainView = !showBack;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [menuOpen]);
 
   const handleBack = () => {
     if (onBack) {
@@ -82,7 +95,61 @@ export default function AppHeader({
               {rightIcon}
             </button>
           )}
-          {isMainView && showLogout && <LogoutButton />}
+
+          {isMainView && showLogout && (
+            <div className="relative lg:hidden" ref={menuRef}>
+              <button
+                type="button"
+                aria-label="Menú"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+                className="grid h-10 w-10 place-items-center rounded-full text-neutral-700 transition hover:bg-black/5 active:scale-95"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+
+              {menuOpen && (
+                <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 overflow-hidden rounded-2xl border border-black/5 bg-white shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/perfil");
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-sm text-neutral-800 hover:bg-neutral-50"
+                  >
+                    <UserCircle className="h-4 w-4 text-neutral-600" />
+                    Perfil
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/configuracion");
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-sm text-neutral-800 hover:bg-neutral-50"
+                  >
+                    <Settings className="h-4 w-4 text-neutral-600" />
+                    Configuración
+                  </button>
+                  <div className="h-px w-full bg-black/5" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      logoutAndRedirect((href) => router.push(href));
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-sm text-rose-700 hover:bg-rose-50"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Cerrar sesión
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Desktop logout lives in the left sidebar */}
         </div>
       </div>
     </header>
