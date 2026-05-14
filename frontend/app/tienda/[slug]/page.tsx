@@ -17,6 +17,25 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
+import { Footer, FooterConfig } from "@/src/components/layout/Footer";
+
+const mockFooterConfig: FooterConfig = {
+  backgroundColor: '#064e3b',
+  titulo: 'Mi Negocio',
+  frasePrincipal: 'Potenciando tu negocio cada día',
+  contacto: {
+    email: 'contacto@sactec.com',
+    telefonos: {
+      registro: '+54 9 11 1234-5678',
+      opcional1: '+54 9 11 8765-4321',
+    },
+    redesSociales: {
+      facebook: 'https://facebook.com',
+      instagram: 'https://instagram.com/savik.ar',
+      youtube: 'https://youtube.com',
+    }
+  }
+};
 
 const formatPrice = (value: number) => {
   return formatPriceInput(value.toFixed(2).replace(".", ","));
@@ -372,7 +391,7 @@ export default function PublicStorePage() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8]">
+    <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
       <header
         className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
@@ -470,7 +489,7 @@ export default function PublicStorePage() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
+      <main className="flex-grow mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
@@ -637,6 +656,8 @@ export default function PublicStorePage() {
           closeProductDetail();
         }}
       />
+
+      <Footer config={mockFooterConfig} />
     </div>
   );
 }

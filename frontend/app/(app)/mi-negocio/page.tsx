@@ -25,7 +25,6 @@ import {
   MAX_ITEM_IMAGE_SIZE_BYTES 
 } from "@/src/lib/itemImages";
 
-
 export default function MiNegocioPage() {
 
   const [items, setItems] = useState<Item[]>([]);
@@ -331,18 +330,23 @@ export default function MiNegocioPage() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+  const handleScroll = () => {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const scrollHeight = document.documentElement.scrollHeight;
+    const clientHeight = document.documentElement.clientHeight;
     setShowScrollBottom(scrollTop + clientHeight < scrollHeight - 400);
   };
 
+  useEffect(() => {
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const scrollToBottom = (instant = false) => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: instant ? "auto" : "smooth"
-      });
-    }
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: instant ? "auto" : "smooth"
+    });
   };
 
   const groupedItems = useMemo(() => {
@@ -370,7 +374,7 @@ export default function MiNegocioPage() {
   }, [filteredItems, visibleCount]);
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-100">
+    <div className="flex flex-col min-h-screen bg-neutral-100">
       {selectedItem ? (
         <SelectionActionBar
           visible
@@ -389,8 +393,7 @@ export default function MiNegocioPage() {
 
       <main 
         ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 space-y-8 pb-28 scroll-smooth"
+        className="flex-grow px-4 py-4 space-y-8 pb-28"
       >
         {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
