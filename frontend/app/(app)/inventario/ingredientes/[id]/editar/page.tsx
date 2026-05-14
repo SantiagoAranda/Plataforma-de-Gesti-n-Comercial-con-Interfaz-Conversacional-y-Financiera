@@ -74,6 +74,7 @@ export default function EditarIngredientePage({ params }: { params: Promise<{ id
                       consumptionUnit: values.consumptionUnit,
                       purchaseUnit: values.purchaseUnit,
                       purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                      minStock: values.minStock,
                       status: values.status,
                     });
                     toast.dismiss(loadingId);

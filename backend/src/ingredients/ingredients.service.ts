@@ -39,6 +39,11 @@ export class IngredientsService {
       );
     }
 
+    const minStock = new Prisma.Decimal(dto.minStock ?? 0);
+    if (minStock.lt(0)) {
+      throw new BadRequestException('minStock must be greater than or equal to zero');
+    }
+
     try {
       return await this.prisma.ingredient.create({
         data: {
@@ -47,6 +52,7 @@ export class IngredientsService {
           consumptionUnit: this.normalizeText(dto.consumptionUnit),
           purchaseUnit: this.normalizeText(dto.purchaseUnit),
           purchaseToConsumptionFactor,
+          minStock,
         },
       });
     } catch (error) {
@@ -91,6 +97,10 @@ export class IngredientsService {
       );
     }
 
+    if (dto.minStock !== undefined && new Prisma.Decimal(dto.minStock).lt(0)) {
+      throw new BadRequestException('minStock must be greater than or equal to zero');
+    }
+
     try {
       return await this.prisma.ingredient.update({
         where: { id },
@@ -109,6 +119,8 @@ export class IngredientsService {
             dto.purchaseToConsumptionFactor === undefined
               ? undefined
               : new Prisma.Decimal(dto.purchaseToConsumptionFactor),
+          minStock:
+            dto.minStock === undefined ? undefined : new Prisma.Decimal(dto.minStock),
         },
       });
     } catch (error) {

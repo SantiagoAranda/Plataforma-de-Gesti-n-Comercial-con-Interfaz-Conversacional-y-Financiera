@@ -8,9 +8,9 @@ import AppHeader from "@/src/components/layout/AppHeader";
 import { getErrorMessage } from "@/src/lib/errors";
 import {
   listIngredients,
-  listKardex,
   type Ingredient,
-  type InventoryMovement,
+  getInventoryKardex,
+  type InventoryKardexGlobalMovement,
   type InventoryMovementType,
 } from "@/src/services/inventory";
 import { KardexList } from "@/src/components/inventory/KardexList";
@@ -33,7 +33,10 @@ function KardexPageContent() {
   const [movementType, setMovementType] = useState<InventoryMovementType | "all">("all");
 
   const [loadingKardex, setLoadingKardex] = useState(false);
-  const [kardex, setKardex] = useState<InventoryMovement[]>([]);
+  const [kardex, setKardex] = useState<InventoryKardexGlobalMovement[]>([]);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(25);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [chatValue, setChatValue] = useState("");
   const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
@@ -65,23 +68,32 @@ function KardexPageContent() {
     [ingredients, ingredientId],
   );
 
+  useEffect(() => {
+    setPage(1);
+  }, [ingredientId, from, to, movementType]);
+
   const loadKardex = useCallback(async () => {
-    if (!ingredientId) return;
     try {
       setLoadingKardex(true);
-      const movements = await listKardex(ingredientId, {
-        from: from || undefined,
-        to: to || undefined,
+      const result = await getInventoryKardex({
+        ingredientId: ingredientId || undefined,
+        type: movementType === "all" ? undefined : movementType,
+        dateFrom: from || undefined,
+        dateTo: to || undefined,
+        page,
+        limit,
       });
-      setKardex(movements ?? []);
+      setKardex(result?.data ?? []);
+      setTotalPages(result?.meta?.totalPages ?? 1);
     } catch (err) {
       console.error(err);
       toast.error(getErrorMessage(err, "No se pudo cargar el kardex"));
       setKardex([]);
+      setTotalPages(1);
     } finally {
       setLoadingKardex(false);
     }
-  }, [ingredientId, from, to]);
+  }, [ingredientId, movementType, from, to, page, limit]);
 
   useEffect(() => {
     void loadKardex();
@@ -91,15 +103,25 @@ function KardexPageContent() {
     const q = chatValue.trim().toLowerCase();
 
     return kardex
-      .filter((m) => (movementType === "all" ? true : m.type === movementType))
       .filter((m) => {
         if (!q) return true;
-      const t = m.type?.toLowerCase?.() ?? "";
-      const d = m.detail?.toLowerCase?.() ?? "";
-      const r = m.referenceId?.toLowerCase?.() ?? "";
-      return t.includes(q) || d.includes(q) || r.includes(q);
+        const t = m.type?.toLowerCase?.() ?? "";
+        const d = m.detail?.toLowerCase?.() ?? "";
+        const r = m.referenceId?.toLowerCase?.() ?? "";
+        const ing = m.ingredient?.name?.toLowerCase?.() ?? "";
+        return t.includes(q) || d.includes(q) || r.includes(q) || ing.includes(q);
       });
-  }, [kardex, chatValue, movementType]);
+  }, [kardex, chatValue]);
+
+  const movementsForList = useMemo(() => {
+    if (ingredientId) return visibleMovements;
+    return visibleMovements.map((m) => {
+      const ingName = m.ingredient?.name ?? "";
+      const nextDetail =
+        !ingName ? m.detail : m.detail ? `${ingName}: ${m.detail}` : `${ingName}`;
+      return { ...m, detail: nextDetail };
+    });
+  }, [visibleMovements, ingredientId]);
 
   const movementTypeOptions: Array<{ value: InventoryMovementType | "all"; label: string }> = [
     { value: "all", label: "Todos" },
@@ -150,7 +172,11 @@ function KardexPageContent() {
                 onChange={(e) => {
                   const next = e.target.value;
                   setIngredientId(next);
-                  router.replace(`/inventario/kardex?ingredientId=${encodeURIComponent(next)}`);
+                  router.replace(
+                    next
+                      ? `/inventario/kardex?ingredientId=${encodeURIComponent(next)}`
+                      : "/inventario/kardex",
+                  );
                 }}
                 className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
               >
@@ -224,10 +250,32 @@ function KardexPageContent() {
                 type="button"
                 onClick={() => void loadKardex()}
                 className="mt-4 h-11 w-full rounded-2xl bg-neutral-900 text-[11px] font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
-                disabled={!ingredientId || loadingKardex}
+                disabled={loadingKardex}
               >
                 {loadingKardex ? "Cargando..." : "Actualizar"}
               </button>
+
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="h-9 rounded-full bg-neutral-100 px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+                  disabled={loadingKardex || page <= 1}
+                >
+                  Anterior
+                </button>
+                <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                  Página {page} de {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-9 rounded-full bg-neutral-100 px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+                  disabled={loadingKardex || page >= totalPages}
+                >
+                  Siguiente
+                </button>
+              </div>
             </div>
           )}
 
@@ -235,12 +283,8 @@ function KardexPageContent() {
             <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
               Cargando movimientos...
             </div>
-          ) : !ingredientId ? (
-            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-              Seleccioná un insumo para ver sus movimientos.
-            </div>
           ) : (
-            <KardexList movements={visibleMovements} layout="chat" />
+            <KardexList movements={movementsForList} layout="chat" />
           )}
         </div>
       </main>

@@ -11,7 +11,8 @@ type SubmitValues = {
   name: string;
   consumptionUnit: string;
   purchaseUnit: string;
-  purchaseToConsumptionFactor: number;
+  purchaseToConsumptionFactor: string;
+  minStock: string;
   status?: IngredientStatus;
 };
 
@@ -46,16 +47,25 @@ export function IngredientForm({
       defaults?.purchaseToConsumptionFactor?.toString?.() ??
       "",
   );
+  const [minStock, setMinStock] = useState(
+    initial?.minStock?.toString?.() ?? defaults?.minStock?.toString?.() ?? "0",
+  );
   const [status, setStatus] = useState<IngredientStatus>(initial?.status ?? "ACTIVE");
 
   const canSubmit = useMemo(() => {
     if (!name.trim()) return false;
     if (!consumptionUnit.trim()) return false;
     if (!purchaseUnit.trim()) return false;
-    const numFactor = Number(factor.replace(",", "."));
-    if (!Number.isFinite(numFactor) || numFactor <= 0) return false;
+
+    const normalizedFactor = factor.replace(",", ".").trim();
+    if (!/^\d+(\.\d+)?$/.test(normalizedFactor)) return false;
+    if (/^0+(\.0+)?$/.test(normalizedFactor)) return false;
+
+    const normalizedMinStock = minStock.replace(",", ".").trim();
+    if (!/^\d+(\.\d+)?$/.test(normalizedMinStock)) return false;
+
     return true;
-  }, [name, consumptionUnit, purchaseUnit, factor]);
+  }, [name, consumptionUnit, purchaseUnit, factor, minStock]);
 
   const readonlyStock = initial ? formatMoney(parseNumber(initial.currentStock)) : null;
   const readonlyAvg = initial ? formatMoney(parseNumber(initial.averageCost)) : null;
@@ -65,12 +75,14 @@ export function IngredientForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (!canSubmit) return;
-        const numFactor = Number(factor.replace(",", "."));
+        const normalizedFactor = factor.replace(",", ".").trim();
+        const normalizedMinStock = minStock.replace(",", ".").trim() || "0";
         void onSubmit({
           name: name.trim(),
           consumptionUnit: consumptionUnit.trim(),
           purchaseUnit: purchaseUnit.trim(),
-          purchaseToConsumptionFactor: numFactor,
+          purchaseToConsumptionFactor: normalizedFactor,
+          minStock: normalizedMinStock,
           ...(mode === "edit" ? { status } : {}),
         });
       }}
@@ -143,6 +155,22 @@ export function IngredientForm({
         />
         <p className="text-[11px] font-medium text-neutral-400">
           Ejemplo: 1 {purchaseUnit || "kg"} = {factor || "1000"} {consumptionUnit || "g"}
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+          Stock mínimo (alerta)
+        </label>
+        <input
+          value={minStock}
+          onChange={(e) => setMinStock(e.target.value.replace(/[^0-9.,]/g, ""))}
+          placeholder="Ej: 10"
+          inputMode="decimal"
+          className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+        />
+        <p className="text-[11px] font-medium text-neutral-400">
+          Si el stock queda por debajo de este valor, se marcará como “Stock bajo”. Usa 0 para desactivar.
         </p>
       </div>
 

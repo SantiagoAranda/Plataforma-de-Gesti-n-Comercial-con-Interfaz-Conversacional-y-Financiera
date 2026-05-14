@@ -17,6 +17,7 @@ describe('InventoryService', () => {
       },
       inventoryMovement: {
         findMany: mockFn(),
+        count: mockFn(),
         create: mockFn(),
       },
       recipe: {
@@ -29,7 +30,11 @@ describe('InventoryService', () => {
     };
 
     const prisma = {
-      $transaction: jest.fn((fn: (transaction: any) => unknown) => fn(tx)),
+      $transaction: jest.fn((arg: any) => {
+        if (typeof arg === 'function') return arg(tx);
+        if (Array.isArray(arg)) return Promise.all(arg);
+        throw new Error('Unsupported $transaction usage in test');
+      }),
       ...tx,
     } as any;
 
@@ -140,7 +145,7 @@ describe('InventoryService', () => {
     expect(movement.averageCostAfter.toString()).toBe('3');
   });
 
-  it('converts purchaseQuantity into consumption units using purchaseToConsumptionFactor', async () => {
+  it('converts purchaseQuantity into consumption units using purchaseToConsumptionFactor (decimal strings)', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -157,16 +162,16 @@ describe('InventoryService', () => {
 
     const movement = await service.registerPurchase(businessId, {
       ingredientId,
-      purchaseQuantity: 2,
-      purchaseUnitCost: 12,
+      purchaseQuantity: '2',
+      purchaseUnitCost: '12000',
       detail: 'buy packs',
     } as any);
 
     expect(movement.quantity.toString()).toBe('12');
-    expect(movement.unitCost.toString()).toBe('2');
-    expect(movement.totalValue.toString()).toBe('24');
+    expect(movement.unitCost.toString()).toBe('2000');
+    expect(movement.totalValue.toString()).toBe('24000');
     expect(movement.stockAfter.toString()).toBe('12');
-    expect(movement.averageCostAfter.toString()).toBe('2');
+    expect(movement.averageCostAfter.toString()).toBe('2000');
   });
 
   it('creates PURCHASE_RETURN movement, decreases stock, and recalculates average cost using return unitCost', async () => {
@@ -635,5 +640,157 @@ describe('InventoryService', () => {
         orderId: 'order-1',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('marks outOfStock and lowStock flags in inventory summary', async () => {
+    const { service, prisma } = createService();
+
+    prisma.ingredient.findMany.mockResolvedValue([
+      {
+        id: 'i-1',
+        businessId,
+        name: 'Flour',
+        status: 'ACTIVE',
+        consumptionUnit: 'g',
+        purchaseUnit: 'kg',
+        purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(2),
+        minStock: new Prisma.Decimal(10),
+      },
+      {
+        id: 'i-2',
+        businessId,
+        name: 'Sugar',
+        status: 'ACTIVE',
+        consumptionUnit: 'g',
+        purchaseUnit: 'kg',
+        purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+        currentStock: new Prisma.Decimal(5),
+        averageCost: new Prisma.Decimal(1),
+        minStock: new Prisma.Decimal(10),
+      },
+      {
+        id: 'i-3',
+        businessId,
+        name: 'Oil',
+        status: 'ACTIVE',
+        consumptionUnit: 'ml',
+        purchaseUnit: 'l',
+        purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+        currentStock: new Prisma.Decimal(5),
+        averageCost: new Prisma.Decimal(1),
+        minStock: new Prisma.Decimal(0),
+      },
+      {
+        id: 'i-4',
+        businessId,
+        name: 'Salt',
+        status: 'ACTIVE',
+        consumptionUnit: 'g',
+        purchaseUnit: 'kg',
+        purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+        currentStock: new Prisma.Decimal(20),
+        averageCost: new Prisma.Decimal(1),
+        minStock: new Prisma.Decimal(10),
+      },
+    ]);
+
+    const summary = await service.getSummary(businessId, {} as any);
+
+    const byName = new Map(summary.map((row: any) => [row.name, row]));
+    expect(byName.get('Flour')?.outOfStock).toBe(true);
+    expect(byName.get('Flour')?.lowStock).toBe(false);
+
+    expect(byName.get('Sugar')?.outOfStock).toBe(false);
+    expect(byName.get('Sugar')?.lowStock).toBe(true);
+
+    expect(byName.get('Oil')?.outOfStock).toBe(false);
+    expect(byName.get('Oil')?.lowStock).toBe(false);
+
+    expect(byName.get('Salt')?.outOfStock).toBe(false);
+    expect(byName.get('Salt')?.lowStock).toBe(false);
+  });
+
+  it('returns paginated global kardex movements filtered by businessId', async () => {
+    const { service, prisma } = createService();
+
+    prisma.inventoryMovement.count.mockResolvedValue(2);
+    prisma.inventoryMovement.findMany.mockResolvedValue([
+      {
+        id: 'm-2',
+        businessId,
+        ingredientId,
+        type: 'PURCHASE',
+        occurredAt: new Date('2026-05-10T00:00:00.000Z'),
+        createdAt: new Date('2026-05-10T00:00:00.000Z'),
+        ingredient: { id: ingredientId, name: 'Flour', consumptionUnit: 'g' },
+      },
+      {
+        id: 'm-1',
+        businessId,
+        ingredientId,
+        type: 'SALE',
+        occurredAt: new Date('2026-05-09T00:00:00.000Z'),
+        createdAt: new Date('2026-05-09T00:00:00.000Z'),
+        ingredient: { id: ingredientId, name: 'Flour', consumptionUnit: 'g' },
+      },
+    ]);
+
+    const result = await service.listGlobalKardex(businessId, {
+      page: 1,
+      limit: 25,
+    } as any);
+
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 25,
+      total: 2,
+      totalPages: 1,
+    });
+    expect(Array.isArray(result.data)).toBe(true);
+
+    expect(prisma.inventoryMovement.count).toHaveBeenCalledWith({
+      where: { businessId },
+    });
+    expect(prisma.inventoryMovement.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { businessId },
+        skip: 0,
+        take: 25,
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          ingredient: { select: { id: true, name: true, consumptionUnit: true } },
+        },
+      }),
+    );
+  });
+
+  it('applies ingredientId, type and date filters to global kardex query', async () => {
+    const { service, prisma } = createService();
+    prisma.inventoryMovement.count.mockResolvedValue(0);
+    prisma.inventoryMovement.findMany.mockResolvedValue([]);
+
+    await service.listGlobalKardex(businessId, {
+      ingredientId: 'ingredient-1',
+      type: 'SALE',
+      dateFrom: '2026-05-01',
+      dateTo: '2026-05-31',
+      page: 2,
+      limit: 20,
+    } as any);
+
+    expect(prisma.inventoryMovement.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          businessId,
+          ingredientId: 'ingredient-1',
+          type: 'SALE',
+          occurredAt: expect.any(Object),
+        }),
+        skip: 20,
+        take: 20,
+      }),
+    );
   });
 });

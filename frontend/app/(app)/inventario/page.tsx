@@ -54,6 +54,7 @@ function InventoryListsScreen({
   ingredients: InventorySummaryIngredient[];
   products: ComposedProduct[];
 }) {
+  const router = useRouter();
   return (
     <section className="space-y-3">
       <div className="rounded-3xl border border-neutral-200/70 bg-white/70 p-2 shadow-sm ring-1 ring-black/5">
@@ -100,7 +101,17 @@ function InventoryListsScreen({
               key={product.itemId}
               product={product}
               onClick={() => {
-                // Placeholder: por ahora, sin navegación.
+                if (
+                  product.itemType === "PRODUCT" &&
+                  (product.inventoryMode === "SIMPLE" || product.inventoryMode === "RECIPE_BASED")
+                ) {
+                  router.push(`/inventario/recetas?itemId=${encodeURIComponent(product.itemId)}`);
+                  return;
+                }
+                if (product.itemType === "PRODUCT" && product.inventoryMode === "NONE") {
+                  router.push(`/mi-negocio?edit=${encodeURIComponent(product.itemId)}`);
+                  return;
+                }
               }}
             />
           ))}
@@ -370,7 +381,16 @@ function InventoryHomeActual({
 
   const totalValue = summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
   const totalStock = summary.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
-  const outOfStockCount = summary.filter((it) => parseNumber(it.currentStock) <= 0).length;
+  const outOfStockCount = summary.filter((it) =>
+    it.outOfStock !== undefined ? it.outOfStock : parseNumber(it.currentStock) <= 0,
+  ).length;
+  const lowStockCount = summary.filter((it) => {
+    if (it.lowStock !== undefined) return it.lowStock;
+    const minStock = parseNumber((it as any).minStock ?? 0);
+    const currentStock = parseNumber(it.currentStock);
+    return minStock > 0 && currentStock > 0 && currentStock <= minStock;
+  }).length;
+  const alertCount = outOfStockCount + lowStockCount;
 
   const recipeBasedProducts = products.filter((p) => p.inventoryMode === "RECIPE_BASED");
   const pendingRecipesCount = recipeBasedProducts.filter((p) => (p.ingredients ?? []).length === 0).length;
@@ -471,14 +491,18 @@ function InventoryHomeActual({
             className={
               outOfStockCount > 0
                 ? "w-fit max-w-full rounded-2xl border border-rose-100 bg-rose-50/90 px-4 py-3 shadow-sm"
-                : "w-fit max-w-full rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm"
+                : lowStockCount > 0
+                  ? "w-fit max-w-full rounded-2xl border border-amber-100 bg-amber-50/90 px-4 py-3 shadow-sm"
+                  : "w-fit max-w-full rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm"
             }
           >
             <p
               className={
                 outOfStockCount > 0
                   ? "text-[10px] font-black uppercase tracking-widest text-rose-600"
-                  : "text-[10px] font-black uppercase tracking-widest text-emerald-700"
+                  : lowStockCount > 0
+                    ? "text-[10px] font-black uppercase tracking-widest text-amber-700"
+                    : "text-[10px] font-black uppercase tracking-widest text-emerald-700"
               }
             >
               Alertas
@@ -487,15 +511,16 @@ function InventoryHomeActual({
               className={
                 outOfStockCount > 0
                   ? "mt-1 text-sm font-semibold text-rose-800"
-                  : "mt-1 text-sm font-semibold text-emerald-800"
+                  : lowStockCount > 0
+                    ? "mt-1 text-sm font-semibold text-amber-900"
+                    : "mt-1 text-sm font-semibold text-emerald-800"
               }
             >
               {outOfStockCount > 0
-                ? `${outOfStockCount} insumo(s) sin stock o en cero.`
-                : "Todo OK por ahora."}
-            </p>
-            <p className="mt-1 text-[11px] font-medium leading-relaxed text-neutral-400">
-              (Los umbrales de stock bajo todavía no están disponibles en la API.)
+                ? `${outOfStockCount} insumo(s) sin stock.`
+                : lowStockCount > 0
+                  ? `${lowStockCount} insumo(s) con stock bajo.`
+                  : "Todo OK por ahora."}
             </p>
           </div>
 
@@ -600,17 +625,23 @@ export default function InventarioPage() {
 
       setSummary(summaryData ?? []);
 
-      const inventoryProducts = (itemsData ?? []).filter(
-        (i) => i.type === "PRODUCT" && i.inventoryMode && i.inventoryMode !== "NONE",
-      );
+      const allActiveItems = (itemsData ?? []).filter((i) => i.status === "ACTIVE");
 
       const productsWithRecipes = await Promise.all(
-        inventoryProducts.map(async (product) => {
+        allActiveItems.map(async (item) => {
+          const inventoryMode = item.inventoryMode ?? "NONE";
+
+          const shouldLoadRecipe =
+            item.type === "PRODUCT" &&
+            (inventoryMode === "SIMPLE" || inventoryMode === "RECIPE_BASED");
+
           let recipeLines: RecipeLine[] = [];
-          try {
-            recipeLines = (await getRecipe(product.id)) ?? [];
-          } catch (e) {
-            console.error("Failed to load recipe for", product.id, e);
+          if (shouldLoadRecipe) {
+            try {
+              recipeLines = (await getRecipe(item.id)) ?? [];
+            } catch (e) {
+              console.error("Failed to load recipe for", item.id, e);
+            }
           }
 
           const ingredients = recipeLines.map((line) => {
@@ -626,11 +657,11 @@ export default function InventarioPage() {
           });
 
           return {
-            itemId: product.id,
-            itemName: product.name,
-            itemType: product.type,
-            inventoryMode: product.inventoryMode!,
-            price: product.price,
+            itemId: item.id,
+            itemName: item.name,
+            itemType: item.type,
+            inventoryMode,
+            price: item.price,
             stock: undefined,
             value: undefined,
             ingredients,
@@ -727,7 +758,16 @@ export default function InventarioPage() {
     }
   };
 
-  const outOfStockCount = summary.filter((it) => parseNumber(it.currentStock) <= 0).length;
+  const outOfStockCount = summary.filter((it) =>
+    it.outOfStock !== undefined ? it.outOfStock : parseNumber(it.currentStock) <= 0,
+  ).length;
+  const lowStockCount = summary.filter((it) => {
+    if (it.lowStock !== undefined) return it.lowStock;
+    const minStock = parseNumber((it as any).minStock ?? 0);
+    const currentStock = parseNumber(it.currentStock);
+    return minStock > 0 && currentStock > 0 && currentStock <= minStock;
+  }).length;
+  const alertCount = outOfStockCount + lowStockCount;
 
   const handleCreateIngredient = useCallback(() => {
     const text = searchQuery.trim();
@@ -817,15 +857,15 @@ export default function InventarioPage() {
             <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
-                onClick={() => setScreen("home")}
-                className={
-                  outOfStockCount > 0
-                    ? "h-9 shrink-0 rounded-full bg-amber-50 px-4 text-xs font-black text-amber-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-                    : "h-9 shrink-0 rounded-full bg-emerald-50 px-4 text-xs font-black text-emerald-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-                }
-              >
-                Stock bajo{outOfStockCount > 0 ? ` (${outOfStockCount})` : ""}
-              </button>
+                  onClick={() => setScreen("home")}
+                  className={
+                    alertCount > 0
+                      ? "h-9 shrink-0 rounded-full bg-amber-50 px-4 text-xs font-black text-amber-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                      : "h-9 shrink-0 rounded-full bg-emerald-50 px-4 text-xs font-black text-emerald-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                  }
+                >
+                  Stock bajo{alertCount > 0 ? ` (${alertCount})` : ""}
+                </button>
               <button
                 type="button"
                 onClick={() => router.push("/inventario/recetas")}
@@ -950,6 +990,7 @@ export default function InventarioPage() {
                 consumptionUnit: values.consumptionUnit,
                 purchaseUnit: values.purchaseUnit,
                 purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                minStock: values.minStock,
               });
 
               toast.dismiss(loadingId);

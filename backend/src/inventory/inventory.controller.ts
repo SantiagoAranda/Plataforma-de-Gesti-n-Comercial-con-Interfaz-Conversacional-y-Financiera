@@ -5,6 +5,7 @@ import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
 import { CreateInventoryPurchaseDto } from './dto/create-inventory-purchase.dto';
 import { CreateInventoryPurchaseReturnDto } from './dto/create-inventory-purchase-return.dto';
+import { InventoryKardexGlobalQueryDto } from './dto/inventory-kardex-global.query.dto';
 import { InventoryKardexQueryDto } from './dto/inventory-kardex.query.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
 import { InventoryService } from './inventory.service';
@@ -57,6 +58,11 @@ export class InventoryController {
   @Get('summary')
   getSummary(@Req() req: any, @Query() query: InventorySummaryQueryDto) {
     return this.inventoryService.getSummary(req.user.businessId, query);
+  }
+
+  @Get('kardex')
+  listGlobalKardex(@Req() req: any, @Query() query: InventoryKardexGlobalQueryDto) {
+    return this.inventoryService.listGlobalKardex(req.user.businessId, query);
   }
 
   @Get('kardex/:ingredientId')

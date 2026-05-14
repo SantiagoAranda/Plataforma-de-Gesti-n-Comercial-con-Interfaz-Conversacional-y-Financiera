@@ -34,10 +34,17 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
         const stockValue = parseNumber(it.stockValue);
         const inactive = it.status !== "ACTIVE";
         const outOfStock = Number.isFinite(currentStock) && currentStock <= 0;
+        const minStock = parseNumber((it as any).minStock ?? 0);
+        const lowStock =
+          it.lowStock !== undefined
+            ? it.lowStock
+            : Number.isFinite(minStock) && minStock > 0 && Number.isFinite(currentStock) && currentStock > 0 && currentStock <= minStock;
         const statusBadge = inactive
           ? { label: "Inactivo", tone: "bg-neutral-100 text-neutral-600" }
           : outOfStock
             ? { label: "Sin stock", tone: "bg-rose-50 text-rose-700" }
+            : lowStock
+              ? { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" }
             : { label: "OK", tone: "bg-emerald-50 text-emerald-800" };
         const avatarLabel = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
 

@@ -30,4 +30,10 @@ export class UpdateIngredientDto {
     message: 'purchaseToConsumptionFactor must be a valid decimal number',
   })
   purchaseToConsumptionFactor?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  minStock?: string;
 }

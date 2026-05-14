@@ -120,6 +120,16 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                   </div>
                 </div>
 
+                <div className="mt-3 rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock mínimo</p>
+                  <p className="mt-1 text-sm font-black text-neutral-900">
+                    {formatMoney(parseNumber(ingredient.minStock ?? 0))} {ingredient.consumptionUnit}
+                  </p>
+                  <p className="mt-1 text-[11px] font-medium text-neutral-400">
+                    Si el stock cae por debajo, se marca como “Stock bajo”.
+                  </p>
+                </div>
+
                 <div className="mt-4 grid grid-cols-3 gap-2">
                   <button
                     type="button"

@@ -11,12 +11,19 @@ type Props = {
   onClick: () => void;
 };
 
+function getTypeBadge(type: string) {
+  if (type === "SERVICE") {
+    return { label: "Servicio", tone: "bg-violet-50 text-violet-700" };
+  }
+  return { label: "Producto", tone: "bg-neutral-100 text-neutral-600" };
+}
+
 function getModeBadge(mode: string) {
   if (mode === "SIMPLE") {
     return { label: "Stock simple", tone: "bg-sky-50 text-sky-700" };
   }
   if (mode === "RECIPE_BASED") {
-    return { label: "Receta", tone: "bg-amber-50 text-amber-800" };
+    return { label: "Producto compuesto", tone: "bg-amber-50 text-amber-800" };
   }
   if (mode === "NONE") {
     return { label: "Sin control", tone: "bg-neutral-100 text-neutral-600" };
@@ -24,7 +31,14 @@ function getModeBadge(mode: string) {
   return { label: mode, tone: "bg-neutral-100 text-neutral-600" };
 }
 
-function recipeHealth(product: ComposedProduct) {
+function recipeStatus(product: ComposedProduct) {
+  if (product.itemType === "SERVICE") {
+    return { ok: true, label: "No impacta inventario", tone: "bg-neutral-100 text-neutral-600" };
+  }
+  if (product.inventoryMode === "NONE") {
+    return { ok: true, label: "No descuenta stock", tone: "bg-neutral-100 text-neutral-600" };
+  }
+
   const mandatory = product.ingredients.filter((l) => !l.isOptional);
 
   const anyInvalidLine = product.ingredients.some(
@@ -33,22 +47,22 @@ function recipeHealth(product: ComposedProduct) {
 
   if (product.inventoryMode === "SIMPLE") {
     if (mandatory.length === 0) {
-      return { ok: false, label: "Falta configurar receta", tone: "bg-rose-50 text-rose-700" };
+      return { ok: false, label: "Sin receta", tone: "bg-rose-50 text-rose-700" };
     }
     const ok = mandatory.length === 1 && product.ingredients.length === 1 && !anyInvalidLine;
     return ok
-      ? { ok: true, label: "Listo para vender", tone: "bg-emerald-50 text-emerald-800" }
-      : { ok: false, label: "Configuración inválida", tone: "bg-rose-50 text-rose-700" };
+      ? { ok: true, label: "Receta configurada", tone: "bg-emerald-50 text-emerald-800" }
+      : { ok: false, label: "Receta inválida", tone: "bg-rose-50 text-rose-700" };
   }
 
   if (product.inventoryMode === "RECIPE_BASED") {
     if (mandatory.length === 0) {
-      return { ok: false, label: "Falta configurar receta", tone: "bg-rose-50 text-rose-700" };
+      return { ok: false, label: "Sin receta", tone: "bg-rose-50 text-rose-700" };
     }
     const ok = mandatory.length >= 1 && !anyInvalidLine;
     return ok
-      ? { ok: true, label: "Listo para vender", tone: "bg-emerald-50 text-emerald-800" }
-      : { ok: false, label: "Configuración inválida", tone: "bg-rose-50 text-rose-700" };
+      ? { ok: true, label: "Receta configurada", tone: "bg-emerald-50 text-emerald-800" }
+      : { ok: false, label: "Receta inválida", tone: "bg-rose-50 text-rose-700" };
   }
 
   return { ok: true, label: "Listo", tone: "bg-neutral-100 text-neutral-600" };
@@ -63,8 +77,45 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
 
   const stock = formatValue(product.stock);
   const value = formatValue(product.value);
+  const typeBadge = getTypeBadge(product.itemType);
   const mode = getModeBadge(product.inventoryMode);
-  const health = recipeHealth(product);
+  const status = recipeStatus(product);
+
+  const isInventoriableProduct =
+    product.itemType === "PRODUCT" &&
+    (product.inventoryMode === "SIMPLE" || product.inventoryMode === "RECIPE_BASED");
+
+  const canShowIngredients = isInventoriableProduct && product.ingredients.length > 0;
+  const shouldShowNoRecipe = isInventoriableProduct && product.ingredients.length === 0;
+
+  const mandatoryLines = product.ingredients.filter((l) => !l.isOptional);
+
+  const producibleUnits = (() => {
+    if (!isInventoriableProduct) return null;
+    if (product.inventoryMode !== "RECIPE_BASED") return null;
+    if (mandatoryLines.length === 0) return null;
+
+    let minUnits = Number.POSITIVE_INFINITY;
+    for (const line of mandatoryLines) {
+      const stock = parseNumber(line.currentStock ?? 0);
+      const required = parseNumber(line.quantityRequired);
+      if (!Number.isFinite(stock) || !Number.isFinite(required) || required <= 0) return null;
+      minUnits = Math.min(minUnits, Math.floor(stock / required));
+    }
+
+    return Number.isFinite(minUnits) ? minUnits : null;
+  })();
+
+  const simpleStockInfo = (() => {
+    if (!isInventoriableProduct) return null;
+    if (product.inventoryMode !== "SIMPLE") return null;
+    if (mandatoryLines.length !== 1 || product.ingredients.length !== 1) return null;
+
+    const line = mandatoryLines[0];
+    const stock = parseNumber(line.currentStock ?? 0);
+    if (!Number.isFinite(stock)) return null;
+    return { stock, unit: line.consumptionUnit ?? "" };
+  })();
 
   return (
     <button
@@ -90,6 +141,14 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
+                selected ? "bg-emerald-200/50 text-emerald-900" : typeBadge.tone,
+              )}
+            >
+              {typeBadge.label}
+            </span>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
                 selected ? "bg-emerald-200/50 text-emerald-900" : mode.tone,
               )}
             >
@@ -98,10 +157,10 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                selected ? "bg-white/70 text-neutral-700" : health.tone,
+                selected ? "bg-white/70 text-neutral-700" : status.tone,
               )}
             >
-              {health.label}
+              {status.label}
             </span>
           </div>
         </div>
@@ -122,7 +181,7 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
         )}
       </div>
 
-      {product.ingredients.length > 0 && (
+      {canShowIngredients && (
         <div
           className={cn(
             "mt-1 rounded-2xl p-2",
@@ -156,13 +215,41 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
         </div>
       )}
 
-      {product.ingredients.length === 0 && (
+      {shouldShowNoRecipe && (
         <p className="mt-1 text-[11px] font-medium text-neutral-400">
           Sin receta configurada
         </p>
       )}
 
-      {(product.inventoryMode === "SIMPLE" || product.inventoryMode === "RECIPE_BASED") && (
+      {product.itemType === "PRODUCT" && product.inventoryMode === "NONE" && (
+        <p className="mt-1 text-[11px] font-medium text-neutral-400">
+          Activar control desde Mi Negocio.
+        </p>
+      )}
+
+      {product.itemType === "SERVICE" && (
+        <p className="mt-1 text-[11px] font-medium text-neutral-400">
+          Los servicios no descuentan inventario.
+        </p>
+      )}
+
+      {isInventoriableProduct && producibleUnits !== null && producibleUnits >= 0 && (
+        <p className="mt-1 text-[11px] font-medium text-neutral-500">
+          Puede producirse aprox.:{" "}
+          <span className="font-black text-neutral-700">{producibleUnits}</span> unidades
+        </p>
+      )}
+
+      {isInventoriableProduct && simpleStockInfo !== null && (
+        <p className="mt-1 text-[11px] font-medium text-neutral-500">
+          Stock disponible:{" "}
+          <span className="font-black text-neutral-700">
+            {simpleStockInfo.stock} {simpleStockInfo.unit}
+          </span>
+        </p>
+      )}
+
+      {isInventoriableProduct && (
         <p className={cn("mt-1 text-[11px] font-bold", selected ? "text-neutral-700" : "text-neutral-400")}>
           Editar receta →
         </p>

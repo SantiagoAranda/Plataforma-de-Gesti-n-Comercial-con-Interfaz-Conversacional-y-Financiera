@@ -15,6 +15,7 @@ import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
 import { CreateInventoryPurchaseDto } from './dto/create-inventory-purchase.dto';
 import { CreateInventoryPurchaseReturnDto } from './dto/create-inventory-purchase-return.dto';
+import { InventoryKardexGlobalQueryDto } from './dto/inventory-kardex-global.query.dto';
 import { InventoryKardexQueryDto } from './dto/inventory-kardex.query.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
 
@@ -168,6 +169,58 @@ export class InventoryService {
     });
   }
 
+  async listGlobalKardex(businessId: string, query: InventoryKardexGlobalQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 25;
+    const skip = (page - 1) * limit;
+
+    const occurredAtFilter =
+      query.dateFrom || query.dateTo
+        ? {
+            occurredAt: {
+              ...(query.dateFrom
+                ? { gte: this.parseDate(query.dateFrom, 'from') }
+                : {}),
+              ...(query.dateTo ? { lte: this.parseDate(query.dateTo, 'to') } : {}),
+            },
+          }
+        : {};
+
+    const where: Prisma.InventoryMovementWhereInput = {
+      businessId,
+      ...(query.ingredientId ? { ingredientId: query.ingredientId } : {}),
+      ...(query.type ? { type: query.type } : {}),
+      ...(occurredAtFilter as any),
+    };
+
+    const [total, movements] = await this.prisma.$transaction([
+      this.prisma.inventoryMovement.count({ where }),
+      this.prisma.inventoryMovement.findMany({
+        where,
+        include: {
+          ingredient: {
+            select: { id: true, name: true, consumptionUnit: true },
+          },
+        },
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      data: movements,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
+  }
+
   async getSummary(businessId: string, query: InventorySummaryQueryDto) {
     const ingredients = await this.prisma.ingredient.findMany({
       where: {
@@ -182,6 +235,11 @@ export class InventoryService {
       stockValue: this.decimal(ingredient.currentStock)
         .mul(this.decimal(ingredient.averageCost))
         .toDecimalPlaces(6),
+      outOfStock: this.decimal(ingredient.currentStock).lte(0),
+      lowStock:
+        this.decimal(ingredient.minStock ?? 0).gt(0) &&
+        this.decimal(ingredient.currentStock).gt(0) &&
+        this.decimal(ingredient.currentStock).lte(this.decimal(ingredient.minStock ?? 0)),
     }));
   }
 

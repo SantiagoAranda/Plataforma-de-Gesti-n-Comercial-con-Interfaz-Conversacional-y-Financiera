@@ -8,16 +8,19 @@ export type Ingredient = {
   name: string;
   consumptionUnit: string;
   purchaseUnit: string;
-  purchaseToConsumptionFactor: number | string;
+  purchaseToConsumptionFactor: string;
+  minStock: string;
   status: IngredientStatus;
-  currentStock: number | string;
-  averageCost: number | string;
+  currentStock: string;
+  averageCost: string;
   createdAt: string;
   updatedAt: string;
 };
 
 export type InventorySummaryIngredient = Ingredient & {
   stockValue: number | string;
+  outOfStock?: boolean;
+  lowStock?: boolean;
 };
 
 export type InventoryMovementType =
@@ -49,11 +52,32 @@ export type InventoryMovement = {
   updatedAt: string;
 };
 
+export type InventoryKardexGlobalMovement = InventoryMovement & {
+  ingredient: {
+    id: string;
+    name: string;
+    consumptionUnit: string;
+  };
+};
+
+export type PaginatedResultMeta = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type InventoryKardexGlobalResult = {
+  data: InventoryKardexGlobalMovement[];
+  meta: PaginatedResultMeta;
+};
+
 export type CreateIngredientDto = {
   name: string;
   consumptionUnit: string;
   purchaseUnit: string;
-  purchaseToConsumptionFactor: number;
+  purchaseToConsumptionFactor: string;
+  minStock?: string;
 };
 
 export type UpdateIngredientDto = Partial<CreateIngredientDto> & {
@@ -69,10 +93,19 @@ export type InventoryKardexQuery = {
   to?: string;
 };
 
+export type InventoryKardexGlobalQuery = {
+  ingredientId?: string;
+  type?: InventoryMovementType;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+};
+
 export type CreateInventoryInitialDto = {
   ingredientId: string;
-  quantity: number;
-  unitCost: number;
+  quantity: string;
+  unitCost: string;
   detail?: string;
 };
 
@@ -84,16 +117,16 @@ export type CreateInventoryPurchaseBaseDto = {
 
 export type CreateInventoryPurchaseLegacyDto = CreateInventoryPurchaseBaseDto & {
   // Legacy mode: quantity + unitCost represent values in consumption units.
-  quantity: number;
-  unitCost: number;
+  quantity: string;
+  unitCost: string;
   purchaseQuantity?: never;
   purchaseUnitCost?: never;
 };
 
 export type CreateInventoryPurchaseByUnitDto = CreateInventoryPurchaseBaseDto & {
   // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
-  purchaseQuantity: number;
-  purchaseUnitCost: number;
+  purchaseQuantity: string;
+  purchaseUnitCost: string;
   quantity?: never;
   unitCost?: never;
 };
@@ -104,16 +137,16 @@ export type CreateInventoryPurchaseDto =
 
 export type CreateInventoryPurchaseReturnDto = {
   ingredientId: string;
-  quantity: number;
-  unitCost: number;
+  quantity: string;
+  unitCost: string;
   referenceId?: string;
   detail?: string;
 };
 
 export type CreateInventoryAdjustmentDto = {
   ingredientId: string;
-  quantity: number;
-  unitCost?: number;
+  quantity: string;
+  unitCost?: string;
   detail: string;
 };
 
@@ -205,6 +238,18 @@ export function listKardex(ingredientId: string, query: InventoryKardexQuery = {
   if (query.to) qs.set("to", query.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<InventoryMovement[]>(`/inventory/kardex/${ingredientId}${suffix}`);
+}
+
+export function getInventoryKardex(query: InventoryKardexGlobalQuery = {}) {
+  const qs = new URLSearchParams();
+  if (query.ingredientId) qs.set("ingredientId", query.ingredientId);
+  if (query.type) qs.set("type", query.type);
+  if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
+  if (query.dateTo) qs.set("dateTo", query.dateTo);
+  if (query.page) qs.set("page", String(query.page));
+  if (query.limit) qs.set("limit", String(query.limit));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<InventoryKardexGlobalResult>(`/inventory/kardex${suffix}`);
 }
 
 export function getRecipe(itemId: string) {

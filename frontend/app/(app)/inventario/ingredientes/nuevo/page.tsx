@@ -35,6 +35,7 @@ export default function NuevoIngredientePage() {
                     consumptionUnit: values.consumptionUnit,
                     purchaseUnit: values.purchaseUnit,
                     purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                    minStock: values.minStock,
                   });
                   toast.dismiss(loadingId);
                   toast.success("Ingrediente creado");

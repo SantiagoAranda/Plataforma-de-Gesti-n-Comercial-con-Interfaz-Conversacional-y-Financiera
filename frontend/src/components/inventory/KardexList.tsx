@@ -48,7 +48,7 @@ export function KardexList({
   if (!movements.length) {
     return (
       <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-        No hay movimientos para este ingrediente.
+        No hay movimientos para mostrar.
       </div>
     );
   }

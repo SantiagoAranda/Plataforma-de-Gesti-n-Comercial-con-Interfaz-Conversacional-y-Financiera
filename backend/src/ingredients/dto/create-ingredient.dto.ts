@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateIngredientDto {
@@ -21,4 +21,12 @@ export class CreateIngredientDto {
     message: 'purchaseToConsumptionFactor must be a valid decimal number',
   })
   purchaseToConsumptionFactor!: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'minStock must be a valid decimal number',
+  })
+  minStock?: string;
 }

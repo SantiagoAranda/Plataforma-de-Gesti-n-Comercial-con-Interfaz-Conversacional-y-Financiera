@@ -35,8 +35,16 @@ type Props = {
   initialAction?: MovementAction;
 };
 
-function toNumber(value: string) {
-  const normalized = value.replace(",", ".");
+function normalizeDecimalInput(value: string) {
+  return value.trim().replace(",", ".");
+}
+
+function isValidDecimalString(value: string) {
+  return /^\d+(\.\d+)?$/.test(value);
+}
+
+function toDisplayNumber(value: string) {
+  const normalized = normalizeDecimalInput(value);
   const num = Number(normalized);
   return Number.isFinite(num) ? num : NaN;
 }
@@ -45,6 +53,8 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
   const [action, setAction] = useState<MovementAction>(initialAction ?? "PURCHASE");
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
+  const [purchaseQuantity, setPurchaseQuantity] = useState("");
+  const [purchaseUnitCost, setPurchaseUnitCost] = useState("");
   const [detail, setDetail] = useState("");
   const [referenceId, setReferenceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -63,15 +73,74 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
     setAction(initialAction);
   }, [initialAction]);
 
-  const parsedQuantity = useMemo(() => toNumber(quantity), [quantity]);
-  const parsedUnitCost = useMemo(() => toNumber(unitCost), [unitCost]);
+  const normalizedQuantity = useMemo(() => normalizeDecimalInput(quantity), [quantity]);
+  const normalizedUnitCost = useMemo(() => normalizeDecimalInput(unitCost), [unitCost]);
+  const normalizedPurchaseQuantity = useMemo(
+    () => normalizeDecimalInput(purchaseQuantity),
+    [purchaseQuantity],
+  );
+  const normalizedPurchaseUnitCost = useMemo(
+    () => normalizeDecimalInput(purchaseUnitCost),
+    [purchaseUnitCost],
+  );
+
+  const parsedQuantity = useMemo(() => toDisplayNumber(quantity), [quantity]);
+  const parsedUnitCost = useMemo(() => toDisplayNumber(unitCost), [unitCost]);
+  const parsedPurchaseQuantity = useMemo(
+    () => toDisplayNumber(purchaseQuantity),
+    [purchaseQuantity],
+  );
+  const parsedPurchaseUnitCost = useMemo(
+    () => toDisplayNumber(purchaseUnitCost),
+    [purchaseUnitCost],
+  );
+
+  const purchaseFactor = useMemo(() => toDisplayNumber(ingredient.purchaseToConsumptionFactor), [ingredient.purchaseToConsumptionFactor]);
+  const canShowPurchaseFormula = useMemo(() => Number.isFinite(purchaseFactor) && purchaseFactor > 0, [purchaseFactor]);
+
+  const estimatedConsumptionQty = useMemo(() => {
+    if (!canShowPurchaseFormula) return null;
+    if (!Number.isFinite(parsedPurchaseQuantity) || parsedPurchaseQuantity <= 0) return null;
+    return parsedPurchaseQuantity * purchaseFactor;
+  }, [canShowPurchaseFormula, parsedPurchaseQuantity, purchaseFactor]);
+
+  const estimatedUnitCostPerConsumption = useMemo(() => {
+    if (!canShowPurchaseFormula) return null;
+    if (!Number.isFinite(parsedPurchaseUnitCost) || parsedPurchaseUnitCost < 0) return null;
+    if (!Number.isFinite(purchaseFactor) || purchaseFactor <= 0) return null;
+    return parsedPurchaseUnitCost / purchaseFactor;
+  }, [canShowPurchaseFormula, parsedPurchaseUnitCost, purchaseFactor]);
 
   const canSubmit = useMemo(() => {
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return false;
-    if (needsUnitCost && (!Number.isFinite(parsedUnitCost) || parsedUnitCost < 0)) return false;
+    if (action === "PURCHASE") {
+      if (!isValidDecimalString(normalizedPurchaseQuantity)) return false;
+      if (!isValidDecimalString(normalizedPurchaseUnitCost)) return false;
+      if (!Number.isFinite(parsedPurchaseQuantity) || parsedPurchaseQuantity <= 0) return false;
+      if (!Number.isFinite(parsedPurchaseUnitCost) || parsedPurchaseUnitCost < 0) return false;
+    } else {
+      if (!isValidDecimalString(normalizedQuantity)) return false;
+      if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return false;
+      if (needsUnitCost) {
+        if (!isValidDecimalString(normalizedUnitCost)) return false;
+        if (!Number.isFinite(parsedUnitCost) || parsedUnitCost < 0) return false;
+      }
+    }
     if (needsDetail && !detail.trim()) return false;
     return true;
-  }, [parsedQuantity, parsedUnitCost, needsUnitCost, needsDetail, detail]);
+  }, [
+    action,
+    normalizedPurchaseQuantity,
+    normalizedPurchaseUnitCost,
+    parsedPurchaseQuantity,
+    parsedPurchaseUnitCost,
+    normalizedQuantity,
+    normalizedUnitCost,
+    parsedQuantity,
+    parsedUnitCost,
+    needsUnitCost,
+    needsDetail,
+    detail,
+  ]);
 
   const submit = async () => {
     const loadingId = "inventory-movement-loading";
@@ -87,37 +156,37 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
       if (action === "INITIAL") {
         await registerInitial({
           ingredientId: ingredient.id,
-          quantity: parsedQuantity,
-          unitCost: parsedUnitCost,
+          quantity: normalizedQuantity,
+          unitCost: normalizedUnitCost,
           detail: detail.trim() || undefined,
         });
       } else if (action === "PURCHASE") {
         await registerPurchase({
           ingredientId: ingredient.id,
-          quantity: parsedQuantity,
-          unitCost: parsedUnitCost,
+          purchaseQuantity: normalizedPurchaseQuantity,
+          purchaseUnitCost: normalizedPurchaseUnitCost,
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
       } else if (action === "PURCHASE_RETURN") {
         await registerPurchaseReturn({
           ingredientId: ingredient.id,
-          quantity: parsedQuantity,
-          unitCost: parsedUnitCost,
+          quantity: normalizedQuantity,
+          unitCost: normalizedUnitCost,
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
       } else if (action === "ADJUSTMENT_POSITIVE") {
         await registerPositiveAdjustment({
           ingredientId: ingredient.id,
-          quantity: parsedQuantity,
-          unitCost: parsedUnitCost,
+          quantity: normalizedQuantity,
+          unitCost: normalizedUnitCost,
           detail: detail.trim(),
         });
       } else {
         await registerNegativeAdjustment({
           ingredientId: ingredient.id,
-          quantity: parsedQuantity,
+          quantity: normalizedQuantity,
           detail: detail.trim(),
         });
       }
@@ -126,6 +195,8 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
       toast.success("Movimiento registrado", { id: successId, duration: 2200 });
       setQuantity("");
       setUnitCost("");
+      setPurchaseQuantity("");
+      setPurchaseUnitCost("");
       setDetail("");
       setReferenceId("");
       onSuccess?.();
@@ -174,37 +245,97 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-            Cantidad ({ingredient.consumptionUnit})
-          </label>
-          <input
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
-            inputMode="decimal"
-            placeholder="0"
-            className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
-          />
-        </div>
+        {action === "PURCHASE" ? (
+          <>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                Cantidad comprada ({ingredient.purchaseUnit})
+              </label>
+              <input
+                value={purchaseQuantity}
+                onChange={(e) => setPurchaseQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
+                inputMode="decimal"
+                placeholder="0"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              />
+            </div>
 
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-            Costo unit.
-          </label>
-          <input
-            value={unitCost}
-            onChange={(e) => setUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
-            inputMode="decimal"
-            placeholder={allowsUnitCost ? "0" : "No aplica"}
-            disabled={!allowsUnitCost}
-            className={cn(
-              "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm",
-              allowsUnitCost
-                ? "border-neutral-100 bg-white focus:border-emerald-500"
-                : "border-neutral-100 bg-neutral-50 text-neutral-400",
-            )}
-          />
-        </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                Costo por {ingredient.purchaseUnit}
+              </label>
+              <input
+                value={purchaseUnitCost}
+                onChange={(e) => setPurchaseUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
+                inputMode="decimal"
+                placeholder="0"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="col-span-2 rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-500">
+              <p>
+                El sistema convierte esta compra a {ingredient.consumptionUnit} usando el factor configurado:{" "}
+                <span className="font-black text-neutral-700">
+                  1 {ingredient.purchaseUnit} = {ingredient.purchaseToConsumptionFactor} {ingredient.consumptionUnit}
+                </span>
+                .
+              </p>
+              {canShowPurchaseFormula && estimatedConsumptionQty !== null && (
+                <p className="mt-1">
+                  Ingresarán aprox.{" "}
+                  <span className="font-black text-neutral-700">
+                    {estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {ingredient.consumptionUnit}
+                  </span>
+                  .
+                </p>
+              )}
+              {canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null && (
+                <p className="mt-1">
+                  Costo estimado por {ingredient.consumptionUnit}:{" "}
+                  <span className="font-black text-neutral-700">
+                    {estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 6 })}
+                  </span>
+                  .
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                Cantidad ({ingredient.consumptionUnit})
+              </label>
+              <input
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
+                inputMode="decimal"
+                placeholder="0"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                Costo unit.
+              </label>
+              <input
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
+                inputMode="decimal"
+                placeholder={allowsUnitCost ? "0" : "No aplica"}
+                disabled={!allowsUnitCost}
+                className={cn(
+                  "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm",
+                  allowsUnitCost
+                    ? "border-neutral-100 bg-white focus:border-emerald-500"
+                    : "border-neutral-100 bg-neutral-50 text-neutral-400",
+                )}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {allowsReferenceId && (

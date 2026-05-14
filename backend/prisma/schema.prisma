@@ -246,6 +246,9 @@ model Ingredient {
   // Persisted weighted average cost per consumptionUnit for output valuation.
   averageCost Decimal @default(0) @db.Decimal(20, 6)
 
+  // Stock threshold used for low-stock alerts (in consumptionUnit).
+  minStock Decimal @default(0) @db.Decimal(20, 6)
+
   // Recipe rows that consume this ingredient when items are sold.
   recipes Recipe[]
 
