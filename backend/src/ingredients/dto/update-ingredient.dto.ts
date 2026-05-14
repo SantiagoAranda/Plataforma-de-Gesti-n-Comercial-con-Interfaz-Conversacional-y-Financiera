@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 import { IngredientStatus } from '@prisma/client';
+import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class UpdateIngredientDto {
   @IsOptional()
@@ -23,8 +24,10 @@ export class UpdateIngredientDto {
   purchaseUnit?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0.000001)
-  @Transform(({ value }) => Number(value))
-  purchaseToConsumptionFactor?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'purchaseToConsumptionFactor must be a valid decimal number',
+  })
+  purchaseToConsumptionFactor?: string;
 }

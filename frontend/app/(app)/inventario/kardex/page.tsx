@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -20,7 +20,7 @@ import {
 } from "@/src/components/inventory/InventoryChatActionBar";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 
-export default function KardexPage() {
+function KardexPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialIngredientId = searchParams.get("ingredientId");
@@ -275,3 +275,25 @@ export default function KardexPage() {
   );
 }
 
+export default function KardexPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+          <div className="shrink-0">
+            <AppHeader title="Kardex" showBack hrefBack="/inventario" />
+          </div>
+          <main className="min-h-0 flex-1 overflow-y-auto pb-44">
+            <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+              <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
+                Cargando kardex...
+              </div>
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <KardexPageContent />
+    </Suspense>
+  );
+}

@@ -936,6 +936,12 @@ export class SalesService {
 
     if (!order) throw new NotFoundException('Order not found');
 
+    if (order.status === 'COMPLETED' && order.inventoryPostedAt) {
+      throw new BadRequestException(
+        'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
+      );
+    }
+
     return this.prisma.order.update({
       where: { id },
       data: { archived: true },

@@ -73,8 +73,8 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
       className={cn(
         "flex w-full flex-col gap-2 rounded-3xl p-4 text-left shadow-sm transition active:scale-[0.99] border",
         selected
-          ? "bg-emerald-50 border-emerald-300 ring-1 ring-emerald-300"
-          : "bg-white border-slate-200 ring-0 hover:bg-slate-50",
+          ? "bg-emerald-50/60 border-emerald-200 ring-1 ring-emerald-200"
+          : "bg-white/90 border-neutral-200 ring-0 hover:bg-white",
       )}
     >
       <div className="flex w-full items-start justify-between gap-3">
@@ -163,7 +163,7 @@ export function ProductInventoryFeedItem({ product, selected, onClick }: Props) 
       )}
 
       {(product.inventoryMode === "SIMPLE" || product.inventoryMode === "RECIPE_BASED") && (
-        <p className={cn("mt-1 text-[11px] font-bold", selected ? "text-emerald-700" : "text-neutral-400")}>
+        <p className={cn("mt-1 text-[11px] font-bold", selected ? "text-neutral-700" : "text-neutral-400")}>
           Editar receta →
         </p>
       )}

@@ -50,8 +50,8 @@ type OrderIngredientConsumption = InventoryRequirement & {
 type ApplyInventoryMovementInput = {
   ingredientId: string;
   type: InventoryMovementType;
-  quantity: number | Prisma.Decimal;
-  unitCost?: number | Prisma.Decimal;
+  quantity: number | string | Prisma.Decimal;
+  unitCost?: number | string | Prisma.Decimal;
   referenceType: InventoryReferenceType;
   referenceId?: string | null;
   orderId?: string | null;

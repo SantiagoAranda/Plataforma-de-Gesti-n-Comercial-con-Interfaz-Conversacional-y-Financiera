@@ -30,8 +30,13 @@ export class IngredientsService {
   }
 
   async create(businessId: string, dto: CreateIngredientDto) {
-    if (dto.purchaseToConsumptionFactor <= 0) {
-      throw new BadRequestException('purchaseToConsumptionFactor must be greater than zero');
+    const purchaseToConsumptionFactor = new Prisma.Decimal(
+      dto.purchaseToConsumptionFactor,
+    );
+    if (purchaseToConsumptionFactor.lte(0)) {
+      throw new BadRequestException(
+        'purchaseToConsumptionFactor must be greater than zero',
+      );
     }
 
     try {
@@ -41,7 +46,7 @@ export class IngredientsService {
           name: this.normalizeText(dto.name),
           consumptionUnit: this.normalizeText(dto.consumptionUnit),
           purchaseUnit: this.normalizeText(dto.purchaseUnit),
-          purchaseToConsumptionFactor: dto.purchaseToConsumptionFactor,
+          purchaseToConsumptionFactor,
         },
       });
     } catch (error) {
@@ -79,9 +84,11 @@ export class IngredientsService {
 
     if (
       dto.purchaseToConsumptionFactor !== undefined &&
-      dto.purchaseToConsumptionFactor <= 0
+      new Prisma.Decimal(dto.purchaseToConsumptionFactor).lte(0)
     ) {
-      throw new BadRequestException('purchaseToConsumptionFactor must be greater than zero');
+      throw new BadRequestException(
+        'purchaseToConsumptionFactor must be greater than zero',
+      );
     }
 
     try {
@@ -98,7 +105,10 @@ export class IngredientsService {
             dto.purchaseUnit === undefined
               ? undefined
               : this.normalizeText(dto.purchaseUnit),
-          purchaseToConsumptionFactor: dto.purchaseToConsumptionFactor,
+          purchaseToConsumptionFactor:
+            dto.purchaseToConsumptionFactor === undefined
+              ? undefined
+              : new Prisma.Decimal(dto.purchaseToConsumptionFactor),
         },
       });
     } catch (error) {

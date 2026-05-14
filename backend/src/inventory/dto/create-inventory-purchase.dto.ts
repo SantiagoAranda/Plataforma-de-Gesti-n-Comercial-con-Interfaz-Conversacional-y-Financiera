@@ -1,12 +1,12 @@
 import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
-  Min,
+  Matches,
 } from 'class-validator';
+import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateInventoryPurchaseDto {
   @IsString()
@@ -15,31 +15,31 @@ export class CreateInventoryPurchaseDto {
 
   // Legacy mode: quantity + unitCost represent values in consumption units.
   @IsOptional()
-  @IsNumber()
-  @Min(0.000001)
-  @Transform(({ value }) => Number(value))
-  quantity?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'quantity must be a valid decimal number' })
+  quantity?: string;
 
   // Legacy mode: unitCost is cost per consumption unit.
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Transform(({ value }) => Number(value))
-  unitCost?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'unitCost must be a valid decimal number' })
+  unitCost?: string;
 
   // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
   @IsOptional()
-  @IsNumber()
-  @Min(0.000001)
-  @Transform(({ value }) => Number(value))
-  purchaseQuantity?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'purchaseQuantity must be a valid decimal number' })
+  purchaseQuantity?: string;
 
   // New mode: purchaseUnitCost is cost per purchase unit.
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Transform(({ value }) => Number(value))
-  purchaseUnitCost?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'purchaseUnitCost must be a valid decimal number' })
+  purchaseUnitCost?: string;
 
   @IsOptional()
   @IsString()

@@ -54,6 +54,20 @@ export function RecipeEditor({
 
   const isSimple = selectedItem?.inventoryMode === "SIMPLE";
 
+  const invalidSelectionMessage = useMemo(() => {
+    if (!selectedItemId) return null;
+    if (!selectedItem) {
+      return "No se encontró el producto seleccionado. Elegí un producto simple o compuesto para configurar su receta.";
+    }
+    if (selectedItem.type === "SERVICE") {
+      return "Este item es un servicio y no puede tener receta. Seleccioná un producto simple o compuesto.";
+    }
+    if (selectedItem.inventoryMode === "NONE") {
+      return "Este producto no tiene control de inventario. Seleccioná un producto simple o compuesto para configurar su receta.";
+    }
+    return null;
+  }, [selectedItemId, selectedItem]);
+
   const filteredItems = useMemo(() => {
     const q = effectiveSearch.trim().toLowerCase();
     return items
@@ -282,6 +296,12 @@ export function RecipeEditor({
         <div className="mt-4 text-center text-neutral-400">Cargando receta...</div>
       ) : (
         <div className="mt-4 space-y-3">
+          {invalidSelectionMessage && (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-[11px] font-medium text-amber-900">
+              {invalidSelectionMessage}
+            </div>
+          )}
+
                                         {isSimple && (
             <div className="rounded-2xl bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-600">
               En modo <span className="font-bold">SIMPLE</span>, este producto se vincula a un único insumo.

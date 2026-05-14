@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InventoryMode, ItemType } from '@prisma/client';
+import { InventoryMode, ItemType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReplaceRecipeDto } from './dto/replace-recipe.dto';
 import { RecipeLineDto } from './dto/recipe-line.dto';
@@ -7,6 +7,10 @@ import { RecipeLineDto } from './dto/recipe-line.dto';
 @Injectable()
 export class RecipesService {
   constructor(private prisma: PrismaService) {}
+
+  private decimal(value: number | string | Prisma.Decimal) {
+    return new Prisma.Decimal(value);
+  }
 
   async getForItem(businessId: string, itemId: string) {
     await this.loadItemOrThrow(businessId, itemId);
@@ -85,7 +89,7 @@ export class RecipesService {
     }
 
     for (const line of lines) {
-      if (line.quantityRequired <= 0) {
+      if (this.decimal(line.quantityRequired).lte(0)) {
         throw new BadRequestException('Recipe quantityRequired must be greater than zero');
       }
     }

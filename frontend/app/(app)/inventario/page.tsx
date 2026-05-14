@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 
@@ -18,7 +18,6 @@ import {
   type InventorySummaryIngredient,
   type RecipeLine,
 } from "@/src/services/inventory";
-import { InventorySummaryCards } from "@/src/components/inventory/InventorySummaryCards";
 import {
   InventoryChatActionBar,
   type InventoryChatMenuAction,
@@ -38,7 +37,7 @@ type InventoryListTab = "ingredients" | "products";
 type KardexDirectionFilter = "all" | "in" | "out";
 
 function getInventorySearchPlaceholder(screen: InventoryScreen) {
-  if (screen === "home") return "Buscar en inventario...";
+  if (screen === "home") return "Buscar en inventario o escribir comando...";
   if (screen === "lists") return "Buscar insumo o producto...";
   if (screen === "kardex") return "Buscar movimiento...";
   return "Buscar...";
@@ -107,7 +106,7 @@ function InventoryListsScreen({
           ))}
 
           {products.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white/70 p-6 text-center text-sm text-neutral-400">
+            <div className="w-fit max-w-full rounded-2xl border border-dashed border-neutral-200 bg-white/70 px-4 py-3 text-sm font-medium text-neutral-500">
               Todavía no hay productos configurados.
             </div>
           )}
@@ -241,7 +240,7 @@ function InventoryKardexScreen({
       )}
 
       {!loading && error && (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm">
+        <div className="w-fit max-w-full rounded-2xl border border-red-100 bg-red-50/90 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
           {error}
         </div>
       )}
@@ -350,41 +349,166 @@ function InventoryHomeActual({
   error,
   summary,
   products,
+  draftIngredientName,
+  draftOpen,
+  createdIngredientName,
+  onEditDraft,
 }: {
   loading: boolean;
   error: string | null;
   summary: InventorySummaryIngredient[];
   products: ComposedProduct[];
+  draftIngredientName?: string;
+  draftOpen?: boolean;
+  createdIngredientName?: string | null;
+  onEditDraft?: () => void;
 }) {
   const router = useRouter();
   const visibleProducts = products.filter(
     (p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED",
   );
 
+  const totalValue = summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
+  const totalStock = summary.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
+  const outOfStockCount = summary.filter((it) => parseNumber(it.currentStock) <= 0).length;
+
+  const recipeBasedProducts = products.filter((p) => p.inventoryMode === "RECIPE_BASED");
+  const pendingRecipesCount = recipeBasedProducts.filter((p) => (p.ingredients ?? []).length === 0).length;
+
   return (
-    <>
-      {loading && (
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
-          Cargando inventario...
-        </div>
-      )}
+    <section
+      className="relative overflow-hidden rounded-3xl border border-neutral-200/70 bg-white/40 p-3 shadow-sm ring-1 ring-black/5"
+      aria-label="Feed conversacional de inventario"
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(0,0,0,0.035)_1px,transparent_0)] bg-[size:18px_18px] opacity-40" />
+      <div className="relative space-y-3">
+        <DateSeparator dateISO={new Date().toISOString().slice(0, 10)} labelOverride="Hoy" />
+
+        {loading && (
+          <div className="w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 text-sm font-medium text-neutral-500 shadow-sm ring-1 ring-black/5">
+            Cargando inventario...
+          </div>
+        )}
 
       {!loading && error && (
-        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm">
+        <div className="w-fit max-w-full rounded-2xl border border-red-100 bg-red-50/90 px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
           {error}
         </div>
       )}
 
-      {!loading && !error && (
-        <>
-          <InventorySummaryCards items={summary} />
+        {!loading && !error && (
+          <>
+            {!!createdIngredientName && (
+              <div className="w-fit max-w-full rounded-2xl rounded-tl-none border border-emerald-100 bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                  Insumo creado correctamente
+                </p>
+                <p className="mt-1 text-sm font-semibold text-neutral-800">{createdIngredientName}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/inventario")}
+                    className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                  >
+                    Registrar compra
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/inventario/kardex")}
+                    className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                  >
+                    Ver kardex
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {draftOpen && (
+              <div className="ml-auto w-fit max-w-full rounded-2xl rounded-tr-none border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                  Borrador de insumo
+                </p>
+                <p className="mt-1 text-sm font-semibold text-emerald-900">
+                  {draftIngredientName || "(sin nombre)"}
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onEditDraft}
+                    className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onEditDraft}
+                    className="h-9 rounded-2xl bg-neutral-900 px-4 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
+                  >
+                    Guardar
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] font-medium text-emerald-800/70">
+                  Completá los datos en el panel y guardá.
+                </p>
+              </div>
+            )}
+
+            <div className="w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                Valor inventario
+              </p>
+              <p className="mt-1 text-lg font-black text-neutral-900">${formatMoney(totalValue)}</p>
+          </div>
+
+          <div className="w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              Stock total
+            </p>
+            <p className="mt-1 text-lg font-black text-neutral-900">{formatMoney(totalStock)}</p>
+          </div>
+
+          <div
+            className={
+              outOfStockCount > 0
+                ? "w-fit max-w-full rounded-2xl border border-rose-100 bg-rose-50/90 px-4 py-3 shadow-sm"
+                : "w-fit max-w-full rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 shadow-sm"
+            }
+          >
+            <p
+              className={
+                outOfStockCount > 0
+                  ? "text-[10px] font-black uppercase tracking-widest text-rose-600"
+                  : "text-[10px] font-black uppercase tracking-widest text-emerald-700"
+              }
+            >
+              Alertas
+            </p>
+            <p
+              className={
+                outOfStockCount > 0
+                  ? "mt-1 text-sm font-semibold text-rose-800"
+                  : "mt-1 text-sm font-semibold text-emerald-800"
+              }
+            >
+              {outOfStockCount > 0
+                ? `${outOfStockCount} insumo(s) sin stock o en cero.`
+                : "Todo OK por ahora."}
+            </p>
+            <p className="mt-1 text-[11px] font-medium leading-relaxed text-neutral-400">
+              (Los umbrales de stock bajo todavía no están disponibles en la API.)
+            </p>
+          </div>
+
+          <div className="w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              Productos con inventario
+            </p>
+            <p className="mt-1 text-sm font-semibold text-neutral-700">
+              {visibleProducts.length} producto(s).
+            </p>
+          </div>
 
           <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-black uppercase tracking-widest text-neutral-400">
-                Productos con inventario
-              </p>
-            </div>
 
             <div className="space-y-3">
               {visibleProducts.map((product) => (
@@ -404,9 +528,39 @@ function InventoryHomeActual({
               )}
             </div>
           </section>
+
+          <div className="w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              Recetas pendientes
+            </p>
+            <p className="mt-1 text-sm font-semibold text-neutral-700">
+              {pendingRecipesCount > 0
+                ? `${pendingRecipesCount} producto(s) sin receta configurada.`
+                : "No hay pendientes."}
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => router.push("/inventario/recetas")}
+                className="h-9 rounded-2xl bg-neutral-900 px-4 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
+              >
+                Ver recetas
+              </button>
+              {pendingRecipesCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/inventario/recetas")}
+                  className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                >
+                  Completar pendientes
+                </button>
+              )}
+            </div>
+          </div>
         </>
       )}
-    </>
+      </div>
+    </section>
   );
 }
 
@@ -428,6 +582,7 @@ export default function InventarioPage() {
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
   const [prefillIngredientName, setPrefillIngredientName] = useState("");
   const [creatingIngredient, setCreatingIngredient] = useState(false);
+  const [lastCreatedIngredientName, setLastCreatedIngredientName] = useState<string | null>(null);
 
   const [movementSheetOpen, setMovementSheetOpen] = useState(false);
   const [movementIngredientId, setMovementIngredientId] = useState<string>("");
@@ -572,13 +727,45 @@ export default function InventarioPage() {
     }
   };
 
+  const outOfStockCount = summary.filter((it) => parseNumber(it.currentStock) <= 0).length;
+
   const handleCreateIngredient = useCallback(() => {
     const text = searchQuery.trim();
     if (!text) toast("Crear ingrediente");
 
     setPrefillIngredientName(text);
+    setLastCreatedIngredientName(null);
     setIngredientSheetOpen(true);
   }, [searchQuery]);
+
+  const swipeRef = useRef<HTMLDivElement | null>(null);
+  const screenToIndex: Record<InventoryScreen, number> = { lists: 0, home: 1, kardex: 2 };
+  const indexToScreen: InventoryScreen[] = ["lists", "home", "kardex"];
+  const rafRef = useRef<number | null>(null);
+
+  const scrollToScreen = useCallback(
+    (screen: InventoryScreen, behavior: ScrollBehavior = "smooth") => {
+      const el = swipeRef.current;
+      if (!el) return;
+      const w = el.clientWidth || 1;
+      el.scrollTo({ left: screenToIndex[screen] * w, behavior });
+    },
+    [],
+  );
+
+  const setScreen = useCallback(
+    (screen: InventoryScreen) => {
+      setActiveScreen(screen);
+      scrollToScreen(screen);
+    },
+    [scrollToScreen],
+  );
+
+  useEffect(() => {
+    // Keep the scroll position in sync when state changes (e.g. initial render).
+    scrollToScreen(activeScreen, "auto");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -592,7 +779,7 @@ export default function InventarioPage() {
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
-                onClick={() => setActiveScreen("lists")}
+                onClick={() => setScreen("lists")}
                 className={
                   activeScreen === "lists"
                     ? "h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
@@ -603,7 +790,7 @@ export default function InventarioPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveScreen("home")}
+                onClick={() => setScreen("home")}
                 className={
                   activeScreen === "home"
                     ? "h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
@@ -614,7 +801,7 @@ export default function InventarioPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveScreen("kardex")}
+                onClick={() => setScreen("kardex")}
                 className={
                   activeScreen === "kardex"
                     ? "h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
@@ -626,30 +813,104 @@ export default function InventarioPage() {
             </div>
           </div>
 
-          {activeScreen === "lists" && (
-            <InventoryListsScreen
-              activeTab={activeListTab}
-              onChangeTab={setActiveListTab}
-              ingredients={summary}
-              products={products}
-            />
-          )}
           {activeScreen === "home" && (
-            <InventoryHomeActual
-              loading={loading}
-              error={error}
-              summary={summary}
-              products={products}
-            />
+            <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button
+                type="button"
+                onClick={() => setScreen("home")}
+                className={
+                  outOfStockCount > 0
+                    ? "h-9 shrink-0 rounded-full bg-amber-50 px-4 text-xs font-black text-amber-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                    : "h-9 shrink-0 rounded-full bg-emerald-50 px-4 text-xs font-black text-emerald-800 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                }
+              >
+                Stock bajo{outOfStockCount > 0 ? ` (${outOfStockCount})` : ""}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/inventario/recetas")}
+                className="h-9 shrink-0 rounded-full bg-white/90 px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+              >
+                Recetas
+              </button>
+              <button
+                type="button"
+                onClick={() => setScreen("kardex")}
+                className="h-9 shrink-0 rounded-full bg-white/90 px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+              >
+                Movimientos
+              </button>
+              <button
+                type="button"
+                onClick={() => openMovementSheet("PURCHASE")}
+                className="h-9 shrink-0 rounded-full bg-white/90 px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+              >
+                Cargar stock
+              </button>
+              <button
+                type="button"
+                onClick={() => openMovementSheet("ADJUSTMENT_POSITIVE")}
+                className="h-9 shrink-0 rounded-full bg-white/90 px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+              >
+                Ajustes
+              </button>
+            </div>
           )}
-          {activeScreen === "kardex" && (
-            <InventoryKardexScreen
-              loading={kardexLoading}
-              error={kardexError}
-              movements={kardexMovements}
-              searchQuery={searchQuery}
-            />
-          )}
+
+          <div
+            ref={swipeRef}
+            className="flex w-full snap-x snap-mandatory gap-4 overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={() => {
+              const el = swipeRef.current;
+              if (!el) return;
+              if (rafRef.current) cancelAnimationFrame(rafRef.current);
+              rafRef.current = requestAnimationFrame(() => {
+                const w = el.clientWidth || 1;
+                const idx = Math.round(el.scrollLeft / w);
+                const next = indexToScreen[Math.max(0, Math.min(2, idx))] ?? "home";
+                if (next !== activeScreen) setActiveScreen(next);
+              });
+            }}
+          >
+            <div className="w-full shrink-0 snap-center space-y-3">
+              <InventoryListsScreen
+                activeTab={activeListTab}
+                onChangeTab={setActiveListTab}
+                ingredients={summary}
+                products={products}
+              />
+            </div>
+
+            <div className="w-full shrink-0 snap-center space-y-3">
+              <InventoryHomeActual
+                loading={loading}
+                error={error}
+                summary={summary}
+                products={products}
+                draftIngredientName={prefillIngredientName}
+                draftOpen={ingredientSheetOpen}
+                createdIngredientName={lastCreatedIngredientName}
+                onEditDraft={() => setIngredientSheetOpen(true)}
+              />
+            </div>
+
+            <div className="w-full shrink-0 snap-center space-y-3">
+              <InventoryKardexScreen
+                loading={kardexLoading}
+                error={kardexError}
+                movements={kardexMovements}
+                searchQuery={searchQuery}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 pt-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+            <span className={activeScreen === "lists" ? "text-neutral-700" : ""}>Listas</span>
+            <span className="text-neutral-300">â€¢</span>
+            <span className={activeScreen === "home" ? "text-neutral-700" : ""}>Home</span>
+            <span className="text-neutral-300">â€¢</span>
+            <span className={activeScreen === "kardex" ? "text-neutral-700" : ""}>Kardex</span>
+          </div>
         </div>
       </main>
 
@@ -693,6 +954,7 @@ export default function InventarioPage() {
 
               toast.dismiss(loadingId);
               toast.success("Ingrediente creado");
+              setLastCreatedIngredientName(values.name);
               setIngredientSheetOpen(false);
               setSearchQuery("");
               await loadData();

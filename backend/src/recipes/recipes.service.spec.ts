@@ -42,7 +42,7 @@ describe('RecipesService', () => {
     });
 
     await service.replaceForItem(businessId, itemId, {
-      lines: [{ ingredientId, quantityRequired: 1 }],
+      lines: [{ ingredientId, quantityRequired: '1' }],
     });
 
     expect(tx.recipe.deleteMany).toHaveBeenCalledWith({
@@ -54,7 +54,7 @@ describe('RecipesService', () => {
           businessId,
           itemId,
           ingredientId,
-          quantityRequired: 1,
+          quantityRequired: '1',
           isOptional: false,
         },
       ],
@@ -71,7 +71,7 @@ describe('RecipesService', () => {
 
     await expect(
       service.replaceForItem(businessId, itemId, {
-        lines: [{ ingredientId, quantityRequired: 1, isOptional: true }],
+        lines: [{ ingredientId, quantityRequired: '1', isOptional: true }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -86,7 +86,7 @@ describe('RecipesService', () => {
 
     await expect(
       service.replaceForItem(businessId, itemId, {
-        lines: [{ ingredientId, quantityRequired: 1, isOptional: true }],
+        lines: [{ ingredientId, quantityRequired: '1', isOptional: true }],
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });

@@ -1,21 +1,22 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateInventoryAdjustmentDto {
   @IsString()
   @IsUUID()
   ingredientId!: string;
 
-  @IsNumber()
-  @Min(0.000001)
-  @Transform(({ value }) => Number(value))
-  quantity!: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'quantity must be a valid decimal number' })
+  quantity!: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Transform(({ value }) => Number(value))
-  unitCost?: number;
+  @IsString()
+  @Transform(({ value }) => normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, { message: 'unitCost must be a valid decimal number' })
+  unitCost?: string;
 
   @IsString()
   @IsNotEmpty()
