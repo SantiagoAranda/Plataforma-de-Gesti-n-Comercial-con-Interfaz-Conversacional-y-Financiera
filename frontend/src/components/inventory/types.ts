@@ -5,6 +5,7 @@ export type ComposedIngredient = {
   consumptionUnit?: string;
   isOptional: boolean;
   currentStock?: number | string;
+  averageCost?: number | string;
 };
 
 export type ComposedProduct = {

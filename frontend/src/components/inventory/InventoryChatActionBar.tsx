@@ -160,7 +160,7 @@ export function InventoryChatActionBar({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 pointer-events-none"
+      className="fixed inset-x-0 bottom-0 z-40 pointer-events-none lg:left-[408px] lg:right-0"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {menuOpen && (
@@ -171,7 +171,7 @@ export function InventoryChatActionBar({
         />
       )}
 
-      <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2">
+      <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2 lg:max-w-full lg:px-4 lg:pb-4">
         <div className="relative">
           {menuOpen && hasMenu && !onlyCreateIngredient && (
             <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3 shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-bottom-4 duration-200">
@@ -265,7 +265,7 @@ export function InventoryChatActionBar({
           </div>
 
           {helperText !== null && (
-            <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
+            <div className="text-[10px] text-neutral-400 font-bold text-center mt-4 uppercase tracking-widest opacity-70">
               {helperText ?? "Us\u00E1 el + para acciones r\u00E1pidas o escrib\u00ED para crear un ingrediente"}
             </div>
           )}
