@@ -246,9 +246,12 @@ export default function MiTiendaPage() {
   }, [items, query, category]);
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8] w-full min-w-0 overflow-x-hidden">
+    <div
+      className="min-h-dvh bg-[#F7FAF8] w-full min-w-0 overflow-x-hidden"
+      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+    >
       <header
-        className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
+        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
         <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-full items-center justify-between px-4 lg:px-6">
@@ -256,7 +259,7 @@ export default function MiTiendaPage() {
             <button
               type="button"
               onClick={() => router.push("/home")}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Volver"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -284,7 +287,7 @@ export default function MiTiendaPage() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Buscar"
             >
               <Search className="h-5 w-5" />
@@ -293,7 +296,7 @@ export default function MiTiendaPage() {
             <button
               type="button"
               onClick={handleShareStore}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Compartir tienda"
             >
               <Share2 className="h-5 w-5" />
@@ -303,14 +306,14 @@ export default function MiTiendaPage() {
 
         <div className="mx-auto w-full max-w-[420px] lg:max-w-full px-4 lg:px-6 pb-3 space-y-3">
           {isSearchOpen && (
-            <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
-              <Search className="h-5 w-5 text-slate-400" />
+            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+              <Search className="h-4 w-4 text-slate-400" />
               <input
                 ref={searchInputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar productos..."
-                className="w-full bg-transparent text-sm outline-none text-slate-900 placeholder:text-slate-400"
+                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
               />
               <button
                 type="button"
@@ -318,7 +321,7 @@ export default function MiTiendaPage() {
                   setQuery("");
                   setIsSearchOpen(false);
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
                 aria-label="Cerrar búsqueda"
               >
                 <X className="h-4 w-4" />
@@ -467,8 +470,8 @@ function AdminProductCard({
       className="flex flex-col"
       aria-label={`Ver detalle de ${item.name}`}
     >
-      <div className="relative overflow-hidden rounded-3xl bg-neutral-100 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)] cursor-pointer">
-        <div className="aspect-square w-full lg:aspect-auto lg:h-[220px]">
+      <div className="relative overflow-hidden rounded-3xl bg-neutral-100 cursor-pointer">
+        <div className="aspect-[270/378] w-full lg:aspect-auto lg:h-[220px]">
           {imageUrl ? (
             <img
               src={imageUrl}
@@ -482,7 +485,7 @@ function AdminProductCard({
         </div>
 
         {showCarousel && (
-          <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+          <div className="absolute left-3 right-3 top-3 z-10 flex gap-1">
             {images.map((image, index) => (
               <button
                 key={image.id ?? `${item.id}-seg-${index}`}
@@ -495,8 +498,8 @@ function AdminProductCard({
                 className={[
                   "h-0.5 flex-1 rounded-full",
                   index === currentImageIndex
-                    ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                    : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                    ? "bg-white"
+                    : "bg-white/60",
                 ].join(" ")}
                 aria-label={`Imagen ${index + 1}`}
               />
@@ -511,18 +514,23 @@ function AdminProductCard({
             event.stopPropagation();
             onOpenDetail();
           }}
-          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.18)] transition hover:scale-105 active:scale-95"
+          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-none ring-1 ring-black/5 transition hover:scale-105 active:scale-95"
           aria-label="Abrir"
         >
           <Plus className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="mt-3 space-y-1 px-1">
-        <div className="truncate text-[14px] font-bold text-slate-950">
+      <div className="mt-3 px-1">
+        <div className="truncate text-[15px] font-extrabold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
-        <div className="text-[15px] font-black text-emerald-600">
+        {item.description?.trim() ? (
+          <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
+            {item.description.trim()}
+          </div>
+        ) : null}
+        <div className="mt-1 text-[16px] font-black text-black">
           {formatCop(Number(item.price || 0))}
         </div>
       </div>
