@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight, PackageSearch } from "lucide-react";
+import { PackageSearch } from "lucide-react";
+
 import { formatMoney } from "@/src/lib/formatters";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import type { InventorySummaryIngredient } from "@/src/services/inventory";
@@ -26,6 +27,13 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
     );
   }
 
+  const formatShortDate = (dateISO: string | null | undefined) => {
+    if (!dateISO) return "—";
+    const date = new Date(dateISO);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  };
+
   return (
     <div className={layout === "chat" ? "flex flex-col-reverse gap-3" : "space-y-3"}>
       {ingredients.map((it) => {
@@ -46,52 +54,52 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
             : lowStock
               ? { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" }
             : { label: "OK", tone: "bg-emerald-50 text-emerald-800" };
-        const avatarLabel = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
+
+        const lastMovementText = "Últ. mov.: —";
+        const lastDate = formatShortDate((it as any).updatedAt ?? (it as any).createdAt ?? null);
 
         return (
           <button
             key={it.id}
             type="button"
             onClick={() => onSelect(it.id)}
-            className="w-full rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+            className="w-full rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
           >
-            <div className="flex items-start gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
-                {avatarLabel}
-              </div>
+            <div className="flex gap-3">
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5" />
 
               <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-neutral-900">{it.name}</p>
-                    <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                      {formatMoney(currentStock)} {it.consumptionUnit} &middot; ${formatMoney(averageCost)} /{" "}
-                      {it.consumptionUnit}
-                    </p>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <span
-                      className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${statusBadge.tone}`}
-                    >
-                      {statusBadge.label}
-                    </span>
-                    <div className="mt-2 flex items-center justify-end gap-1 text-[10px] font-bold text-neutral-400">
-                      <span>${formatMoney(stockValue)}</span>
-                      <ChevronRight className="h-4 w-4 text-neutral-300" />
-                    </div>
-                  </div>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="min-w-0 line-clamp-2 text-sm font-black text-neutral-950">{it.name}</h3>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${statusBadge.tone}`}
+                  >
+                    {statusBadge.label}
+                  </span>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 text-[10px]">
-                  <div>
-                    <p className="font-bold uppercase tracking-widest text-neutral-400">Stock</p>
-                    <p className="mt-1 font-black text-neutral-800">{formatMoney(currentStock)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold uppercase tracking-widest text-neutral-400">Valor</p>
-                    <p className="mt-1 font-black text-neutral-800">${formatMoney(stockValue)}</p>
-                  </div>
+                <div className="mt-1 space-y-0.5 text-xs text-neutral-600">
+                  <p>
+                    Valor:{" "}
+                    <span className="font-black text-neutral-900">${formatMoney(stockValue)}</span>
+                  </p>
+                  <p>
+                    Costo prom.:{" "}
+                    <span className="font-black text-neutral-900">
+                      ${formatMoney(averageCost)} / {it.consumptionUnit}
+                    </span>
+                  </p>
+                  <p>
+                    Stock:{" "}
+                    <span className="font-black text-neutral-900">
+                      {formatMoney(currentStock)} {it.consumptionUnit}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="mt-2 flex items-end justify-between gap-2 border-t border-neutral-100 pt-2">
+                  <p className="min-w-0 truncate text-[11px] font-medium text-neutral-500">{lastMovementText}</p>
+                  <time className="shrink-0 text-[10px] font-semibold text-neutral-400">{lastDate}</time>
                 </div>
               </div>
             </div>

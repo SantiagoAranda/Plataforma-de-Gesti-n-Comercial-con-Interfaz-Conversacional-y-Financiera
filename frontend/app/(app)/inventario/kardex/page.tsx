@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
+import { Filter } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { getErrorMessage } from "@/src/lib/errors";
@@ -31,6 +32,12 @@ function KardexPageContent() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [movementType, setMovementType] = useState<InventoryMovementType | "all">("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const [draftIngredientId, setDraftIngredientId] = useState<string>(initialIngredientId ?? "");
+  const [draftFrom, setDraftFrom] = useState("");
+  const [draftTo, setDraftTo] = useState("");
+  const [draftMovementType, setDraftMovementType] = useState<InventoryMovementType | "all">("all");
 
   const [loadingKardex, setLoadingKardex] = useState(false);
   const [kardex, setKardex] = useState<InventoryKardexGlobalMovement[]>([]);
@@ -56,12 +63,6 @@ function KardexPageContent() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const filteredIngredients = useMemo(() => {
-    const q = chatValue.trim().toLowerCase();
-    if (!q) return ingredients;
-    return ingredients.filter((i) => i.name.toLowerCase().includes(q));
-  }, [ingredients, chatValue]);
 
   const selectedIngredient = useMemo(
     () => ingredients.find((i) => i.id === ingredientId) ?? null,
@@ -153,11 +154,26 @@ function KardexPageContent() {
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
-        <AppHeader title="Kardex" showBack hrefBack="/inventario" />
+        <AppHeader
+          title="Kardex"
+          showBack
+          hrefBack="/inventario"
+          rightIcon={<Filter className="h-5 w-5" />}
+          rightAriaLabel="Filtros"
+          onRightClick={() => {
+            setDraftIngredientId(ingredientId);
+            setDraftFrom(from);
+            setDraftTo(to);
+            setDraftMovementType(movementType);
+            setFilterQuery("");
+            setFiltersOpen(true);
+          }}
+        />
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto pb-44">
         <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+          {/*
           {loading ? (
             <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
               Cargando...
@@ -278,6 +294,17 @@ function KardexPageContent() {
               </div>
             </div>
           )}
+          */}
+
+          {selectedIngredient && !loading && (
+            <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingrediente</p>
+              <p className="mt-1 text-sm font-black text-neutral-900">{selectedIngredient.name}</p>
+              <p className="mt-1 text-xs font-medium text-neutral-500">
+                Unidad: {selectedIngredient.consumptionUnit}
+              </p>
+            </div>
+          )}
 
           {loadingKardex ? (
             <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
@@ -286,6 +313,28 @@ function KardexPageContent() {
           ) : (
             <KardexList movements={movementsForList} layout="chat" />
           )}
+
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="h-9 rounded-full bg-white px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+              disabled={loadingKardex || page <= 1}
+            >
+              Anterior
+            </button>
+            <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              Página {page} de {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              className="h-9 rounded-full bg-white px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+              disabled={loadingKardex || page >= totalPages}
+            >
+              Siguiente
+            </button>
+          </div>
         </div>
       </main>
 
@@ -295,8 +344,107 @@ function KardexPageContent() {
         onSubmit={() => toast("Usá el menú + para seleccionar una acción")}
         onPickAction={handlePickAction}
         placeholder="Buscar movimiento o ingrediente..."
-        helperText="Escribí para filtrar. Usá el + para navegar."
+        helperText={null}
       />
+
+      <ItemPanelLayout
+        open={filtersOpen}
+        title="Filtros"
+        subtitle="Refiná la consulta del kardex"
+        onClose={() => setFiltersOpen(false)}
+      >
+        {loading ? (
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
+            Cargando ingredientes...
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Buscar ingrediente</p>
+              <input
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              />
+              <select
+                value={draftIngredientId}
+                onChange={(e) => setDraftIngredientId(e.target.value)}
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              >
+                <option value="">Todos</option>
+                {ingredients
+                  .filter((ing) => {
+                    const q = filterQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return ing.name.toLowerCase().includes(q);
+                  })
+                  .map((ing) => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Desde</label>
+                <input
+                  type="date"
+                  value={draftFrom}
+                  onChange={(e) => setDraftFrom(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+                />
+              </div>
+              <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Hasta</label>
+                <input
+                  type="date"
+                  value={draftTo}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Tipo de movimiento</p>
+              <select
+                value={draftMovementType}
+                onChange={(e) => setDraftMovementType(e.target.value as any)}
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              >
+                {movementTypeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIngredientId(draftIngredientId);
+                setFrom(draftFrom);
+                setTo(draftTo);
+                setMovementType(draftMovementType);
+                setPage(1);
+                router.replace(
+                  draftIngredientId
+                    ? `/inventario/kardex?ingredientId=${encodeURIComponent(draftIngredientId)}`
+                    : "/inventario/kardex",
+                );
+                setFiltersOpen(false);
+              }}
+              className="h-12 w-full rounded-2xl bg-neutral-900 text-[11px] font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
+            >
+              Aplicar filtros
+            </button>
+          </div>
+        )}
+      </ItemPanelLayout>
 
       <ItemPanelLayout
         open={purchaseReturnOpen}

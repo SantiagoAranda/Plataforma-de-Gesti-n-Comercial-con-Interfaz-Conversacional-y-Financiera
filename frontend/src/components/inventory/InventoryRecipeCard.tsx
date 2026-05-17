@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreVertical, PencilLine, PackageSearch } from "lucide-react";
+import { Eye, MoreVertical, PencilLine } from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 import { formatMoney } from "@/src/lib/formatters";
@@ -13,8 +13,8 @@ export function InventoryRecipeCard({
   impactText,
   imageUrl,
   active = true,
+  onView,
   onEditRecipe,
-  onViewKardex,
   onMenu,
 }: {
   name: string;
@@ -24,8 +24,8 @@ export function InventoryRecipeCard({
   impactText?: string | null;
   imageUrl?: string | null;
   active?: boolean;
+  onView?: () => void;
   onEditRecipe?: () => void;
-  onViewKardex?: () => void;
   onMenu?: () => void;
 }) {
   return (
@@ -56,14 +56,38 @@ export function InventoryRecipeCard({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onMenu}
-              className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-              aria-label="Men&uacute;"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {onView && (
+                <button
+                  type="button"
+                  onClick={onView}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-neutral-700 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
+                  aria-label="Ver producto"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+              )}
+              {onEditRecipe && (
+                <button
+                  type="button"
+                  onClick={onEditRecipe}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-neutral-700 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
+                  aria-label="Editar receta"
+                >
+                  <PencilLine className="h-4 w-4" />
+                </button>
+              )}
+              {onMenu && (
+                <button
+                  type="button"
+                  onClick={onMenu}
+                  className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
+                  aria-label="Men&uacute;"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 space-y-1 text-[11px] font-medium text-neutral-600">
@@ -93,31 +117,11 @@ export function InventoryRecipeCard({
             )}
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onEditRecipe}
-              className="h-11 rounded-2xl bg-white text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                <PencilLine className="h-4 w-4 text-neutral-600" />
-                Editar receta
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={onViewKardex}
-              className="h-11 rounded-2xl bg-emerald-500 text-xs font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
-            >
-              <span className="inline-flex items-center justify-center gap-2">
-                <PackageSearch className="h-4 w-4" />
-                Ver kardex
-              </span>
-            </button>
+          <div className="mt-4 text-[10px] font-black uppercase tracking-widest text-neutral-400">
+            Acciones &rarr;
           </div>
         </div>
       </div>
     </article>
   );
 }
-

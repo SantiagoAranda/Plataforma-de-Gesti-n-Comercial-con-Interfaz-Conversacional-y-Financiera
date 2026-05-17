@@ -1,46 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  BookOpen,
-  ClipboardList,
-  PackageSearch,
-  Plus,
-  RefreshCcw,
-  RotateCcw,
-  Search,
-  Send,
-  TrendingDown,
-  TrendingUp,
-  X,
-} from "lucide-react";
+import { BookOpen, ClipboardList, PackageSearch, Plus, Search, Send, TrendingUp, X } from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 
 export type InventoryChatMenuAction =
-  | "INGREDIENTES"
-  | "KARDEX"
-  | "RECETAS"
   | "CREATE_INGREDIENT"
   | "REGISTER_PURCHASE"
-  | "REGISTER_PURCHASE_RETURN"
-  | "REGISTER_ADJUSTMENT_POSITIVE"
-  | "REGISTER_ADJUSTMENT_NEGATIVE"
-  | "REGISTER_INITIAL";
+  | "NEW_RECIPE"
+  | "INGREDIENTES"
+  | "KARDEX"
+  | "RECETAS";
 
 export type InventoryChatActionBarProps = {
   value?: string;
   onChange?: (value: string) => void;
   onSubmit?: () => void;
-  onPickAction?: (action: InventoryChatMenuAction) => void;
   placeholder?: string;
   helperText?: string | null;
+  onPickAction?: (action: InventoryChatMenuAction) => void;
   onCreateIngredient?: () => void;
   onRegisterPurchase?: () => void;
-  onRegisterPurchaseReturn?: () => void;
-  onRegisterPositiveAdjustment?: () => void;
-  onRegisterNegativeAdjustment?: () => void;
-  onRegisterInitial?: () => void;
+  onNewRecipe?: () => void;
 };
 
 const MENU: Array<{
@@ -49,32 +31,9 @@ const MENU: Array<{
   icon: typeof Plus;
   tone: string;
 }> = [
-  { action: "CREATE_INGREDIENT", label: "Crear insumo", icon: Plus, tone: "bg-emerald-50 text-emerald-700" },
-  { action: "REGISTER_PURCHASE", label: "Registrar compra", icon: TrendingUp, tone: "bg-sky-50 text-sky-700" },
-  {
-    action: "REGISTER_PURCHASE_RETURN",
-    label: "Devolución de compra",
-    icon: RotateCcw,
-    tone: "bg-neutral-100 text-neutral-700",
-  },
-  {
-    action: "REGISTER_ADJUSTMENT_POSITIVE",
-    label: "Ajuste positivo",
-    icon: TrendingUp,
-    tone: "bg-emerald-50 text-emerald-800",
-  },
-  {
-    action: "REGISTER_ADJUSTMENT_NEGATIVE",
-    label: "Ajuste negativo",
-    icon: TrendingDown,
-    tone: "bg-rose-50 text-rose-700",
-  },
-  {
-    action: "REGISTER_INITIAL",
-    label: "Inventario inicial",
-    icon: RefreshCcw,
-    tone: "bg-amber-50 text-amber-800",
-  },
+  { action: "CREATE_INGREDIENT", label: "Nuevo ingrediente", icon: Plus, tone: "bg-emerald-50 text-emerald-700" },
+  { action: "REGISTER_PURCHASE", label: "Cargar compra", icon: TrendingUp, tone: "bg-sky-50 text-sky-700" },
+  { action: "NEW_RECIPE", label: "Nueva receta", icon: BookOpen, tone: "bg-amber-50 text-amber-800" },
   { action: "INGREDIENTES", label: "Ingredientes", icon: ClipboardList, tone: "bg-emerald-50 text-emerald-700" },
   { action: "KARDEX", label: "Kardex", icon: PackageSearch, tone: "bg-sky-50 text-sky-700" },
   { action: "RECETAS", label: "Recetas", icon: BookOpen, tone: "bg-amber-50 text-amber-800" },
@@ -84,15 +43,12 @@ export function InventoryChatActionBar({
   value,
   onChange,
   onSubmit,
-  onPickAction,
   placeholder,
   helperText,
+  onPickAction,
   onCreateIngredient,
   onRegisterPurchase,
-  onRegisterPurchaseReturn,
-  onRegisterPositiveAdjustment,
-  onRegisterNegativeAdjustment,
-  onRegisterInitial,
+  onNewRecipe,
 }: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [internalValue, setInternalValue] = useState("");
@@ -107,25 +63,13 @@ export function InventoryChatActionBar({
     return MENU.filter((item) => {
       if (item.action === "CREATE_INGREDIENT") return !!onCreateIngredient;
       if (item.action === "REGISTER_PURCHASE") return !!onRegisterPurchase;
-      if (item.action === "REGISTER_PURCHASE_RETURN") return !!onRegisterPurchaseReturn;
-      if (item.action === "REGISTER_ADJUSTMENT_POSITIVE") return !!onRegisterPositiveAdjustment;
-      if (item.action === "REGISTER_ADJUSTMENT_NEGATIVE") return !!onRegisterNegativeAdjustment;
-      if (item.action === "REGISTER_INITIAL") return !!onRegisterInitial;
-      // Navigation actions depend on the host consuming onPickAction.
+      if (item.action === "NEW_RECIPE") return !!onNewRecipe;
       if (item.action === "INGREDIENTES") return !!onPickAction;
       if (item.action === "KARDEX") return !!onPickAction;
       if (item.action === "RECETAS") return !!onPickAction;
-      return !!onPickAction;
+      return false;
     });
-  }, [
-    onCreateIngredient,
-    onRegisterPurchase,
-    onRegisterPurchaseReturn,
-    onRegisterPositiveAdjustment,
-    onRegisterNegativeAdjustment,
-    onRegisterInitial,
-    onPickAction,
-  ]);
+  }, [onCreateIngredient, onRegisterPurchase, onNewRecipe, onPickAction]);
 
   const hasMenu = availableMenu.length > 0;
   const onlyCreateIngredient =
@@ -134,29 +78,21 @@ export function InventoryChatActionBar({
   const runAction = (action: InventoryChatMenuAction) => {
     if (action === "CREATE_INGREDIENT") return onCreateIngredient?.();
     if (action === "REGISTER_PURCHASE") return onRegisterPurchase?.();
-    if (action === "REGISTER_PURCHASE_RETURN") return onRegisterPurchaseReturn?.();
-    if (action === "REGISTER_ADJUSTMENT_POSITIVE") return onRegisterPositiveAdjustment?.();
-    if (action === "REGISTER_ADJUSTMENT_NEGATIVE") return onRegisterNegativeAdjustment?.();
-    if (action === "REGISTER_INITIAL") return onRegisterInitial?.();
-
+    if (action === "NEW_RECIPE") return onNewRecipe?.();
     return handlePick(action);
   };
 
-  const rightIcon = useMemo(() => {
+  const RightIcon = useMemo(() => {
     return effectiveValue.trim() ? Send : Search;
   }, [effectiveValue]);
 
   useEffect(() => {
-    if (!menuOpen) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [menuOpen]);
-
-  const RightIcon = rightIcon;
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div
@@ -192,16 +128,10 @@ export function InventoryChatActionBar({
                         <Icon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-neutral-900">
-                          {item.label}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] font-medium text-neutral-400">
-                          Abrir
-                        </span>
+                        <span className="block truncate text-sm font-bold text-neutral-900">{item.label}</span>
+                        <span className="mt-0.5 block text-[11px] font-medium text-neutral-400">Abrir</span>
                       </span>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-neutral-300">
-                        &rarr;
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-neutral-300">&rarr;</span>
                     </button>
                   );
                 })}
@@ -209,7 +139,7 @@ export function InventoryChatActionBar({
             </div>
           )}
 
-          <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
+          <div className="rounded-[28px] bg-white/95 p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50 backdrop-blur">
             <div className="flex items-end gap-2">
               <button
                 type="button"
@@ -224,17 +154,13 @@ export function InventoryChatActionBar({
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95 border border-neutral-200/60"
                 aria-label={
                   onlyCreateIngredient && onCreateIngredient
-                    ? "Crear ingrediente"
+                    ? "Nuevo ingrediente"
                     : menuOpen
                       ? "Cerrar menú"
                       : "Abrir menú"
                 }
               >
-                {menuOpen && hasMenu ? (
-                  <X className="h-5 w-5" />
-                ) : (
-                  <Plus className="h-5 w-5" />
-                )}
+                {menuOpen && hasMenu ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
               </button>
 
               <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center">
@@ -248,7 +174,7 @@ export function InventoryChatActionBar({
                       handleSubmit();
                     }
                   }}
-                  placeholder={placeholder ?? "Buscar o crear en inventario..."}
+                  placeholder={placeholder ?? "Buscar ingrediente o producto..."}
                   className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-neutral-400"
                 />
               </div>
@@ -257,18 +183,18 @@ export function InventoryChatActionBar({
                 type="button"
                 onClick={handleSubmit}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
-                aria-label="Buscar o crear"
+                aria-label="Buscar"
               >
                 <RightIcon className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          {helperText !== null && (
+          {helperText ? (
             <div className="text-[10px] text-neutral-400 font-bold text-center mt-4 uppercase tracking-widest opacity-70">
-              {helperText ?? "Us\u00E1 el + para acciones r\u00E1pidas o escrib\u00ED para crear un ingrediente"}
+              {helperText}
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

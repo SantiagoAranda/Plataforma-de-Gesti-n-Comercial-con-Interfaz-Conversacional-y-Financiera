@@ -4,10 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
+  BookOpen,
   ClipboardList,
-  Download,
   Filter,
+  Layers,
+  PackageCheck,
   PackageSearch,
+  TriangleAlert,
   TrendingDown,
   TrendingUp,
   X,
@@ -39,17 +42,15 @@ import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
 import {
   InventoryChatActionBar,
-  type InventoryChatMenuAction,
 } from "@/src/components/inventory/InventoryChatActionBar";
-import { InventorySummaryCards } from "@/src/components/inventory/InventorySummaryCards";
-import { InventoryQuickActions } from "@/src/components/inventory/InventoryQuickActions";
 import { InventoryRecipeCard } from "@/src/components/inventory/InventoryRecipeCard";
 import type { ComposedProduct } from "@/src/components/inventory/types";
 import { ProductInventoryFeedItem } from "@/src/components/inventory/ProductInventoryFeedItem";
 import { KardexList } from "@/src/components/inventory/KardexList";
+import { IngredientList } from "@/src/components/inventory/IngredientList";
 
-type InventoryScreen = "lists" | "home" | "kardex";
 type InventoryListTab = "ingredients" | "products";
+type MobileSlide = "list" | "home" | "kardex";
 
 type InventoryKardexMovement = InventoryMovement & {
   itemName: string;
@@ -78,13 +79,6 @@ function formatRelativeTime(dateISO: string | undefined | null) {
   return `Hace ${days}d`;
 }
 
-function getInventorySearchPlaceholder(screen: InventoryScreen) {
-  if (screen === "home") return "Buscar en inventario o escribir comando...";
-  if (screen === "lists") return "Buscar insumo o producto...";
-  if (screen === "kardex") return "Buscar movimiento...";
-  return "Buscar...";
-}
-
 function impactTextFromRecipe(recipe: Array<{ name: string; qty: number; unit?: string }>) {
   const mandatory = recipe.slice(0, 2);
   if (!mandatory.length) return null;
@@ -95,6 +89,66 @@ function impactTextFromRecipe(recipe: Array<{ name: string; qty: number; unit?: 
 function estimateRecipeCost(lines: Array<{ qty: number; avgCost: number }>) {
   const total = lines.reduce((acc, l) => acc + l.qty * l.avgCost, 0);
   return Number.isFinite(total) ? total : null;
+}
+
+function InventorySummaryDesktop({ items }: { items: InventorySummaryIngredient[] }) {
+  const totalValue = items.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
+  const totalStock = items.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
+
+  const outOfStockCount = items.filter((it) =>
+    it.outOfStock !== undefined ? it.outOfStock : parseNumber(it.currentStock) <= 0,
+  ).length;
+  const lowStockCount = items.filter((it) => {
+    if (it.lowStock !== undefined) return it.lowStock;
+    const minStock = parseNumber((it as any).minStock ?? 0);
+    const currentStock = parseNumber(it.currentStock);
+    return Number.isFinite(minStock) && minStock > 0 && currentStock > 0 && currentStock <= minStock;
+  }).length;
+  const alertCount = outOfStockCount + lowStockCount;
+
+  const alertTone =
+    outOfStockCount > 0
+      ? { bubble: "bg-rose-50 text-rose-700", border: "border-rose-100", hint: `${outOfStockCount} sin stock` }
+      : lowStockCount > 0
+        ? { bubble: "bg-amber-50 text-amber-800", border: "border-amber-100", hint: `${lowStockCount} stock bajo` }
+        : { bubble: "bg-emerald-50 text-emerald-700", border: "border-emerald-100", hint: "Todo OK" };
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700">
+          <PackageCheck className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor inventario</p>
+          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">${formatMoney(totalValue)} COP</p>
+          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Costo total</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sky-50 text-sky-700">
+          <Layers className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock total</p>
+          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">{formatMoney(totalStock)}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">En todos los insumos</p>
+        </div>
+      </div>
+
+      <div className={cn("col-span-2 flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5", alertTone.border)}>
+        <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", alertTone.bubble)}>
+          <TriangleAlert className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Alertas</p>
+          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">{formatMoney(alertCount)}</p>
+          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">{alertTone.hint}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MobileMetricCard({
@@ -123,45 +177,6 @@ function MobileMetricCard({
       <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-neutral-400">{label}</p>
       <p className="mt-1 truncate text-[15px] font-black text-neutral-900">{value}</p>
       <p className="mt-0.5 text-[11px] font-medium text-neutral-400">{hint}</p>
-    </div>
-  );
-}
-
-function InventoryTopTabs({
-  active,
-  onChange,
-}: {
-  active: InventoryScreen;
-  onChange: (screen: InventoryScreen) => void;
-}) {
-  const tabs: Array<{ key: InventoryScreen; label: string }> = [
-    { key: "lists", label: "Listas" },
-    { key: "home", label: "Home" },
-    { key: "kardex", label: "Kardex" },
-  ];
-
-  return (
-    <div className="rounded-[28px] bg-white p-1.5 shadow-sm ring-1 ring-black/5">
-      <div className="grid grid-cols-3 gap-1.5">
-        {tabs.map((tab) => {
-          const isActive = active === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onChange(tab.key)}
-              className={cn(
-                "h-10 rounded-[22px] text-xs font-black transition active:scale-[0.99]",
-                isActive
-                  ? "bg-emerald-500 text-white"
-                  : "bg-white text-neutral-600 hover:bg-neutral-50",
-              )}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -422,10 +437,6 @@ function DesktopHomePanel({
   error,
   summary,
   recipeCards,
-  onQuickLoadStock,
-  onQuickAdjustStock,
-  onQuickNewRecipe,
-  onQuickViewKardex,
 }: {
   loading: boolean;
   error: string | null;
@@ -438,13 +449,9 @@ function DesktopHomePanel({
     ingredientsCount?: number | null;
     impactText?: string | null;
     imageUrl?: string | null;
+    onView?: () => void;
     onEditRecipe?: () => void;
-    onViewKardex?: () => void;
   }>;
-  onQuickLoadStock: () => void;
-  onQuickAdjustStock: () => void;
-  onQuickNewRecipe: () => void;
-  onQuickViewKardex: () => void;
 }) {
   return (
     <section className="min-w-0 h-full overflow-y-auto custom-scrollbar rounded-3xl border border-black/5 bg-white/40 p-4 pb-36 shadow-sm ring-1 ring-black/5">
@@ -468,17 +475,8 @@ function DesktopHomePanel({
             {error}
           </div>
         ) : (
-          <InventorySummaryCards items={summary} />
+          <InventorySummaryDesktop items={summary} />
         )}
-      </div>
-
-      <div className="mt-4">
-        <InventoryQuickActions
-          onLoadStock={onQuickLoadStock}
-          onAdjustStock={onQuickAdjustStock}
-          onNewRecipe={onQuickNewRecipe}
-          onViewKardex={onQuickViewKardex}
-        />
       </div>
 
       <div className="mt-6 flex items-center justify-between">
@@ -501,8 +499,8 @@ function DesktopHomePanel({
             ingredientsCount={card.ingredientsCount}
             impactText={card.impactText}
             imageUrl={card.imageUrl}
+            onView={card.onView}
             onEditRecipe={card.onEditRecipe}
-            onViewKardex={card.onViewKardex}
           />
         ))}
 
@@ -796,6 +794,197 @@ function DesktopDetailPanel({
   );
 }
 
+function RecipeThreadView({
+  itemId,
+  products,
+  itemsById,
+  summary,
+  onClose,
+  onEditRecipe,
+}: {
+  itemId: string;
+  products: ComposedProduct[];
+  itemsById: Map<string, Item>;
+  summary: InventorySummaryIngredient[];
+  onClose: () => void;
+  onEditRecipe: () => void;
+}) {
+  const product = products.find((p) => p.itemId === itemId) ?? null;
+  const item = itemsById.get(itemId) ?? null;
+  const img =
+    (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
+
+  const mandatoryLines = (product?.ingredients ?? []).filter((l) => !l.isOptional);
+
+  const producibleUnits = (() => {
+    if (!product) return null;
+    if (product.inventoryMode !== "RECIPE_BASED") return null;
+    if (mandatoryLines.length === 0) return null;
+    let minUnits = Number.POSITIVE_INFINITY;
+    for (const line of mandatoryLines) {
+      const stock = parseNumber(line.currentStock ?? 0);
+      const required = parseNumber(line.quantityRequired);
+      if (!Number.isFinite(stock) || !Number.isFinite(required) || required <= 0) return null;
+      minUnits = Math.min(minUnits, Math.floor(stock / required));
+    }
+    return Number.isFinite(minUnits) ? minUnits : null;
+  })();
+
+  const estimatedCost = (() => {
+    if (!product) return null;
+    const lines = (product.ingredients ?? [])
+      .filter((l) => !l.isOptional)
+      .map((l) => ({ qty: parseNumber(l.quantityRequired), avg: parseNumber(l.averageCost ?? 0) }))
+      .filter((l) => Number.isFinite(l.qty) && Number.isFinite(l.avg));
+    if (!lines.length) return null;
+    return estimateRecipeCost(lines.map((l) => ({ qty: l.qty, avgCost: l.avg })));
+  })();
+
+  const price = item?.price ?? product?.price ?? 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="h-14 w-20 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
+              {img ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={img} alt={product?.itemName ?? "Producto"} className="h-full w-full object-cover" draggable={false} />
+              ) : (
+                <div className="h-full w-full bg-neutral-100" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Producto</p>
+              <h2 className="mt-1 line-clamp-2 text-lg font-black text-neutral-900">
+                {product?.itemName ?? "Producto"}
+              </h2>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
+                  Activa
+                </span>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700">
+                  {product?.inventoryMode === "RECIPE_BASED" ? "Compuesto" : "Simple"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
+            aria-label="Cerrar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-neutral-200/70 bg-white/60 p-3 shadow-sm ring-1 ring-black/5">
+        <DateSeparator dateISO={new Date().toISOString().slice(0, 10)} labelOverride="Receta" />
+
+        {(product?.ingredients ?? []).length === 0 ? (
+          <div className="w-fit max-w-full rounded-2xl border border-dashed border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-500 shadow-sm ring-1 ring-black/5">
+            Todav&iacute;a no hay ingredientes cargados en la receta.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {(product?.ingredients ?? []).map((line) => {
+              const qty = parseNumber(line.quantityRequired);
+              const avg = parseNumber(line.averageCost ?? 0);
+              const partial = Number.isFinite(qty) && Number.isFinite(avg) ? qty * avg : null;
+              return (
+                <div
+                  key={line.ingredientId}
+                  className="ml-auto w-fit max-w-[92%] rounded-2xl rounded-tr-none bg-emerald-50/70 px-4 py-3 shadow-sm ring-1 ring-emerald-100"
+                >
+                  <p className="text-sm font-black text-emerald-950">{line.name}</p>
+                  <p className="mt-1 text-[11px] font-medium text-emerald-900/80">
+                    Cantidad: <span className="font-black">{line.quantityRequired}</span>{" "}
+                    {line.consumptionUnit ?? ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
+                        line.isOptional ? "bg-white/70 text-neutral-700 ring-1 ring-black/5" : "bg-amber-50 text-amber-800 ring-1 ring-amber-100",
+                      )}
+                    >
+                      {line.isOptional ? "Opcional" : "Obligatorio"}
+                    </span>
+                    {partial !== null && (
+                      <span className="rounded-full bg-white/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700 ring-1 ring-black/5">
+                        Costo: ${formatMoney(partial)} COP
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mt-4 w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Resumen del producto</p>
+          <div className="mt-2 grid grid-cols-2 gap-3 text-[11px]">
+            <div>
+              <p className="font-bold uppercase tracking-widest text-neutral-400">Precio</p>
+              <p className="mt-1 text-sm font-black text-neutral-900">${formatMoney(price)} COP</p>
+            </div>
+            <div>
+              <p className="font-bold uppercase tracking-widest text-neutral-400">Costo est.</p>
+              <p className="mt-1 text-sm font-black text-neutral-900">
+                {estimatedCost !== null ? `$${formatMoney(estimatedCost)} COP` : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="font-bold uppercase tracking-widest text-neutral-400">Stock posible</p>
+              <p className="mt-1 text-sm font-black text-neutral-900">
+                {producibleUnits !== null ? `${producibleUnits} unid.` : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="font-bold uppercase tracking-widest text-neutral-400">Impacto</p>
+              <p className="mt-1 text-[11px] font-black text-neutral-800">
+                {impactTextFromRecipe(
+                  mandatoryLines.map((l) => ({
+                    name: l.name,
+                    qty: parseNumber(l.quantityRequired),
+                    unit: l.consumptionUnit ?? "",
+                  })),
+                ) ?? "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onEditRecipe}
+          className="h-12 rounded-2xl bg-white text-sm font-black text-neutral-900 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+        >
+          Editar receta
+        </button>
+        <button
+          type="button"
+          onClick={onEditRecipe}
+          className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
+        >
+          + Agregar ingrediente
+        </button>
+      </div>
+
+      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 text-center opacity-70">
+        TODO: integrar alta de ingrediente desde este chat reutilizando el editor de recetas existente.
+      </p>
+    </div>
+  );
+}
+
 export default function InventarioPage() {
   const router = useRouter();
 
@@ -809,11 +998,12 @@ export default function InventarioPage() {
   const [kardexError, setKardexError] = useState<string | null>(null);
   const [kardexMovements, setKardexMovements] = useState<InventoryKardexMovement[]>([]);
 
-  const [activeScreen, setActiveScreen] = useState<InventoryScreen>("home");
   const [activeListTab, setActiveListTab] = useState<InventoryListTab>("ingredients");
   const [selection, setSelection] = useState<Selection>({ kind: "none" });
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const [mobileKardexRange, setMobileKardexRange] = useState<"today" | "yesterday" | "week" | "custom">("today");
+  const [recipeThreadOpen, setRecipeThreadOpen] = useState(false);
+  const [recipeThreadItemId, setRecipeThreadItemId] = useState<string | null>(null);
+  const [mobileActiveIndex, setMobileActiveIndex] = useState(1);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
@@ -942,10 +1132,16 @@ export default function InventarioPage() {
 
   useEffect(() => {
     if (summary.length === 0) return;
-    if (isDesktop || activeScreen === "kardex") {
-      void loadKardexAll();
-    }
-  }, [summary.length, isDesktop, activeScreen, loadKardexAll]);
+    if (isDesktop) void loadKardexAll();
+  }, [summary.length, isDesktop, loadKardexAll]);
+
+  useEffect(() => {
+    if (isDesktop) return;
+    if (mobileActiveIndex !== 2) return;
+    if (summary.length === 0) return;
+    if (kardexLoading) return;
+    void loadKardexAll();
+  }, [isDesktop, mobileActiveIndex, summary.length, kardexLoading, loadKardexAll]);
 
   const lastMovementByIngredientId = useMemo(() => {
     const map = new Map<string, InventoryKardexMovement>();
@@ -973,20 +1169,7 @@ export default function InventarioPage() {
     [summary],
   );
 
-  const handlePickAction = (action: InventoryChatMenuAction) => {
-    if (action === "INGREDIENTES") {
-      router.push("/inventario/ingredientes");
-      return;
-    }
-    if (action === "KARDEX") {
-      router.push("/inventario/kardex");
-      return;
-    }
-    if (action === "RECETAS") {
-      router.push("/inventario/recetas");
-      return;
-    }
-  };
+  // Navigation happens via pills and explicit buttons in the UI.
 
   const handleCreateIngredient = useCallback(() => {
     const text = searchQuery.trim();
@@ -994,34 +1177,56 @@ export default function InventarioPage() {
     setIngredientSheetOpen(true);
   }, [searchQuery]);
 
-  // Mobile carousel behavior
-  const swipeRef = useRef<HTMLDivElement | null>(null);
-  const screenToIndex: Record<InventoryScreen, number> = { lists: 0, home: 1, kardex: 2 };
-  const indexToScreen: InventoryScreen[] = ["lists", "home", "kardex"];
-  const rafRef = useRef<number | null>(null);
+  const isSwipeDisabled =
+    mobileDetailOpen || ingredientSheetOpen || movementSheetOpen || recipeThreadOpen;
 
-  const scrollToScreen = useCallback(
-    (screen: InventoryScreen, behavior: ScrollBehavior = "smooth") => {
-      const el = swipeRef.current;
-      if (!el) return;
-      const w = el.clientWidth || 1;
-      el.scrollTo({ left: screenToIndex[screen] * w, behavior });
-    },
-    [],
-  );
+  const mobileTouchStart = useRef<{ x: number; y: number } | null>(null);
+  const mobileTouchEnd = useRef<{ x: number; y: number } | null>(null);
 
-  const setScreen = useCallback(
-    (screen: InventoryScreen) => {
-      setActiveScreen(screen);
-      scrollToScreen(screen);
-    },
-    [scrollToScreen],
-  );
+  const handleMobileTouchStart = (event: React.TouchEvent) => {
+    if (isSwipeDisabled) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    mobileTouchStart.current = { x: touch.clientX, y: touch.clientY };
+    mobileTouchEnd.current = null;
+  };
 
-  useEffect(() => {
-    scrollToScreen(activeScreen, "auto");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const handleMobileTouchMove = (event: React.TouchEvent) => {
+    if (isSwipeDisabled) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    mobileTouchEnd.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleMobileTouchEnd = () => {
+    if (isSwipeDisabled) return;
+    if (!mobileTouchStart.current || !mobileTouchEnd.current) return;
+
+    const deltaX = mobileTouchEnd.current.x - mobileTouchStart.current.x;
+    const deltaY = mobileTouchEnd.current.y - mobileTouchStart.current.y;
+
+    const isHorizontalSwipe =
+      Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+
+    if (!isHorizontalSwipe) return;
+
+    if (deltaX < 0) {
+      setMobileActiveIndex((current) => Math.min(current + 1, 2));
+      return;
+    }
+
+    if (deltaX > 0) {
+      setMobileActiveIndex((current) => Math.max(current - 1, 0));
+    }
+  };
+
+  const mobileSlides: MobileSlide[] = ["list", "home", "kardex"];
+  const mobileComposerPlaceholder =
+    mobileActiveIndex === 0
+      ? "Buscar insumo o producto..."
+      : mobileActiveIndex === 1
+        ? "Buscar ingrediente o producto..."
+        : "Buscar movimiento o ingrediente...";
 
   const recipeCards = useMemo(() => {
     const recipeProducts = products
@@ -1053,8 +1258,11 @@ export default function InventarioPage() {
         ingredientsCount: (p.ingredients ?? []).length,
         impactText: impact,
         imageUrl: img,
+        onView: () => {
+          setRecipeThreadItemId(p.itemId);
+          setRecipeThreadOpen(true);
+        },
         onEditRecipe: () => router.push(`/inventario/recetas?itemId=${encodeURIComponent(p.itemId)}`),
-        onViewKardex: () => router.push(`/inventario/kardex`),
       };
     });
 
@@ -1070,6 +1278,7 @@ export default function InventarioPage() {
     return formatMoney(n);
   };
 
+  /*
   const mobileLists = (
     <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
       <InventoryListTabs active={activeListTab} onChange={setActiveListTab} />
@@ -1218,10 +1427,94 @@ export default function InventarioPage() {
       )}
     </div>
   );
+  */
+
+  const filteredMobileIngredients = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const base = [...summary].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    if (!q) return base;
+    return base.filter((i) => i.name.toLowerCase().includes(q));
+  }, [summary, searchQuery]);
+
+  const filteredMobileProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const base = products
+      .filter((p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED")
+      .slice()
+      .sort((a, b) => (a.itemName < b.itemName ? -1 : 1));
+    if (!q) return base;
+    return base.filter((p) => p.itemName.toLowerCase().includes(q));
+  }, [products, searchQuery]);
+
+  const mobileListsScreen = (
+    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Lista</p>
+          <h2 className="mt-1 truncate text-lg font-black text-neutral-900">Insumos</h2>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/inventario/ingredientes")}
+          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
+        >
+          Ver todos
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="rounded-3xl bg-white p-4 text-center text-sm text-neutral-400 shadow-sm ring-1 ring-black/5">
+          Cargando...
+        </div>
+      ) : (
+        <IngredientList
+          layout="chat"
+          ingredients={filteredMobileIngredients.slice(0, 12)}
+          onSelect={(id) => router.push(`/inventario/ingredientes/${id}`)}
+        />
+      )}
+
+      <div className="flex items-center justify-between pt-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Productos</p>
+          <p className="mt-1 truncate text-sm font-black text-neutral-900">Recetas / productos con stock</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/inventario/recetas")}
+          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
+        >
+          Ver todos
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {filteredMobileProducts.slice(0, 8).map((p) => (
+          <ProductInventoryFeedItem
+            key={p.itemId}
+            product={p}
+            onClick={() => {
+              setSelection({ kind: "product", id: p.itemId });
+              setMobileDetailOpen(true);
+            }}
+          />
+        ))}
+
+        {!loading && filteredMobileProducts.length === 0 && (
+          <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
+            <p className="text-sm font-black text-neutral-900">Sin productos</p>
+            <p className="mt-1 text-xs font-medium leading-relaxed text-neutral-400">
+              Creá una receta o configurá stock en un producto.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const mobileHome = (
     <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-3">
         {(() => {
           const totalValue = summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
           const totalStock = summary.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
@@ -1236,39 +1529,45 @@ export default function InventarioPage() {
           }).length;
           const alertCount = outOfStockCount + lowStockCount;
 
+          const alertHint =
+            outOfStockCount > 0
+              ? `${outOfStockCount} sin stock`
+              : lowStockCount > 0
+                ? `${lowStockCount} stock bajo`
+                : "Todo OK";
+
+          const alertTone: "emerald" | "rose" =
+            outOfStockCount > 0 || lowStockCount > 0 ? "rose" : "emerald";
+
           return (
             <>
               <MobileMetricCard
-                label="Valor"
+                label="Valor inventario"
                 value={`$${formatCompact(totalValue)}`}
                 hint="Costo total"
                 tone="emerald"
                 icon={<PackageSearch className="h-4 w-4" />}
               />
               <MobileMetricCard
-                label="Stock"
+                label="Stock total"
                 value={formatMoney(totalStock)}
                 hint="Unidades"
                 tone="sky"
                 icon={<ClipboardList className="h-4 w-4" />}
               />
-              <MobileMetricCard
-                label="Alertas"
-                value={String(alertCount)}
-                hint="Críticas"
-                tone="rose"
-                icon={<Filter className="h-4 w-4" />}
-              />
+              <div className="col-span-2">
+                <MobileMetricCard
+                  label="Alertas"
+                  value={String(alertCount)}
+                  hint={alertHint}
+                  tone={alertTone}
+                  icon={<TriangleAlert className="h-4 w-4" />}
+                />
+              </div>
             </>
           );
         })()}
       </div>
-      <InventoryQuickActions
-        onLoadStock={() => openMovementSheet("PURCHASE")}
-        onAdjustStock={() => openMovementSheet("ADJUSTMENT_POSITIVE")}
-        onNewRecipe={() => router.push("/inventario/recetas")}
-        onViewKardex={() => router.push("/inventario/kardex")}
-      />
 
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-black text-neutral-900">Recetas / Productos</h3>
@@ -1291,8 +1590,8 @@ export default function InventarioPage() {
             ingredientsCount={c.ingredientsCount}
             impactText={c.impactText}
             imageUrl={c.imageUrl}
+            onView={c.onView}
             onEditRecipe={c.onEditRecipe}
-            onViewKardex={c.onViewKardex}
           />
         ))}
         {recipeCards.length === 0 && (
@@ -1307,6 +1606,37 @@ export default function InventarioPage() {
     </div>
   );
 
+  const mobileKardexScreen = (
+    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Kardex</p>
+          <h2 className="mt-1 truncate text-lg font-black text-neutral-900">Movimientos</h2>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/inventario/kardex")}
+          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
+        >
+          Filtros
+        </button>
+      </div>
+
+      {kardexLoading ? (
+        <div className="rounded-3xl bg-white p-4 text-center text-sm text-neutral-400 shadow-sm ring-1 ring-black/5">
+          Cargando movimientos...
+        </div>
+      ) : kardexError ? (
+        <div className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm font-medium text-rose-700 shadow-sm">
+          {kardexError}
+        </div>
+      ) : (
+        <KardexList movements={kardexMovements.slice(0, 24)} layout="chat" />
+      )}
+    </div>
+  );
+
+  /*
   const mobileKardex = (
     <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
       <div className="flex items-center justify-between">
@@ -1525,6 +1855,7 @@ export default function InventarioPage() {
       )}
     </div>
   );
+  */
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -1534,7 +1865,7 @@ export default function InventarioPage() {
 
       <div className="min-h-0 flex-1 overflow-hidden">
         {/* Desktop panels */}
-        <div className="hidden h-full min-h-0 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-3 lg:p-3 xl:grid-cols-[320px_minmax(420px,1fr)_420px] xl:gap-4 xl:p-4">
+        <div className="hidden h-full min-h-0 lg:grid lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-3 lg:p-4 lg:pb-32">
           <DesktopListsPanel
             activeTab={activeListTab}
             onChangeTab={setActiveListTab}
@@ -1558,40 +1889,18 @@ export default function InventarioPage() {
             error={error}
             summary={summary}
             recipeCards={recipeCards}
-            onQuickLoadStock={() => openMovementSheet("PURCHASE")}
-            onQuickAdjustStock={() => openMovementSheet("ADJUSTMENT_POSITIVE")}
-            onQuickNewRecipe={() => router.push("/inventario/recetas")}
-            onQuickViewKardex={() => router.push("/inventario/kardex")}
           />
-
-          <div className="hidden min-w-0 xl:block">
-            <DesktopDetailPanel
-              selection={selection}
-              summary={summary}
-              products={products}
-              itemsById={itemsById}
-              kardexMovements={kardexMovements}
-              onClearSelection={() => setSelection({ kind: "none" })}
-              onOpenIngredient={(id) => router.push(`/inventario/ingredientes/${id}`)}
-              onOpenRecipes={() => router.push("/inventario/recetas")}
-              onOpenKardex={(ingredientId) =>
-                ingredientId
-                  ? router.push(`/inventario/kardex?ingredientId=${encodeURIComponent(ingredientId)}`)
-                  : router.push(`/inventario/kardex`)
-              }
-            />
-          </div>
         </div>
 
-        {/* Detail drawer for intermediate desktop (lg..xl) */}
+        {/* Detail overlay on desktop (never a fixed column) */}
         {selection.kind !== "none" && (
-          <div className="hidden xl:hidden lg:block">
+          <div className="hidden lg:block">
             <div
-              className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+              className="fixed inset-y-0 left-[408px] right-0 z-50 bg-black/30 backdrop-blur-sm 2xl:bg-transparent 2xl:backdrop-blur-0"
               onClick={() => setSelection({ kind: "none" })}
               aria-hidden
             />
-            <div className="fixed inset-y-0 right-0 z-[60] w-full max-w-[420px] p-3 xl:p-4">
+            <div className="fixed inset-y-0 right-0 z-[60] w-full max-w-[420px] p-3">
               <div className="h-full min-h-0 overflow-hidden rounded-[28px] bg-[#F0F2F5] shadow-2xl ring-1 ring-black/10">
                 <DesktopDetailPanel
                   selection={selection}
@@ -1613,53 +1922,84 @@ export default function InventarioPage() {
           </div>
         )}
 
-        {/* Mobile carousel */}
-        <main className="min-h-0 flex-1 overflow-hidden lg:hidden">
-          <div className="sticky top-0 z-20 bg-[#F0F2F5] px-4 pb-3 pt-4">
-            <div className="mx-auto w-full max-w-md">
-              <InventoryTopTabs active={activeScreen} onChange={setScreen} />
-            </div>
-          </div>
-
+        {/* Mobile: swipe lateral (Lista / Home / Kardex) sin tabs */}
+        <main
+          className="relative min-h-0 flex-1 overflow-hidden lg:hidden"
+          onTouchStart={handleMobileTouchStart}
+          onTouchMove={handleMobileTouchMove}
+          onTouchEnd={handleMobileTouchEnd}
+        >
           <div
-            ref={swipeRef}
-            className="flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-smooth overscroll-x-contain"
-            onScroll={() => {
-              const el = swipeRef.current;
-              if (!el) return;
-              if (rafRef.current) cancelAnimationFrame(rafRef.current);
-              rafRef.current = requestAnimationFrame(() => {
-                const w = el.clientWidth || 1;
-                const idx = Math.round(el.scrollLeft / w);
-                const next = indexToScreen[Math.max(0, Math.min(2, idx))] ?? "home";
-                if (next !== activeScreen) setActiveScreen(next);
-              });
-            }}
+            className="flex h-full transition-transform duration-300 ease-out"
+            style={{ transform: `translateX(-${mobileActiveIndex * 100}%)` }}
           >
-            <section className="w-full shrink-0 snap-center">
-              <div className="h-full min-h-0 overflow-y-auto pb-40">{mobileLists}</div>
+            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
+              {mobileListsScreen}
             </section>
-            <section className="w-full shrink-0 snap-center">
-              <div className="h-full min-h-0 overflow-y-auto pb-40">{mobileHome}</div>
+            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
+              {mobileHome}
             </section>
-            <section className="w-full shrink-0 snap-center">
-              <div className="h-full min-h-0 overflow-y-auto pb-40">{mobileKardex}</div>
+            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
+              {mobileKardexScreen}
             </section>
           </div>
         </main>
       </div>
 
+      {/* Swipe hint (sin tabs) */}
+      <div className="fixed bottom-[88px] left-1/2 z-30 flex -translate-x-1/2 gap-1.5 lg:hidden">
+        {mobileSlides.map((screen, index) => (
+          <button
+            key={screen}
+            type="button"
+            onClick={() => setMobileActiveIndex(index)}
+            className={cn(
+              "h-1.5 rounded-full transition-all",
+              mobileActiveIndex === index ? "w-6 bg-emerald-500" : "w-1.5 bg-neutral-300",
+            )}
+            aria-label={`Ir a ${screen}`}
+          />
+        ))}
+      </div>
+
+      <div className="fixed inset-x-0 bottom-[76px] z-40 pointer-events-none lg:left-[408px] lg:right-0">
+        <div className="pointer-events-auto mx-auto w-full max-w-md px-3 lg:max-w-full lg:px-4">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            <button
+              type="button"
+              onClick={() => router.push("/inventario/recetas")}
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
+            >
+              <BookOpen className="h-4 w-4 text-amber-700" />
+              Recetas
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileActiveIndex(2)}
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
+            >
+              <PackageSearch className="h-4 w-4 text-sky-700" />
+              Kardex
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileActiveIndex(0)}
+              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
+            >
+              <ClipboardList className="h-4 w-4 text-neutral-700" />
+              Lista
+            </button>
+          </div>
+        </div>
+      </div>
+
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={getInventorySearchPlaceholder(activeScreen)}
+        placeholder={mobileComposerPlaceholder}
         onCreateIngredient={handleCreateIngredient}
-        onPickAction={handlePickAction}
-        onRegisterPurchase={() => openMovementSheet("PURCHASE")}
-        onRegisterPurchaseReturn={() => openMovementSheet("PURCHASE_RETURN")}
-        onRegisterPositiveAdjustment={() => openMovementSheet("ADJUSTMENT_POSITIVE")}
-        onRegisterNegativeAdjustment={() => openMovementSheet("ADJUSTMENT_NEGATIVE")}
-        onRegisterInitial={() => openMovementSheet("INITIAL")}
+        onRegisterPurchase={mobileActiveIndex === 2 ? undefined : () => openMovementSheet("PURCHASE")}
+        onNewRecipe={mobileActiveIndex === 2 ? undefined : () => router.push("/inventario/recetas")}
       />
 
       {/* Modals */}
@@ -1750,6 +2090,30 @@ export default function InventarioPage() {
             })()}
           </div>
         )}
+      </ItemPanelLayout>
+
+      <ItemPanelLayout
+        open={recipeThreadOpen && !!recipeThreadItemId}
+        title="Receta"
+        subtitle="Vista conversacional"
+        onClose={() => {
+          setRecipeThreadOpen(false);
+          setRecipeThreadItemId(null);
+        }}
+      >
+        {recipeThreadItemId ? (
+          <RecipeThreadView
+            itemId={recipeThreadItemId}
+            products={products}
+            itemsById={itemsById}
+            summary={summary}
+            onClose={() => {
+              setRecipeThreadOpen(false);
+              setRecipeThreadItemId(null);
+            }}
+            onEditRecipe={() => router.push(`/inventario/recetas?itemId=${encodeURIComponent(recipeThreadItemId)}`)}
+          />
+        ) : null}
       </ItemPanelLayout>
 
       <ItemPanelLayout

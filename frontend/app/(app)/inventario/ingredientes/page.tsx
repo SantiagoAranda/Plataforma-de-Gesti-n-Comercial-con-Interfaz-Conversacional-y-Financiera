@@ -151,8 +151,8 @@ export default function IngredientesPage() {
         onChange={setChatValue}
         onSubmit={openIngredientCreateFromChat}
         onPickAction={handlePickAction}
-        placeholder="Buscar o crear ingrediente..."
-        helperText="Escribí para filtrar o crear. Usá el + para navegar."
+        placeholder="Buscar insumo o producto..."
+        helperText={null}
       />
 
       <ItemPanelLayout
