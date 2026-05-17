@@ -246,15 +246,12 @@ export default function MiTiendaPage() {
   }, [items, query, category]);
 
   return (
-    <div
-      className="min-h-dvh bg-[#F7FAF8] w-full min-w-0 overflow-x-hidden"
-      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-    >
+    <div className="min-h-dvh bg-[#F7FAF8] w-full min-w-0 overflow-x-hidden">
       <header
         className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-full items-center justify-between px-4 lg:px-6">
+        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -304,7 +301,7 @@ export default function MiTiendaPage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[420px] lg:max-w-full px-4 lg:px-6 pb-3 space-y-3">
+        <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
           {isSearchOpen && (
             <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
               <Search className="h-4 w-4 text-slate-400" />
@@ -350,7 +347,7 @@ export default function MiTiendaPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[420px] lg:max-w-full px-4 lg:px-6 pb-32 pt-4">
+      <main className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-32 pt-4">
         {loading ? (
           <p className="text-center text-neutral-400 mt-6">
             Cargando productos...
@@ -360,7 +357,7 @@ export default function MiTiendaPage() {
             No hay productos cargados
           </p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 lg:gap-x-4 lg:gap-y-5">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
             {filtered.map((item) => (
               <AdminProductCard
                 key={item.id}
@@ -467,7 +464,7 @@ function AdminProductCard({
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") onOpenDetail();
       }}
-      className="flex flex-col"
+      className="flex w-full max-w-[220px] flex-col"
       aria-label={`Ver detalle de ${item.name}`}
     >
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100 cursor-pointer">

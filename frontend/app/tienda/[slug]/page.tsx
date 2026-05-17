@@ -400,15 +400,12 @@ export default function PublicStorePage() {
   };
 
   return (
-    <div
-      className="flex flex-col min-h-screen bg-[#F7FAF8]"
-      style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
-    >
+    <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
       <header
         className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0">
               <Store className="h-5 w-5" />
@@ -457,7 +454,7 @@ export default function PublicStorePage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+        <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
           {isSearchOpen && (
             <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
               <Search className="h-4 w-4 text-slate-400" />
@@ -509,11 +506,11 @@ export default function PublicStorePage() {
         </div>
       )}
 
-      <main className="flex-grow mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
+      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-4">
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
             {filtered.map((item) => (
               <ProductCard
                 key={item.id}
@@ -714,7 +711,7 @@ function ProductCard({
   }, [showCarousel, imageCount]);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex w-full max-w-[220px] flex-col">
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100">
         <div
           role="button"
