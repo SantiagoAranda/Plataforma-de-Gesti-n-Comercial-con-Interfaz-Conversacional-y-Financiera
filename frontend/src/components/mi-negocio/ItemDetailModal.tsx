@@ -8,6 +8,7 @@ import { formatFullDate } from "@/src/lib/datetime";
 import { api } from "@/src/lib/api";
 
 import { groupScheduleByDay, formatActiveDaysCompact } from "@/src/lib/availability";
+import { getItemBadges } from "@/src/lib/itemBadges";
 
 import { ItemPanelLayout } from "./ItemPanelLayout";
 
@@ -20,6 +21,9 @@ interface Item {
   durationMinutes?: number;
   schedule?: any[];
   createdAt?: string;
+  badges?: Array<{ text: string; color: string }> | null;
+  badgeText?: string | null;
+  badgeColor?: string | null;
   images?: { id: string; url: string; order: number }[];
   status?: string;
 }
@@ -59,6 +63,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
   const displayItem = fullItem ?? item;
   const images = displayItem.images ?? [];
   const imageCount = images.length;
+  const badges = getItemBadges(displayItem);
   
   const activeDays = displayItem.type === "SERVICE" ? formatActiveDaysCompact(displayItem.schedule) : "";
   const groupedSchedule = displayItem.type === "SERVICE" ? groupScheduleByDay(displayItem.schedule) : [];
@@ -74,7 +79,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
           
           {/* IMAGE SECTION ... (omitting for brevity in TargetContent if possible, but I'll include the whole block for safety) */}
           {imageCount > 0 ? (
-            <div className="rounded-2xl overflow-hidden border border-neutral-100 bg-white shadow-sm aspect-square w-full">
+            <div className="relative rounded-2xl overflow-hidden border border-neutral-100 bg-white shadow-sm aspect-square w-full">
               <ItemImageViewer
                 images={images}
                 imageCount={imageCount}
@@ -82,6 +87,20 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
                 containerClassName="h-full w-full flex items-center justify-center"
                 imageClassName="h-full w-full object-cover"
               />
+
+              {badges.length ? (
+                <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1">
+                  {badges.map((badge) => (
+                    <div
+                      key={`${badge.text}-${badge.color}`}
+                      className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                      style={{ background: badge.color }}
+                    >
+                      {badge.text}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 aspect-square w-full flex flex-col items-center justify-center text-neutral-400 gap-2">

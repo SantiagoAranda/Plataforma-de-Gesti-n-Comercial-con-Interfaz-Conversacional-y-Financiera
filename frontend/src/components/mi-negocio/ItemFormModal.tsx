@@ -29,6 +29,7 @@ import {
 } from "@/src/lib/itemHelpers";
 import { ItemPanelLayout } from "./ItemPanelLayout";
 import { ItemFormContent } from "./ItemFormContent";
+import { getItemBadges } from "@/src/lib/itemBadges";
 
 interface ItemFormModalProps {
   open: boolean;
@@ -60,6 +61,10 @@ function fileToDataUrl(file: File) {
 export default function ItemFormModal({ open, onClose, onSaved, editingItem, setToast }: ItemFormModalProps) {
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
+  const [badgeText1, setBadgeText1] = useState("");
+  const [badgeColor1, setBadgeColor1] = useState("#ef4444");
+  const [badgeText2, setBadgeText2] = useState("");
+  const [badgeColor2, setBadgeColor2] = useState("#ef4444");
   const [price, setPrice] = useState("");
   const [priceDisplay, setPriceDisplay] = useState("");
   const [description, setDescription] = useState("");
@@ -81,6 +86,13 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
     if (editingItem) {
       setType(editingItem.type);
       setName(editingItem.name);
+
+      const badges = getItemBadges(editingItem);
+      setBadgeText1(badges[0]?.text ?? "");
+      setBadgeColor1(badges[0]?.color ?? "#ef4444");
+      setBadgeText2(badges[1]?.text ?? "");
+      setBadgeColor2(badges[1]?.color ?? "#ef4444");
+
       setPrice(String(editingItem.price));
       setPriceDisplay(formatPriceInput(String(editingItem.price).replace(".", ",")));
       setDescription(editingItem.description ?? "");
@@ -115,6 +127,10 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
 
   const resetForm = () => {
     setName("");
+    setBadgeText1("");
+    setBadgeColor1("#ef4444");
+    setBadgeText2("");
+    setBadgeColor2("#ef4444");
     setPrice("");
     setPriceDisplay("");
     setDescription("");
@@ -204,6 +220,23 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         })) : []
       ) : [];
 
+      const cleanedBadgeText1 = badgeText1.trim();
+      const cleanedBadgeColor1 = badgeColor1.trim();
+      const cleanedBadgeText2 = badgeText2.trim();
+      const cleanedBadgeColor2 = badgeColor2.trim();
+
+      const nextBadges = [
+        cleanedBadgeText1
+          ? { text: cleanedBadgeText1, color: cleanedBadgeColor1 || "#ef4444" }
+          : null,
+        cleanedBadgeText2
+          ? { text: cleanedBadgeText2, color: cleanedBadgeColor2 || "#ef4444" }
+          : null,
+      ].filter(Boolean) as Array<{ text: string; color: string }>;
+
+      const finalBadgeText = nextBadges[0]?.text ?? null;
+      const finalBadgeColor = nextBadges[0]?.color ?? null;
+
       const body = {
         type,
         name,
@@ -211,6 +244,10 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? duration : null,
         schedule,
+        badges: nextBadges.length ? nextBadges : null,
+        // compatibilidad legacy: badge 1
+        badgeText: finalBadgeText,
+        badgeColor: finalBadgeColor || (finalBadgeText ? "#ef4444" : null),
       };
 
       let savedItem: Item;
@@ -284,6 +321,14 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         setType={setType}
         name={name}
         setName={setName}
+        badgeText1={badgeText1}
+        setBadgeText1={setBadgeText1}
+        badgeColor1={badgeColor1}
+        setBadgeColor1={setBadgeColor1}
+        badgeText2={badgeText2}
+        setBadgeText2={setBadgeText2}
+        badgeColor2={badgeColor2}
+        setBadgeColor2={setBadgeColor2}
         priceDisplay={priceDisplay}
         setPriceDisplay={setPriceDisplay}
         setPrice={setPrice}

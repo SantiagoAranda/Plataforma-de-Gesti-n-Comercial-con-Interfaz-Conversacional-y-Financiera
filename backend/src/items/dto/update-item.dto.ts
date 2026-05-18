@@ -9,10 +9,18 @@ import {
     Min,
     ValidateNested,
 } from "class-validator";
-import { Transform } from "class-transformer";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ItemType } from '@prisma/client';
 import { ScheduleInput } from "./create-item.dto";
+
+class BadgeInput {
+    @IsString()
+    text: string;
+
+    @IsOptional()
+    @IsString()
+    color?: string;
+}
 
 export class UpdateItemDto {
     @IsOptional()
@@ -33,6 +41,20 @@ export class UpdateItemDto {
     @IsOptional()
     @IsString()
     description?: string;
+
+    @IsOptional()
+    @IsString()
+    badgeText?: string;
+
+    @IsOptional()
+    @IsString()
+    badgeColor?: string;
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => BadgeInput)
+    badges?: BadgeInput[];
 
     @IsOptional()
     @IsInt()

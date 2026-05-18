@@ -18,6 +18,7 @@ import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig } from "@/src/components/layout/Footer";
+import { getItemBadges } from "@/src/lib/itemBadges";
 
 const mockFooterConfig: FooterConfig = {
   backgroundColor: '#064e3b',
@@ -64,6 +65,9 @@ type Item = {
   description?: string;
   durationMinutes?: number;
   previousPrice?: number | null;
+  badgeText?: string | null;
+  badgeColor?: string | null;
+  badges?: Array<{ text: string; color: string }> | null;
   images?: { id: string; url: string }[];
 };
 
@@ -695,6 +699,7 @@ function ProductCard({
   const showCarousel = imageCount > 1;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -726,7 +731,7 @@ function ProductCard({
           className="block w-full cursor-pointer"
           aria-label={`Ver ${item.name}`}
         >
-          <div className="aspect-[270/378] w-full">
+          <div className="relative aspect-[270/378] w-full">
             {imageUrl ? (
               <img
                 src={imageUrl}
@@ -737,6 +742,20 @@ function ProductCard({
             ) : (
               <div className="h-full w-full bg-neutral-200" />
             )}
+
+            {badges.length ? (
+              <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1">
+                {badges.map((badge) => (
+                  <div
+                    key={`${badge.text}-${badge.color}`}
+                    className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                    style={{ background: badge.color }}
+                  >
+                    {badge.text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {showCarousel && (
@@ -815,6 +834,7 @@ function ProductDetailOverlay({
   const images = item?.images ?? [];
   const imageCount = images.length;
   const showCarousel = imageCount > 1;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -860,7 +880,7 @@ function ProductDetailOverlay({
           <X className="h-5 w-5" />
         </button>
 
-        <div className="h-full w-full md:hidden">
+        <div className="h-full w-full xl:hidden">
           <ReelLikeProductView
             item={item}
             businessName={businessName}
@@ -873,7 +893,7 @@ function ProductDetailOverlay({
           />
         </div>
 
-        <div className="hidden h-full md:flex">
+        <div className="hidden h-full xl:flex">
           {/* LEFT: commercial info */}
           <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
@@ -898,12 +918,26 @@ function ProductDetailOverlay({
                   )}
                 </div>
 
+                {badges.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {badges.map((badge) => (
+                      <div
+                        key={`${badge.text}-${badge.color}`}
+                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        style={{ background: badge.color }}
+                      >
+                        {badge.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="h-px w-full bg-black/5" />
 
                 <div className="flex flex-wrap items-end justify-between gap-8">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      PRECIO ESPECIAL
+                      PRECIO
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                       <div className="text-4xl font-black tracking-tight text-slate-900">
@@ -1123,6 +1157,7 @@ function ReelLikeProductView({
   const images = item.images ?? [];
   const showCarousel = images.length > 1;
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
@@ -1186,35 +1221,62 @@ function ReelLikeProductView({
       </div>
 
       {/* FOOTER (full width bar, no rounded “card”) */}
-      <div className="flex w-full flex-wrap items-center justify-between gap-6 bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            PRECIO ESPECIAL
+      <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+        <div className="space-y-2 pb-3">
+          <div className="text-[18px] font-extrabold leading-tight text-slate-900">
+            {item.name}
           </div>
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <div className="text-3xl font-black tracking-tight text-slate-900">
-              ${formatPrice(item.price)}
+          {businessName && (
+            <div className="text-xs font-semibold text-slate-600">
+              {businessName}
             </div>
-            {item.previousPrice != null &&
-              Number.isFinite(item.previousPrice) &&
-              item.previousPrice > item.price && (
-                <div className="ml-3 text-base text-slate-400 line-through">
-                  ${formatPrice(item.previousPrice)}
+          )}
+
+          {badges.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {badges.map((badge) => (
+                <div
+                  key={`${badge.text}-${badge.color}`}
+                  className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                  style={{ background: badge.color }}
+                >
+                  {badge.text}
                 </div>
-              )}
-          </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        <button
-          type="button"
-          disabled={preview}
-          onClick={onPrimaryAction}
-          className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <ShoppingBag className="h-4 w-4" />
-          Comprar
-          <ArrowRight className="h-4 w-4" />
-        </button>
+        <div className="flex w-full flex-wrap items-center justify-between gap-6">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              PRECIO
+            </div>
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+              <div className="text-3xl font-black tracking-tight text-slate-900">
+                ${formatPrice(item.price)}
+              </div>
+              {item.previousPrice != null &&
+                Number.isFinite(item.previousPrice) &&
+                item.previousPrice > item.price && (
+                  <div className="ml-3 text-base text-slate-400 line-through">
+                    ${formatPrice(item.previousPrice)}
+                  </div>
+                )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={preview}
+            onClick={onPrimaryAction}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ShoppingBag className="h-4 w-4" />
+            Comprar
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* DESCRIPTION (padding only here; no heavy card) */}

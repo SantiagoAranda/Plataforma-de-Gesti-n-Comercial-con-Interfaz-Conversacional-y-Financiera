@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
+import { getItemBadges } from "@/src/lib/itemBadges";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -39,6 +40,9 @@ type Item = {
   durationMinutes?: number;
   description?: string;
   previousPrice?: number | null;
+  badgeText?: string | null;
+  badgeColor?: string | null;
+  badges?: Array<{ text: string; color: string }> | null;
   images?: { id: string; url: string }[];
 };
 
@@ -401,6 +405,7 @@ function AdminProductCard({
   const showCarousel = images.length > 1;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -468,7 +473,7 @@ function AdminProductCard({
       aria-label={`Ver detalle de ${item.name}`}
     >
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100 cursor-pointer">
-        <div className="aspect-[270/378] w-full lg:aspect-auto lg:h-[220px]">
+        <div className="relative aspect-[270/378] w-full lg:aspect-auto lg:h-[220px]">
           {imageUrl ? (
             <img
               src={imageUrl}
@@ -479,6 +484,20 @@ function AdminProductCard({
           ) : (
             <div className="h-full w-full bg-neutral-200" />
           )}
+
+          {badges.length ? (
+            <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1">
+              {badges.map((badge) => (
+                <div
+                  key={`${badge.text}-${badge.color}`}
+                  className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                  style={{ background: badge.color }}
+                >
+                  {badge.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         {showCarousel && (
@@ -552,6 +571,7 @@ function PrivateProductDetailOverlay({
   const imageCount = images.length;
   const showCarousel = imageCount > 1;
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -587,8 +607,8 @@ function PrivateProductDetailOverlay({
           <X className="h-5 w-5" />
         </button>
 
-        {/* MOBILE */}
-        <div className="h-full w-full md:hidden">
+        {/* MOBILE / 1 columna (<1280px) */}
+        <div className="h-full w-full xl:hidden">
           <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
             <div className="relative w-full bg-neutral-100">
               <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
@@ -656,16 +676,41 @@ function PrivateProductDetailOverlay({
               )}
             </div>
 
-            <div className="flex w-full flex-wrap items-center justify-between gap-6 bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+            <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+              <div className="space-y-2 pb-3">
+                <div className="text-[18px] font-extrabold leading-tight text-slate-900">
+                  {item.name}
+                </div>
+                <div className="text-xs font-semibold text-slate-600">
+                  {businessName}
+                </div>
+
+                {badges.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {badges.map((badge) => (
+                      <div
+                        key={`${badge.text}-${badge.color}`}
+                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        style={{ background: badge.color }}
+                      >
+                        {badge.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex w-full flex-wrap items-center justify-between gap-6">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  PRECIO ESPECIAL
+                  PRECIO
                 </div>
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                   <div className="text-3xl font-black tracking-tight text-slate-900">
                     ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                   </div>
                 </div>
+              </div>
               </div>
             </div>
 
@@ -691,8 +736,8 @@ function PrivateProductDetailOverlay({
           </div>
         </div>
 
-        {/* DESKTOP */}
-        <div className="hidden h-full md:flex md:flex-col xl:flex-row">
+        {/* DESKTOP / 2 columnas (>=1280px) */}
+        <div className="hidden h-full xl:flex xl:flex-row">
           <div className="min-w-0 flex-1 bg-[#F7FAF8] px-6 py-8 lg:px-8 lg:py-10 xl:px-12">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className="max-w-2xl space-y-8 text-slate-900">
@@ -714,12 +759,26 @@ function PrivateProductDetailOverlay({
                   </div>
                 </div>
 
+                {badges.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {badges.map((badge) => (
+                      <div
+                        key={`${badge.text}-${badge.color}`}
+                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        style={{ background: badge.color }}
+                      >
+                        {badge.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="h-px w-full bg-black/5" />
 
                 <div className="flex flex-wrap items-end justify-between gap-8">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      PRECIO ESPECIAL
+                      PRECIO
                     </div>
                     <div className="text-4xl font-black tracking-tight text-slate-900">
                       ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}

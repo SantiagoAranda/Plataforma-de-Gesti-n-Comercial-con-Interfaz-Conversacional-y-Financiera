@@ -20,6 +20,7 @@ import {
   timeToMinutes,
   minutesToTime
 } from "@/src/lib/itemHelpers";
+import { getItemBadges } from "@/src/lib/itemBadges";
 import { 
   MAX_ITEM_IMAGES, 
   MAX_ITEM_IMAGE_SIZE_BYTES 
@@ -37,11 +38,18 @@ export default function MiNegocioPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const shouldStickToBottomRef = useRef(true);
+  const isInitialLoadRef = useRef(true);
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
+  const [badgeText1, setBadgeText1] = useState("");
+  const [badgeColor1, setBadgeColor1] = useState("#ef4444");
+  const [badgeText2, setBadgeText2] = useState("");
+  const [badgeColor2, setBadgeColor2] = useState("#ef4444");
   const [price, setPrice] = useState("");
   const [priceDisplay, setPriceDisplay] = useState("");
   const [description, setDescription] = useState("");
@@ -98,6 +106,10 @@ export default function MiNegocioPage() {
 
   const resetForm = useCallback(() => {
     setName("");
+    setBadgeText1("");
+    setBadgeColor1("#ef4444");
+    setBadgeText2("");
+    setBadgeColor2("#ef4444");
     setPrice("");
     setPriceDisplay("");
     setDescription("");
@@ -137,6 +149,13 @@ export default function MiNegocioPage() {
     // Fill form
     setType(item.type);
     setName(item.name);
+
+    const badges = getItemBadges(item);
+    setBadgeText1(badges[0]?.text ?? "");
+    setBadgeColor1(badges[0]?.color ?? "#ef4444");
+    setBadgeText2(badges[1]?.text ?? "");
+    setBadgeColor2(badges[1]?.color ?? "#ef4444");
+
     setPrice(String(item.price));
     setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
     setDescription(item.description ?? "");
@@ -202,16 +221,32 @@ export default function MiNegocioPage() {
     });
   };
 
-  // Iniciar scroll abajo al cargar
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    window.requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior,
+      });
+    });
+  }, []);
+
+  // Auto-scroll tipo WhatsApp: al cargar y al aparecer nuevos items si el usuario está abajo
   useEffect(() => {
-    if (!loading && items.length > 0) {
-      // Pequeño timeout para asegurar que el DOM de las cards esté renderizado
-      const timer = setTimeout(() => {
-        scrollToBottom(true);
-      }, 100);
-      return () => clearTimeout(timer);
+    if (loading) return;
+    if (!items.length) return;
+
+    if (isInitialLoadRef.current) {
+      scrollToBottom("auto");
+      isInitialLoadRef.current = false;
+      return;
     }
-  }, [loading, items.length]);
+
+    if (shouldStickToBottomRef.current) {
+      scrollToBottom("smooth");
+    }
+  }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
     const errors: FormErrors = {};
@@ -240,6 +275,23 @@ export default function MiNegocioPage() {
         })) : []
       ) : [];
 
+      const cleanedBadgeText1 = badgeText1.trim();
+      const cleanedBadgeColor1 = badgeColor1.trim();
+      const cleanedBadgeText2 = badgeText2.trim();
+      const cleanedBadgeColor2 = badgeColor2.trim();
+
+      const nextBadges = [
+        cleanedBadgeText1
+          ? { text: cleanedBadgeText1, color: cleanedBadgeColor1 || "#ef4444" }
+          : null,
+        cleanedBadgeText2
+          ? { text: cleanedBadgeText2, color: cleanedBadgeColor2 || "#ef4444" }
+          : null,
+      ].filter(Boolean) as Array<{ text: string; color: string }>;
+
+      const finalBadgeText = nextBadges[0]?.text ?? null;
+      const finalBadgeColor = nextBadges[0]?.color ?? null;
+
       const body = {
         type,
         name,
@@ -247,6 +299,10 @@ export default function MiNegocioPage() {
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? duration : null,
         schedule,
+        badges: nextBadges.length ? nextBadges : null,
+        // compatibilidad legacy: badge 1
+        badgeText: finalBadgeText,
+        badgeColor: finalBadgeColor || (finalBadgeText ? "#ef4444" : null),
       };
 
       let savedItem: Item;
@@ -301,6 +357,9 @@ export default function MiNegocioPage() {
       });
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
+      // Forzar autoscroll al final al crear/editar (estilo WhatsApp)
+      shouldStickToBottomRef.current = true;
+
       setToast({ message: editingItem ? "Item actualizado" : "Item creado", type: "success" });
       setComposerMode("closed");
       resetForm();
@@ -330,24 +389,15 @@ export default function MiNegocioPage() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleScroll = () => {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const scrollHeight = document.documentElement.scrollHeight;
-    const clientHeight = document.documentElement.clientHeight;
-    setShowScrollBottom(scrollTop + clientHeight < scrollHeight - 400);
-  };
-
-  useEffect(() => {
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom < 120;
+    shouldStickToBottomRef.current = nearBottom;
+    setIsAtBottom(nearBottom);
+    setShowScrollBottom(!nearBottom);
   }, []);
-
-  const scrollToBottom = (instant = false) => {
-    window.scrollTo({
-      top: document.documentElement.scrollHeight,
-      behavior: instant ? "auto" : "smooth"
-    });
-  };
 
   const groupedItems = useMemo(() => {
     const groups: { dateLabel: string; items: Item[] }[] = [];
@@ -374,7 +424,7 @@ export default function MiNegocioPage() {
   }, [filteredItems, visibleCount]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-neutral-100">
+    <div className="flex flex-col min-h-screen bg-neutral-100 lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
         <SelectionActionBar
           visible
@@ -393,7 +443,8 @@ export default function MiNegocioPage() {
 
       <main 
         ref={scrollRef}
-        className="flex-grow px-4 py-4 space-y-8 pb-28"
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-24 lg:pb-[140px]"
       >
         {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
@@ -465,6 +516,14 @@ export default function MiNegocioPage() {
           setType={setType}
           name={name}
           setName={setName}
+          badgeText1={badgeText1}
+          setBadgeText1={setBadgeText1}
+          badgeColor1={badgeColor1}
+          setBadgeColor1={setBadgeColor1}
+          badgeText2={badgeText2}
+          setBadgeText2={setBadgeText2}
+          badgeColor2={badgeColor2}
+          setBadgeColor2={setBadgeColor2}
           priceDisplay={priceDisplay}
           setPriceDisplay={setPriceDisplay}
           setPrice={setPrice}
@@ -529,7 +588,7 @@ export default function MiNegocioPage() {
       {/* BAF - IR AL ÚLTIMO (BOTÓN FLOTANTE) */}
       {showScrollBottom && (
         <button
-          onClick={() => scrollToBottom()}
+          onClick={() => scrollToBottom("smooth")}
           className="fixed bottom-24 right-6 z-40 bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
           aria-label="Ir al final"
         >
