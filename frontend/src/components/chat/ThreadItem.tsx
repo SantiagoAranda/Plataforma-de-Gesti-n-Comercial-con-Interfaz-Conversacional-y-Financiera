@@ -55,12 +55,15 @@ function ThreadItem({
       <div className="flex-1 min-w-0">
         <div className="flex justify-between">
           <p className="font-medium truncate">{title}</p>
-                  <span
-                      className={`text-xs font-medium ${active ? "text-green-500" : "text-neutral-400"
-                          }`}
-                  >
-            {time}
-          </span>
+          {!!time?.trim() && (
+            <span
+              className={`text-xs font-medium ${
+                active ? "text-green-500" : "text-neutral-400"
+              }`}
+            >
+              {time}
+            </span>
+          )}
         </div>
 
         <p className="text-sm text-neutral-400 truncate leading-snug">
