@@ -12,6 +12,7 @@ type Props = {
   accent?: "blue" | "green" | "amber";
   onClick?: () => void;
   className?: string;
+  divider?: boolean;
 };
 
 const accentStyles: Record<NonNullable<Props["accent"]>, string> = {
@@ -30,12 +31,14 @@ function ThreadItem({
   accent = "blue",
   onClick,
   className,
+  divider = true,
 }: Props) {
   return (
     <div
       onClick={onClick}
       className={cn(
-        "flex cursor-pointer items-center gap-3 border-b border-neutral-100 px-4 py-3 hover:bg-neutral-50",
+        "flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-neutral-50",
+        divider && "border-b border-neutral-100",
         selected && "bg-emerald-50/70",
         className,
       )}

@@ -4,6 +4,7 @@ import {
   formatBusinessTime,
   getBusinessDayKey,
 } from "@/src/lib/businessDate";
+import type { Sale } from "@/src/types/sales";
 
 export type ModuleActivitySummary = {
   module: "BUSINESS" | "SALES" | "ACCOUNTING";
@@ -22,23 +23,6 @@ export type BusinessItem = {
   price?: number;
   createdAt?: string;
   updatedAt?: string;
-};
-
-export type ApiOrderItem = {
-  quantity: number;
-  unitPrice: number;
-  itemNameSnapshot: string;
-  item: { type: "PRODUCT" | "SERVICE"; durationMinutes?: number | null };
-};
-
-export type ApiOrder = {
-  id: string;
-  customerName: string;
-  customerWhatsapp?: string;
-  status: "DRAFT" | "SENT" | "COMPLETED" | "CANCELLED";
-  createdAt: string;
-  total?: number;
-  items: ApiOrderItem[];
 };
 
 const FALLBACK_NO_ACTIVITY = "Sin actividad registrada";
@@ -167,7 +151,7 @@ export function mapBusinessActivity(latest: BusinessItem | null): ModuleActivity
   };
 }
 
-export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
+export function mapSalesActivity(orders: Sale[]): ModuleActivitySummary {
   const sorted = byDateDesc(orders, (o) => o.createdAt);
   const latest = sorted[0];
 
@@ -175,12 +159,12 @@ export function mapSalesActivity(orders: ApiOrder[]): ModuleActivitySummary {
 
   let activityText: string | null = null;
   if (latest) {
-    const total = latest.total ?? latest.items.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-    const statusLabel: Record<ApiOrder["status"], string> = {
-      DRAFT: "Pedido en borrador",
-      SENT: "Pedido pendiente de cierre",
-      COMPLETED: "Venta completada",
-      CANCELLED: "Venta cancelada",
+    const total = latest.total;
+    const statusLabel: Record<Sale["status"], string> = {
+      "PENDIENTE DE CIERRE": "Venta pendiente de cierre",
+      PENDIENTE: "Venta pendiente",
+      CERRADO: "Venta completada",
+      CANCELADO: "Venta cancelada",
     };
 
     const base = statusLabel[latest.status] ?? "Venta registrada";

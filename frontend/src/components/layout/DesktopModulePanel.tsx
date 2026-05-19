@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { Building2, Calculator, ShoppingBag } from "lucide-react";
 
 import ThreadItem from "@/src/components/chat/ThreadItem";
+import HomeAgenda from "@/src/components/home/HomeAgenda";
+import { useHomeDesktopView } from "@/src/components/home/HomeDesktopViewContext";
 import { formatActivityTime, type ModuleActivitySummary } from "@/src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "@/src/lib/home/useHomeModuleSummaries";
 
@@ -28,8 +30,10 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
 export default function DesktopModulePanel() {
   const router = useRouter();
   const pathname = usePathname();
+  const homeDesktopView = useHomeDesktopView();
   const [businessName, setBusinessName] = useState("Mi Negocio");
-  const { summaries, loading } = useHomeModuleSummaries();
+  const { summaries, loading, orders } = useHomeModuleSummaries();
+  const isHome = pathname === "/home";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -56,8 +60,14 @@ export default function DesktopModulePanel() {
   );
 
   return (
-    <aside className="hidden lg:flex h-screen w-[320px] flex-col border-r border-black/5 bg-white">
-      <div className="border-b border-black/5 px-4 py-3">
+    <aside
+      className={
+        isHome
+          ? "hidden lg:flex h-screen w-[320px] flex-col bg-white"
+          : "hidden lg:flex h-screen w-[320px] flex-col border-r border-black/5 bg-white"
+      }
+    >
+      <div className={isHome ? "px-4 py-3" : "border-b border-black/5 px-4 py-3"}>
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold text-neutral-900">
             {businessName}
@@ -69,12 +79,19 @@ export default function DesktopModulePanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {isHome && (
+          <HomeAgenda
+            sales={orders}
+            onOpenDetailedAgenda={(date) => homeDesktopView?.openDetailedAgenda(date)}
+          />
+        )}
+
         {loading && modules.length === 0 && (
           <div>
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="h-[74px] animate-pulse border-b border-neutral-100 px-4 py-3"
+                className="h-[74px] animate-pulse px-4 py-3"
               >
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-full bg-neutral-100" />
@@ -101,6 +118,7 @@ export default function DesktopModulePanel() {
                 selected={isSelected}
                 icon={mod.icon}
                 accent={mod.accent}
+                divider={!isHome}
                 onClick={() => router.push(mod.href)}
                 className={isSelected ? "hover:bg-emerald-50/70" : undefined}
               />

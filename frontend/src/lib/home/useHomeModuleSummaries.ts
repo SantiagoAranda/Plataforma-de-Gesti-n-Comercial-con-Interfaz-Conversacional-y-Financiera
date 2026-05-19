@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache } from "@/src/lib/cache";
 import { type BackendMovement } from "@/src/services/accounting";
+import type { Sale } from "@/src/types/sales";
 import {
-  type ApiOrder,
   type BusinessItem,
   mapAccountingActivity,
   mapBusinessActivity,
@@ -18,7 +18,7 @@ export function useHomeModuleSummaries() {
     "home:businessActivity",
     HOME_CACHE_TTL,
   );
-  const initialSales = getInstantCache<ApiOrder[]>("home:sales", HOME_CACHE_TTL);
+  const initialSales = getInstantCache<Sale[]>("home:sales", HOME_CACHE_TTL);
   const initialMovements = getInstantCache<BackendMovement[]>(
     "home:movements",
     HOME_CACHE_TTL,
@@ -32,7 +32,7 @@ export function useHomeModuleSummaries() {
   const [businessLatest, setBusinessLatest] = useState<{
     item: BusinessItem | null;
   }>(initialBusinessLatest ?? { item: null });
-  const [orders, setOrders] = useState<ApiOrder[]>(initialSales ?? []);
+  const [orders, setOrders] = useState<Sale[]>(initialSales ?? []);
   const [movements, setMovements] = useState<BackendMovement[]>(
     initialMovements ?? [],
   );
@@ -63,8 +63,8 @@ export function useHomeModuleSummaries() {
             HOME_CACHE_TTL,
             () => api<{ item: BusinessItem | null }>("/items/latest-activity"),
           ),
-          getCached<ApiOrder[]>("home:sales", HOME_CACHE_TTL, () =>
-            api<ApiOrder[]>("/sales"),
+          getCached<Sale[]>("home:sales", HOME_CACHE_TTL, () =>
+            api<Sale[]>("/sales"),
           ),
           getCached<BackendMovement[]>(
             "home:movements",
@@ -122,6 +122,6 @@ export function useHomeModuleSummaries() {
     [businessLatest, orders, movements],
   );
 
-  return { summaries, loading, error };
+  return { summaries, loading, error, orders };
 }
 
