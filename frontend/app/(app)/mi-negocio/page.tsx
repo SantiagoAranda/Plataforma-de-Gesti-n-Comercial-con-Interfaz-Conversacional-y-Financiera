@@ -37,6 +37,7 @@ export default function MiNegocioPage() {
   const [visibleCount, setVisibleCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const shouldStickToBottomRef = useRef(true);
@@ -222,14 +223,18 @@ export default function MiNegocioPage() {
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    const el = scrollRef.current;
-    if (!el) return;
-    window.requestAnimationFrame(() => {
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior,
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    } else {
+      const el = scrollRef.current;
+      if (!el) return;
+      window.requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior,
+        });
       });
-    });
+    }
   }, []);
 
   // Auto-scroll tipo WhatsApp: al cargar y al aparecer nuevos items si el usuario está abajo
@@ -444,7 +449,7 @@ export default function MiNegocioPage() {
       <main 
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-24 lg:pb-[140px]"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-32 lg:pb-[140px]"
       >
         {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
         {!loading && items.length === 0 && (
@@ -497,6 +502,9 @@ export default function MiNegocioPage() {
             </button>
           </div>
         )}
+
+        {/* Referencia vacía para forzar el auto-scroll al fondo de la lista */}
+        <div ref={messagesEndRef} className="h-px" />
       </main>
 
       {/* COMPONENTES DE CHAT COMPOSER */}
