@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { Building2, Calculator, ReceiptText, Settings, ShoppingBag, Store, UserCircle,PackageSearch } from "lucide-react";
 
-
 import ThreadItem from "@/src/components/chat/ThreadItem";
 import HomeAgenda from "@/src/components/home/HomeAgenda";
 import { useDesktopSidePanel } from "@/src/components/layout/DesktopSidePanelContext";
