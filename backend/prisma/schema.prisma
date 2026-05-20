@@ -177,6 +177,11 @@ model Item {
   price       Decimal @db.Decimal(10, 2)
   description String?
 
+  // Badge opcional para mostrar sobre la imagen en la tienda
+  badgeText  String?
+  badgeColor String?
+  badges     Json?
+
   // Solo para servicios (validar en app: requerido si type=SERVICE)
   durationMinutes Int?
 

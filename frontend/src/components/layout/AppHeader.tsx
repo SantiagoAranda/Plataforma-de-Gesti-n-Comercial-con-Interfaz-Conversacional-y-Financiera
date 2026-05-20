@@ -16,6 +16,7 @@ type Props = {
   rightAriaLabel?: string;
   onRightClick?: () => void;
   showLogout?: boolean;
+  variant?: "default" | "flat";
 };
 
 export default function AppHeader({
@@ -28,6 +29,7 @@ export default function AppHeader({
   rightAriaLabel = "Accion",
   onRightClick,
   showLogout = true,
+  variant = "default",
 }: Props) {
   const router = useRouter();
   const isMainView = !showBack;
@@ -60,7 +62,11 @@ export default function AppHeader({
 
   return (
     <header
-      className="sticky top-0 z-30 w-full border-b border-black/5 bg-white"
+      className={
+        variant === "flat"
+          ? "sticky top-0 z-30 w-full bg-white"
+          : "sticky top-0 z-30 w-full border-b border-black/5 bg-white"
+      }
       style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
     >
       <div className="flex min-h-[72px] items-center justify-between gap-3 px-4 py-3">

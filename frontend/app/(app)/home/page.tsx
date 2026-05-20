@@ -13,6 +13,7 @@ import {
 } from "../../../src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "../../../src/lib/home/useHomeModuleSummaries";
 import { readBusinessProfile } from "../../../src/lib/businessProfile";
+import HomeAgenda from "../../../src/components/home/HomeAgenda";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
@@ -25,7 +26,7 @@ export default function HomePage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("Mi Negocio");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
-  const { summaries, loading, error } = useHomeModuleSummaries();
+  const { summaries, loading, error, orders } = useHomeModuleSummaries();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -68,28 +69,32 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen flex-col bg-white">
-      <AppHeader title={businessName} subtitle={businessSubtitle || ""} />
-
-      <main className="flex-1 overflow-y-auto pb-24">
-        <div className="hidden h-full items-center justify-center px-6 py-10 lg:flex">
-          <div className="w-full max-w-xl rounded-3xl border border-black/5 bg-white p-8 shadow-[0_10px_30px_rgba(0,0,0,0.06)]">
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Bienvenido
-            </h2>
-            <p className="mt-2 text-sm text-neutral-500">
-              Elegí un módulo desde la columna central para comenzar.
-            </p>
+      <AppHeader
+        title={businessName}
+        subtitle={businessSubtitle || ""}
+        variant="flat"
+      />
+      <main className="flex-1 overflow-y-auto pb-24 lg:overflow-hidden lg:pb-0">
+        <div className="hidden lg:flex h-full">
+          <div className="flex h-full flex-1 items-center justify-center px-6 py-10">
+            <div className="w-full max-w-xl rounded-3xl bg-white p-8">
+              <h2 className="text-lg font-semibold text-neutral-900">
+                Bienvenido
+              </h2>
+              <p className="mt-2 text-sm text-neutral-500">
+                Elegí un módulo desde la columna central para comenzar.
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="lg:hidden">
+          <HomeAgenda sales={orders} />
+
           {loading && (
             <div>
               {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-[74px] animate-pulse border-b border-neutral-100 px-4 py-3"
-                >
+                <div key={i} className="h-[74px] animate-pulse px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="h-11 w-11 rounded-full bg-neutral-100" />
                     <div className="min-w-0 flex-1 space-y-2">
@@ -122,6 +127,7 @@ export default function HomePage() {
                   active={summary.isRecent}
                   icon={MODULE_ICONS[summary.module]}
                   accent={summary.accent}
+                  divider={false}
                   onClick={() => router.push(summary.href)}
                 />
               ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import { X, Clock } from "lucide-react";
+import { useState } from "react";
 import { 
   ItemType, 
   ItemImage, 
@@ -25,6 +26,14 @@ interface ItemFormContentProps {
   setInventoryMode: (mode: ItemInventoryMode) => void;
   name: string;
   setName: (name: string) => void;
+  badgeText1: string;
+  setBadgeText1: (val: string) => void;
+  badgeColor1: string;
+  setBadgeColor1: (val: string) => void;
+  badgeText2: string;
+  setBadgeText2: (val: string) => void;
+  badgeColor2: string;
+  setBadgeColor2: (val: string) => void;
   priceDisplay: string;
   setPriceDisplay: (val: string) => void;
   setPrice: (val: string) => void;
@@ -53,6 +62,14 @@ export function ItemFormContent({
   setInventoryMode,
   name,
   setName,
+  badgeText1,
+  setBadgeText1,
+  badgeColor1,
+  setBadgeColor1,
+  badgeText2,
+  setBadgeText2,
+  badgeColor2,
+  setBadgeColor2,
   priceDisplay,
   setPriceDisplay,
   setPrice,
@@ -74,6 +91,14 @@ export function ItemFormContent({
   editingItem,
 }: ItemFormContentProps) {
   const totalImages = existingImages.length + newImages.length;
+  const [badgeIndex, setBadgeIndex] = useState<0 | 1>(0);
+
+  const isBadge1 = badgeIndex === 0;
+  const currentBadgeText = isBadge1 ? badgeText1 : badgeText2;
+  const currentBadgeColor = isBadge1 ? badgeColor1 : badgeColor2;
+  const setCurrentBadgeText = isBadge1 ? setBadgeText1 : setBadgeText2;
+  const setCurrentBadgeColor = isBadge1 ? setBadgeColor1 : setBadgeColor2;
+  const currentPlaceholder = isBadge1 ? "Ej: POP" : "Ej: Nuevo";
 
   return (
     <div className="space-y-6">
@@ -136,6 +161,57 @@ export function ItemFormContent({
           className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-green-500"}`}
         />
         {formErrors.name && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.name}</p>}
+      </div>
+
+      {/* BADGES (Badge 1 / Badge 2) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-2">
+          <button
+            type="button"
+            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
+            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
+            aria-label="Badge anterior"
+          >
+            ‹
+          </button>
+          <p className="text-xs font-bold text-neutral-700 uppercase tracking-widest">
+            {isBadge1 ? "Badge 1" : "Badge 2"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
+            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
+            aria-label="Siguiente badge"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Texto</label>
+            <input
+              placeholder={currentPlaceholder}
+              value={currentBadgeText}
+              onChange={(e) => setCurrentBadgeText(e.target.value)}
+              className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm outline-none shadow-sm transition focus:border-green-500"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Color</label>
+            <div className="flex items-center gap-3 rounded-2xl border border-neutral-100 bg-white px-4 h-[48px] shadow-sm">
+              <input
+                type="color"
+                value={currentBadgeColor}
+                onChange={(e) => setCurrentBadgeColor(e.target.value)}
+                className="h-7 w-10 cursor-pointer rounded-md border border-neutral-200 bg-white p-0"
+                aria-label="Seleccionar color del badge"
+              />
+              <div className="text-xs font-semibold text-neutral-500">{currentBadgeColor.toUpperCase()}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* PRECIO + DURACION */}

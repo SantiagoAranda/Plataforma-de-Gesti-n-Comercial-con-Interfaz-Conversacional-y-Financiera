@@ -13,6 +13,9 @@ export type Item = {
   type: ItemType;
   name: string;
   price: number;
+  badges?: Array<{ text: string; color: string }> | null;
+  badgeText?: string | null;
+  badgeColor?: string | null;
   description?: string;
   durationMinutes?: number;
   inventoryMode?: ItemInventoryMode | null;
