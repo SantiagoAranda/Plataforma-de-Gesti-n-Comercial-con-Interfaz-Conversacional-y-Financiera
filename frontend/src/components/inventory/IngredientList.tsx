@@ -1,6 +1,6 @@
 "use client";
 
-import { PackageSearch } from "lucide-react";
+import { PackageSearch, TriangleAlert } from "lucide-react";
 
 import { formatMoney } from "@/src/lib/formatters";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
@@ -50,10 +50,14 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
         const statusBadge = inactive
           ? { label: "Inactivo", tone: "bg-neutral-100 text-neutral-600" }
           : outOfStock
-            ? { label: "Sin stock", tone: "bg-rose-50 text-rose-700" }
+            ? { label: "Sin stock", tone: "bg-rose-600 text-white" }
             : lowStock
-              ? { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" }
+              ? { label: "Stock bajo", tone: "bg-rose-50 text-rose-700" }
             : { label: "OK", tone: "bg-emerald-50 text-emerald-800" };
+
+        const warning = !inactive && (outOfStock || lowStock);
+        const cardTone = warning ? "bg-rose-50/80 ring-1 ring-rose-100" : "bg-white ring-1 ring-black/5";
+        const avatar = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
 
         const lastMovementText = "Últ. mov.: —";
         const lastDate = formatShortDate((it as any).updatedAt ?? (it as any).createdAt ?? null);
@@ -63,10 +67,19 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
             key={it.id}
             type="button"
             onClick={() => onSelect(it.id)}
-            className="w-full rounded-2xl bg-white p-3 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+            className={`w-full rounded-2xl p-3 text-left shadow-sm transition active:scale-[0.99] ${cardTone}`}
           >
             <div className="flex gap-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5" />
+              <div className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/70 ring-1 ring-black/5">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
+                  {avatar}
+                </div>
+                {warning ? (
+                  <div className="absolute -right-1 -top-1 grid h-7 w-7 place-items-center rounded-full bg-rose-600 text-white shadow-md">
+                    <TriangleAlert className="h-4 w-4" />
+                  </div>
+                ) : null}
+              </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">

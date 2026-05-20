@@ -1,20 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import {
-  BookOpen,
-  ClipboardList,
-  Filter,
-  Layers,
-  PackageCheck,
-  PackageSearch,
-  TriangleAlert,
-  TrendingDown,
-  TrendingUp,
-  X,
-} from "lucide-react";
+import { Bell, BookOpen, ChevronDown, ChevronUp, Minus, Plus, Trash2, TriangleAlert } from "lucide-react";
 
 import { api } from "@/src/lib/api";
 import { cn } from "@/src/lib/utils";
@@ -23,989 +12,57 @@ import { formatMoney } from "@/src/lib/formatters";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
-import { DateSeparator } from "@/src/components/shared/DateSeparator";
+import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
+import { IngredientForm } from "@/src/components/inventory/IngredientForm";
+import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
+import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 
 import {
   createIngredient,
   getInventorySummary,
   getRecipe,
-  listKardex,
-  type InventoryMovement,
-  type InventoryMovementType,
+  replaceRecipe,
   type InventorySummaryIngredient,
   type RecipeLine,
 } from "@/src/services/inventory";
 import type { Item } from "@/src/types/item";
 
-import { parseNumber } from "@/src/components/inventory/inventoryUtils";
-import { IngredientForm } from "@/src/components/inventory/IngredientForm";
-import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
-import {
-  InventoryChatActionBar,
-} from "@/src/components/inventory/InventoryChatActionBar";
-import { InventoryRecipeCard } from "@/src/components/inventory/InventoryRecipeCard";
-import type { ComposedProduct } from "@/src/components/inventory/types";
-import { ProductInventoryFeedItem } from "@/src/components/inventory/ProductInventoryFeedItem";
-import { KardexList } from "@/src/components/inventory/KardexList";
-import { IngredientList } from "@/src/components/inventory/IngredientList";
+type UITab = "recipes" | "ingredients";
 
-type InventoryListTab = "ingredients" | "products";
-type MobileSlide = "list" | "home" | "kardex";
-
-type InventoryKardexMovement = InventoryMovement & {
-  itemName: string;
-};
-
-type Selection =
-  | { kind: "none" }
-  | { kind: "ingredient"; id: string }
-  | { kind: "product"; id: string };
-
-function isInventoryOutput(type: InventoryMovementType) {
-  return type === "SALE" || type === "ADJUSTMENT_NEGATIVE" || type === "PURCHASE_RETURN";
+function isRecipeEditableInline(item: { inventoryMode?: string | null }) {
+  return item.inventoryMode === "RECIPE_BASED";
 }
 
-function formatRelativeTime(dateISO: string | undefined | null) {
-  if (!dateISO) return "—";
-  const ms = new Date(dateISO).getTime();
-  if (!Number.isFinite(ms)) return "—";
-  const diff = Date.now() - ms;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "Recién";
-  if (minutes < 60) return `Hace ${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Hace ${hours}h`;
-  const days = Math.floor(hours / 24);
-  return `Hace ${days}d`;
-}
-
-function impactTextFromRecipe(recipe: Array<{ name: string; qty: number; unit?: string }>) {
-  const mandatory = recipe.slice(0, 2);
-  if (!mandatory.length) return null;
-  const parts = mandatory.map((l) => `-${l.qty}${l.unit ? l.unit : ""} ${l.name}`.trim());
-  return recipe.length > 2 ? `${parts.join(", ")}…` : parts.join(", ");
-}
-
-function estimateRecipeCost(lines: Array<{ qty: number; avgCost: number }>) {
-  const total = lines.reduce((acc, l) => acc + l.qty * l.avgCost, 0);
-  return Number.isFinite(total) ? total : null;
-}
-
-function InventorySummaryDesktop({ items }: { items: InventorySummaryIngredient[] }) {
-  const totalValue = items.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
-  const totalStock = items.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
-
-  const outOfStockCount = items.filter((it) =>
-    it.outOfStock !== undefined ? it.outOfStock : parseNumber(it.currentStock) <= 0,
-  ).length;
-  const lowStockCount = items.filter((it) => {
-    if (it.lowStock !== undefined) return it.lowStock;
-    const minStock = parseNumber((it as any).minStock ?? 0);
-    const currentStock = parseNumber(it.currentStock);
-    return Number.isFinite(minStock) && minStock > 0 && currentStock > 0 && currentStock <= minStock;
-  }).length;
-  const alertCount = outOfStockCount + lowStockCount;
-
-  const alertTone =
-    outOfStockCount > 0
-      ? { bubble: "bg-rose-50 text-rose-700", border: "border-rose-100", hint: `${outOfStockCount} sin stock` }
-      : lowStockCount > 0
-        ? { bubble: "bg-amber-50 text-amber-800", border: "border-amber-100", hint: `${lowStockCount} stock bajo` }
-        : { bubble: "bg-emerald-50 text-emerald-700", border: "border-emerald-100", hint: "Todo OK" };
-
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <div className="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-50 text-emerald-700">
-          <PackageCheck className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor inventario</p>
-          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">${formatMoney(totalValue)} COP</p>
-          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Costo total</p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-sky-50 text-sky-700">
-          <Layers className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock total</p>
-          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">{formatMoney(totalStock)}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">En todos los insumos</p>
-        </div>
-      </div>
-
-      <div className={cn("col-span-2 flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5", alertTone.border)}>
-        <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", alertTone.bubble)}>
-          <TriangleAlert className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Alertas</p>
-          <p className="mt-0.5 truncate text-lg font-black text-neutral-900">{formatMoney(alertCount)}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">{alertTone.hint}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MobileMetricCard({
-  label,
-  value,
-  hint,
-  tone,
-  icon,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone: "emerald" | "sky" | "rose";
-  icon: ReactNode;
-}) {
-  const toneClass =
-    tone === "emerald"
-      ? "bg-emerald-50 text-emerald-700"
-      : tone === "sky"
-        ? "bg-sky-50 text-sky-700"
-        : "bg-rose-50 text-rose-700";
-
-  return (
-    <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-      <div className={cn("grid h-9 w-9 place-items-center rounded-full", toneClass)}>{icon}</div>
-      <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-neutral-400">{label}</p>
-      <p className="mt-1 truncate text-[15px] font-black text-neutral-900">{value}</p>
-      <p className="mt-0.5 text-[11px] font-medium text-neutral-400">{hint}</p>
-    </div>
-  );
-}
-
-function InventoryListTabs({
-  active,
-  onChange,
-}: {
-  active: InventoryListTab;
-  onChange: (tab: InventoryListTab) => void;
-}) {
-  return (
-    <div className="rounded-3xl border border-neutral-200/70 bg-white/70 p-2 shadow-sm ring-1 ring-black/5">
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onChange("ingredients")}
-          className={
-            active === "ingredients"
-              ? "h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
-              : "h-10 rounded-2xl bg-white text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-          }
-        >
-          Insumos
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange("products")}
-          className={
-            active === "products"
-              ? "h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
-              : "h-10 rounded-2xl bg-white text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-          }
-        >
-          Productos
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function DesktopListsPanel({
-  activeTab,
-  onChangeTab,
-  query,
-  onChangeQuery,
-  ingredients,
-  products,
-  selection,
-  onSelectIngredient,
-  onSelectProduct,
-  lastMovementByIngredientId,
-}: {
-  activeTab: InventoryListTab;
-  onChangeTab: (tab: InventoryListTab) => void;
-  query: string;
-  onChangeQuery: (v: string) => void;
-  ingredients: InventorySummaryIngredient[];
-  products: Array<{ product: ComposedProduct; imageUrl?: string | null }>;
-  selection: Selection;
-  onSelectIngredient: (id: string) => void;
-  onSelectProduct: (id: string) => void;
-  lastMovementByIngredientId: Map<string, InventoryKardexMovement>;
-}) {
-  const q = query.trim().toLowerCase();
-  const filteredIngredients = useMemo(() => {
-    const sorted = [...ingredients].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    if (!q) return sorted;
-    return sorted.filter((i) => i.name.toLowerCase().includes(q));
-  }, [ingredients, q]);
-
-  const filteredProducts = useMemo(() => {
-    const visible = products.filter(
-      (p) => p.product.inventoryMode === "SIMPLE" || p.product.inventoryMode === "RECIPE_BASED",
-    );
-    if (!q) return visible;
-    return visible.filter((p) => p.product.itemName.toLowerCase().includes(q));
-  }, [products, q]);
-
-  return (
-    <section className="min-w-0 h-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
-      <div className="border-b border-black/5 px-4 py-3">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-emerald-700">
-            <ClipboardList className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold text-neutral-900">Inventario</p>
-            <p className="truncate text-[12px] font-medium text-neutral-500">Listas</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-4 space-y-3">
-        <InventoryListTabs active={activeTab} onChange={onChangeTab} />
-
-        <div className="flex items-center gap-2">
-          <div className="flex h-11 flex-1 items-center rounded-2xl border border-neutral-100 bg-white px-4 shadow-sm ring-1 ring-black/5">
-            <PackageSearch className="h-4 w-4 text-neutral-400" />
-            <input
-              value={query}
-              onChange={(e) => onChangeQuery(e.target.value)}
-              placeholder={activeTab === "ingredients" ? "Buscar insumo..." : "Buscar producto..."}
-              className="ml-2 w-full bg-transparent text-sm font-semibold outline-none placeholder:text-neutral-400"
-            />
-          </div>
-          <button
-            type="button"
-            className="grid h-11 w-11 place-items-center rounded-full bg-neutral-100 text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-95"
-            aria-label="Filtro"
-          >
-            <Filter className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-4 pb-36">
-        {activeTab === "ingredients" ? (
-          <div className="space-y-3">
-            {filteredIngredients.map((it) => {
-              const currentStock = parseNumber(it.currentStock);
-              const stockValue = parseNumber(it.stockValue);
-              const minStock = parseNumber((it as any).minStock ?? 0);
-              const lowStock =
-                it.lowStock !== undefined
-                  ? it.lowStock
-                  : Number.isFinite(minStock) &&
-                    minStock > 0 &&
-                    Number.isFinite(currentStock) &&
-                    currentStock > 0 &&
-                    currentStock <= minStock;
-              const outOfStock =
-                it.outOfStock !== undefined
-                  ? it.outOfStock
-                  : Number.isFinite(currentStock) && currentStock <= 0;
-              const badge = outOfStock
-                ? { label: "Sin stock", tone: "bg-rose-50 text-rose-700" }
-                : lowStock
-                  ? { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" }
-                  : { label: "OK", tone: "bg-emerald-50 text-emerald-800" };
-              const avatar = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
-              const selected = selection.kind === "ingredient" && selection.id === it.id;
-              const last = lastMovementByIngredientId.get(it.id) ?? null;
-
-              return (
-                <button
-                  key={it.id}
-                  type="button"
-                  onClick={() => onSelectIngredient(it.id)}
-                  className={cn(
-                    "w-full rounded-2xl bg-white p-4 text-left shadow-sm transition active:scale-[0.99] border",
-                    selected
-                      ? "border-emerald-200 bg-emerald-50/50 ring-1 ring-emerald-200"
-                      : "border-neutral-200 hover:bg-white",
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
-                      {avatar}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-neutral-900">{it.name}</p>
-                          <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                            {formatMoney(currentStock)} {it.consumptionUnit} disponibles
-                          </p>
-                          <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                            &Uacute;lt. mov: {last ? new Date(last.occurredAt).toLocaleString("es-AR") : "—"}
-                          </p>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <span
-                            className={cn(
-                              "inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                              badge.tone,
-                            )}
-                          >
-                            {badge.label}
-                          </span>
-                          <p className="mt-2 text-xs font-black text-neutral-900">
-                            ${formatMoney(stockValue)} COP
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-
-            {filteredIngredients.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-                No hay insumos para mostrar.
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredProducts.map(({ product, imageUrl }) => {
-              const selected = selection.kind === "product" && selection.id === product.itemId;
-              return (
-                <div
-                  key={product.itemId}
-                  className={cn(
-                    "rounded-2xl border bg-white p-2 shadow-sm ring-1 ring-black/5",
-                    selected ? "border-emerald-200 bg-emerald-50/40" : "border-neutral-200",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectProduct(product.itemId)}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-neutral-50 active:scale-[0.99]"
-                  >
-                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
-                      {imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={imageUrl}
-                          alt={product.itemName}
-                          className="h-full w-full object-cover"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="h-full w-full bg-neutral-100" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-neutral-900">{product.itemName}</p>
-                      <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                        {product.inventoryMode === "RECIPE_BASED"
-                          ? "Receta basada en ingredientes"
-                          : "Stock propio"}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                      Activa
-                    </span>
-                  </button>
-                </div>
-              );
-            })}
-
-            {filteredProducts.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-                No hay productos con inventario para mostrar.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DesktopHomePanel({
-  loading,
-  error,
-  summary,
-  recipeCards,
-}: {
-  loading: boolean;
-  error: string | null;
-  summary: InventorySummaryIngredient[];
-  recipeCards: Array<{
-    id: string;
-    name: string;
-    price?: number | null;
-    estimatedCost?: number | null;
-    ingredientsCount?: number | null;
-    impactText?: string | null;
-    imageUrl?: string | null;
-    onView?: () => void;
-    onEditRecipe?: () => void;
-  }>;
-}) {
-  return (
-    <section className="min-w-0 h-full overflow-y-auto custom-scrollbar rounded-3xl border border-black/5 bg-white/40 p-4 pb-36 shadow-sm ring-1 ring-black/5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[12px] font-medium text-neutral-500">Resumen del inventario</p>
-          <h2 className="truncate text-xl font-black text-neutral-900">Inventario</h2>
-        </div>
-        <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
-          Saldo
-        </span>
-      </div>
-
-      <div className="mt-4">
-        {loading ? (
-          <div className="rounded-2xl bg-white p-4 text-sm text-neutral-500 shadow-sm ring-1 ring-black/5">
-            Cargando resumen...
-          </div>
-        ) : error ? (
-          <div className="rounded-2xl bg-white p-4 text-sm text-rose-700 shadow-sm ring-1 ring-black/5">
-            {error}
-          </div>
-        ) : (
-          <InventorySummaryDesktop items={summary} />
-        )}
-      </div>
-
-      <div className="mt-6 flex items-center justify-between">
-        <h3 className="text-sm font-black text-neutral-900">Recetas / Productos</h3>
-        <button
-          type="button"
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Ver todos
-        </button>
-      </div>
-
-      <div className="mt-3 space-y-3">
-        {recipeCards.slice(0, 2).map((card) => (
-          <InventoryRecipeCard
-            key={card.id}
-            name={card.name}
-            price={card.price}
-            estimatedCost={card.estimatedCost}
-            ingredientsCount={card.ingredientsCount}
-            impactText={card.impactText}
-            imageUrl={card.imageUrl}
-            onView={card.onView}
-            onEditRecipe={card.onEditRecipe}
-          />
-        ))}
-
-        {recipeCards.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-neutral-200 bg-white/70 px-6 py-10 text-center text-neutral-400">
-            Todav&iacute;a no hay productos con receta configurada.
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DesktopDetailPanel({
-  selection,
-  summary,
-  products,
-  itemsById,
-  kardexMovements,
-  onClearSelection,
-  onOpenIngredient,
-  onOpenRecipes,
-  onOpenKardex,
-}: {
-  selection: Selection;
-  summary: InventorySummaryIngredient[];
-  products: ComposedProduct[];
-  itemsById: Map<string, Item>;
-  kardexMovements: InventoryKardexMovement[];
-  onClearSelection: () => void;
-  onOpenIngredient: (id: string) => void;
-  onOpenRecipes: () => void;
-  onOpenKardex: (ingredientId?: string) => void;
-}) {
-  if (selection.kind === "none") {
-    return (
-      <section className="min-w-0 h-full overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-black/5">
-        <div className="border-b border-black/5 px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-[15px] font-semibold text-neutral-900">Detalle</p>
-              <p className="truncate text-[12px] font-medium text-neutral-500">
-                Seleccion&aacute; un insumo o producto
-              </p>
-            </div>
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-neutral-700">
-              <PackageSearch className="h-5 w-5" />
-            </span>
-          </div>
-        </div>
-        <div className="p-4 text-sm text-neutral-500">
-          Us&aacute; el panel de listas para elegir un elemento y ver su informaci&oacute;n contextual.
-        </div>
-      </section>
-    );
+function sameRecipe(a: RecipeLine[], b: RecipeLine[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const al = a[i];
+    const bl = b[i];
+    if (al?.ingredientId !== bl?.ingredientId) return false;
+    if (Number(al?.quantityRequired ?? 0) !== Number(bl?.quantityRequired ?? 0)) return false;
+    if (!!al?.isOptional !== !!bl?.isOptional) return false;
   }
-
-  if (selection.kind === "ingredient") {
-    const ingredient = summary.find((s) => s.id === selection.id) ?? null;
-    const recent = kardexMovements
-      .filter((m) => m.ingredientId === selection.id)
-      .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-      .slice(0, 4);
-
-    return (
-      <section className="min-w-0 h-full overflow-y-auto custom-scrollbar rounded-3xl border border-black/5 bg-white p-4 pb-36 shadow-sm ring-1 ring-black/5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Insumo</p>
-            <h2 className="mt-1 truncate text-lg font-black text-neutral-900">
-              {ingredient?.name ?? "Ingrediente"}
-            </h2>
-            <p className="mt-1 text-xs font-medium text-neutral-500">
-              {ingredient ? `${ingredient.consumptionUnit} / ${ingredient.purchaseUnit}` : "—"}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClearSelection}
-            className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-            aria-label="Cerrar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {ingredient ? (
-          <>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock</p>
-                <p className="mt-1 text-lg font-black text-neutral-900">
-                  {formatMoney(parseNumber(ingredient.currentStock))} {ingredient.consumptionUnit}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Costo prom.</p>
-                <p className="mt-1 text-lg font-black text-neutral-900">
-                  ${formatMoney(parseNumber(ingredient.averageCost))} COP
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor total</p>
-              <p className="mt-1 text-lg font-black text-neutral-900">
-                ${formatMoney(parseNumber(ingredient.stockValue))} COP
-              </p>
-              <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                &Uacute;ltima actualizaci&oacute;n: {formatRelativeTime(ingredient.updatedAt)}
-              </p>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => onOpenIngredient(selection.id)}
-                className="h-10 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-              >
-                Abrir detalle
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenKardex(selection.id)}
-                className="h-10 rounded-2xl bg-emerald-500 px-4 text-xs font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
-              >
-                Ver kardex completo
-              </button>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between">
-              <h3 className="text-sm font-black text-neutral-900">Movimientos recientes</h3>
-              <button
-                type="button"
-                onClick={() => onOpenKardex(selection.id)}
-                className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-              >
-                Ver kardex &rarr;
-              </button>
-            </div>
-
-            <div className="mt-3">
-              <KardexList movements={recent} />
-              {recent.length === 0 && (
-                <div className="mt-3 rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-8 text-center text-sm text-neutral-400">
-                  No hay movimientos recientes.
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="mt-4 rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-            No se encontr&oacute; el insumo seleccionado.
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  const product = products.find((p) => p.itemId === selection.id) ?? null;
-  const item = itemsById.get(selection.id) ?? null;
-  const img = (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
-
-  const impactedIngredientIds = new Set((product?.ingredients ?? []).map((i) => i.ingredientId));
-  const recent = kardexMovements
-    .filter((m) => impactedIngredientIds.has(m.ingredientId))
-    .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-    .slice(0, 6);
-
-  return (
-    <section className="min-w-0 h-full overflow-y-auto custom-scrollbar rounded-3xl border border-black/5 bg-white p-4 pb-36 shadow-sm ring-1 ring-black/5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Producto</p>
-          <h2 className="mt-1 truncate text-lg font-black text-neutral-900">{product?.itemName ?? "Producto"}</h2>
-          <p className="mt-1 text-xs font-medium text-neutral-500">
-            {product?.inventoryMode === "RECIPE_BASED" ? "Receta basada en ingredientes" : "Stock propio"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClearSelection}
-          className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-          aria-label="Cerrar"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="mt-4 flex items-start gap-3 rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-        <div className="h-20 w-28 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
-          {img ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={img} alt={product?.itemName ?? "Producto"} className="h-full w-full object-cover" draggable={false} />
-          ) : (
-            <div className="h-full w-full bg-neutral-100" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
-              Activa
-            </span>
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700">
-              Producto
-            </span>
-          </div>
-          <p className="mt-2 text-[11px] font-medium text-neutral-500">
-            {product?.inventoryMode === "RECIPE_BASED"
-              ? "Resumen de receta por unidad"
-              : "Resumen de stock por unidad"}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-black text-neutral-900">Resumen de la receta (por unidad)</h3>
-          <button
-            type="button"
-            onClick={onOpenRecipes}
-            className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-          >
-            Editar &rarr;
-          </button>
-        </div>
-
-        <div className="mt-3 space-y-2">
-          {(product?.ingredients ?? []).map((line) => (
-            <div key={line.ingredientId} className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-neutral-900">{line.name}</p>
-                <p className="mt-0.5 text-[11px] font-medium text-neutral-400">
-                  {line.quantityRequired} {line.consumptionUnit ?? ""}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                  line.isOptional ? "bg-neutral-100 text-neutral-600" : "bg-amber-50 text-amber-800",
-                )}
-              >
-                {line.isOptional ? "Opcional" : "Obligatorio"}
-              </span>
-            </div>
-          ))}
-
-          {(product?.ingredients ?? []).length === 0 && (
-            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-8 text-center text-sm text-neutral-400">
-              Sin receta configurada.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <h3 className="text-sm font-black text-neutral-900">Informaci&oacute;n del producto</h3>
-        <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Precio</p>
-            <p className="mt-1 text-sm font-black text-neutral-900">
-              ${formatMoney(item?.price ?? product?.price ?? 0)} COP
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingredientes</p>
-            <p className="mt-1 text-sm font-black text-neutral-900">{(product?.ingredients ?? []).length}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 flex items-center justify-between">
-        <h3 className="text-sm font-black text-neutral-900">Movimientos recientes</h3>
-        <button
-          type="button"
-          onClick={() => onOpenKardex()}
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Ver kardex completo &rarr;
-        </button>
-      </div>
-      <div className="mt-3">
-        <KardexList movements={recent} />
-        {recent.length === 0 && (
-          <div className="mt-3 rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-8 text-center text-sm text-neutral-400">
-            No hay movimientos recientes para los insumos de esta receta.
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function RecipeThreadView({
-  itemId,
-  products,
-  itemsById,
-  summary,
-  onClose,
-  onEditRecipe,
-}: {
-  itemId: string;
-  products: ComposedProduct[];
-  itemsById: Map<string, Item>;
-  summary: InventorySummaryIngredient[];
-  onClose: () => void;
-  onEditRecipe: () => void;
-}) {
-  const product = products.find((p) => p.itemId === itemId) ?? null;
-  const item = itemsById.get(itemId) ?? null;
-  const img =
-    (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
-
-  const mandatoryLines = (product?.ingredients ?? []).filter((l) => !l.isOptional);
-
-  const producibleUnits = (() => {
-    if (!product) return null;
-    if (product.inventoryMode !== "RECIPE_BASED") return null;
-    if (mandatoryLines.length === 0) return null;
-    let minUnits = Number.POSITIVE_INFINITY;
-    for (const line of mandatoryLines) {
-      const stock = parseNumber(line.currentStock ?? 0);
-      const required = parseNumber(line.quantityRequired);
-      if (!Number.isFinite(stock) || !Number.isFinite(required) || required <= 0) return null;
-      minUnits = Math.min(minUnits, Math.floor(stock / required));
-    }
-    return Number.isFinite(minUnits) ? minUnits : null;
-  })();
-
-  const estimatedCost = (() => {
-    if (!product) return null;
-    const lines = (product.ingredients ?? [])
-      .filter((l) => !l.isOptional)
-      .map((l) => ({ qty: parseNumber(l.quantityRequired), avg: parseNumber(l.averageCost ?? 0) }))
-      .filter((l) => Number.isFinite(l.qty) && Number.isFinite(l.avg));
-    if (!lines.length) return null;
-    return estimateRecipeCost(lines.map((l) => ({ qty: l.qty, avgCost: l.avg })));
-  })();
-
-  const price = item?.price ?? product?.price ?? 0;
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="h-14 w-20 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
-              {img ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={img} alt={product?.itemName ?? "Producto"} className="h-full w-full object-cover" draggable={false} />
-              ) : (
-                <div className="h-full w-full bg-neutral-100" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Producto</p>
-              <h2 className="mt-1 line-clamp-2 text-lg font-black text-neutral-900">
-                {product?.itemName ?? "Producto"}
-              </h2>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                  Activa
-                </span>
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700">
-                  {product?.inventoryMode === "RECIPE_BASED" ? "Compuesto" : "Simple"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
-            aria-label="Cerrar"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-3xl border border-neutral-200/70 bg-white/60 p-3 shadow-sm ring-1 ring-black/5">
-        <DateSeparator dateISO={new Date().toISOString().slice(0, 10)} labelOverride="Receta" />
-
-        {(product?.ingredients ?? []).length === 0 ? (
-          <div className="w-fit max-w-full rounded-2xl border border-dashed border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-500 shadow-sm ring-1 ring-black/5">
-            Todav&iacute;a no hay ingredientes cargados en la receta.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {(product?.ingredients ?? []).map((line) => {
-              const qty = parseNumber(line.quantityRequired);
-              const avg = parseNumber(line.averageCost ?? 0);
-              const partial = Number.isFinite(qty) && Number.isFinite(avg) ? qty * avg : null;
-              return (
-                <div
-                  key={line.ingredientId}
-                  className="ml-auto w-fit max-w-[92%] rounded-2xl rounded-tr-none bg-emerald-50/70 px-4 py-3 shadow-sm ring-1 ring-emerald-100"
-                >
-                  <p className="text-sm font-black text-emerald-950">{line.name}</p>
-                  <p className="mt-1 text-[11px] font-medium text-emerald-900/80">
-                    Cantidad: <span className="font-black">{line.quantityRequired}</span>{" "}
-                    {line.consumptionUnit ?? ""}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                        line.isOptional ? "bg-white/70 text-neutral-700 ring-1 ring-black/5" : "bg-amber-50 text-amber-800 ring-1 ring-amber-100",
-                      )}
-                    >
-                      {line.isOptional ? "Opcional" : "Obligatorio"}
-                    </span>
-                    {partial !== null && (
-                      <span className="rounded-full bg-white/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700 ring-1 ring-black/5">
-                        Costo: ${formatMoney(partial)} COP
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="mt-4 w-fit max-w-full rounded-2xl bg-white/90 px-4 py-3 shadow-sm ring-1 ring-black/5">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Resumen del producto</p>
-          <div className="mt-2 grid grid-cols-2 gap-3 text-[11px]">
-            <div>
-              <p className="font-bold uppercase tracking-widest text-neutral-400">Precio</p>
-              <p className="mt-1 text-sm font-black text-neutral-900">${formatMoney(price)} COP</p>
-            </div>
-            <div>
-              <p className="font-bold uppercase tracking-widest text-neutral-400">Costo est.</p>
-              <p className="mt-1 text-sm font-black text-neutral-900">
-                {estimatedCost !== null ? `$${formatMoney(estimatedCost)} COP` : "—"}
-              </p>
-            </div>
-            <div>
-              <p className="font-bold uppercase tracking-widest text-neutral-400">Stock posible</p>
-              <p className="mt-1 text-sm font-black text-neutral-900">
-                {producibleUnits !== null ? `${producibleUnits} unid.` : "—"}
-              </p>
-            </div>
-            <div>
-              <p className="font-bold uppercase tracking-widest text-neutral-400">Impacto</p>
-              <p className="mt-1 text-[11px] font-black text-neutral-800">
-                {impactTextFromRecipe(
-                  mandatoryLines.map((l) => ({
-                    name: l.name,
-                    qty: parseNumber(l.quantityRequired),
-                    unit: l.consumptionUnit ?? "",
-                  })),
-                ) ?? "—"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={onEditRecipe}
-          className="h-12 rounded-2xl bg-white text-sm font-black text-neutral-900 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-        >
-          Editar receta
-        </button>
-        <button
-          type="button"
-          onClick={onEditRecipe}
-          className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
-        >
-          + Agregar ingrediente
-        </button>
-      </div>
-
-      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 text-center opacity-70">
-        TODO: integrar alta de ingrediente desde este chat reutilizando el editor de recetas existente.
-      </p>
-    </div>
-  );
+  return true;
 }
 
 export default function InventarioPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
-  const [products, setProducts] = useState<ComposedProduct[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [itemsById, setItemsById] = useState<Map<string, Item>>(new Map());
+  const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [recipesByItemId, setRecipesByItemId] = useState<Record<string, RecipeLine[]>>({});
 
-  const [kardexLoading, setKardexLoading] = useState(false);
-  const [kardexError, setKardexError] = useState<string | null>(null);
-  const [kardexMovements, setKardexMovements] = useState<InventoryKardexMovement[]>([]);
-
-  const [activeListTab, setActiveListTab] = useState<InventoryListTab>("ingredients");
-  const [selection, setSelection] = useState<Selection>({ kind: "none" });
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const [recipeThreadOpen, setRecipeThreadOpen] = useState(false);
-  const [recipeThreadItemId, setRecipeThreadItemId] = useState<string | null>(null);
-  const [mobileActiveIndex, setMobileActiveIndex] = useState(1);
-
+  const [tab, setTab] = useState<UITab>("recipes");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const [alertsOpen, setAlertsOpen] = useState(false);
+
+  const [expandedRecipeId, setExpandedRecipeId] = useState<string | null>(null);
+  const [recipeDrafts, setRecipeDrafts] = useState<Record<string, RecipeLine[]>>({});
+  const [savingRecipeId, setSavingRecipeId] = useState<string | null>(null);
+
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
   const [prefillIngredientName, setPrefillIngredientName] = useState("");
   const [creatingIngredient, setCreatingIngredient] = useState(false);
@@ -1014,16 +71,7 @@ export default function InventarioPage() {
   const [movementIngredientId, setMovementIngredientId] = useState<string>("");
   const [movementInitialAction, setMovementInitialAction] = useState<MovementAction>("PURCHASE");
 
-  const [isDesktop, setIsDesktop] = useState(false);
-
-  useEffect(() => {
-    const compute = () => setIsDesktop(window.innerWidth >= 1024);
-    compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
-  }, []);
-
-  const loadData = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -1034,975 +82,600 @@ export default function InventarioPage() {
       ]);
 
       setSummary(summaryData ?? []);
+      setItems((itemsData ?? []).filter((i) => i.status === "ACTIVE"));
 
-      const allActiveItems = (itemsData ?? []).filter((i) => i.status === "ACTIVE");
-      setItemsById(new Map(allActiveItems.map((i) => [i.id, i])));
+      const recipeItems = (itemsData ?? [])
+        .filter((i) => i.status === "ACTIVE")
+        .filter((i) => i.type === "PRODUCT" && (i.inventoryMode === "SIMPLE" || i.inventoryMode === "RECIPE_BASED"));
 
-      const productsWithRecipes = await Promise.all(
-        allActiveItems.map(async (item) => {
-          const inventoryMode = item.inventoryMode ?? "NONE";
-          const shouldLoadRecipe =
-            item.type === "PRODUCT" && (inventoryMode === "SIMPLE" || inventoryMode === "RECIPE_BASED");
-
-          let recipeLines: RecipeLine[] = [];
-          if (shouldLoadRecipe) {
-            try {
-              recipeLines = (await getRecipe(item.id)) ?? [];
-            } catch (e) {
-              console.error("Failed to load recipe for", item.id, e);
-            }
+      const recipes = await Promise.all(
+        recipeItems.map(async (it) => {
+          try {
+            const lines = (await getRecipe(it.id)) ?? [];
+            return [it.id, lines] as const;
+          } catch (e) {
+            console.error("Failed to load recipe for", it.id, e);
+            return [it.id, []] as const;
           }
-
-          const ingredients = recipeLines.map((line) => {
-            const summaryIng = summaryData?.find((s) => s.id === line.ingredientId);
-            return {
-              ingredientId: line.ingredientId,
-              name: summaryIng?.name ?? "Desconocido",
-              quantityRequired: line.quantityRequired,
-              consumptionUnit: summaryIng?.consumptionUnit,
-              isOptional: !!line.isOptional,
-              currentStock: summaryIng?.currentStock,
-              averageCost: summaryIng?.averageCost,
-            };
-          });
-
-          return {
-            itemId: item.id,
-            itemName: item.name,
-            itemType: item.type,
-            inventoryMode,
-            price: item.price,
-            stock: undefined,
-            value: undefined,
-            ingredients,
-          } as ComposedProduct;
         }),
       );
 
-      setProducts(productsWithRecipes);
-    } catch (err) {
-      console.error(err);
-      const msg = getErrorMessage(err, "No se pudo cargar el inventario");
-      setError(msg);
-      toast.error(msg);
+      setRecipesByItemId(Object.fromEntries(recipes));
+    } catch (e) {
+      console.error(e);
+      setError(getErrorMessage(e, "No se pudo cargar el inventario"));
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const loadKardexAll = useCallback(async () => {
-    try {
-      setKardexLoading(true);
-      setKardexError(null);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-      const ingredientIds = summary.map((s) => s.id);
-      if (ingredientIds.length === 0) {
-        setKardexMovements([]);
-        return;
-      }
-
-      const byId = new Map(summary.map((s) => [s.id, s.name]));
-      const perIngredient = await Promise.all(
-        ingredientIds.map(async (ingredientId) => {
-          try {
-            const movements = (await listKardex(ingredientId)) ?? [];
-            const name = byId.get(ingredientId) ?? "Insumo";
-            return movements.map((m) => ({ ...m, itemName: name }));
-          } catch (e) {
-            console.error("Failed to load kardex for", ingredientId, e);
-            return [] as InventoryKardexMovement[];
-          }
-        }),
-      );
-
-      setKardexMovements(perIngredient.flat());
-    } catch (err) {
-      console.error(err);
-      const msg = getErrorMessage(err, "No se pudo cargar el kardex");
-      setKardexError(msg);
-      setKardexMovements([]);
-    } finally {
-      setKardexLoading(false);
-    }
+  const inventoryTotalValue = useMemo(() => {
+    return summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
   }, [summary]);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const alertGroups = useMemo(() => {
+    const outOfStock: InventorySummaryIngredient[] = [];
+    const lowStock: InventorySummaryIngredient[] = [];
 
-  useEffect(() => {
-    if (summary.length === 0) return;
-    if (isDesktop) void loadKardexAll();
-  }, [summary.length, isDesktop, loadKardexAll]);
+    for (const it of summary) {
+      const currentStock = parseNumber(it.currentStock);
+      const minStock = parseNumber((it as any).minStock ?? 0);
+      const isOut = it.outOfStock !== undefined ? it.outOfStock : Number.isFinite(currentStock) && currentStock <= 0;
+      const isLow =
+        it.lowStock !== undefined
+          ? it.lowStock
+          : Number.isFinite(minStock) &&
+            minStock > 0 &&
+            Number.isFinite(currentStock) &&
+            currentStock > 0 &&
+            currentStock <= minStock;
 
-  useEffect(() => {
-    if (isDesktop) return;
-    if (mobileActiveIndex !== 2) return;
-    if (summary.length === 0) return;
-    if (kardexLoading) return;
-    void loadKardexAll();
-  }, [isDesktop, mobileActiveIndex, summary.length, kardexLoading, loadKardexAll]);
-
-  const lastMovementByIngredientId = useMemo(() => {
-    const map = new Map<string, InventoryKardexMovement>();
-    for (const m of kardexMovements) {
-      const current = map.get(m.ingredientId);
-      if (!current || current.occurredAt < m.occurredAt) map.set(m.ingredientId, m);
+      if (isOut) outOfStock.push(it);
+      else if (isLow) lowStock.push(it);
     }
-    return map;
-  }, [kardexMovements]);
 
-  const movementTitle: Record<MovementAction, string> = {
-    INITIAL: "Inventario inicial",
-    PURCHASE: "Registrar compra",
-    PURCHASE_RETURN: "Devolución de compra",
-    ADJUSTMENT_POSITIVE: "Ajuste positivo",
-    ADJUSTMENT_NEGATIVE: "Ajuste negativo",
-  };
+    outOfStock.sort((a, b) => a.name.localeCompare(b.name));
+    lowStock.sort((a, b) => a.name.localeCompare(b.name));
 
-  const openMovementSheet = useCallback(
-    (action: MovementAction) => {
-      setMovementInitialAction(action);
-      setMovementSheetOpen(true);
-      setMovementIngredientId((prev) => prev || summary[0]?.id || "");
+    return { outOfStock, lowStock, count: outOfStock.length + lowStock.length };
+  }, [summary]);
+
+  const recipeItems = useMemo(() => {
+    return items
+      .filter((i) => i.type === "PRODUCT")
+      .filter((i) => i.inventoryMode === "SIMPLE" || i.inventoryMode === "RECIPE_BASED");
+  }, [items]);
+
+  const visibleIngredients = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return summary;
+    return summary.filter((i) => (i.name ?? "").toLowerCase().includes(q));
+  }, [summary, searchQuery]);
+
+  const visibleRecipes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return recipeItems;
+    return recipeItems.filter((i) => (i.name ?? "").toLowerCase().includes(q));
+  }, [recipeItems, searchQuery]);
+
+  const recipeCost = useCallback(
+    (itemId: string) => {
+      const lines = recipesByItemId[itemId] ?? [];
+      let invalid = false;
+      const cost = lines.reduce((acc, l) => {
+        const qty = Number(l.quantityRequired ?? 0);
+        const ing = summary.find((s) => s.id === l.ingredientId) ?? null;
+        const avg = parseNumber(String(ing?.averageCost ?? "0"));
+        if (!l.ingredientId || !Number.isFinite(qty) || qty <= 0) invalid = true;
+        if (!Number.isFinite(avg) || avg <= 0) invalid = true;
+        return Number.isFinite(qty) && Number.isFinite(avg) ? acc + qty * avg : acc;
+      }, 0);
+      return invalid ? null : cost;
     },
-    [summary],
+    [recipesByItemId, summary],
   );
 
-  // Navigation happens via pills and explicit buttons in the UI.
+  const openMovementSheet = (action: MovementAction) => {
+    setMovementInitialAction(action);
+    setMovementSheetOpen(true);
+  };
 
-  const handleCreateIngredient = useCallback(() => {
+  const openCreateIngredientFromBar = useCallback(() => {
     const text = searchQuery.trim();
+    if (!text) {
+      toast.error("Escribí un ingrediente para crearlo o buscarlo");
+      return;
+    }
     setPrefillIngredientName(text);
     setIngredientSheetOpen(true);
   }, [searchQuery]);
 
-  const isSwipeDisabled =
-    mobileDetailOpen || ingredientSheetOpen || movementSheetOpen || recipeThreadOpen;
-
-  const mobileTouchStart = useRef<{ x: number; y: number } | null>(null);
-  const mobileTouchEnd = useRef<{ x: number; y: number } | null>(null);
-
-  const handleMobileTouchStart = (event: React.TouchEvent) => {
-    if (isSwipeDisabled) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    mobileTouchStart.current = { x: touch.clientX, y: touch.clientY };
-    mobileTouchEnd.current = null;
-  };
-
-  const handleMobileTouchMove = (event: React.TouchEvent) => {
-    if (isSwipeDisabled) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    mobileTouchEnd.current = { x: touch.clientX, y: touch.clientY };
-  };
-
-  const handleMobileTouchEnd = () => {
-    if (isSwipeDisabled) return;
-    if (!mobileTouchStart.current || !mobileTouchEnd.current) return;
-
-    const deltaX = mobileTouchEnd.current.x - mobileTouchStart.current.x;
-    const deltaY = mobileTouchEnd.current.y - mobileTouchStart.current.y;
-
-    const isHorizontalSwipe =
-      Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
-
-    if (!isHorizontalSwipe) return;
-
-    if (deltaX < 0) {
-      setMobileActiveIndex((current) => Math.min(current + 1, 2));
-      return;
-    }
-
-    if (deltaX > 0) {
-      setMobileActiveIndex((current) => Math.max(current - 1, 0));
-    }
-  };
-
-  const mobileSlides: MobileSlide[] = ["list", "home", "kardex"];
-  const mobileComposerPlaceholder =
-    mobileActiveIndex === 0
-      ? "Buscar insumo o producto..."
-      : mobileActiveIndex === 1
-        ? "Buscar ingrediente o producto..."
-        : "Buscar movimiento o ingrediente...";
-
-  const recipeCards = useMemo(() => {
-    const recipeProducts = products
-      .filter((p) => p.itemType === "PRODUCT")
-      .filter((p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED");
-
-    const cards = recipeProducts.map((p) => {
-      const item = itemsById.get(p.itemId) ?? null;
-      const img =
-        (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
-
-      const mandatory = (p.ingredients ?? []).filter((l: any) => !l.isOptional);
-      const impact = impactTextFromRecipe(
-        mandatory.map((l: any) => ({ name: l.name, qty: Number(l.quantityRequired ?? 0), unit: l.consumptionUnit })),
-      );
-
-      const cost = estimateRecipeCost(
-        (p.ingredients ?? [])
-          .filter((l: any) => !l.isOptional)
-          .map((l: any) => ({ qty: Number(l.quantityRequired ?? 0), avgCost: parseNumber(l.averageCost ?? 0) }))
-          .filter((l: any) => Number.isFinite(l.qty) && Number.isFinite(l.avgCost)),
-      );
-
-      return {
-        id: p.itemId,
-        name: p.itemName,
-        price: p.price ?? item?.price ?? null,
-        estimatedCost: cost,
-        ingredientsCount: (p.ingredients ?? []).length,
-        impactText: impact,
-        imageUrl: img,
-        onView: () => {
-          setRecipeThreadItemId(p.itemId);
-          setRecipeThreadOpen(true);
-        },
-        onEditRecipe: () => router.push(`/inventario/recetas?itemId=${encodeURIComponent(p.itemId)}`),
-      };
-    });
-
-    return cards;
-  }, [products, itemsById, router]);
-
-  const formatCompact = (n: number) => {
-    if (!Number.isFinite(n)) return "0";
-    if (Math.abs(n) >= 1000) {
-      const k = Math.round(n / 1000);
-      return `${k}k`;
-    }
-    return formatMoney(n);
-  };
-
-  /*
-  const mobileLists = (
-    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <InventoryListTabs active={activeListTab} onChange={setActiveListTab} />
-
-      <div className="flex items-center gap-2">
-        <div className="flex h-11 flex-1 items-center rounded-2xl border border-neutral-100 bg-white px-4 shadow-sm ring-1 ring-black/5">
-          <PackageSearch className="h-4 w-4 text-neutral-400" />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={activeListTab === "ingredients" ? "Buscar insumo..." : "Buscar producto..."}
-            className="ml-2 w-full bg-transparent text-sm font-semibold outline-none placeholder:text-neutral-400"
-          />
-        </div>
-        <button
-          type="button"
-          className="grid h-11 w-11 place-items-center rounded-full bg-neutral-100 text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-95"
-          aria-label="Filtro"
-        >
-          <Filter className="h-4 w-4" />
-        </button>
-      </div>
-
-      {activeListTab === "ingredients" ? (
-        <div className="space-y-3">
-          {summary
-            .filter(
-              (i) =>
-                !searchQuery.trim() ||
-                i.name.toLowerCase().includes(searchQuery.trim().toLowerCase()),
-            )
-            .map((it) => {
-              const currentStock = parseNumber(it.currentStock);
-              const stockValue = parseNumber(it.stockValue);
-              const minStock = parseNumber((it as any).minStock ?? 0);
-              const lowStock =
-                it.lowStock !== undefined
-                  ? it.lowStock
-                  : Number.isFinite(minStock) &&
-                    minStock > 0 &&
-                    Number.isFinite(currentStock) &&
-                    currentStock > 0 &&
-                    currentStock <= minStock;
-              const outOfStock =
-                it.outOfStock !== undefined
-                  ? it.outOfStock
-                  : Number.isFinite(currentStock) && currentStock <= 0;
-              const badge = outOfStock
-                ? { label: "Sin stock", tone: "bg-rose-50 text-rose-700" }
-                : lowStock
-                  ? { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" }
-                  : { label: "OK", tone: "bg-emerald-50 text-emerald-800" };
-              const avatar = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
-              const last = lastMovementByIngredientId.get(it.id) ?? null;
-
-              return (
-                <article
-                  key={it.id}
-                  className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelection({ kind: "ingredient", id: it.id });
-                      setMobileDetailOpen(true);
-                    }}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
-                        {avatar}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className="min-w-0 line-clamp-2 text-sm font-black text-neutral-950">
-                            {it.name}
-                          </h3>
-                          <span
-                            className={cn(
-                              "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                              badge.tone,
-                            )}
-                          >
-                            {badge.label}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs font-medium text-neutral-500">
-                          {formatMoney(currentStock)} {it.consumptionUnit} disponibles
-                        </p>
-                        <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                          &Uacute;lt. mov.:{" "}
-                          {last
-                            ? new Date(last.occurredAt).toLocaleString("es-AR", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 text-[10px]">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock</p>
-                        <p className="mt-1 text-sm font-black text-neutral-900">{formatMoney(currentStock)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor</p>
-                        <p className="mt-1 text-sm font-black text-neutral-900">
-                          ${formatMoney(stockValue)} COP
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                </article>
-              );
-            })}
-
-          {!loading && summary.length === 0 && (
-            <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
-              <p className="text-sm font-black text-neutral-900">Sin insumos</p>
-              <p className="mt-1 text-xs font-medium leading-relaxed text-neutral-400">
-                Us&aacute; el + para crear el primer insumo.
-              </p>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {products
-            .filter((p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED")
-            .filter((p) => !searchQuery.trim() || p.itemName.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-            .map((p) => (
-              <ProductInventoryFeedItem
-                key={p.itemId}
-                product={p}
-                onClick={() => {
-                  setSelection({ kind: "product", id: p.itemId });
-                  setMobileDetailOpen(true);
-                }}
-              />
-            ))}
-        </div>
-      )}
-    </div>
-  );
-  */
-
-  const filteredMobileIngredients = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const base = [...summary].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    if (!q) return base;
-    return base.filter((i) => i.name.toLowerCase().includes(q));
-  }, [summary, searchQuery]);
-
-  const filteredMobileProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const base = products
-      .filter((p) => p.inventoryMode === "SIMPLE" || p.inventoryMode === "RECIPE_BASED")
-      .slice()
-      .sort((a, b) => (a.itemName < b.itemName ? -1 : 1));
-    if (!q) return base;
-    return base.filter((p) => p.itemName.toLowerCase().includes(q));
-  }, [products, searchQuery]);
-
-  const mobileListsScreen = (
-    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Lista</p>
-          <h2 className="mt-1 truncate text-lg font-black text-neutral-900">Insumos</h2>
-        </div>
-        <button
-          type="button"
-          onClick={() => router.push("/inventario/ingredientes")}
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Ver todos
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="rounded-3xl bg-white p-4 text-center text-sm text-neutral-400 shadow-sm ring-1 ring-black/5">
-          Cargando...
-        </div>
-      ) : (
-        <IngredientList
-          layout="chat"
-          ingredients={filteredMobileIngredients.slice(0, 12)}
-          onSelect={(id) => router.push(`/inventario/ingredientes/${id}`)}
-        />
-      )}
-
-      <div className="flex items-center justify-between pt-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Productos</p>
-          <p className="mt-1 truncate text-sm font-black text-neutral-900">Recetas / productos con stock</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => router.push("/inventario/recetas")}
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Ver todos
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {filteredMobileProducts.slice(0, 8).map((p) => (
-          <ProductInventoryFeedItem
-            key={p.itemId}
-            product={p}
-            onClick={() => {
-              setSelection({ kind: "product", id: p.itemId });
-              setMobileDetailOpen(true);
-            }}
-          />
-        ))}
-
-        {!loading && filteredMobileProducts.length === 0 && (
-          <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
-            <p className="text-sm font-black text-neutral-900">Sin productos</p>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-neutral-400">
-              Creá una receta o configurá stock en un producto.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const mobileHome = (
-    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <div className="grid grid-cols-2 gap-3">
-        {(() => {
-          const totalValue = summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
-          const totalStock = summary.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
-          const outOfStockCount = summary.filter((it) =>
-            it.outOfStock !== undefined ? it.outOfStock : parseNumber(it.currentStock) <= 0,
-          ).length;
-          const lowStockCount = summary.filter((it) => {
-            if (it.lowStock !== undefined) return it.lowStock;
-            const minStock = parseNumber((it as any).minStock ?? 0);
-            const currentStock = parseNumber(it.currentStock);
-            return Number.isFinite(minStock) && minStock > 0 && currentStock > 0 && currentStock <= minStock;
-          }).length;
-          const alertCount = outOfStockCount + lowStockCount;
-
-          const alertHint =
-            outOfStockCount > 0
-              ? `${outOfStockCount} sin stock`
-              : lowStockCount > 0
-                ? `${lowStockCount} stock bajo`
-                : "Todo OK";
-
-          const alertTone: "emerald" | "rose" =
-            outOfStockCount > 0 || lowStockCount > 0 ? "rose" : "emerald";
-
-          return (
-            <>
-              <MobileMetricCard
-                label="Valor inventario"
-                value={`$${formatCompact(totalValue)}`}
-                hint="Costo total"
-                tone="emerald"
-                icon={<PackageSearch className="h-4 w-4" />}
-              />
-              <MobileMetricCard
-                label="Stock total"
-                value={formatMoney(totalStock)}
-                hint="Unidades"
-                tone="sky"
-                icon={<ClipboardList className="h-4 w-4" />}
-              />
-              <div className="col-span-2">
-                <MobileMetricCard
-                  label="Alertas"
-                  value={String(alertCount)}
-                  hint={alertHint}
-                  tone={alertTone}
-                  icon={<TriangleAlert className="h-4 w-4" />}
-                />
-              </div>
-            </>
-          );
-        })()}
-      </div>
-
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-black text-neutral-900">Recetas / Productos</h3>
-        <button
-          type="button"
-          onClick={() => router.push("/inventario/recetas")}
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Ver todos
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {recipeCards.slice(0, 2).map((c) => (
-          <InventoryRecipeCard
-            key={c.id}
-            name={c.name}
-            price={c.price}
-            estimatedCost={c.estimatedCost}
-            ingredientsCount={c.ingredientsCount}
-            impactText={c.impactText}
-            imageUrl={c.imageUrl}
-            onView={c.onView}
-            onEditRecipe={c.onEditRecipe}
-          />
-        ))}
-        {recipeCards.length === 0 && (
-          <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
-            <p className="text-sm font-black text-neutral-900">Todav&iacute;a no hay recetas</p>
-            <p className="mt-1 text-xs font-medium leading-relaxed text-neutral-400">
-              Us&aacute; el bot&oacute;n + para crear la primera receta o asociar insumos a un producto.
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const mobileKardexScreen = (
-    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <div className="flex items-center justify-between">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Kardex</p>
-          <h2 className="mt-1 truncate text-lg font-black text-neutral-900">Movimientos</h2>
-        </div>
-        <button
-          type="button"
-          onClick={() => router.push("/inventario/kardex")}
-          className="text-[10px] font-black uppercase tracking-widest text-emerald-700"
-        >
-          Filtros
-        </button>
-      </div>
-
-      {kardexLoading ? (
-        <div className="rounded-3xl bg-white p-4 text-center text-sm text-neutral-400 shadow-sm ring-1 ring-black/5">
-          Cargando movimientos...
-        </div>
-      ) : kardexError ? (
-        <div className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm font-medium text-rose-700 shadow-sm">
-          {kardexError}
-        </div>
-      ) : (
-        <KardexList movements={kardexMovements.slice(0, 24)} layout="chat" />
-      )}
-    </div>
-  );
-
-  /*
-  const mobileKardex = (
-    <div className="mx-auto w-full max-w-md space-y-4 px-4 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-            Kardex &ndash; Inventario
-          </p>
-          <p className="mt-1 text-sm font-bold text-neutral-900">Movimientos</p>
-        </div>
-        <button
-          type="button"
-          className="h-10 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-        >
-          <span className="inline-flex items-center gap-2">
-            <Download className="h-4 w-4" /> Descargar
-          </span>
-        </button>
-      </div>
-
-      {kardexLoading ? (
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-center text-sm text-neutral-400 shadow-sm">
-          Cargando movimientos...
-        </div>
-      ) : kardexError ? (
-        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm font-medium text-rose-700 shadow-sm">
-          {kardexError}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="rounded-[28px] bg-white p-1.5 shadow-sm ring-1 ring-black/5">
-            <div className="flex gap-1.5 overflow-x-auto">
-              {[
-                { key: "today", label: "Hoy" },
-                { key: "yesterday", label: "Ayer" },
-                { key: "week", label: "Esta semana" },
-                { key: "custom", label: "Personalizado" },
-              ].map((opt) => {
-                const active = mobileKardexRange === (opt.key as any);
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setMobileKardexRange(opt.key as any)}
-                    className={cn(
-                      "h-10 shrink-0 rounded-[22px] px-4 text-xs font-black transition active:scale-[0.99]",
-                      active ? "bg-emerald-500 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {(() => {
-            const now = new Date();
-            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-            const startOfYesterday = startOfToday - 86400000;
-            const startOfWeek = startOfToday - 86400000 * 6;
-
-            const filtered = kardexMovements
-              .slice()
-              .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-              .filter((m) => {
-                const t = new Date(m.occurredAt).getTime();
-                if (!Number.isFinite(t)) return true;
-                if (mobileKardexRange === "today") return t >= startOfToday;
-                if (mobileKardexRange === "yesterday") return t >= startOfYesterday && t < startOfToday;
-                if (mobileKardexRange === "week") return t >= startOfWeek;
-                return true;
-              })
-              .slice(0, 12);
-
-            const stocks = filtered
-              .slice()
-              .reverse()
-              .map((m) => parseNumber(m.stockAfter))
-              .filter((n) => Number.isFinite(n));
-
-            const chartPoints = stocks.length >= 2 ? stocks.slice(-7) : [120, 126, 118, 135, 128, 142, 136];
-            const min = Math.min(...chartPoints);
-            const max = Math.max(...chartPoints);
-            const range = Math.max(1, max - min);
-
-            const svgPoints = chartPoints
-              .map((v, idx) => {
-                const x = (idx / Math.max(1, chartPoints.length - 1)) * 260;
-                const y = 60 - ((v - min) / range) * 48;
-                return `${x.toFixed(1)},${y.toFixed(1)}`;
-              })
-              .join(" ");
-
-            const totalValue = summary.reduce((acc, it) => acc + parseNumber(it.stockValue), 0);
-            const totalStock = summary.reduce((acc, it) => acc + parseNumber(it.currentStock), 0);
-            const avgCost = summary.length
-              ? summary.reduce((acc, it) => acc + parseNumber(it.averageCost), 0) / Math.max(1, summary.length)
-              : 0;
-
-            return (
-              <>
-                <DateSeparator dateISO={new Date().toISOString().slice(0, 10)} labelOverride="HOY" />
-
-                <div className="space-y-3">
-                  {filtered.map((m) => {
-                    const out = isInventoryOutput(m.type);
-                    const badgeTone = out ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-800";
-                    const surface = out ? "bg-rose-50/50" : "bg-emerald-50/50";
-                    const Icon = out ? TrendingDown : TrendingUp;
-                    const qty = parseNumber(m.quantity);
-                    const value = parseNumber(m.totalValue);
-                    const stockAfter = parseNumber(m.stockAfter);
-
-                    return (
-                      <article
-                        key={m.id}
-                        className={cn("rounded-3xl p-4 shadow-sm ring-1 ring-black/5", surface)}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 items-start gap-3">
-                            <div className={cn("grid h-10 w-10 place-items-center rounded-full bg-white/80 ring-1 ring-black/5")}>
-                              <Icon className={cn("h-5 w-5", out ? "text-rose-700" : "text-emerald-700")} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-black text-neutral-950">{m.itemName}</p>
-                              <p className="mt-0.5 text-[11px] font-medium leading-snug text-neutral-600">
-                                {m.detail ?? "Movimiento de inventario"}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right space-y-1">
-                            <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", badgeTone)}>
-                              {out ? "SALIDA" : "ENTRADA"}
-                            </span>
-                            <span className="block text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                              {new Date(m.occurredAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-white/70 p-3 ring-1 ring-black/5">
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Impacto</p>
-                            <p className={cn("mt-1 text-sm font-black", out ? "text-rose-700" : "text-emerald-700")}>
-                              {out ? "-" : "+"}
-                              {formatMoney(qty)}
-                            </p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Saldo</p>
-                            <p className="mt-1 text-sm font-black text-neutral-900">{formatMoney(stockAfter)}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor</p>
-                            <p className="mt-1 text-sm font-black text-neutral-900">${formatMoney(value)} COP</p>
-                          </div>
-                        </div>
-                      </article>
-                    );
-                  })}
-
-                  {filtered.length === 0 && (
-                    <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-                      No hay movimientos para este rango.
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                        Evoluci&oacute;n del stock
-                      </p>
-                      <p className="mt-1 text-sm font-black text-neutral-900">Ultimos 7 puntos</p>
-                    </div>
-                    <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-700">
-                      Vista previa
-                    </span>
-                  </div>
-                  <div className="mt-3 overflow-hidden rounded-2xl bg-neutral-50 p-3 ring-1 ring-black/5">
-                    <svg viewBox="0 0 260 60" className="h-[64px] w-full">
-                      <polyline
-                        points={svgPoints}
-                        fill="none"
-                        stroke="rgb(16,185,129)"
-                        strokeWidth="3"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock</p>
-                    <p className="mt-1 text-sm font-black text-neutral-900">{formatMoney(totalStock)}</p>
-                    <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Actual</p>
-                  </div>
-                  <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Costo</p>
-                    <p className="mt-1 text-sm font-black text-neutral-900">${formatMoney(avgCost)}</p>
-                    <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Prom.</p>
-                  </div>
-                  <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor</p>
-                    <p className="mt-1 text-sm font-black text-neutral-900">${formatCompact(totalValue)}</p>
-                    <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Total</p>
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      )}
-    </div>
-  );
-  */
-
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
-        <AppHeader title="Inventario" showBack hrefBack="/home" />
+        <AppHeader
+          title="Inventario"
+          showBack
+          hrefBack="/home"
+          rightAriaLabel="Alertas de inventario"
+          onRightClick={() => setAlertsOpen(true)}
+          rightIcon={
+            <div className="relative">
+              <Bell className="h-5 w-5" />
+              {alertGroups.count > 0 ? (
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-black leading-none text-white">
+                  {alertGroups.count > 99 ? "99+" : String(alertGroups.count)}
+                </span>
+              ) : null}
+            </div>
+          }
+        />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {/* Desktop panels */}
-        <div className="hidden h-full min-h-0 lg:grid lg:grid-cols-[340px_minmax(0,1fr)] lg:gap-3 lg:p-4 lg:pb-32">
-          <DesktopListsPanel
-            activeTab={activeListTab}
-            onChangeTab={setActiveListTab}
-            query={searchQuery}
-            onChangeQuery={setSearchQuery}
-            ingredients={summary}
-            products={products.map((p) => {
-              const item = itemsById.get(p.itemId) ?? null;
-              const img =
-                (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
-              return { product: p, imageUrl: img };
-            })}
-            selection={selection}
-            onSelectIngredient={(id) => setSelection({ kind: "ingredient", id })}
-            onSelectProduct={(id) => setSelection({ kind: "product", id })}
-            lastMovementByIngredientId={lastMovementByIngredientId}
-          />
+      <main className="min-h-0 flex-1 overflow-y-auto pb-40">
+        <div className="mx-auto w-full max-w-md space-y-3 px-4 py-4">
+          {/* Summary */}
+          <section className="relative overflow-hidden rounded-2xl bg-[#0B1220] p-4 shadow-sm ring-1 ring-black/10">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.12)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+            <div className="relative flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">
+                  INVENTARIO TOTAL
+                </p>
+                <p className="mt-1 truncate text-2xl font-black text-white">
+                  ${formatMoney(inventoryTotalValue)} COP
+                </p>
+              </div>
 
-          <DesktopHomePanel
-            loading={loading}
-            error={error}
-            summary={summary}
-            recipeCards={recipeCards}
-          />
-        </div>
-
-        {/* Detail overlay on desktop (never a fixed column) */}
-        {selection.kind !== "none" && (
-          <div className="hidden lg:block">
-            <div
-              className="fixed inset-y-0 left-[408px] right-0 z-50 bg-black/30 backdrop-blur-sm 2xl:bg-transparent 2xl:backdrop-blur-0"
-              onClick={() => setSelection({ kind: "none" })}
-              aria-hidden
-            />
-            <div className="fixed inset-y-0 right-0 z-[60] w-full max-w-[420px] p-3">
-              <div className="h-full min-h-0 overflow-hidden rounded-[28px] bg-[#F0F2F5] shadow-2xl ring-1 ring-black/10">
-                <DesktopDetailPanel
-                  selection={selection}
-                  summary={summary}
-                  products={products}
-                  itemsById={itemsById}
-                  kardexMovements={kardexMovements}
-                  onClearSelection={() => setSelection({ kind: "none" })}
-                  onOpenIngredient={(id) => router.push(`/inventario/ingredientes/${id}`)}
-                  onOpenRecipes={() => router.push("/inventario/recetas")}
-                  onOpenKardex={(ingredientId) =>
-                    ingredientId
-                      ? router.push(`/inventario/kardex?ingredientId=${encodeURIComponent(ingredientId)}`)
-                      : router.push(`/inventario/kardex`)
-                  }
-                />
+              <div className="flex items-center gap-4">
+                <div className="h-12 w-px bg-white/10" aria-hidden />
+                <div className="space-y-1 pl-4">
+                  <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                    <span>Recetas</span>
+                    <span className="font-black text-white">{formatMoney(recipeItems.length)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                    <span>Faltantes</span>
+                    <span className="font-black text-rose-300">{formatMoney(alertGroups.outOfStock.length)}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          </section>
 
-        {/* Mobile: swipe lateral (Lista / Home / Kardex) sin tabs */}
-        <main
-          className="relative min-h-0 flex-1 overflow-hidden lg:hidden"
-          onTouchStart={handleMobileTouchStart}
-          onTouchMove={handleMobileTouchMove}
-          onTouchEnd={handleMobileTouchEnd}
-        >
-          <div
-            className="flex h-full transition-transform duration-300 ease-out"
-            style={{ transform: `translateX(-${mobileActiveIndex * 100}%)` }}
-          >
-            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
-              {mobileListsScreen}
-            </section>
-            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
-              {mobileHome}
-            </section>
-            <section className="h-full w-full shrink-0 overflow-y-auto pb-44">
-              {mobileKardexScreen}
-            </section>
-          </div>
-        </main>
-      </div>
+          {/* Switch */}
+          <section className="rounded-2xl bg-neutral-100/80 p-1.5 shadow-sm ring-1 ring-black/5">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTab("recipes")}
+                className={cn(
+                  "h-9 rounded-2xl text-xs font-black transition active:scale-[0.99]",
+                  tab === "recipes"
+                    ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5"
+                    : "bg-transparent text-neutral-500",
+                )}
+              >
+                Recetas
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("ingredients")}
+                className={cn(
+                  "h-9 rounded-2xl text-xs font-black transition active:scale-[0.99]",
+                  tab === "ingredients"
+                    ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5"
+                    : "bg-transparent text-neutral-500",
+                )}
+              >
+                Insumos
+              </button>
+            </div>
+          </section>
 
-      {/* Swipe hint (sin tabs) */}
-      <div className="fixed bottom-[88px] left-1/2 z-30 flex -translate-x-1/2 gap-1.5 lg:hidden">
-        {mobileSlides.map((screen, index) => (
-          <button
-            key={screen}
-            type="button"
-            onClick={() => setMobileActiveIndex(index)}
-            className={cn(
-              "h-1.5 rounded-full transition-all",
-              mobileActiveIndex === index ? "w-6 bg-emerald-500" : "w-1.5 bg-neutral-300",
-            )}
-            aria-label={`Ir a ${screen}`}
-          />
-        ))}
-      </div>
+          {/* Content */}
+          {loading ? (
+            <div className="rounded-2xl bg-white p-4 text-center text-sm font-medium text-neutral-400 shadow-sm ring-1 ring-black/5">
+              Cargando...
+            </div>
+          ) : error ? (
+            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm">
+              {error}
+            </div>
+          ) : tab === "ingredients" ? (
+            <section className="space-y-2">
+              {visibleIngredients.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
+                  No hay insumos para mostrar.
+                </div>
+              ) : (
+                visibleIngredients.map((it) => {
+                  const currentStock = parseNumber(it.currentStock);
+                  const minStock = parseNumber((it as any).minStock ?? 0);
+                  const outOfStock = it.outOfStock !== undefined ? it.outOfStock : Number.isFinite(currentStock) && currentStock <= 0;
+                  const lowStock =
+                    it.lowStock !== undefined
+                      ? it.lowStock
+                      : Number.isFinite(minStock) &&
+                        minStock > 0 &&
+                        Number.isFinite(currentStock) &&
+                        currentStock > 0 &&
+                        currentStock <= minStock;
 
-      <div className="fixed inset-x-0 bottom-[76px] z-40 pointer-events-none lg:left-[408px] lg:right-0">
-        <div className="pointer-events-auto mx-auto w-full max-w-md px-3 lg:max-w-full lg:px-4">
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            <button
-              type="button"
-              onClick={() => router.push("/inventario/recetas")}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
-            >
-              <BookOpen className="h-4 w-4 text-amber-700" />
-              Recetas
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileActiveIndex(2)}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
-            >
-              <PackageSearch className="h-4 w-4 text-sky-700" />
-              Kardex
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileActiveIndex(0)}
-              className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-neutral-800 shadow-sm ring-1 ring-black/5 transition hover:bg-neutral-50 active:scale-95"
-            >
-              <ClipboardList className="h-4 w-4 text-neutral-700" />
-              Lista
-            </button>
-          </div>
+                  const warning = it.status === "ACTIVE" && (outOfStock || lowStock);
+                  const badge = outOfStock
+                    ? { label: "SIN STOCK", tone: "bg-rose-600 text-white" }
+                    : lowStock
+                      ? { label: "CRÍTICO", tone: "bg-rose-50 text-rose-700 ring-1 ring-rose-100" }
+                      : { label: `${formatMoney(currentStock)} ${it.consumptionUnit}`.trim(), tone: "bg-neutral-100 text-neutral-700" };
+
+                  const avatar = (it.name ?? "I").trim().slice(0, 1).toUpperCase();
+                  const avgCost = parseNumber(it.averageCost);
+
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => router.push(`/inventario/ingredientes/${it.id}`)}
+                      className={cn(
+                        "w-full rounded-2xl p-3 text-left shadow-sm transition active:scale-[0.99] ring-1",
+                        warning ? "bg-rose-50/70 ring-rose-100" : "bg-white ring-black/5",
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-black text-neutral-700 ring-1 ring-black/5">
+                          {avatar}
+                          {warning ? (
+                            <span className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-rose-600 text-white shadow-sm">
+                              <TriangleAlert className="h-4 w-4" />
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-black text-neutral-900">{it.name}</p>
+                              <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
+                                {Number.isFinite(avgCost) ? `Costo $${formatMoney(avgCost)} / ${it.consumptionUnit}` : "Costo —"}
+                              </p>
+                            </div>
+                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", badge.tone)}>
+                              {badge.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </section>
+          ) : (
+            <section className="space-y-2">
+              {visibleRecipes.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
+                  No hay recetas para mostrar.
+                </div>
+              ) : (
+                visibleRecipes.map((it) => {
+                  const linesOriginal = recipesByItemId[it.id] ?? [];
+                  const draft = recipeDrafts[it.id] ?? linesOriginal;
+                  const expanded = expandedRecipeId === it.id;
+
+                  const cost = recipeCost(it.id);
+                  const price = typeof it.price === "number" ? it.price : null;
+                  const profit = price !== null && cost !== null ? price - cost : null;
+
+                  const dirty = recipeDrafts[it.id] ? !sameRecipe(draft, linesOriginal) : false;
+                  const canInlineEdit = isRecipeEditableInline(it);
+
+                  return (
+                    <article
+                      key={it.id}
+                      className={cn(
+                        "rounded-2xl bg-white shadow-sm ring-1 ring-black/5",
+                        expanded ? "p-3" : "p-3",
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedRecipeId((prev) => (prev === it.id ? null : it.id));
+                          setRecipeDrafts((prev) => (prev[it.id] ? prev : { ...prev, [it.id]: linesOriginal }));
+                        }}
+                        className="w-full text-left"
+                        aria-expanded={expanded}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-neutral-700 ring-1 ring-black/5">
+                            <BookOpen className="h-4 w-4" />
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-black text-neutral-900">{it.name}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-medium">
+                              <span className="text-neutral-500">
+                                {price === null ? "Venta —" : `Venta $${formatMoney(price)}`}
+                              </span>
+                              <span className="text-rose-700">
+                                {cost === null ? "Costo —" : `Costo $${formatMoney(cost)}`}
+                              </span>
+                              {profit !== null ? (
+                                <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-black", profit >= 0 ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-700")}>
+                                  {profit >= 0 ? `+ $${formatMoney(profit)}` : `- $${formatMoney(Math.abs(profit))}`}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="grid h-9 w-9 place-items-center rounded-full bg-neutral-100 text-neutral-700 ring-1 ring-black/5">
+                            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </div>
+                        </div>
+                      </button>
+
+                      {expanded ? (
+                        <div className="mt-3 space-y-2">
+                          {draft.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-4 text-sm font-medium text-neutral-500">
+                              Sin receta configurada.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {draft.map((line, idx) => {
+                                const qty = Number(line.quantityRequired ?? 0);
+                                const ing = summary.find((s) => s.id === line.ingredientId) ?? null;
+                                const name = ing?.name ?? "Insumo";
+                                const unit = ing?.consumptionUnit ?? "";
+                                const avg = parseNumber(String(ing?.averageCost ?? "0"));
+
+                                return (
+                                  <div key={`${it.id}-${line.ingredientId}-${idx}`} className="rounded-2xl bg-neutral-50 p-3 ring-1 ring-black/5">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <p className="truncate text-[13px] font-black text-neutral-900">{name}</p>
+                                        <p className="mt-0.5 truncate text-[11px] font-medium text-neutral-500">
+                                          {Number.isFinite(avg) ? `$${formatMoney(avg)} / ${unit}`.trim() : "Costo —"}
+                                        </p>
+                                      </div>
+
+                                      <div className="flex shrink-0 items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          disabled={!canInlineEdit}
+                                          onClick={() => {
+                                            if (!canInlineEdit) return;
+                                            setRecipeDrafts((prev) => {
+                                              const next = (prev[it.id] ?? draft).slice();
+                                              const nextQty = Math.max(0, (Number(next[idx]?.quantityRequired ?? qty) || 0) - 1);
+                                              next[idx] = { ...next[idx], quantityRequired: nextQty };
+                                              return { ...prev, [it.id]: next };
+                                            });
+                                          }}
+                                          className="grid h-8 w-8 place-items-center rounded-full bg-white text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-95 disabled:opacity-40"
+                                          aria-label="Restar"
+                                        >
+                                          <Minus className="h-4 w-4" />
+                                        </button>
+
+                                        <div className="min-w-[76px] rounded-full bg-white px-3 py-2 text-center text-xs font-black text-neutral-900 shadow-sm ring-1 ring-black/5">
+                                          {`${formatMoney(qty)} ${unit}`.trim()}
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          disabled={!canInlineEdit}
+                                          onClick={() => {
+                                            if (!canInlineEdit) return;
+                                            setRecipeDrafts((prev) => {
+                                              const next = (prev[it.id] ?? draft).slice();
+                                              const nextQty = (Number(next[idx]?.quantityRequired ?? qty) || 0) + 1;
+                                              next[idx] = { ...next[idx], quantityRequired: nextQty };
+                                              return { ...prev, [it.id]: next };
+                                            });
+                                          }}
+                                          className="grid h-8 w-8 place-items-center rounded-full bg-white text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-95 disabled:opacity-40"
+                                          aria-label="Sumar"
+                                        >
+                                          <Plus className="h-4 w-4" />
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          disabled={!canInlineEdit}
+                                          onClick={() => {
+                                            if (!canInlineEdit) return;
+                                            setRecipeDrafts((prev) => {
+                                              const next = (prev[it.id] ?? draft).slice();
+                                              next.splice(idx, 1);
+                                              return { ...prev, [it.id]: next };
+                                            });
+                                          }}
+                                          className="grid h-8 w-8 place-items-center rounded-full bg-rose-50 text-rose-700 transition active:scale-95 disabled:opacity-40"
+                                          aria-label="Eliminar"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/inventario/recetas?itemId=${encodeURIComponent(it.id)}`)}
+                              className="h-10 rounded-2xl bg-white text-xs font-black text-neutral-900 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                            >
+                              Editar receta
+                            </button>
+
+                            {dirty && canInlineEdit ? (
+                              <button
+                                type="button"
+                                disabled={savingRecipeId === it.id}
+                                onClick={async () => {
+                                  const loadingId = `recipe-inline-save-${it.id}`;
+                                  try {
+                                    setSavingRecipeId(it.id);
+                                    toast.loading("Guardando receta...", { id: loadingId });
+
+                                    const anyInvalid = draft.some(
+                                      (l) =>
+                                        !l.ingredientId ||
+                                        !Number.isFinite(Number(l.quantityRequired)) ||
+                                        Number(l.quantityRequired) <= 0,
+                                    );
+                                    const mandatory = draft.filter((l) => !l.isOptional);
+                                    if (anyInvalid) {
+                                      toast.error("Hay ingredientes con cantidad inválida o sin insumo", { id: loadingId });
+                                      return;
+                                    }
+                                    if (mandatory.length < 1) {
+                                      toast.error("RECIPE_BASED requiere al menos 1 ingrediente obligatorio", { id: loadingId });
+                                      return;
+                                    }
+                                    const ids = draft.map((l) => l.ingredientId);
+                                    if (new Set(ids).size !== ids.length) {
+                                      toast.error("La receta contiene ingredientes duplicados", { id: loadingId });
+                                      return;
+                                    }
+
+                                    await replaceRecipe(it.id, { lines: draft });
+                                    toast.success("Receta guardada", { id: loadingId });
+                                    setRecipeDrafts((prev) => ({ ...prev, [it.id]: draft }));
+                                    await load();
+                                  } catch (e) {
+                                    console.error(e);
+                                    toast.error(getErrorMessage(e, "No se pudo guardar la receta"), { id: loadingId });
+                                  } finally {
+                                    setSavingRecipeId(null);
+                                  }
+                                }}
+                                className="h-10 rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+                              >
+                                Guardar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => router.push("/inventario/kardex")}
+                                className="h-10 rounded-2xl bg-neutral-100 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                              >
+                                Kardex
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })
+              )}
+            </section>
+          )}
         </div>
-      </div>
+      </main>
 
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={mobileComposerPlaceholder}
-        onCreateIngredient={handleCreateIngredient}
-        onRegisterPurchase={mobileActiveIndex === 2 ? undefined : () => openMovementSheet("PURCHASE")}
-        onNewRecipe={mobileActiveIndex === 2 ? undefined : () => router.push("/inventario/recetas")}
+        placeholder={tab === "ingredients" ? "Buscar insumo..." : "Buscar receta..."}
+        onSubmit={() => {}}
+        onCreateIngredient={openCreateIngredientFromBar}
+        onRegisterPurchase={() => openMovementSheet("PURCHASE")}
+        onPickAction={(action) => {
+          if (action === "INGREDIENTES") setTab("ingredients");
+          if (action === "RECETAS") setTab("recipes");
+          if (action === "KARDEX") router.push("/inventario/kardex");
+        }}
       />
 
-      {/* Modals */}
+      <ItemPanelLayout
+        open={alertsOpen}
+        title="Alertas"
+        subtitle={
+          alertGroups.count > 0
+            ? `${alertGroups.outOfStock.length} faltantes · ${alertGroups.lowStock.length} mínimo`
+            : "Sin alertas"
+        }
+        onClose={() => setAlertsOpen(false)}
+      >
+        {alertGroups.count === 0 ? (
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
+            Todo OK. No hay insumos con stock crítico o mínimo alcanzado.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {alertGroups.outOfStock.length > 0 ? (
+              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Faltantes</p>
+                <div className="mt-3 space-y-2">
+                  {alertGroups.outOfStock.map((it) => (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => {
+                        setAlertsOpen(false);
+                        router.push(`/inventario/ingredientes/${it.id}`);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl bg-rose-50 px-3 py-3 text-left ring-1 ring-rose-100 transition active:scale-[0.99]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-rose-900">{it.name}</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-rose-700">
+                          Stock: {formatMoney(parseNumber(it.currentStock))} {it.consumptionUnit}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                        SIN STOCK
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {alertGroups.lowStock.length > 0 ? (
+              <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Mínimo alcanzado</p>
+                <div className="mt-3 space-y-2">
+                  {alertGroups.lowStock.map((it) => (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => {
+                        setAlertsOpen(false);
+                        router.push(`/inventario/ingredientes/${it.id}`);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl bg-rose-50/60 px-3 py-3 text-left ring-1 ring-rose-100 transition active:scale-[0.99]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-neutral-900">{it.name}</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-neutral-600">
+                          Stock: {formatMoney(parseNumber(it.currentStock))} {it.consumptionUnit}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-700">
+                        CRÍTICO
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </ItemPanelLayout>
+
       <ItemPanelLayout
         open={ingredientSheetOpen}
         title="Nuevo ingrediente"
@@ -2032,7 +705,7 @@ export default function InventarioPage() {
               toast.success("Ingrediente creado");
               setIngredientSheetOpen(false);
               setSearchQuery("");
-              await loadData();
+              await load();
             } catch (err) {
               console.error(err);
               toast.dismiss(loadingId);
@@ -2046,8 +719,8 @@ export default function InventarioPage() {
 
       <ItemPanelLayout
         open={movementSheetOpen}
-        title={movementTitle[movementInitialAction]}
-        subtitle="Registrar movimiento"
+        title={movementInitialAction === "PURCHASE" ? "Cargar stock" : "Registrar movimiento"}
+        subtitle="Movimiento rápido"
         onClose={() => setMovementSheetOpen(false)}
       >
         {summary.length === 0 ? (
@@ -2056,7 +729,7 @@ export default function InventarioPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
               <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingrediente</p>
               <select
                 value={movementIngredientId || summary[0]?.id || ""}
@@ -2082,8 +755,7 @@ export default function InventarioPage() {
                   onSuccess={async () => {
                     setMovementSheetOpen(false);
                     setSearchQuery("");
-                    await loadData();
-                    await loadKardexAll();
+                    await load();
                   }}
                 />
               );
@@ -2091,202 +763,7 @@ export default function InventarioPage() {
           </div>
         )}
       </ItemPanelLayout>
-
-      <ItemPanelLayout
-        open={recipeThreadOpen && !!recipeThreadItemId}
-        title="Receta"
-        subtitle="Vista conversacional"
-        onClose={() => {
-          setRecipeThreadOpen(false);
-          setRecipeThreadItemId(null);
-        }}
-      >
-        {recipeThreadItemId ? (
-          <RecipeThreadView
-            itemId={recipeThreadItemId}
-            products={products}
-            itemsById={itemsById}
-            summary={summary}
-            onClose={() => {
-              setRecipeThreadOpen(false);
-              setRecipeThreadItemId(null);
-            }}
-            onEditRecipe={() => router.push(`/inventario/recetas?itemId=${encodeURIComponent(recipeThreadItemId)}`)}
-          />
-        ) : null}
-      </ItemPanelLayout>
-
-      <ItemPanelLayout
-        open={!isDesktop && mobileDetailOpen && selection.kind !== "none"}
-        title={selection.kind === "product" ? "Detalle producto" : "Detalle insumo"}
-        subtitle="Vista contextual"
-        onClose={() => setMobileDetailOpen(false)}
-      >
-        {(() => {
-          if (selection.kind === "none") return null;
-          if (selection.kind === "ingredient") {
-            const ingredient = summary.find((s) => s.id === selection.id) ?? null;
-            const recent = kardexMovements
-              .filter((m) => m.ingredientId === selection.id)
-              .sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1))
-              .slice(0, 8);
-
-            return (
-              <div className="space-y-4">
-                <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Insumo</p>
-                  <h3 className="mt-1 text-lg font-black text-neutral-900">
-                    {ingredient?.name ?? "Ingrediente"}
-                  </h3>
-                  <p className="mt-1 text-xs font-medium text-neutral-500">
-                    {ingredient ? `${ingredient.consumptionUnit} / ${ingredient.purchaseUnit}` : "—"}
-                  </p>
-                </div>
-
-                {ingredient && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock</p>
-                      <p className="mt-1 text-sm font-black text-neutral-900">
-                        {formatMoney(parseNumber(ingredient.currentStock))}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Costo</p>
-                      <p className="mt-1 text-sm font-black text-neutral-900">
-                        ${formatMoney(parseNumber(ingredient.averageCost))}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor</p>
-                      <p className="mt-1 text-sm font-black text-neutral-900">
-                        ${formatMoney(parseNumber(ingredient.stockValue))}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/inventario/ingredientes/${selection.id}`)}
-                    className="h-12 rounded-2xl bg-white text-sm font-black text-neutral-900 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-                  >
-                    Abrir detalle
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/inventario/kardex?ingredientId=${encodeURIComponent(selection.id)}`)}
-                    className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
-                  >
-                    Ver kardex
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-black text-neutral-900">Movimientos recientes</h4>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Kardex
-                  </span>
-                </div>
-
-                {recent.length === 0 ? (
-                  <div className="rounded-3xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-                    Sin movimientos para mostrar.
-                  </div>
-                ) : (
-                  <KardexList movements={recent} layout="chat" />
-                )}
-              </div>
-            );
-          }
-
-          const selectedId = selection.id;
-          const product = products.find((p) => p.itemId === selectedId) ?? null;
-          const item = itemsById.get(selectedId) ?? null;
-          const img =
-            (item?.images ?? []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url ?? null;
-
-          return (
-            <div className="space-y-4">
-              <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <div className="flex items-start gap-3">
-                  <div className="h-16 w-24 shrink-0 overflow-hidden rounded-2xl bg-neutral-100 ring-1 ring-black/5">
-                    {img ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={img} alt={product?.itemName ?? "Producto"} className="h-full w-full object-cover" draggable={false} />
-                    ) : (
-                      <div className="h-full w-full bg-neutral-100" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Producto</p>
-                    <h3 className="mt-1 line-clamp-2 text-lg font-black text-neutral-900">
-                      {product?.itemName ?? "Producto"}
-                    </h3>
-                    <p className="mt-1 text-xs font-medium text-neutral-500">
-                      {product?.inventoryMode === "RECIPE_BASED" ? "Receta basada en ingredientes" : "Stock propio"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-black text-neutral-900">Resumen de receta</h4>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
-                    Activa
-                  </span>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {(product?.ingredients ?? []).length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
-                      Sin receta configurada.
-                    </div>
-                  ) : (
-                    (product?.ingredients ?? []).map((line) => (
-                      <div key={line.ingredientId} className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-neutral-900">{line.name}</p>
-                          <p className="mt-0.5 text-[11px] font-medium text-neutral-400">
-                            {line.quantityRequired} {line.consumptionUnit ?? ""}
-                          </p>
-                        </div>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
-                            line.isOptional ? "bg-neutral-100 text-neutral-600" : "bg-amber-50 text-amber-800",
-                          )}
-                        >
-                          {line.isOptional ? "Opcional" : "Obligatorio"}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => router.push(`/inventario/recetas?itemId=${encodeURIComponent(selectedId)}`)}
-                  className="h-12 rounded-2xl bg-white text-sm font-black text-neutral-900 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
-                >
-                  Editar receta
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.push(`/inventario/kardex`)}
-                  className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 active:scale-[0.99]"
-                >
-                  Ver kardex
-                </button>
-              </div>
-            </div>
-          );
-        })()}
-      </ItemPanelLayout>
     </div>
   );
 }
+

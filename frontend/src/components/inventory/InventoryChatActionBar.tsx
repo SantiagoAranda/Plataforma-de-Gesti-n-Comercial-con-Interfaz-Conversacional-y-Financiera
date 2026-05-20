@@ -1,14 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ClipboardList, PackageSearch, Plus, Search, Send, TrendingUp, X } from "lucide-react";
+import {
+  BookOpen,
+  ClipboardList,
+  PackageSearch,
+  Search,
+  Send,
+  SlidersHorizontal,
+  TrendingUp,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 
 export type InventoryChatMenuAction =
   | "CREATE_INGREDIENT"
   | "REGISTER_PURCHASE"
-  | "NEW_RECIPE"
   | "INGREDIENTES"
   | "KARDEX"
   | "RECETAS";
@@ -22,18 +31,21 @@ export type InventoryChatActionBarProps = {
   onPickAction?: (action: InventoryChatMenuAction) => void;
   onCreateIngredient?: () => void;
   onRegisterPurchase?: () => void;
-  onNewRecipe?: () => void;
 };
 
 const MENU: Array<{
   action: InventoryChatMenuAction;
   label: string;
-  icon: typeof Plus;
+  icon: LucideIcon;
   tone: string;
 }> = [
-  { action: "CREATE_INGREDIENT", label: "Nuevo ingrediente", icon: Plus, tone: "bg-emerald-50 text-emerald-700" },
+  {
+    action: "CREATE_INGREDIENT",
+    label: "Nuevo ingrediente",
+    icon: SlidersHorizontal,
+    tone: "bg-emerald-50 text-emerald-700",
+  },
   { action: "REGISTER_PURCHASE", label: "Cargar compra", icon: TrendingUp, tone: "bg-sky-50 text-sky-700" },
-  { action: "NEW_RECIPE", label: "Nueva receta", icon: BookOpen, tone: "bg-amber-50 text-amber-800" },
   { action: "INGREDIENTES", label: "Ingredientes", icon: ClipboardList, tone: "bg-emerald-50 text-emerald-700" },
   { action: "KARDEX", label: "Kardex", icon: PackageSearch, tone: "bg-sky-50 text-sky-700" },
   { action: "RECETAS", label: "Recetas", icon: BookOpen, tone: "bg-amber-50 text-amber-800" },
@@ -48,7 +60,6 @@ export function InventoryChatActionBar({
   onPickAction,
   onCreateIngredient,
   onRegisterPurchase,
-  onNewRecipe,
 }: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [internalValue, setInternalValue] = useState("");
@@ -63,13 +74,12 @@ export function InventoryChatActionBar({
     return MENU.filter((item) => {
       if (item.action === "CREATE_INGREDIENT") return !!onCreateIngredient;
       if (item.action === "REGISTER_PURCHASE") return !!onRegisterPurchase;
-      if (item.action === "NEW_RECIPE") return !!onNewRecipe;
       if (item.action === "INGREDIENTES") return !!onPickAction;
       if (item.action === "KARDEX") return !!onPickAction;
       if (item.action === "RECETAS") return !!onPickAction;
       return false;
     });
-  }, [onCreateIngredient, onRegisterPurchase, onNewRecipe, onPickAction]);
+  }, [onCreateIngredient, onRegisterPurchase, onPickAction]);
 
   const hasMenu = availableMenu.length > 0;
   const onlyCreateIngredient =
@@ -78,7 +88,6 @@ export function InventoryChatActionBar({
   const runAction = (action: InventoryChatMenuAction) => {
     if (action === "CREATE_INGREDIENT") return onCreateIngredient?.();
     if (action === "REGISTER_PURCHASE") return onRegisterPurchase?.();
-    if (action === "NEW_RECIPE") return onNewRecipe?.();
     return handlePick(action);
   };
 
@@ -107,7 +116,7 @@ export function InventoryChatActionBar({
         />
       )}
 
-      <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2 lg:max-w-full lg:px-4 lg:pb-4">
+      <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2">
         <div className="relative">
           {menuOpen && hasMenu && !onlyCreateIngredient && (
             <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3 shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-bottom-4 duration-200">
@@ -160,7 +169,7 @@ export function InventoryChatActionBar({
                       : "Abrir menú"
                 }
               >
-                {menuOpen && hasMenu ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                {menuOpen && hasMenu ? <X className="h-5 w-5" /> : <SlidersHorizontal className="h-5 w-5" />}
               </button>
 
               <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center">
