@@ -9,8 +9,17 @@ import {
 } from 'class-validator';
 
 import { Type } from 'class-transformer';
-
 import { InventoryMode, ItemType, Weekday } from '@prisma/client';
+
+class BadgeInput {
+  @IsString()
+  text!: string;
+
+  @IsOptional()
+  @IsString()
+  color?: string;
+}
+
 export class ScheduleInput {
   @IsEnum(Weekday)
   weekday!: Weekday;
@@ -43,6 +52,20 @@ export class CreateItemDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  badgeText?: string;
+
+  @IsOptional()
+  @IsString()
+  badgeColor?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BadgeInput)
+  badges?: BadgeInput[];
 
   @IsOptional()
   @IsNumber()

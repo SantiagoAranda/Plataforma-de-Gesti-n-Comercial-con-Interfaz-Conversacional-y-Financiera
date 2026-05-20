@@ -17,6 +17,26 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
+import { Footer, FooterConfig } from "@/src/components/layout/Footer";
+import { getItemBadges } from "@/src/lib/itemBadges";
+
+const mockFooterConfig: FooterConfig = {
+  backgroundColor: '#064e3b',
+  titulo: 'Mi Negocio',
+  frasePrincipal: 'Potenciando tu negocio cada día',
+  contacto: {
+    email: 'contacto@sactec.com',
+    telefonos: {
+      registro: '+54 9 11 1234-5678',
+      opcional1: '+54 9 11 8765-4321',
+    },
+    redesSociales: {
+      facebook: 'https://facebook.com',
+      instagram: 'https://instagram.com/savik.ar',
+      youtube: 'https://youtube.com',
+    }
+  }
+};
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 
 const formatPrice = (value: number) => {
@@ -45,6 +65,9 @@ type Item = {
   description?: string;
   durationMinutes?: number;
   previousPrice?: number | null;
+  badgeText?: string | null;
+  badgeColor?: string | null;
+  badges?: Array<{ text: string; color: string }> | null;
   images?: { id: string; url: string }[];
 };
 
@@ -85,7 +108,7 @@ export default function PublicStorePage() {
     try {
       const profile = readBusinessProfile();
       if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -121,7 +144,7 @@ export default function PublicStorePage() {
         if (!res.ok) throw new Error("Error loading items");
 
         const data = await res.json();
-        
+
         // Redirección Canónica
         if (data?.business?.slug && data.business.slug !== slug) {
           const params = new URLSearchParams(searchParams.toString());
@@ -381,14 +404,14 @@ export default function PublicStorePage() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8]">
+    <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
       <header
-        className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100"
+        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] items-center justify-between px-4">
+        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0">
               <Store className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -413,7 +436,7 @@ export default function PublicStorePage() {
             <button
               type="button"
               onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Buscar"
             >
               <Search className="h-5 w-5" />
@@ -422,7 +445,7 @@ export default function PublicStorePage() {
             <button
               type="button"
               onClick={() => setShowCartModal(true)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 text-slate-700 shadow-sm ring-1 ring-slate-200/70 transition hover:bg-slate-100 active:scale-95"
+              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Carrito"
             >
               <ShoppingBag className="h-5 w-5" />
@@ -435,16 +458,16 @@ export default function PublicStorePage() {
           </div>
         </div>
 
-        <div className="mx-auto w-full max-w-[420px] px-4 pb-3 space-y-3">
+        <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
           {isSearchOpen && (
-            <div className="flex items-center gap-3 rounded-full bg-slate-50 px-4 py-3 shadow-sm ring-1 ring-slate-200/70">
-              <Search className="h-5 w-5 text-slate-400" />
+            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+              <Search className="h-4 w-4 text-slate-400" />
               <input
                 ref={searchInputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar..."
-                className="w-full bg-transparent text-sm outline-none text-slate-900 placeholder:text-slate-400"
+                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
               />
               <button
                 type="button"
@@ -452,7 +475,7 @@ export default function PublicStorePage() {
                   setQuery("");
                   setIsSearchOpen(false);
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 active:scale-95"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
                 aria-label="Cerrar búsqueda"
               >
                 <X className="h-4 w-4" />
@@ -487,11 +510,11 @@ export default function PublicStorePage() {
         </div>
       )}
 
-      <main className="mx-auto w-full max-w-[420px] px-4 pb-28 pt-4">
+      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-4">
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6">
+          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
             {filtered.map((item) => (
               <ProductCard
                 key={item.id}
@@ -654,6 +677,8 @@ export default function PublicStorePage() {
           closeProductDetail();
         }}
       />
+
+      <Footer config={mockFooterConfig} />
     </div>
   );
 }
@@ -674,6 +699,7 @@ function ProductCard({
   const showCarousel = imageCount > 1;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -690,8 +716,8 @@ function ProductCard({
   }, [showCarousel, imageCount]);
 
   return (
-    <div className="flex flex-col">
-      <div className="relative overflow-hidden rounded-3xl bg-neutral-100 shadow-[0_16px_40px_-28px_rgba(15,23,42,0.35)]">
+    <div className="flex w-full max-w-[220px] flex-col">
+      <div className="relative overflow-hidden rounded-3xl bg-neutral-100">
         <div
           role="button"
           tabIndex={0}
@@ -705,7 +731,7 @@ function ProductCard({
           className="block w-full cursor-pointer"
           aria-label={`Ver ${item.name}`}
         >
-          <div className="aspect-square w-full">
+          <div className="relative aspect-[270/378] w-full">
             {imageUrl ? (
               <img
                 src={imageUrl}
@@ -716,10 +742,24 @@ function ProductCard({
             ) : (
               <div className="h-full w-full bg-neutral-200" />
             )}
+
+            {badges.length ? (
+              <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1">
+                {badges.map((badge) => (
+                  <div
+                    key={`${badge.text}-${badge.color}`}
+                    className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                    style={{ background: badge.color }}
+                  >
+                    {badge.text}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {showCarousel && (
-            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.25)]">
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1">
               {images.map((image, index) => (
                 <button
                   key={image.id ?? `${item.id}-seg-${index}`}
@@ -732,8 +772,8 @@ function ProductCard({
                   className={[
                     "h-0.5 flex-1 rounded-full",
                     index === currentImageIndex
-                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
+                      ? "bg-white"
+                      : "bg-white/60",
                   ].join(" ")}
                   aria-label={`Imagen ${index + 1}`}
                 />
@@ -750,18 +790,23 @@ function ProductCard({
             event.stopPropagation();
             onPlus();
           }}
-          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.18)] transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-none ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
         >
           <Plus className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="mt-3 space-y-1 px-1">
-        <div className="truncate text-[14px] font-bold text-slate-950">
+      <div className="mt-3 px-1">
+        <div className="truncate text-[15px] font-extrabold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
-        <div className="text-[15px] font-black text-emerald-600">
+        {item.description?.trim() ? (
+          <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
+            {item.description.trim()}
+          </div>
+        ) : null}
+        <div className="mt-1 text-[16px] font-black text-black">
           {formatCop(item.price)}
         </div>
       </div>
@@ -789,6 +834,7 @@ function ProductDetailOverlay({
   const images = item?.images ?? [];
   const imageCount = images.length;
   const showCarousel = imageCount > 1;
+  const badges = getItemBadges(item);
 
   useEffect(() => {
     setCurrentImageIndex(0);
@@ -834,7 +880,7 @@ function ProductDetailOverlay({
           <X className="h-5 w-5" />
         </button>
 
-        <div className="h-full w-full md:hidden">
+        <div className="h-full w-full xl:hidden">
           <ReelLikeProductView
             item={item}
             businessName={businessName}
@@ -847,7 +893,7 @@ function ProductDetailOverlay({
           />
         </div>
 
-        <div className="hidden h-full md:flex">
+        <div className="hidden h-full xl:flex">
           {/* LEFT: commercial info */}
           <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
@@ -872,12 +918,26 @@ function ProductDetailOverlay({
                   )}
                 </div>
 
+                {badges.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {badges.map((badge) => (
+                      <div
+                        key={`${badge.text}-${badge.color}`}
+                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        style={{ background: badge.color }}
+                      >
+                        {badge.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="h-px w-full bg-black/5" />
 
                 <div className="flex flex-wrap items-end justify-between gap-8">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                      PRECIO ESPECIAL
+                      PRECIO
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                       <div className="text-4xl font-black tracking-tight text-slate-900">
@@ -1097,6 +1157,7 @@ function ReelLikeProductView({
   const images = item.images ?? [];
   const showCarousel = images.length > 1;
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
+  const badges = getItemBadges(item);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
@@ -1160,35 +1221,62 @@ function ReelLikeProductView({
       </div>
 
       {/* FOOTER (full width bar, no rounded “card”) */}
-      <div className="flex w-full flex-wrap items-center justify-between gap-6 bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            PRECIO ESPECIAL
+      <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
+        <div className="space-y-2 pb-3">
+          <div className="text-[18px] font-extrabold leading-tight text-slate-900">
+            {item.name}
           </div>
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <div className="text-3xl font-black tracking-tight text-slate-900">
-              ${formatPrice(item.price)}
+          {businessName && (
+            <div className="text-xs font-semibold text-slate-600">
+              {businessName}
             </div>
-            {item.previousPrice != null &&
-              Number.isFinite(item.previousPrice) &&
-              item.previousPrice > item.price && (
-                <div className="ml-3 text-base text-slate-400 line-through">
-                  ${formatPrice(item.previousPrice)}
+          )}
+
+          {badges.length ? (
+            <div className="flex flex-wrap gap-1.5">
+              {badges.map((badge) => (
+                <div
+                  key={`${badge.text}-${badge.color}`}
+                  className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                  style={{ background: badge.color }}
+                >
+                  {badge.text}
                 </div>
-              )}
-          </div>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        <button
-          type="button"
-          disabled={preview}
-          onClick={onPrimaryAction}
-          className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <ShoppingBag className="h-4 w-4" />
-          Comprar
-          <ArrowRight className="h-4 w-4" />
-        </button>
+        <div className="flex w-full flex-wrap items-center justify-between gap-6">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              PRECIO
+            </div>
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+              <div className="text-3xl font-black tracking-tight text-slate-900">
+                ${formatPrice(item.price)}
+              </div>
+              {item.previousPrice != null &&
+                Number.isFinite(item.previousPrice) &&
+                item.previousPrice > item.price && (
+                  <div className="ml-3 text-base text-slate-400 line-through">
+                    ${formatPrice(item.previousPrice)}
+                  </div>
+                )}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={preview}
+            onClick={onPrimaryAction}
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ShoppingBag className="h-4 w-4" />
+            Comprar
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* DESCRIPTION (padding only here; no heavy card) */}
