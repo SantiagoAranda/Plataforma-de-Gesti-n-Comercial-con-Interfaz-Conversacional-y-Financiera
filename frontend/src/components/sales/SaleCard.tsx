@@ -180,14 +180,14 @@ export default function SaleCard({
           </button>
         </div>
 
-         <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-50">
-         <span className="flex items-center gap-1 text-[10px] font-bold text-[#34b7f1]">
-          {/*  <ShieldCheck className="h-3.5 w-3.5" />
-            {validationLabel}*/}
+        <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-50">
+          <span className="flex items-center gap-1 text-[10px] font-bold text-[#34b7f1]">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {validationLabel}
           </span>
           <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
             {formatTime(sale.createdAt)}
-            {/*<CheckCheck className="w-4 h-4 text-[#34b7f1]" /> */}
+            <CheckCheck className="w-4 h-4 text-[#34b7f1]" />
           </span>
         </div>
       </div>

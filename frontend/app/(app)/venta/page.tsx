@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarDays, Filter, ShoppingBag, WalletCards } from "lucide-react";
+import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -17,7 +17,8 @@ import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
-import { formatBusinessDateTime, getBusinessDayKey } from "@/src/lib/businessDate";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
+import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
@@ -55,13 +56,6 @@ function mapOrderToSale(order: ApiOrder): Sale {
   };
 }
 
-function getTodayCalendarLabel() {
-  return `HOY, ${formatBusinessDateTime(new Date(), "es-AR", {
-    day: "2-digit",
-    month: "short",
-  }).toUpperCase().replace(".", "")}`;
-}
-
 function formatDisplayMoney(value: number) {
   return new Intl.NumberFormat("es-AR", {
     minimumFractionDigits: 0,
@@ -69,8 +63,16 @@ function formatDisplayMoney(value: number) {
   }).format(value ?? 0);
 }
 
+function getCalendarBusinessDayKey(date: Date) {
+  return getBusinessDayKey(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12),
+  );
+}
+
 export default function VentaPage() {
   const [q, setQ] = useState("");
+  const today = useMemo(() => new Date(), []);
+  const [selectedDate, setSelectedDate] = useState<Date>(today);
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,8 +152,19 @@ export default function VentaPage() {
     loadOrders();
   }, [loadOrders]);
 
+  const salesForSelectedDate = useMemo(() => {
+    const selectedKey = getCalendarBusinessDayKey(selectedDate);
+    return sales.filter((sale) => {
+      try {
+        return getBusinessDayKey(sale.createdAt) === selectedKey;
+      } catch {
+        return false;
+      }
+    });
+  }, [sales, selectedDate]);
+
   const filtered = useMemo(() => {
-    let result = sales;
+    let result = salesForSelectedDate;
 
     if (filterStatus !== "ALL") {
       result = result.filter((s) => {
@@ -176,25 +189,28 @@ export default function VentaPage() {
       if (s.id.toLowerCase().includes(term)) return true;
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
-  }, [q, sales, filterStatus]);
+  }, [q, salesForSelectedDate, filterStatus]);
 
   const todayMetrics = useMemo(() => {
-    const todayKey = getBusinessDayKey(new Date());
-    const todaySales = sales.filter((sale) => {
-      try {
-        return getBusinessDayKey(sale.createdAt) === todayKey;
-      } catch {
-        return false;
-      }
-    });
-
     return {
-      total: todaySales
+      total: salesForSelectedDate
         .filter((sale) => sale.status === "CERRADO")
         .reduce((acc, sale) => acc + (sale.total ?? 0), 0),
-      transactions: todaySales.length,
+      transactions: salesForSelectedDate.length,
     };
+  }, [salesForSelectedDate]);
+
+  const saleDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    sales.forEach((sale) => {
+      try {
+        keys.add(getBusinessDayKey(sale.createdAt));
+      } catch {}
+    });
+    return keys;
   }, [sales]);
+
+  const hasDateFilter = !isSameCalendarDay(selectedDate, today);
 
   useEffect(() => {
     if (!loading && sales.length > 0 && !initialScrollDone.current) {
@@ -541,20 +557,24 @@ export default function VentaPage() {
                 </div>
               </div>
 
-              <div className="mb-6 px-5 py-5 bg-white rounded-2xl shadow-sm border border-slate-200">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-slate-50 border border-slate-100">
-                    <CalendarDays className="h-4 w-4 text-slate-400" />
+              <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <DayPickerCalendar
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  markedDateKeys={saleDateKeys}
+                  id="sales-calendar"
+                />
+                {hasDateFilter && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(new Date())}
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                    >
+                      Limpiar
+                    </button>
                   </div>
-                  <div className="flex min-w-0 flex-col">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                      Calendario
-                    </span>
-                    <span className="text-xs font-black text-slate-700 uppercase tracking-wide">
-                      {getTodayCalendarLabel()}
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             </section>
           )}
