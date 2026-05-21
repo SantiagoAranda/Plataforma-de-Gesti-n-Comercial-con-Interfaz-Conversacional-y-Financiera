@@ -78,7 +78,7 @@ export default function SalesChatComposer({
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
-  const [newItem, setNewItem] = useState<{itemId: string, qty: number}>({itemId: "", qty: 1});
+  const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
 
   const fetchItems = async () => {
     try {
@@ -137,7 +137,7 @@ export default function SalesChatComposer({
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty,
+        qty: newItem.qty === "" ? 1 : newItem.qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -277,7 +277,23 @@ export default function SalesChatComposer({
                           type="number"
                           min="1"
                           value={newItem.qty}
-                          onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "") {
+                              setNewItem(prev => ({ ...prev, qty: "" }));
+                              return;
+                            }
+                            const num = parseInt(val, 10);
+                            if (!isNaN(num)) {
+                              setNewItem(prev => ({ ...prev, qty: num }));
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          onBlur={() => {
+                            if (newItem.qty === "" || newItem.qty <= 0) {
+                              setNewItem(prev => ({ ...prev, qty: 1 }));
+                            }
+                          }}
                           className="w-full h-9 bg-white border border-neutral-200 rounded-lg px-3 text-[13px] font-semibold outline-none focus:border-emerald-500 transition"
                         />
                       </div>
