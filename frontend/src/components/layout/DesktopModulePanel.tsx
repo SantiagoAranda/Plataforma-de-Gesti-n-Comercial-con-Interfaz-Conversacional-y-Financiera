@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Calculator, ReceiptText, Settings, ShoppingBag, Store, UserCircle } from "lucide-react";
+import { Building2, Calculator, ShoppingBag } from "lucide-react";
 
 import ThreadItem from "@/src/components/chat/ThreadItem";
 import HomeAgenda from "@/src/components/home/HomeAgenda";
@@ -21,36 +21,38 @@ type ModuleItem = {
   icon: ReactNode;
 };
 
-type AccessItem = {
-  key: string;
-  href: string;
-  title: string;
-  subtitle: string;
-  icon: ReactNode;
-  accent: "blue" | "green" | "amber";
-};
-
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
 };
 
+function subscribeBusinessName(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function getBusinessNameSnapshot() {
+  if (typeof window === "undefined") return "Mi Negocio";
+  return localStorage.getItem("businessName")?.trim() || "Mi Negocio";
+}
+
+function getBusinessNameServerSnapshot() {
+  return "Mi Negocio";
+}
+
 export default function DesktopModulePanel() {
   const router = useRouter();
   const pathname = usePathname();
   const sidePanel = useDesktopSidePanel();
-  const [businessName, setBusinessName] = useState("Mi Negocio");
   const { summaries, loading, orders } = useHomeModuleSummaries();
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedBusinessName = localStorage.getItem("businessName");
-    if (storedBusinessName?.trim()) {
-      setBusinessName(storedBusinessName.trim());
-      return;
-    }
-  }, []);
+  const businessName = useSyncExternalStore(
+    subscribeBusinessName,
+    getBusinessNameSnapshot,
+    getBusinessNameServerSnapshot,
+  );
 
   const modules: ModuleItem[] = useMemo(
     () =>
@@ -67,53 +69,15 @@ export default function DesktopModulePanel() {
     [summaries],
   );
 
-  const accessItems: AccessItem[] = useMemo(
-    () => [
-      {
-        key: "MOVEMENTS",
-        href: "/movimientos",
-        title: "Movimientos",
-        subtitle: "Revisá y conciliá ingresos/egresos",
-        icon: <ReceiptText className="h-5 w-5" />,
-        accent: "amber",
-      },
-      {
-        key: "STORE",
-        href: "/tienda",
-        title: "Mi Tienda",
-        subtitle: "Catálogo y pedidos online",
-        icon: <Store className="h-5 w-5" />,
-        accent: "blue",
-      },
-      {
-        key: "SETTINGS",
-        href: "/configuracion",
-        title: "Configuración",
-        subtitle: "Preferencias y datos del negocio",
-        icon: <Settings className="h-5 w-5" />,
-        accent: "blue",
-      },
-      {
-        key: "PROFILE",
-        href: "/perfil",
-        title: "Perfil",
-        subtitle: "Tus datos y accesos",
-        icon: <UserCircle className="h-5 w-5" />,
-        accent: "green",
-      },
-    ],
-    [],
-  );
-
   return (
-    <aside className="hidden lg:flex h-screen w-[320px] flex-col border-r border-black/5 bg-white">
+    <aside className="hidden h-screen w-[320px] flex-col border-r border-black/5 bg-white lg:flex">
       <div className="border-b border-black/5 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[15px] font-semibold text-neutral-900">
             {businessName}
           </p>
           <p className="truncate text-[12px] font-medium text-neutral-500">
-            Módulos
+            Modulos
           </p>
         </div>
       </div>
@@ -127,10 +91,7 @@ export default function DesktopModulePanel() {
         {loading && modules.length === 0 && (
           <div>
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-[74px] animate-pulse px-4 py-3"
-              >
+              <div key={i} className="h-[74px] animate-pulse px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-full bg-neutral-100" />
                   <div className="min-w-0 flex-1 space-y-2">
@@ -158,26 +119,6 @@ export default function DesktopModulePanel() {
                 accent={mod.accent}
                 divider={false}
                 onClick={() => router.push(mod.href)}
-                className={isSelected ? "hover:bg-emerald-50/70" : undefined}
-              />
-            </div>
-          );
-        })}
-
-        {accessItems.map((item) => {
-          const isSelected = !!pathname?.startsWith(item.href);
-          return (
-            <div key={item.key}>
-              <ThreadItem
-                title={item.title}
-                preview={item.subtitle}
-                time=""
-                active={false}
-                selected={isSelected}
-                icon={item.icon}
-                accent={item.accent}
-                divider={false}
-                onClick={() => router.push(item.href)}
                 className={isSelected ? "hover:bg-emerald-50/70" : undefined}
               />
             </div>
