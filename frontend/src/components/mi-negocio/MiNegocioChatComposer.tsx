@@ -73,7 +73,7 @@ export function MiNegocioChatComposer({
   }, [description, isOpen]);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4">
+    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {/* EXPANDABLE CONTENT */}
@@ -91,10 +91,10 @@ export function MiNegocioChatComposer({
               <button
                 type="button"
                 onClick={onToggle}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 self-center"
                 aria-label={isOpen ? "Cancelar" : "Nuevo item"}
               >
-                {isOpen ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                {isOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               </button>
 
               <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-3 ring-1 ring-neutral-200">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Plus, Trash2, Send, Search } from "lucide-react";
+import { X, Plus, Trash2, Send, Search, Paperclip } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
@@ -20,6 +20,10 @@ type BusinessItem = {
   price: number;
   type: "PRODUCT" | "SERVICE";
   durationMinutes?: number;
+};
+
+type ApiBusinessItem = Omit<BusinessItem, "price"> & {
+  price: number | string;
 };
 
 function formatMoney(n: number) {
@@ -74,7 +78,7 @@ export default function SalesChatComposer({
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
-  const [newItem, setNewItem] = useState<{itemId: string, qty: number}>({itemId: "", qty: 1});
+  const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
 
   const fetchItems = async () => {
     try {
@@ -83,8 +87,8 @@ export default function SalesChatComposer({
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
-      const data = await res.json();
-      setBusinessItems(data.map((i: any) => ({ ...i, price: Number(i.price) })));
+      const data = (await res.json()) as ApiBusinessItem[];
+      setBusinessItems(data.map((i) => ({ ...i, price: Number(i.price) })));
     } catch (err) {
       console.error("Error fetching items", err);
     }
@@ -133,7 +137,7 @@ export default function SalesChatComposer({
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty,
+        qty: newItem.qty === "" ? 1 : newItem.qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -166,7 +170,7 @@ export default function SalesChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4">
+    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
@@ -273,7 +277,23 @@ export default function SalesChatComposer({
                           type="number"
                           min="1"
                           value={newItem.qty}
-                          onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "") {
+                              setNewItem(prev => ({ ...prev, qty: "" }));
+                              return;
+                            }
+                            const num = parseInt(val, 10);
+                            if (!isNaN(num)) {
+                              setNewItem(prev => ({ ...prev, qty: num }));
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          onBlur={() => {
+                            if (newItem.qty === "" || newItem.qty <= 0) {
+                              setNewItem(prev => ({ ...prev, qty: 1 }));
+                            }
+                          }}
                           className="w-full h-9 bg-white border border-neutral-200 rounded-lg px-3 text-[13px] font-semibold outline-none focus:border-emerald-500 transition"
                         />
                       </div>
@@ -321,17 +341,17 @@ export default function SalesChatComposer({
           )}
 
           {/* Bottom Bar */}
-          <div className="relative z-20 rounded-[28px] bg-white p-2 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] ring-1 ring-black/5">
+          <div className="relative z-20 rounded-[28px] bg-white p-2 shadow-[0_-6px_24px_rgba(15,23,42,0.10)] ring-1 ring-slate-200/80">
             <div className="flex items-end gap-2">
               <button
                 type="button"
                 onClick={expanded ? onCancelComposer : onOpenComposer}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 focus:outline-none"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-400 transition hover:bg-slate-50 focus:outline-none"
               >
-                {expanded ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+                {expanded ? <X className="h-5 w-5" /> : <Paperclip className="h-5 w-5" />}
               </button>
 
-              <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-3 ring-1 ring-neutral-200">
+              <div className="min-h-11 flex-1 rounded-[22px] bg-slate-50 px-4 py-3 ring-1 ring-slate-100">
                 {expanded ? (
                   <div className="flex items-center justify-between w-full h-full pt-0.5">
                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
@@ -344,8 +364,8 @@ export default function SalesChatComposer({
                       type="text"
                       value={searchValue}
                       onChange={(e) => onSearchChange(e.target.value)}
-                      placeholder="Buscar ventas..."
-                      className="w-full border-none bg-transparent text-[13px] text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
+                      placeholder="Buscar por cliente o ID..."
+                      className="w-full border-none bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
                     />
                   </div>
                 )}
@@ -353,7 +373,7 @@ export default function SalesChatComposer({
 
               <button
                 type="button"
-                onClick={expanded ? handleSave : undefined}
+                onClick={expanded ? handleSave : onOpenComposer}
                 disabled={expanded && items.length === 0}
                 className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full shadow-sm transition ${
                   expanded && items.length === 0 
@@ -361,7 +381,7 @@ export default function SalesChatComposer({
                     : "bg-emerald-500 text-white hover:bg-emerald-600 focus:outline-none"
                 }`}
               >
-                {expanded ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+                {expanded ? <Send className="h-4 w-4" /> : <Plus className="h-5 w-5" />}
               </button>
             </div>
           </div>

@@ -19,6 +19,7 @@ import {
   timeToMinutes,
   minutesToTime,
 } from "@/src/lib/itemHelpers";
+import { getItemBadges } from "@/src/lib/itemBadges";
 import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
@@ -36,10 +37,16 @@ export default function MiNegocioPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const shouldStickToBottomRef = useRef(true);
+  const isInitialLoadRef = useRef(true);
 
   const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
+  const [badgeText1, setBadgeText1] = useState("");
+  const [badgeColor1, setBadgeColor1] = useState("#ef4444");
+  const [badgeText2, setBadgeText2] = useState("");
+  const [badgeColor2, setBadgeColor2] = useState("#ef4444");
   const [price, setPrice] = useState("");
   const [priceDisplay, setPriceDisplay] = useState("");
   const [description, setDescription] = useState("");
@@ -98,6 +105,10 @@ export default function MiNegocioPage() {
 
   const resetForm = useCallback(() => {
     setName("");
+    setBadgeText1("");
+    setBadgeColor1("#ef4444");
+    setBadgeText2("");
+    setBadgeColor2("#ef4444");
     setPrice("");
     setPriceDisplay("");
     setDescription("");
@@ -137,6 +148,13 @@ export default function MiNegocioPage() {
 
     setType(item.type);
     setName(item.name);
+
+    const badges = getItemBadges(item);
+    setBadgeText1(badges[0]?.text ?? "");
+    setBadgeColor1(badges[0]?.color ?? "#ef4444");
+    setBadgeText2(badges[1]?.text ?? "");
+    setBadgeColor2(badges[1]?.color ?? "#ef4444");
+
     setPrice(String(item.price));
     setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
     setDescription(item.description ?? "");
@@ -215,10 +233,8 @@ export default function MiNegocioPage() {
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    const end = messagesEndRef.current;
-
-    if (end) {
-      end.scrollIntoView({ behavior, block: "end" });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: "end" });
       return;
     }
 
@@ -234,14 +250,19 @@ export default function MiNegocioPage() {
   }, []);
 
   useEffect(() => {
-    if (!loading && items.length > 0) {
-      const timer = setTimeout(() => {
-        scrollToBottom("auto");
-      }, 100);
+    if (loading) return;
+    if (!items.length) return;
 
-      return () => clearTimeout(timer);
+    if (isInitialLoadRef.current) {
+      scrollToBottom("auto");
+      isInitialLoadRef.current = false;
+      return;
     }
-  }, [loading, items.length, scrollToBottom]);
+
+    if (shouldStickToBottomRef.current) {
+      scrollToBottom("smooth");
+    }
+  }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
     const errors: FormErrors = {};
@@ -268,15 +289,32 @@ export default function MiNegocioPage() {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : []
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : []
+          )
           : [];
+
+      const cleanedBadgeText1 = badgeText1.trim();
+      const cleanedBadgeColor1 = badgeColor1.trim();
+      const cleanedBadgeText2 = badgeText2.trim();
+      const cleanedBadgeColor2 = badgeColor2.trim();
+
+      const nextBadges = [
+        cleanedBadgeText1
+          ? { text: cleanedBadgeText1, color: cleanedBadgeColor1 || "#ef4444" }
+          : null,
+        cleanedBadgeText2
+          ? { text: cleanedBadgeText2, color: cleanedBadgeColor2 || "#ef4444" }
+          : null,
+      ].filter(Boolean) as Array<{ text: string; color: string }>;
+
+      const finalBadgeText = nextBadges[0]?.text ?? null;
+      const finalBadgeColor = nextBadges[0]?.color ?? null;
 
       const body = {
         type,
@@ -285,6 +323,9 @@ export default function MiNegocioPage() {
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? duration : null,
         schedule,
+        badges: nextBadges.length ? nextBadges : null,
+        badgeText: finalBadgeText,
+        badgeColor: finalBadgeColor || (finalBadgeText ? "#ef4444" : null),
       };
 
       let savedItem: Item;
@@ -352,6 +393,8 @@ export default function MiNegocioPage() {
 
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
+      shouldStickToBottomRef.current = true;
+
       setToast({
         message: editingItem ? "Item actualizado" : "Item creado",
         type: "success",
@@ -387,10 +430,16 @@ export default function MiNegocioPage() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    setShowScrollBottom(scrollTop + clientHeight < scrollHeight - 400);
-  };
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom < 120;
+
+    shouldStickToBottomRef.current = nearBottom;
+    setShowScrollBottom(!nearBottom);
+  }, []);
 
   const groupedItems = useMemo(() => {
     const groups: { dateLabel: string; items: Item[] }[] = [];
@@ -423,7 +472,7 @@ export default function MiNegocioPage() {
   }, [filteredItems, visibleCount]);
 
   return (
-    <div className="flex flex-col h-screen bg-neutral-100">
+    <div className="flex flex-col min-h-screen bg-neutral-100 lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
         <SelectionActionBar
           visible
@@ -528,6 +577,14 @@ export default function MiNegocioPage() {
           setType={setType}
           name={name}
           setName={setName}
+          badgeText1={badgeText1}
+          setBadgeText1={setBadgeText1}
+          badgeColor1={badgeColor1}
+          setBadgeColor1={setBadgeColor1}
+          badgeText2={badgeText2}
+          setBadgeText2={setBadgeText2}
+          badgeColor2={badgeColor2}
+          setBadgeColor2={setBadgeColor2}
           priceDisplay={priceDisplay}
           setPriceDisplay={setPriceDisplay}
           setPrice={setPrice}
@@ -607,11 +664,10 @@ export default function MiNegocioPage() {
 
       {toast && (
         <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${
-            toast.type === "success"
-              ? "bg-green-600 shadow-green-100"
-              : "bg-red-600 shadow-red-100"
-          }`}
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success"
+            ? "bg-green-600 shadow-green-100"
+            : "bg-red-600 shadow-red-100"
+            }`}
         >
           {toast.message}
         </div>

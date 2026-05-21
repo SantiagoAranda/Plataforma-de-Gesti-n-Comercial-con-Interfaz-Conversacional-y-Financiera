@@ -33,10 +33,10 @@ function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
         onSelect={onSelect}
         onOpen={onOpen}
         disableOpenOnClick={true}
-        className="ml-auto max-w-[85%] overflow-hidden flex flex-col min-h-[140px]"
+        className="ml-auto max-w-[85%] lg:max-w-[460px] overflow-hidden flex flex-col min-h-[140px]"
       >
         {(currentImages.length > 0) && (
-          <div className="aspect-[4/3] w-full overflow-hidden border-b border-neutral-100 bg-neutral-50 shrink-0">
+          <div className="aspect-[4/3] w-full overflow-hidden border-b border-neutral-100 bg-neutral-50 shrink-0 lg:aspect-auto lg:h-[220px]">
             <ItemImageViewer
               images={currentImages}
               imageCount={imageCount}

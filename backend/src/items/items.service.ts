@@ -9,6 +9,21 @@ import { CreateItemDto } from "./dto/create-item.dto";
 export class ItemsService {
   constructor(private prisma: PrismaService) {}
 
+  private normalizeBadges(input: any) {
+    if (!Array.isArray(input)) return [];
+    return input
+      .map((b) => ({
+        text: typeof b?.text === "string" ? b.text.trim() : "",
+        color: typeof b?.color === "string" ? b.color.trim() : "",
+      }))
+      .filter((b) => b.text.length > 0)
+      .map((b) => ({
+        text: b.text,
+        color: b.color || "#ef4444",
+      }))
+      .slice(0, 2);
+  }
+
   private mapItemWithSchedule<T extends { scheduleWindows?: any[] }>(item: T) {
     const { scheduleWindows, ...rest } = item as T & { scheduleWindows?: any[] };
     return {
@@ -27,6 +42,26 @@ export class ItemsService {
         console.log(`[ItemsService] Creating item: "${dto.name}"`);
         console.log(`[ItemsService] Name Hex: ${Buffer.from(dto.name).toString('hex')}`);
 
+        const cleanedBadges = this.normalizeBadges((dto as any).badges);
+
+        const cleanedBadgeText = dto.badgeText?.trim() ?? "";
+        const legacyBadgeText = cleanedBadgeText ? cleanedBadgeText : null;
+        const cleanedBadgeColor = dto.badgeColor?.trim() ?? "";
+        const legacyBadgeColor = legacyBadgeText
+          ? (cleanedBadgeColor ? cleanedBadgeColor : "#ef4444")
+          : null;
+
+        const nextBadges = [...cleanedBadges];
+        if (legacyBadgeText) {
+          const legacy = { text: legacyBadgeText, color: legacyBadgeColor ?? "#ef4444" };
+          const exists = nextBadges.some(
+            (b) => b.text.toUpperCase() === legacy.text.toUpperCase() && b.color.toLowerCase() === legacy.color.toLowerCase()
+          );
+          if (!exists) nextBadges.unshift(legacy);
+        }
+        const finalBadges = nextBadges.slice(0, 2);
+        const firstBadge = finalBadges[0] ?? null;
+
         const item = await tx.item.create({
           data: {
             id: dto.id,
@@ -35,6 +70,9 @@ export class ItemsService {
             name: dto.name,
             price: dto.price,
             description: dto.description?.trim() || null,
+            badgeText: firstBadge?.text ?? legacyBadgeText,
+            badgeColor: firstBadge?.color ?? legacyBadgeColor,
+            badges: finalBadges.length ? finalBadges : null,
             durationMinutes: dto.durationMinutes,
           },
         });
@@ -99,6 +137,9 @@ export class ItemsService {
         status: true,
         createdAt: true,
         updatedAt: true,
+        badgeText: true,
+        badgeColor: true,
+        badges: true,
         images: {
           take: 1,
           orderBy: { order: 'asc' },
@@ -124,6 +165,9 @@ export class ItemsService {
           status: true,
           description: true,
           durationMinutes: true,
+          badgeText: true,
+          badgeColor: true,
+          badges: true,
           createdAt: true,
           updatedAt: true,
           _count: {
@@ -191,6 +235,41 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
     throw new BadRequestException("durationMinutes is required for SERVICE");
   }
 
+  const hasBadgeTextField = dto.badgeText !== undefined;
+  const hasBadgeColorField = dto.badgeColor !== undefined;
+  const hasBadgesField = (dto as any).badges !== undefined;
+
+  let nextBadgeText: string | null | undefined = undefined;
+  let nextBadgeColor: string | null | undefined = undefined;
+  let nextBadges: any = undefined;
+
+  if (hasBadgeTextField) {
+    const cleanedText = (dto.badgeText ?? "").trim();
+    const finalText = cleanedText ? cleanedText : null;
+
+    const cleanedColor =
+      hasBadgeColorField ? (dto.badgeColor ?? "").trim() : (existing.badgeColor ?? "").trim();
+
+    nextBadgeText = finalText;
+    nextBadgeColor = finalText
+      ? (cleanedColor ? cleanedColor : "#ef4444")
+      : null;
+  } else if (hasBadgeColorField) {
+    const cleanedColor = (dto.badgeColor ?? "").trim();
+    const hasExistingText = (existing.badgeText ?? "").trim().length > 0;
+    nextBadgeColor = hasExistingText
+      ? (cleanedColor ? cleanedColor : "#ef4444")
+      : (cleanedColor || null);
+  }
+
+  if (hasBadgesField) {
+    const cleaned = this.normalizeBadges((dto as any).badges);
+    nextBadges = cleaned.length ? cleaned : null;
+    // mantener compatibilidad legacy: primer badge
+    nextBadgeText = cleaned[0]?.text ?? null;
+    nextBadgeColor = cleaned[0]?.color ?? null;
+  }
+
   return this.prisma.$transaction(async (tx) => {
     await tx.item.update({
       where: { id },
@@ -199,6 +278,9 @@ async update(businessId: string, id: string, dto: UpdateItemDto) {
         name: dto.name,
         price: dto.price,
         description: dto.description === undefined ? undefined : (dto.description?.trim() || null),
+        badgeText: (hasBadgesField || hasBadgeTextField) ? nextBadgeText : undefined,
+        badgeColor: (hasBadgesField || hasBadgeTextField || hasBadgeColorField) ? nextBadgeColor : undefined,
+        badges: hasBadgesField ? nextBadges : undefined,
         durationMinutes:
           dto.durationMinutes === undefined && dto.type === undefined ? undefined : nextDuration,
       },
