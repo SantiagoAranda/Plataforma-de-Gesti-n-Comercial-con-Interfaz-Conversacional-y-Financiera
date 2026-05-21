@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, Filter } from "lucide-react";
+import { AlertTriangle, CalendarDays, Filter, ShoppingBag, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -15,10 +14,10 @@ import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, cancelSale, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
-import { Plus } from "lucide-react";
+import { formatBusinessDateTime, getBusinessDayKey } from "@/src/lib/businessDate";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
@@ -47,7 +46,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     customerWhatsapp: order.customerWhatsapp,
     paymentMethod: order.paymentMethod,
     type: order.type,
-    status: order.status as any,
+    status: order.status as Sale["status"],
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
@@ -56,8 +55,21 @@ function mapOrderToSale(order: ApiOrder): Sale {
   };
 }
 
+function getTodayCalendarLabel() {
+  return `HOY, ${formatBusinessDateTime(new Date(), "es-AR", {
+    day: "2-digit",
+    month: "short",
+  }).toUpperCase().replace(".", "")}`;
+}
+
+function formatDisplayMoney(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value ?? 0);
+}
+
 export default function VentaPage() {
-  const router = useRouter(); // Initialized useRouter
   const [q, setQ] = useState("");
 
   const [sales, setSales] = useState<Sale[]>([]);
@@ -161,9 +173,28 @@ export default function VentaPage() {
 
     return result.filter((s) => {
       if (s.customerName?.toLowerCase().includes(term)) return true;
+      if (s.id.toLowerCase().includes(term)) return true;
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
   }, [q, sales, filterStatus]);
+
+  const todayMetrics = useMemo(() => {
+    const todayKey = getBusinessDayKey(new Date());
+    const todaySales = sales.filter((sale) => {
+      try {
+        return getBusinessDayKey(sale.createdAt) === todayKey;
+      } catch {
+        return false;
+      }
+    });
+
+    return {
+      total: todaySales
+        .filter((sale) => sale.status === "CERRADO")
+        .reduce((acc, sale) => acc + (sale.total ?? 0), 0),
+      transactions: todaySales.length,
+    };
+  }, [sales]);
 
   useEffect(() => {
     if (!loading && sales.length > 0 && !initialScrollDone.current) {
@@ -289,12 +320,18 @@ export default function VentaPage() {
       await loadOrders();
       setIsCreateOpen(false);
       setPendingSmoothScroll(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error creating sale:", error);
-      console.error("Status:", error?.status);
-      console.error("Details:", error?.details);
-      console.error("Raw:", error?.raw);
-      toast.error(error?.message || "Error al registrar la venta");
+      const apiError = error as {
+        status?: unknown;
+        details?: unknown;
+        raw?: unknown;
+        message?: string;
+      };
+      console.error("Status:", apiError.status);
+      console.error("Details:", apiError.details);
+      console.error("Raw:", apiError.raw);
+      toast.error(apiError.message || "Error al registrar la venta");
     }
   };
 
@@ -427,7 +464,7 @@ export default function VentaPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-slate-100">
       <div className="shrink-0">
         {selectedSale ? (
           <SelectionActionBar
@@ -476,8 +513,54 @@ export default function VentaPage() {
             </div>
           )}
 
+          {!loading && !error && (
+            <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
+                  <div className="p-2 bg-emerald-50 rounded-lg mb-3">
+                    <WalletCards className="h-4 w-4 text-emerald-500" />
+                  </div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                    Total ventas
+                  </span>
+                  <span className="text-xl font-black text-slate-900 tabular-nums">
+                    ${formatDisplayMoney(todayMetrics.total)}
+                  </span>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
+                  <div className="p-2 bg-indigo-50 rounded-lg mb-3">
+                    <ShoppingBag className="h-4 w-4 text-indigo-500" />
+                  </div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                    Transacciones
+                  </span>
+                  <span className="text-xl font-black text-slate-900">
+                    {todayMetrics.transactions} realizadas
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-6 px-5 py-5 bg-white rounded-2xl shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-8 w-8 place-items-center rounded-xl bg-slate-50 border border-slate-100">
+                    <CalendarDays className="h-4 w-4 text-slate-400" />
+                  </div>
+                  <div className="flex min-w-0 flex-col">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                      Calendario
+                    </span>
+                    <span className="text-xs font-black text-slate-700 uppercase tracking-wide">
+                      {getTodayCalendarLabel()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
           {!loading && !error && filtered.length === 0 && (
-            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 mt-10 h-32">
+            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 h-32">
               No hay ventas {filterStatus !== "ALL" ? "con este estado" : "todavía"}
             </div>
           )}
@@ -513,6 +596,13 @@ export default function VentaPage() {
           setDetailsSale(null);
         }}
         confirming={confirmingSaleId === detailsSale?.id}
+      />
+
+      <SalesFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        status={filterStatus}
+        onChange={setFilterStatus}
       />
 
       <SalesChatComposer
