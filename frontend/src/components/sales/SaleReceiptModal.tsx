@@ -3,6 +3,7 @@
 import { useRef, useState, type RefObject } from "react";
 import { AlertTriangle, Download, Loader2, Printer, ReceiptText, Share2, X } from "lucide-react";
 import toast from "react-hot-toast";
+import html2canvas from "html2canvas-pro";
 
 import type { Sale } from "@/src/types/sales";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
@@ -166,12 +167,23 @@ function SaleReceiptView({
         className="max-h-[86dvh] overflow-y-auto bg-white"
       >
         <header className="px-6 pb-5 pt-6 text-center">
-          {business.logoUrl ? (
+          {business.logoUrl && !isExporting ? (
+            <img
+              src={business.logoUrl}
+              crossOrigin="anonymous"
+              alt={business.name}
+              className="mx-auto mb-3 h-16 w-16 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 object-cover"
+            />
+          ) : business.logoUrl && isExporting ? (
             <div
-              className="mx-auto mb-3 h-16 w-16 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 bg-cover bg-center"
-              style={{ backgroundImage: `url(${business.logoUrl})` }}
-              aria-label={business.name}
-              role="img"
+              className="mx-auto mb-3 border"
+              style={{
+                backgroundColor: "#e2e8f0",
+                width: "64px",
+                height: "64px",
+                borderRadius: "1rem",
+                borderColor: "#f1f5f9",
+              }}
             />
           ) : (
             <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
@@ -424,66 +436,27 @@ export default function SaleReceiptModal({
     if (!source) return null;
 
     setIsExporting(true);
+    // Dar un breve respiro a React para renderizar el DOM sin elementos externos
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     try {
-      const rect = source.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(source.scrollHeight);
-      const clone = source.cloneNode(true) as HTMLElement;
+      const canvas = await html2canvas(source, {
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
 
-      copyComputedStyles(source, clone);
-      clone.style.width = `${width}px`;
-      clone.style.height = `${height}px`;
-      clone.style.maxHeight = "none";
-      clone.style.overflow = "visible";
-      clone.style.background = "#ffffff";
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/png", 1);
+      });
+      if (!blob) throw new Error("No se pudo generar la imagen del ticket");
 
-      const serialized = new XMLSerializer().serializeToString(clone);
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-          <foreignObject width="100%" height="100%">
-            <div xmlns="http://www.w3.org/1999/xhtml">${serialized}</div>
-          </foreignObject>
-        </svg>
-      `;
-      const svgUrl = URL.createObjectURL(
-        new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
-      );
-
-      try {
-        const image = new Image();
-        image.decoding = "async";
-        const loaded = new Promise<void>((resolve, reject) => {
-          image.onload = () => resolve();
-          image.onerror = () => reject(new Error("No se pudo generar la imagen del ticket"));
-        });
-        image.src = svgUrl;
-        await loaded;
-
-        const scale = Math.min(window.devicePixelRatio || 2, 3);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.ceil(width * scale);
-        canvas.height = Math.ceil(height * scale);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas no disponible");
-
-        ctx.scale(scale, scale);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(image, 0, 0, width, height);
-
-        const blob = await new Promise<Blob | null>((resolve) => {
-          canvas.toBlob(resolve, "image/png", 1);
-        });
-        if (!blob) throw new Error("No se pudo exportar el ticket");
-
-        return new File([blob], `ticket-venta-${sale.id}.png`, {
-          type: "image/png",
-        });
-      } finally {
-        URL.revokeObjectURL(svgUrl);
-      }
+      return new File([blob], `ticket-venta-${sale.id}.png`, {
+        type: "image/png",
+      });
     } catch (error) {
-      console.error(error);
+      console.error("Error crítico en descarga/exportación:", error);
       toast.error("No se pudo generar el ticket.");
       return null;
     } finally {
