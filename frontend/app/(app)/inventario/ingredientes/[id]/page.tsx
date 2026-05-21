@@ -11,6 +11,7 @@ import { deactivateIngredient, getIngredient, type Ingredient } from "@/src/serv
 import { MovementForm } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
+import { formatIngredientUnit, formatUnit } from "@/src/components/inventory/unitLabels";
 
 export default function IngredienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -59,6 +60,9 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
     }
   };
 
+  const unitLabel = ingredient ? formatIngredientUnit(ingredient) : "";
+  const purchaseUnitLabel = ingredient ? formatUnit(ingredient.purchaseUnit) : "";
+
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
@@ -89,7 +93,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                     </p>
                     <h2 className="mt-1 truncate text-lg font-bold text-neutral-900">{ingredient.name}</h2>
                     <p className="mt-1 text-xs font-medium text-neutral-400">
-                      Consumo: {ingredient.consumptionUnit} &middot; Compra: {ingredient.purchaseUnit}
+                      Consumo: {unitLabel} &middot; Compra: {purchaseUnitLabel}
                     </p>
                   </div>
 
@@ -107,7 +111,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                   <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock</p>
                     <p className="mt-1 text-sm font-black text-neutral-900">
-                      {formatMoney(parseNumber(ingredient.currentStock))} {ingredient.consumptionUnit}
+                      {formatMoney(parseNumber(ingredient.currentStock))} {unitLabel}
                     </p>
                     <p className="mt-1 text-[11px] font-medium text-neutral-400">Solo v&iacute;a movimientos</p>
                   </div>
@@ -123,7 +127,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                 <div className="mt-3 rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock mínimo</p>
                   <p className="mt-1 text-sm font-black text-neutral-900">
-                    {formatMoney(parseNumber(ingredient.minStock ?? 0))} {ingredient.consumptionUnit}
+                    {formatMoney(parseNumber(ingredient.minStock ?? 0))} {unitLabel}
                   </p>
                   <p className="mt-1 text-[11px] font-medium text-neutral-400">
                     Si el stock cae por debajo, se marca como “Stock bajo”.

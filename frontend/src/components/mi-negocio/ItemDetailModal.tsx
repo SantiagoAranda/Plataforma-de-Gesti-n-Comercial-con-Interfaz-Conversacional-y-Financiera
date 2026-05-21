@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { X, Edit, Trash2, Tag, Clock, Calendar, Info } from "lucide-react";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney } from "@/src/lib/formatters";
@@ -26,6 +27,7 @@ interface Item {
   badgeColor?: string | null;
   images?: { id: string; url: string; order: number }[];
   status?: string;
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | null;
 }
 
 interface ItemDetailModalProps {
@@ -34,9 +36,27 @@ interface ItemDetailModalProps {
   onClose: () => void;
   onEdit: (item: any) => void;
   onDelete: (item: any) => void;
+  recipeLineCount?: number;
 }
 
-export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete }: ItemDetailModalProps) {
+function inventoryMeta(item: Item, recipeLineCount = 0) {
+  if (item.type !== "PRODUCT" || item.inventoryMode === "NONE" || !item.inventoryMode) {
+    return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600", cta: null as null | string, href: null as null | string };
+  }
+  if (item.inventoryMode === "SIMPLE") {
+    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800", cta: "Cargar stock", href: "/inventario/ingredientes" };
+  }
+  const configured = recipeLineCount > 0;
+  return {
+    label: configured ? "Receta configurada" : "Receta pendiente",
+    tone: configured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800",
+    cta: "Configurar receta",
+    href: `/inventario/recetas?itemId=${encodeURIComponent(item.id)}`,
+  };
+}
+
+export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete, recipeLineCount = 0 }: ItemDetailModalProps) {
+  const router = useRouter();
   const [fullItem, setFullItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -67,6 +87,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
   
   const activeDays = displayItem.type === "SERVICE" ? formatActiveDaysCompact(displayItem.schedule) : "";
   const groupedSchedule = displayItem.type === "SERVICE" ? groupScheduleByDay(displayItem.schedule) : [];
+  const inventory = inventoryMeta(displayItem, recipeLineCount);
 
   return (
     <ItemPanelLayout
@@ -121,7 +142,26 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete 
                 <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Precio</span>
                 <span className="text-lg font-black text-emerald-600">${formatMoney(item.price)}</span>
               </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Inventario</span>
+                <span className={`inline-flex rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
+                  {inventory.label}
+                </span>
+              </div>
             </div>
+
+            {inventory.cta && inventory.href ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(inventory.href!);
+                }}
+                className="h-11 w-full rounded-2xl bg-neutral-900 text-xs font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
+              >
+                {inventory.cta}
+              </button>
+            ) : null}
 
             {displayItem.type === "SERVICE" && (
               <div className="pt-3 border-t border-neutral-50 space-y-4">

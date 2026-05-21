@@ -177,6 +177,7 @@ export default function IngredientesPage() {
                 consumptionUnit: values.consumptionUnit,
                 purchaseUnit: values.purchaseUnit,
                 purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                customUnitLabel: values.customUnitLabel,
                 minStock: values.minStock,
               });
 

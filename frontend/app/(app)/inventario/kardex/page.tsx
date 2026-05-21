@@ -20,6 +20,7 @@ import {
   type InventoryChatMenuAction,
 } from "@/src/components/inventory/InventoryChatActionBar";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
+import { formatUnit } from "@/src/components/inventory/unitLabels";
 
 function KardexPageContent() {
   const router = useRouter();
@@ -206,7 +207,7 @@ function KardexPageContent() {
 
               {selectedIngredient && (
                 <p className="mt-2 text-xs font-medium text-neutral-400">
-                  Unidad: {selectedIngredient.consumptionUnit}
+                  Unidad: {formatUnit(selectedIngredient.consumptionUnit)}
                 </p>
               )}
 
@@ -301,7 +302,7 @@ function KardexPageContent() {
               <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingrediente</p>
               <p className="mt-1 text-sm font-black text-neutral-900">{selectedIngredient.name}</p>
               <p className="mt-1 text-xs font-medium text-neutral-500">
-                Unidad: {selectedIngredient.consumptionUnit}
+                Unidad: {formatUnit(selectedIngredient.consumptionUnit)}
               </p>
             </div>
           )}

@@ -3,6 +3,7 @@ export type ComposedIngredient = {
   name: string;
   quantityRequired: number;
   consumptionUnit?: string;
+  customUnitLabel?: string | null;
   isOptional: boolean;
   currentStock?: number | string;
   averageCost?: number | string;

@@ -49,9 +49,10 @@ export class IngredientsService {
         data: {
           businessId,
           name: this.normalizeText(dto.name),
-          consumptionUnit: this.normalizeText(dto.consumptionUnit),
-          purchaseUnit: this.normalizeText(dto.purchaseUnit),
+          consumptionUnit: dto.consumptionUnit,
+          purchaseUnit: dto.purchaseUnit,
           purchaseToConsumptionFactor,
+          customUnitLabel: dto.customUnitLabel?.trim() || null,
           minStock,
         },
       });
@@ -63,26 +64,30 @@ export class IngredientsService {
   async findAll(businessId: string, query: ListIngredientsQueryDto) {
     const search = query.search?.trim();
 
-    return this.prisma.ingredient.findMany({
+    const ingredients = await this.prisma.ingredient.findMany({
       where: {
         businessId,
         ...(query.status ? { status: query.status } : {}),
         ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
       },
+      include: { _count: { select: { inventoryMovements: true } } },
       orderBy: { name: 'asc' },
     });
+
+    return ingredients.map((ingredient) => this.withMovementFlags(ingredient));
   }
 
   async findOne(businessId: string, id: string) {
     const ingredient = await this.prisma.ingredient.findFirst({
       where: { id, businessId },
+      include: { _count: { select: { inventoryMovements: true } } },
     });
 
     if (!ingredient) {
       throw new NotFoundException('Ingredient not found');
     }
 
-    return ingredient;
+    return this.withMovementFlags(ingredient);
   }
 
   async update(businessId: string, id: string, dto: UpdateIngredientDto) {
@@ -110,11 +115,15 @@ export class IngredientsService {
           consumptionUnit:
             dto.consumptionUnit === undefined
               ? undefined
-              : this.normalizeText(dto.consumptionUnit),
+              : dto.consumptionUnit,
           purchaseUnit:
             dto.purchaseUnit === undefined
               ? undefined
-              : this.normalizeText(dto.purchaseUnit),
+              : dto.purchaseUnit,
+          customUnitLabel:
+            dto.customUnitLabel === undefined
+              ? undefined
+              : dto.customUnitLabel.trim() || null,
           purchaseToConsumptionFactor:
             dto.purchaseToConsumptionFactor === undefined
               ? undefined
@@ -135,5 +144,19 @@ export class IngredientsService {
       where: { id },
       data: { status: 'INACTIVE' },
     });
+  }
+
+  private withMovementFlags<T extends { _count?: { inventoryMovements?: number } }>(
+    ingredient: T,
+  ) {
+    const movementCount = ingredient._count?.inventoryMovements ?? 0;
+    const { _count, ...rest } = ingredient as T & {
+      _count?: { inventoryMovements?: number };
+    };
+    return {
+      ...rest,
+      hasMovements: movementCount > 0,
+      canCreateInitialInventory: movementCount === 0,
+    };
   }
 }

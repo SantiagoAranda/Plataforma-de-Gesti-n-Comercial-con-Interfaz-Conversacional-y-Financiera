@@ -1,18 +1,22 @@
 import { api } from "@/src/lib/api";
 
 export type IngredientStatus = "ACTIVE" | "INACTIVE";
+export type IngredientUnit = "UNIT" | "G" | "KG" | "ML" | "L";
 
 export type Ingredient = {
   id: string;
   businessId: string;
   name: string;
-  consumptionUnit: string;
-  purchaseUnit: string;
+  consumptionUnit: IngredientUnit;
+  purchaseUnit: IngredientUnit;
+  customUnitLabel?: string | null;
   purchaseToConsumptionFactor: string;
   minStock: string;
   status: IngredientStatus;
   currentStock: string;
   averageCost: string;
+  hasMovements?: boolean;
+  canCreateInitialInventory?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -74,9 +78,10 @@ export type InventoryKardexGlobalResult = {
 
 export type CreateIngredientDto = {
   name: string;
-  consumptionUnit: string;
-  purchaseUnit: string;
+  consumptionUnit: IngredientUnit;
+  purchaseUnit: IngredientUnit;
   purchaseToConsumptionFactor: string;
+  customUnitLabel?: string;
   minStock?: string;
 };
 

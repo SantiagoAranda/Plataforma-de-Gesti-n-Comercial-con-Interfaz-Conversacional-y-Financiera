@@ -13,6 +13,7 @@ import {
 } from "@/src/services/inventory";
 import { getErrorMessage } from "@/src/lib/errors";
 import { cn } from "@/src/lib/utils";
+import { formatIngredientUnit, formatUnit } from "@/src/components/inventory/unitLabels";
 
 export type MovementAction =
   | "INITIAL"
@@ -21,7 +22,7 @@ export type MovementAction =
   | "ADJUSTMENT_POSITIVE"
   | "ADJUSTMENT_NEGATIVE";
 
-const ACTIONS: Array<{ label: string; value: MovementAction }> = [
+const ALL_ACTIONS: Array<{ label: string; value: MovementAction }> = [
   { label: "Inicial", value: "INITIAL" },
   { label: "Compra", value: "PURCHASE" },
   { label: "Dev. compra", value: "PURCHASE_RETURN" },
@@ -50,7 +51,9 @@ function toDisplayNumber(value: string) {
 }
 
 export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
-  const [action, setAction] = useState<MovementAction>(initialAction ?? "PURCHASE");
+  const canCreateInitial = ingredient.canCreateInitialInventory ?? !ingredient.hasMovements;
+  const suggestedAction = canCreateInitial ? "INITIAL" : "PURCHASE";
+  const [action, setAction] = useState<MovementAction>(initialAction ?? suggestedAction);
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [purchaseQuantity, setPurchaseQuantity] = useState("");
@@ -69,9 +72,17 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
   const allowsReferenceId = action === "PURCHASE" || action === "PURCHASE_RETURN";
 
   useEffect(() => {
-    if (!initialAction) return;
-    setAction(initialAction);
-  }, [initialAction]);
+    const nextAction = initialAction ?? suggestedAction;
+    setAction(nextAction === "INITIAL" && !canCreateInitial ? "PURCHASE" : nextAction);
+  }, [initialAction, suggestedAction, canCreateInitial]);
+
+  const actions = useMemo(
+    () => ALL_ACTIONS.filter((item) => item.value !== "INITIAL" || canCreateInitial),
+    [canCreateInitial],
+  );
+
+  const consumptionUnitLabel = formatIngredientUnit(ingredient);
+  const purchaseUnitLabel = formatUnit(ingredient.purchaseUnit);
 
   const normalizedQuantity = useMemo(() => normalizeDecimalInput(quantity), [quantity]);
   const normalizedUnitCost = useMemo(() => normalizeDecimalInput(unitCost), [unitCost]);
@@ -224,12 +235,18 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
           </p>
         </div>
         <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-neutral-500">
-          {ingredient.consumptionUnit}
+          {consumptionUnitLabel}
         </span>
       </div>
 
+      {canCreateInitial ? (
+        <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[11px] font-semibold text-emerald-900">
+          Este insumo no tiene movimientos. La carga inicial aparece como primera acci&oacute;n sugerida.
+        </div>
+      ) : null}
+
       <div className="mt-4 flex rounded-full bg-neutral-100 p-1">
-        {ACTIONS.map((opt) => (
+        {actions.map((opt) => (
           <button
             key={opt.value}
             type="button"
@@ -249,7 +266,7 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
           <>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                Cantidad comprada ({ingredient.purchaseUnit})
+                Cantidad comprada ({purchaseUnitLabel})
               </label>
               <input
                 value={purchaseQuantity}
@@ -262,7 +279,7 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
 
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                Costo por {ingredient.purchaseUnit}
+                Costo por {purchaseUnitLabel}
               </label>
               <input
                 value={purchaseUnitCost}
@@ -275,9 +292,9 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
 
             <div className="col-span-2 rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-500">
               <p>
-                El sistema convierte esta compra a {ingredient.consumptionUnit} usando el factor configurado:{" "}
+                El sistema convierte esta compra a {consumptionUnitLabel} usando el factor configurado:{" "}
                 <span className="font-black text-neutral-700">
-                  1 {ingredient.purchaseUnit} = {ingredient.purchaseToConsumptionFactor} {ingredient.consumptionUnit}
+                  1 {purchaseUnitLabel} = {ingredient.purchaseToConsumptionFactor} {consumptionUnitLabel}
                 </span>
                 .
               </p>
@@ -285,14 +302,14 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                 <p className="mt-1">
                   Ingresarán aprox.{" "}
                   <span className="font-black text-neutral-700">
-                    {estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {ingredient.consumptionUnit}
+                    {estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {consumptionUnitLabel}
                   </span>
                   .
                 </p>
               )}
               {canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null && (
                 <p className="mt-1">
-                  Costo estimado por {ingredient.consumptionUnit}:{" "}
+                  Costo estimado por {consumptionUnitLabel}:{" "}
                   <span className="font-black text-neutral-700">
                     {estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 6 })}
                   </span>
@@ -305,7 +322,7 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
           <>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                Cantidad ({ingredient.consumptionUnit})
+                Cantidad ({consumptionUnitLabel})
               </label>
               <input
                 value={quantity}

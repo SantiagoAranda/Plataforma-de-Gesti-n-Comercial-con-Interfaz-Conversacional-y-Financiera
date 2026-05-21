@@ -3,15 +3,17 @@
 import { useMemo, useState } from "react";
 
 import { cn } from "@/src/lib/utils";
-import type { Ingredient, IngredientStatus } from "@/src/services/inventory";
+import type { Ingredient, IngredientStatus, IngredientUnit } from "@/src/services/inventory";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
+import { formatIngredientUnit, formatUnit, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
 
 type SubmitValues = {
   name: string;
-  consumptionUnit: string;
-  purchaseUnit: string;
+  consumptionUnit: IngredientUnit;
+  purchaseUnit: IngredientUnit;
   purchaseToConsumptionFactor: string;
+  customUnitLabel: string;
   minStock: string;
   status?: IngredientStatus;
 };
@@ -37,10 +39,13 @@ export function IngredientForm({
 }: Props) {
   const [name, setName] = useState(initial?.name ?? defaults?.name ?? "");
   const [consumptionUnit, setConsumptionUnit] = useState(
-    initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "",
+    initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "UNIT",
   );
   const [purchaseUnit, setPurchaseUnit] = useState(
-    initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "",
+    initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "UNIT",
+  );
+  const [customUnitLabel, setCustomUnitLabel] = useState(
+    initial?.customUnitLabel ?? defaults?.customUnitLabel ?? "",
   );
   const [factor, setFactor] = useState(
     initial?.purchaseToConsumptionFactor?.toString?.() ??
@@ -54,8 +59,8 @@ export function IngredientForm({
 
   const canSubmit = useMemo(() => {
     if (!name.trim()) return false;
-    if (!consumptionUnit.trim()) return false;
-    if (!purchaseUnit.trim()) return false;
+    if (!consumptionUnit) return false;
+    if (!purchaseUnit) return false;
 
     const normalizedFactor = factor.replace(",", ".").trim();
     if (!/^\d+(\.\d+)?$/.test(normalizedFactor)) return false;
@@ -79,9 +84,10 @@ export function IngredientForm({
         const normalizedMinStock = minStock.replace(",", ".").trim() || "0";
         void onSubmit({
           name: name.trim(),
-          consumptionUnit: consumptionUnit.trim(),
-          purchaseUnit: purchaseUnit.trim(),
+          consumptionUnit,
+          purchaseUnit,
           purchaseToConsumptionFactor: normalizedFactor,
+          customUnitLabel: customUnitLabel.trim(),
           minStock: normalizedMinStock,
           ...(mode === "edit" ? { status } : {}),
         });
@@ -93,7 +99,7 @@ export function IngredientForm({
           <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock</p>
             <p className="mt-1 text-sm font-black text-neutral-900">
-              {readonlyStock} {initial.consumptionUnit}
+              {readonlyStock} {formatIngredientUnit(initial)}
             </p>
             <p className="mt-1 text-[11px] font-medium text-neutral-400">Solo v&iacute;a movimientos</p>
           </div>
@@ -122,24 +128,49 @@ export function IngredientForm({
           <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
             Unidad consumo
           </label>
-          <input
+          <select
             value={consumptionUnit}
-            onChange={(e) => setConsumptionUnit(e.target.value)}
-            placeholder="Ej: g"
+            onChange={(e) => setConsumptionUnit(e.target.value as IngredientUnit)}
             className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
-          />
+          >
+            {INGREDIENT_UNIT_OPTIONS.map((unit) => (
+              <option key={unit.value} value={unit.value}>
+                {unit.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="space-y-2">
           <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
             Unidad compra
           </label>
-          <input
+          <select
             value={purchaseUnit}
-            onChange={(e) => setPurchaseUnit(e.target.value)}
-            placeholder="Ej: kg"
+            onChange={(e) => setPurchaseUnit(e.target.value as IngredientUnit)}
             className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
-          />
+          >
+            {INGREDIENT_UNIT_OPTIONS.map((unit) => (
+              <option key={unit.value} value={unit.value}>
+                {unit.label}
+              </option>
+            ))}
+          </select>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+          Label visual opcional
+        </label>
+        <input
+          value={customUnitLabel}
+          onChange={(e) => setCustomUnitLabel(e.target.value)}
+          placeholder="Ej: rodajas, paquetes, potes"
+          className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+        />
+        <p className="text-[11px] font-medium text-neutral-400">
+          Solo cambia c&oacute;mo se muestra la unidad. La unidad base sigue controlada.
+        </p>
       </div>
 
       <div className="space-y-2">
@@ -154,7 +185,7 @@ export function IngredientForm({
           className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
         />
         <p className="text-[11px] font-medium text-neutral-400">
-          Ejemplo: 1 {purchaseUnit || "kg"} = {factor || "1000"} {consumptionUnit || "g"}
+          Ejemplo: 1 {formatUnit(purchaseUnit)} = {factor || "1000"} {customUnitLabel.trim() || formatUnit(consumptionUnit)}
         </p>
       </div>
 

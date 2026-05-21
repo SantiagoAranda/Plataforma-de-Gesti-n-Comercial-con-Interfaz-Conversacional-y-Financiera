@@ -49,6 +49,14 @@ enum IngredientStatus {
   INACTIVE
 }
 
+enum IngredientUnit {
+  UNIT
+  G
+  KG
+  ML
+  L
+}
+
 enum InventoryMovementType {
   INVENTORY_INITIAL
   PURCHASE
@@ -237,10 +245,13 @@ model Ingredient {
   status IngredientStatus @default(ACTIVE)
 
   // Base unit used by recipes, Kardex, sale consumption, and currentStock.
-  consumptionUnit String @db.VarChar(20)
+  consumptionUnit IngredientUnit
 
   // Unit used when manually registering purchases or initial stock inputs.
-  purchaseUnit String @db.VarChar(20)
+  purchaseUnit IngredientUnit
+
+  // Optional user-facing unit label for business-specific wording.
+  customUnitLabel String?
 
   // Number of consumption units contained in one purchase unit.
   purchaseToConsumptionFactor Decimal @db.Decimal(20, 6)

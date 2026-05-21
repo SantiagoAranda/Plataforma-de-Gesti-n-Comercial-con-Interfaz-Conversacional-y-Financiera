@@ -1,7 +1,8 @@
 import { Transform } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
-import { IngredientStatus } from '@prisma/client';
+import { IngredientStatus, IngredientUnit } from '@prisma/client';
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
+import { normalizeIngredientUnit } from '../ingredient-unit.util';
 
 export class UpdateIngredientDto {
   @IsOptional()
@@ -14,14 +15,18 @@ export class UpdateIngredientDto {
   status?: IngredientStatus;
 
   @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  consumptionUnit?: string;
+  @Transform(({ value }) => normalizeIngredientUnit(value))
+  @IsEnum(IngredientUnit)
+  consumptionUnit?: IngredientUnit;
+
+  @IsOptional()
+  @Transform(({ value }) => normalizeIngredientUnit(value))
+  @IsEnum(IngredientUnit)
+  purchaseUnit?: IngredientUnit;
 
   @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  purchaseUnit?: string;
+  customUnitLabel?: string;
 
   @IsOptional()
   @IsString()

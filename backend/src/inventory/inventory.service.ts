@@ -65,16 +65,18 @@ export class InventoryService {
   constructor(private prisma: PrismaService) {}
 
   async registerInitial(businessId: string, dto: CreateInventoryInitialDto) {
-    return this.runInventoryTransaction((tx) =>
-      this.applyInventoryMovement(tx, businessId, {
+    return this.runInventoryTransaction(async (tx) => {
+      await this.assertCanCreateInitialInventory(tx, businessId, dto.ingredientId);
+
+      return this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
         type: 'INVENTORY_INITIAL',
         quantity: dto.quantity,
         unitCost: dto.unitCost,
         referenceType: 'MANUAL',
         detail: dto.detail ?? null,
-      }),
-    );
+      });
+    });
   }
 
   async registerPurchase(businessId: string, dto: CreateInventoryPurchaseDto) {
@@ -227,20 +229,28 @@ export class InventoryService {
         businessId,
         ...(query.status ? { status: query.status } : {}),
       },
+      include: { _count: { select: { inventoryMovements: true } } },
       orderBy: { name: 'asc' },
     });
 
-    return ingredients.map((ingredient) => ({
-      ...ingredient,
-      stockValue: this.decimal(ingredient.currentStock)
-        .mul(this.decimal(ingredient.averageCost))
-        .toDecimalPlaces(6),
-      outOfStock: this.decimal(ingredient.currentStock).lte(0),
-      lowStock:
-        this.decimal(ingredient.minStock ?? 0).gt(0) &&
-        this.decimal(ingredient.currentStock).gt(0) &&
-        this.decimal(ingredient.currentStock).lte(this.decimal(ingredient.minStock ?? 0)),
-    }));
+    return ingredients.map((ingredient) => {
+      const { _count, ...rest } = ingredient;
+      const movementCount = _count?.inventoryMovements ?? 0;
+
+      return {
+        ...rest,
+        stockValue: this.decimal(rest.currentStock)
+          .mul(this.decimal(rest.averageCost))
+          .toDecimalPlaces(6),
+        outOfStock: this.decimal(rest.currentStock).lte(0),
+        lowStock:
+          this.decimal(rest.minStock ?? 0).gt(0) &&
+          this.decimal(rest.currentStock).gt(0) &&
+          this.decimal(rest.currentStock).lte(this.decimal(rest.minStock ?? 0)),
+        hasMovements: movementCount > 0,
+        canCreateInitialInventory: movementCount === 0,
+      };
+    });
   }
 
   async expandItemRecipe(
@@ -693,6 +703,25 @@ export class InventoryService {
     }
 
     return ingredient;
+  }
+
+  private async assertCanCreateInitialInventory(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    ingredientId: string,
+  ) {
+    await this.loadIngredientOrThrow(tx, businessId, ingredientId);
+
+    const existingMovement = await tx.inventoryMovement.findFirst({
+      where: { businessId, ingredientId },
+      select: { id: true },
+    });
+
+    if (existingMovement) {
+      throw new ConflictException(
+        'Initial inventory can only be created before the first movement',
+      );
+    }
   }
 
   private calculateWeightedAverageCost(

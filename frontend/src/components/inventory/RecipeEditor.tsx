@@ -15,6 +15,7 @@ import {
   type RecipeLine,
 } from "@/src/services/inventory";
 import { cn } from "@/src/lib/utils";
+import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 
 type Props = {
   selectedItemId: string | null;
@@ -138,6 +139,10 @@ export function RecipeEditor({
 
   const ingredientName = (ingredientId: string) =>
     ingredients.find((i) => i.id === ingredientId)?.name ?? "Ingrediente";
+  const ingredientUnit = (ingredientId: string) => {
+    const ingredient = ingredients.find((i) => i.id === ingredientId);
+    return ingredient ? formatIngredientUnit(ingredient) : "";
+  };
 
   const validateBeforeSave = () => {
     if (!selectedItem) return "Selecciona un producto";
@@ -341,7 +346,7 @@ export function RecipeEditor({
                   </select>
                   {line.ingredientId && (
                     <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                      {ingredientName(line.ingredientId)}
+                      {ingredientName(line.ingredientId)} · {ingredientUnit(line.ingredientId)}
                     </p>
                   )}
                 </div>

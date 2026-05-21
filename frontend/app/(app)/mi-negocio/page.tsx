@@ -39,6 +39,7 @@ import {
 export default function MiNegocioPage() {
 
   const [items, setItems] = useState<Item[]>([]);
+  const [recipeLineCounts, setRecipeLineCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
@@ -97,6 +98,21 @@ export default function MiNegocioPage() {
         new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
       );
       setItems(sorted);
+
+      const recipeItems = sorted.filter(
+        (item) => item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
+      );
+      const counts = await Promise.all(
+        recipeItems.map(async (item) => {
+          try {
+            const recipe = await api<Array<unknown>>(`/items/${item.id}/recipe`);
+            return [item.id, recipe.length] as const;
+          } catch {
+            return [item.id, 0] as const;
+          }
+        }),
+      );
+      setRecipeLineCounts(Object.fromEntries(counts));
     } catch (err) {
       console.error(err);
     } finally {
@@ -495,6 +511,7 @@ export default function MiNegocioPage() {
                   item={item}
                   selected={selectedItem?.id === item.id}
                   onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+                  recipeLineCount={recipeLineCounts[item.id] ?? 0}
                 />
               ))}
             </div>
@@ -581,6 +598,7 @@ export default function MiNegocioPage() {
         onClose={() => setItemForDetail(null)}
         onEdit={(i) => { setItemForDetail(null); handleStartEdit(i); }}
         onDelete={(i) => { setItemForDetail(null); setDeleteId(i.id); }}
+        recipeLineCount={itemForDetail ? recipeLineCounts[itemForDetail.id] ?? 0 : 0}
       />
 
       {/* MODAL ELIMINAR (CONFIRMACION) */}

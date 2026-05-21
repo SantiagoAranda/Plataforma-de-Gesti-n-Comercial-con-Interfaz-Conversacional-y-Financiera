@@ -72,6 +72,7 @@ function RecetasPageContent() {
               name: summaryIng?.name ?? "Desconocido",
               quantityRequired: line.quantityRequired,
               consumptionUnit: summaryIng?.consumptionUnit,
+              customUnitLabel: summaryIng?.customUnitLabel,
               isOptional: !!line.isOptional,
               currentStock: summaryIng?.currentStock,
               averageCost: summaryIng?.averageCost,
@@ -195,6 +196,7 @@ function RecetasPageContent() {
                 visible.map((p) => {
                   const status = recipeStatus(p);
                   const cost = estimatedCost(p);
+                  const margin = Number.isFinite(Number(p.price)) ? Number(p.price) - cost : null;
                   const isSelected = p.itemId === itemId;
 
                   return (
@@ -207,7 +209,7 @@ function RecetasPageContent() {
                           <p className="truncate text-sm font-bold text-neutral-900">{p.itemName}</p>
                           <div className="mt-1 flex flex-wrap gap-1">
                             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800">
-                              {p.inventoryMode === "SIMPLE" ? "Producto compuesto" : "Receta"}
+                              {p.inventoryMode === "SIMPLE" ? "Stock simple" : "Receta"}
                             </span>
                             <span
                               className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${status.tone}`}
@@ -234,6 +236,12 @@ function RecetasPageContent() {
                           <p className="font-bold uppercase tracking-widest text-neutral-400">Costo est.</p>
                           <p className="mt-1 font-black text-neutral-800">${formatMoney(cost)}</p>
                         </div>
+                        <div>
+                          <p className="font-bold uppercase tracking-widest text-neutral-400">Margen est.</p>
+                          <p className={`mt-1 font-black ${margin === null ? "text-neutral-800" : margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                            {margin === null ? "—" : `${margin >= 0 ? "+" : "-"}$${formatMoney(Math.abs(margin))}`}
+                          </p>
+                        </div>
                       </div>
 
                       {(p.ingredients?.length ?? 0) > 0 && (
@@ -249,7 +257,7 @@ function RecetasPageContent() {
                                 <div key={ing.ingredientId} className="flex items-center justify-between gap-2 text-[11px]">
                                   <span className="truncate font-medium text-neutral-700">{ing.name}</span>
                                   <span className="shrink-0 font-semibold text-neutral-500">
-                                    {ing.quantityRequired} {ing.consumptionUnit}
+                                    {ing.quantityRequired} {ing.customUnitLabel || ing.consumptionUnit}
                                   </span>
                                 </div>
                               ))}

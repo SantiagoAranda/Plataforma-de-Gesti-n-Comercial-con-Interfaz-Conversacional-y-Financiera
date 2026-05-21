@@ -5,6 +5,7 @@ import { PackageSearch, TriangleAlert } from "lucide-react";
 import { formatMoney } from "@/src/lib/formatters";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import type { InventorySummaryIngredient } from "@/src/services/inventory";
+import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 
 type Props = {
   ingredients: InventorySummaryIngredient[];
@@ -40,6 +41,7 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
         const currentStock = parseNumber(it.currentStock);
         const averageCost = parseNumber(it.averageCost);
         const stockValue = parseNumber(it.stockValue);
+        const unitLabel = formatIngredientUnit(it);
         const inactive = it.status !== "ACTIVE";
         const outOfStock = Number.isFinite(currentStock) && currentStock <= 0;
         const minStock = parseNumber((it as any).minStock ?? 0);
@@ -99,13 +101,13 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
                   <p>
                     Costo prom.:{" "}
                     <span className="font-black text-neutral-900">
-                      ${formatMoney(averageCost)} / {it.consumptionUnit}
+                      ${formatMoney(averageCost)} / {unitLabel}
                     </span>
                   </p>
                   <p>
                     Stock:{" "}
                     <span className="font-black text-neutral-900">
-                      {formatMoney(currentStock)} {it.consumptionUnit}
+                      {formatMoney(currentStock)} {unitLabel}
                     </span>
                   </p>
                 </div>
