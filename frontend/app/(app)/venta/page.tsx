@@ -11,6 +11,7 @@ import SalesList from "@/src/components/sales/SalesList";
 import SalesChatComposer from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
+import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
@@ -79,6 +80,7 @@ export default function VentaPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
 
@@ -591,6 +593,7 @@ export default function VentaPage() {
               selectedId={selectedSale?.id}
               onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
               onDetails={(sale) => setDetailsSale(sale)}
+              onReceipt={(sale) => setReceiptSale(sale)}
               onSendWhatsApp={handleSendWhatsApp}
             />
           )}
@@ -616,6 +619,12 @@ export default function VentaPage() {
           setDetailsSale(null);
         }}
         confirming={confirmingSaleId === detailsSale?.id}
+      />
+
+      <SaleReceiptModal
+        open={!!receiptSale}
+        sale={receiptSale}
+        onClose={() => setReceiptSale(null)}
       />
 
       <SalesFilterModal

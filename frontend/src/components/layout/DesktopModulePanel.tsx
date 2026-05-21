@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Building2, Calculator, ShoppingBag } from "lucide-react";
 
@@ -27,15 +27,32 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   ACCOUNTING: <Calculator className="h-5 w-5" />,
 };
 
+function subscribeBusinessName(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function getBusinessNameSnapshot() {
+  if (typeof window === "undefined") return "Mi Negocio";
+  return localStorage.getItem("businessName")?.trim() || "Mi Negocio";
+}
+
+function getBusinessNameServerSnapshot() {
+  return "Mi Negocio";
+}
+
 export default function DesktopModulePanel() {
   const router = useRouter();
   const pathname = usePathname();
   const sidePanel = useDesktopSidePanel();
   const { summaries, loading, orders } = useHomeModuleSummaries();
-  const businessName =
-    typeof window !== "undefined"
-      ? localStorage.getItem("businessName")?.trim() || "Mi Negocio"
-      : "Mi Negocio";
+  const businessName = useSyncExternalStore(
+    subscribeBusinessName,
+    getBusinessNameSnapshot,
+    getBusinessNameServerSnapshot,
+  );
 
   const modules: ModuleItem[] = useMemo(
     () =>

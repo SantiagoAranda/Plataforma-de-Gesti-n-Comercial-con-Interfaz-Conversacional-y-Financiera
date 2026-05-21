@@ -9,6 +9,7 @@ type Props = {
   selectedId?: string | null;
   onSelect?: (sale: Sale) => void;
   onDetails?: (sale: Sale) => void;
+  onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
 };
 
@@ -41,6 +42,7 @@ export default function SalesList({
   selectedId,
   onSelect,
   onDetails,
+  onReceipt,
   onSendWhatsApp,
 }: Props) {
   const groups = groupSalesByDate(sales);
@@ -56,6 +58,7 @@ export default function SalesList({
               selected={selectedId === s.id}
               onSelect={onSelect ? () => onSelect(s) : undefined}
               onDetails={onDetails}
+              onReceipt={onReceipt}
               onSendWhatsApp={onSendWhatsApp}
             />
           ))}

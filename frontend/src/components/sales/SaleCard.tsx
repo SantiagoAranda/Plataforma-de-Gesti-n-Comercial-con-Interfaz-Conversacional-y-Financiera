@@ -35,6 +35,7 @@ type Props = {
   selected?: boolean;
   onSelect?: () => void;
   onDetails?: (sale: Sale) => void;
+  onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
 };
 
@@ -43,6 +44,7 @@ export default function SaleCard({
   selected = false,
   onSelect,
   onDetails,
+  onReceipt,
   onSendWhatsApp,
 }: Props) {
   const router = useRouter();
@@ -170,6 +172,7 @@ export default function SaleCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (onReceipt) return onReceipt(sale);
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
             }}
