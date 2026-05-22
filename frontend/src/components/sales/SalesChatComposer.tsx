@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Plus, Trash2, Send, Search, Paperclip } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 type EditableItem = {
   itemId: string;
@@ -170,7 +171,7 @@ export default function SalesChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-[#f7f3ed] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
@@ -341,50 +342,26 @@ export default function SalesChatComposer({
           )}
 
           {/* Bottom Bar */}
-          <div className="relative z-20 rounded-[28px] bg-white p-2 shadow-[0_-6px_24px_rgba(15,23,42,0.10)] ring-1 ring-slate-200/80">
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={expanded ? onCancelComposer : onOpenComposer}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-400 transition hover:bg-slate-50 focus:outline-none"
-              >
-                {expanded ? <X className="h-5 w-5" /> : <Paperclip className="h-5 w-5" />}
-              </button>
-
-              <div className="min-h-11 flex-1 rounded-[22px] bg-slate-50 px-4 py-3 ring-1 ring-slate-100">
-                {expanded ? (
-                  <div className="flex items-center justify-between w-full h-full pt-0.5">
-                    <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
-                    <span className="text-sm font-black text-neutral-900">${formatMoney(total)}</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Search className="h-4 w-4 shrink-0 text-neutral-400" />
-                    <input
-                      type="text"
-                      value={searchValue}
-                      onChange={(e) => onSearchChange(e.target.value)}
-                      placeholder="Buscar por cliente o ID..."
-                      className="w-full border-none bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={expanded ? handleSave : onOpenComposer}
-                disabled={expanded && items.length === 0}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full shadow-sm transition ${
-                  expanded && items.length === 0 
-                    ? "bg-emerald-500 opacity-40 text-white cursor-not-allowed" 
-                    : "bg-emerald-500 text-white hover:bg-emerald-600 focus:outline-none"
-                }`}
-              >
-                {expanded ? <Send className="h-4 w-4" /> : <Plus className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
+          <WhatsappComposer
+            value={searchValue}
+            onChange={onSearchChange}
+            leftAction={expanded ? onCancelComposer : onOpenComposer}
+            rightAction={expanded ? handleSave : undefined}
+            placeholder="Buscar por cliente o ID..."
+            leftIconVariant={expanded ? "x" : "plus"}
+            rightIconVariant={expanded ? "send" : "search"}
+            submitDisabled={expanded && items.length === 0}
+            centerContent={
+              expanded ? (
+                <div className="flex h-full w-full items-center justify-between pt-0.5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total venta</span>
+                  <span className="text-sm font-black text-neutral-900">${formatMoney(total)}</span>
+                </div>
+              ) : undefined
+            }
+            plusAriaLabel={expanded ? "Cancelar venta" : "Nueva venta"}
+            submitAriaLabel={expanded ? "Guardar venta" : "Buscar ventas"}
+          />
         </div>
       </div>
     </div>

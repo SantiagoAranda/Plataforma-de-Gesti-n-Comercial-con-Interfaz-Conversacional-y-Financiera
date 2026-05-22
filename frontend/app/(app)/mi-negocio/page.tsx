@@ -429,7 +429,7 @@ export default function MiNegocioPage() {
   }, [filteredItems, visibleCount]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-neutral-100 lg:h-[100dvh] lg:overflow-hidden">
+    <div className="flex flex-col min-h-screen bg-[#f7f3ed] lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
         <SelectionActionBar
           visible

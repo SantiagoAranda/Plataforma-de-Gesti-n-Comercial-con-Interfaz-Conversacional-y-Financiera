@@ -482,7 +482,7 @@ export default function VentaPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-slate-100">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
       <div className="shrink-0">
         {selectedSale ? (
           <SelectionActionBar

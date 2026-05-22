@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Search, Send, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
 import type { AccountingFormState } from "@/src/types/accounting-form";
 import { AccountingExpandableForm } from "./AccountingExpandableForm";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 type AccountingFormErrors = {
   puc?: string;
@@ -92,7 +93,7 @@ export function AccountingChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-[#f7f3ed] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
@@ -106,83 +107,51 @@ export function AccountingChatComposer({
             </div>
           )}
 
-          <div className="relative z-20 rounded-[28px] bg-white p-2 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] ring-1 ring-black/5">
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={expanded ? onCancel : onOpenComposer}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200"
-                aria-label={
-                  expanded
-                    ? isEditing
-                      ? "Cancelar edicion"
-                      : "Cancelar creacion"
-                    : "Crear asiento contable"
-                }
-              >
-                {expanded ? (
-                  <X className="h-5 w-5" />
-                ) : (
-                  <Plus className="h-5 w-5" />
-                )}
-              </button>
-
-              <div 
-                className={`min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-3 ring-1 transition-colors ${
-                  isError ? "ring-red-300" : "ring-neutral-200"
-                }`}
-              >
-                {isComposeMode ? (
-                  <input
-                    type="text"
-                    value={value.detail}
-                    onChange={(e) =>
-                      onChange((prev) => ({ ...prev, detail: e.target.value }))
-                    }
-                    placeholder={
-                      isEditing
-                        ? "Edita la descripcion del movimiento (opcional)..."
-                        : "Describi el movimiento contable (opcional)..."
-                    }
-                    className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
-                  />
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Search className={`h-4 w-4 shrink-0 transition-colors ${isError ? "text-red-400" : "text-neutral-400"}`} />
-                    <input
-                      type="text"
-                      value={localSearch}
-                      onChange={(e) => setLocalSearch(e.target.value)}
-                      placeholder="Buscar por cuenta PUC o por precio (ej: $1000 o 1000-5000)..."
-                      className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
-                    />
-                    {localSearch && (
-                      <button
-                        type="button"
-                        onClick={handleClear}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-600 transition hover:bg-neutral-300"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={onSubmit}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm transition hover:bg-emerald-600"
-                aria-label={expanded ? "Confirmar movimiento" : "Buscar"}
-              >
-                {expanded ? (
-                  <Send className="h-4 w-4" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
-              </button>
-            </div>
-          </div>
+          <WhatsappComposer
+            value={isComposeMode ? value.detail : localSearch}
+            onChange={
+              isComposeMode
+                ? (next) => onChange((prev) => ({ ...prev, detail: next }))
+                : setLocalSearch
+            }
+            onPlusClick={expanded ? onCancel : onOpenComposer}
+            onSubmit={onSubmit}
+            placeholder={
+              isComposeMode
+                ? isEditing
+                  ? "Edita la descripcion del movimiento (opcional)..."
+                  : "Describi el movimiento contable (opcional)..."
+                : "Buscar por cuenta PUC o por precio (ej: $1000 o 1000-5000)..."
+            }
+            leftIconVariant={expanded ? "x" : "plus"}
+            rightIconVariant={expanded ? "send" : "search"}
+            hasError={isError}
+            leadingIcon={
+              !isComposeMode ? (
+                <Search className={`h-4 w-4 shrink-0 transition-colors ${isError ? "text-red-400" : "text-neutral-400"}`} />
+              ) : null
+            }
+            trailingContent={
+              !isComposeMode && localSearch ? (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-200 text-neutral-600 transition hover:bg-neutral-300"
+                  aria-label="Limpiar busqueda"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null
+            }
+            plusAriaLabel={
+              expanded
+                ? isEditing
+                  ? "Cancelar edicion"
+                  : "Cancelar creacion"
+                : "Crear asiento contable"
+            }
+            submitAriaLabel={expanded ? "Confirmar movimiento" : "Buscar"}
+          />
         </div>
       </div>
     </div>
