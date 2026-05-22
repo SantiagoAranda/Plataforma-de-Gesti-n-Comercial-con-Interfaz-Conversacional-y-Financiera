@@ -97,6 +97,9 @@ model Business {
   fiscalId      String
   phoneWhatsapp String
   logoUrl       String?
+  logoObjectKey String?
+  logoMimeType  String?
+  logoSizeBytes Int?
   status        BusinessStatus @default(ACTIVE)
   inactivatedAt DateTime?
 
