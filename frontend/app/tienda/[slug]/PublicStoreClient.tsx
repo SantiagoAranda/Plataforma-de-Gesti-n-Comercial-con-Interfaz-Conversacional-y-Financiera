@@ -82,6 +82,7 @@ export default function PublicStoreClient() {
   const [items, setItems] = useState<Item[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -157,6 +158,7 @@ export default function PublicStoreClient() {
         if (data?.business?.name) {
           setBusinessName(data.business.name);
         }
+        setBusinessLogoUrl(data?.business?.logoUrl || null);
 
         setItems(
           itemsList.map((item: any) => ({
@@ -411,8 +413,16 @@ export default function PublicStoreClient() {
       >
         <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0">
-              <Store className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
+              {businessLogoUrl ? (
+                <img
+                  src={businessLogoUrl}
+                  alt={`Logo de ${businessName || "Tienda"}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Store className="h-5 w-5" />
+              )}
             </div>
             <div className="min-w-0">
               <div className="truncate text-[16px] font-bold text-slate-950">
