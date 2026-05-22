@@ -1,6 +1,7 @@
 import {
   Controller,
   Delete,
+  Body,
   Get,
   Param,
   Patch,
@@ -53,6 +54,24 @@ export class BusinessesController {
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   getProfile(@Req() req: AuthenticatedRequest) {
     return this.businessesService.getProfile(getBusinessId(req));
+  }
+
+  @Get('store-footer-settings')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  getStoreFooterSettings(@Req() req: AuthenticatedRequest) {
+    return this.businessesService.getStoreFooterSettings(getBusinessId(req));
+  }
+
+  @Patch('store-footer-settings')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  updateStoreFooterSettings(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    return this.businessesService.updateStoreFooterSettings(
+      getBusinessId(req),
+      body,
+    );
   }
 
   @Post('profile/logo')

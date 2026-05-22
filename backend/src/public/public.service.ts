@@ -157,7 +157,20 @@ export class PublicService {
   async listPublicItems(slug: string, type?: string) {
     let business = await this.prisma.business.findFirst({
       where: { slug, status: 'ACTIVE' },
-      select: { id: true, name: true, slug: true, logoUrl: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        storeFooterSettings: {
+          select: {
+            description: true,
+            email: true,
+            phones: true,
+            socials: true,
+          },
+        },
+      },
     });
 
     if (!business) {
@@ -165,7 +178,20 @@ export class PublicService {
       if (normalized !== slug) {
         business = await this.prisma.business.findFirst({
           where: { slug: normalized, status: 'ACTIVE' },
-          select: { id: true, name: true, slug: true, logoUrl: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            storeFooterSettings: {
+              select: {
+                description: true,
+                email: true,
+                phones: true,
+                socials: true,
+              },
+            },
+          },
         });
       }
     }
@@ -189,8 +215,10 @@ export class PublicService {
       },
     });
 
+    const { id: _businessId, ...publicBusiness } = business;
+
     return {
-      business,
+      business: publicBusiness,
       data: data.map((item) => ({
         ...item,
         price: Number(item.price),

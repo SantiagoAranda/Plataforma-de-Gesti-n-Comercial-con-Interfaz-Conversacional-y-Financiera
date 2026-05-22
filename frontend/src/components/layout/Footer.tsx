@@ -1,22 +1,37 @@
 import React from 'react';
-import { Facebook, Instagram, Youtube, Phone, Mail } from 'lucide-react';
+import {
+  Facebook,
+  Globe,
+  Instagram,
+  Linkedin,
+  Mail,
+  MessageCircle,
+  Music2,
+  Phone,
+  Twitter,
+  Youtube,
+  type LucideIcon,
+} from 'lucide-react';
+
+export type FooterPhone = {
+  label?: string;
+  value: string;
+};
+
+export type FooterSocial = {
+  type: string;
+  label?: string;
+  value: string;
+};
 
 export interface FooterConfig {
   backgroundColor?: string;
   titulo?: string;
-  frasePrincipal: string;
+  frasePrincipal?: string;
   contacto: {
     email?: string;
-    telefonos: {
-      registro: string;
-      opcional1?: string;
-      opcional2?: string;
-    };
-    redesSociales: {
-      facebook?: string;
-      instagram?: string;
-      youtube?: string;
-    };
+    telefonos: FooterPhone[];
+    redesSociales: FooterSocial[];
   };
 }
 
@@ -32,7 +47,18 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
     contacto
   } = config;
 
-  const { email, telefonos, redesSociales } = contacto;
+  const { email, telefonos = [], redesSociales = [] } = contacto;
+  const socialIcons: Record<string, LucideIcon> = {
+    facebook: Facebook,
+    instagram: Instagram,
+    youtube: Youtube,
+    tiktok: Music2,
+    linkedin: Linkedin,
+    x: Twitter,
+    twitter: Twitter,
+    whatsapp: MessageCircle,
+    website: Globe,
+  };
 
   return (
     <footer 
@@ -60,18 +86,12 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
             
             {/* Contacto: Teléfonos y Email */}
             <div className="flex flex-wrap items-center justify-center md:justify-end gap-x-3 gap-y-1">
-              {telefonos?.registro && (
-                <div className="flex items-center space-x-1 group">
+              {telefonos.map((telefono, index) => (
+                <div key={`${telefono.value}-${index}`} className="flex items-center space-x-1 group">
                   <Phone className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#064e3b]" strokeWidth={2} />
-                  <span className="text-[10px] md:text-xs text-neutral-700">{telefonos.registro}</span>
+                  <span className="text-[10px] md:text-xs text-neutral-700">{telefono.value}</span>
                 </div>
-              )}
-              {telefonos?.opcional1 && (
-                <div className="flex items-center space-x-1 group">
-                  <Phone className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#064e3b]" strokeWidth={2} />
-                  <span className="text-[10px] md:text-xs text-neutral-700">{telefonos.opcional1}</span>
-                </div>
-              )}
+              ))}
               {email && (
                 <div className="flex items-center space-x-1 group">
                   <Mail className="w-3 h-3 md:w-3.5 md:h-3.5 text-[#064e3b]" strokeWidth={2} />
@@ -86,41 +106,23 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
             </div>
 
             {/* Redes Sociales */}
-            {(redesSociales?.facebook || redesSociales?.instagram || redesSociales?.youtube) && (
+            {redesSociales.length > 0 && (
               <div className="flex items-center justify-center md:justify-end space-x-3">
-                {redesSociales.facebook && (
+                {redesSociales.map((social, index) => {
+                  const Icon = socialIcons[social.type] ?? Globe;
+                  return (
                   <a 
-                    href={redesSociales.facebook} 
+                    key={`${social.type}-${index}`}
+                    href={social.value} 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="flex items-center justify-center hover:-translate-y-0.5 transition-transform duration-300 ease-out text-[#064e3b] hover:text-emerald-700"
-                    aria-label="Facebook"
+                    aria-label={social.label || social.type}
                   >
-                    <Facebook className="w-4 h-4" />
+                    <Icon className="w-4 h-4" />
                   </a>
-                )}
-                {redesSociales.instagram && (
-                  <a 
-                    href={redesSociales.instagram} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center hover:-translate-y-0.5 transition-transform duration-300 ease-out text-[#064e3b] hover:text-emerald-700"
-                    aria-label="Instagram"
-                  >
-                    <Instagram className="w-4 h-4" />
-                  </a>
-                )}
-                {redesSociales.youtube && (
-                  <a 
-                    href={redesSociales.youtube} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center hover:-translate-y-0.5 transition-transform duration-300 ease-out text-[#064e3b] hover:text-emerald-700"
-                    aria-label="YouTube"
-                  >
-                    <Youtube className="w-4 h-4" />
-                  </a>
-                )}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -132,7 +134,16 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
       <div className="w-full border-t border-neutral-100 bg-neutral-50/50 py-2">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-[10px] text-neutral-400 text-center">
-            © 2026 Sactec | Desarrollado por{' '}
+            © 2026&nbsp;
+            <a 
+              href="https://www.instagram.com/sactec.dev/" 
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-[#064e3b] transition-colors font-medium text-neutral-500 hover:underline underline-offset-2"
+            >
+              Sactec
+            </a>
+            &nbsp;| Desarrollado por{' '}
             <a 
               href="https://instagram.com/savik.ar" 
               target="_blank"

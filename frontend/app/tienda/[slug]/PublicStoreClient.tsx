@@ -17,26 +17,9 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
-import { Footer, FooterConfig } from "@/src/components/layout/Footer";
+import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
 import { getItemBadges } from "@/src/lib/itemBadges";
 
-const mockFooterConfig: FooterConfig = {
-  backgroundColor: '#064e3b',
-  titulo: 'Mi Negocio',
-  frasePrincipal: 'Potenciando tu negocio cada día',
-  contacto: {
-    email: 'contacto@sactec.com',
-    telefonos: {
-      registro: '+54 9 11 1234-5678',
-      opcional1: '+54 9 11 8765-4321',
-    },
-    redesSociales: {
-      facebook: 'https://facebook.com',
-      instagram: 'https://instagram.com/savik.ar',
-      youtube: 'https://youtube.com',
-    }
-  }
-};
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 
 const formatPrice = (value: number) => {
@@ -71,6 +54,40 @@ type Item = {
   images?: { id: string; url: string }[];
 };
 
+type StoreFooterSettings = {
+  description?: string | null;
+  email?: string | null;
+  phones?: unknown;
+  socials?: unknown;
+} | null;
+
+function normalizeFooterPhones(value: unknown): FooterPhone[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterPhone[]>((acc, phone) => {
+      if (!phone || typeof phone !== "object") return acc;
+      const record = phone as Record<string, unknown>;
+      const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      if (!phoneValue) return acc;
+      acc.push({ label, value: phoneValue });
+      return acc;
+    }, []);
+}
+
+function normalizeFooterSocials(value: unknown): FooterSocial[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterSocial[]>((acc, social) => {
+      if (!social || typeof social !== "object") return acc;
+      const record = social as Record<string, unknown>;
+      const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      const socialValue = typeof record.value === "string" ? record.value.trim() : "";
+      if (!type || !socialValue) return acc;
+      acc.push({ type, label, value: socialValue });
+      return acc;
+    }, []);
+}
+
 export default function PublicStoreClient() {
   const params = useParams();
   const slug = typeof params?.slug === "string" ? params.slug : "";
@@ -83,6 +100,7 @@ export default function PublicStoreClient() {
   const [businessName, setBusinessName] = useState("");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
   const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
+  const [footerSettings, setFooterSettings] = useState<StoreFooterSettings>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -159,6 +177,7 @@ export default function PublicStoreClient() {
           setBusinessName(data.business.name);
         }
         setBusinessLogoUrl(data?.business?.logoUrl || null);
+        setFooterSettings(data?.business?.storeFooterSettings ?? null);
 
         setItems(
           itemsList.map((item: any) => ({
@@ -187,6 +206,28 @@ export default function PublicStoreClient() {
 
     fetchItems();
   }, [slug, category, notify]);
+
+  const footerConfig = useMemo<FooterConfig>(() => {
+    const description =
+      typeof footerSettings?.description === "string"
+        ? footerSettings.description.trim()
+        : "";
+    const email =
+      typeof footerSettings?.email === "string"
+        ? footerSettings.email.trim()
+        : "";
+
+    return {
+      backgroundColor: '#064e3b',
+      titulo: businessName,
+      frasePrincipal: description || undefined,
+      contacto: {
+        email: email || undefined,
+        telefonos: normalizeFooterPhones(footerSettings?.phones),
+        redesSociales: normalizeFooterSocials(footerSettings?.socials),
+      },
+    };
+  }, [businessName, footerSettings]);
 
   const resetReservationUi = () => {
     setSelectedService(null);
@@ -688,7 +729,7 @@ export default function PublicStoreClient() {
         }}
       />
 
-      <Footer config={mockFooterConfig} />
+      <Footer config={footerConfig} />
     </div>
   );
 }

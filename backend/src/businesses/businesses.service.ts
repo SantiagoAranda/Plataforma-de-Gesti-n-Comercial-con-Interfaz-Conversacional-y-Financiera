@@ -11,6 +11,24 @@ import { generateSlug } from '../common/utils/slug.util';
 import { createClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 
+type FooterPhone = {
+  label: string;
+  value: string;
+};
+
+type FooterSocial = {
+  type: string;
+  label: string;
+  value: string;
+};
+
+type StoreFooterSettingsPayload = {
+  description?: string | null;
+  email?: string | null;
+  phones?: FooterPhone[];
+  socials?: FooterSocial[];
+};
+
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_LOGO_MIME_TYPES = new Set([
   'image/jpeg',
@@ -18,6 +36,101 @@ const ALLOWED_LOGO_MIME_TYPES = new Set([
   'image/webp',
 ]);
 const BUSINESS_LOGOS_BUCKET = 'business-logos';
+const ALLOWED_SOCIAL_TYPES = new Set([
+  'facebook',
+  'instagram',
+  'youtube',
+  'tiktok',
+  'linkedin',
+  'x',
+  'twitter',
+  'whatsapp',
+  'website',
+]);
+
+function cleanOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function validatePhones(value: unknown): FooterPhone[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('phones debe ser un array');
+  }
+
+  return value
+    .map((phone) => {
+      if (!phone || typeof phone !== 'object') {
+        throw new BadRequestException('Cada telefono debe ser un objeto');
+      }
+
+      const record = phone as Record<string, unknown>;
+      const label = cleanOptionalString(record.label);
+      const phoneValue = cleanOptionalString(record.value);
+
+      if (!label && !phoneValue) return null;
+      if (!phoneValue) {
+        throw new BadRequestException('Cada telefono debe tener numero');
+      }
+
+      return {
+        label: label ?? 'Telefono',
+        value: phoneValue,
+      };
+    })
+    .filter((phone): phone is FooterPhone => Boolean(phone));
+}
+
+function validateSocials(value: unknown): FooterSocial[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('socials debe ser un array');
+  }
+
+  return value
+    .map((social) => {
+      if (!social || typeof social !== 'object') {
+        throw new BadRequestException('Cada red social debe ser un objeto');
+      }
+
+      const record = social as Record<string, unknown>;
+      const type = cleanOptionalString(record.type)?.toLowerCase() ?? null;
+      const label = cleanOptionalString(record.label);
+      const socialValue = cleanOptionalString(record.value);
+
+      if (!type && !label && !socialValue) return null;
+      if (!type || !socialValue) {
+        throw new BadRequestException('Cada red social debe tener tipo y valor');
+      }
+      if (!ALLOWED_SOCIAL_TYPES.has(type)) {
+        throw new BadRequestException(`Tipo de red social no soportado: ${type}`);
+      }
+
+      return {
+        type,
+        label: label ?? type,
+        value: socialValue,
+      };
+    })
+    .filter((social): social is FooterSocial => Boolean(social));
+}
+
+function validateStoreFooterSettingsPayload(
+  body: unknown,
+): StoreFooterSettingsPayload {
+  if (!body || typeof body !== 'object') {
+    throw new BadRequestException('Payload invalido');
+  }
+
+  const record = body as Record<string, unknown>;
+
+  return {
+    description: cleanOptionalString(record.description),
+    email: cleanOptionalString(record.email),
+    phones: validatePhones(record.phones),
+    socials: validateSocials(record.socials),
+  };
+}
 
 @Injectable()
 export class BusinessesService {
@@ -164,6 +277,60 @@ export class BusinessesService {
     }
 
     return business;
+  }
+
+  async getStoreFooterSettings(businessId: string) {
+    const settings = await this.prisma.storeFooterSettings.findUnique({
+      where: { businessId },
+      select: {
+        id: true,
+        description: true,
+        email: true,
+        phones: true,
+        socials: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return (
+      settings ?? {
+        description: null,
+        email: null,
+        phones: [],
+        socials: [],
+      }
+    );
+  }
+
+  async updateStoreFooterSettings(businessId: string, body: unknown) {
+    const payload = validateStoreFooterSettingsPayload(body);
+
+    return this.prisma.storeFooterSettings.upsert({
+      where: { businessId },
+      create: {
+        businessId,
+        description: payload.description,
+        email: payload.email,
+        phones: payload.phones ?? [],
+        socials: payload.socials ?? [],
+      },
+      update: {
+        description: payload.description,
+        email: payload.email,
+        phones: payload.phones ?? [],
+        socials: payload.socials ?? [],
+      },
+      select: {
+        id: true,
+        description: true,
+        email: true,
+        phones: true,
+        socials: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
   }
 
   async uploadLogo(businessId: string, file?: Express.Multer.File) {
