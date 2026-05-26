@@ -32,6 +32,34 @@ export class ReservationsController {
     return this.reservationsService.findByDate(req.user.businessId, date);
   }
 
+  @Get('availability')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  getAvailability(
+    @Req() req: any,
+    @Query('itemId') itemId: string,
+    @Query('date') date: string,
+  ) {
+    return this.reservationsService.getAvailability(
+      req.user.businessId,
+      itemId,
+      date,
+    );
+  }
+
+  @Get('availability-calendar')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  getAvailabilityCalendar(
+    @Req() req: any,
+    @Query('itemId') itemId: string,
+    @Query('month') month: string,
+  ) {
+    return this.reservationsService.getAvailabilityCalendar(
+      req.user.businessId,
+      itemId,
+      month,
+    );
+  }
+
   @Patch(':id/cancel')
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   cancel(@Req() req: any, @Param('id') id: string) {

@@ -109,8 +109,6 @@ export default function PublicStoreClient() {
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
@@ -231,50 +229,7 @@ export default function PublicStoreClient() {
 
   const resetReservationUi = () => {
     setSelectedService(null);
-    setAvailableSlots([]);
-    setAvailableDates([]);
     setSelectedDateKey(null);
-  };
-
-  const handleDateChange = async (date: Date) => {
-    if (!selectedService || !slug) return;
-
-    const formatted = formatLocalDateKey(date);
-    setSelectedDateKey(formatted);
-
-    try {
-      const res = await fetch(
-        `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
-      );
-
-      if (!res.ok) throw new Error("Error fetching availability");
-
-      const data = await res.json();
-      setAvailableSlots(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Availability error:", error);
-      setAvailableSlots([]);
-    }
-  };
-
-  const handleMonthChange = async (date: Date) => {
-    if (!selectedService || !slug) return;
-
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-    try {
-      const res = await fetch(
-        `${API_URL}/public/${slug}/availability-calendar?itemId=${selectedService.id}&month=${month}`
-      );
-
-      if (!res.ok) throw new Error("Error fetching availability calendar");
-
-      const data = await res.json();
-      setAvailableDates(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Availability calendar error:", error);
-      setAvailableDates([]);
-    }
   };
 
   const handleReserve = async (data: any) => {
@@ -699,13 +654,10 @@ export default function PublicStoreClient() {
       <ReservationDrawer
         open={!!selectedService}
         onClose={resetReservationUi}
+        itemId={selectedService?.id}
+        businessSlug={slug}
         title={selectedService?.name}
-        subtitle="Selecciona dia y horario disponible"
-        timeSlots={availableSlots}
-        availableDates={availableDates}
         selectedDateValue={selectedDateKey}
-        onDateChange={handleDateChange}
-        onMonthChange={handleMonthChange}
         onConfirm={handleReserve}
       />
 

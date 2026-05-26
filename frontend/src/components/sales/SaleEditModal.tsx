@@ -504,21 +504,14 @@ export default function SaleEditModal({
         <ReservationDrawer
           open={reservationPickerOpen}
           onClose={() => setReservationPickerOpen(false)}
+          itemId={sale.items[0]?.itemId}
+          mode="private"
           title={sale.items[0]?.name ?? "Reserva"}
-          subtitle="Selecciona una nueva fecha y horario disponibles"
-          timeSlots={availableSlots}
-          availableDates={availableDates}
           selectedDateValue={scheduledDate || null}
           initialFullName={customerName}
           initialWhatsapp={
             phoneNumber ? `${countryCode}${phoneNumber}` : ""
           }
-          onMonthChange={loadReservationDates}
-          onDateChange={(date) => {
-            const key = formatLocalDateKey(date);
-            setScheduledDate(key);
-            loadReservationSlots(key);
-          }}
           onConfirm={(data) => {
             if (!data.date || !data.time) return;
             const dateKey = formatLocalDateKey(data.date);

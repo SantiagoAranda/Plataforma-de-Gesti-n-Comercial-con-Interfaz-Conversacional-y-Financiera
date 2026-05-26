@@ -179,6 +179,37 @@ export class SalesService {
     return slots;
   }
 
+  private async assertReservationSlotAvailable(
+    businessId: string,
+    itemId: string,
+    date: Date,
+    startMinute: number,
+    endMinute: number,
+    excludeReservationId?: string,
+  ) {
+    if (startMinute < 0 || endMinute > 24 * 60 || startMinute >= endMinute) {
+      throw new BadRequestException('Invalid time range');
+    }
+
+    const overlapping = await this.prisma.reservation.findFirst({
+      where: {
+        businessId,
+        itemId,
+        date,
+        status: { not: 'CANCELLED' },
+        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+        AND: [
+          { startMinute: { lt: endMinute } },
+          { endMinute: { gt: startMinute } },
+        ],
+      },
+    });
+
+    if (overlapping) {
+      throw new BadRequestException('Time slot already booked');
+    }
+  }
+
   async create(businessId: string, dto: CreateOrderDto) {
     if (!dto.items.length) {
       throw new BadRequestException('Order must contain at least one item');
@@ -195,18 +226,33 @@ export class SalesService {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    this.ensureSingleItemType(itemsFromDb);
+    const itemType = this.ensureSingleItemType(itemsFromDb);
 
     // BIFURCACIÓN SEGÚN TIPO
-    if (dto.type === 'SERVICIO') {
-      const item = itemsFromDb[0];
-      const now = new Date();
-      const dateOnly = new Date(now);
-      dateOnly.setHours(0, 0, 0, 0);
+    if (itemType === 'SERVICE') {
+      if (dto.items.length !== 1) {
+        throw new BadRequestException('Services with appointment must be registered separately');
+      }
 
-      const startMinute = now.getHours() * 60 + now.getMinutes();
-      const duration = item.durationMinutes ?? 60;
+      const item = itemsFromDb[0];
+      if (item.type !== 'SERVICE') {
+        throw new BadRequestException('Selected item is not a service');
+      }
+      if (!dto.scheduledAt) {
+        throw new BadRequestException('scheduledAt is required for service sales');
+      }
+
+      const { dateOnly, startMinute } = this.parseScheduledAt(dto.scheduledAt);
+      const duration = item.durationMinutes ?? dto.durationMinutes ?? 60;
       const endMinute = startMinute + duration;
+
+      await this.assertReservationSlotAvailable(
+        businessId,
+        item.id,
+        dateOnly,
+        startMinute,
+        endMinute,
+      );
 
       const reservation = await this.prisma.reservation.create({
         data: {
@@ -221,12 +267,32 @@ export class SalesService {
           origin: dto.origin ?? 'MANUAL',
           paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
         },
+        include: { item: true },
       });
 
       // Mapear a un formato que el frontend entienda como una "venta" recién creada
       return {
-        ...reservation,
-        sourceType: 'RESERVATION',
+        id: reservation.id,
+        sourceType: 'RESERVATION' as const,
+        customerName: reservation.customerName,
+        customerWhatsapp: reservation.customerWhatsapp,
+        paymentMethod: (reservation.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
+        total: Number(reservation.item.price),
+        status: this.mapReservationStatus(reservation.status),
+        createdAt: reservation.createdAt,
+        origin: reservation.origin as 'MANUAL' | 'PUBLIC_STORE',
+        scheduledAt: this.toScheduledAt(reservation.date, reservation.startMinute),
+        type: 'SERVICIO' as const,
+        items: [
+          {
+            name: reservation.item.name,
+            qty: 1,
+            unitPrice: Number(reservation.item.price),
+            price: Number(reservation.item.price),
+            itemId: reservation.itemId,
+            durationMin: reservation.item.durationMinutes ?? null,
+          },
+        ],
       };
     }
 

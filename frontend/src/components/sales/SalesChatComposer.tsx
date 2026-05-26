@@ -6,6 +6,7 @@ import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
+import ReservationSlotPicker from "@/src/components/reservations/ReservationSlotPicker";
 
 type EditableItem = {
   itemId: string;
@@ -20,7 +21,7 @@ type BusinessItem = {
   name: string;
   price: number;
   type: "PRODUCT" | "SERVICE";
-  durationMinutes?: number;
+  durationMinutes?: number | null;
 };
 
 type ApiBusinessItem = Omit<BusinessItem, "price"> & {
@@ -37,6 +38,12 @@ function formatMoney(n: number) {
 function normalizeQty(type: Sale["type"], qty: number) {
   if (type === "SERVICIO") return 1;
   return Math.max(1, Math.floor(qty || 1));
+}
+
+function formatTimeFromMinutes(value: number) {
+  const hour = String(Math.floor(value / 60)).padStart(2, "0");
+  const minute = String(value % 60).padStart(2, "0");
+  return `${hour}:${minute}`;
 }
 
 function ItemThumbnail() {
@@ -68,6 +75,8 @@ export default function SalesChatComposer({
     type: Sale["type"];
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
+    scheduledAt?: string;
+    durationMinutes?: number;
     items: { itemId: string; quantity: number }[];
   }) => void;
 }) {
@@ -80,6 +89,10 @@ export default function SalesChatComposer({
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
+  const [scheduledDate, setScheduledDate] = useState<string | null>(null);
+  const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
+  const [manualDuration, setManualDuration] = useState("60");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const fetchItems = async () => {
     try {
@@ -109,6 +122,10 @@ export default function SalesChatComposer({
       setPaymentMethod("CASH");
       setItems([]);
       setNewItem({ itemId: "", qty: 1 });
+      setScheduledDate(null);
+      setSelectedStartMinute(null);
+      setManualDuration("60");
+      setFormError(null);
     }
   }, [expanded]);
 
@@ -123,15 +140,34 @@ export default function SalesChatComposer({
   };
 
   const removeItem = (idx: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== idx));
+    setItems((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      if (next.length === 0) {
+        setType("PRODUCTO");
+        setScheduledDate(null);
+        setSelectedStartMinute(null);
+        setManualDuration("60");
+        setFormError(null);
+      }
+      return next;
+    });
   };
 
   const handleAddItem = () => {
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
+    setFormError(null);
+
+    if (bi.type === "SERVICE" && items.length > 0) {
+      setFormError("Para registrar servicios con turno, cargá la cita por separado.");
+      return;
+    }
 
     if (items.length === 0) {
       setType(bi.type === "SERVICE" ? "SERVICIO" : "PRODUCTO");
+    } else if (type === "SERVICIO") {
+      setFormError("Para registrar servicios con turno, cargá la cita por separado.");
+      return;
     }
 
     setItems((prev) => [
@@ -148,6 +184,7 @@ export default function SalesChatComposer({
   };
 
   const handleSave = () => {
+    setFormError(null);
     const cleanedName = customerName.trim();
     const rawPhone = phoneNumber.replace(/\D/g, "");
     const cleanedWhatsapp = rawPhone.length > 0 ? `${countryCode}${rawPhone}` : undefined;
@@ -160,12 +197,31 @@ export default function SalesChatComposer({
 
     if (cleanedItems.length === 0) return;
 
+    const isService = type === "SERVICIO";
+    const serviceItem = items[0];
+    const serviceDuration = serviceItem?.durationMin ?? Number(manualDuration || 0);
+    const scheduledAt = isService && scheduledDate && selectedStartMinute != null
+      ? `${scheduledDate}T${formatTimeFromMinutes(selectedStartMinute)}:00`
+      : undefined;
+
+    if (isService && !scheduledAt) {
+      setFormError("Elegí fecha y hora para registrar la cita.");
+      return;
+    }
+
+    if (isService && (!Number.isFinite(serviceDuration) || serviceDuration <= 0)) {
+      setFormError("Ingresá una duración válida para la cita.");
+      return;
+    }
+
     onSave({
       customerName: cleanedName || undefined,
       customerWhatsapp: cleanedWhatsapp,
       type,
       status,
       paymentMethod: paymentMethod || "CASH",
+      scheduledAt,
+      durationMinutes: isService ? serviceDuration : undefined,
       items: cleanedItems,
     });
   };
@@ -253,6 +309,56 @@ export default function SalesChatComposer({
                   </div>
                 </div>
 
+                {type === "SERVICIO" && items.length > 0 && (
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border border-emerald-100 bg-emerald-50/40">
+                    <div className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">
+                        Servicio seleccionado
+                      </span>
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-black text-neutral-900">
+                          {items[0].name}
+                        </span>
+                        <span className="shrink-0 text-sm font-black text-neutral-900">
+                          ${formatMoney(items[0].price)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <ReservationSlotPicker
+                      itemId={items[0].itemId}
+                      mode="private"
+                      selectedDate={scheduledDate}
+                      selectedStartMinute={selectedStartMinute}
+                      onChange={({ date, startMinute }) => {
+                        setScheduledDate(date);
+                        setSelectedStartMinute(startMinute);
+                      }}
+                    />
+
+                    {!items[0]?.durationMin && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest px-1">
+                          Duración en minutos
+                        </span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={manualDuration}
+                          onChange={(e) => setManualDuration(e.target.value)}
+                          className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-[13px] font-semibold text-neutral-800 outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    )}
+                    {items[0]?.durationMin && (
+                      <p className="px-1 text-[11px] font-semibold text-emerald-700">
+                        Duración: {items[0].durationMin} min
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {type === "PRODUCTO" && (
                 <div className="space-y-3">
                   <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
 
@@ -308,6 +414,12 @@ export default function SalesChatComposer({
                     </button>
                   </div>
 
+                  {formError && (
+                    <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                      {formError}
+                    </div>
+                  )}
+
                   {/* Items List */}
                   <div className="space-y-2">
                     {items.map((it, idx) => (
@@ -335,6 +447,13 @@ export default function SalesChatComposer({
                     ))}
                   </div>
                 </div>
+                )}
+
+                {type === "SERVICIO" && formError && (
+                  <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                    {formError}
+                  </div>
+                )}
 
                  <div className="h-4" />
               </div>

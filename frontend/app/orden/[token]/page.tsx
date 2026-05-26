@@ -198,16 +198,10 @@ export default function PublicStorePage() {
           setAvailableDates([]);
           setSelectedDate(null);
         }}
+        itemId={selectedService?.id}
+        businessSlug={token}
         title={selectedService?.name}
-        subtitle="Selecciona dia y horario disponible"
-        timeSlots={availableSlots}
-        availableDates={availableDates}
         selectedDateValue={selectedDate ? formatLocalDateKey(selectedDate) : null}
-        onDateChange={(date) => {
-          setSelectedDate(date);
-          fetchAvailability(date);
-        }}
-        onMonthChange={fetchAvailabilityCalendar}
         onConfirm={handleConfirmReservation}
       />
     </div>

@@ -318,6 +318,8 @@ export default function VentaPage() {
     type: Sale["type"];
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
+    scheduledAt?: string;
+    durationMinutes?: number;
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
