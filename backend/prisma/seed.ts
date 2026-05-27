@@ -315,6 +315,52 @@ async function seedSolidarityBrackets(base: string) {
     console.log(`Solidaridad seed OK: ${rows.length}`);
 }
 
+async function seedPayrollAccountingMappings(base: string) {
+    const rows = parseCSV(path.join(base, "payroll_accounting_mapping.csv"));
+
+    const businesses = await prisma.business.findMany({
+        select: { id: true, name: true },
+    });
+
+    if (businesses.length === 0) {
+        console.log("PayrollAccountingMapping seed omitido: no hay negocios creados");
+        return;
+    }
+
+    for (const business of businesses) {
+        for (const r of rows) {
+            await prisma.payrollAccountingMapping.upsert({
+                where: {
+                    businessId_conceptCode_side: {
+                        businessId: business.id,
+                        conceptCode: r.concept_code,
+                        side: r.side as any,
+                    },
+                },
+                update: {
+                    conceptName: r.concept_name,
+                    accountCode: r.account_code,
+                    accountName: r.account_name,
+                    isActive: true,
+                },
+                create: {
+                    businessId: business.id,
+                    conceptCode: r.concept_code,
+                    conceptName: r.concept_name,
+                    accountCode: r.account_code,
+                    accountName: r.account_name,
+                    side: r.side as any,
+                    isActive: true,
+                },
+            });
+        }
+    }
+
+    console.log(
+        `PayrollAccountingMapping seed OK: businesses=${businesses.length}, mappings=${rows.length}`,
+    );
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
@@ -326,6 +372,7 @@ async function main() {
     await seedCiiu(base);
     await seedOvertimeRates(base);
     await seedSolidarityBrackets(base);
+    await seedPayrollAccountingMappings(base);
 }
 
 main()

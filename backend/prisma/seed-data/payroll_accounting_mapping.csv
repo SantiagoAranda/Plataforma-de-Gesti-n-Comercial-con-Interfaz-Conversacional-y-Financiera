@@ -1,0 +1,37 @@
+concept_code,concept_name,account_code,account_name,side
+SALARY,Sueldos,5105,Sueldos,DEBIT
+TRANSPORT_ALLOWANCE,Auxilio transporte,5105,Sueldos,DEBIT
+CONNECTIVITY_ALLOWANCE,Auxilio conectividad,5105,Sueldos,DEBIT
+COMMISSIONS,Comisiones,5105,Sueldos,DEBIT
+NON_SALARY_BONUS,Bonificaciones no salariales,5105,Sueldos,DEBIT
+OVERTIME_TOTAL,Horas extras y recargos,5105,Sueldos,DEBIT
+EMPLOYER_HEALTH,Salud empleador,5105,Sueldos,DEBIT
+EMPLOYER_PENSION,Pensión empleador,5105,Sueldos,DEBIT
+EMPLOYER_ARL,ARL empleador,5105,Sueldos,DEBIT
+COMPENSATION_FUND,Caja compensación,5105,Sueldos,DEBIT
+SENA,SENA,5105,Sueldos,DEBIT
+ICBF,ICBF,5105,Sueldos,DEBIT
+SEVERANCE,Cesantías,5105,Sueldos,DEBIT
+SEVERANCE_INTEREST,Intereses cesantías,5105,Sueldos,DEBIT
+SERVICE_BONUS,Prima de servicios,5105,Sueldos,DEBIT
+VACATION,Vacaciones,5105,Sueldos,DEBIT
+EMPLOYEE_HEALTH,Salud por pagar,2370,Retenciones y aportes de nómina,CREDIT
+EMPLOYEE_PENSION,Pensión por pagar,2370,Retenciones y aportes de nómina,CREDIT
+SOLIDARITY_FUND,Fondo solidaridad,2370,Retenciones y aportes de nómina,CREDIT
+WITHHOLDING_TAX,Retefuente por pagar,2365,Retención en la fuente,CREDIT
+OTHER_DEDUCTIONS,Otras deducciones,2370,Retenciones y aportes de nómina,CREDIT
+NET_PAY,Neto a pagar,2505,Salarios por pagar,CREDIT
+EMPLOYER_HEALTH,Salud empleador por pagar,2370,Retenciones y aportes de nómina,CREDIT
+EMPLOYER_PENSION,Pensión empleador por pagar,2370,Retenciones y aportes de nómina,CREDIT
+EMPLOYER_ARL,ARL por pagar,2370,Retenciones y aportes de nómina,CREDIT
+COMPENSATION_FUND,Caja compensación por pagar,2370,Retenciones y aportes de nómina,CREDIT
+SENA,SENA por pagar,2370,Retenciones y aportes de nómina,CREDIT
+ICBF,ICBF por pagar,2370,Retenciones y aportes de nómina,CREDIT
+SEVERANCE,Cesantías por pagar,2510,Cesantías consolidadas,CREDIT
+SEVERANCE_INTEREST,Intereses cesantías por pagar,2515,Intereses sobre cesantías,CREDIT
+SERVICE_BONUS,Prima por pagar,2520,Prima de servicios,CREDIT
+VACATION,Vacaciones por pagar,2525,Vacaciones consolidadas,CREDIT
+SERVICE_BONUS_SEMESTER_ONE,Prima servicios I,5105,Sueldos,DEBIT
+SERVICE_BONUS_SEMESTER_TWO,Prima servicios II,5105,Sueldos,DEBIT
+SERVICE_BONUS_SEMESTER_ONE,Prima servicios I por pagar,2520,Prima de servicios,CREDIT
+SERVICE_BONUS_SEMESTER_TWO,Prima servicios II por pagar,2520,Prima de servicios,CREDIT
