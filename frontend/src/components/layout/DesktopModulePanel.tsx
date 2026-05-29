@@ -2,7 +2,7 @@
 
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Calculator, ShoppingBag } from "lucide-react";
+import { Building2, Calculator, ShoppingBag, WalletCards } from "lucide-react";
 
 import ThreadItem from "@/src/components/chat/ThreadItem";
 import HomeAgenda from "@/src/components/home/HomeAgenda";
@@ -25,6 +25,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  PAYROLL: <WalletCards className="h-5 w-5" />,
 };
 
 function subscribeBusinessName(onStoreChange: () => void) {

@@ -7,7 +7,7 @@ import {
 import type { Sale } from "@/src/types/sales";
 
 export type ModuleActivitySummary = {
-  module: "BUSINESS" | "SALES" | "ACCOUNTING";
+  module: "BUSINESS" | "SALES" | "ACCOUNTING" | "PAYROLL";
   title: string;
   subtitle: string;
   lastActivityAt?: string | null;
@@ -231,5 +231,17 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
     isRecent: isRecentActivity(lastActivityAt),
     href: "/contabilidad",
     accent: "amber",
+  };
+}
+
+export function mapPayrollActivity(): ModuleActivitySummary {
+  return {
+    module: "PAYROLL",
+    title: "Nomina",
+    subtitle: " Planilla, pagos y liquidaciones",
+    lastActivityAt: null,
+    isRecent: false,
+    href: "/nomina",
+    accent: "green",
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Building2, Calculator, ShoppingBag } from "lucide-react";
+import { Building2, Calculator, ShoppingBag, WalletCards } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import AppHeader from "../../../src/components/layout/AppHeader";
@@ -19,6 +19,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  PAYROLL: <WalletCards className="h-5 w-5" />,
 };
 
 export default function HomePage() {

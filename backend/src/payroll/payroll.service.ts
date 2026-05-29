@@ -135,7 +135,7 @@ export class PayrollService {
     );
     if (new Prisma.Decimal(salaryMonthly).lessThan(smmlv)) {
       throw new BadRequestException(
-        'salaryMonthly must be greater than or equal to configured SMMLV',
+        'El salario mensual no puede ser inferior al salario mínimo legal vigente.',
       );
     }
   }
@@ -1220,15 +1220,17 @@ export class PayrollService {
       const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
       const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
 
-      const benefitsBase = salaryEarned
+      const benefitBaseWithTransport = salaryEarned
         .add(transportAllowance)
         .add(connectivityAllowance)
         .add(commissions)
         .add(overtimeAmount);
-      const severance = benefitsBase.mul(params.severanceRate);
-      const severanceInterest = severance.mul(params.severanceInterestRate);
-      const serviceBonus = benefitsBase.mul(params.serviceBonusRate);
-      const vacation = salaryEarned.mul(params.vacationRate);
+      const vacationBase = salaryEarned.add(commissions).add(overtimeAmount);
+      const severance = benefitBaseWithTransport.mul(params.severanceRate);
+      const monthlySeveranceInterestRate = this.decimal(0.12);
+      const severanceInterest = severance.mul(monthlySeveranceInterestRate);
+      const serviceBonus = benefitBaseWithTransport.mul(params.serviceBonusRate);
+      const vacation = vacationBase.mul(params.vacationRate);
       const totalEmployerContributions = employerHealth
         .add(employerPension)
         .add(employerArl);
@@ -1283,6 +1285,16 @@ export class PayrollService {
           hourlyRate: hourlyRate.toString(),
           law1819Applies,
           arlRate: String(contract.arlRiskClass?.rate ?? 0),
+          benefitBaseWithTransport: benefitBaseWithTransport.toString(),
+          benefitBaseWithTransportPolicy:
+            'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_AND_CONNECTIVITY_ALLOWANCE',
+          vacationBase: vacationBase.toString(),
+          vacationBasePolicy:
+            'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_AND_CONNECTIVITY_ALLOWANCE',
+          monthlySeveranceInterestRate:
+            monthlySeveranceInterestRate.toString(),
+          monthlySeveranceInterestPolicy:
+            'DATAICO_MONTHLY_PROVISION_USES_12_PERCENT_OF_SEVERANCE_PROVISION',
         },
         calculatedAt: new Date(),
       };
@@ -1328,10 +1340,10 @@ export class PayrollService {
         this.concept('COMPENSATION_FUND', 'Compensation fund', PayrollConceptCategory.PARAFISCAL, compensationFund, { baseAmount: ibcAmount, rate: params.compensationFundRate }),
         this.concept('SENA', 'SENA', PayrollConceptCategory.PARAFISCAL, sena, { baseAmount: ibcAmount, rate: params.senaRate }),
         this.concept('ICBF', 'ICBF', PayrollConceptCategory.PARAFISCAL, icbf, { baseAmount: ibcAmount, rate: params.icbfRate }),
-        this.concept('SEVERANCE', 'Severance', PayrollConceptCategory.BENEFIT_PROVISION, severance, { baseAmount: benefitsBase, rate: params.severanceRate }),
-        this.concept('SEVERANCE_INTEREST', 'Severance interest', PayrollConceptCategory.BENEFIT_PROVISION, severanceInterest, { baseAmount: severance, rate: params.severanceInterestRate }),
-        this.concept('SERVICE_BONUS', 'Service bonus', PayrollConceptCategory.BENEFIT_PROVISION, serviceBonus, { baseAmount: benefitsBase, rate: params.serviceBonusRate }),
-        this.concept('VACATION', 'Vacation', PayrollConceptCategory.BENEFIT_PROVISION, vacation, { baseAmount: salaryEarned, rate: params.vacationRate }),
+        this.concept('SEVERANCE', 'Severance', PayrollConceptCategory.BENEFIT_PROVISION, severance, { baseAmount: benefitBaseWithTransport, rate: params.severanceRate }),
+        this.concept('SEVERANCE_INTEREST', 'Severance interest', PayrollConceptCategory.BENEFIT_PROVISION, severanceInterest, { baseAmount: severance, rate: monthlySeveranceInterestRate }),
+        this.concept('SERVICE_BONUS', 'Service bonus', PayrollConceptCategory.BENEFIT_PROVISION, serviceBonus, { baseAmount: benefitBaseWithTransport, rate: params.serviceBonusRate }),
+        this.concept('VACATION', 'Vacation', PayrollConceptCategory.BENEFIT_PROVISION, vacation, { baseAmount: vacationBase, rate: params.vacationRate }),
       ].map((concept) => ({ ...concept, payrollRunId: run.id }));
 
       await tx.payrollConceptResult.createMany({ data: concepts });
@@ -1486,13 +1498,25 @@ export class PayrollService {
 
     const params = await this.resolvePayrollParameters(businessId, year, tx);
     const salaryMonthly = this.decimal(contract.salaryMonthly);
+    const qualifiesForTransport = salaryMonthly.lessThanOrEqualTo(
+      params.smmlv.mul(params.transportLimitSmmlv),
+    );
+    const settlementTransportAllowance =
+      qualifiesForTransport && !contract.isRemote
+        ? params.transportAllowance
+        : this.decimal(0);
+    const benefitSettlementBase = salaryMonthly.add(settlementTransportAllowance);
     const totalDays = this.decimal(totalWorkedDays);
     const dailySalary = salaryMonthly.div(params.maxWorkedDaysMonth);
     const hourlyRate = salaryMonthly.div(params.monthlyHours);
-    const severance = salaryMonthly.mul(totalDays).div(360);
+    const severance = benefitSettlementBase.mul(totalDays).div(360);
     const severanceInterest = severance.mul(0.12).mul(totalDays).div(360);
-    const serviceBonusSemesterOne = salaryMonthly.mul(semesterOneDays).div(360);
-    const serviceBonusSemesterTwo = salaryMonthly.mul(semesterTwoDays).div(360);
+    const serviceBonusSemesterOne = benefitSettlementBase
+      .mul(semesterOneDays)
+      .div(360);
+    const serviceBonusSemesterTwo = benefitSettlementBase
+      .mul(semesterTwoDays)
+      .div(360);
     const vacationDays = totalDays.mul(15).div(360);
     const vacation = salaryMonthly.mul(totalDays).div(720);
     const totalAmount = severance
@@ -1507,12 +1531,14 @@ export class PayrollService {
       dailySalary: dailySalary.toString(),
       hourlyRate: hourlyRate.toString(),
       salaryMonthly: salaryMonthly.toString(),
+      transportAllowance: settlementTransportAllowance.toString(),
+      benefitSettlementBase: benefitSettlementBase.toString(),
       withholdingTax: '0',
       dayCountBasis: '30/360',
       formulas: {
-        severance: 'salaryMonthly * totalWorkedDays30_360 / 360',
+        severance: '(salaryMonthly + transportAllowance) * totalWorkedDays30_360 / 360',
         severanceInterest: 'severance * 0.12 * totalWorkedDays30_360 / 360',
-        serviceBonus: 'salaryMonthly * semesterDays30_360 / 360',
+        serviceBonus: '(salaryMonthly + transportAllowance) * semesterDays30_360 / 360',
         vacationDays: 'totalWorkedDays30_360 * 15 / 360',
         vacation: 'salaryMonthly * totalWorkedDays30_360 / 720',
       },
@@ -1523,11 +1549,14 @@ export class PayrollService {
         'SEVERANCE',
         'Cesantias',
         severance,
-        salaryMonthly,
+        benefitSettlementBase,
         totalWorkedDays,
         {
           basis: '30/360',
-          formula: 'salaryMonthly * totalWorkedDays30_360 / 360',
+          formula:
+            '(salaryMonthly + transportAllowance) * totalWorkedDays30_360 / 360',
+          salaryMonthly: salaryMonthly.toString(),
+          transportAllowance: settlementTransportAllowance.toString(),
         },
       ),
       this.settlementLine(
@@ -1546,22 +1575,28 @@ export class PayrollService {
         'SERVICE_BONUS_SEMESTER_ONE',
         'Prima de servicios I',
         serviceBonusSemesterOne,
-        salaryMonthly,
+        benefitSettlementBase,
         semesterOneDays,
         {
           basis: '30/360',
-          formula: 'salaryMonthly * semesterOneDays30_360 / 360',
+          formula:
+            '(salaryMonthly + transportAllowance) * semesterOneDays30_360 / 360',
+          salaryMonthly: salaryMonthly.toString(),
+          transportAllowance: settlementTransportAllowance.toString(),
         },
       ),
       this.settlementLine(
         'SERVICE_BONUS_SEMESTER_TWO',
         'Prima de servicios II',
         serviceBonusSemesterTwo,
-        salaryMonthly,
+        benefitSettlementBase,
         semesterTwoDays,
         {
           basis: '30/360',
-          formula: 'salaryMonthly * semesterTwoDays30_360 / 360',
+          formula:
+            '(salaryMonthly + transportAllowance) * semesterTwoDays30_360 / 360',
+          salaryMonthly: salaryMonthly.toString(),
+          transportAllowance: settlementTransportAllowance.toString(),
         },
       ),
       this.settlementLine(
