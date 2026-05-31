@@ -30,6 +30,11 @@ import { CalculatePayrollDto } from './dto/calculate-payroll.dto';
 import { CreateContractSettlementDto } from './dto/create-contract-settlement.dto';
 import { SimulateContractSettlementDto } from './dto/simulate-contract-settlement.dto';
 import { QueryContractSettlementsDto } from './dto/query-contract-settlements.dto';
+import {
+  CreatePayrollBenefitPaymentDto,
+  CreatePayrollPaymentDto,
+  UpdatePayrollPaymentStatusDto,
+} from './dto/payroll-payment.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard, RolesGuard)
 @Controller('payroll')
@@ -153,6 +158,12 @@ export class PayrollController {
     return this.payrollService.deleteEmployee(this.getBusinessId(req), id);
   }
 
+  @Delete('employees/:id/hard')
+  @Roles('BUSINESS')
+  hardDeleteEmployee(@Req() req: any, @Param('id') id: string) {
+    return this.payrollService.hardDeleteEmployee(this.getBusinessId(req), id);
+  }
+
   @Post('employees/:employeeId/contracts')
   @Roles('BUSINESS')
   createContract(
@@ -216,6 +227,32 @@ export class PayrollController {
     @Body() dto: SimulateContractSettlementDto,
   ) {
     return this.payrollService.simulateContractSettlement(
+      this.getBusinessId(req),
+      contractId,
+      dto,
+    );
+  }
+
+  @Get('contracts/:contractId/benefit-payments')
+  @Roles('BUSINESS')
+  listContractBenefitPayments(
+    @Req() req: any,
+    @Param('contractId') contractId: string,
+  ) {
+    return this.payrollService.listContractBenefitPayments(
+      this.getBusinessId(req),
+      contractId,
+    );
+  }
+
+  @Post('contracts/:contractId/benefit-payments')
+  @Roles('BUSINESS')
+  createContractBenefitPayment(
+    @Req() req: any,
+    @Param('contractId') contractId: string,
+    @Body() dto: CreatePayrollBenefitPaymentDto,
+  ) {
+    return this.payrollService.createContractBenefitPayment(
       this.getBusinessId(req),
       contractId,
       dto,
@@ -359,6 +396,43 @@ export class PayrollController {
   @Roles('BUSINESS')
   getPayrollRun(@Req() req: any, @Param('runId') runId: string) {
     return this.payrollService.getPayrollRun(this.getBusinessId(req), runId);
+  }
+
+  @Get('runs/:runId/payments')
+  @Roles('BUSINESS')
+  listPayrollRunPayments(@Req() req: any, @Param('runId') runId: string) {
+    return this.payrollService.listPayrollRunPayments(
+      this.getBusinessId(req),
+      runId,
+    );
+  }
+
+  @Post('runs/:runId/payments')
+  @Roles('BUSINESS')
+  createPayrollRunPayment(
+    @Req() req: any,
+    @Param('runId') runId: string,
+    @Body() dto: CreatePayrollPaymentDto,
+  ) {
+    return this.payrollService.createPayrollRunPayment(
+      this.getBusinessId(req),
+      runId,
+      dto,
+    );
+  }
+
+  @Patch('payments/:paymentId/status')
+  @Roles('BUSINESS')
+  updatePayrollPaymentStatus(
+    @Req() req: any,
+    @Param('paymentId') paymentId: string,
+    @Body() dto: UpdatePayrollPaymentStatusDto,
+  ) {
+    return this.payrollService.updatePayrollPaymentStatus(
+      this.getBusinessId(req),
+      paymentId,
+      dto,
+    );
   }
 
   @Get('periods/:periodId/runs')

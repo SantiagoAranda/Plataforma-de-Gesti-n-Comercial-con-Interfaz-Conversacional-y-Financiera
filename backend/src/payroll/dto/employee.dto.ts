@@ -15,6 +15,10 @@ export class CreateEmployeeDto {
   documentNumber: string;
 
   @IsOptional()
+  @IsString()
+  position?: string;
+
+  @IsOptional()
   @IsEmail()
   email?: string;
 
@@ -39,6 +43,10 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsString()
   documentNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  position?: string;
 
   @IsOptional()
   @IsEmail()

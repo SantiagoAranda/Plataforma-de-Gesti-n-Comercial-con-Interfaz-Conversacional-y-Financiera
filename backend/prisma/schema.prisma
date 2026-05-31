@@ -36,11 +36,13 @@ enum AccountingMovementOriginType {
   ORDER
   PAYROLL_RUN
   PAYROLL_SETTLEMENT
+  PAYROLL_PAYMENT
 }
 
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
+  OTHER
 }
 
 enum OrderStatus {
@@ -127,6 +129,8 @@ model Business {
   payrollRuns    PayrollRun[]
 
   payrollContractSettlements PayrollContractSettlement[]
+  payrollPayments            PayrollPayment[]
+  payrollBenefitPayments     PayrollBenefitPayment[]
 
   payrollAccountingMappings PayrollAccountingMapping[]
 
@@ -526,6 +530,25 @@ enum PayrollWithholdingStatus {
   ENABLED
 }
 
+enum PayrollPaymentType {
+  SALARY_PAYMENT
+  ADVANCE
+  ADJUSTMENT
+}
+
+enum PayrollPaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum PayrollBenefitPaymentType {
+  PRIMA
+  CESANTIAS
+  INTERESES_CESANTIAS
+  VACACIONES
+}
+
 // ===============================
 // CONFIGURACIÓN GLOBAL ADMIN
 // ===============================
@@ -745,6 +768,7 @@ model Employee {
   lastName       String
   documentType   String?
   documentNumber String
+  position       String?
 
   email String?
   phone String?
@@ -756,9 +780,11 @@ model Employee {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  contracts   EmployeeContract[]
-  payrollRuns PayrollRun[]
-  settlements PayrollContractSettlement[]
+  contracts       EmployeeContract[]
+  payrollRuns     PayrollRun[]
+  settlements     PayrollContractSettlement[]
+  payrollPayments PayrollPayment[]
+  benefitPayments PayrollBenefitPayment[]
 
   @@unique([businessId, documentNumber])
   @@index([businessId, isActive])
@@ -795,8 +821,10 @@ model EmployeeContract {
   arlRiskClass PayrollArlRiskClass?  @relation(fields: [arlRiskClassId], references: [id])
   ciiu         EconomicActivityCiiu? @relation(fields: [ciiuId], references: [id])
 
-  payrollRuns PayrollRun[]
-  settlements PayrollContractSettlement[]
+  payrollRuns     PayrollRun[]
+  settlements     PayrollContractSettlement[]
+  payrollPayments PayrollPayment[]
+  benefitPayments PayrollBenefitPayment[]
 
   @@index([businessId, employeeId])
   @@index([businessId, isActive])
@@ -825,7 +853,8 @@ model PayrollPeriod {
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  runs PayrollRun[]
+  runs            PayrollRun[]
+  benefitPayments PayrollBenefitPayment[]
 
   @@unique([businessId, year, month, paymentCycle, installmentNumber])
   @@index([businessId, status])
@@ -895,6 +924,8 @@ model PayrollRun {
   adjustments           PayrollAdjustment[]
   conceptResults        PayrollConceptResult[]
   withholdingTaxResults PayrollWithholdingTaxResult[]
+  payments              PayrollPayment[]
+  benefitPayments       PayrollBenefitPayment[]
 
   @@unique([payrollPeriodId, employeeId])
   @@index([businessId, calculatedAt])
@@ -1015,10 +1046,73 @@ model PayrollContractSettlement {
   employee Employee         @relation(fields: [employeeId], references: [id])
   contract EmployeeContract @relation(fields: [contractId], references: [id])
 
-  lines PayrollContractSettlementLine[]
+  lines           PayrollContractSettlementLine[]
+  benefitPayments PayrollBenefitPayment[]
 
   @@index([businessId, employeeId])
   @@index([businessId, status])
+}
+
+model PayrollPayment {
+  id String @id @default(uuid())
+
+  businessId   String
+  payrollRunId String
+  employeeId   String
+  contractId   String
+
+  installmentNumber Int?
+  paymentCycle      PayrollPaymentCycle
+  type              PayrollPaymentType   @default(SALARY_PAYMENT)
+  status            PayrollPaymentStatus @default(PENDING)
+
+  amount        Decimal        @db.Decimal(20, 6)
+  paidAt        DateTime?
+  paymentMethod PaymentMethod?
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business   Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payrollRun PayrollRun       @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee   Employee         @relation(fields: [employeeId], references: [id])
+  contract   EmployeeContract @relation(fields: [contractId], references: [id])
+
+  @@unique([payrollRunId, installmentNumber, type])
+  @@index([businessId, status])
+  @@index([businessId, employeeId])
+  @@index([contractId, status])
+}
+
+model PayrollBenefitPayment {
+  id String @id @default(uuid())
+
+  businessId   String
+  employeeId   String
+  contractId   String
+  type         PayrollBenefitPaymentType
+  amount       Decimal                   @db.Decimal(20, 6)
+  status       PayrollPaymentStatus      @default(PAID)
+  paidAt       DateTime?
+  periodId     String?
+  payrollRunId String?
+  settlementId String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business   Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employee   Employee                   @relation(fields: [employeeId], references: [id])
+  contract   EmployeeContract           @relation(fields: [contractId], references: [id])
+  period     PayrollPeriod?             @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  payrollRun PayrollRun?                @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  settlement PayrollContractSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, contractId])
+  @@index([businessId, employeeId])
+  @@index([contractId, type])
 }
 
 model PayrollContractSettlementLine {

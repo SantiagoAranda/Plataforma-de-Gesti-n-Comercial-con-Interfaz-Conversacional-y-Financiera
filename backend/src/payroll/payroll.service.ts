@@ -8,10 +8,14 @@ import {
 import {
   AccountingMovementOriginType,
   MovementNature,
+  PaymentMethod,
   PayrollAccountingSide,
   PayrollAdjustmentType,
+  PayrollBenefitPaymentType,
   PayrollConceptCategory,
   PayrollContractType,
+  PayrollPaymentStatus,
+  PayrollPaymentType,
   PayrollPaymentCycle,
   PayrollPeriodStatus,
   PayrollSettlementStatus,
@@ -33,6 +37,11 @@ import { CalculatePayrollDto } from './dto/calculate-payroll.dto';
 import { CreateContractSettlementDto } from './dto/create-contract-settlement.dto';
 import { SimulateContractSettlementDto } from './dto/simulate-contract-settlement.dto';
 import { QueryContractSettlementsDto } from './dto/query-contract-settlements.dto';
+import {
+  CreatePayrollBenefitPaymentDto,
+  CreatePayrollPaymentDto,
+  UpdatePayrollPaymentStatusDto,
+} from './dto/payroll-payment.dto';
 
 type PayrollTx = Prisma.TransactionClient | PrismaService;
 
@@ -338,6 +347,7 @@ export class PayrollService {
           lastName: dto.lastName.trim(),
           documentType: this.normalizeNullableText(dto.documentType),
           documentNumber,
+          position: this.normalizeNullableText(dto.position),
           email: this.normalizeNullableText(dto.email),
           phone: this.normalizeNullableText(dto.phone),
         },
@@ -422,6 +432,7 @@ export class PayrollService {
         lastName: dto.lastName?.trim(),
         documentType: this.normalizeNullableText(dto.documentType),
         documentNumber: nextDocumentNumber,
+        position: this.normalizeNullableText(dto.position),
         email: this.normalizeNullableText(dto.email),
         phone: this.normalizeNullableText(dto.phone),
       },
@@ -430,10 +441,37 @@ export class PayrollService {
 
   async deleteEmployee(businessId: string, id: string) {
     await this.assertEmployeeBelongsToBusiness(businessId, id);
+    const activeContract = await this.prisma.employeeContract.findFirst({
+      where: { businessId, employeeId: id, isActive: true },
+    });
+    if (activeContract) {
+      throw new BadRequestException(
+        'Employee has an active contract. Terminate or settle the contract before inactivating.',
+      );
+    }
     await this.prisma.employee.update({
       where: { id },
       data: { isActive: false },
     });
+    return { ok: true };
+  }
+
+  async hardDeleteEmployee(businessId: string, id: string) {
+    await this.assertEmployeeBelongsToBusiness(businessId, id);
+    const [contracts, runs, settlements, payments] = await Promise.all([
+      this.prisma.employeeContract.count({ where: { businessId, employeeId: id } }),
+      this.prisma.payrollRun.count({ where: { businessId, employeeId: id } }),
+      this.prisma.payrollContractSettlement.count({
+        where: { businessId, employeeId: id },
+      }),
+      this.prisma.payrollPayment.count({ where: { businessId, employeeId: id } }),
+    ]);
+    if (contracts || runs || settlements || payments) {
+      throw new BadRequestException(
+        'Employee has payroll history and cannot be hard deleted.',
+      );
+    }
+    await this.prisma.employee.delete({ where: { id } });
     return { ok: true };
   }
 
@@ -451,6 +489,146 @@ export class PayrollService {
 
   private money(value: Prisma.Decimal) {
     return value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+  }
+
+  private paymentMethodCreditConcept(paymentMethod?: PaymentMethod | null) {
+    if (paymentMethod === PaymentMethod.BANK_TRANSFER) {
+      return 'PAYROLL_PAYMENT_BANK';
+    }
+    if (paymentMethod === PaymentMethod.OTHER) {
+      return 'PAYROLL_PAYMENT_OTHER';
+    }
+    return 'PAYROLL_PAYMENT_CASH';
+  }
+
+  private async ensurePayrollRunPayments(
+    run: {
+      id: string;
+      businessId: string;
+      employeeId: string;
+      contractId: string;
+      netPay: Prisma.Decimal;
+      contract?: { paymentCycle: PayrollPaymentCycle } | null;
+    },
+    tx: PayrollTx = this.prisma,
+  ) {
+    const existing = await tx.payrollPayment.findMany({
+      where: {
+        payrollRunId: run.id,
+        type: PayrollPaymentType.SALARY_PAYMENT,
+      },
+    });
+    if (existing.length) return existing;
+
+    const paymentCycle = run.contract?.paymentCycle ?? PayrollPaymentCycle.MONTHLY;
+    const netPay = this.money(this.decimal(run.netPay));
+    const installments =
+      paymentCycle === PayrollPaymentCycle.BIWEEKLY ? [1, 2] : [null];
+    const firstAmount =
+      paymentCycle === PayrollPaymentCycle.BIWEEKLY
+        ? this.money(netPay.div(2))
+        : netPay;
+    const secondAmount =
+      paymentCycle === PayrollPaymentCycle.BIWEEKLY
+        ? this.money(netPay.sub(firstAmount))
+        : netPay;
+
+    await tx.payrollPayment.createMany({
+      data: installments.map((installmentNumber) => ({
+        businessId: run.businessId,
+        payrollRunId: run.id,
+        employeeId: run.employeeId,
+        contractId: run.contractId,
+        installmentNumber,
+        paymentCycle,
+        type: PayrollPaymentType.SALARY_PAYMENT,
+        status: PayrollPaymentStatus.PENDING,
+        amount:
+          installmentNumber === 2
+            ? secondAmount
+            : firstAmount,
+      })),
+    });
+
+    return tx.payrollPayment.findMany({
+      where: { payrollRunId: run.id },
+      orderBy: [{ installmentNumber: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  private async recreatePayrollPaymentAccountingMovements(
+    businessId: string,
+    payment: {
+      id: string;
+      amount: Prisma.Decimal;
+      paymentMethod: PaymentMethod | null;
+      payrollRun: {
+        period: { year: number; month: number };
+        employee: { firstName: string; lastName: string };
+      };
+    },
+    tx: PayrollTx,
+  ) {
+    await tx.accountingMovement.deleteMany({
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
+        originId: payment.id,
+      },
+    });
+
+    const mappings = await tx.payrollAccountingMapping.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        conceptCode: {
+          in: ['NET_PAY', this.paymentMethodCreditConcept(payment.paymentMethod)],
+        },
+      },
+    });
+    const debitMapping = mappings.find(
+      (mapping) =>
+        mapping.conceptCode === 'NET_PAY' &&
+        mapping.side === PayrollAccountingSide.DEBIT,
+    );
+    const creditMapping = mappings.find(
+      (mapping) =>
+        mapping.conceptCode === this.paymentMethodCreditConcept(payment.paymentMethod) &&
+        mapping.side === PayrollAccountingSide.CREDIT,
+    );
+
+    if (!debitMapping || !creditMapping) {
+      this.logger.warn(
+        `Payroll payment accounting mapping missing for paymentId=${payment.id}, businessId=${businessId}`,
+      );
+      return;
+    }
+
+    const employeeName = `${payment.payrollRun.employee.firstName} ${payment.payrollRun.employee.lastName}`;
+    const date = new Date();
+    const movements: Prisma.AccountingMovementCreateManyInput[] = [];
+    for (const mapping of [debitMapping, creditMapping]) {
+      const accountCode = mapping.accountCode.trim();
+      if (accountCode.length !== 4 && accountCode.length !== 6) continue;
+      movements.push({
+        businessId,
+        pucCuentaCode: accountCode.length === 4 ? accountCode : undefined,
+        pucSubcuentaId: accountCode.length === 6 ? accountCode : undefined,
+        amount: this.money(payment.amount),
+        nature:
+          mapping.side === PayrollAccountingSide.DEBIT
+            ? MovementNature.DEBIT
+            : MovementNature.CREDIT,
+        date,
+        detail: `Pago nomina ${payment.payrollRun.period.year}-${String(payment.payrollRun.period.month).padStart(2, '0')} ${employeeName}`,
+        originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
+        originId: payment.id,
+      });
+    }
+
+    if (movements.length === 2) {
+      await tx.accountingMovement.createMany({ data: movements });
+    }
   }
 
   private isSupplementaryHourType(type: PayrollAdjustmentType) {
@@ -639,6 +817,35 @@ export class PayrollService {
       if (!existing) throw new NotFoundException('Contract not found');
 
       await this.assertCatalogReferences(dto.arlRiskClassId, dto.ciiuId, tx);
+      const criticalFields: (keyof UpdateEmployeeContractDto)[] = [
+        'salaryMonthly',
+        'startDate',
+        'paymentCycle',
+        'arlRiskClassId',
+        'applyLaw1819',
+        'isRemote',
+      ];
+      const changesCriticalField = criticalFields.some(
+        (field) => dto[field] !== undefined,
+      );
+      if (changesCriticalField) {
+        const postedRun = await tx.payrollRun.findFirst({
+          where: {
+            businessId,
+            contractId,
+            period: {
+              status: {
+                in: [PayrollPeriodStatus.POSTED, PayrollPeriodStatus.CLOSED],
+              },
+            },
+          },
+        });
+        if (postedRun) {
+          throw new BadRequestException(
+            'Contract has posted payroll history. Create a new contract version for critical changes.',
+          );
+        }
+      }
 
       const startDate = dto.startDate
         ? this.parseDate(dto.startDate, 'startDate')
@@ -797,15 +1004,54 @@ export class PayrollService {
       throw new BadRequestException('Only POSTED periods can be closed');
     }
 
-    return this.prisma.payrollPeriod.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        calculatedAt:
-          dto.status === PayrollPeriodStatus.CALCULATED ? new Date() : undefined,
-        postedAt: dto.status === PayrollPeriodStatus.POSTED ? new Date() : undefined,
-        closedAt: dto.status === PayrollPeriodStatus.CLOSED ? new Date() : undefined,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.status === PayrollPeriodStatus.POSTED) {
+        const runs = await tx.payrollRun.findMany({
+          where: { businessId, payrollPeriodId: id },
+          include: {
+            employee: true,
+            conceptResults: true,
+          },
+        });
+
+        for (const run of runs) {
+          await this.recreateAccountingMovements(
+            businessId,
+            period,
+            run,
+            `${run.employee.firstName} ${run.employee.lastName}`,
+            run.conceptResults,
+            tx,
+          );
+
+          const paidPayments = await tx.payrollPayment.findMany({
+            where: { payrollRunId: run.id, status: PayrollPaymentStatus.PAID },
+            include: {
+              payrollRun: {
+                include: { period: true, employee: true },
+              },
+            },
+          });
+          for (const payment of paidPayments) {
+            await this.recreatePayrollPaymentAccountingMovements(
+              businessId,
+              payment,
+              tx,
+            );
+          }
+        }
+      }
+
+      return tx.payrollPeriod.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          calculatedAt:
+            dto.status === PayrollPeriodStatus.CALCULATED ? new Date() : undefined,
+          postedAt: dto.status === PayrollPeriodStatus.POSTED ? new Date() : undefined,
+          closedAt: dto.status === PayrollPeriodStatus.CLOSED ? new Date() : undefined,
+        },
+      });
     });
   }
 
@@ -1282,6 +1528,27 @@ export class PayrollService {
         realEmployerCost: this.money(realEmployerCost),
         usedParameters: {
           ...this.parametersSnapshot(params),
+          employeeSnapshot: {
+            id: employee.id,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            documentType: employee.documentType,
+            documentNumber: employee.documentNumber,
+            position: employee.position,
+          },
+          contractSnapshot: {
+            id: contract.id,
+            contractType: contract.contractType,
+            salaryMonthly: contract.salaryMonthly.toString(),
+            startDate: contract.startDate.toISOString(),
+            endDate: contract.endDate?.toISOString() ?? null,
+            paymentCycle: contract.paymentCycle,
+            installmentsCount: contract.installmentsCount,
+            arlRiskClassId: contract.arlRiskClassId,
+            arlRate: String(contract.arlRiskClass?.rate ?? 0),
+            applyLaw1819: contract.applyLaw1819,
+            isRemote: contract.isRemote,
+          },
           hourlyRate: hourlyRate.toString(),
           law1819Applies,
           arlRate: String(contract.arlRiskClass?.rate ?? 0),
@@ -1312,6 +1579,13 @@ export class PayrollService {
 
       await tx.payrollConceptResult.deleteMany({ where: { payrollRunId: run.id } });
       await tx.payrollAdjustment.deleteMany({ where: { payrollRunId: run.id } });
+      await tx.accountingMovement.deleteMany({
+        where: {
+          businessId,
+          originType: AccountingMovementOriginType.PAYROLL_RUN,
+          originId: run.id,
+        },
+      });
 
       if (overtimeAdjustments.length) {
         await tx.payrollAdjustment.createMany({
@@ -1347,15 +1621,17 @@ export class PayrollService {
       ].map((concept) => ({ ...concept, payrollRunId: run.id }));
 
       await tx.payrollConceptResult.createMany({ data: concepts });
-      await this.recreateAccountingMovements(
-        businessId,
-        period,
-        run,
-        `${employee.firstName} ${employee.lastName}`,
-        concepts,
+      await this.ensurePayrollRunPayments(
+        {
+          id: run.id,
+          businessId,
+          employeeId,
+          contractId: contract.id,
+          netPay: run.netPay,
+          contract: { paymentCycle: contract.paymentCycle },
+        },
         tx,
       );
-
       await tx.payrollPeriod.update({
         where: { id: period.id },
         data: { status: PayrollPeriodStatus.CALCULATED, calculatedAt: new Date() },
@@ -1368,6 +1644,7 @@ export class PayrollService {
           contract: true,
           adjustments: true,
           conceptResults: true,
+          payments: true,
         },
       });
     });
@@ -1414,6 +1691,7 @@ export class PayrollService {
         contract: true,
         adjustments: true,
         conceptResults: true,
+        payments: true,
       },
     });
     if (!run) throw new NotFoundException('Payroll run not found');
@@ -1430,6 +1708,153 @@ export class PayrollService {
         contract: true,
         adjustments: true,
         conceptResults: true,
+        payments: true,
+      },
+    });
+  }
+
+  async listPayrollRunPayments(businessId: string, runId: string) {
+    const run = await this.prisma.payrollRun.findFirst({
+      where: { id: runId, businessId },
+      include: { contract: true },
+    });
+    if (!run) throw new NotFoundException('Payroll run not found');
+    await this.ensurePayrollRunPayments(run);
+    return this.prisma.payrollPayment.findMany({
+      where: { businessId, payrollRunId: runId },
+      orderBy: [{ installmentNumber: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async createPayrollRunPayment(
+    businessId: string,
+    runId: string,
+    dto: CreatePayrollPaymentDto,
+  ) {
+    const run = await this.prisma.payrollRun.findFirst({
+      where: { id: runId, businessId },
+      include: { contract: true },
+    });
+    if (!run) throw new NotFoundException('Payroll run not found');
+    const amount = dto.amount === undefined ? run.netPay : dto.amount;
+    if (this.decimal(amount).lessThanOrEqualTo(0)) {
+      throw new BadRequestException('amount must be greater than 0');
+    }
+
+    return this.prisma.payrollPayment.create({
+      data: {
+        businessId,
+        payrollRunId: run.id,
+        employeeId: run.employeeId,
+        contractId: run.contractId,
+        installmentNumber: dto.installmentNumber ?? null,
+        paymentCycle: run.contract.paymentCycle,
+        type: dto.type ?? PayrollPaymentType.ADJUSTMENT,
+        status: dto.paidAt
+          ? PayrollPaymentStatus.PAID
+          : PayrollPaymentStatus.PENDING,
+        amount,
+        paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : undefined,
+        paymentMethod: dto.paymentMethod,
+        notes: this.normalizeNullableText(dto.notes),
+      },
+    });
+  }
+
+  async updatePayrollPaymentStatus(
+    businessId: string,
+    paymentId: string,
+    dto: UpdatePayrollPaymentStatusDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.payrollPayment.findFirst({
+        where: { id: paymentId, businessId },
+        include: {
+          payrollRun: {
+            include: {
+              period: true,
+              employee: true,
+            },
+          },
+        },
+      });
+      if (!existing) throw new NotFoundException('Payroll payment not found');
+      if (existing.status === PayrollPaymentStatus.CANCELLED) {
+        throw new BadRequestException('Cancelled payroll payments cannot be modified');
+      }
+
+      const payment = await tx.payrollPayment.update({
+        where: { id: paymentId },
+        data: {
+          status: dto.status,
+          paidAt:
+            dto.status === PayrollPaymentStatus.PAID
+              ? dto.paidAt
+                ? this.parseDate(dto.paidAt, 'paidAt')
+                : existing.paidAt ?? new Date()
+              : null,
+          paymentMethod: dto.paymentMethod ?? existing.paymentMethod,
+          notes: this.normalizeNullableText(dto.notes) ?? existing.notes,
+        },
+        include: {
+          payrollRun: {
+            include: {
+              period: true,
+              employee: true,
+            },
+          },
+        },
+      });
+
+      if (payment.status === PayrollPaymentStatus.PAID) {
+        if (payment.payrollRun.period.status === PayrollPeriodStatus.POSTED) {
+          await this.recreatePayrollPaymentAccountingMovements(
+            businessId,
+            payment,
+            tx,
+          );
+        }
+      } else {
+        await tx.accountingMovement.deleteMany({
+          where: {
+            businessId,
+            originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
+            originId: payment.id,
+          },
+        });
+      }
+
+      return payment;
+    });
+  }
+
+  async listContractBenefitPayments(businessId: string, contractId: string) {
+    await this.getContractForSettlement(businessId, contractId);
+    return this.prisma.payrollBenefitPayment.findMany({
+      where: { businessId, contractId },
+      orderBy: { paidAt: 'desc' },
+    });
+  }
+
+  async createContractBenefitPayment(
+    businessId: string,
+    contractId: string,
+    dto: CreatePayrollBenefitPaymentDto,
+  ) {
+    const contract = await this.getContractForSettlement(businessId, contractId);
+    return this.prisma.payrollBenefitPayment.create({
+      data: {
+        businessId,
+        employeeId: contract.employeeId,
+        contractId,
+        type: dto.type,
+        amount: dto.amount,
+        status: dto.status ?? PayrollPaymentStatus.PAID,
+        paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
+        periodId: dto.periodId,
+        payrollRunId: dto.payrollRunId,
+        settlementId: dto.settlementId,
+        notes: this.normalizeNullableText(dto.notes),
       },
     });
   }
@@ -1454,7 +1879,7 @@ export class PayrollService {
     name: string,
     amount: Prisma.Decimal,
     baseAmount: Prisma.Decimal,
-    days: number,
+    days: number | undefined,
     metadata: Prisma.InputJsonObject,
     rate?: Prisma.Decimal,
   ): Omit<Prisma.PayrollContractSettlementLineCreateManyInput, 'settlementId'> {
@@ -1509,33 +1934,126 @@ export class PayrollService {
     const totalDays = this.decimal(totalWorkedDays);
     const dailySalary = salaryMonthly.div(params.maxWorkedDaysMonth);
     const hourlyRate = salaryMonthly.div(params.monthlyHours);
-    const severance = benefitSettlementBase.mul(totalDays).div(360);
-    const severanceInterest = severance.mul(0.12).mul(totalDays).div(360);
-    const serviceBonusSemesterOne = benefitSettlementBase
+    const salaryAccrued = dailySalary.mul(totalDays);
+    const paidSalaryAggregate = await tx.payrollPayment.aggregate({
+      where: {
+        businessId,
+        contractId: contract.id,
+        status: PayrollPaymentStatus.PAID,
+        type: {
+          in: [
+            PayrollPaymentType.SALARY_PAYMENT,
+            PayrollPaymentType.ADVANCE,
+          ],
+        },
+        OR: [{ paidAt: null }, { paidAt: { lte: finalEndDate } }],
+      },
+      _sum: { amount: true },
+    });
+    const salaryPaid = this.decimal(paidSalaryAggregate._sum.amount);
+    const salaryPending = salaryAccrued.sub(salaryPaid);
+
+    const benefitPaidRows = await tx.payrollBenefitPayment.groupBy({
+      by: ['type'],
+      where: {
+        businessId,
+        contractId: contract.id,
+        status: PayrollPaymentStatus.PAID,
+        OR: [{ paidAt: null }, { paidAt: { lte: finalEndDate } }],
+      },
+      _sum: { amount: true },
+    });
+    const benefitPaid = (type: PayrollBenefitPaymentType) =>
+      this.decimal(
+        benefitPaidRows.find((row) => row.type === type)?._sum.amount,
+      );
+
+    const severanceCaused = benefitSettlementBase.mul(totalDays).div(360);
+    const severanceInterestCaused = severanceCaused.mul(0.12).mul(totalDays).div(360);
+    const serviceBonusSemesterOneCaused = benefitSettlementBase
       .mul(semesterOneDays)
       .div(360);
-    const serviceBonusSemesterTwo = benefitSettlementBase
+    const serviceBonusSemesterTwoCaused = benefitSettlementBase
       .mul(semesterTwoDays)
       .div(360);
     const vacationDays = totalDays.mul(15).div(360);
-    const vacation = salaryMonthly.mul(totalDays).div(720);
+    const vacationCaused = salaryMonthly.mul(totalDays).div(720);
+    const serviceBonusPaid = benefitPaid(PayrollBenefitPaymentType.PRIMA);
+    const severancePaid = benefitPaid(PayrollBenefitPaymentType.CESANTIAS);
+    const severanceInterestPaid = benefitPaid(
+      PayrollBenefitPaymentType.INTERESES_CESANTIAS,
+    );
+    const vacationPaid = benefitPaid(PayrollBenefitPaymentType.VACACIONES);
+    const serviceBonusCaused = serviceBonusSemesterOneCaused.add(
+      serviceBonusSemesterTwoCaused,
+    );
+    const severance = severanceCaused.sub(severancePaid);
+    const severanceInterest = severanceInterestCaused.sub(severanceInterestPaid);
+    const serviceBonusPending = serviceBonusCaused.sub(serviceBonusPaid);
+    const serviceBonusSemesterOne =
+      serviceBonusCaused.equals(0)
+        ? this.decimal(0)
+        : serviceBonusPending
+            .mul(serviceBonusSemesterOneCaused)
+            .div(serviceBonusCaused);
+    const serviceBonusSemesterTwo = serviceBonusPending.sub(
+      serviceBonusSemesterOne,
+    );
+    const vacation = vacationCaused.sub(vacationPaid);
     const totalAmount = severance
       .add(severanceInterest)
       .add(serviceBonusSemesterOne)
       .add(serviceBonusSemesterTwo)
-      .add(vacation);
+      .add(vacation)
+      .add(salaryPending);
 
     const snapshot = {
       ...this.parametersSnapshot(params),
+      employeeSnapshot: {
+        id: contract.employee.id,
+        firstName: contract.employee.firstName,
+        lastName: contract.employee.lastName,
+        documentType: contract.employee.documentType,
+        documentNumber: contract.employee.documentNumber,
+        position: contract.employee.position,
+      },
+      contractSnapshot: {
+        id: contract.id,
+        contractType: contract.contractType,
+        salaryMonthly: contract.salaryMonthly.toString(),
+        startDate: contract.startDate.toISOString(),
+        endDate: contract.endDate?.toISOString() ?? null,
+        paymentCycle: contract.paymentCycle,
+        installmentsCount: contract.installmentsCount,
+        applyLaw1819: contract.applyLaw1819,
+        isRemote: contract.isRemote,
+        arlRiskClassId: contract.arlRiskClassId,
+      },
       settlementYear: year,
       dailySalary: dailySalary.toString(),
       hourlyRate: hourlyRate.toString(),
       salaryMonthly: salaryMonthly.toString(),
       transportAllowance: settlementTransportAllowance.toString(),
       benefitSettlementBase: benefitSettlementBase.toString(),
+      salaryAccrued: salaryAccrued.toString(),
+      salaryPaid: salaryPaid.toString(),
+      salaryPending: salaryPending.toString(),
+      paidBenefits: {
+        severance: severancePaid.toString(),
+        severanceInterest: severanceInterestPaid.toString(),
+        serviceBonus: serviceBonusPaid.toString(),
+        vacation: vacationPaid.toString(),
+      },
+      causedBenefits: {
+        severance: severanceCaused.toString(),
+        severanceInterest: severanceInterestCaused.toString(),
+        serviceBonus: serviceBonusCaused.toString(),
+        vacation: vacationCaused.toString(),
+      },
       withholdingTax: '0',
       dayCountBasis: '30/360',
       formulas: {
+        salaryPending: 'salaryMonthly / 30 * totalWorkedDays30_360 - paidSalary',
         severance: '(salaryMonthly + transportAllowance) * totalWorkedDays30_360 / 360',
         severanceInterest: 'severance * 0.12 * totalWorkedDays30_360 / 360',
         serviceBonus: '(salaryMonthly + transportAllowance) * semesterDays30_360 / 360',
@@ -1545,6 +2063,39 @@ export class PayrollService {
     } as Prisma.InputJsonObject;
 
     const lines = [
+      this.settlementLine(
+        'SALARY_ACCRUED',
+        'Salario causado',
+        salaryAccrued,
+        salaryMonthly,
+        totalWorkedDays,
+        {
+          basis: '30/360',
+          formula: 'salaryMonthly / 30 * totalWorkedDays30_360',
+        },
+      ),
+      this.settlementLine(
+        'SALARY_PAID',
+        'Pagos salariales realizados',
+        salaryPaid.neg(),
+        salaryPaid,
+        undefined,
+        {
+          source: 'PayrollPayment PAID',
+          types: ['SALARY_PAYMENT', 'ADVANCE'],
+        },
+      ),
+      this.settlementLine(
+        'SALARY_PENDING',
+        'Salario pendiente',
+        salaryPending,
+        salaryAccrued,
+        totalWorkedDays,
+        {
+          formula: 'salaryAccrued - salaryPaid',
+          canBeNegative: true,
+        },
+      ),
       this.settlementLine(
         'SEVERANCE',
         'Cesantias',
@@ -1557,6 +2108,8 @@ export class PayrollService {
             '(salaryMonthly + transportAllowance) * totalWorkedDays30_360 / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          causedAmount: severanceCaused.toString(),
+          paidAmount: severancePaid.toString(),
         },
       ),
       this.settlementLine(
@@ -1568,6 +2121,8 @@ export class PayrollService {
         {
           basis: '30/360',
           formula: 'severance * 0.12 * totalWorkedDays30_360 / 360',
+          causedAmount: severanceInterestCaused.toString(),
+          paidAmount: severanceInterestPaid.toString(),
         },
         new Prisma.Decimal(0.12),
       ),
@@ -1583,6 +2138,8 @@ export class PayrollService {
             '(salaryMonthly + transportAllowance) * semesterOneDays30_360 / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          causedAmount: serviceBonusSemesterOneCaused.toString(),
+          paidAmount: serviceBonusPaid.toString(),
         },
       ),
       this.settlementLine(
@@ -1597,6 +2154,8 @@ export class PayrollService {
             '(salaryMonthly + transportAllowance) * semesterTwoDays30_360 / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          causedAmount: serviceBonusSemesterTwoCaused.toString(),
+          paidAmount: serviceBonusPaid.toString(),
         },
       ),
       this.settlementLine(
@@ -1609,6 +2168,8 @@ export class PayrollService {
           basis: '30/360',
           formula: 'salaryMonthly * totalWorkedDays30_360 / 720',
           vacationDays: vacationDays.toDecimalPlaces(2).toString(),
+          causedAmount: vacationCaused.toString(),
+          paidAmount: vacationPaid.toString(),
         },
       ),
     ];
