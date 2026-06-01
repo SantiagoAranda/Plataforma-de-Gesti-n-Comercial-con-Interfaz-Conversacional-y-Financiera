@@ -77,6 +77,7 @@ export class PublicService {
     businessId: string,
     item: { id: string; durationMinutes: number | null },
     date: Date,
+    hasSpecificWindows: boolean,
     excludeReservationId?: string,
   ) {
     const weekday = this.getWeekday(date);
@@ -86,7 +87,7 @@ export class PublicService {
         where: {
           businessId,
           weekday,
-          OR: [{ itemId: item.id }, { itemId: null }],
+          itemId: hasSpecificWindows ? item.id : null,
         },
         orderBy: { startMinute: 'asc' },
       }),
@@ -114,10 +115,26 @@ export class PublicService {
 
     if (windows.length === 0) return [];
 
+    // 1. Windows are already filtered at the database query level based on item-specific priority.
+    const filteredWindows = windows;
+
+    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
+    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
+    for (const w of filteredWindows) {
+      const last = mergedWindows[mergedWindows.length - 1];
+      if (last && last.endMinute >= w.startMinute) {
+        last.endMinute = Math.max(last.endMinute, w.endMinute);
+      } else {
+        mergedWindows.push({ startMinute: w.startMinute, endMinute: w.endMinute });
+      }
+    }
+
     const duration = item.durationMinutes ?? 60;
+    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos)
+    const step = 30;
     const slots: string[] = [];
 
-    for (const window of windows) {
+    for (const window of mergedWindows) {
       let cursor = window.startMinute;
 
       while (cursor + duration <= window.endMinute) {
@@ -143,7 +160,7 @@ export class PublicService {
           slots.push(this.formatTime(start));
         }
 
-        cursor += duration;
+        cursor += step;
       }
     }
 
@@ -157,7 +174,20 @@ export class PublicService {
   async listPublicItems(slug: string, type?: string) {
     let business = await this.prisma.business.findFirst({
       where: { slug, status: 'ACTIVE' },
-      select: { id: true, name: true, slug: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        storeFooterSettings: {
+          select: {
+            description: true,
+            email: true,
+            phones: true,
+            socials: true,
+          },
+        },
+      },
     });
 
     if (!business) {
@@ -165,7 +195,20 @@ export class PublicService {
       if (normalized !== slug) {
         business = await this.prisma.business.findFirst({
           where: { slug: normalized, status: 'ACTIVE' },
-          select: { id: true, name: true, slug: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            storeFooterSettings: {
+              select: {
+                description: true,
+                email: true,
+                phones: true,
+                socials: true,
+              },
+            },
+          },
         });
       }
     }
@@ -189,8 +232,10 @@ export class PublicService {
       },
     });
 
+    const { id: _businessId, ...publicBusiness } = business;
+
     return {
-      business,
+      business: publicBusiness,
       data: data.map((item) => ({
         ...item,
         price: Number(item.price),
@@ -230,7 +275,11 @@ export class PublicService {
       throw new BadRequestException('Invalid service');
 
     const selectedDate = this.parseDateOnly(date);
-    return this.getAvailabilitySlotsForItem(business.id, item, selectedDate);
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId: business.id, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+    return this.getAvailabilitySlotsForItem(business.id, item, selectedDate, hasSpecificWindows);
   }
 
   async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
@@ -266,6 +315,11 @@ export class PublicService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId: business.id, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+
     const cursor = new Date(firstDay);
     const availableDates: string[] = [];
 
@@ -275,6 +329,7 @@ export class PublicService {
           business.id,
           item,
           new Date(cursor),
+          hasSpecificWindows,
         );
 
         if (slots.length > 0) {
@@ -343,10 +398,16 @@ export class PublicService {
       if (!item)
         throw new BadRequestException('Invalid service');
 
+      const specificWindowsCount = await tx.serviceScheduleWindow.count({
+        where: { businessId: business.id, itemId: item.id },
+      });
+      const hasSpecificWindows = specificWindowsCount > 0;
+
       const availableSlots = await this.getAvailabilitySlotsForItem(
         business.id,
         item,
         selectedDate,
+        hasSpecificWindows,
       );
       const requestedSlot = this.formatTime(startMinute);
 

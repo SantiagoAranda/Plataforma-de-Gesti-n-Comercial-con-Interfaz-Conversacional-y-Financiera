@@ -318,6 +318,8 @@ export default function VentaPage() {
     type: Sale["type"];
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
+    scheduledAt?: string;
+    durationMinutes?: number;
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
@@ -482,7 +484,7 @@ export default function VentaPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-slate-100">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
       <div className="shrink-0">
         {selectedSale ? (
           <SelectionActionBar

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Send, X, Search } from "lucide-react";
 import { ItemType } from "@/src/types/item";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 interface MiNegocioChatComposerProps {
   mode: "closed" | "create" | "edit";
@@ -73,7 +73,7 @@ export function MiNegocioChatComposer({
   }, [description, isOpen]);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2 sm:px-4 lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-[#f7f3ed] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {/* EXPANDABLE CONTENT */}
@@ -86,59 +86,28 @@ export function MiNegocioChatComposer({
           )}
 
           {/* CHAT BAR */}
-          <div className="relative z-20 rounded-[28px] bg-white p-2 shadow-[0_-6px_24px_rgba(0,0,0,0.08)] ring-1 ring-black/5">
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={onToggle}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 self-center"
-                aria-label={isOpen ? "Cancelar" : "Nuevo item"}
-              >
-                {isOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-              </button>
-
-              <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-3 ring-1 ring-neutral-200">
-                {isOpen ? (
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    maxLength={250}
-                    value={description}
-                    onChange={(e) => handleDescriptionChange(e.target.value)}
-                    placeholder={placeholders[type]}
-                    className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none resize-none leading-relaxed overflow-hidden py-0"
-                  />
-                ) : (
-                  <input
-                    type="text"
-                    value={searchValue}
-                    onChange={(e) => onSearchChange(e.target.value)}
-                    placeholder="Buscar producto o servicio..."
-                    className="w-full border-none bg-transparent text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none"
-                  />
-                )}
-              </div>
-
-              <div className="relative flex shrink-0 items-center justify-center">
-                {isOpen && isExpanded && (
-                  <span className="absolute -top-7 text-[10px] font-medium text-neutral-400 z-10 whitespace-nowrap">
-                    {description.length}/250
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={onSubmit}
-                  disabled={isSubmitting}
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition active:scale-95 ${
-                    isSubmitting ? "bg-neutral-200 text-neutral-400 pointer-events-none" : "bg-emerald-500 hover:bg-emerald-600"
-                  }`}
-                  aria-label={label}
-                >
-                  {isOpen ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4 text-white" />}
-                </button>
-              </div>
-            </div>
-          </div>
+          <WhatsappComposer
+            value={isOpen ? description : searchValue}
+            onChange={isOpen ? handleDescriptionChange : onSearchChange}
+            onPlusClick={onToggle}
+            onSubmit={onSubmit}
+            placeholder={isOpen ? placeholders[type] : "Buscar producto o servicio..."}
+            isSubmitting={isSubmitting}
+            leftIconVariant={isOpen ? "x" : "plus"}
+            rightIconVariant={isOpen ? "send" : "search"}
+            inputKind={isOpen ? "textarea" : "input"}
+            textareaRef={textareaRef}
+            textareaProps={{ rows: 1, maxLength: 250 }}
+            plusAriaLabel={isOpen ? "Cancelar" : "Nuevo item"}
+            submitAriaLabel={label}
+            counter={
+              isOpen && isExpanded ? (
+                <span className="absolute -top-7 z-10 whitespace-nowrap text-[10px] font-medium text-neutral-400">
+                  {description.length}/250
+                </span>
+              ) : null
+            }
+          />
         </div>
       </div>
     </div>

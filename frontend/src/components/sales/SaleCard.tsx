@@ -30,6 +30,19 @@ function formatTime(iso?: string) {
   return formatBusinessTime(d);
 }
 
+function formatAppointment(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 type Props = {
   sale: Sale;
   selected?: boolean;
@@ -150,6 +163,12 @@ export default function SaleCard({
               ${formatDisplayMoney(total)}
             </span>
           </div>
+
+          {sale.type === "SERVICIO" && sale.scheduledAt && (
+            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100">
+              Turno: {formatAppointment(sale.scheduledAt)}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -184,9 +203,9 @@ export default function SaleCard({
         </div>
 
         <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-50">
-          <span className="flex items-center gap-1 text-[10px] font-bold text-[#34b7f1]">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {validationLabel}
+        <span className="flex items-center gap-1 text-[10px] font-bold text-[#34b7f1]">
+              {/*<ShieldCheck className="h-3.5 w-3.5" />
+            {validationLabel}*/} {/* Muestra la validacion */}
           </span>
           <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
             {formatTime(sale.createdAt)}

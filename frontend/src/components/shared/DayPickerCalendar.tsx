@@ -152,34 +152,34 @@ export default function DayPickerCalendar({
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
-      <div className="flex items-center justify-between rounded-full bg-slate-100 px-3 py-2">
+      <div className="flex h-10 items-center justify-between gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
         <button
           onClick={() => moveSelectedDay(-1)}
-          className="rounded-full p-2 text-neutral-500 hover:bg-white/60"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
           aria-label="Dia anterior"
           type="button"
         >
-          <ChevronLeft className="h-5 w-5" />
+          <ChevronLeft className="h-4 w-4" />
         </button>
 
         <button
           onClick={() => setCalendarOpen((v) => !v)}
-          className="flex items-center gap-2 rounded-full px-2 py-1 text-sm font-medium text-neutral-700 hover:bg-white/60"
+          className="flex h-9 flex-1 items-center justify-center gap-2 rounded-full px-2 text-sm text-[#0f172a] outline-none transition hover:bg-white/60 active:scale-95"
           aria-expanded={calendarOpen}
           aria-controls={id}
           type="button"
         >
-          <Calendar className="h-4 w-4 text-neutral-500" />
+          <Calendar className="h-4 w-4 text-slate-400" />
           <span className="capitalize">{pillLabel}</span>
         </button>
 
         <button
           onClick={() => moveSelectedDay(1)}
-          className="rounded-full p-2 text-neutral-500 hover:bg-white/60"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
           aria-label="Dia siguiente"
           type="button"
         >
-          <ChevronRight className="h-5 w-5" />
+          <ChevronRight className="h-4 w-4" />
         </button>
       </div>
 

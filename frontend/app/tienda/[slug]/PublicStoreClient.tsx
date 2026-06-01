@@ -17,26 +17,9 @@ import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
-import { Footer, FooterConfig } from "@/src/components/layout/Footer";
+import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
 import { getItemBadges } from "@/src/lib/itemBadges";
 
-const mockFooterConfig: FooterConfig = {
-  backgroundColor: '#064e3b',
-  titulo: 'Mi Negocio',
-  frasePrincipal: 'Potenciando tu negocio cada día',
-  contacto: {
-    email: 'contacto@sactec.com',
-    telefonos: {
-      registro: '+54 9 11 1234-5678',
-      opcional1: '+54 9 11 8765-4321',
-    },
-    redesSociales: {
-      facebook: 'https://facebook.com',
-      instagram: 'https://instagram.com/savik.ar',
-      youtube: 'https://youtube.com',
-    }
-  }
-};
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 
 const formatPrice = (value: number) => {
@@ -71,6 +54,40 @@ type Item = {
   images?: { id: string; url: string }[];
 };
 
+type StoreFooterSettings = {
+  description?: string | null;
+  email?: string | null;
+  phones?: unknown;
+  socials?: unknown;
+} | null;
+
+function normalizeFooterPhones(value: unknown): FooterPhone[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterPhone[]>((acc, phone) => {
+      if (!phone || typeof phone !== "object") return acc;
+      const record = phone as Record<string, unknown>;
+      const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      if (!phoneValue) return acc;
+      acc.push({ label, value: phoneValue });
+      return acc;
+    }, []);
+}
+
+function normalizeFooterSocials(value: unknown): FooterSocial[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterSocial[]>((acc, social) => {
+      if (!social || typeof social !== "object") return acc;
+      const record = social as Record<string, unknown>;
+      const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      const socialValue = typeof record.value === "string" ? record.value.trim() : "";
+      if (!type || !socialValue) return acc;
+      acc.push({ type, label, value: socialValue });
+      return acc;
+    }, []);
+}
+
 export default function PublicStoreClient() {
   const params = useParams();
   const slug = typeof params?.slug === "string" ? params.slug : "";
@@ -82,6 +99,8 @@ export default function PublicStoreClient() {
   const [items, setItems] = useState<Item[]>([]);
   const [businessName, setBusinessName] = useState("");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
+  const [footerSettings, setFooterSettings] = useState<StoreFooterSettings>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -90,8 +109,6 @@ export default function PublicStoreClient() {
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
@@ -157,6 +174,8 @@ export default function PublicStoreClient() {
         if (data?.business?.name) {
           setBusinessName(data.business.name);
         }
+        setBusinessLogoUrl(data?.business?.logoUrl || null);
+        setFooterSettings(data?.business?.storeFooterSettings ?? null);
 
         setItems(
           itemsList.map((item: any) => ({
@@ -186,52 +205,31 @@ export default function PublicStoreClient() {
     fetchItems();
   }, [slug, category, notify]);
 
+  const footerConfig = useMemo<FooterConfig>(() => {
+    const description =
+      typeof footerSettings?.description === "string"
+        ? footerSettings.description.trim()
+        : "";
+    const email =
+      typeof footerSettings?.email === "string"
+        ? footerSettings.email.trim()
+        : "";
+
+    return {
+      backgroundColor: '#064e3b',
+      titulo: businessName,
+      frasePrincipal: description || undefined,
+      contacto: {
+        email: email || undefined,
+        telefonos: normalizeFooterPhones(footerSettings?.phones),
+        redesSociales: normalizeFooterSocials(footerSettings?.socials),
+      },
+    };
+  }, [businessName, footerSettings]);
+
   const resetReservationUi = () => {
     setSelectedService(null);
-    setAvailableSlots([]);
-    setAvailableDates([]);
     setSelectedDateKey(null);
-  };
-
-  const handleDateChange = async (date: Date) => {
-    if (!selectedService || !slug) return;
-
-    const formatted = formatLocalDateKey(date);
-    setSelectedDateKey(formatted);
-
-    try {
-      const res = await fetch(
-        `${API_URL}/public/${slug}/availability?itemId=${selectedService.id}&date=${formatted}`
-      );
-
-      if (!res.ok) throw new Error("Error fetching availability");
-
-      const data = await res.json();
-      setAvailableSlots(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Availability error:", error);
-      setAvailableSlots([]);
-    }
-  };
-
-  const handleMonthChange = async (date: Date) => {
-    if (!selectedService || !slug) return;
-
-    const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-    try {
-      const res = await fetch(
-        `${API_URL}/public/${slug}/availability-calendar?itemId=${selectedService.id}&month=${month}`
-      );
-
-      if (!res.ok) throw new Error("Error fetching availability calendar");
-
-      const data = await res.json();
-      setAvailableDates(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Availability calendar error:", error);
-      setAvailableDates([]);
-    }
   };
 
   const handleReserve = async (data: any) => {
@@ -409,22 +407,30 @@ export default function PublicStoreClient() {
         className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
+        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0">
-              <Store className="h-5 w-5" />
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
+              {businessLogoUrl ? (
+                <img
+                  src={businessLogoUrl}
+                  alt={`Logo de ${businessName || "Tienda"}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Store className="h-5 w-5" />
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-[16px] font-bold text-slate-950">
+            <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
+              <h1 className="truncate text-[20px] font-semibold text-neutral-900">
                 {businessName || "Tienda"}
-              </div>
+              </h1>
               {businessSubtitle?.trim() && (
-                <div className="truncate text-[12px] font-medium text-slate-500">
+                <div className="truncate text-[13px] font-medium text-slate-500 ml-2">
                   {businessSubtitle.trim()}
                 </div>
               )}
               <div
-                className="truncate text-[12px] font-medium text-slate-500"
+                className="truncate text-[13px] font-medium text-slate-500 ml-2"
                 style={businessSubtitle?.trim() ? { display: "none" } : undefined}
               >
                 Catálogo
@@ -433,15 +439,6 @@ export default function PublicStoreClient() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-              aria-label="Buscar"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-
             <button
               type="button"
               onClick={() => setShowCartModal(true)}
@@ -459,29 +456,16 @@ export default function PublicStoreClient() {
         </div>
 
         <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
-          {isSearchOpen && (
-            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar..."
-                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setIsSearchOpen(false);
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
-                aria-label="Cerrar búsqueda"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input
+              ref={searchInputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar..."
+              className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
+            />
+          </div>
 
           <div className="flex gap-2">
             {["", "PRODUCT", "SERVICE"].map((type) => (
@@ -648,13 +632,10 @@ export default function PublicStoreClient() {
       <ReservationDrawer
         open={!!selectedService}
         onClose={resetReservationUi}
+        itemId={selectedService?.id}
+        businessSlug={slug}
         title={selectedService?.name}
-        subtitle="Selecciona dia y horario disponible"
-        timeSlots={availableSlots}
-        availableDates={availableDates}
         selectedDateValue={selectedDateKey}
-        onDateChange={handleDateChange}
-        onMonthChange={handleMonthChange}
         onConfirm={handleReserve}
       />
 
@@ -678,7 +659,7 @@ export default function PublicStoreClient() {
         }}
       />
 
-      <Footer config={mockFooterConfig} />
+      <Footer config={footerConfig} />
     </div>
   );
 }

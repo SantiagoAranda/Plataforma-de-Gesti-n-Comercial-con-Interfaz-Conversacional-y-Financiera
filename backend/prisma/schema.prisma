@@ -97,6 +97,9 @@ model Business {
   fiscalId      String
   phoneWhatsapp String
   logoUrl       String?
+  logoObjectKey String?
+  logoMimeType  String?
+  logoSizeBytes Int?
   status        BusinessStatus @default(ACTIVE)
   inactivatedAt DateTime?
 
@@ -110,9 +113,27 @@ model Business {
   schedules           ServiceScheduleWindow[]
   blocks              ServiceScheduleBlock[]
   accountingMovements AccountingMovement[]
+  storeFooterSettings StoreFooterSettings?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model StoreFooterSettings {
+  id String @id @default(uuid())
+
+  businessId String @unique
+
+  description String?
+  email       String?
+
+  phones  Json?
+  socials Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model Item {

@@ -1,10 +1,164 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { Weekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 @Injectable()
 export class ReservationsService {
   constructor(private prisma: PrismaService) {}
+
+  private parseDateOnly(value: string) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
+    if (!match) throw new BadRequestException('Invalid date');
+
+    return new Date(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      0,
+      0,
+      0,
+      0,
+    );
+  }
+
+  private parseMonth(value: string) {
+    const match = /^(\d{4})-(\d{2})$/.exec((value ?? '').trim());
+    if (!match) throw new BadRequestException('Invalid month');
+
+    return {
+      year: Number(match[1]),
+      monthIndex: Number(match[2]) - 1,
+    };
+  }
+
+  private formatDateOnly(value: Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private formatTime(minutes: number) {
+    const h = Math.floor(minutes / 60).toString().padStart(2, '0');
+    const m = (minutes % 60).toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  private getWeekday(date: Date): Weekday {
+    const weekdayMap: Record<number, Weekday> = {
+      0: 'SUN',
+      1: 'MON',
+      2: 'TUE',
+      3: 'WED',
+      4: 'THU',
+      5: 'FRI',
+      6: 'SAT',
+    };
+
+    return weekdayMap[date.getDay()];
+  }
+
+  private async getAvailabilitySlotsForItem(
+    businessId: string,
+    item: { id: string; durationMinutes: number | null },
+    date: Date,
+    hasSpecificWindows: boolean,
+    excludeReservationId?: string,
+  ) {
+    const weekday = this.getWeekday(date);
+
+    const [windows, reservations, blocks] = await Promise.all([
+      this.prisma.serviceScheduleWindow.findMany({
+        where: {
+          businessId,
+          weekday,
+          itemId: hasSpecificWindows ? item.id : null,
+        },
+        orderBy: { startMinute: 'asc' },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          businessId,
+          itemId: item.id,
+          date,
+          status: { not: 'CANCELLED' },
+          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+        },
+        select: { startMinute: true, endMinute: true },
+      }),
+      this.prisma.serviceScheduleBlock.findMany({
+        where: {
+          businessId,
+          date,
+          OR: [{ itemId: item.id }, { itemId: null }],
+        },
+      }),
+    ]);
+
+    if (windows.length === 0) return [];
+
+    // 1. Windows are already filtered at the database query level based on item-specific priority.
+    const filteredWindows = windows;
+
+    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
+    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
+    for (const w of filteredWindows) {
+      const last = mergedWindows[mergedWindows.length - 1];
+      if (last && last.endMinute >= w.startMinute) {
+        last.endMinute = Math.max(last.endMinute, w.endMinute);
+      } else {
+        mergedWindows.push({ startMinute: w.startMinute, endMinute: w.endMinute });
+      }
+    }
+
+    const duration = item.durationMinutes ?? 60;
+    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos)
+    const step = 30;
+    const slots: string[] = [];
+
+    for (const window of mergedWindows) {
+      let cursor = window.startMinute;
+
+      while (cursor + duration <= window.endMinute) {
+        const start = cursor;
+        const end = cursor + duration;
+
+        const overlap = reservations.some(
+          (reservation) => start < reservation.endMinute && end > reservation.startMinute,
+        );
+
+        const blocked = blocks.some((block) => {
+          if (block.startMinute === null && block.endMinute === null) return true;
+          return start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0);
+        });
+
+        if (!overlap && !blocked) slots.push(this.formatTime(start));
+
+        cursor += step;
+      }
+    }
+
+    return slots;
+  }
+
+  private async getBusinessService(businessId: string, itemId: string) {
+    const item = await this.prisma.item.findFirst({
+      where: {
+        id: itemId,
+        businessId,
+        type: 'SERVICE',
+      },
+      select: {
+        id: true,
+        durationMinutes: true,
+      },
+    });
+
+    if (!item) throw new BadRequestException('Invalid service');
+
+    return item;
+  }
 
   async create(businessId: string, dto: CreateReservationDto) {
     if (dto.startMinute >= dto.endMinute) {
@@ -75,6 +229,54 @@ export class ReservationsService {
         startMinute: 'asc',
       },
     });
+  }
+
+  async getAvailability(businessId: string, itemId: string, date: string) {
+    const item = await this.getBusinessService(businessId, itemId);
+    const dateOnly = this.parseDateOnly(date);
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+    return this.getAvailabilitySlotsForItem(businessId, item, dateOnly, hasSpecificWindows);
+  }
+
+  async getAvailabilityCalendar(businessId: string, itemId: string, month: string) {
+    const item = await this.getBusinessService(businessId, itemId);
+    const { year, monthIndex } = this.parseMonth(month);
+    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+
+    const cursor = new Date(firstDay);
+    const availableDates: string[] = [];
+
+    while (cursor <= lastDay) {
+      const current = new Date(cursor);
+
+      if (current >= today) {
+        const slots = await this.getAvailabilitySlotsForItem(
+          businessId,
+          item,
+          current,
+          hasSpecificWindows,
+        );
+
+        if (slots.length > 0) {
+          availableDates.push(this.formatDateOnly(current));
+        }
+      }
+
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return availableDates;
   }
 
   async cancel(businessId: string, id: string) {
