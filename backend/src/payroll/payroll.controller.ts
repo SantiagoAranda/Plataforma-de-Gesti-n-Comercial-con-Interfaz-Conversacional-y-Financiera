@@ -383,6 +383,22 @@ export class PayrollController {
     );
   }
 
+  @Post('periods/:periodId/preview/:employeeId')
+  @Roles('BUSINESS')
+  previewEmployeePayroll(
+    @Req() req: any,
+    @Param('periodId') periodId: string,
+    @Param('employeeId') employeeId: string,
+    @Body() dto: CalculatePayrollDto,
+  ) {
+    return this.payrollService.previewEmployeePayroll(
+      this.getBusinessId(req),
+      periodId,
+      employeeId,
+      dto,
+    );
+  }
+
   @Post('periods/:periodId/calculate')
   @Roles('BUSINESS')
   calculatePeriodPayroll(@Req() req: any, @Param('periodId') periodId: string) {

@@ -1343,6 +1343,201 @@ export class PayrollService {
     }
   }
 
+  async previewEmployeePayroll(
+    businessId: string,
+    periodId: string,
+    employeeId: string,
+    dto: CalculatePayrollDto = {},
+  ) {
+    const period = await this.getPeriodForBusiness(businessId, periodId);
+    const employee = await this.assertEmployeeBelongsToBusiness(
+      businessId,
+      employeeId,
+    );
+    const periodStart = new Date(Date.UTC(period.year, period.month - 1, 1));
+    const periodEnd = new Date(Date.UTC(period.year, period.month, 0));
+
+    const contract = await this.prisma.employeeContract.findFirst({
+      where: {
+        businessId,
+        employeeId,
+        isActive: true,
+        startDate: { lte: periodEnd },
+        OR: [{ endDate: null }, { endDate: { gte: periodStart } }],
+      },
+      include: { arlRiskClass: true },
+      orderBy: { startDate: 'desc' },
+    });
+    if (!contract) throw new NotFoundException('Active contract not found');
+
+    const params = await this.resolvePayrollParameters(businessId, period.year, this.prisma);
+    const workedDays =
+      dto.workedDays ??
+      (period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? 15 : 30);
+    if (workedDays > params.maxWorkedDaysMonth) {
+      throw new BadRequestException('workedDays exceeds maxWorkedDaysMonth');
+    }
+
+    const salaryMonthly = this.decimal(contract.salaryMonthly);
+    const workedDaysDecimal = this.decimal(workedDays);
+    const maxDays = this.decimal(params.maxWorkedDaysMonth);
+    const salaryEarned = salaryMonthly.mul(workedDaysDecimal).div(maxDays);
+    const qualifiesForTransport = salaryMonthly.lessThanOrEqualTo(
+      params.smmlv.mul(params.transportLimitSmmlv),
+    );
+    const proportionalAllowance = qualifiesForTransport
+      ? params.transportAllowance.mul(workedDaysDecimal).div(maxDays)
+      : this.decimal(0);
+    const transportAllowance = contract.isRemote
+      ? this.decimal(0)
+      : proportionalAllowance;
+    const connectivityAllowance = contract.isRemote
+      ? proportionalAllowance
+      : this.decimal(0);
+    const commissions = this.decimal(dto.commissions);
+    const nonSalaryBonus = this.decimal(dto.nonSalaryBonus);
+    const otherDeductions = this.decimal(dto.otherDeductions);
+    const hourlyRate = salaryMonthly.div(params.monthlyHours);
+
+    const totalOvertimeQuantity = (dto.overtimeHours ?? []).reduce(
+      (sum, item) => sum + item.quantity,
+      0,
+    );
+    if (totalOvertimeQuantity > params.maxSupplementaryHours) {
+      throw new BadRequestException('maxSupplementaryHours exceeded');
+    }
+
+    let overtimeAmount = this.decimal(0);
+    for (const item of dto.overtimeHours ?? []) {
+      if (!this.isSupplementaryHourType(item.type) || item.quantity <= 0) {
+        throw new BadRequestException('Invalid overtimeHours item');
+      }
+      const rate = params.overtimeRates.find((entry) => entry.code === item.type);
+      if (!rate) {
+        throw new BadRequestException(`Overtime rate not found for ${item.type}`);
+      }
+      overtimeAmount = overtimeAmount.add(
+        hourlyRate.mul(item.quantity).mul(this.decimal(rate.factor)),
+      );
+    }
+
+    const grossIncome = salaryEarned
+      .add(transportAllowance)
+      .add(connectivityAllowance)
+      .add(commissions)
+      .add(nonSalaryBonus)
+      .add(overtimeAmount);
+    const ibcAmount = salaryEarned.add(commissions).add(overtimeAmount);
+    const employeeHealth = ibcAmount.mul(params.healthEmployeeRate);
+    const employeePension = ibcAmount.mul(params.pensionEmployeeRate);
+    const salaryInSmmlv = params.smmlv.equals(0)
+      ? this.decimal(0)
+      : ibcAmount.div(params.smmlv);
+    const bracket = params.solidarityBrackets.find((item) => {
+      const from = this.decimal(item.fromSmmlv);
+      const to = item.toSmmlv ? this.decimal(item.toSmmlv) : null;
+      return salaryInSmmlv.greaterThanOrEqualTo(from) && (!to || salaryInSmmlv.lessThan(to));
+    });
+    const solidarityFund =
+      params.applySolidarityFund && bracket
+        ? ibcAmount.mul(bracket.rate)
+        : this.decimal(0);
+    const withholdingTax = this.decimal(0);
+    const totalEmployeeDeductions = employeeHealth
+      .add(employeePension)
+      .add(solidarityFund)
+      .add(withholdingTax)
+      .add(otherDeductions);
+    const netPay = grossIncome.sub(totalEmployeeDeductions);
+
+    const law1819Applies =
+      contract.applyLaw1819 &&
+      params.applyLaw1819 &&
+      salaryMonthly.lessThan(params.smmlv.mul(params.law1819ThresholdSmmlv));
+    const employerHealth = law1819Applies
+      ? this.decimal(0)
+      : ibcAmount.mul(params.healthEmployerRate);
+    const employerPension = ibcAmount.mul(params.pensionEmployerRate);
+    const employerArl = ibcAmount.mul(contract.arlRiskClass?.rate ?? 0);
+    const compensationFund = ibcAmount.mul(params.compensationFundRate);
+    const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
+    const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
+
+    const benefitBaseWithTransport = salaryEarned
+      .add(transportAllowance)
+      .add(connectivityAllowance)
+      .add(commissions)
+      .add(overtimeAmount);
+    const vacationBase = salaryEarned.add(commissions).add(overtimeAmount);
+    const severance = benefitBaseWithTransport.mul(params.severanceRate);
+    const monthlySeveranceInterestRate = this.decimal(0.12);
+    const severanceInterest = severance.mul(monthlySeveranceInterestRate);
+    const serviceBonus = benefitBaseWithTransport.mul(params.serviceBonusRate);
+    const vacation = vacationBase.mul(params.vacationRate);
+    const totalEmployerContributions = employerHealth
+      .add(employerPension)
+      .add(employerArl);
+    const totalParafiscals = compensationFund.add(sena).add(icbf);
+    const totalBenefits = severance
+      .add(severanceInterest)
+      .add(serviceBonus)
+      .add(vacation);
+    const realEmployerCost = grossIncome
+      .add(totalEmployerContributions)
+      .add(totalParafiscals)
+      .add(totalBenefits);
+
+    return {
+      id: `preview-${period.id}-${employee.id}`,
+      businessId,
+      payrollPeriodId: period.id,
+      employeeId,
+      contractId: contract.id,
+      employee,
+      contract,
+      workedDays,
+      baseSalary: this.money(salaryMonthly),
+      salaryEarned: this.money(salaryEarned),
+      transportAllowance: this.money(transportAllowance),
+      connectivityAllowance: this.money(connectivityAllowance),
+      commissions: this.money(commissions),
+      nonSalaryBonus: this.money(nonSalaryBonus),
+      overtimeAmount: this.money(overtimeAmount),
+      grossIncome: this.money(grossIncome),
+      ibcAmount: this.money(ibcAmount),
+      employeeHealth: this.money(employeeHealth),
+      employeePension: this.money(employeePension),
+      solidarityFund: this.money(solidarityFund),
+      withholdingTax: this.money(withholdingTax),
+      otherDeductions: this.money(otherDeductions),
+      totalEmployeeDeductions: this.money(totalEmployeeDeductions),
+      netPay: this.money(netPay),
+      employerHealth: this.money(employerHealth),
+      employerPension: this.money(employerPension),
+      employerArl: this.money(employerArl),
+      compensationFund: this.money(compensationFund),
+      sena: this.money(sena),
+      icbf: this.money(icbf),
+      severance: this.money(severance),
+      severanceInterest: this.money(severanceInterest),
+      serviceBonus: this.money(serviceBonus),
+      vacation: this.money(vacation),
+      totalEmployerContributions: this.money(totalEmployerContributions),
+      totalParafiscals: this.money(totalParafiscals),
+      totalBenefits: this.money(totalBenefits),
+      realEmployerCost: this.money(realEmployerCost),
+      payments: [],
+      adjustments: [],
+      conceptResults: [],
+      preview: true,
+      warnings:
+        period.status === PayrollPeriodStatus.POSTED ||
+        period.status === PayrollPeriodStatus.CLOSED
+          ? ['Vista previa, no modifica el periodo posteado.']
+          : [],
+    };
+  }
+
   async calculateEmployeePayroll(
     businessId: string,
     periodId: string,
@@ -1358,7 +1553,7 @@ export class PayrollService {
         tx,
       );
       const contract = await tx.employeeContract.findFirst({
-        where: { businessId, employeeId, isActive: true },
+        where: { businessId, employeeId, isActive: true, startDate: { lte: new Date(Date.UTC(period.year, period.month, 0)) }, OR: [{ endDate: null }, { endDate: { gte: new Date(Date.UTC(period.year, period.month - 1, 1)) } }] },
         include: { arlRiskClass: true },
         orderBy: { startDate: 'desc' },
       });
@@ -2247,22 +2442,43 @@ export class PayrollService {
     contractId: string,
     dto: SimulateContractSettlementDto,
   ) {
-    const endDate = dto.endDate
-      ? this.parseDate(dto.endDate, 'endDate')
-      : new Date();
-
     return this.prisma.$transaction(async (tx) => {
-      const settlement = await this.createSettlement(
+      const contract = await this.getContractForSettlement(businessId, contractId, tx);
+      const endDate = dto.endDate
+        ? this.parseDate(dto.endDate, 'endDate')
+        : contract.endDate ?? new Date();
+      const calculated = await this.calculateSettlementValues(
         businessId,
-        contractId,
-        PayrollSettlementType.SIMULATION_TO_DATE,
+        contract,
         endDate,
         tx,
       );
-      return tx.payrollContractSettlement.findUnique({
-        where: { id: settlement.id },
-        include: { employee: true, contract: true, lines: true },
-      });
+      return {
+        id: `simulation-${contract.id}-${this.startOfUtcDay(endDate).toISOString().slice(0, 10)}`,
+        businessId,
+        employeeId: contract.employeeId,
+        contractId: contract.id,
+        type: PayrollSettlementType.SIMULATION_TO_DATE,
+        status: PayrollSettlementStatus.CALCULATED,
+        startDate: calculated.startDate,
+        endDate: calculated.endDate,
+        semesterOneDays: calculated.semesterOneDays,
+        semesterTwoDays: calculated.semesterTwoDays,
+        totalWorkedDays: calculated.totalWorkedDays,
+        severance: calculated.severance,
+        severanceInterest: calculated.severanceInterest,
+        serviceBonusSemesterOne: calculated.serviceBonusSemesterOne,
+        serviceBonusSemesterTwo: calculated.serviceBonusSemesterTwo,
+        vacation: calculated.vacation,
+        vacationDays: calculated.vacationDays,
+        hourlyRate: calculated.hourlyRate,
+        totalAmount: calculated.totalAmount,
+        usedParameters: calculated.usedParameters,
+        employee: contract.employee,
+        contract,
+        lines: calculated.lines,
+        preview: true,
+      };
     });
   }
 

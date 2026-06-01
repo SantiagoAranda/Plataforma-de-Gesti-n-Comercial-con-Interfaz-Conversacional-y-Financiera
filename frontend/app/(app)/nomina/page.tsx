@@ -23,6 +23,7 @@ import { PayrollChatActionBar } from "@/src/components/payroll/PayrollChatAction
 import { AppApiError } from "@/src/lib/api";
 import {
   type ArlRiskClass,
+  type CalculatePayrollPayload,
   type CiiuActivity,
   type Contract,
   type Employee,
@@ -224,6 +225,47 @@ function employeeRole(employee: Employee, _contract?: Contract | null) {
   return employee.position?.trim() || "Empleado";
 }
 
+function dateOnlyUtc(value?: string | null) {
+  if (!value) return null;
+  const [datePart] = value.split("T");
+  const parts = datePart.split("-").map(Number);
+  if (parts.length < 3 || parts.some((part) => Number.isNaN(part))) return null;
+  return Date.UTC(parts[0], parts[1] - 1, parts[2]);
+}
+
+function periodRangeUtc(period?: PayrollPeriod) {
+  if (!period) return null;
+  return {
+    start: Date.UTC(period.year, period.month - 1, 1),
+    end: Date.UTC(period.year, period.month, 0),
+  };
+}
+
+function isContractActiveForPeriod(contract?: Contract | null, period?: PayrollPeriod) {
+  if (!contract || contract.isActive === false) return false;
+  const start = dateOnlyUtc(contract.startDate);
+  const end = dateOnlyUtc(contract.endDate);
+  const range = periodRangeUtc(period);
+  if (!range) return true;
+  return (start === null || start <= range.end) && (end === null || end >= range.start);
+}
+
+function findActiveContract(contracts?: Contract[], period?: PayrollPeriod) {
+  return contracts?.find((contract) => isContractActiveForPeriod(contract, period)) ?? null;
+}
+
+function isPeriodEditable(period?: PayrollPeriod) {
+  return Boolean(period && period.status !== "POSTED" && period.status !== "CLOSED");
+}
+
+function isoDate(value?: string | null) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function payrollSimulationKey(employeeId: string, contractId?: string | null, periodId?: string | null) {
+  return `${employeeId}:${contractId ?? "no-contract"}:${periodId ?? "no-period"}`;
+}
+
 function PeriodSelector({
   periods,
   selectedId,
@@ -245,8 +287,7 @@ function PeriodSelector({
       >
         {periods.map((period) => (
           <option key={period.id} value={period.id}>
-            {monthNames[period.month - 1]} {period.year}
-            {period.installmentNumber ? ` - cuota ${period.installmentNumber}` : ""} - {period.status}
+            {monthNames[period.month - 1]} {period.year} - {period.status}
           </option>
         ))}
       </select>
@@ -426,7 +467,7 @@ function PayrollSummaryPanel({
     ? "Finalizado"
     : run.contract?.isActive === false
       ? "Requiere liquidacion"
-      : "Contrato Activo";
+      : "Contrato activo";
 
   return (
     <div
@@ -452,7 +493,10 @@ function PayrollSummaryPanel({
             <p className="mt-0.5 text-[12px] font-medium text-slate-500">{employeeRole(run.employee, run.contract)}</p>
             <p className="mt-0.5 text-[11px] text-slate-400">{run.employee.documentNumber ?? "Sin documento"}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">● Activo</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Activo
+              </span>
               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
                 ● {isBiweekly ? "Quincenal" : "Mensual"}
               </span>
@@ -460,7 +504,7 @@ function PayrollSummaryPanel({
           </div>
           <div className="text-right">
             <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(run.contract?.salaryMonthly ?? run.salaryEarned)}</p>
-            <p className="text-[11px] text-slate-400">{contractStatus}</p>
+            <p className="text-[11px] text-slate-400">{run.preview ? "Simulacion disponible" : contractStatus}</p>
           </div>
         </div>
 
@@ -600,7 +644,7 @@ function PayrollSummaryPanel({
             Novedades
           </button>
           <button type="button" onClick={(event) => { event.stopPropagation(); onOpenSettlement?.(run); }} className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-700">
-            Liquidar
+            Ver liquidación
           </button>
         </div>
 
@@ -874,6 +918,92 @@ function EmployeeCarousel({
   );
 }
 
+function EmployeeStandaloneCard({
+  employee,
+  contract,
+  selectedPeriod,
+  onEditEmployee,
+  onEditContract,
+  onOpenNews,
+}: {
+  employee: Employee;
+  contract?: Contract | null;
+  selectedPeriod?: PayrollPeriod;
+  onEditEmployee: (employee: Employee) => void;
+  onEditContract: (employee: Employee, contract?: Contract | null) => void;
+  onOpenNews: (employee: Employee, contract?: Contract | null) => void;
+}) {
+  const hasContract = Boolean(contract);
+  const isBiweekly = contract?.paymentCycle === "BIWEEKLY";
+
+  return (
+    <article className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-start gap-3">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-sm font-medium text-[#0f8f76]">
+          {initials(employee)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-medium text-slate-900">{employeeName(employee)}</p>
+          <p className="mt-0.5 text-[12px] font-medium text-slate-500">{employeeRole(employee, contract)}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">{employee.documentNumber ?? "Sin documento"}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Activo
+            </span>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                hasContract ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700",
+              )}
+            >
+              {hasContract ? "Contrato activo" : "Sin contrato"}
+            </span>
+            {hasContract && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                {isBiweekly ? "Quincenal" : "Mensual"}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="text-right">
+          {hasContract ? (
+            <>
+              <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(contract?.salaryMonthly)}</p>
+              <p className="text-[11px] text-slate-400">{selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Periodo"}</p>
+            </>
+          ) : (
+            <p className="max-w-[90px] text-[11px] font-medium leading-snug text-amber-600">Crear contrato para calcular nomina</p>
+          )}
+        </div>
+      </div>
+
+      <p className="mb-3 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-500">
+        {hasContract ? "Sin nomina calculada en este periodo" : "Empleado activo visible sin contrato activo"}
+      </p>
+
+      <div className={cn("grid gap-1.5 border-t border-slate-100 pt-3", hasContract ? "grid-cols-4" : "grid-cols-2")}>
+        <button type="button" onClick={() => onEditEmployee(employee)} className="rounded-xl bg-slate-50 px-2 py-2 text-[10px] font-bold text-slate-600">
+          Editar
+        </button>
+        <button type="button" onClick={() => onEditContract(employee, contract)} className="rounded-xl bg-blue-50 px-2 py-2 text-[10px] font-bold text-blue-700">
+          {hasContract ? "Contrato" : "Crear contrato"}
+        </button>
+        {hasContract && (
+          <>
+            <button type="button" onClick={() => onOpenNews(employee, contract)} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700">
+              Novedades
+            </button>
+            <button type="button" className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-300" disabled>
+              Liquidar
+            </button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function DetailPanel({
   run,
   settlement,
@@ -1037,8 +1167,8 @@ function EmployeeManagementSheet({
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState<Employee | null>(null);
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
+
   const [documentNumber, setDocumentNumber] = useState("");
   const [position, setPosition] = useState("");
   const [email, setEmail] = useState("");
@@ -1050,8 +1180,8 @@ function EmployeeManagementSheet({
 
   const resetForm = () => {
     setEditing(null);
-    setFirstName("");
-    setLastName("");
+    setFullName("");
+
     setDocumentNumber("");
     setPosition("");
     setEmail("");
@@ -1061,8 +1191,8 @@ function EmployeeManagementSheet({
 
   const startEdit = (employee: Employee) => {
     setEditing(employee);
-    setFirstName(employee.firstName ?? "");
-    setLastName(employee.lastName ?? "");
+    setFullName(`${employee.firstName ?? ""} ${employee.lastName ?? ""}`.trim());
+
     setDocumentNumber(employee.documentNumber ?? "");
     setPosition(employee.position ?? "");
     setEmail(employee.email ?? "");
@@ -1071,15 +1201,15 @@ function EmployeeManagementSheet({
   };
 
   const save = async () => {
-    if (!firstName.trim()) return setError("El nombre es obligatorio.");
-    if (!lastName.trim()) return setError("El apellido es obligatorio.");
+    if (!fullName.trim()) return setError("El nombre completo es obligatorio.");
+
     if (!documentNumber.trim()) return setError("El documento es obligatorio.");
     setSubmitting(true);
     setError(null);
     try {
       const payload = {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        firstName: fullName.trim().split(" ")[0] ?? "",
+        lastName: fullName.trim().split(" ").slice(1).join(" "),
         documentNumber: documentNumber.trim(),
         position: position.trim() || undefined,
         email: email.trim() || undefined,
@@ -1132,8 +1262,8 @@ function EmployeeManagementSheet({
         <div className="rounded-[24px] bg-slate-50 p-3">
           <p className="mb-2 text-xs font-medium text-slate-500">{editing ? "Editar empleado" : "Nuevo empleado"}</p>
           <div className="space-y-2">
-            <input value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Nombre" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
-            <input value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Apellido" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
+            <input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nombre completo" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
+
             <input value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="Documento" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
             <input value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Cargo" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
             <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email opcional" type="email" className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
@@ -2024,13 +2154,21 @@ function PayrollNewsSheet({
   open,
   onClose,
   run,
+  employee,
+  contract,
   selectedPeriod,
+  onPreview,
+  onSettlementPreview,
   onFinished,
 }: {
   open: boolean;
   onClose: () => void;
   run?: PayrollRun | null;
+  employee?: Employee | null;
+  contract?: Contract | null;
   selectedPeriod?: PayrollPeriod;
+  onPreview?: (preview: PayrollRun) => void;
+  onSettlementPreview?: (settlement: Settlement) => void;
   onFinished: (periodId: string) => void;
 }) {
   const [workedDays, setWorkedDays] = useState("30");
@@ -2038,6 +2176,10 @@ function PayrollNewsSheet({
   const [nonSalaryBonus, setNonSalaryBonus] = useState("0");
   const [loans, setLoans] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
+  const [simulatedEndDate, setSimulatedEndDate] = useState("");
+  const [preview, setPreview] = useState<PayrollRun | null>(null);
+  const [settlementPreview, setSettlementPreview] = useState<Settlement | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
     OVERTIME_DAY: "0",
     OVERTIME_NIGHT: "0",
@@ -2056,6 +2198,9 @@ function PayrollNewsSheet({
     setNonSalaryBonus("0");
     setLoans("0");
     setOtherDeductions("0");
+    setSimulatedEndDate(isoDate(contract?.endDate ?? run?.contract?.endDate));
+    setPreview(run?.preview ? run : null);
+    setSettlementPreview(null);
     setOvertimeHours({
       OVERTIME_DAY: "0",
       OVERTIME_NIGHT: "0",
@@ -2065,15 +2210,81 @@ function PayrollNewsSheet({
       SUNDAY_HOLIDAY_DAY: "0",
     });
     setError(null);
-  }, [open]);
+  }, [contract?.endDate, open, run]);
 
   const totalOvertimeHours = overtimeInputs.reduce(
     (sum, item) => sum + numberValue(overtimeHours[item.type]),
     0,
   );
 
+  const sheetEmployee = run?.employee ?? employee ?? null;
+  const employeeId = run?.employeeId ?? sheetEmployee?.id;
+  const sheetContract = run?.contract ?? contract ?? null;
+  const editable = isPeriodEditable(selectedPeriod);
+
+  const buildPayload = useCallback((): CalculatePayrollPayload | null => {
+    const parsedWorkedDays = numberValue(workedDays);
+    if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
+      return null;
+    }
+    const overtimePayload = overtimeInputs
+      .map((item) => ({
+        type: item.type,
+        quantity: numberValue(overtimeHours[item.type]),
+      }))
+      .filter((item) => item.quantity > 0);
+
+    return {
+      workedDays: parsedWorkedDays,
+      commissions: numberValue(commissions),
+      nonSalaryBonus: numberValue(nonSalaryBonus),
+      otherDeductions: numberValue(loans) + numberValue(otherDeductions),
+      overtimeHours: overtimePayload.length ? overtimePayload : undefined,
+    };
+  }, [commissions, loans, nonSalaryBonus, otherDeductions, overtimeHours, workedDays]);
+
+  useEffect(() => {
+    if (!open || !employeeId || !selectedPeriod) return;
+    const payload = buildPayload();
+    if (!payload) return;
+
+    let alive = true;
+    const timer = window.setTimeout(async () => {
+      setPreviewing(true);
+      try {
+        const [payrollPreview, settlementResult] = await Promise.all([
+          payrollApi.previewEmployee(selectedPeriod.id, employeeId, payload),
+          sheetContract?.id
+            ? payrollApi.simulateSettlement(
+                sheetContract.id,
+                simulatedEndDate ? { endDate: simulatedEndDate } : {},
+              ).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (!alive) return;
+        setPreview(payrollPreview);
+        onPreview?.(payrollPreview);
+        if (settlementResult) {
+          setSettlementPreview(settlementResult);
+          onSettlementPreview?.(settlementResult);
+        }
+        setError(null);
+      } catch (err) {
+        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudo calcular la vista previa.");
+      } finally {
+        if (alive) setPreviewing(false);
+      }
+    }, 500);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [buildPayload, employeeId, onPreview, onSettlementPreview, open, selectedPeriod, sheetContract?.id, simulatedEndDate]);
+
   const save = async () => {
-    if (!run || !selectedPeriod) return setError("Selecciona un periodo con empleado calculado.");
+    if (!employeeId || !selectedPeriod) return setError("Selecciona un periodo con empleado activo.");
+    if (!editable) return setError("Este período ya está posteado. No se pueden modificar novedades.");
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
@@ -2082,20 +2293,9 @@ function PayrollNewsSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const overtimePayload = overtimeInputs
-        .map((item) => ({
-          type: item.type,
-          quantity: numberValue(overtimeHours[item.type]),
-        }))
-        .filter((item) => item.quantity > 0);
-
-      await payrollApi.calculateEmployee(selectedPeriod.id, run.employeeId, {
-        workedDays: parsedWorkedDays,
-        commissions: numberValue(commissions),
-        nonSalaryBonus: numberValue(nonSalaryBonus),
-        otherDeductions: numberValue(loans) + numberValue(otherDeductions),
-        overtimeHours: overtimePayload.length ? overtimePayload : undefined,
-      });
+      const payload = buildPayload();
+      if (!payload) return setError("Revisa los valores de novedades.");
+      await payrollApi.calculateEmployee(selectedPeriod.id, employeeId, payload);
 
       onFinished(selectedPeriod.id);
       toast.success("Novedades guardadas");
@@ -2111,7 +2311,7 @@ function PayrollNewsSheet({
     <SheetShell
       open={open}
       title="Novedades"
-      subtitle={run ? employeeName(run.employee) : "Empleado"}
+      subtitle={sheetEmployee ? employeeName(sheetEmployee) : "Empleado"}
       onClose={onClose}
       maxWidth="sm:max-w-xl"
       footer={
@@ -2119,38 +2319,52 @@ function PayrollNewsSheet({
           <button type="button" onClick={onClose} className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600">
             Cancelar
           </button>
-          <button type="button" onClick={save} disabled={submitting || !run} className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 disabled:opacity-60">
-            {submitting ? "Guardando..." : "Guardar novedades"}
-          </button>
+          {editable ? (
+            <button type="button" onClick={save} disabled={submitting || !employeeId} className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 disabled:opacity-60">
+              {submitting ? "Guardando..." : "Guardar novedades"}
+            </button>
+          ) : (
+            <button type="button" onClick={onClose} className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100">
+              Ver detalle
+            </button>
+          )}
         </div>
       }
     >
       <div className="space-y-3">
+        {!editable && (
+          <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+            Este período ya está posteado. No se pueden modificar novedades. Vista previa, no modifica el período posteado.
+          </p>
+        )}
         <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-bold text-neutral-900">{run ? employeeName(run.employee) : "Empleado"}</p>
-              <p className="text-xs font-medium text-neutral-400">{run?.employee.position ?? "Sin cargo"}</p>
+              <p className="text-sm font-bold text-neutral-900">{sheetEmployee ? employeeName(sheetEmployee) : "Empleado"}</p>
+              <p className="text-xs font-medium text-neutral-400">{sheetEmployee?.position ?? "Sin cargo"}</p>
             </div>
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
-              {selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Sin periodo"}
+              {contract?.paymentCycle === "BIWEEKLY" || run?.contract?.paymentCycle === "BIWEEKLY" ? "Quincenal" : selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Sin periodo"}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <FieldBlock label="Dias trabajados">
-              <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" />
+              <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" disabled={!editable} />
             </FieldBlock>
             <FieldBlock label="Prestamos">
-              <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" />
+              <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" disabled={!editable} />
             </FieldBlock>
             <FieldBlock label="Comisiones salariales">
-              <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" />
+              <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" disabled={!editable} />
             </FieldBlock>
             <FieldBlock label="Bonos no salariales">
-              <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" />
+              <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" disabled={!editable} />
             </FieldBlock>
             <FieldBlock label="Otras deducciones">
-              <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" />
+              <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" disabled={!editable} />
+            </FieldBlock>
+            <FieldBlock label="Fecha salida simulada">
+              <BigInput value={simulatedEndDate} onChange={(event) => setSimulatedEndDate(event.target.value)} type="date" />
             </FieldBlock>
           </div>
         </div>
@@ -2177,6 +2391,7 @@ function PayrollNewsSheet({
                   }
                   type="number"
                   min="0"
+                  disabled={!editable}
                   className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-right text-sm font-semibold outline-none focus:border-emerald-400"
                 />
               </label>
@@ -2185,7 +2400,9 @@ function PayrollNewsSheet({
         </div>
 
         <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-neutral-400">Resumen de novedades</span>
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+            Resumen de novedades {previewing ? "calculando..." : ""}
+          </span>
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-2xl bg-emerald-50 p-2">
               <p className="text-[10px] font-bold text-emerald-700">Comisiones</p>
@@ -2201,6 +2418,23 @@ function PayrollNewsSheet({
             </div>
           </div>
         </div>
+
+        {preview && (
+          <div className="rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm">
+            <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-emerald-600">Vista previa de nomina</span>
+            <div className="space-y-1.5">
+              <MoneyLine label="Devengados" value={preview.grossIncome} color="text-slate-600" />
+              <MoneyLine label="Deducciones" value={preview.totalEmployeeDeductions} color="text-rose-500" sign="-" />
+              <MoneyLine label="Prestaciones" value={preview.totalBenefits} color="text-violet-600" />
+              <MoneyLine label="Neto" value={preview.netPay} color="text-slate-900" medium />
+              <MoneyLine label="Costo empresa" value={preview.realEmployerCost} color="text-[#0fb18f]" medium />
+            </div>
+          </div>
+        )}
+
+        {settlementPreview && (
+          <SettlementPanel settlement={settlementPreview} />
+        )}
 
         {error && <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
       </div>
@@ -2226,6 +2460,7 @@ function SettlementSimulationSheet({
   const [settlement, setSettlement] = useState<Settlement | null>(null);
   const [loadingContracts, setLoadingContracts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingPost, setConfirmingPost] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2247,7 +2482,9 @@ function SettlementSimulationSheet({
       .then((data) => {
         if (!alive) return;
         setContracts(data);
-        setContractId(data.find((contract) => !contract.endDate)?.id ?? data[0]?.id ?? "");
+        const nextContract = data.find((contract) => !contract.endDate) ?? data[0];
+        setContractId(nextContract?.id ?? "");
+        setEndDate(isoDate(nextContract?.endDate));
       })
       .catch((err) => {
         console.error(err);
@@ -2262,9 +2499,12 @@ function SettlementSimulationSheet({
     };
   }, [employeeId, open]);
 
-  if (!open) return null;
-
   const selectedContract = contracts.find((contract) => contract.id === contractId);
+
+  useEffect(() => {
+    if (!open || !selectedContract) return;
+    setEndDate((current) => current || isoDate(selectedContract.endDate));
+  }, [open, selectedContract]);
 
   const handleClose = () => {
     setEmployeeId("");
@@ -2272,6 +2512,7 @@ function SettlementSimulationSheet({
     setContractId("");
     setEndDate("");
     setSettlement(null);
+    setConfirmingPost(false);
     setError(null);
     onClose();
   };
@@ -2305,10 +2546,37 @@ function SettlementSimulationSheet({
     }
   };
 
+  useEffect(() => {
+    if (!open || !contractId) return;
+    let alive = true;
+    const timer = window.setTimeout(async () => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        const result = await payrollApi.simulateSettlement(contractId, endDate ? { endDate } : {});
+        if (!alive) return;
+        setSettlement(result);
+        onFinished(result);
+      } catch (err) {
+        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudo simular la liquidacion.");
+      } finally {
+        if (alive) setSubmitting(false);
+      }
+    }, 500);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [contractId, endDate, onFinished, open]);
+
   const handlePostSettlement = async () => {
     if (!contractId) return;
     if (!endDate) {
       setError("Para postear una liquidacion real debes indicar fecha de salida.");
+      return;
+    }
+    if (!confirmingPost) {
+      setConfirmingPost(true);
       return;
     }
     setSubmitting(true);
@@ -2319,12 +2587,15 @@ function SettlementSimulationSheet({
       setSettlement(posted);
       onFinished(posted);
       toast.success("Liquidacion posteada");
+      setConfirmingPost(false);
     } catch (err) {
       setError(err instanceof AppApiError ? err.message : "No se pudo postear la liquidacion.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
@@ -2387,9 +2658,15 @@ function SettlementSimulationSheet({
               className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-violet-300"
             />
             <span className="mt-2 block text-[11px] text-slate-400">
-              Si queda vacia, el backend proyecta la liquidacion al dia actual.
+              Si dejás vacío este campo y el contrato no tiene fecha de salida, se proyecta al día actual.
             </span>
           </label>
+
+          {confirmingPost && (
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+              Esta acción generará la liquidación definitiva y cerrará el contrato.
+            </div>
+          )}
 
           {selectedContract && (
             <div className="rounded-2xl bg-violet-50 p-3 text-xs text-violet-800">
@@ -2418,14 +2695,14 @@ function SettlementSimulationSheet({
           >
             Cerrar
           </button>
-          <button
-            type="button"
-            onClick={handleSimulate}
-            disabled={submitting}
-            className="h-12 flex-1 rounded-2xl bg-violet-500 text-sm font-medium text-white shadow-lg shadow-violet-100 disabled:opacity-60"
-          >
-            {submitting ? "Calculando..." : "Simular"}
-          </button>
+
+
+
+
+
+
+
+
         </div>
         {settlement && (
           <button
@@ -2434,7 +2711,7 @@ function SettlementSimulationSheet({
             disabled={submitting}
             className="mt-2 h-12 w-full rounded-2xl bg-slate-900 text-sm font-medium text-white disabled:opacity-60"
           >
-            Postear liquidacion real
+            {confirmingPost ? "Confirmar liquidación definitiva" : "Liquidar contrato"}
           </button>
         )}
       </div>
@@ -2446,7 +2723,7 @@ export default function PayrollPage() {
   const [periods, setPeriods] = useState<PayrollPeriod[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [arlRisks, setArlRisks] = useState<ArlRiskClass[]>([]);
-  const [ciiuActivities, setCiiuActivities] = useState<CiiuActivity[]>([]);
+
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [settlements, setSettlements] = useState<Record<string, Settlement>>({});
@@ -2466,6 +2743,11 @@ export default function PayrollPage() {
   const [contractToEdit, setContractToEdit] = useState<Contract | null>(null);
   const [contractEmployee, setContractEmployee] = useState<Employee | null>(null);
   const [newsRun, setNewsRun] = useState<PayrollRun | null>(null);
+  const [newsEmployee, setNewsEmployee] = useState<Employee | null>(null);
+  const [newsContract, setNewsContract] = useState<Contract | null>(null);
+  const [periodRefreshKey, setPeriodRefreshKey] = useState(0);
+  const [simulationByEmployee, setSimulationByEmployee] = useState<Record<string, PayrollRun>>({});
+  const [settlementPreviewByContract, setSettlementPreviewByContract] = useState<Record<string, Settlement>>({});
 
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId),
@@ -2478,7 +2760,23 @@ export default function PayrollPage() {
     try {
       const data = await payrollApi.listPeriods();
       setPeriods(data);
-      setSelectedPeriodId((current) => current || data[0]?.id || "");
+      setSelectedPeriodId((current) => {
+        if (current) return current;
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth() + 1;
+        const currentPeriod = data.find((p) => p.year === year && p.month === month);
+        if (currentPeriod) return currentPeriod.id;
+        
+        payrollApi.createPeriod({ year, month, paymentCycle: "MONTHLY", installmentNumber: 1 })
+          .then((newPeriod) => {
+            setPeriods((prev) => [...prev, newPeriod]);
+            setSelectedPeriodId(newPeriod.id);
+          })
+          .catch((err) => console.error("Failed to auto-create current period", err));
+          
+        return data[0]?.id || "";
+      });
     } catch (err) {
       console.error(err);
       setError("No se pudo cargar nomina");
@@ -2490,19 +2788,25 @@ export default function PayrollPage() {
   const loadEmployees = useCallback(async () => {
     try {
       const data = await payrollApi.listEmployees();
-      setEmployees(data);
+      const withContracts = await Promise.all(
+        data.map(async (employee) => ({
+          ...employee,
+          contracts: await payrollApi.listContracts(employee.id).catch(() => employee.contracts ?? []),
+        })),
+      );
+      setEmployees(withContracts);
     } catch (err) {
       console.error(err);
     }
   }, []);
 
   const loadCatalogs = useCallback(async () => {
-    const [risks, ciiu] = await Promise.allSettled([
+    const [risks] = await Promise.allSettled([
       payrollApi.listArlRisks(),
-      payrollApi.listCiiu(100),
+
     ]);
     if (risks.status === "fulfilled") setArlRisks(risks.value);
-    if (ciiu.status === "fulfilled") setCiiuActivities(ciiu.value);
+
   }, []);
 
   useEffect(() => {
@@ -2588,33 +2892,120 @@ export default function PayrollPage() {
     return () => {
       alive = false;
     };
-  }, [selectedPeriodId]);
+  }, [selectedPeriodId, periodRefreshKey]);
 
-  const filteredRuns = useMemo(() => {
+  const employeeRows = useMemo(() => {
+    const employeeIds = new Set(employees.map((employee) => employee.id));
+    const runByEmployeeId = new Map(runs.map((run) => [run.employeeId, run]));
+    const rows = employees.map((employee) => {
+      const run = runByEmployeeId.get(employee.id);
+      const activeContract = run?.contract ?? findActiveContract(employee.contracts, selectedPeriod);
+      const preview = !run && activeContract
+        ? simulationByEmployee[payrollSimulationKey(employee.id, activeContract.id, selectedPeriod?.id)]
+        : null;
+      return {
+        key: run?.id ?? preview?.id ?? employee.id,
+        employee,
+        contract: activeContract,
+        run: run ? { ...run, employee, contract: activeContract ?? run.contract } : preview,
+      };
+    });
+
+    for (const run of runs) {
+      if (employeeIds.has(run.employeeId)) continue;
+      rows.push({
+        key: run.id,
+        employee: run.employee,
+        contract: run.contract ?? null,
+        run: { ...run, contract: run.contract ?? null },
+      });
+    }
+
+    return rows;
+  }, [employees, runs, selectedPeriod, simulationByEmployee]);
+
+  useEffect(() => {
+    if (!selectedPeriod) return;
+    const missingRows = employees
+      .map((employee) => ({
+        employee,
+        contract: findActiveContract(employee.contracts, selectedPeriod),
+        hasRun: runs.some((run) => run.employeeId === employee.id),
+      }))
+      .filter((row) => row.contract && !row.hasRun && !simulationByEmployee[payrollSimulationKey(row.employee.id, row.contract?.id, selectedPeriod.id)]);
+
+    if (!missingRows.length) return;
+    let alive = true;
+    const timer = window.setTimeout(async () => {
+      const previews = await Promise.all(
+        missingRows.map(async ({ employee, contract }) => {
+          try {
+            const [payrollPreview, settlementPreview] = await Promise.all([
+              payrollApi.previewEmployee(selectedPeriod.id, employee.id, {
+                workedDays: selectedPeriod.paymentCycle === "BIWEEKLY" ? 15 : 30,
+                commissions: 0,
+                nonSalaryBonus: 0,
+                otherDeductions: 0,
+              }),
+              contract?.id
+                ? payrollApi.simulateSettlement(contract.id, {}).catch(() => null)
+                : Promise.resolve(null),
+            ]);
+            return { employeeId: employee.id, contractId: contract?.id, payrollPreview, settlementPreview };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (!alive) return;
+      setSimulationByEmployee((current) => {
+        const next = { ...current };
+        for (const item of previews) {
+          if (item) next[payrollSimulationKey(item.employeeId, item.contractId, selectedPeriod.id)] = item.payrollPreview;
+        }
+        return next;
+      });
+      setSettlementPreviewByContract((current) => {
+        const next = { ...current };
+        for (const item of previews) {
+          if (item?.contractId && item.settlementPreview) next[item.contractId] = item.settlementPreview;
+        }
+        return next;
+      });
+    }, 500);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [employees, runs, selectedPeriod, simulationByEmployee]);
+
+  const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return runs;
-    return runs.filter((run) => {
-      const fullName = employeeName(run.employee).toLowerCase();
+    if (!term) return employeeRows;
+    return employeeRows.filter((row) => {
+      const fullName = employeeName(row.employee).toLowerCase();
       return (
         fullName.includes(term) ||
-        run.employee.firstName?.toLowerCase().includes(term) ||
-        run.employee.lastName?.toLowerCase().includes(term) ||
-        run.employee.documentNumber?.toLowerCase().includes(term)
+        row.employee.firstName?.toLowerCase().includes(term) ||
+        row.employee.lastName?.toLowerCase().includes(term) ||
+        row.employee.documentNumber?.toLowerCase().includes(term) ||
+        row.employee.position?.toLowerCase().includes(term)
       );
     });
-  }, [runs, search]);
+  }, [employeeRows, search]);
 
   const totals = useMemo(
     () => ({
-      cost: filteredRuns.reduce((acc, run) => acc + toNumber(run.realEmployerCost), 0),
-      net: filteredRuns.reduce((acc, run) => acc + toNumber(run.netPay), 0),
+      cost: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.realEmployerCost), 0),
+      net: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.netPay), 0),
     }),
-    [filteredRuns],
+    [filteredRows],
   );
 
   const selectedRun = useMemo(
-    () => runs.find((run) => run.id === selectedRunId) ?? filteredRuns[0],
-    [filteredRuns, runs, selectedRunId],
+    () => runs.find((run) => run.id === selectedRunId) ?? filteredRows.find((row) => row.run)?.run ?? undefined,
+    [filteredRows, runs, selectedRunId],
   );
 
   const refreshRunPayments = useCallback(async (runId: string) => {
@@ -2694,6 +3085,27 @@ export default function PayrollPage() {
     }
   }, [selectedPeriodId, benefitPayments]);
 
+  const handlePayrollPreview = useCallback((preview: PayrollRun) => {
+    setSimulationByEmployee((current) => ({
+      ...current,
+      [payrollSimulationKey(preview.employeeId, preview.contractId, selectedPeriodId)]: preview,
+    }));
+  }, [selectedPeriodId]);
+
+  const handleSettlementPreview = useCallback((settlement: Settlement) => {
+    if (settlement.preview) {
+      setSettlementPreviewByContract((current) => ({
+        ...current,
+        [settlement.contractId]: settlement,
+      }));
+      return;
+    }
+    setSettlements((current) => ({
+      ...current,
+      [settlement.employeeId]: settlement,
+    }));
+  }, []);
+
   const handlePostPeriod = async () => {
     if (!selectedPeriodId) return;
     try {
@@ -2730,7 +3142,7 @@ export default function PayrollPage() {
             <div className="mb-3 mt-5">
               <div>
                 <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
-                <p className="text-xs text-slate-500">{filteredRuns.length} empleados calculados</p>
+                <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
               </div>
             </div>
 
@@ -2747,12 +3159,12 @@ export default function PayrollPage() {
               </div>
             )}
 
-            {!loading && !error && filteredRuns.length === 0 && (
+            {!loading && !error && filteredRows.length === 0 && (
               <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
                 <Wallet className="mx-auto h-8 w-8 text-slate-300" />
-                <p className="mt-3 text-sm font-medium text-slate-700">No hay nominas calculadas</p>
+                <p className="mt-3 text-sm font-medium text-slate-700">No hay empleados activos</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Abre las acciones con el boton + para preparar el calculo del periodo.
+                  Abre las acciones con el boton + para crear un empleado o contrato.
                 </p>
               </div>
             )}
@@ -2760,45 +3172,76 @@ export default function PayrollPage() {
             <div className="space-y-2.5">
               {!loading &&
                 !error &&
-                filteredRuns.map((run) => (
-                  <EmployeeCarousel
-                    key={run.id}
-                    run={run}
-                    settlement={settlements[run.employeeId]}
-                    expanded={expandedRunId === run.id}
-                    selected={selectedRun?.id === run.id}
-                    onSelect={() => setSelectedRunId(run.id)}
-                    onToggleExpanded={() => setExpandedRunId((current) => (current === run.id ? null : run.id))}
-                    onTogglePayment={togglePayment}
-                    selectedPeriod={selectedPeriod}
-                    benefitPayments={benefitPayments[run.contractId] ?? []}
-                    onRegisterPrima={handleRegisterPrima}
-                    onEditEmployee={(employee) => {
-                      setEmployeeToEdit(employee);
-                      setEmployeeSheetOpen(true);
-                    }}
-                    onEditContract={(selectedRun) => {
-                      setContractEmployee(selectedRun.employee);
-                      setContractToEdit(selectedRun.contract ?? null);
-                      setContractSheetOpen(true);
-                    }}
-                    onOpenNews={(selectedRun) => {
-                      setNewsRun(selectedRun);
-                      setNewsSheetOpen(true);
-                    }}
-                    onOpenSettlement={(selectedRun) => {
-                      setNewsRun(selectedRun);
-                      setSettlementSheetOpen(true);
-                    }}
-                  />
-                ))}
+                filteredRows.map((row) => {
+                  if (!row.run) {
+                    return (
+                      <EmployeeStandaloneCard
+                        key={row.key}
+                        employee={row.employee}
+                        contract={row.contract}
+                        selectedPeriod={selectedPeriod}
+                        onEditEmployee={(employee) => {
+                          setEmployeeToEdit(employee);
+                          setEmployeeSheetOpen(true);
+                        }}
+                        onEditContract={(employee, contract) => {
+                          setContractEmployee(employee);
+                          setContractToEdit(contract ?? null);
+                          setContractSheetOpen(true);
+                        }}
+                        onOpenNews={(employee, contract) => {
+                          setNewsRun(null);
+                          setNewsEmployee(employee);
+                          setNewsContract(contract ?? null);
+                          setNewsSheetOpen(true);
+                        }}
+                      />
+                    );
+                  }
+
+                  const run = row.run;
+                  return (
+                    <EmployeeCarousel
+                      key={row.key}
+                      run={run}
+                      settlement={settlements[run.employeeId] ?? settlementPreviewByContract[run.contractId]}
+                      expanded={expandedRunId === run.id}
+                      selected={selectedRun?.id === run.id}
+                      onSelect={() => setSelectedRunId(run.id)}
+                      onToggleExpanded={() => setExpandedRunId((current) => (current === run.id ? null : run.id))}
+                      onTogglePayment={togglePayment}
+                      selectedPeriod={selectedPeriod}
+                      benefitPayments={benefitPayments[run.contractId] ?? []}
+                      onRegisterPrima={handleRegisterPrima}
+                      onEditEmployee={(employee) => {
+                        setEmployeeToEdit(employee);
+                        setEmployeeSheetOpen(true);
+                      }}
+                      onEditContract={(selectedRun) => {
+                        setContractEmployee(selectedRun.employee);
+                        setContractToEdit(selectedRun.contract ?? null);
+                        setContractSheetOpen(true);
+                      }}
+                      onOpenNews={(selectedRun) => {
+                        setNewsRun(selectedRun);
+                        setNewsEmployee(null);
+                        setNewsContract(null);
+                        setNewsSheetOpen(true);
+                      }}
+                      onOpenSettlement={(selectedRun) => {
+                        setNewsRun(selectedRun);
+                        setSettlementSheetOpen(true);
+                      }}
+                    />
+                  );
+                })}
             </div>
           </div>
         </section>
 
         <DetailPanel
           run={selectedRun}
-          settlement={selectedRun ? settlements[selectedRun.employeeId] : undefined}
+          settlement={selectedRun ? (settlements[selectedRun.employeeId] ?? settlementPreviewByContract[selectedRun.contractId]) : undefined}
           onTogglePayment={togglePayment}
           selectedPeriod={selectedPeriod}
           benefitPayments={selectedRun ? (benefitPayments[selectedRun.contractId] ?? []) : []}
@@ -2823,13 +3266,23 @@ export default function PayrollPage() {
 
       <PayrollNewsSheet
         open={newsSheetOpen}
-        onClose={() => setNewsSheetOpen(false)}
+        onClose={() => {
+          setNewsSheetOpen(false);
+          setNewsRun(null);
+          setNewsEmployee(null);
+          setNewsContract(null);
+        }}
         run={newsRun}
+        employee={newsEmployee}
+        contract={newsContract}
         selectedPeriod={selectedPeriod}
+        onPreview={handlePayrollPreview}
+        onSettlementPreview={handleSettlementPreview}
         onFinished={(periodId) => {
           loadEmployees();
           loadPeriods();
           setSelectedPeriodId(periodId);
+          setPeriodRefreshKey((value) => value + 1);
         }}
       />
       <EmployeeFormSheet
@@ -2852,18 +3305,16 @@ export default function PayrollPage() {
         arlRisks={arlRisks}
         initialEmployee={contractEmployee}
         contract={contractToEdit}
-        onChanged={loadEmployees}
+        onChanged={() => {
+          loadEmployees();
+          loadPeriods();
+        }}
       />
       <SettlementSimulationSheet
         open={settlementSheetOpen}
         onClose={() => setSettlementSheetOpen(false)}
         employees={employees}
-        onFinished={(settlement) => {
-          setSettlements((current) => ({
-            ...current,
-            [settlement.employeeId]: settlement,
-          }));
-        }}
+        onFinished={handleSettlementPreview}
       />
     </div>
   );

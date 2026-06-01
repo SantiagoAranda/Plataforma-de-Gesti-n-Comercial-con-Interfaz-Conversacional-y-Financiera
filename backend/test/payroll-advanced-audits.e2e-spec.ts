@@ -236,4 +236,38 @@ describe('Payroll Advanced Audits (Integration)', () => {
     // Validar que se liquida solo el contrato activo
   });
 
+  describe('Auditoría: Contratos inactivos no deben ser calculados', () => {
+    let employeeId: string;
+    let contractId: string;
+
+    beforeAll(async () => {
+      const emp = await prisma.employee.create({
+        data: { businessId, firstName: 'Inactive', lastName: 'Test', documentNumber: '44444' }
+      });
+      employeeId = emp.id;
+
+      const contract = await prisma.employeeContract.create({
+        data: {
+          businessId,
+          employeeId,
+          contractType: 'INDEFINITE',
+          salaryMonthly: 2000000,
+          startDate: new Date('2026-01-01T00:00:00Z'),
+          paymentCycle: 'MONTHLY',
+          isActive: false
+        }
+      });
+      contractId = contract.id;
+    });
+
+    it('Debe rechazar el calculo de nomina para un contrato inactivo', async () => {
+      const period = await prisma.payrollPeriod.create({
+        data: { businessId, year: 2026, month: 2, paymentCycle: 'MONTHLY', installmentNumber: 1 }
+      });
+
+      await expect(payrollService.calculateEmployeePayroll(businessId, period.id, employeeId))
+        .rejects
+        .toThrow('Active contract not found');
+    });
+  });
 });

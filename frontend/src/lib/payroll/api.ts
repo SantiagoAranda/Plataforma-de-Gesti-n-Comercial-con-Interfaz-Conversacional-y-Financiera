@@ -72,6 +72,8 @@ export type PayrollRun = {
   realEmployerCost: MoneyLike;
   usedParameters?: Record<string, unknown>;
   payments?: PayrollPayment[];
+  preview?: boolean;
+  warnings?: string[];
 };
 
 export type PayrollPayment = {
@@ -109,6 +111,7 @@ export type Settlement = {
   calculatedAt?: string;
   lines?: Array<{ code: string; name: string; amount: MoneyLike }>;
   usedParameters?: Record<string, unknown>;
+  preview?: boolean;
 };
 
 export type PayrollBenefitPayment = {
@@ -127,12 +130,6 @@ export type ArlRiskClass = {
   level: number;
   name: string;
   rate?: MoneyLike;
-};
-
-export type CiiuActivity = {
-  id: string;
-  code: string;
-  description: string;
 };
 
 export type OvertimeType =
@@ -163,7 +160,6 @@ export type CreateContractPayload = {
   applyLaw1819: boolean;
   paymentCycle: "MONTHLY" | "BIWEEKLY";
   arlRiskClassId: string;
-  ciiuId?: string;
 };
 
 export type UpdateContractPayload = Partial<CreateContractPayload> & {
@@ -311,9 +307,6 @@ export const payrollApi = {
   listArlRisks() {
     return payrollRequest<ArlRiskClass[]>("/payroll/arl-risks");
   },
-  listCiiu(limit = 100) {
-    return payrollRequest<CiiuActivity[]>(`/payroll/ciiu?limit=${limit}`);
-  },
   listRuns(periodId: string) {
     return payrollRequest<PayrollRun[]>(`/payroll/periods/${periodId}/runs`);
   },
@@ -328,6 +321,12 @@ export const payrollApi = {
   },
   calculateEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
     return payrollRequest<PayrollRun>(`/payroll/periods/${periodId}/calculate/${employeeId}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  previewEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
+    return payrollRequest<PayrollRun>(`/payroll/periods/${periodId}/preview/${employeeId}`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -387,4 +386,3 @@ export const payrollApi = {
     );
   },
 };
-
