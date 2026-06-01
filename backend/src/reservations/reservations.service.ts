@@ -63,6 +63,7 @@ export class ReservationsService {
     businessId: string,
     item: { id: string; durationMinutes: number | null },
     date: Date,
+    hasSpecificWindows: boolean,
     excludeReservationId?: string,
   ) {
     const weekday = this.getWeekday(date);
@@ -72,7 +73,7 @@ export class ReservationsService {
         where: {
           businessId,
           weekday,
-          OR: [{ itemId: item.id }, { itemId: null }],
+          itemId: hasSpecificWindows ? item.id : null,
         },
         orderBy: { startMinute: 'asc' },
       }),
@@ -97,10 +98,26 @@ export class ReservationsService {
 
     if (windows.length === 0) return [];
 
+    // 1. Windows are already filtered at the database query level based on item-specific priority.
+    const filteredWindows = windows;
+
+    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
+    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
+    for (const w of filteredWindows) {
+      const last = mergedWindows[mergedWindows.length - 1];
+      if (last && last.endMinute >= w.startMinute) {
+        last.endMinute = Math.max(last.endMinute, w.endMinute);
+      } else {
+        mergedWindows.push({ startMinute: w.startMinute, endMinute: w.endMinute });
+      }
+    }
+
     const duration = item.durationMinutes ?? 60;
+    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos)
+    const step = 30;
     const slots: string[] = [];
 
-    for (const window of windows) {
+    for (const window of mergedWindows) {
       let cursor = window.startMinute;
 
       while (cursor + duration <= window.endMinute) {
@@ -118,7 +135,7 @@ export class ReservationsService {
 
         if (!overlap && !blocked) slots.push(this.formatTime(start));
 
-        cursor += duration;
+        cursor += step;
       }
     }
 
@@ -217,7 +234,11 @@ export class ReservationsService {
   async getAvailability(businessId: string, itemId: string, date: string) {
     const item = await this.getBusinessService(businessId, itemId);
     const dateOnly = this.parseDateOnly(date);
-    return this.getAvailabilitySlotsForItem(businessId, item, dateOnly);
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+    return this.getAvailabilitySlotsForItem(businessId, item, dateOnly, hasSpecificWindows);
   }
 
   async getAvailabilityCalendar(businessId: string, itemId: string, month: string) {
@@ -227,6 +248,11 @@ export class ReservationsService {
     const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
 
     const cursor = new Date(firstDay);
     const availableDates: string[] = [];
@@ -239,6 +265,7 @@ export class ReservationsService {
           businessId,
           item,
           current,
+          hasSpecificWindows,
         );
 
         if (slots.length > 0) {
