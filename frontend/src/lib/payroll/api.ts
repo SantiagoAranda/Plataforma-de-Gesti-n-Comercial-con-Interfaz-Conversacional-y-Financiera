@@ -10,6 +10,7 @@ export type Employee = {
   position?: string | null;
   email?: string | null;
   phone?: string | null;
+  isActive?: boolean;
   contracts?: Contract[];
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type InputHTMLAttributes, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
@@ -38,8 +38,6 @@ import {
 } from "@/src/lib/payroll/api";
 import { cn } from "@/src/lib/utils";
 
-type WizardStep = 0 | 1 | 2 | 3;
-
 const overtimeInputs: Array<{ type: OvertimeType; label: string; hint: string }> = [
   { type: "OVERTIME_DAY", label: "Extra diurna", hint: "+25%" },
   { type: "OVERTIME_NIGHT", label: "Extra nocturna", hint: "+75%" },
@@ -48,6 +46,125 @@ const overtimeInputs: Array<{ type: OvertimeType; label: string; hint: string }>
   { type: "SUNDAY_HOLIDAY_EXTRA_NIGHT", label: "Extra dom/festiva nocturna", hint: "+150%" },
   { type: "SUNDAY_HOLIDAY_DAY", label: "Recargo dominical/festivo", hint: "+75%" },
 ];
+
+type WizardStep = 0 | 1 | 2 | 3;
+
+function SheetShell({
+  open,
+  title,
+  subtitle,
+  accent = "text-[#0fb18f]",
+  onClose,
+  children,
+  footer,
+  maxWidth = "sm:max-w-lg",
+}: {
+  open: boolean;
+  title: string;
+  subtitle: string;
+  accent?: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer: ReactNode;
+  maxWidth?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:p-4">
+      <div className={cn(
+        "relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:rounded-[32px]",
+        maxWidth,
+      )}>
+        <div className="flex justify-center pt-3">
+          <div className="h-1.5 w-12 rounded-full bg-neutral-200" />
+        </div>
+        <div className="flex items-start justify-between gap-3 border-b border-neutral-100 bg-white px-5 pb-4 pt-3">
+          <div>
+            <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
+            <p className={cn("mt-0.5 text-[10px] font-bold uppercase tracking-widest", accent)}>
+              {subtitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-neutral-500 transition hover:bg-neutral-200"
+            aria-label="Cerrar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto bg-neutral-50/30 px-5 py-4">
+          {children}
+          <div className="h-20" />
+        </div>
+        <div className="absolute inset-x-0 bottom-0 border-t border-neutral-100 bg-white/95 px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)] backdrop-blur">
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FieldBlock({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function BigInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={cn(
+        "h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-400 focus:bg-white",
+        props.className,
+      )}
+    />
+  );
+}
+
+function SegmentedOption<T extends string>({
+  value,
+  current,
+  onChange,
+  children,
+  disabled,
+}: {
+  value: T;
+  current: T;
+  onChange: (value: T) => void;
+  children: ReactNode;
+  disabled?: boolean;
+}) {
+  const selected = value === current;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onChange(value)}
+      className={cn(
+        "h-10 rounded-xl px-3 text-xs font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45",
+        selected
+          ? "bg-[#0fb18f] text-white shadow-sm"
+          : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 const monthNames = [
   "Enero",
@@ -265,6 +382,10 @@ function PayrollSummaryPanel({
   selectedPeriod,
   benefitPayments = [],
   onRegisterPrima,
+  onEditEmployee,
+  onEditContract,
+  onOpenNews,
+  onOpenSettlement,
 }: {
   run: PayrollRun;
   expanded: boolean;
@@ -273,6 +394,10 @@ function PayrollSummaryPanel({
   selectedPeriod?: PayrollPeriod;
   benefitPayments?: PayrollBenefitPayment[];
   onRegisterPrima?: (run: PayrollRun, amount: number) => void;
+  onEditEmployee?: (employee: Employee) => void;
+  onEditContract?: (run: PayrollRun) => void;
+  onOpenNews?: (run: PayrollRun) => void;
+  onOpenSettlement?: (run: PayrollRun) => void;
 }) {
   const extras = [
     { label: "Horas extras", value: run.overtimeAmount },
@@ -292,6 +417,16 @@ function PayrollSummaryPanel({
     .filter((payment) => payment.type === "SALARY_PAYMENT")
     .sort((a, b) => (a.installmentNumber ?? 1) - (b.installmentNumber ?? 1));
   const allPaid = salaryPayments.length > 0 && salaryPayments.every((payment) => payment.status === "PAID");
+  const hasNews =
+    toNumber(run.commissions) > 0 ||
+    toNumber(run.nonSalaryBonus) > 0 ||
+    toNumber(run.otherDeductions) > 0 ||
+    toNumber(run.overtimeAmount) > 0;
+  const contractStatus = run.contract?.endDate
+    ? "Finalizado"
+    : run.contract?.isActive === false
+      ? "Requiere liquidacion"
+      : "Contrato Activo";
 
   return (
     <div
@@ -316,12 +451,39 @@ function PayrollSummaryPanel({
             <p className="truncate text-[15px] font-medium text-slate-900">{employeeName(run.employee)}</p>
             <p className="mt-0.5 text-[12px] font-medium text-slate-500">{employeeRole(run.employee, run.contract)}</p>
             <p className="mt-0.5 text-[11px] text-slate-400">{run.employee.documentNumber ?? "Sin documento"}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">● Activo</span>
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                ● {isBiweekly ? "Quincenal" : "Mensual"}
+              </span>
+            </div>
           </div>
           <div className="text-right">
-            <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(run.netPay)}</p>
-            <p className="text-[11px] text-slate-400">Neto a transferir</p>
+            <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(run.contract?.salaryMonthly ?? run.salaryEarned)}</p>
+            <p className="text-[11px] text-slate-400">{contractStatus}</p>
           </div>
         </div>
+
+        {hasNews ? (
+          <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-emerald-50 p-2">
+              <p className="text-[10px] font-bold text-emerald-700">Comisiones</p>
+              <p className="text-xs font-bold text-emerald-800">+{money(run.commissions)}</p>
+            </div>
+            <div className="rounded-2xl bg-rose-50 p-2">
+              <p className="text-[10px] font-bold text-rose-700">Deducciones</p>
+              <p className="text-xs font-bold text-rose-800">-{money(run.otherDeductions)}</p>
+            </div>
+            <div className="rounded-2xl bg-blue-50 p-2">
+              <p className="text-[10px] font-bold text-blue-700">Extras</p>
+              <p className="text-xs font-bold text-blue-800">{money(run.overtimeAmount)}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="mb-3 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-500">
+            Sin novedades cargadas
+          </p>
+        )}
 
         <div className="space-y-2">
           <MoneyLine label="Sueldo basico" value={run.salaryEarned} color="text-[#1f2937]" />
@@ -425,6 +587,21 @@ function PayrollSummaryPanel({
           ) : (
             <MoneyLine label="Neto mensual" value={run.netPay} color="text-slate-600" />
           )}
+        </div>
+
+        <div className="mt-3 grid grid-cols-4 gap-1.5 border-t border-slate-100 pt-3">
+          <button type="button" onClick={(event) => { event.stopPropagation(); onEditEmployee?.(run.employee); }} className="rounded-xl bg-slate-50 px-2 py-2 text-[10px] font-bold text-slate-600">
+            Editar
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onEditContract?.(run); }} className="rounded-xl bg-blue-50 px-2 py-2 text-[10px] font-bold text-blue-700">
+            Contrato
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenNews?.(run); }} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700">
+            Novedades
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenSettlement?.(run); }} className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-700">
+            Liquidar
+          </button>
         </div>
 
         {(() => {
@@ -649,6 +826,10 @@ function EmployeeCarousel({
   selectedPeriod,
   benefitPayments = [],
   onRegisterPrima,
+  onEditEmployee,
+  onEditContract,
+  onOpenNews,
+  onOpenSettlement,
 }: {
   run: PayrollRun;
   settlement?: Settlement;
@@ -660,6 +841,10 @@ function EmployeeCarousel({
   selectedPeriod?: PayrollPeriod;
   benefitPayments?: PayrollBenefitPayment[];
   onRegisterPrima?: (run: PayrollRun, amount: number) => void;
+  onEditEmployee?: (employee: Employee) => void;
+  onEditContract?: (run: PayrollRun) => void;
+  onOpenNews?: (run: PayrollRun) => void;
+  onOpenSettlement?: (run: PayrollRun) => void;
 }) {
   return (
     <div
@@ -678,6 +863,10 @@ function EmployeeCarousel({
           selectedPeriod={selectedPeriod}
           benefitPayments={benefitPayments}
           onRegisterPrima={onRegisterPrima}
+          onEditEmployee={onEditEmployee}
+          onEditContract={onEditContract}
+          onOpenNews={onOpenNews}
+          onOpenSettlement={onOpenSettlement}
         />
         <SettlementPanel settlement={settlement} />
       </div>
@@ -975,6 +1164,129 @@ function EmployeeManagementSheet({
   );
 }
 
+function EmployeeFormSheet({
+  open,
+  onClose,
+  employee,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee?: Employee | null;
+  onChanged: () => void;
+}) {
+  const [fullName, setFullName] = useState("");
+  const [documentNumber, setDocumentNumber] = useState("");
+  const [position, setPosition] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [active, setActive] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setFullName(employee ? employeeName(employee) : "");
+    setDocumentNumber(employee?.documentNumber ?? "");
+    setPosition(employee?.position ?? "");
+    setEmail(employee?.email ?? "");
+    setPhone(employee?.phone ?? "");
+    setActive(employee?.isActive === false ? "INACTIVE" : "ACTIVE");
+    setError(null);
+  }, [employee, open]);
+
+  const save = async () => {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    const firstName = parts[0] ?? "";
+    const lastName = parts.slice(1).join(" ") || parts[0] || "";
+    if (!fullName.trim()) return setError("El nombre completo es obligatorio.");
+    if (!documentNumber.trim()) return setError("El documento es obligatorio.");
+    setSubmitting(true);
+    setError(null);
+    try {
+      const payload = {
+        firstName,
+        lastName,
+        documentNumber: documentNumber.trim(),
+        position: position.trim() || undefined,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+      };
+      if (employee) {
+        await payrollApi.updateEmployee(employee.id, payload);
+        toast.success("Empleado actualizado");
+      } else {
+        await payrollApi.createEmployee(payload);
+        toast.success("Empleado creado");
+      }
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el empleado.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SheetShell
+      open={open}
+      title={employee ? "Editar Empleado" : "Nuevo Empleado"}
+      subtitle="Informacion basica"
+      onClose={onClose}
+      footer={
+        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
+          <button type="button" onClick={onClose} className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600">
+            Cancelar
+          </button>
+          <button type="button" onClick={save} disabled={submitting} className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 disabled:opacity-60">
+            {submitting ? "Guardando..." : "Guardar empleado"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <div className="space-y-3">
+            <FieldBlock label="Nombre completo">
+              <BigInput value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Juan Perez" />
+            </FieldBlock>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldBlock label="Documento">
+                <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
+              </FieldBlock>
+              <FieldBlock label="Cargo">
+                <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
+              </FieldBlock>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldBlock label="Telefono">
+                <BigInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="3001234567" />
+              </FieldBlock>
+              <FieldBlock label="Correo opcional">
+                <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
+              </FieldBlock>
+            </div>
+            <div>
+              <span className="mb-1.5 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Estado</span>
+              <div className="grid grid-cols-2 gap-2">
+                <SegmentedOption value="ACTIVE" current={active} onChange={setActive}>Activo</SegmentedOption>
+                <SegmentedOption value="INACTIVE" current={active} onChange={setActive} disabled={!employee}>Inactivo</SegmentedOption>
+              </div>
+              {active === "INACTIVE" && (
+                <p className="mt-2 rounded-2xl bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-700">
+                  La inactivacion sigue las reglas de liquidacion del contrato.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        {error && <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
+      </div>
+    </SheetShell>
+  );
+}
+
 function ContractManagementSheet({
   open,
   onClose,
@@ -1155,6 +1467,188 @@ function ContractManagementSheet({
         </div>
       </div>
     </div>
+  );
+}
+
+function ContractFormSheet({
+  open,
+  onClose,
+  employees,
+  arlRisks,
+  initialEmployee,
+  contract,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employees: Employee[];
+  arlRisks: ArlRiskClass[];
+  initialEmployee?: Employee | null;
+  contract?: Contract | null;
+  onChanged: () => void;
+}) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [employeeId, setEmployeeId] = useState("");
+  const [salaryMonthly, setSalaryMonthly] = useState("");
+  const [startDate, setStartDate] = useState(todayIso);
+  const [endDate, setEndDate] = useState("");
+  const [contractType, setContractType] = useState<"INDEFINITE" | "FIXED_TERM">("INDEFINITE");
+  const [arlRiskClassId, setArlRiskClassId] = useState("");
+  const [applyLaw1819, setApplyLaw1819] = useState(true);
+  const [isRemote, setIsRemote] = useState(false);
+  const [paymentCycle, setPaymentCycle] = useState<"MONTHLY" | "BIWEEKLY">("MONTHLY");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setEmployeeId(initialEmployee?.id ?? contract?.employeeId ?? "");
+    setSalaryMonthly(String(contract?.salaryMonthly ?? ""));
+    setStartDate(contract?.startDate?.slice(0, 10) ?? todayIso);
+    setEndDate(contract?.endDate?.slice(0, 10) ?? "");
+    setContractType((contract?.contractType as "INDEFINITE" | "FIXED_TERM") ?? "INDEFINITE");
+    setArlRiskClassId(contract?.arlRiskClassId ?? contract?.arlRiskClass?.id ?? "");
+    setApplyLaw1819(contract?.applyLaw1819 ?? true);
+    setIsRemote(contract?.isRemote ?? false);
+    setPaymentCycle((contract?.paymentCycle as "MONTHLY" | "BIWEEKLY") ?? "MONTHLY");
+    setError(null);
+  }, [contract, initialEmployee, open, todayIso]);
+
+  const save = async () => {
+    if (!employeeId) return setError("Selecciona un empleado.");
+    if (numberValue(salaryMonthly) <= 0) return setError("El salario mensual debe ser mayor a 0.");
+    if (!startDate) return setError("La fecha de ingreso es obligatoria.");
+    if (!arlRiskClassId) return setError("Selecciona ARL.");
+    setSubmitting(true);
+    setError(null);
+    try {
+      const payload = {
+        contractType,
+        salaryMonthly: numberValue(salaryMonthly),
+        startDate,
+        endDate: endDate || undefined,
+        isRemote,
+        applyLaw1819,
+        paymentCycle,
+        arlRiskClassId,
+      };
+      if (contract) {
+        await payrollApi.updateContract(contract.id, payload);
+        toast.success("Contrato actualizado");
+      } else {
+        await payrollApi.createContract(employeeId, payload);
+        toast.success("Contrato creado");
+      }
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el contrato.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SheetShell
+      open={open}
+      title="Contrato Laboral"
+      subtitle="Configuracion contractual"
+      accent="text-blue-500"
+      onClose={onClose}
+      maxWidth="sm:max-w-xl"
+      footer={
+        <button type="button" onClick={save} disabled={submitting} className="h-12 w-full rounded-2xl bg-blue-500 text-sm font-bold text-white shadow-lg shadow-blue-100 disabled:opacity-60">
+          {submitting ? "Guardando..." : "Guardar contrato"}
+        </button>
+      }
+    >
+      <div className="space-y-3">
+        {!initialEmployee && (
+          <FieldBlock label="Empleado">
+            <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} className="h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 outline-none focus:border-blue-300">
+              <option value="">Selecciona empleado</option>
+              {employees.map((employee) => (
+                <option key={employee.id} value={employee.id}>{employeeName(employee)} - {employee.documentNumber}</option>
+              ))}
+            </select>
+          </FieldBlock>
+        )}
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
+          <div className="grid grid-cols-3 gap-2">
+            <SegmentedOption value="INDEFINITE" current={contractType} onChange={setContractType}>Indefinido</SegmentedOption>
+            <SegmentedOption value="FIXED_TERM" current={contractType} onChange={setContractType}>Fijo</SegmentedOption>
+            <button type="button" disabled className="h-10 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-xs font-bold text-neutral-400">
+              Obra labor
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <FieldBlock label="Salario mensual">
+            <BigInput value={salaryMonthly} onChange={(event) => setSalaryMonthly(event.target.value)} placeholder="3000000" type="number" />
+          </FieldBlock>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">ARL</span>
+          <div className="grid grid-cols-5 gap-1.5">
+            {[1, 2, 3, 4, 5].map((level) => {
+              const risk = arlRisks.find((item) => item.level === level);
+              const selected = arlRiskClassId === risk?.id;
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  disabled={!risk}
+                  onClick={() => risk && setArlRiskClassId(risk.id)}
+                  className={cn(
+                    "h-10 rounded-xl text-[11px] font-bold transition disabled:opacity-40",
+                    selected ? "bg-blue-500 text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
+                  )}
+                >
+                  Riesgo {level}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
+          <div className="grid grid-cols-2 gap-2">
+            <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
+            <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle}>Quincenal</SegmentedOption>
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+              Trabajo remoto
+            </button>
+            <button type="button" onClick={() => setApplyLaw1819((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+              Exonerado Ley 1819
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <FieldBlock label="Fecha ingreso">
+              <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
+            </FieldBlock>
+            <FieldBlock label="Fecha salida">
+              <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
+            </FieldBlock>
+          </div>
+        </div>
+
+        {error && <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
+      </div>
+    </SheetShell>
   );
 }
 
@@ -1526,6 +2020,194 @@ function PayrollRecordWizardSheet({
   );
 }
 
+function PayrollNewsSheet({
+  open,
+  onClose,
+  run,
+  selectedPeriod,
+  onFinished,
+}: {
+  open: boolean;
+  onClose: () => void;
+  run?: PayrollRun | null;
+  selectedPeriod?: PayrollPeriod;
+  onFinished: (periodId: string) => void;
+}) {
+  const [workedDays, setWorkedDays] = useState("30");
+  const [commissions, setCommissions] = useState("0");
+  const [nonSalaryBonus, setNonSalaryBonus] = useState("0");
+  const [loans, setLoans] = useState("0");
+  const [otherDeductions, setOtherDeductions] = useState("0");
+  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
+    OVERTIME_DAY: "0",
+    OVERTIME_NIGHT: "0",
+    NIGHT_SURCHARGE: "0",
+    SUNDAY_HOLIDAY_EXTRA_DAY: "0",
+    SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
+    SUNDAY_HOLIDAY_DAY: "0",
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setWorkedDays("30");
+    setCommissions("0");
+    setNonSalaryBonus("0");
+    setLoans("0");
+    setOtherDeductions("0");
+    setOvertimeHours({
+      OVERTIME_DAY: "0",
+      OVERTIME_NIGHT: "0",
+      NIGHT_SURCHARGE: "0",
+      SUNDAY_HOLIDAY_EXTRA_DAY: "0",
+      SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
+      SUNDAY_HOLIDAY_DAY: "0",
+    });
+    setError(null);
+  }, [open]);
+
+  const totalOvertimeHours = overtimeInputs.reduce(
+    (sum, item) => sum + numberValue(overtimeHours[item.type]),
+    0,
+  );
+
+  const save = async () => {
+    if (!run || !selectedPeriod) return setError("Selecciona un periodo con empleado calculado.");
+    const parsedWorkedDays = numberValue(workedDays);
+    if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
+      return setError("Los dias trabajados deben estar entre 1 y 30.");
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const overtimePayload = overtimeInputs
+        .map((item) => ({
+          type: item.type,
+          quantity: numberValue(overtimeHours[item.type]),
+        }))
+        .filter((item) => item.quantity > 0);
+
+      await payrollApi.calculateEmployee(selectedPeriod.id, run.employeeId, {
+        workedDays: parsedWorkedDays,
+        commissions: numberValue(commissions),
+        nonSalaryBonus: numberValue(nonSalaryBonus),
+        otherDeductions: numberValue(loans) + numberValue(otherDeductions),
+        overtimeHours: overtimePayload.length ? overtimePayload : undefined,
+      });
+
+      onFinished(selectedPeriod.id);
+      toast.success("Novedades guardadas");
+      onClose();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudieron guardar las novedades.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SheetShell
+      open={open}
+      title="Novedades"
+      subtitle={run ? employeeName(run.employee) : "Empleado"}
+      onClose={onClose}
+      maxWidth="sm:max-w-xl"
+      footer={
+        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
+          <button type="button" onClick={onClose} className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600">
+            Cancelar
+          </button>
+          <button type="button" onClick={save} disabled={submitting || !run} className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 disabled:opacity-60">
+            {submitting ? "Guardando..." : "Guardar novedades"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-neutral-900">{run ? employeeName(run.employee) : "Empleado"}</p>
+              <p className="text-xs font-medium text-neutral-400">{run?.employee.position ?? "Sin cargo"}</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
+              {selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Sin periodo"}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FieldBlock label="Dias trabajados">
+              <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" />
+            </FieldBlock>
+            <FieldBlock label="Prestamos">
+              <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" />
+            </FieldBlock>
+            <FieldBlock label="Comisiones salariales">
+              <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" />
+            </FieldBlock>
+            <FieldBlock label="Bonos no salariales">
+              <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" />
+            </FieldBlock>
+            <FieldBlock label="Otras deducciones">
+              <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" />
+            </FieldBlock>
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Trabajo suplementario</span>
+            <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-bold text-neutral-500">{totalOvertimeHours} h</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {overtimeInputs.map((item) => (
+              <label key={item.type} className="rounded-2xl border border-neutral-100 bg-neutral-50 p-2">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[11px] font-bold text-neutral-700">{item.label}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#0fb18f]">{item.hint}</span>
+                </span>
+                <input
+                  value={overtimeHours[item.type]}
+                  onChange={(event) =>
+                    setOvertimeHours((current) => ({
+                      ...current,
+                      [item.type]: event.target.value,
+                    }))
+                  }
+                  type="number"
+                  min="0"
+                  className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-right text-sm font-semibold outline-none focus:border-emerald-400"
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+          <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-neutral-400">Resumen de novedades</span>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-2xl bg-emerald-50 p-2">
+              <p className="text-[10px] font-bold text-emerald-700">Comisiones</p>
+              <p className="text-xs font-bold text-emerald-800">+{money(commissions)}</p>
+            </div>
+            <div className="rounded-2xl bg-rose-50 p-2">
+              <p className="text-[10px] font-bold text-rose-700">Prestamos</p>
+              <p className="text-xs font-bold text-rose-800">-{money(loans)}</p>
+            </div>
+            <div className="rounded-2xl bg-blue-50 p-2">
+              <p className="text-[10px] font-bold text-blue-700">Extras</p>
+              <p className="text-xs font-bold text-blue-800">{totalOvertimeHours} h</p>
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
+      </div>
+    </SheetShell>
+  );
+}
+
 function SettlementSimulationSheet({
   open,
   onClose,
@@ -1778,8 +2460,12 @@ export default function PayrollPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
-  const [recordWizardOpen, setRecordWizardOpen] = useState(false);
+  const [newsSheetOpen, setNewsSheetOpen] = useState(false);
   const [settlementSheetOpen, setSettlementSheetOpen] = useState(false);
+  const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
+  const [contractToEdit, setContractToEdit] = useState<Contract | null>(null);
+  const [contractEmployee, setContractEmployee] = useState<Employee | null>(null);
+  const [newsRun, setNewsRun] = useState<PayrollRun | null>(null);
 
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId),
@@ -1956,22 +2642,15 @@ export default function PayrollPage() {
   const handleAction = (action: string) => {
     if (action === "employees") {
       setActionsOpen(false);
+      setEmployeeToEdit(null);
       setEmployeeSheetOpen(true);
       return;
     }
     if (action === "contracts") {
       setActionsOpen(false);
+      setContractToEdit(null);
+      setContractEmployee(null);
       setContractSheetOpen(true);
-      return;
-    }
-    if (action === "new-record") {
-      setActionsOpen(false);
-      setRecordWizardOpen(true);
-      return;
-    }
-    if (action === "settlement") {
-      setActionsOpen(false);
-      setSettlementSheetOpen(true);
       return;
     }
 
@@ -2094,6 +2773,23 @@ export default function PayrollPage() {
                     selectedPeriod={selectedPeriod}
                     benefitPayments={benefitPayments[run.contractId] ?? []}
                     onRegisterPrima={handleRegisterPrima}
+                    onEditEmployee={(employee) => {
+                      setEmployeeToEdit(employee);
+                      setEmployeeSheetOpen(true);
+                    }}
+                    onEditContract={(selectedRun) => {
+                      setContractEmployee(selectedRun.employee);
+                      setContractToEdit(selectedRun.contract ?? null);
+                      setContractSheetOpen(true);
+                    }}
+                    onOpenNews={(selectedRun) => {
+                      setNewsRun(selectedRun);
+                      setNewsSheetOpen(true);
+                    }}
+                    onOpenSettlement={(selectedRun) => {
+                      setNewsRun(selectedRun);
+                      setSettlementSheetOpen(true);
+                    }}
                   />
                 ))}
             </div>
@@ -2125,28 +2821,37 @@ export default function PayrollPage() {
         </div>
       )}
 
-      <PayrollRecordWizardSheet
-        open={recordWizardOpen}
-        onClose={() => setRecordWizardOpen(false)}
-        arlRisks={arlRisks}
-        employees={employees}
+      <PayrollNewsSheet
+        open={newsSheetOpen}
+        onClose={() => setNewsSheetOpen(false)}
+        run={newsRun}
+        selectedPeriod={selectedPeriod}
         onFinished={(periodId) => {
           loadEmployees();
           loadPeriods();
           setSelectedPeriodId(periodId);
         }}
       />
-      <EmployeeManagementSheet
+      <EmployeeFormSheet
         open={employeeSheetOpen}
-        onClose={() => setEmployeeSheetOpen(false)}
-        employees={employees}
+        onClose={() => {
+          setEmployeeSheetOpen(false);
+          setEmployeeToEdit(null);
+        }}
+        employee={employeeToEdit}
         onChanged={loadEmployees}
       />
-      <ContractManagementSheet
+      <ContractFormSheet
         open={contractSheetOpen}
-        onClose={() => setContractSheetOpen(false)}
+        onClose={() => {
+          setContractSheetOpen(false);
+          setContractToEdit(null);
+          setContractEmployee(null);
+        }}
         employees={employees}
         arlRisks={arlRisks}
+        initialEmployee={contractEmployee}
+        contract={contractToEdit}
         onChanged={loadEmployees}
       />
       <SettlementSimulationSheet
