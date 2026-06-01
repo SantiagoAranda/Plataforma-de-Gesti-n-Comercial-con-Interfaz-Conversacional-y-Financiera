@@ -113,13 +113,65 @@ export default function HomeAgenda({
   }
 
   return (
-    <div className="border-b border-gray-100 px-4 pt-4">
+    <div className="px-4 pb-3">
       <DayPickerCalendar
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
         markedDateKeys={eventDateKeys}
         id="home-agenda-calendar"
       />
+
+      <div className="mt-3 flex items-center gap-2 pb-1">
+        <button
+          type="button"
+          onClick={() => scrollFilters("left")}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          aria-label="Scroll filtros a la izquierda"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+
+        <div
+          ref={filtersRef}
+          className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {(
+            [
+              { key: "TODOS", label: "Todos" },
+              { key: "PENDIENTE", label: "Pendiente" },
+              { key: "CONFIRMADO", label: "Confirmado" },
+              { key: "COMPLETADO", label: "Completado" },
+              { key: "CANCELADO", label: "Cancelado" },
+            ] as const
+          ).map((opt) => {
+            const active = filter === opt.key;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => setFilter(opt.key)}
+                className={cn(
+                  "shrink-0 px-4 py-2 rounded-full text-sm font-semibold ring-1 transition",
+                  active
+                    ? "bg-[#11d473] text-white ring-emerald-200"
+                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+                )}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => scrollFilters("right")}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          aria-label="Scroll filtros a la derecha"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
 
       {hasEvents && (
         <div className="mt-4">
@@ -144,60 +196,8 @@ export default function HomeAgenda({
             )}
           </div>
 
-          <div className="mt-3 flex items-center gap-2 pb-1">
-            <button
-              type="button"
-              onClick={() => scrollFilters("left")}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
-              aria-label="Scroll filtros a la izquierda"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-
-            <div
-              ref={filtersRef}
-              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {(
-                [
-                  { key: "TODOS", label: "Todos" },
-                  { key: "PENDIENTE", label: "Pendiente" },
-                  { key: "CONFIRMADO", label: "Confirmado" },
-                  { key: "COMPLETADO", label: "Completado" },
-                  { key: "CANCELADO", label: "Cancelado" },
-                ] as const
-              ).map((opt) => {
-                const active = filter === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    onClick={() => setFilter(opt.key)}
-                    className={cn(
-                      "shrink-0 rounded-full px-3 py-1 text-sm font-medium transition",
-                      active
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-slate-100 text-neutral-700 hover:bg-slate-200",
-                    )}
-                    type="button"
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => scrollFilters("right")}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
-              aria-label="Scroll filtros a la derecha"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
           {hasFilteredEvents && (
-            <div className="mt-1">
+            <div className="mt-3">
               {visibleEvents.map((ev) => (
                 <AgendaEventRow key={ev.id} event={ev} />
               ))}

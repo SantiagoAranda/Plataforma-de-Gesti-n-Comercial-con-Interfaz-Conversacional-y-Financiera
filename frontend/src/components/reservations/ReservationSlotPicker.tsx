@@ -116,6 +116,7 @@ export default function ReservationSlotPicker({
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
   const [loadingDates, setLoadingDates] = useState(false);
+  const [isLoadingDays, setIsLoadingDays] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const onChangeRef = useRef(onChange);
 
@@ -149,6 +150,7 @@ export default function ReservationSlotPicker({
         : `/reservations/availability-calendar?itemId=${itemId}&month=${month}`;
 
     let alive = true;
+    setIsLoadingDays(true);
     setLoadingDates(true);
     fetchJson<string[]>(path)
       .then((data) => {
@@ -158,7 +160,10 @@ export default function ReservationSlotPicker({
         if (alive) setAvailableDates([]);
       })
       .finally(() => {
-        if (alive) setLoadingDates(false);
+        if (alive) {
+          setIsLoadingDays(false);
+          setLoadingDates(false);
+        }
       });
 
     return () => {
@@ -172,6 +177,9 @@ export default function ReservationSlotPicker({
       return;
     }
     if (mode === "public" && !businessSlug) return;
+
+    // Si aún se están consultando las fechas disponibles del mes, no buscamos horarios aún
+    if (isLoadingDays) return;
 
     const path =
       mode === "public"
@@ -199,7 +207,7 @@ export default function ReservationSlotPicker({
     return () => {
       alive = false;
     };
-  }, [businessSlug, fetchJson, itemId, mode, selectedDate, selectedTime]);
+  }, [businessSlug, fetchJson, itemId, mode, selectedDate, selectedTime, isLoadingDays]);
 
   function handlePickDate(date: Date, inMonth: boolean) {
     const key = formatLocalDateKey(date);
@@ -224,16 +232,44 @@ export default function ReservationSlotPicker({
         </div>
       </div>
 
-      <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <div className="relative rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5 overflow-hidden">
+        {/* Spinner visual de carga cubriendo el calendario con glassmorphism */}
+        {isLoadingDays && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1.5px] rounded-3xl transition-all duration-300">
+            <svg
+              className="animate-spin h-8 w-8 text-emerald-500 mb-2"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span className="text-xs font-semibold text-emerald-700">Cargando fechas...</span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <button
             type="button"
+            disabled={isLoadingDays}
             onClick={() =>
               setViewMonth(
                 startOfMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1)),
               )
             }
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-black/5"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Mes anterior"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -243,12 +279,13 @@ export default function ReservationSlotPicker({
 
           <button
             type="button"
+            disabled={isLoadingDays}
             onClick={() =>
               setViewMonth(
                 startOfMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)),
               )
             }
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-black/5"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-black/5 disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Mes siguiente"
           >
             <ChevronRight className="h-4 w-4" />
@@ -271,15 +308,16 @@ export default function ReservationSlotPicker({
               <button
                 key={`${dateKey}-${i}`}
                 type="button"
-                disabled={!isAvailable}
+                disabled={isLoadingDays || !isAvailable}
                 onClick={() => handlePickDate(date, inMonth)}
                 className={cn(
-                  "h-10 rounded-full text-sm",
+                  "h-10 rounded-full text-sm transition-all duration-200",
                   selected
                     ? "bg-emerald-500 text-white"
                     : isAvailable
                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       : "text-black/20",
+                  isLoadingDays && "opacity-50 cursor-not-allowed",
                 )}
               >
                 {date.getDate()}

@@ -407,7 +407,7 @@ export default function PublicStoreClient() {
         className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
+        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
               {businessLogoUrl ? (
@@ -420,17 +420,17 @@ export default function PublicStoreClient() {
                 <Store className="h-5 w-5" />
               )}
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-[16px] font-bold text-slate-950">
+            <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
+              <h1 className="truncate text-[20px] font-semibold text-neutral-900">
                 {businessName || "Tienda"}
-              </div>
+              </h1>
               {businessSubtitle?.trim() && (
-                <div className="truncate text-[12px] font-medium text-slate-500">
+                <div className="truncate text-[13px] font-medium text-slate-500 ml-2">
                   {businessSubtitle.trim()}
                 </div>
               )}
               <div
-                className="truncate text-[12px] font-medium text-slate-500"
+                className="truncate text-[13px] font-medium text-slate-500 ml-2"
                 style={businessSubtitle?.trim() ? { display: "none" } : undefined}
               >
                 Catálogo
@@ -439,15 +439,6 @@ export default function PublicStoreClient() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-              aria-label="Buscar"
-            >
-              <Search className="h-5 w-5" />
-            </button>
-
             <button
               type="button"
               onClick={() => setShowCartModal(true)}
@@ -465,29 +456,16 @@ export default function PublicStoreClient() {
         </div>
 
         <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
-          {isSearchOpen && (
-            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
-              <Search className="h-4 w-4 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar..."
-                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setQuery("");
-                  setIsSearchOpen(false);
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
-                aria-label="Cerrar búsqueda"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+          <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input
+              ref={searchInputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar..."
+              className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
+            />
+          </div>
 
           <div className="flex gap-2">
             {["", "PRODUCT", "SERVICE"].map((type) => (
