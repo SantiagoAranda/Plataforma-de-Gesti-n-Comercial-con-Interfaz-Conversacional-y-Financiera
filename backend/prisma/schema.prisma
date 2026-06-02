@@ -618,6 +618,7 @@ model PayrollBusinessParameter {
   monthlyHours Decimal? @db.Decimal(10, 2)
 
   applyLaw1819        Boolean @default(true)
+  exemptEmployerHealthLaw1819 Boolean @default(true)
   applySolidarityFund Boolean @default(true)
   applyIncomeTax      Boolean @default(false)
 

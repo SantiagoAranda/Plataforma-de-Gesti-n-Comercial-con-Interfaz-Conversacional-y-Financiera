@@ -132,6 +132,12 @@ export type ArlRiskClass = {
   rate?: MoneyLike;
 };
 
+export type CiiuActivity = {
+  id: string;
+  code: string;
+  description: string;
+};
+
 export type OvertimeType =
   | "OVERTIME_DAY"
   | "OVERTIME_NIGHT"
@@ -281,6 +287,11 @@ export const payrollApi = {
   },
   deleteEmployee(employeeId: string) {
     return payrollRequest<{ ok: boolean }>(`/payroll/employees/${employeeId}`, {
+      method: "DELETE",
+    });
+  },
+  hardDeleteEmployee(employeeId: string) {
+    return payrollRequest<{ ok: boolean }>(`/payroll/employees/${employeeId}/hard`, {
       method: "DELETE",
     });
   },

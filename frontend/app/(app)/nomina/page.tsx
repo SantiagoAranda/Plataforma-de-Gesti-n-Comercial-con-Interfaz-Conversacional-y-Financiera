@@ -326,13 +326,13 @@ function SummaryCard({
       <div className="space-y-4">
         <div>
           <p className="text-3xl font-medium tabular-nums">{money(totalCost)}</p>
-          <p className="mt-1 text-sm text-white/78">Costo laboral total</p>
+          <p className="mt-1 text-sm text-white/78">Costo laboral real</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
             <p className="text-lg font-medium tabular-nums">{shortMoney(totalNet)}</p>
-            <p className="mt-1 text-[11px] text-white/78">Pago a empleados</p>
+            <p className="mt-1 text-[11px] text-white/78">Neto a pagar</p>
           </div>
           <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
             <div className="flex items-center justify-between gap-2">
@@ -341,7 +341,7 @@ function SummaryCard({
                 {percent.toFixed(1)}%
               </span>
             </div>
-            <p className="mt-1 text-[11px] text-white/78">Cargas + provisiones</p>
+            <p className="mt-1 text-[11px] text-white/78">Deducciones, cargas y provisiones</p>
           </div>
         </div>
       </div>
@@ -427,6 +427,10 @@ function PayrollSummaryPanel({
   onEditContract,
   onOpenNews,
   onOpenSettlement,
+  onCreateContract,
+  onInactivateContract,
+  onInactivateEmployee,
+  onHardDeleteEmployee,
 }: {
   run: PayrollRun;
   expanded: boolean;
@@ -439,6 +443,10 @@ function PayrollSummaryPanel({
   onEditContract?: (run: PayrollRun) => void;
   onOpenNews?: (run: PayrollRun) => void;
   onOpenSettlement?: (run: PayrollRun) => void;
+  onCreateContract?: (employee: Employee) => void;
+  onInactivateContract?: (contract: Contract) => void;
+  onInactivateEmployee?: (employee: Employee) => void;
+  onHardDeleteEmployee?: (employee: Employee) => void;
 }) {
   const extras = [
     { label: "Horas extras", value: run.overtimeAmount },
@@ -468,6 +476,7 @@ function PayrollSummaryPanel({
     : run.contract?.isActive === false
       ? "Requiere liquidacion"
       : "Contrato activo";
+  const canCalculateNews = run.contract?.isActive !== false && !run.contract?.endDate;
 
   return (
     <div
@@ -640,11 +649,25 @@ function PayrollSummaryPanel({
           <button type="button" onClick={(event) => { event.stopPropagation(); onEditContract?.(run); }} className="rounded-xl bg-blue-50 px-2 py-2 text-[10px] font-bold text-blue-700">
             Contrato
           </button>
-          <button type="button" onClick={(event) => { event.stopPropagation(); onOpenNews?.(run); }} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700">
+          <button type="button" disabled={!canCalculateNews} onClick={(event) => { event.stopPropagation(); if (canCalculateNews) onOpenNews?.(run); }} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 disabled:text-emerald-300">
             Novedades
           </button>
           <button type="button" onClick={(event) => { event.stopPropagation(); onOpenSettlement?.(run); }} className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-700">
             Ver liquidación
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          <button type="button" onClick={(event) => { event.stopPropagation(); onCreateContract?.(run.employee); }} className="rounded-xl bg-sky-50 px-2 py-2 text-[10px] font-bold text-sky-700">
+            Nuevo contrato
+          </button>
+          <button type="button" disabled={!run.contract || run.contract.isActive === false} onClick={(event) => { event.stopPropagation(); if (run.contract) onInactivateContract?.(run.contract); }} className="rounded-xl bg-amber-50 px-2 py-2 text-[10px] font-bold text-amber-700 disabled:text-amber-300">
+            Inactivar contrato
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onInactivateEmployee?.(run.employee); }} className="rounded-xl bg-orange-50 px-2 py-2 text-[10px] font-bold text-orange-700">
+            Inactivar emp.
+          </button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); onHardDeleteEmployee?.(run.employee); }} className="rounded-xl bg-rose-50 px-2 py-2 text-[10px] font-bold text-rose-700">
+            Eliminar
           </button>
         </div>
 
@@ -874,6 +897,10 @@ function EmployeeCarousel({
   onEditContract,
   onOpenNews,
   onOpenSettlement,
+  onCreateContract,
+  onInactivateContract,
+  onInactivateEmployee,
+  onHardDeleteEmployee,
 }: {
   run: PayrollRun;
   settlement?: Settlement;
@@ -889,6 +916,10 @@ function EmployeeCarousel({
   onEditContract?: (run: PayrollRun) => void;
   onOpenNews?: (run: PayrollRun) => void;
   onOpenSettlement?: (run: PayrollRun) => void;
+  onCreateContract?: (employee: Employee) => void;
+  onInactivateContract?: (contract: Contract) => void;
+  onInactivateEmployee?: (employee: Employee) => void;
+  onHardDeleteEmployee?: (employee: Employee) => void;
 }) {
   return (
     <div
@@ -911,6 +942,10 @@ function EmployeeCarousel({
           onEditContract={onEditContract}
           onOpenNews={onOpenNews}
           onOpenSettlement={onOpenSettlement}
+          onCreateContract={onCreateContract}
+          onInactivateContract={onInactivateContract}
+          onInactivateEmployee={onInactivateEmployee}
+          onHardDeleteEmployee={onHardDeleteEmployee}
         />
         <SettlementPanel settlement={settlement} />
       </div>
@@ -925,6 +960,9 @@ function EmployeeStandaloneCard({
   onEditEmployee,
   onEditContract,
   onOpenNews,
+  onInactivateContract,
+  onInactivateEmployee,
+  onHardDeleteEmployee,
 }: {
   employee: Employee;
   contract?: Contract | null;
@@ -932,9 +970,13 @@ function EmployeeStandaloneCard({
   onEditEmployee: (employee: Employee) => void;
   onEditContract: (employee: Employee, contract?: Contract | null) => void;
   onOpenNews: (employee: Employee, contract?: Contract | null) => void;
+  onInactivateContract?: (contract: Contract) => void;
+  onInactivateEmployee?: (employee: Employee) => void;
+  onHardDeleteEmployee?: (employee: Employee) => void;
 }) {
   const hasContract = Boolean(contract);
   const isBiweekly = contract?.paymentCycle === "BIWEEKLY";
+  const canCalculateNews = contract?.isActive !== false && !contract?.endDate;
 
   return (
     <article className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
@@ -991,7 +1033,7 @@ function EmployeeStandaloneCard({
         </button>
         {hasContract && (
           <>
-            <button type="button" onClick={() => onOpenNews(employee, contract)} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700">
+            <button type="button" disabled={!canCalculateNews} onClick={() => canCalculateNews && onOpenNews(employee, contract)} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 disabled:text-emerald-300">
               Novedades
             </button>
             <button type="button" className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-300" disabled>
@@ -999,6 +1041,19 @@ function EmployeeStandaloneCard({
             </button>
           </>
         )}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
+        {contract && (
+          <button type="button" disabled={contract.isActive === false} onClick={() => onInactivateContract?.(contract)} className="rounded-xl bg-amber-50 px-2 py-2 text-[10px] font-bold text-amber-700 disabled:text-amber-300">
+            Inactivar contrato
+          </button>
+        )}
+        <button type="button" onClick={() => onInactivateEmployee?.(employee)} className="rounded-xl bg-orange-50 px-2 py-2 text-[10px] font-bold text-orange-700">
+          Inactivar emp.
+        </button>
+        <button type="button" onClick={() => onHardDeleteEmployee?.(employee)} className="rounded-xl bg-rose-50 px-2 py-2 text-[10px] font-bold text-rose-700">
+          Eliminar
+        </button>
       </div>
     </article>
   );
@@ -2769,8 +2824,24 @@ export default function PayrollPage() {
         if (currentPeriod) return currentPeriod.id;
         
         payrollApi.createPeriod({ year, month, paymentCycle: "MONTHLY", installmentNumber: 1 })
+          .catch(async (err) => {
+            if (err instanceof AppApiError && err.status === 409) {
+              const existingPeriods = await payrollApi.findPeriods(year, month);
+              const existingPeriod = existingPeriods.find(
+                (period) =>
+                  period.paymentCycle === "MONTHLY" &&
+                  (period.installmentNumber ?? 1) === 1,
+              );
+              if (existingPeriod) return existingPeriod;
+            }
+            throw err;
+          })
           .then((newPeriod) => {
-            setPeriods((prev) => [...prev, newPeriod]);
+            setPeriods((prev) => (
+              prev.some((period) => period.id === newPeriod.id)
+                ? prev
+                : [...prev, newPeriod]
+            ));
             setSelectedPeriodId(newPeriod.id);
           })
           .catch((err) => console.error("Failed to auto-create current period", err));
@@ -3106,6 +3177,44 @@ export default function PayrollPage() {
     }));
   }, []);
 
+  const refreshPeople = useCallback(async () => {
+    await loadEmployees();
+    setPeriodRefreshKey((value) => value + 1);
+  }, [loadEmployees]);
+
+  const handleInactivateContract = useCallback(async (contract: Contract) => {
+    if (!window.confirm("Inactivar este contrato?")) return;
+    try {
+      await payrollApi.deleteContract(contract.id);
+      toast.success("Contrato inactivado");
+      await refreshPeople();
+    } catch (err) {
+      toast.error(err instanceof AppApiError ? err.message : "No se pudo inactivar el contrato.");
+    }
+  }, [refreshPeople]);
+
+  const handleInactivateEmployee = useCallback(async (employee: Employee) => {
+    if (!window.confirm("Inactivar este empleado?")) return;
+    try {
+      await payrollApi.deleteEmployee(employee.id);
+      toast.success("Empleado inactivado");
+      await refreshPeople();
+    } catch (err) {
+      toast.error(err instanceof AppApiError ? err.message : "No se pudo inactivar el empleado.");
+    }
+  }, [refreshPeople]);
+
+  const handleHardDeleteEmployee = useCallback(async (employee: Employee) => {
+    if (!window.confirm("Eliminar definitivamente este empleado? Solo funciona si no tiene historial.")) return;
+    try {
+      await payrollApi.hardDeleteEmployee(employee.id);
+      toast.success("Empleado eliminado");
+      await refreshPeople();
+    } catch (err) {
+      toast.error(err instanceof AppApiError ? err.message : "No se pudo eliminar definitivamente.");
+    }
+  }, [refreshPeople]);
+
   const handlePostPeriod = async () => {
     if (!selectedPeriodId) return;
     try {
@@ -3195,6 +3304,9 @@ export default function PayrollPage() {
                           setNewsContract(contract ?? null);
                           setNewsSheetOpen(true);
                         }}
+                        onInactivateContract={handleInactivateContract}
+                        onInactivateEmployee={handleInactivateEmployee}
+                        onHardDeleteEmployee={handleHardDeleteEmployee}
                       />
                     );
                   }
@@ -3232,6 +3344,14 @@ export default function PayrollPage() {
                         setNewsRun(selectedRun);
                         setSettlementSheetOpen(true);
                       }}
+                      onCreateContract={(employee) => {
+                        setContractEmployee(employee);
+                        setContractToEdit(null);
+                        setContractSheetOpen(true);
+                      }}
+                      onInactivateContract={handleInactivateContract}
+                      onInactivateEmployee={handleInactivateEmployee}
+                      onHardDeleteEmployee={handleHardDeleteEmployee}
                     />
                   );
                 })}

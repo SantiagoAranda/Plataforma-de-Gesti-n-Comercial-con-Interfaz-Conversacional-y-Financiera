@@ -32,6 +32,10 @@ export class UpdateBusinessConfigDto {
 
   @IsOptional()
   @IsBoolean()
+  exemptEmployerHealthLaw1819?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   applySolidarityFund?: boolean;
 
   @IsOptional()

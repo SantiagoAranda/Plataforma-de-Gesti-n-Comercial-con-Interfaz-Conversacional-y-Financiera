@@ -41,10 +41,10 @@ describe('Payroll Advanced Audits (Integration)', () => {
       create: {
         year: 2025,
         version: 1,
-        smmlv: 1300000,
-        transportAllowance: 162000,
-        uvt: 47065,
-        monthlyHours: 240,
+        smmlv: 1750905,
+        transportAllowance: 249095,
+        uvt: 52374,
+        monthlyHours: 220,
         isActive: true,
       }
     });
@@ -56,10 +56,10 @@ describe('Payroll Advanced Audits (Integration)', () => {
       create: {
         year: 2026,
         version: 1,
-        smmlv: 1300000,
-        transportAllowance: 162000,
-        uvt: 47065,
-        monthlyHours: 240,
+        smmlv: 1750905,
+        transportAllowance: 249095,
+        uvt: 52374,
+        monthlyHours: 220,
         isActive: true,
       }
     });
