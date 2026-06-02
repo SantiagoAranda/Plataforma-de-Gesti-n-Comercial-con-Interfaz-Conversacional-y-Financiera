@@ -113,7 +113,7 @@ export default function HomeAgenda({
   }
 
   return (
-    <div className="px-4 pb-3">
+    <div className="px-4 pb-1">
       <DayPickerCalendar
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
@@ -121,11 +121,11 @@ export default function HomeAgenda({
         id="home-agenda-calendar"
       />
 
-      <div className="mt-3 flex items-center gap-2 pb-1">
+      <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
           onClick={() => scrollFilters("left")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
           aria-label="Scroll filtros a la izquierda"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -133,7 +133,7 @@ export default function HomeAgenda({
 
         <div
           ref={filtersRef}
-          className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           {(
             [
@@ -166,7 +166,7 @@ export default function HomeAgenda({
         <button
           type="button"
           onClick={() => scrollFilters("right")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
           aria-label="Scroll filtros a la derecha"
         >
           <ChevronRight className="h-4 w-4" />
@@ -174,7 +174,7 @@ export default function HomeAgenda({
       </div>
 
       {hasEvents && (
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="flex items-center justify-between px-2">
             <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
               Eventos de hoy
