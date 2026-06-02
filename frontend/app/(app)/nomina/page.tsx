@@ -771,8 +771,13 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
   const params = (settlement.usedParameters ?? {}) as any;
   const causedBenefits = params.causedBenefits ?? {};
   const paidBenefits = params.paidBenefits ?? {};
-  const salaryPaid = params.salaryPaid;
-  const salaryPending = settlement.salaryPending ?? params.salaryPending;
+  const grossSalaryAccrued = settlement.grossSalaryAccrued ?? params.grossSalaryAccrued ?? params.salaryAccrued;
+  const grossSalaryPaid = settlement.grossSalaryPaid ?? params.grossSalaryPaid ?? params.salaryPaid;
+  const grossSalaryPending =
+    settlement.grossSalaryPending ??
+    params.grossSalaryPending ??
+    settlement.salaryPending ??
+    params.salaryPending;
   const benefitsTotal =
     settlement.benefitsTotal ??
     params.benefitsTotal ??
@@ -843,10 +848,10 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         {/* Sección Salarios */}
         <div className="space-y-1.5 border-b border-slate-100 pb-2.5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Salarios</p>
-          <MoneyLine label="Sueldo causado" value={params.salaryAccrued} color="text-slate-600" />
-          <MoneyLine label="Pagos registrados en nomina" value={salaryPaid} color="text-rose-500" valueColor="text-rose-600" sign="-" />
+          <MoneyLine label="Salario bruto causado" value={grossSalaryAccrued} color="text-slate-600" />
+          <MoneyLine label="Salario bruto pagado" value={grossSalaryPaid} color="text-rose-500" valueColor="text-rose-600" sign="-" />
           <div className="pt-1 font-semibold">
-            <MoneyLine label="Salario pendiente por pagar" value={salaryPending} color="text-slate-800" valueColor="text-slate-900" />
+            <MoneyLine label="Salario bruto pendiente" value={grossSalaryPending} color="text-slate-800" valueColor="text-slate-900" />
           </div>
         </div>
 

@@ -45,6 +45,13 @@ import {
 
 type PayrollTx = Prisma.TransactionClient | PrismaService;
 
+type PayrollPeriodRef = {
+  year: number;
+  month: number;
+  paymentCycle?: PayrollPaymentCycle;
+  installmentNumber?: number | null;
+};
+
 const EARNING_CODES_WITHOUT_CREDIT = new Set([
   'SALARY',
   'TRANSPORT_ALLOWANCE',
@@ -495,6 +502,109 @@ export class PayrollService {
 
   private money(value: Prisma.Decimal) {
     return value.toDecimalPlaces(0, Prisma.Decimal.ROUND_HALF_UP);
+  }
+
+  private reconcileBenefitsProvision(
+    provisioned: {
+      severance: Prisma.Decimal;
+      severanceInterest: Prisma.Decimal;
+      serviceBonus: Prisma.Decimal;
+      vacation: Prisma.Decimal;
+    },
+    calculated: {
+      severance: Prisma.Decimal;
+      severanceInterest: Prisma.Decimal;
+      serviceBonus: Prisma.Decimal;
+      vacation: Prisma.Decimal;
+    },
+  ) {
+    const reconcile = (
+      provisionedAmount: Prisma.Decimal,
+      calculatedAmount: Prisma.Decimal,
+    ) => {
+      const differenceAmount = calculatedAmount.sub(provisionedAmount);
+      const differencePercent = calculatedAmount.equals(0)
+        ? this.decimal(0)
+        : differenceAmount.abs().div(calculatedAmount).mul(100);
+      const status = differencePercent.lessThanOrEqualTo(1)
+        ? 'OK'
+        : differencePercent.lessThanOrEqualTo(5)
+          ? 'WARNING'
+          : 'ERROR';
+
+      return {
+        provisioned: this.money(provisionedAmount).toString(),
+        calculated: this.money(calculatedAmount).toString(),
+        differenceAmount: this.money(differenceAmount).toString(),
+        differencePercent: differencePercent.toDecimalPlaces(4).toString(),
+        status,
+      };
+    };
+
+    const serviceBonus = calculated.serviceBonus;
+    const result = {
+      severance: reconcile(provisioned.severance, calculated.severance),
+      severanceInterest: reconcile(
+        provisioned.severanceInterest,
+        calculated.severanceInterest,
+      ),
+      serviceBonus: reconcile(provisioned.serviceBonus, serviceBonus),
+      vacation: reconcile(provisioned.vacation, calculated.vacation),
+    };
+    const provisionedTotal = provisioned.severance
+      .add(provisioned.severanceInterest)
+      .add(provisioned.serviceBonus)
+      .add(provisioned.vacation);
+    const calculatedTotal = calculated.severance
+      .add(calculated.severanceInterest)
+      .add(calculated.serviceBonus)
+      .add(calculated.vacation);
+
+    return {
+      ...result,
+      total: reconcile(provisionedTotal, calculatedTotal),
+    };
+  }
+
+  private async payrollProvisionSumsUntilDate(
+    businessId: string,
+    contractId: string,
+    endDate: Date,
+    tx: PayrollTx,
+  ) {
+    const end = this.startOfUtcDay(endDate);
+    const aggregate = await tx.payrollRun.aggregate({
+      where: {
+        businessId,
+        contractId,
+        period: {
+          OR: [
+            { year: { lt: end.getUTCFullYear() } },
+            {
+              year: end.getUTCFullYear(),
+              month: { lt: end.getUTCMonth() + 1 },
+            },
+          ],
+        },
+      },
+      _sum: {
+        severance: true,
+        severanceInterest: true,
+        serviceBonus: true,
+        vacation: true,
+        salaryEarned: true,
+        netPay: true,
+      },
+    });
+
+    return {
+      severance: this.decimal(aggregate._sum.severance),
+      severanceInterest: this.decimal(aggregate._sum.severanceInterest),
+      serviceBonus: this.decimal(aggregate._sum.serviceBonus),
+      vacation: this.decimal(aggregate._sum.vacation),
+      grossSalaryAccrued: this.decimal(aggregate._sum.salaryEarned),
+      netSalaryAccrued: this.decimal(aggregate._sum.netPay),
+    };
   }
 
   private paymentMethodCreditConcept(paymentMethod?: PaymentMethod | null) {
@@ -1290,7 +1400,7 @@ export class PayrollService {
       serviceBonusRate: DATAICO_TRUNCATED_SERVICE_BONUS_RATE,
       vacationRate: DATAICO_TRUNCATED_VACATION_RATE,
       severanceInterestRate: DATAICO_TRUNCATED_SEVERANCE_INTEREST_RATE,
-      severanceInterestFormula: 'SEVERANCE_MONTHLY_X_12_PERCENT',
+      severanceInterestFormula: 'MONTHLY_SEVERANCE_X_12_PERCENT',
     };
   }
 
@@ -1534,7 +1644,10 @@ export class PayrollService {
     const severance = benefitBaseWithTransport.mul(benefitProfile.severanceRate);
     const monthlySeveranceInterestRate =
       benefitProfile.severanceInterestRate;
-    const severanceInterest = severance.mul(monthlySeveranceInterestRate);
+    const monthlySeveranceInterestProvision = severance.mul(
+      monthlySeveranceInterestRate,
+    );
+    const severanceInterest = monthlySeveranceInterestProvision;
     const serviceBonus = benefitBaseWithTransport.mul(
       benefitProfile.serviceBonusRate,
     );
@@ -1611,6 +1724,8 @@ export class PayrollService {
         serviceBonusRateApplied: benefitProfile.serviceBonusRate.toString(),
         vacationRateApplied: benefitProfile.vacationRate.toString(),
         severanceInterestFormula: benefitProfile.severanceInterestFormula,
+        monthlySeveranceInterestProvision:
+          monthlySeveranceInterestProvision.toString(),
         totalAccrued: costBreakdown.totalAccrued,
         netPay: costBreakdown.netPay,
         employeeDeductions: costBreakdown.employeeDeductions,
@@ -1764,7 +1879,10 @@ export class PayrollService {
       );
       const monthlySeveranceInterestRate =
         benefitProfile.severanceInterestRate;
-      const severanceInterest = severance.mul(monthlySeveranceInterestRate);
+      const monthlySeveranceInterestProvision = severance.mul(
+        monthlySeveranceInterestRate,
+      );
+      const severanceInterest = monthlySeveranceInterestProvision;
       const serviceBonus = benefitBaseWithTransport.mul(
         benefitProfile.serviceBonusRate,
       );
@@ -1861,6 +1979,8 @@ export class PayrollService {
           serviceBonusRateApplied: benefitProfile.serviceBonusRate.toString(),
           vacationRateApplied: benefitProfile.vacationRate.toString(),
           severanceInterestFormula: benefitProfile.severanceInterestFormula,
+          monthlySeveranceInterestProvision:
+            monthlySeveranceInterestProvision.toString(),
           totalAccrued: costBreakdown.totalAccrued,
           netPay: costBreakdown.netPay,
           employeeDeductions: costBreakdown.employeeDeductions,
@@ -1875,7 +1995,7 @@ export class PayrollService {
             'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_AND_CONNECTIVITY_ALLOWANCE',
           monthlySeveranceInterestRate: monthlySeveranceInterestRate.toString(),
           monthlySeveranceInterestPolicy:
-            'DATAICO_MONTHLY_PROVISION_USES_SEVERANCE_MONTHLY_X_12_PERCENT',
+            'MONTHLY_SEVERANCE_X_12_PERCENT',
         },
         calculatedAt: new Date(),
       };
@@ -2223,6 +2343,24 @@ export class PayrollService {
       settlementTotalPayable:
         current.settlementTotalPayable ?? params.settlementTotalPayable,
       serviceBonusTotal: current.serviceBonusTotal ?? params.serviceBonusTotal,
+      grossSalaryAccrued:
+        current.grossSalaryAccrued ?? params.grossSalaryAccrued,
+      grossSalaryPaid: current.grossSalaryPaid ?? params.grossSalaryPaid,
+      grossSalaryPending:
+        current.grossSalaryPending ?? params.grossSalaryPending,
+      netSalaryAccrued: current.netSalaryAccrued ?? params.netSalaryAccrued,
+      netSalaryPaid: current.netSalaryPaid ?? params.netSalaryPaid,
+      netSalaryPending: current.netSalaryPending ?? params.netSalaryPending,
+      benefitsProvisioned:
+        current.benefitsProvisioned ?? params.benefitsProvisioned,
+      benefitsCalculated:
+        current.benefitsCalculated ?? params.benefitsCalculated,
+      reconciliationDifference:
+        current.reconciliationDifference ?? params.reconciliationDifference,
+      reconciliationPercent:
+        current.reconciliationPercent ?? params.reconciliationPercent,
+      benefitsReconciliation:
+        current.benefitsReconciliation ?? params.benefitsReconciliation,
     };
   }
 
@@ -2275,8 +2413,8 @@ export class PayrollService {
     const benefitDays = this.decimal(referenceBenefitDays);
     const dailySalary = salaryMonthly.div(params.maxWorkedDaysMonth);
     const hourlyRate = salaryMonthly.div(params.monthlyHours);
-    const salaryAccrued = dailySalary.mul(totalDays);
-    const paidSalaryAggregate = await tx.payrollPayment.aggregate({
+    const grossSalaryAccrued = dailySalary.mul(totalDays);
+    const paidSalaryRows = await tx.payrollPayment.findMany({
       where: {
         businessId,
         contractId: contract.id,
@@ -2289,10 +2427,38 @@ export class PayrollService {
         },
         OR: [{ paidAt: null }, { paidAt: { lte: calculationEndDate } }],
       },
-      _sum: { amount: true },
+      include: {
+        payrollRun: {
+          select: {
+            salaryEarned: true,
+            netPay: true,
+          },
+        },
+      },
     });
-    const salaryPaid = this.decimal(paidSalaryAggregate._sum.amount);
-    const salaryPending = salaryAccrued.sub(salaryPaid);
+    const netSalaryPaid = paidSalaryRows.reduce(
+      (sum, payment) => sum.add(payment.amount),
+      this.decimal(0),
+    );
+    const grossSalaryPaid = paidSalaryRows.reduce((sum, payment) => {
+      const runNetPay = this.decimal(payment.payrollRun?.netPay);
+      const runGrossSalary = this.decimal(payment.payrollRun?.salaryEarned);
+      if (runNetPay.greaterThan(0) && runGrossSalary.greaterThan(0)) {
+        return sum.add(runGrossSalary.mul(payment.amount).div(runNetPay));
+      }
+      return sum.add(payment.amount);
+    }, this.decimal(0));
+    const grossSalaryPending = grossSalaryAccrued.sub(grossSalaryPaid);
+    const historicalProvisioned = await this.payrollProvisionSumsUntilDate(
+      businessId,
+      contract.id,
+      calculationEndDate,
+      tx,
+    );
+    const netSalaryAccrued = historicalProvisioned.netSalaryAccrued;
+    const netSalaryPending = netSalaryAccrued.sub(netSalaryPaid);
+    const salaryPaid = grossSalaryPaid;
+    const salaryPending = grossSalaryPending;
 
     const benefitPaidRows = await tx.payrollBenefitPayment.groupBy({
       by: ['type'],
@@ -2347,6 +2513,34 @@ export class PayrollService {
       .add(serviceBonusSemesterTwo)
       .add(vacation);
     const settlementTotalPayable = salaryPending.add(benefitsTotal);
+    const serviceBonusCalculated = serviceBonusCaused;
+    const benefitsCalculatedTotal = severanceCaused
+      .add(severanceInterestCaused)
+      .add(serviceBonusCalculated)
+      .add(vacationCaused);
+    const benefitsProvisionedTotal = historicalProvisioned.severance
+      .add(historicalProvisioned.severanceInterest)
+      .add(historicalProvisioned.serviceBonus)
+      .add(historicalProvisioned.vacation);
+    const benefitsReconciliation = this.reconcileBenefitsProvision(
+      {
+        severance: historicalProvisioned.severance,
+        severanceInterest: historicalProvisioned.severanceInterest,
+        serviceBonus: historicalProvisioned.serviceBonus,
+        vacation: historicalProvisioned.vacation,
+      },
+      {
+        severance: severanceCaused,
+        severanceInterest: severanceInterestCaused,
+        serviceBonus: serviceBonusCalculated,
+        vacation: vacationCaused,
+      },
+    );
+    const reconciliationDifference =
+      benefitsCalculatedTotal.sub(benefitsProvisionedTotal);
+    const reconciliationPercent = benefitsCalculatedTotal.equals(0)
+      ? this.decimal(0)
+      : reconciliationDifference.abs().div(benefitsCalculatedTotal).mul(100);
 
     const snapshot = {
       ...this.parametersSnapshot(params),
@@ -2383,12 +2577,35 @@ export class PayrollService {
       salaryMonthly: salaryMonthly.toString(),
       transportAllowance: settlementTransportAllowance.toString(),
       benefitSettlementBase: benefitSettlementBase.toString(),
-      salaryAccrued: salaryAccrued.toString(),
+      grossSalaryAccrued: grossSalaryAccrued.toString(),
+      grossSalaryPaid: grossSalaryPaid.toString(),
+      grossSalaryPending: grossSalaryPending.toString(),
+      netSalaryAccrued: netSalaryAccrued.toString(),
+      netSalaryPaid: netSalaryPaid.toString(),
+      netSalaryPending: netSalaryPending.toString(),
+      salaryAccrued: grossSalaryAccrued.toString(),
       salaryPaid: salaryPaid.toString(),
       salaryPending: salaryPending.toString(),
       benefitsTotal: benefitsTotal.toString(),
       settlementTotalPayable: settlementTotalPayable.toString(),
       serviceBonusTotal: serviceBonusPending.toString(),
+      benefitsProvisioned: {
+        severance: historicalProvisioned.severance.toString(),
+        severanceInterest: historicalProvisioned.severanceInterest.toString(),
+        serviceBonus: historicalProvisioned.serviceBonus.toString(),
+        vacation: historicalProvisioned.vacation.toString(),
+        total: benefitsProvisionedTotal.toString(),
+      },
+      benefitsCalculated: {
+        severance: severanceCaused.toString(),
+        severanceInterest: severanceInterestCaused.toString(),
+        serviceBonus: serviceBonusCalculated.toString(),
+        vacation: vacationCaused.toString(),
+        total: benefitsCalculatedTotal.toString(),
+      },
+      reconciliationDifference: reconciliationDifference.toString(),
+      reconciliationPercent: reconciliationPercent.toString(),
+      benefitsReconciliation,
       paidBenefits: {
         severance: severancePaid.toString(),
         severanceInterest: severanceInterestPaid.toString(),
@@ -2431,12 +2648,12 @@ export class PayrollService {
       this.settlementLine(
         'SALARY_ACCRUED',
         'Salario causado',
-        salaryAccrued,
+        grossSalaryAccrued,
         salaryMonthly,
         daysWorkedTotal360,
         {
           basis: '30/360',
-          formula: 'salaryMonthly / 30 * totalWorkedDays30_360',
+          formula: 'grossSalaryMonthly / 30 * totalWorkedDays30_360',
         },
       ),
       this.settlementLine(
@@ -2452,12 +2669,12 @@ export class PayrollService {
       ),
       this.settlementLine(
         'SALARY_PENDING',
-        'Salario pendiente',
+        'Salario bruto pendiente',
         salaryPending,
-        salaryAccrued,
+        grossSalaryAccrued,
         daysWorkedTotal360,
         {
-          formula: 'salaryAccrued - salaryPaid',
+          formula: 'grossSalaryAccrued - grossSalaryPaid',
           canBeNegative: true,
         },
       ),
@@ -2547,9 +2764,32 @@ export class PayrollService {
       totalWorkedDays: daysWorkedTotal360,
       semesterOneDays: daysWorkedSemester1,
       semesterTwoDays: daysWorkedSemester2,
+      grossSalaryAccrued: this.money(grossSalaryAccrued),
+      grossSalaryPaid: this.money(grossSalaryPaid),
+      grossSalaryPending: this.money(grossSalaryPending),
+      netSalaryAccrued: this.money(netSalaryAccrued),
+      netSalaryPaid: this.money(netSalaryPaid),
+      netSalaryPending: this.money(netSalaryPending),
       salaryPending: this.money(salaryPending),
       benefitsTotal: this.money(benefitsTotal),
       settlementTotalPayable: this.money(settlementTotalPayable),
+      benefitsProvisioned: {
+        severance: this.money(historicalProvisioned.severance),
+        severanceInterest: this.money(historicalProvisioned.severanceInterest),
+        serviceBonus: this.money(historicalProvisioned.serviceBonus),
+        vacation: this.money(historicalProvisioned.vacation),
+        total: this.money(benefitsProvisionedTotal),
+      },
+      benefitsCalculated: {
+        severance: this.money(severanceCaused),
+        severanceInterest: this.money(severanceInterestCaused),
+        serviceBonus: this.money(serviceBonusCalculated),
+        vacation: this.money(vacationCaused),
+        total: this.money(benefitsCalculatedTotal),
+      },
+      reconciliationDifference: this.money(reconciliationDifference),
+      reconciliationPercent: reconciliationPercent.toDecimalPlaces(4),
+      benefitsReconciliation,
       severance: this.money(severance),
       severanceInterest: this.money(severanceInterest),
       serviceBonusSemesterOne: this.money(serviceBonusSemesterOne),
@@ -2647,6 +2887,17 @@ export class PayrollService {
         benefitsTotal: calculated.benefitsTotal,
         settlementTotalPayable: calculated.settlementTotalPayable,
         serviceBonusTotal: calculated.serviceBonusTotal,
+        grossSalaryAccrued: calculated.grossSalaryAccrued,
+        grossSalaryPaid: calculated.grossSalaryPaid,
+        grossSalaryPending: calculated.grossSalaryPending,
+        netSalaryAccrued: calculated.netSalaryAccrued,
+        netSalaryPaid: calculated.netSalaryPaid,
+        netSalaryPending: calculated.netSalaryPending,
+        benefitsProvisioned: calculated.benefitsProvisioned,
+        benefitsCalculated: calculated.benefitsCalculated,
+        reconciliationDifference: calculated.reconciliationDifference,
+        reconciliationPercent: calculated.reconciliationPercent,
+        benefitsReconciliation: calculated.benefitsReconciliation,
         severance: calculated.severance,
         severanceInterest: calculated.severanceInterest,
         serviceBonusSemesterOne: calculated.serviceBonusSemesterOne,

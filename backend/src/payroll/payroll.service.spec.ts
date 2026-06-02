@@ -28,6 +28,16 @@ function createPrismaMock(overrides: Record<string, any> = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     payrollRun: {
+      aggregate: jest.fn().mockResolvedValue({
+        _sum: {
+          severance: null,
+          severanceInterest: null,
+          serviceBonus: null,
+          vacation: null,
+          salaryEarned: null,
+          netPay: null,
+        },
+      }),
       count: jest.fn().mockResolvedValue(0),
       findFirst: jest.fn().mockResolvedValue(null),
       upsert: jest.fn(),
@@ -277,7 +287,7 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.serviceBonusRateApplied).toBe('0.0833');
     expect(result.usedParameters.vacationRateApplied).toBe('0.0417');
     expect(result.usedParameters.severanceInterestFormula).toBe(
-      'SEVERANCE_MONTHLY_X_12_PERCENT',
+      'MONTHLY_SEVERANCE_X_12_PERCENT',
     );
   });
 
@@ -340,7 +350,7 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.serviceBonusRateApplied).toBe('0.0833');
     expect(result.usedParameters.vacationRateApplied).toBe('0.0417');
     expect(result.usedParameters.severanceInterestFormula).toBe(
-      'SEVERANCE_MONTHLY_X_12_PERCENT',
+      'MONTHLY_SEVERANCE_X_12_PERCENT',
     );
   });
 
@@ -374,6 +384,39 @@ describe('PayrollService payroll history rules', () => {
     expect(Number(result.serviceBonus)).toBe(270_650);
     expect(Number(result.severanceInterest)).toBe(32_478);
     expect(Number(result.vacation)).toBe(125_100);
+  });
+
+  it('provisions monthly severance interest as monthly severance times 12 percent', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      startDate: new Date('2026-05-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: 3_000_000,
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+      arlRiskClass: { id: 'arl-1', rate: 0.00522 },
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.previewEmployeePayroll(
+      'biz-1',
+      'period-1',
+      'emp-1',
+      { workedDays: 30 },
+    );
+
+    expect(Number(result.severance)).toBe(270_650);
+    expect(Number(result.severanceInterest)).toBe(32_478);
+    expect(result.usedParameters.severanceInterestFormula).toBe(
+      'MONTHLY_SEVERANCE_X_12_PERCENT',
+    );
   });
 
   it('returns the existing payroll period when the unique key already exists', async () => {
@@ -451,6 +494,59 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.daysWorkedTotal360).toBe(151);
     expect(result.usedParameters.daysWorkedSemester1).toBe(150);
     expect(result.usedParameters.daysWorkedSemester2).toBe(1);
+  });
+
+  it('exposes benefits reconciliation against historical payroll provisions', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollRun.aggregate.mockResolvedValue({
+      _sum: {
+        severance: new Prisma.Decimal(1_353_250),
+        severanceInterest: new Prisma.Decimal(67_689),
+        serviceBonus: new Prisma.Decimal(1_353_250),
+        vacation: new Prisma.Decimal(625_500),
+        salaryEarned: new Prisma.Decimal(15_000_000),
+        netPay: new Prisma.Decimal(15_045_475),
+      },
+    });
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-31T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-07-01' },
+    );
+
+    expect(Number(result.benefitsProvisioned.total)).toBe(3_399_689);
+    expect(Number(result.benefitsCalculated.total)).toBe(3_423_391);
+    expect(Number(result.reconciliationDifference)).toBe(23_702);
+    expect(Number(result.reconciliationPercent)).toBeLessThan(1);
+    expect(result.benefitsReconciliation.severance.status).toBe('OK');
+    expect(result.benefitsReconciliation.serviceBonus.status).toBe('OK');
+    expect(result.benefitsReconciliation.vacation.status).toBe('OK');
+    expect(result.benefitsReconciliation.severanceInterest.status).toBe('WARNING');
   });
 
   it('settles an explicit inclusive endDate from 2026-01-01 to 2026-06-01', async () => {
@@ -552,9 +648,16 @@ describe('PayrollService payroll history rules', () => {
 
   it('discounts paid salary payments from settlement salary pending', async () => {
     const prisma = createPrismaMock();
-    prisma.payrollPayment.aggregate.mockResolvedValue({
-      _sum: { amount: new Prisma.Decimal(3_000_000) },
-    });
+    prisma.payrollPayment.findMany.mockResolvedValue([
+      {
+        amount: new Prisma.Decimal(3_009_095),
+        type: 'SALARY_PAYMENT',
+        payrollRun: {
+          salaryEarned: new Prisma.Decimal(3_000_000),
+          netPay: new Prisma.Decimal(3_009_095),
+        },
+      },
+    ]);
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
       businessId: 'biz-1',
@@ -587,6 +690,8 @@ describe('PayrollService payroll history rules', () => {
     );
 
     expect(Number(result.salaryPending)).toBe(12_100_000);
+    expect(Number(result.grossSalaryPaid)).toBe(3_000_000);
+    expect(Number(result.netSalaryPaid)).toBe(3_009_095);
     expect(Number(result.benefitsTotal)).toBe(3_423_391);
     expect(Number(result.settlementTotalPayable)).toBe(15_523_391);
     expect(result.usedParameters.salaryPaid).toBe('3000000');
