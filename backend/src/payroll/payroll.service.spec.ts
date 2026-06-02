@@ -405,7 +405,55 @@ describe('PayrollService payroll history rules', () => {
     ).resolves.toBe(existing);
   });
 
-  it('matches the contract settlement reference for 2026-01-01 to 2027-01-01', async () => {
+  it('settles 2026-01-31 to 2026-07-01 with 30/360 day-31 normalization and semester split', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-31T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-07-01' },
+    );
+
+    expect(result.totalWorkedDays).toBe(151);
+    expect(result.semesterOneDays).toBe(150);
+    expect(result.semesterTwoDays).toBe(1);
+    expect(Number(result.severance)).toBe(1_362_815);
+    expect(Number(result.severanceInterest)).toBe(68_595);
+    expect(Number(result.serviceBonusSemesterOne)).toBe(1_353_790);
+    expect(Number(result.serviceBonusSemesterTwo)).toBe(9_025);
+    expect(Number(result.serviceBonusTotal)).toBe(1_362_815);
+    expect(Number(result.vacation)).toBe(629_167);
+    expect(Number(result.benefitsTotal)).toBe(3_423_391);
+    expect(result.usedParameters.daysWorkedTotal360).toBe(151);
+    expect(result.usedParameters.daysWorkedSemester1).toBe(150);
+    expect(result.usedParameters.daysWorkedSemester2).toBe(1);
+  });
+
+  it('settles an explicit inclusive endDate from 2026-01-01 to 2026-06-01', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -435,17 +483,156 @@ describe('PayrollService payroll history rules', () => {
     const result: any = await service.simulateContractSettlement(
       'biz-1',
       'contract-1',
-      { endDate: '2027-01-01' },
+      { endDate: '2026-06-01' },
     );
 
-    expect(Number(result.severance)).toBe(1_624_548);
-    expect(Number(result.severanceInterest)).toBe(97_473);
-    expect(Number(result.serviceBonusSemesterOne)).toBe(1_624_548);
+    expect(result.startDate.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.endDate.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(result.usedParameters.requestedEndDate).toBe('2026-06-01T00:00:00.000Z');
+    expect(result.usedParameters.calculationEndDate).toBe('2026-06-01T00:00:00.000Z');
+    expect(result.totalWorkedDays).toBe(151);
+    expect(result.semesterOneDays).toBe(151);
+    expect(result.semesterTwoDays).toBe(0);
+    expect(Number(result.severance)).toBe(1_362_815);
+    expect(Number(result.severanceInterest)).toBe(68_595);
+    expect(Number(result.serviceBonusSemesterOne)).toBe(1_362_815);
     expect(Number(result.serviceBonusSemesterTwo)).toBe(0);
-    expect(Number(result.vacation)).toBe(750_000);
-    expect(Number(result.totalAmount)).toBe(4_096_568);
-    expect(result.usedParameters.daysWorkedTotal360).toBe(360);
+    expect(Number(result.serviceBonusTotal)).toBe(1_362_815);
+    expect(Number(result.vacation)).toBe(629_167);
+    expect(Number(result.benefitsTotal)).toBe(3_423_391);
+    expect(Number(result.salaryPending)).toBe(15_100_000);
+    expect(Number(result.settlementTotalPayable)).toBe(18_523_391);
+    expect(Number(result.totalAmount)).toBe(18_523_391);
+    expect(result.usedParameters.daysWorkedTotal360).toBe(151);
+    expect(result.usedParameters.daysWorkedSemester1).toBe(151);
+    expect(result.usedParameters.daysWorkedSemester2).toBe(0);
+    expect(result.usedParameters.daysWorkedForVacation).toBe(151);
+  });
+
+  it('splits one day into semester two for 2026-01-01 to 2026-07-01', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-07-01' },
+    );
+
+    expect(result.totalWorkedDays).toBe(181);
+    expect(result.semesterOneDays).toBe(180);
+    expect(result.semesterTwoDays).toBe(1);
+    expect(result.usedParameters.daysWorkedTotal360).toBe(181);
     expect(result.usedParameters.daysWorkedSemester1).toBe(180);
-    expect(result.usedParameters.daysWorkedForVacation).toBe(180);
+    expect(result.usedParameters.daysWorkedSemester2).toBe(1);
+  });
+
+  it('discounts paid salary payments from settlement salary pending', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollPayment.aggregate.mockResolvedValue({
+      _sum: { amount: new Prisma.Decimal(3_000_000) },
+    });
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-06-01' },
+    );
+
+    expect(Number(result.salaryPending)).toBe(12_100_000);
+    expect(Number(result.benefitsTotal)).toBe(3_423_391);
+    expect(Number(result.settlementTotalPayable)).toBe(15_523_391);
+    expect(result.usedParameters.salaryPaid).toBe('3000000');
+    expect(result.usedParameters.salaryPending).toBe('12100000');
+  });
+
+  it('uses today as an inclusive calculation date when settlement simulation has no endDate', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-02T13:45:00.000Z'));
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    try {
+      const result: any = await service.simulateContractSettlement(
+        'biz-1',
+        'contract-1',
+        {},
+      );
+
+      expect(result.endDate.toISOString()).toBe('2026-06-02T00:00:00.000Z');
+      expect(result.usedParameters.requestedEndDate).toBe('2026-06-02T00:00:00.000Z');
+      expect(result.usedParameters.calculationEndDate).toBe('2026-06-02T00:00:00.000Z');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

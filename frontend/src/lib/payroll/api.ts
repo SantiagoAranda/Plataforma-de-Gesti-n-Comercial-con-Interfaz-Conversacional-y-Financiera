@@ -104,7 +104,13 @@ export type Settlement = {
   severanceInterest: MoneyLike;
   serviceBonusSemesterOne: MoneyLike;
   serviceBonusSemesterTwo: MoneyLike;
+  serviceBonusTotal?: MoneyLike;
   vacation: MoneyLike;
+  salaryPending?: MoneyLike;
+  benefitsTotal?: MoneyLike;
+  settlementTotalPayable?: MoneyLike;
+  requestedEndDate?: string;
+  calculationEndDate?: string;
   totalAmount: MoneyLike;
   vacationDays: MoneyLike;
   hourlyRate: MoneyLike;

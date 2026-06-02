@@ -202,15 +202,19 @@ function shortMoney(value: MoneyLike) {
   return money(n);
 }
 
-function formatDate(value?: string | null) {
+function formatCivilDate(value?: string | Date | null) {
   if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("es-CO", {
+  const date = typeof value === "string" ? value : value.toISOString();
+  const isoDate = date.slice(0, 10);
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) return "-";
+
+  return new Intl.DateTimeFormat("es-CO", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, day)));
 }
 
 function employeeName(employee: Employee) {
@@ -767,11 +771,35 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
   const params = (settlement.usedParameters ?? {}) as any;
   const causedBenefits = params.causedBenefits ?? {};
   const paidBenefits = params.paidBenefits ?? {};
+  const salaryPaid = params.salaryPaid;
+  const salaryPending = settlement.salaryPending ?? params.salaryPending;
+  const benefitsTotal =
+    settlement.benefitsTotal ??
+    params.benefitsTotal ??
+    (toNumber(settlement.severance) +
+      toNumber(settlement.severanceInterest) +
+      toNumber(settlement.serviceBonusSemesterOne) +
+      toNumber(settlement.serviceBonusSemesterTwo) +
+      toNumber(settlement.vacation));
+  const settlementTotalPayable =
+    settlement.settlementTotalPayable ??
+    params.settlementTotalPayable ??
+    settlement.totalAmount;
+  const serviceBonusSemesterOne =
+    causedBenefits.serviceBonusSemesterOne ?? settlement.serviceBonusSemesterOne;
+  const serviceBonusSemesterTwo =
+    causedBenefits.serviceBonusSemesterTwo ?? settlement.serviceBonusSemesterTwo;
+  const serviceBonusTotal =
+    settlement.serviceBonusTotal ??
+    causedBenefits.serviceBonus ??
+    (toNumber(serviceBonusSemesterOne) + toNumber(serviceBonusSemesterTwo));
+  const shouldSplitServiceBonus =
+    toNumber(serviceBonusSemesterOne) > 0 && toNumber(serviceBonusSemesterTwo) > 0;
 
   const totalCausedBenefits =
     toNumber(causedBenefits.severance) +
     toNumber(causedBenefits.severanceInterest) +
-    toNumber(causedBenefits.serviceBonus) +
+    toNumber(serviceBonusTotal) +
     toNumber(causedBenefits.vacation);
 
   const totalPaidBenefits =
@@ -788,11 +816,11 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
             Resumen de Liquidación
           </p>
           <h3 className="mt-1 text-xs font-medium text-slate-500">
-            {formatDate(settlement.startDate)} al {formatDate(settlement.endDate)}
+            {formatCivilDate(settlement.startDate)} al {formatCivilDate(settlement.endDate)}
           </h3>
         </div>
         <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
-          {money(settlement.totalAmount)}
+          {money(settlementTotalPayable)}
         </span>
       </div>
 
@@ -816,9 +844,9 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         <div className="space-y-1.5 border-b border-slate-100 pb-2.5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Salarios</p>
           <MoneyLine label="Sueldo causado" value={params.salaryAccrued} color="text-slate-600" />
-          <MoneyLine label="Pagos realizados" value={params.salaryPaid} color="text-rose-500" valueColor="text-rose-600" sign="-" />
+          <MoneyLine label="Pagos registrados en nomina" value={salaryPaid} color="text-rose-500" valueColor="text-rose-600" sign="-" />
           <div className="pt-1 font-semibold">
-            <MoneyLine label="Sueldo neto pendiente" value={params.salaryPending} color="text-slate-800" valueColor="text-slate-900" />
+            <MoneyLine label="Salario pendiente por pagar" value={salaryPending} color="text-slate-800" valueColor="text-slate-900" />
           </div>
         </div>
 
@@ -826,11 +854,19 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         <div className="space-y-1.5 border-b border-slate-100 pb-2.5">
           <div className="flex justify-between items-center">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Prestaciones Causadas</p>
-            <span className="text-xs font-semibold text-slate-700">{money(totalCausedBenefits)}</span>
+            <span className="text-xs font-semibold text-slate-700">{money(totalCausedBenefits || benefitsTotal)}</span>
           </div>
           <MoneyLine label="Cesantías" value={causedBenefits.severance} color="text-slate-500" indent />
           <MoneyLine label="Intereses Cesantías" value={causedBenefits.severanceInterest} color="text-slate-500" indent />
-          <MoneyLine label="Prima de Servicios" value={causedBenefits.serviceBonus} color="text-slate-500" indent />
+          {shouldSplitServiceBonus ? (
+            <>
+              <MoneyLine label="Prima de Servicios I" value={serviceBonusSemesterOne} color="text-slate-500" indent />
+              <MoneyLine label="Prima de Servicios II" value={serviceBonusSemesterTwo} color="text-slate-500" indent />
+              <MoneyLine label="Prima total" value={serviceBonusTotal} color="text-slate-600" indent />
+            </>
+          ) : (
+            <MoneyLine label="Prima de Servicios" value={serviceBonusTotal} color="text-slate-500" indent />
+          )}
           <MoneyLine label="Vacaciones" value={causedBenefits.vacation} color="text-slate-500" indent />
         </div>
 
@@ -872,10 +908,10 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         {/* Total Final */}
         <div className="pt-2 flex justify-between items-center">
           <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase">Total Neto Liquidación</p>
-            <p className="text-[11px] text-slate-400">Salario pendiente + Prestaciones netas</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">Total estimado a pagar</p>
+            <p className="text-[11px] text-slate-400">Salario pendiente + prestaciones netas</p>
           </div>
-          <span className="text-base font-bold text-violet-700">{money(settlement.totalAmount)}</span>
+          <span className="text-base font-bold text-violet-700">{money(settlementTotalPayable)}</span>
         </div>
       </div>
     </article>
@@ -1642,7 +1678,7 @@ function ContractManagementSheet({
             <article key={contract.id} className="flex items-center gap-3 rounded-[22px] bg-white p-3 shadow-sm ring-1 ring-black/5">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-900">{money(contract.salaryMonthly)}</p>
-                <p className="text-xs text-slate-500">{formatDate(contract.startDate)} - {contract.endDate ? formatDate(contract.endDate) : "Activo"} · {contract.paymentCycle === "BIWEEKLY" ? "Quincenal" : "Mensual"}</p>
+                <p className="text-xs text-slate-500">{formatCivilDate(contract.startDate)} - {contract.endDate ? formatCivilDate(contract.endDate) : "Activo"} · {contract.paymentCycle === "BIWEEKLY" ? "Quincenal" : "Mensual"}</p>
               </div>
               <span className={cn("rounded-full px-2 py-1 text-[10px] font-medium", contract.isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>{contract.isActive ? "Activo" : "Inactivo"}</span>
               <button type="button" onClick={() => startEdit(contract)} className="grid h-9 w-9 place-items-center rounded-full bg-slate-50 text-slate-500" aria-label="Editar contrato"><Edit3 className="h-4 w-4" /></button>
@@ -2096,7 +2132,7 @@ function PayrollRecordWizardSheet({
             </select>
             {selectedContract ? (
               <div className="space-y-2 rounded-2xl bg-slate-50 p-3 text-sm">
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Ingreso</span><span className="font-medium text-slate-900">{formatDate(selectedContract.startDate)}</span></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Ingreso</span><span className="font-medium text-slate-900">{formatCivilDate(selectedContract.startDate)}</span></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Salario</span><span className="font-medium text-slate-900">{money(selectedContract.salaryMonthly)}</span></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Ciclo</span><span className="font-medium text-slate-900">{selectedContract.paymentCycle === "BIWEEKLY" ? "Quincenal" : "Mensual"}</span></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">ARL</span><span className="font-medium text-slate-900">{selectedArl ? `Riesgo ${selectedArl.level}` : "Sin ARL"}</span></div>
@@ -2699,7 +2735,7 @@ function SettlementSimulationSheet({
             <option value="">{loadingContracts ? "Cargando contratos..." : "Contrato"}</option>
             {contracts.map((contract) => (
               <option key={contract.id} value={contract.id}>
-                {formatDate(contract.startDate)} - {contract.endDate ? formatDate(contract.endDate) : "Activo"}
+                {formatCivilDate(contract.startDate)} - {contract.endDate ? formatCivilDate(contract.endDate) : "Activo"}
               </option>
             ))}
           </select>
@@ -2725,7 +2761,7 @@ function SettlementSimulationSheet({
 
           {selectedContract && (
             <div className="rounded-2xl bg-violet-50 p-3 text-xs text-violet-800">
-              Ingreso: {formatDate(selectedContract.startDate)} · Salario: {money(selectedContract.salaryMonthly)}
+              Ingreso: {formatCivilDate(selectedContract.startDate)} · Salario: {money(selectedContract.salaryMonthly)}
             </div>
           )}
         </div>
