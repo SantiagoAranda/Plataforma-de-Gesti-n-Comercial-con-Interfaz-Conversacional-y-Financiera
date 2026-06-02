@@ -118,6 +118,33 @@ export default function PublicStoreClient() {
   const [category, setCategory] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      if (currentScrollY <= 10) {
+        setIsHeaderVisible(true);
+      } else if (currentScrollY > lastScrollYRef.current) {
+        // Scrolling down
+        if (currentScrollY > 60) {
+          setIsHeaderVisible(false);
+        }
+      } else {
+        // Scrolling up
+        setIsHeaderVisible(true);
+      }
+
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   const closeProductDetail = () => setSelectedProduct(null);
 
@@ -404,8 +431,11 @@ export default function PublicStoreClient() {
   return (
     <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
       <header
-        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur transition-transform duration-300 ease-in-out"
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
+        }}
       >
         <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">

@@ -257,15 +257,6 @@ export default function MiTiendaPage() {
       >
         <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/home")}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
-              aria-label="Volver"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-
             <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
               <h1 className="truncate text-[20px] font-semibold text-neutral-900">
                 {businessName}
@@ -516,7 +507,7 @@ function AdminProductCard({
       </div>
 
       <div className="mt-3 px-1">
-        <div className="truncate text-[15px] font-extrabold leading-[1.2] text-[#0f172a]">
+        <div className="truncate text-[14px] font-medium leading-[1.2] text-slate-800">
           {item.name}
         </div>
         {item.description?.trim() ? (
@@ -524,7 +515,7 @@ function AdminProductCard({
             {item.description.trim()}
           </div>
         ) : null}
-        <div className="mt-1 text-[16px] font-black text-black">
+        <div className="mt-1 text-[15px] font-semibold text-slate-900">
           {formatCop(Number(item.price || 0))}
         </div>
       </div>
