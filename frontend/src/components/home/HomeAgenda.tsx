@@ -150,10 +150,10 @@ export default function HomeAgenda({
                 key={opt.key}
                 onClick={() => setFilter(opt.key)}
                 className={cn(
-                  "shrink-0 px-4 py-2 rounded-full text-sm font-semibold ring-1 transition",
+                  "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition",
                   active
-                    ? "bg-[#11d473] text-white ring-emerald-200"
-                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
                 )}
                 type="button"
               >
