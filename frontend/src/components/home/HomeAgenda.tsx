@@ -113,7 +113,7 @@ export default function HomeAgenda({
   }
 
   return (
-    <div className="px-4 pb-3">
+    <div className="px-4 pb-1">
       <DayPickerCalendar
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
@@ -121,11 +121,11 @@ export default function HomeAgenda({
         id="home-agenda-calendar"
       />
 
-      <div className="mt-3 flex items-center gap-2 pb-1">
+      <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
           onClick={() => scrollFilters("left")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
           aria-label="Scroll filtros a la izquierda"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -133,7 +133,7 @@ export default function HomeAgenda({
 
         <div
           ref={filtersRef}
-          className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           {(
             [
@@ -150,10 +150,10 @@ export default function HomeAgenda({
                 key={opt.key}
                 onClick={() => setFilter(opt.key)}
                 className={cn(
-                  "shrink-0 px-4 py-2 rounded-full text-sm font-semibold ring-1 transition",
+                  "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition",
                   active
-                    ? "bg-[#11d473] text-white ring-emerald-200"
-                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
                 )}
                 type="button"
               >
@@ -166,7 +166,7 @@ export default function HomeAgenda({
         <button
           type="button"
           onClick={() => scrollFilters("right")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
+          className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-neutral-500 hover:bg-neutral-100"
           aria-label="Scroll filtros a la derecha"
         >
           <ChevronRight className="h-4 w-4" />
@@ -174,7 +174,7 @@ export default function HomeAgenda({
       </div>
 
       {hasEvents && (
-        <div className="mt-4">
+        <div className="mt-3">
           <div className="flex items-center justify-between px-2">
             <div className="text-[11px] font-bold uppercase tracking-widest text-emerald-700">
               Eventos de hoy
