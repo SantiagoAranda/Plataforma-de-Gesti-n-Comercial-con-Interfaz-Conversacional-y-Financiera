@@ -496,6 +496,118 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.daysWorkedSemester2).toBe(1);
   });
 
+  it('settles 2026-03-06 to 2027-03-06 (Caso B) crossing year and semesters correctly', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-03-06T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2027-03-06' },
+    );
+
+    // total days worked: 1 year (360 days) + 1 day (inclusive adjustment) = 361
+    expect(result.totalWorkedDays).toBe(361);
+    expect(result.semesterTwoDays).not.toBe(0);
+    
+    // Check segments exist in usedParameters
+    const segments = result.usedParameters.serviceBonusSegments;
+    expect(segments).toBeDefined();
+    
+    // Exist segments for 2026 Semester 1, 2026 Semester 2, 2027 Semester 1
+    const s1_2026 = segments.find((s: any) => s.year === 2026 && s.semester === 1);
+    const s2_2026 = segments.find((s: any) => s.year === 2026 && s.semester === 2);
+    const s1_2027 = segments.find((s: any) => s.year === 2027 && s.semester === 1);
+    
+    expect(s1_2026).toBeDefined();
+    expect(s2_2026).toBeDefined();
+    expect(s1_2027).toBeDefined();
+  });
+
+  it('settles 2026-06-03 to 2027-06-03 (Caso C) segmenting correctly and not leaving Semester 2 as 0', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-06-03T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(3_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2027-06-03' },
+    );
+
+    // total days worked: 1 year (360) + 1 day (inclusive adjustment) = 361
+    expect(result.totalWorkedDays).toBe(361);
+    expect(result.semesterOneDays).toBe(181); // 2026-S1: 28 days + 2027-S1: 153 days
+    expect(result.semesterTwoDays).toBe(180); // 2026-S2: 180 days
+
+    const segments = result.usedParameters.serviceBonusSegments;
+    expect(segments).toBeDefined();
+    expect(segments.length).toBe(3);
+
+    // 2026-S1: 2026-06-03 to 2026-06-30 (28 days)
+    const seg1 = segments.find((s: any) => s.year === 2026 && s.semester === 1);
+    expect(seg1.startDate).toBe('2026-06-03');
+    expect(seg1.endDate).toBe('2026-06-30');
+    expect(seg1.days).toBe(28);
+
+    // 2026-S2: 2026-07-01 to 2026-12-31 (180 days)
+    const seg2 = segments.find((s: any) => s.year === 2026 && s.semester === 2);
+    expect(seg2.startDate).toBe('2026-07-01');
+    expect(seg2.endDate).toBe('2026-12-31');
+    expect(seg2.days).toBe(180);
+
+    // 2027-S1: 2027-01-01 to 2027-06-03 (153 days)
+    const seg3 = segments.find((s: any) => s.year === 2027 && s.semester === 1);
+    expect(seg3.startDate).toBe('2027-01-01');
+    expect(seg3.endDate).toBe('2027-06-03');
+    expect(seg3.days).toBe(153);
+  });
+
   it('exposes benefits reconciliation against historical payroll provisions', async () => {
     const prisma = createPrismaMock();
     prisma.payrollRun.aggregate.mockResolvedValue({

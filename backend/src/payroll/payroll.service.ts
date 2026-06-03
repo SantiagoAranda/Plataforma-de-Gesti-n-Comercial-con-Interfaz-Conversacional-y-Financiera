@@ -821,6 +821,78 @@ export class PayrollService {
     return days < 0 ? 0 : days;
   }
 
+  private splitSettlementDaysBySemester(startDate: Date, endDate: Date): {
+    semester1Days: number;
+    semester2Days: number;
+    segments: Array<{
+      year: number;
+      semester: 1 | 2;
+      startDate: string;
+      endDate: string;
+      days: number;
+    }>;
+  } {
+    const start = this.startOfUtcDay(startDate);
+    const end = this.startOfUtcDay(endDate);
+
+    let semester1Days = 0;
+    let semester2Days = 0;
+    const segments: Array<{
+      year: number;
+      semester: 1 | 2;
+      startDate: string;
+      endDate: string;
+      days: number;
+    }> = [];
+
+    const startYear = start.getUTCFullYear();
+    const endYear = end.getUTCFullYear();
+
+    for (let y = startYear; y <= endYear; y++) {
+      // Semester 1
+      const s1Start = new Date(Date.UTC(y, 0, 1));
+      const s1End = new Date(Date.UTC(y, 5, 30));
+      const s1OverlapStart = new Date(Math.max(start.getTime(), s1Start.getTime()));
+      const s1OverlapEnd = new Date(Math.min(end.getTime(), s1End.getTime()));
+
+      if (s1OverlapStart.getTime() <= s1OverlapEnd.getTime()) {
+        const days = this.settlementDays360(s1OverlapStart, s1OverlapEnd);
+        if (days > 0) {
+          semester1Days += days;
+          segments.push({
+            year: y,
+            semester: 1,
+            startDate: s1OverlapStart.toISOString().slice(0, 10),
+            endDate: s1OverlapEnd.toISOString().slice(0, 10),
+            days,
+          });
+        }
+      }
+
+      // Semester 2
+      const s2Start = new Date(Date.UTC(y, 6, 1));
+      const s2End = new Date(Date.UTC(y, 11, 31));
+      const s2OverlapStart = new Date(Math.max(start.getTime(), s2Start.getTime()));
+      const s2OverlapEnd = new Date(Math.min(end.getTime(), s2End.getTime()));
+
+      if (s2OverlapStart.getTime() <= s2OverlapEnd.getTime()) {
+        const days = this.settlementDays360(s2OverlapStart, s2OverlapEnd);
+        if (days > 0) {
+          semester2Days += days;
+          segments.push({
+            year: y,
+            semester: 2,
+            startDate: s2OverlapStart.toISOString().slice(0, 10),
+            endDate: s2OverlapEnd.toISOString().slice(0, 10),
+            days,
+          });
+        }
+      }
+    }
+
+    return { semester1Days, semester2Days, segments };
+  }
+
   private normalizeInclusiveSettlementEndDate(endDate: Date) {
     return this.startOfUtcDay(endDate);
   }
@@ -2385,18 +2457,12 @@ export class PayrollService {
       new Date(Date.UTC(year, 0, 1)),
       new Date(Date.UTC(year, 11, 31)),
     );
-    const daysWorkedSemester1 = this.settlementOverlapDays360(
+    const { semester1Days, semester2Days, segments } = this.splitSettlementDaysBySemester(
       startDate,
       calculationEndDate,
-      new Date(Date.UTC(year, 0, 1)),
-      new Date(Date.UTC(year, 5, 30)),
     );
-    const daysWorkedSemester2 = this.settlementOverlapDays360(
-      startDate,
-      calculationEndDate,
-      new Date(Date.UTC(year, 6, 1)),
-      new Date(Date.UTC(year, 11, 31)),
-    );
+    const daysWorkedSemester1 = semester1Days;
+    const daysWorkedSemester2 = semester2Days;
     const referenceBenefitDays = daysWorkedCurrentYear360;
 
     const params = await this.resolvePayrollParameters(businessId, year, tx);
@@ -2571,6 +2637,7 @@ export class PayrollService {
       daysWorkedCurrentYear360,
       daysWorkedSemester1,
       daysWorkedSemester2,
+      serviceBonusSegments: segments,
       daysWorkedForVacation: referenceBenefitDays,
       dailySalary: dailySalary.toString(),
       hourlyRate: hourlyRate.toString(),
