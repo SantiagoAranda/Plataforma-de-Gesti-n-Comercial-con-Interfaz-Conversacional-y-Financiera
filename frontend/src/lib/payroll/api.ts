@@ -67,6 +67,7 @@ export type PayrollRun = {
   severance: MoneyLike;
   severanceInterest: MoneyLike;
   serviceBonus: MoneyLike;
+  serviceBonusPreview?: MoneyLike;
   vacation: MoneyLike;
   totalBenefits?: MoneyLike;
   realEmployerCost: MoneyLike;
@@ -97,13 +98,23 @@ export type Settlement = {
   contractId: string;
   startDate: string;
   endDate: string;
-  semesterOneDays: number;
-  semesterTwoDays: number;
+  cutoffStartDate?: string;
+  settlementDate?: string;
+  effectiveStartDate?: string;
+  effectiveEndDate?: string;
+  causedDays?: number;
+  semester1Days?: number;
+  semester2Days?: number;
+  semesterOneDays?: number;
+  semesterTwoDays?: number;
   totalWorkedDays: number;
   severance: MoneyLike;
   severanceInterest: MoneyLike;
-  serviceBonusSemesterOne: MoneyLike;
-  serviceBonusSemesterTwo: MoneyLike;
+  serviceBonus?: MoneyLike;
+  serviceBonusSemester1?: MoneyLike;
+  serviceBonusSemester2?: MoneyLike;
+  serviceBonusSemesterOne?: MoneyLike;
+  serviceBonusSemesterTwo?: MoneyLike;
   serviceBonusTotal?: MoneyLike;
   vacation: MoneyLike;
   grossSalaryAccrued?: MoneyLike;
@@ -113,8 +124,10 @@ export type Settlement = {
   netSalaryPaid?: MoneyLike;
   netSalaryPending?: MoneyLike;
   salaryPending?: MoneyLike;
+  salaryPendingAvailable?: boolean;
   benefitsTotal?: MoneyLike;
   settlementTotalPayable?: MoneyLike;
+  totalEstimated?: MoneyLike;
   benefitsProvisioned?: Record<string, MoneyLike>;
   benefitsCalculated?: Record<string, MoneyLike>;
   reconciliationDifference?: MoneyLike;
@@ -122,6 +135,8 @@ export type Settlement = {
   benefitsReconciliation?: Record<string, unknown>;
   requestedEndDate?: string;
   calculationEndDate?: string;
+  calculationYear?: number;
+  settlementScope?: "CURRENT_YEAR" | "CURRENT_SEMESTER_CUTOFF" | string;
   totalAmount: MoneyLike;
   vacationDays: MoneyLike;
   hourlyRate: MoneyLike;
@@ -206,6 +221,14 @@ export type CalculatePayrollPayload = {
 
 export type SimulateSettlementPayload = {
   endDate?: string;
+  calculationYear?: number;
+  salaryConceptsAmount?: number;
+};
+
+export type CreateSettlementPayload = {
+  endDate: string;
+  calculationYear?: number;
+  salaryConceptsAmount?: number;
 };
 
 export type UpdatePayrollPaymentStatusPayload = {
@@ -377,7 +400,7 @@ export const payrollApi = {
       body: JSON.stringify(payload),
     });
   },
-  createSettlement(contractId: string, payload: { endDate: string }) {
+  createSettlement(contractId: string, payload: CreateSettlementPayload) {
     return payrollRequest<Settlement>(`/payroll/contracts/${contractId}/settlements`, {
       method: "POST",
       body: JSON.stringify(payload),

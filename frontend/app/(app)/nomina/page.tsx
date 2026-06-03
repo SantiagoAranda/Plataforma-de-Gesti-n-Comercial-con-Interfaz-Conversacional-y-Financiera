@@ -9,6 +9,7 @@ import {
   ClipboardPlus,
   Edit3,
   FileText,
+  Info,
   ListChecks,
   Plus,
   ReceiptText,
@@ -267,6 +268,14 @@ function isPeriodEditable(period?: PayrollPeriod) {
 
 function isoDate(value?: string | null) {
   return value ? value.slice(0, 10) : "";
+}
+
+function settlementDefaultEndDate(contract?: Contract | null, period?: PayrollPeriod) {
+  if (!period) return isoDate(contract?.endDate);
+  const periodYearEnd = `${period.year}-12-31`;
+  const contractEnd = isoDate(contract?.endDate);
+  if (!contractEnd) return periodYearEnd;
+  return contractEnd > periodYearEnd ? periodYearEnd : contractEnd;
 }
 
 function payrollSimulationKey(employeeId: string, contractId?: string | null, periodId?: string | null) {
@@ -577,7 +586,7 @@ function EmployeePayrollEditorSheet({
     setLoans("0");
     setOtherDeductions(String(totalDeductions));
     
-    setSimulatedEndDate(isoDate(run.contract?.endDate));
+    setSimulatedEndDate(settlementDefaultEndDate(run.contract, selectedPeriod));
     setPreview(run.preview ? run : null);
     setSettlementPreview(null);
     
@@ -617,7 +626,7 @@ function EmployeePayrollEditorSheet({
     setEmail(run.employee.email ?? "");
     setPhone(run.employee.phone ?? "");
     setActive(run.employee.isActive === false ? "INACTIVE" : "ACTIVE");
-  }, [open, run, todayIso]);
+  }, [open, run, selectedPeriod, todayIso]);
 
   const buildPayload = useCallback((): CalculatePayrollPayload | null => {
     const parsedWorkedDays = numberValue(workedDays);
@@ -655,7 +664,10 @@ function EmployeePayrollEditorSheet({
           run.contract?.id
             ? payrollApi.simulateSettlement(
                 run.contract.id,
-                simulatedEndDate ? { endDate: simulatedEndDate } : {},
+                {
+                  ...(simulatedEndDate ? { endDate: simulatedEndDate } : {}),
+                  calculationYear: selectedPeriod.year,
+                },
               ).catch(() => null)
             : Promise.resolve(null),
         ]);
@@ -1099,7 +1111,7 @@ function PayrollSummaryPanel({
   const canCalculateNews = run.contract?.isActive !== false && !run.contract?.endDate;
 
   const isPrimaMonth = selectedPeriod?.month === 6 || selectedPeriod?.month === 12;
-  const primaAmount = toNumber(run.serviceBonus) * 6;
+  const primaAmount = toNumber(run.serviceBonusPreview);
   const isPrimaPaid = benefitPayments.some((bp) => bp.type === "PRIMA" && bp.status === "PAID");
   const hasPrima = isPrimaMonth && primaAmount > 0;
 
@@ -1300,12 +1312,12 @@ function formatSettlementDate(value?: string | Date | null): string {
   return `${day}/${month}/${year}`;
 }
 
-function SettlementPanel({ settlement }: { settlement?: Settlement }) {
+function SettlementPanelLegacy({ settlement }: { settlement?: Settlement }) {
   if (!settlement) {
     return (
       <article className="flex min-w-full snap-start flex-col justify-center rounded-[24px] border border-dashed border-slate-200 bg-white p-5 text-center shadow-sm">
         <ReceiptText className="mx-auto h-7 w-7 text-slate-300" />
-        <p className="mt-3 text-sm font-medium text-slate-700">Liquidación contrato</p>
+        <p className="mt-3 text-sm font-medium text-slate-700">Liquidación año vigente</p>
         <p className="mt-1 text-xs leading-relaxed text-slate-400">
           No hay liquidación calculada.
         </p>
@@ -1314,17 +1326,20 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
   }
 
   const params = (settlement.usedParameters ?? {}) as any;
-  const startDateStr = formatSettlementDate(settlement.startDate);
-  const endDateStr = formatSettlementDate(settlement.endDate);
+  const cutoffStartDate = settlement.cutoffStartDate ?? params.cutoffStartDate ?? settlement.startDate;
+  const settlementDate = settlement.settlementDate ?? settlement.calculationEndDate ?? settlement.endDate;
+  const startDateStr = formatSettlementDate(cutoffStartDate);
+  const endDateStr = formatSettlementDate(settlementDate);
+  const causedDays = settlement.causedDays ?? toNumber(params.causedDays ?? settlement.totalWorkedDays);
+  const serviceBonus = settlement.serviceBonus ?? settlement.serviceBonusTotal ?? 0;
 
   const calculatedTotal =
     toNumber(settlement.severance) +
     toNumber(settlement.severanceInterest) +
-    toNumber(settlement.serviceBonusSemesterOne) +
-    toNumber(settlement.serviceBonusSemesterTwo) +
+    toNumber(serviceBonus) +
     toNumber(settlement.vacation);
 
-  const totalWorkedDays = toNumber(settlement.totalWorkedDays);
+  const totalWorkedDays = toNumber(causedDays);
   const rawVacDays = settlement.vacationDays !== undefined && settlement.vacationDays !== null
     ? toNumber(settlement.vacationDays)
     : (totalWorkedDays / 20);
@@ -1344,38 +1359,30 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
 
   return (
     <article className="min-w-full snap-start rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-      <h3 className="text-sm font-bold text-slate-900 mb-4">Liquidación contrato</h3>
+      <h3 className="text-sm font-bold text-slate-900 mb-4">Liquidación año vigente</h3>
 
       {/* Fechas */}
       <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-3 mb-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha de ingreso</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha corte inicial</p>
           <p className="text-sm font-semibold text-slate-700 mt-0.5">{startDateStr}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha de salida</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha liquidación</p>
           <p className="text-sm font-semibold text-slate-700 mt-0.5">{endDateStr}</p>
         </div>
       </div>
 
-      {/* Días laborados por semestre */}
-      <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-3 mb-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Días laborados Semestre I</p>
-          <p className="text-sm font-semibold text-slate-700 mt-0.5">{settlement.semesterOneDays}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Días laborados Semestre II</p>
-          <p className="text-sm font-semibold text-slate-700 mt-0.5">{settlement.semesterTwoDays}</p>
-        </div>
+      <div className="border-b border-slate-100 pb-3 mb-3">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Días causados</p>
+        <p className="text-sm font-semibold text-slate-700 mt-0.5">{causedDays}</p>
       </div>
 
       {/* Prestaciones */}
       <div className="space-y-2 pb-3 mb-3 border-b border-slate-100">
-        <MoneyLine label="Cesantías" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Intereses cesantías" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Prima de servicios I" value={settlement.serviceBonusSemesterOne} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Prima de servicios II" value={settlement.serviceBonusSemesterTwo} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Cesantías causadas" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Intereses cesantías causados" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Prima de servicios" value={serviceBonus} color="text-slate-600" valueColor="text-slate-800" />
         <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
       </div>
 
@@ -1385,10 +1392,137 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         <span className="text-base font-bold text-violet-700">{money(calculatedTotal)}</span>
       </div>
 
-      {/* Datos finales */}
+      <p className="mb-3 rounded-2xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+        Consulta el icono de informacion para ver el alcance de la estimacion.
+      </p>
+
       <div className="space-y-1.5 pt-2 border-t border-slate-50">
         <div className="flex justify-between items-center text-xs">
           <span className="text-slate-400 font-medium">Días de vacaciones</span>
+          <span className="font-semibold text-slate-600">{formattedVacationDays}</span>
+        </div>
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-slate-400 font-medium">Valor hora</span>
+          <span className="font-semibold text-slate-600">{formattedHourlyRate}</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function SettlementPanel({ settlement }: { settlement?: Settlement }) {
+  const [showInfo, setShowInfo] = useState(false);
+
+  if (!settlement) {
+    return (
+      <article className="flex min-w-full snap-start flex-col justify-center rounded-[24px] border border-dashed border-slate-200 bg-white p-5 text-center shadow-sm">
+        <ReceiptText className="mx-auto h-7 w-7 text-slate-300" />
+        <p className="mt-3 text-sm font-medium text-slate-700">Liquidacion año vigente</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+          No hay liquidacion calculada.
+        </p>
+      </article>
+    );
+  }
+
+  const params = (settlement.usedParameters ?? {}) as any;
+  const startDateStr = formatSettlementDate(params.originalContractStartDate ?? settlement.startDate);
+  const requestedEndDate = settlement.requestedEndDate ?? params.requestedEndDate ?? settlement.endDate;
+  const effectiveEndDate = settlement.effectiveEndDate ?? params.effectiveEndDate ?? settlement.settlementDate ?? settlement.calculationEndDate ?? settlement.endDate;
+  const requestedEndDateStr = formatSettlementDate(requestedEndDate);
+  const effectiveEndDateStr = formatSettlementDate(effectiveEndDate);
+  const hasMvpCutoff = requestedEndDateStr !== effectiveEndDateStr;
+  const causedDays = settlement.causedDays ?? toNumber(params.causedDays ?? settlement.totalWorkedDays);
+  const semester1Days = settlement.semester1Days ?? settlement.semesterOneDays ?? toNumber(params.semester1Days ?? params.daysWorkedSemester1);
+  const semester2Days = settlement.semester2Days ?? settlement.semesterTwoDays ?? toNumber(params.semester2Days ?? params.daysWorkedSemester2);
+  const serviceBonusSemester1 = settlement.serviceBonusSemester1 ?? settlement.serviceBonusSemesterOne ?? 0;
+  const serviceBonusSemester2 = settlement.serviceBonusSemester2 ?? settlement.serviceBonusSemesterTwo ?? 0;
+
+  const backendTotal = settlement.totalAmount ?? settlement.settlementTotalPayable ?? 0;
+
+  const rawVacDays = settlement.vacationDays !== undefined && settlement.vacationDays !== null
+    ? toNumber(settlement.vacationDays)
+    : (toNumber(causedDays) / 24);
+  const formattedVacationDays = (Math.floor(rawVacDays * 2) / 2).toString().replace(".", ",");
+
+  let hourlyRateVal = toNumber(settlement.hourlyRate ?? params.hourlyRate);
+  if (hourlyRateVal === 0) {
+    const salary = toNumber(params.salaryMonthly ?? params.contractSnapshot?.salaryMonthly);
+    if (salary > 0) hourlyRateVal = salary / 240;
+  }
+  const formattedHourlyRate = hourlyRateVal > 0
+    ? hourlyRateVal.toFixed(1).split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + (hourlyRateVal.toFixed(1).split(".")[1] || "0")
+    : "0,0";
+
+  return (
+    <article className="min-w-full snap-start rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
+      <div className="relative mb-4 flex items-center gap-2">
+        <h3 className="text-sm font-bold text-slate-900">Liquidacion año vigente</h3>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setShowInfo((current) => !current);
+          }}
+          className="grid h-5 w-5 place-items-center rounded-full border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
+          aria-label="Informacion de liquidacion"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+        {showInfo && (
+          <div className="absolute left-0 top-7 z-10 max-w-[260px] rounded-2xl border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600 shadow-xl">
+            Esta estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual. No incluye historicos de anos anteriores. El calculo usa año laboral de 360 dias: meses de 30 dias.
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-3 mb-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Fecha de ingreso</p>
+          <p className="text-sm font-semibold text-slate-700 mt-0.5">{startDateStr}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            {hasMvpCutoff ? "Fecha salida solicitada" : "Fecha de salida"}
+          </p>
+          <p className="text-sm font-semibold text-slate-700 mt-0.5">{requestedEndDateStr}</p>
+        </div>
+      </div>
+
+      {hasMvpCutoff && (
+        <div className="border-b border-slate-100 pb-3 mb-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Corte calculado hasta</p>
+          <p className="text-sm font-semibold text-slate-700 mt-0.5">{effectiveEndDateStr}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 border-b border-slate-100 pb-3 mb-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dias laborados semestre I</p>
+          <p className="text-sm font-semibold text-slate-700 mt-0.5">{semester1Days}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Dias laborados semestre II</p>
+          <p className="text-sm font-semibold text-slate-700 mt-0.5">{semester2Days}</p>
+        </div>
+      </div>
+
+      <div className="space-y-2 pb-3 mb-3 border-b border-slate-100">
+        <MoneyLine label="Cesantias" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Intereses cesantias" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Prima de servicios I" value={serviceBonusSemester1} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Prima de servicios II" value={serviceBonusSemester2} color="text-slate-600" valueColor="text-slate-800" />
+        <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
+      </div>
+
+      <div className="flex justify-between items-center mb-4 pt-1">
+        <span className="text-[13px] font-bold text-slate-800">Total</span>
+        <span className="text-base font-bold text-violet-700">{money(backendTotal)}</span>
+      </div>
+
+      <div className="space-y-1.5 pt-2 border-t border-slate-50">
+        <div className="flex justify-between items-center text-xs">
+          <span className="text-slate-400 font-medium">Dias de vacaciones</span>
           <span className="font-semibold text-slate-600">{formattedVacationDays}</span>
         </div>
         <div className="flex justify-between items-center text-xs">
@@ -2623,7 +2757,7 @@ function PayrollNewsSheet({
     setNonSalaryBonus("0");
     setLoans("0");
     setOtherDeductions("0");
-    setSimulatedEndDate(isoDate(contract?.endDate ?? run?.contract?.endDate));
+    setSimulatedEndDate(settlementDefaultEndDate(contract ?? run?.contract, selectedPeriod));
     setPreview(run?.preview ? run : null);
     setSettlementPreview(null);
     setOvertimeHours({
@@ -2635,7 +2769,7 @@ function PayrollNewsSheet({
       SUNDAY_HOLIDAY_DAY: "0",
     });
     setError(null);
-  }, [contract?.endDate, open, run]);
+  }, [contract, open, run, selectedPeriod]);
 
   const totalOvertimeHours = overtimeInputs.reduce(
     (sum, item) => sum + numberValue(overtimeHours[item.type]),
@@ -2682,7 +2816,10 @@ function PayrollNewsSheet({
           sheetContract?.id
             ? payrollApi.simulateSettlement(
                 sheetContract.id,
-                simulatedEndDate ? { endDate: simulatedEndDate } : {},
+                {
+                  ...(simulatedEndDate ? { endDate: simulatedEndDate } : {}),
+                  calculationYear: selectedPeriod.year,
+                },
               ).catch(() => null)
             : Promise.resolve(null),
         ]);
@@ -2871,11 +3008,13 @@ function SettlementSimulationSheet({
   open,
   onClose,
   employees,
+  selectedPeriod,
   onFinished,
 }: {
   open: boolean;
   onClose: () => void;
   employees: Employee[];
+  selectedPeriod?: PayrollPeriod;
   onFinished: (settlement: Settlement) => void;
 }) {
   const [employeeId, setEmployeeId] = useState("");
@@ -2955,7 +3094,10 @@ function SettlementSimulationSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const result = await payrollApi.simulateSettlement(contractId, endDate ? { endDate } : {});
+      const result = await payrollApi.simulateSettlement(contractId, {
+        ...(endDate ? { endDate } : {}),
+        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+      });
       setSettlement(result);
       onFinished(result);
       toast.success("Liquidacion simulada");
@@ -2978,7 +3120,10 @@ function SettlementSimulationSheet({
       setSubmitting(true);
       setError(null);
       try {
-        const result = await payrollApi.simulateSettlement(contractId, endDate ? { endDate } : {});
+        const result = await payrollApi.simulateSettlement(contractId, {
+          ...(endDate ? { endDate } : {}),
+          ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+        });
         if (!alive) return;
         setSettlement(result);
         onFinished(result);
@@ -2992,7 +3137,7 @@ function SettlementSimulationSheet({
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [contractId, endDate, onFinished, open]);
+  }, [contractId, endDate, onFinished, open, selectedPeriod]);
 
   const handlePostSettlement = async () => {
     if (!contractId) return;
@@ -3007,7 +3152,10 @@ function SettlementSimulationSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const calculated = await payrollApi.createSettlement(contractId, { endDate });
+      const calculated = await payrollApi.createSettlement(contractId, {
+        endDate,
+        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+      });
       const posted = await payrollApi.postSettlement(calculated.id);
       setSettlement(posted);
       onFinished(posted);
@@ -3394,7 +3542,10 @@ export default function PayrollPage() {
                 otherDeductions: 0,
               }),
               contract?.id
-                ? payrollApi.simulateSettlement(contract.id, {}).catch(() => null)
+                ? payrollApi.simulateSettlement(contract.id, {
+                    endDate: settlementDefaultEndDate(contract, selectedPeriod),
+                    calculationYear: selectedPeriod.year,
+                  }).catch(() => null)
                 : Promise.resolve(null),
             ]);
             return { employeeId: employee.id, contractId: contract?.id, payrollPreview, settlementPreview };
@@ -3475,7 +3626,10 @@ export default function PayrollPage() {
     }
 
     let alive = true;
-    payrollApi.simulateSettlement(contractId, {})
+    payrollApi.simulateSettlement(contractId, {
+      endDate: settlementDefaultEndDate(selectedRun.contract, selectedPeriod),
+      ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+    })
       .then((preview) => {
         if (!alive) return;
         if (preview) {
@@ -3492,7 +3646,7 @@ export default function PayrollPage() {
     return () => {
       alive = false;
     };
-  }, [selectedRun, settlements, settlementPreviewByContract]);
+  }, [selectedRun, settlements, settlementPreviewByContract, selectedPeriod]);
 
   const refreshRunPayments = useCallback(async (runId: string) => {
     const payments = await payrollApi.listRunPayments(runId);
@@ -3882,6 +4036,7 @@ export default function PayrollPage() {
         open={settlementSheetOpen}
         onClose={() => setSettlementSheetOpen(false)}
         employees={employees}
+        selectedPeriod={selectedPeriod}
         onFinished={handleSettlementPreview}
       />
     </div>

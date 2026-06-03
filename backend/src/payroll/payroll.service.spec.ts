@@ -448,7 +448,7 @@ describe('PayrollService payroll history rules', () => {
     ).resolves.toBe(existing);
   });
 
-  it('settles 2026-01-31 to 2026-07-01 with 30/360 day-31 normalization and semester split', async () => {
+  it('limits a future requested end date to the current semester cutoff for 2026', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -463,10 +463,10 @@ describe('PayrollService payroll history rules', () => {
         position: 'Asistente',
       },
       contractType: PayrollContractType.INDEFINITE,
-      startDate: new Date('2026-01-31T00:00:00.000Z'),
+      startDate: new Date('2026-06-02T00:00:00.000Z'),
       endDate: null,
       isActive: true,
-      salaryMonthly: new Prisma.Decimal(3_000_000),
+      salaryMonthly: new Prisma.Decimal(1_750_905),
       isRemote: false,
       applyLaw1819: true,
       paymentCycle: PayrollPaymentCycle.MONTHLY,
@@ -478,25 +478,244 @@ describe('PayrollService payroll history rules', () => {
     const result: any = await service.simulateContractSettlement(
       'biz-1',
       'contract-1',
-      { endDate: '2026-07-01' },
+      { endDate: '2027-02-04', calculationYear: 2026 },
     );
 
-    expect(result.totalWorkedDays).toBe(151);
-    expect(result.semesterOneDays).toBe(150);
-    expect(result.semesterTwoDays).toBe(1);
-    expect(Number(result.severance)).toBe(1_362_815);
-    expect(Number(result.severanceInterest)).toBe(68_595);
-    expect(Number(result.serviceBonusSemesterOne)).toBe(1_353_790);
-    expect(Number(result.serviceBonusSemesterTwo)).toBe(9_025);
-    expect(Number(result.serviceBonusTotal)).toBe(1_362_815);
-    expect(Number(result.vacation)).toBe(629_167);
-    expect(Number(result.benefitsTotal)).toBe(3_423_391);
-    expect(result.usedParameters.daysWorkedTotal360).toBe(151);
-    expect(result.usedParameters.daysWorkedSemester1).toBe(150);
-    expect(result.usedParameters.daysWorkedSemester2).toBe(1);
+    expect(result.effectiveStartDate.toISOString()).toBe('2026-06-02T00:00:00.000Z');
+    expect(result.effectiveEndDate.toISOString()).toBe('2026-06-30T00:00:00.000Z');
+    expect(result.requestedEndDate.toISOString()).toBe('2027-02-04T00:00:00.000Z');
+    expect(result.calculationYear).toBe(2026);
+    expect(result.settlementScope).toBe('CURRENT_SEMESTER_CUTOFF');
+    expect(result.causedDays).toBe(29);
+    expect(result.totalWorkedDays).toBe(29);
+    expect(result.semesterOneDays).toBe(29);
+    expect(result.semesterTwoDays).toBe(0);
+    expect(result.semester1Days).toBe(29);
+    expect(result.semester2Days).toBe(0);
+    expect(Number(result.severance)).toBe(161_111);
+    expect(Number(result.severanceInterest)).toBe(1_557);
+    expect(Number(result.serviceBonusSemesterOne)).toBe(161_111);
+    expect(Number(result.serviceBonusSemesterTwo)).toBe(0);
+    expect(Number(result.serviceBonusSemester1)).toBe(161_111);
+    expect(Number(result.serviceBonusSemester2)).toBe(0);
+    expect(Number(result.vacation)).toBe(70_523);
+    expect(Number(result.totalAmount)).toBe(394_302);
+    expect(result.usedParameters.effectiveStartDate).toBe('2026-06-02T00:00:00.000Z');
+    expect(result.usedParameters.effectiveEndDate).toBe('2026-06-30T00:00:00.000Z');
   });
 
-  it('settles 2026-03-06 to 2027-03-06 (Caso B) crossing year and semesters correctly', async () => {
+  it('uses 30/360 labor days for a full commercial year', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    expect(result.semester1Days).toBe(180);
+    expect(result.semester2Days).toBe(180);
+    expect(result.causedDays).toBe(360);
+    expect(Number(result.severance)).toBe(2_000_000);
+    expect(Number(result.severanceInterest)).toBe(240_000);
+    expect(Number(result.serviceBonusSemester1)).toBe(1_000_000);
+    expect(Number(result.serviceBonusSemester2)).toBe(1_000_000);
+    expect(Number(result.vacation)).toBe(875_453);
+    expect(Number(result.totalAmount)).toBe(5_115_453);
+    expect(result.usedParameters.dayCountBasis).toBe('30/360');
+  });
+
+  it('uses the sent endDate for 2026-06-03 to 2026-12-31 without MVP future cutoff', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-06-03T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    expect(result.requestedEndDate.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+    expect(result.effectiveStartDate.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+    expect(result.effectiveEndDate.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+    expect(result.settlementScope).toBe('CURRENT_YEAR');
+    expect(result.semester1Days).toBe(28);
+    expect(result.semester2Days).toBe(180);
+    expect(result.causedDays).toBe(208);
+    expect(Number(result.severance)).toBe(1_155_556);
+    expect(Number(result.severanceInterest)).toBe(80_119);
+    expect(Number(result.serviceBonusSemester1)).toBe(155_556);
+    expect(Number(result.serviceBonusSemester2)).toBe(1_000_000);
+    expect(Number(result.vacation)).toBe(505_817);
+    expect(Number(result.totalAmount)).toBe(2_897_047);
+  });
+
+  it('applies current semester cutoff only when the sent endDate is in 2027 for calculation year 2026', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-06-03T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2027-06-03', calculationYear: 2026 },
+    );
+
+    expect(result.requestedEndDate.toISOString()).toBe('2027-06-03T00:00:00.000Z');
+    expect(result.effectiveStartDate.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+    expect(result.effectiveEndDate.toISOString()).toBe('2026-06-30T00:00:00.000Z');
+    expect(result.settlementScope).toBe('CURRENT_SEMESTER_CUTOFF');
+    expect(result.semester1Days).toBe(28);
+    expect(result.semester2Days).toBe(0);
+    expect(result.causedDays).toBe(28);
+  });
+
+  it('uses 30/360 labor days for second semester from 2026-07-01 to 2026-12-31', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-07-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    expect(result.semester1Days).toBe(0);
+    expect(result.semester2Days).toBe(180);
+    expect(result.causedDays).toBe(180);
+  });
+
+  it('uses 30/360 labor days from 2026-08-15 to 2026-12-31', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-08-15T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    expect(result.semester1Days).toBe(0);
+    expect(result.semester2Days).toBe(136);
+    expect(result.causedDays).toBe(136);
+  });
+
+  it('settles 2026-03-06 to 2027-03-06 from January 1 of settlement year', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -529,25 +748,19 @@ describe('PayrollService payroll history rules', () => {
       { endDate: '2027-03-06' },
     );
 
-    // total days worked: 1 year (360 days) + 1 day (inclusive adjustment) = 361
-    expect(result.totalWorkedDays).toBe(361);
-    expect(result.semesterTwoDays).not.toBe(0);
-    
-    // Check segments exist in usedParameters
-    const segments = result.usedParameters.serviceBonusSegments;
-    expect(segments).toBeDefined();
-    
-    // Exist segments for 2026 Semester 1, 2026 Semester 2, 2027 Semester 1
-    const s1_2026 = segments.find((s: any) => s.year === 2026 && s.semester === 1);
-    const s2_2026 = segments.find((s: any) => s.year === 2026 && s.semester === 2);
-    const s1_2027 = segments.find((s: any) => s.year === 2027 && s.semester === 1);
-    
-    expect(s1_2026).toBeDefined();
-    expect(s2_2026).toBeDefined();
-    expect(s1_2027).toBeDefined();
+    expect(result.cutoffStartDate.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    expect(result.settlementDate.toISOString()).toBe('2027-03-06T00:00:00.000Z');
+    expect(result.causedDays).toBe(66);
+    expect(result.totalWorkedDays).toBe(66);
+    expect(result.semesterOneDays).toBe(66);
+    expect(result.semesterTwoDays).toBe(0);
+    expect(result.semester1Days).toBe(66);
+    expect(result.semester2Days).toBe(0);
+    expect(Number(result.serviceBonus)).toBe(595_667);
+    expect(Number(result.totalAmount)).toBe(1_479_440);
   });
 
-  it('settles 2026-06-03 to 2027-06-03 (Caso C) segmenting correctly and not leaving Semester 2 as 0', async () => {
+  it('settles 2026-06-03 to 2027-06-03 using only calculation year 2027', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -577,38 +790,28 @@ describe('PayrollService payroll history rules', () => {
     const result: any = await service.simulateContractSettlement(
       'biz-1',
       'contract-1',
-      { endDate: '2027-06-03' },
+      { endDate: '2027-06-03', calculationYear: 2027 },
     );
 
-    // total days worked: 1 year (360) + 1 day (inclusive adjustment) = 361
-    expect(result.totalWorkedDays).toBe(361);
-    expect(result.semesterOneDays).toBe(181); // 2026-S1: 28 days + 2027-S1: 153 days
-    expect(result.semesterTwoDays).toBe(180); // 2026-S2: 180 days
-
-    const segments = result.usedParameters.serviceBonusSegments;
-    expect(segments).toBeDefined();
-    expect(segments.length).toBe(3);
-
-    // 2026-S1: 2026-06-03 to 2026-06-30 (28 days)
-    const seg1 = segments.find((s: any) => s.year === 2026 && s.semester === 1);
-    expect(seg1.startDate).toBe('2026-06-03');
-    expect(seg1.endDate).toBe('2026-06-30');
-    expect(seg1.days).toBe(28);
-
-    // 2026-S2: 2026-07-01 to 2026-12-31 (180 days)
-    const seg2 = segments.find((s: any) => s.year === 2026 && s.semester === 2);
-    expect(seg2.startDate).toBe('2026-07-01');
-    expect(seg2.endDate).toBe('2026-12-31');
-    expect(seg2.days).toBe(180);
-
-    // 2027-S1: 2027-01-01 to 2027-06-03 (153 days)
-    const seg3 = segments.find((s: any) => s.year === 2027 && s.semester === 1);
-    expect(seg3.startDate).toBe('2027-01-01');
-    expect(seg3.endDate).toBe('2027-06-03');
-    expect(seg3.days).toBe(153);
+    expect(result.cutoffStartDate.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    expect(result.settlementDate.toISOString()).toBe('2027-06-03T00:00:00.000Z');
+    expect(result.causedDays).toBe(153);
+    expect(result.totalWorkedDays).toBe(153);
+    expect(result.semesterOneDays).toBe(153);
+    expect(result.semesterTwoDays).toBe(0);
+    expect(result.semester1Days).toBe(153);
+    expect(result.semester2Days).toBe(0);
+    expect(Number(result.severance)).toBe(1_380_865);
+    expect(Number(result.severanceInterest)).toBe(70_424);
+    expect(Number(result.serviceBonusSemesterOne)).toBe(1_380_865);
+    expect(Number(result.serviceBonusSemesterTwo)).toBe(0);
+    expect(Number(result.vacation)).toBe(637_500);
+    expect(Number(result.totalAmount)).toBe(3_469_655);
+    expect(result.usedParameters.originalContractStartDate).toBe('2026-06-03T00:00:00.000Z');
+    expect(result.usedParameters.cutoffStartDate).toBe('2027-01-01T00:00:00.000Z');
   });
 
-  it('exposes benefits reconciliation against historical payroll provisions', async () => {
+  it('does not reconcile annual settlement against historical payroll provisions', async () => {
     const prisma = createPrismaMock();
     prisma.payrollRun.aggregate.mockResolvedValue({
       _sum: {
@@ -651,14 +854,11 @@ describe('PayrollService payroll history rules', () => {
       { endDate: '2026-07-01' },
     );
 
-    expect(Number(result.benefitsProvisioned.total)).toBe(3_399_689);
+    expect(Number(result.benefitsProvisioned.total)).toBe(0);
     expect(Number(result.benefitsCalculated.total)).toBe(3_423_391);
-    expect(Number(result.reconciliationDifference)).toBe(23_702);
-    expect(Number(result.reconciliationPercent)).toBeLessThan(1);
-    expect(result.benefitsReconciliation.severance.status).toBe('OK');
-    expect(result.benefitsReconciliation.serviceBonus.status).toBe('OK');
-    expect(result.benefitsReconciliation.vacation.status).toBe('OK');
-    expect(result.benefitsReconciliation.severanceInterest.status).toBe('WARNING');
+    expect(Number(result.reconciliationDifference)).toBe(0);
+    expect(Number(result.reconciliationPercent)).toBe(0);
+    expect(result.benefitsReconciliation).toEqual({});
   });
 
   it('settles an explicit inclusive endDate from 2026-01-01 to 2026-06-01', async () => {
@@ -698,26 +898,29 @@ describe('PayrollService payroll history rules', () => {
     expect(result.endDate.toISOString()).toBe('2026-06-01T00:00:00.000Z');
     expect(result.usedParameters.requestedEndDate).toBe('2026-06-01T00:00:00.000Z');
     expect(result.usedParameters.calculationEndDate).toBe('2026-06-01T00:00:00.000Z');
+    expect(result.cutoffStartDate.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.settlementDate.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(result.causedDays).toBe(151);
     expect(result.totalWorkedDays).toBe(151);
     expect(result.semesterOneDays).toBe(151);
     expect(result.semesterTwoDays).toBe(0);
     expect(Number(result.severance)).toBe(1_362_815);
     expect(Number(result.severanceInterest)).toBe(68_595);
-    expect(Number(result.serviceBonusSemesterOne)).toBe(1_362_815);
-    expect(Number(result.serviceBonusSemesterTwo)).toBe(0);
+    expect(Number(result.serviceBonus)).toBe(1_362_815);
     expect(Number(result.serviceBonusTotal)).toBe(1_362_815);
     expect(Number(result.vacation)).toBe(629_167);
     expect(Number(result.benefitsTotal)).toBe(3_423_391);
-    expect(Number(result.salaryPending)).toBe(15_100_000);
-    expect(Number(result.settlementTotalPayable)).toBe(18_523_391);
-    expect(Number(result.totalAmount)).toBe(18_523_391);
+    expect(Number(result.salaryPending)).toBe(0);
+    expect(result.salaryPendingAvailable).toBe(false);
+    expect(Number(result.settlementTotalPayable)).toBe(3_423_391);
+    expect(Number(result.totalAmount)).toBe(3_423_391);
     expect(result.usedParameters.daysWorkedTotal360).toBe(151);
     expect(result.usedParameters.daysWorkedSemester1).toBe(151);
     expect(result.usedParameters.daysWorkedSemester2).toBe(0);
     expect(result.usedParameters.daysWorkedForVacation).toBe(151);
   });
 
-  it('splits one day into semester two for 2026-01-01 to 2026-07-01', async () => {
+  it('splits service bonus between semesters for 2026-06-03 to 2026-08-15', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -732,7 +935,7 @@ describe('PayrollService payroll history rules', () => {
         position: 'Asistente',
       },
       contractType: PayrollContractType.INDEFINITE,
-      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      startDate: new Date('2026-06-03T00:00:00.000Z'),
       endDate: null,
       isActive: true,
       salaryMonthly: new Prisma.Decimal(3_000_000),
@@ -747,18 +950,28 @@ describe('PayrollService payroll history rules', () => {
     const result: any = await service.simulateContractSettlement(
       'biz-1',
       'contract-1',
-      { endDate: '2026-07-01' },
+      { endDate: '2026-08-15', calculationYear: 2026 },
     );
 
-    expect(result.totalWorkedDays).toBe(181);
-    expect(result.semesterOneDays).toBe(180);
-    expect(result.semesterTwoDays).toBe(1);
-    expect(result.usedParameters.daysWorkedTotal360).toBe(181);
-    expect(result.usedParameters.daysWorkedSemester1).toBe(180);
-    expect(result.usedParameters.daysWorkedSemester2).toBe(1);
+    expect(result.effectiveStartDate.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+    expect(result.effectiveEndDate.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(result.settlementScope).toBe('CURRENT_YEAR');
+    expect(result.causedDays).toBe(73);
+    expect(result.semesterOneDays).toBe(28);
+    expect(result.semesterTwoDays).toBe(45);
+    expect(result.semester1Days).toBe(28);
+    expect(result.semester2Days).toBe(45);
+    expect(Number(result.severance)).toBe(658_844);
+    expect(Number(result.severanceInterest)).toBe(16_032);
+    expect(Number(result.serviceBonusSemesterOne)).toBe(252_707);
+    expect(Number(result.serviceBonusSemesterTwo)).toBe(406_137);
+    expect(Number(result.vacation)).toBe(304_167);
+    expect(Number(result.benefitsTotal)).toBe(1_637_887);
+    expect(result.usedParameters.daysWorkedSemester1).toBe(28);
+    expect(result.usedParameters.daysWorkedSemester2).toBe(45);
   });
 
-  it('discounts paid salary payments from settlement salary pending', async () => {
+  it('hides salary pending from annual settlement when payment integration is incomplete', async () => {
     const prisma = createPrismaMock();
     prisma.payrollPayment.findMany.mockResolvedValue([
       {
@@ -801,13 +1014,15 @@ describe('PayrollService payroll history rules', () => {
       { endDate: '2026-06-01' },
     );
 
-    expect(Number(result.salaryPending)).toBe(12_100_000);
-    expect(Number(result.grossSalaryPaid)).toBe(3_000_000);
-    expect(Number(result.netSalaryPaid)).toBe(3_009_095);
+    expect(Number(result.salaryPending)).toBe(0);
+    expect(result.salaryPendingAvailable).toBe(false);
+    expect(Number(result.grossSalaryPaid)).toBe(0);
+    expect(Number(result.netSalaryPaid)).toBe(0);
     expect(Number(result.benefitsTotal)).toBe(3_423_391);
-    expect(Number(result.settlementTotalPayable)).toBe(15_523_391);
-    expect(result.usedParameters.salaryPaid).toBe('3000000');
-    expect(result.usedParameters.salaryPending).toBe('12100000');
+    expect(Number(result.settlementTotalPayable)).toBe(3_423_391);
+    expect(result.usedParameters.salaryPaid).toBe('0');
+    expect(result.usedParameters.salaryPending).toBe('0');
+    expect(result.usedParameters.salaryPendingHiddenReason).toBeDefined();
   });
 
   it('uses today as an inclusive calculation date when settlement simulation has no endDate', async () => {

@@ -11,7 +11,6 @@ import {
   PaymentMethod,
   PayrollAccountingSide,
   PayrollAdjustmentType,
-  PayrollBenefitPaymentType,
   PayrollConceptCategory,
   PayrollContractType,
   PayrollPaymentStatus,
@@ -51,6 +50,8 @@ type PayrollPeriodRef = {
   paymentCycle?: PayrollPaymentCycle;
   installmentNumber?: number | null;
 };
+
+type SettlementScope = 'CURRENT_YEAR' | 'CURRENT_SEMESTER_CUTOFF';
 
 const EARNING_CODES_WITHOUT_CREDIT = new Set([
   'SALARY',
@@ -784,21 +785,17 @@ export class PayrollService {
       : this.inclusiveCalendarDays(start, end);
   }
 
-  private dayForSettlement360(date: Date) {
-    if (date.getUTCDate() === 31) {
-      return 30;
-    }
-    return date.getUTCDate();
+  private dayForLaborDays30_360(date: Date) {
+    return date.getUTCDate() === 31 ? 30 : date.getUTCDate();
   }
 
-  private settlementDays360(startDate: Date, endDate: Date) {
+  private calculateLaborDays30_360(startDate: Date, endDate: Date) {
     const start = this.startOfUtcDay(startDate);
     const end = this.startOfUtcDay(endDate);
     if (end.getTime() < start.getTime()) return -1;
 
-    const startDay = this.dayForSettlement360(start);
-    const endDay = this.dayForSettlement360(end);
-
+    const startDay = this.dayForLaborDays30_360(start);
+    const endDay = this.dayForLaborDays30_360(end);
     const inclusiveAdjustment = start.getUTCDate() === 31 ? 0 : 1;
 
     return (
@@ -809,88 +806,16 @@ export class PayrollService {
     );
   }
 
-  private settlementOverlapDays360(
+  private calculateLaborDaysIntersection30_360(
     startDate: Date,
     endDate: Date,
-    rangeStart: Date,
-    rangeEnd: Date,
+    periodStart: Date,
+    periodEnd: Date,
   ) {
-    const start = new Date(Math.max(this.startOfUtcDay(startDate).getTime(), rangeStart.getTime()));
-    const end = new Date(Math.min(this.startOfUtcDay(endDate).getTime(), rangeEnd.getTime()));
-    const days = this.settlementDays360(start, end);
+    const start = new Date(Math.max(this.startOfUtcDay(startDate).getTime(), this.startOfUtcDay(periodStart).getTime()));
+    const end = new Date(Math.min(this.startOfUtcDay(endDate).getTime(), this.startOfUtcDay(periodEnd).getTime()));
+    const days = this.calculateLaborDays30_360(start, end);
     return days < 0 ? 0 : days;
-  }
-
-  private splitSettlementDaysBySemester(startDate: Date, endDate: Date): {
-    semester1Days: number;
-    semester2Days: number;
-    segments: Array<{
-      year: number;
-      semester: 1 | 2;
-      startDate: string;
-      endDate: string;
-      days: number;
-    }>;
-  } {
-    const start = this.startOfUtcDay(startDate);
-    const end = this.startOfUtcDay(endDate);
-
-    let semester1Days = 0;
-    let semester2Days = 0;
-    const segments: Array<{
-      year: number;
-      semester: 1 | 2;
-      startDate: string;
-      endDate: string;
-      days: number;
-    }> = [];
-
-    const startYear = start.getUTCFullYear();
-    const endYear = end.getUTCFullYear();
-
-    for (let y = startYear; y <= endYear; y++) {
-      // Semester 1
-      const s1Start = new Date(Date.UTC(y, 0, 1));
-      const s1End = new Date(Date.UTC(y, 5, 30));
-      const s1OverlapStart = new Date(Math.max(start.getTime(), s1Start.getTime()));
-      const s1OverlapEnd = new Date(Math.min(end.getTime(), s1End.getTime()));
-
-      if (s1OverlapStart.getTime() <= s1OverlapEnd.getTime()) {
-        const days = this.settlementDays360(s1OverlapStart, s1OverlapEnd);
-        if (days > 0) {
-          semester1Days += days;
-          segments.push({
-            year: y,
-            semester: 1,
-            startDate: s1OverlapStart.toISOString().slice(0, 10),
-            endDate: s1OverlapEnd.toISOString().slice(0, 10),
-            days,
-          });
-        }
-      }
-
-      // Semester 2
-      const s2Start = new Date(Date.UTC(y, 6, 1));
-      const s2End = new Date(Date.UTC(y, 11, 31));
-      const s2OverlapStart = new Date(Math.max(start.getTime(), s2Start.getTime()));
-      const s2OverlapEnd = new Date(Math.min(end.getTime(), s2End.getTime()));
-
-      if (s2OverlapStart.getTime() <= s2OverlapEnd.getTime()) {
-        const days = this.settlementDays360(s2OverlapStart, s2OverlapEnd);
-        if (days > 0) {
-          semester2Days += days;
-          segments.push({
-            year: y,
-            semester: 2,
-            startDate: s2OverlapStart.toISOString().slice(0, 10),
-            endDate: s2OverlapEnd.toISOString().slice(0, 10),
-            days,
-          });
-        }
-      }
-    }
-
-    return { semester1Days, semester2Days, segments };
   }
 
   private normalizeInclusiveSettlementEndDate(endDate: Date) {
@@ -1778,6 +1703,7 @@ export class PayrollService {
       severance: this.money(severance),
       severanceInterest: this.money(severanceInterest),
       serviceBonus: this.money(serviceBonus),
+      serviceBonusPreview: this.money(serviceBonus.mul(6)),
       vacation: this.money(vacation),
       totalEmployerContributions: this.money(totalEmployerContributions),
       totalParafiscals: this.money(totalParafiscals),
@@ -2010,6 +1936,7 @@ export class PayrollService {
         severance: this.money(severance),
         severanceInterest: this.money(severanceInterest),
         serviceBonus: this.money(serviceBonus),
+        serviceBonusPreview: this.money(serviceBonus.mul(6)),
         vacation: this.money(vacation),
         totalEmployerContributions: this.money(totalEmployerContributions),
         totalParafiscals: this.money(totalParafiscals),
@@ -2143,7 +2070,7 @@ export class PayrollService {
         data: { status: PayrollPeriodStatus.CALCULATED, calculatedAt: new Date() },
       });
 
-      return tx.payrollRun.findUnique({
+      const persistedRun = await tx.payrollRun.findUnique({
         where: { id: run.id },
         include: {
           employee: true,
@@ -2153,6 +2080,7 @@ export class PayrollService {
           payments: true,
         },
       });
+      return this.withPayrollRunComputedFields(persistedRun);
     });
   }
 
@@ -2201,12 +2129,12 @@ export class PayrollService {
       },
     });
     if (!run) throw new NotFoundException('Payroll run not found');
-    return run;
+    return this.withPayrollRunComputedFields(run);
   }
 
   async listPayrollRuns(businessId: string, periodId: string) {
     await this.getPeriodForBusiness(businessId, periodId);
-    return this.prisma.payrollRun.findMany({
+    const runs = await this.prisma.payrollRun.findMany({
       where: { businessId, payrollPeriodId: periodId },
       orderBy: { calculatedAt: 'desc' },
       include: {
@@ -2217,6 +2145,7 @@ export class PayrollService {
         payments: true,
       },
     });
+    return runs.map((run) => this.withPayrollRunComputedFields(run));
   }
 
   async listPayrollRunPayments(businessId: string, runId: string) {
@@ -2400,6 +2329,16 @@ export class PayrollService {
     };
   }
 
+  private withPayrollRunComputedFields<T extends { serviceBonus?: unknown } | null>(
+    run: T,
+  ) {
+    if (!run) return run;
+    return {
+      ...run,
+      serviceBonusPreview: this.money(this.decimal(run.serviceBonus).mul(6)),
+    };
+  }
+
   private withSettlementComputedFields<T extends { usedParameters?: unknown } | null>(
     settlement: T,
   ) {
@@ -2408,8 +2347,31 @@ export class PayrollService {
     const params = (settlement.usedParameters ?? {}) as Record<string, unknown>;
     return {
       ...settlement,
+      cutoffStartDate: current.cutoffStartDate ?? params.cutoffStartDate,
+      settlementDate: current.settlementDate ?? params.settlementDate,
+      effectiveStartDate: current.effectiveStartDate ?? params.effectiveStartDate,
+      effectiveEndDate: current.effectiveEndDate ?? params.effectiveEndDate,
+      causedDays: current.causedDays ?? params.causedDays,
+      semester1Days:
+        current.semester1Days ?? current.semesterOneDays ?? params.semester1Days,
+      semester2Days:
+        current.semester2Days ?? current.semesterTwoDays ?? params.semester2Days,
+      serviceBonus: current.serviceBonus ?? params.serviceBonusTotal,
+      serviceBonusSemester1:
+        current.serviceBonusSemester1 ??
+        current.serviceBonusSemesterOne ??
+        params.serviceBonusSemester1,
+      serviceBonusSemester2:
+        current.serviceBonusSemester2 ??
+        current.serviceBonusSemesterTwo ??
+        params.serviceBonusSemester2,
+      totalEstimated: current.totalEstimated ?? params.totalEstimated,
+      salaryPendingAvailable:
+        current.salaryPendingAvailable ?? params.salaryPendingAvailable,
       requestedEndDate: current.requestedEndDate ?? params.requestedEndDate,
       calculationEndDate: current.calculationEndDate ?? params.calculationEndDate,
+      calculationYear: current.calculationYear ?? params.calculationYear,
+      settlementScope: current.settlementScope ?? params.settlementScope,
       salaryPending: current.salaryPending ?? params.salaryPending,
       benefitsTotal: current.benefitsTotal ?? params.benefitsTotal,
       settlementTotalPayable:
@@ -2436,110 +2398,89 @@ export class PayrollService {
     };
   }
 
-  private async calculateSettlementValues(
+  private async calculateAnnualSettlement(
     businessId: string,
     contract: Awaited<ReturnType<PayrollService['getContractForSettlement']>>,
     endDate: Date,
     tx: PayrollTx,
+    options: { calculationYear?: number; salaryConceptsAmount?: number } = {},
   ) {
-    const startDate = this.startOfUtcDay(contract.startDate);
+    const contractStartDate = this.startOfUtcDay(contract.startDate);
     const requestedEndDate = this.startOfUtcDay(endDate);
-    const calculationEndDate = this.normalizeInclusiveSettlementEndDate(requestedEndDate);
-    const daysWorkedTotal360 = this.settlementDays360(startDate, calculationEndDate);
-    if (daysWorkedTotal360 < 0) {
+    if (requestedEndDate.getTime() < contractStartDate.getTime()) {
       throw new BadRequestException('endDate must be greater than or equal to startDate');
     }
 
-    const year = calculationEndDate.getUTCFullYear();
-    const daysWorkedCurrentYear360 = this.settlementOverlapDays360(
-      startDate,
-      calculationEndDate,
-      new Date(Date.UTC(year, 0, 1)),
-      new Date(Date.UTC(year, 11, 31)),
+    const calculationYear =
+      options.calculationYear ?? requestedEndDate.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(calculationYear, 0, 1));
+    const yearEnd = new Date(Date.UTC(calculationYear, 11, 31));
+    const semester1End = new Date(Date.UTC(calculationYear, 5, 30));
+    const semester2Start = new Date(Date.UTC(calculationYear, 6, 1));
+    const settlementScope: SettlementScope =
+      requestedEndDate.getTime() > yearEnd.getTime()
+        ? 'CURRENT_SEMESTER_CUTOFF'
+        : 'CURRENT_YEAR';
+    const effectiveStartDate = new Date(
+      Math.max(contractStartDate.getTime(), yearStart.getTime()),
     );
-    const { semester1Days, semester2Days, segments } = this.splitSettlementDaysBySemester(
-      startDate,
-      calculationEndDate,
-    );
-    const daysWorkedSemester1 = semester1Days;
-    const daysWorkedSemester2 = semester2Days;
-    const referenceBenefitDays = daysWorkedCurrentYear360;
+    const effectiveEndDate =
+      settlementScope === 'CURRENT_SEMESTER_CUTOFF'
+        ? effectiveStartDate.getTime() <= semester1End.getTime()
+          ? semester1End
+          : yearEnd
+        : new Date(Math.min(requestedEndDate.getTime(), yearEnd.getTime()));
+    const calculationEndDate = this.normalizeInclusiveSettlementEndDate(effectiveEndDate);
+    const causedDays = this.calculateLaborDays30_360(effectiveStartDate, calculationEndDate);
+    if (causedDays < 0) {
+      throw new BadRequestException('Settlement has no days in calculation year');
+    }
 
-    const params = await this.resolvePayrollParameters(businessId, year, tx);
+    const daysWorkedSemester1 = this.calculateLaborDaysIntersection30_360(
+      effectiveStartDate,
+      calculationEndDate,
+      yearStart,
+      semester1End,
+    );
+    const daysWorkedSemester2 = this.calculateLaborDaysIntersection30_360(
+      effectiveStartDate,
+      calculationEndDate,
+      semester2Start,
+      yearEnd,
+    );
+    const referenceBenefitDays = causedDays;
+
+    const params = await this.resolvePayrollParameters(businessId, calculationYear, tx);
     const salaryMonthly = this.decimal(contract.salaryMonthly);
     const qualifiesForTransport = salaryMonthly.lessThanOrEqualTo(
       params.smmlv.mul(params.transportLimitSmmlv),
     );
-    const settlementTransportAllowance =
-      qualifiesForTransport && !contract.isRemote
-        ? params.transportAllowance
-        : this.decimal(0);
-    const benefitSettlementBase = salaryMonthly.add(settlementTransportAllowance);
-    const totalDays = this.decimal(daysWorkedTotal360);
+    const settlementAllowance = qualifiesForTransport
+      ? params.transportAllowance
+      : this.decimal(0);
+    const settlementTransportAllowance = contract.isRemote
+      ? this.decimal(0)
+      : settlementAllowance;
+    const settlementConnectivityAllowance = contract.isRemote
+      ? settlementAllowance
+      : this.decimal(0);
+    const salaryConceptsAmount = this.decimal(options.salaryConceptsAmount);
+    const benefitSettlementBase = salaryMonthly
+      .add(settlementTransportAllowance)
+      .add(settlementConnectivityAllowance)
+      .add(salaryConceptsAmount);
+    const vacationBase = salaryMonthly.add(salaryConceptsAmount);
     const benefitDays = this.decimal(referenceBenefitDays);
     const dailySalary = salaryMonthly.div(params.maxWorkedDaysMonth);
     const hourlyRate = salaryMonthly.div(params.monthlyHours);
-    const grossSalaryAccrued = dailySalary.mul(totalDays);
-    const paidSalaryRows = await tx.payrollPayment.findMany({
-      where: {
-        businessId,
-        contractId: contract.id,
-        status: PayrollPaymentStatus.PAID,
-        type: {
-          in: [
-            PayrollPaymentType.SALARY_PAYMENT,
-            PayrollPaymentType.ADVANCE,
-          ],
-        },
-        OR: [{ paidAt: null }, { paidAt: { lte: calculationEndDate } }],
-      },
-      include: {
-        payrollRun: {
-          select: {
-            salaryEarned: true,
-            netPay: true,
-          },
-        },
-      },
-    });
-    const netSalaryPaid = paidSalaryRows.reduce(
-      (sum, payment) => sum.add(payment.amount),
-      this.decimal(0),
-    );
-    const grossSalaryPaid = paidSalaryRows.reduce((sum, payment) => {
-      const runNetPay = this.decimal(payment.payrollRun?.netPay);
-      const runGrossSalary = this.decimal(payment.payrollRun?.salaryEarned);
-      if (runNetPay.greaterThan(0) && runGrossSalary.greaterThan(0)) {
-        return sum.add(runGrossSalary.mul(payment.amount).div(runNetPay));
-      }
-      return sum.add(payment.amount);
-    }, this.decimal(0));
-    const grossSalaryPending = grossSalaryAccrued.sub(grossSalaryPaid);
-    const historicalProvisioned = await this.payrollProvisionSumsUntilDate(
-      businessId,
-      contract.id,
-      calculationEndDate,
-      tx,
-    );
-    const netSalaryAccrued = historicalProvisioned.netSalaryAccrued;
-    const netSalaryPending = netSalaryAccrued.sub(netSalaryPaid);
-    const salaryPaid = grossSalaryPaid;
-    const salaryPending = grossSalaryPending;
-
-    const benefitPaidRows = await tx.payrollBenefitPayment.groupBy({
-      by: ['type'],
-      where: {
-        businessId,
-        contractId: contract.id,
-        status: PayrollPaymentStatus.PAID,
-        OR: [{ paidAt: null }, { paidAt: { lte: calculationEndDate } }],
-      },
-      _sum: { amount: true },
-    });
-    const benefitPaid = (type: PayrollBenefitPaymentType) =>
-      this.decimal(
-        benefitPaidRows.find((row) => row.type === type)?._sum.amount,
-      );
+    const grossSalaryAccrued = this.decimal(0);
+    const netSalaryPaid = this.decimal(0);
+    const grossSalaryPaid = this.decimal(0);
+    const grossSalaryPending = this.decimal(0);
+    const netSalaryAccrued = this.decimal(0);
+    const netSalaryPending = this.decimal(0);
+    const salaryPaid = this.decimal(0);
+    const salaryPending = this.decimal(0);
 
     const severanceCaused = benefitSettlementBase.mul(benefitDays).div(360);
     const severanceInterestCaused = severanceCaused.mul(0.12).mul(benefitDays).div(360);
@@ -2549,64 +2490,35 @@ export class PayrollService {
     const serviceBonusSemesterTwoCaused = benefitSettlementBase
       .mul(daysWorkedSemester2)
       .div(360);
-    const vacationDays = benefitDays.mul(15).div(360);
-    const vacationCaused = salaryMonthly.mul(benefitDays).div(720);
-    const serviceBonusPaid = benefitPaid(PayrollBenefitPaymentType.PRIMA);
-    const severancePaid = benefitPaid(PayrollBenefitPaymentType.CESANTIAS);
-    const severanceInterestPaid = benefitPaid(
-      PayrollBenefitPaymentType.INTERESES_CESANTIAS,
-    );
-    const vacationPaid = benefitPaid(PayrollBenefitPaymentType.VACACIONES);
     const serviceBonusCaused = serviceBonusSemesterOneCaused.add(
       serviceBonusSemesterTwoCaused,
     );
-    const severance = severanceCaused.sub(severancePaid);
-    const severanceInterest = severanceInterestCaused.sub(severanceInterestPaid);
-    const serviceBonusPending = serviceBonusCaused.sub(serviceBonusPaid);
-    const serviceBonusSemesterOne =
-      serviceBonusCaused.equals(0)
-        ? this.decimal(0)
-        : serviceBonusPending
-            .mul(serviceBonusSemesterOneCaused)
-            .div(serviceBonusCaused);
-    const serviceBonusSemesterTwo = serviceBonusPending.sub(
-      serviceBonusSemesterOne,
-    );
-    const vacation = vacationCaused.sub(vacationPaid);
+    const vacationDays = benefitDays.mul(15).div(360);
+    const vacationCaused = vacationBase.mul(benefitDays).div(720);
+    const serviceBonusPaid = this.decimal(0);
+    const severancePaid = this.decimal(0);
+    const severanceInterestPaid = this.decimal(0);
+    const vacationPaid = this.decimal(0);
+    const severance = severanceCaused;
+    const severanceInterest = severanceInterestCaused;
+    const serviceBonus = serviceBonusCaused;
+    const serviceBonusSemesterOne = serviceBonusSemesterOneCaused;
+    const serviceBonusSemesterTwo = serviceBonusSemesterTwoCaused;
+    const vacation = vacationCaused;
     const benefitsTotal = severance
       .add(severanceInterest)
-      .add(serviceBonusSemesterOne)
-      .add(serviceBonusSemesterTwo)
+      .add(serviceBonus)
       .add(vacation);
-    const settlementTotalPayable = salaryPending.add(benefitsTotal);
+    const settlementTotalPayable = benefitsTotal;
     const serviceBonusCalculated = serviceBonusCaused;
     const benefitsCalculatedTotal = severanceCaused
       .add(severanceInterestCaused)
       .add(serviceBonusCalculated)
       .add(vacationCaused);
-    const benefitsProvisionedTotal = historicalProvisioned.severance
-      .add(historicalProvisioned.severanceInterest)
-      .add(historicalProvisioned.serviceBonus)
-      .add(historicalProvisioned.vacation);
-    const benefitsReconciliation = this.reconcileBenefitsProvision(
-      {
-        severance: historicalProvisioned.severance,
-        severanceInterest: historicalProvisioned.severanceInterest,
-        serviceBonus: historicalProvisioned.serviceBonus,
-        vacation: historicalProvisioned.vacation,
-      },
-      {
-        severance: severanceCaused,
-        severanceInterest: severanceInterestCaused,
-        serviceBonus: serviceBonusCalculated,
-        vacation: vacationCaused,
-      },
-    );
-    const reconciliationDifference =
-      benefitsCalculatedTotal.sub(benefitsProvisionedTotal);
-    const reconciliationPercent = benefitsCalculatedTotal.equals(0)
-      ? this.decimal(0)
-      : reconciliationDifference.abs().div(benefitsCalculatedTotal).mul(100);
+    const benefitsProvisionedTotal = this.decimal(0);
+    const benefitsReconciliation = {};
+    const reconciliationDifference = this.decimal(0);
+    const reconciliationPercent = this.decimal(0);
 
     const snapshot = {
       ...this.parametersSnapshot(params),
@@ -2630,20 +2542,61 @@ export class PayrollService {
         isRemote: contract.isRemote,
         arlRiskClassId: contract.arlRiskClassId,
       },
-      settlementYear: year,
+      settlementMode: 'ANNUAL_CUTOFF',
+      calculationYear,
+      settlementYear: calculationYear,
+      settlementScope,
+      originalContractStartDate: contractStartDate.toISOString(),
+      cutoffStartDate: effectiveStartDate.toISOString(),
+      effectiveStartDate: effectiveStartDate.toISOString(),
+      effectiveEndDate: calculationEndDate.toISOString(),
+      settlementDate: calculationEndDate.toISOString(),
+      causedDays,
       requestedEndDate: requestedEndDate.toISOString(),
       calculationEndDate: calculationEndDate.toISOString(),
-      daysWorkedTotal360,
-      daysWorkedCurrentYear360,
+      daysWorkedTotal360: causedDays,
+      daysWorkedCurrentYear360: causedDays,
+      semester1Days: daysWorkedSemester1,
+      semester2Days: daysWorkedSemester2,
       daysWorkedSemester1,
       daysWorkedSemester2,
-      serviceBonusSegments: segments,
+      serviceBonusSegments: [
+        ...(daysWorkedSemester1 > 0
+          ? [{
+              year: calculationYear,
+              semester: 1,
+              startDate: new Date(
+                Math.max(effectiveStartDate.getTime(), yearStart.getTime()),
+              ).toISOString().slice(0, 10),
+              endDate: new Date(
+                Math.min(calculationEndDate.getTime(), semester1End.getTime()),
+              ).toISOString().slice(0, 10),
+              days: daysWorkedSemester1,
+            }]
+          : []),
+        ...(daysWorkedSemester2 > 0
+          ? [{
+              year: calculationYear,
+              semester: 2,
+              startDate: new Date(
+                Math.max(effectiveStartDate.getTime(), semester2Start.getTime()),
+              ).toISOString().slice(0, 10),
+              endDate: new Date(
+                Math.min(calculationEndDate.getTime(), yearEnd.getTime()),
+              ).toISOString().slice(0, 10),
+              days: daysWorkedSemester2,
+            }]
+          : []),
+      ],
       daysWorkedForVacation: referenceBenefitDays,
       dailySalary: dailySalary.toString(),
       hourlyRate: hourlyRate.toString(),
       salaryMonthly: salaryMonthly.toString(),
       transportAllowance: settlementTransportAllowance.toString(),
+      connectivityAllowance: settlementConnectivityAllowance.toString(),
+      salaryConceptsAmount: salaryConceptsAmount.toString(),
       benefitSettlementBase: benefitSettlementBase.toString(),
+      vacationBase: vacationBase.toString(),
       grossSalaryAccrued: grossSalaryAccrued.toString(),
       grossSalaryPaid: grossSalaryPaid.toString(),
       grossSalaryPending: grossSalaryPending.toString(),
@@ -2653,14 +2606,20 @@ export class PayrollService {
       salaryAccrued: grossSalaryAccrued.toString(),
       salaryPaid: salaryPaid.toString(),
       salaryPending: salaryPending.toString(),
+      salaryPendingAvailable: false,
+      salaryPendingHiddenReason:
+        'MVP annual cutoff does not integrate complete real salary payments.',
       benefitsTotal: benefitsTotal.toString(),
       settlementTotalPayable: settlementTotalPayable.toString(),
-      serviceBonusTotal: serviceBonusPending.toString(),
+      totalEstimated: settlementTotalPayable.toString(),
+      serviceBonusTotal: serviceBonus.toString(),
+      serviceBonusSemester1: serviceBonusSemesterOne.toString(),
+      serviceBonusSemester2: serviceBonusSemesterTwo.toString(),
       benefitsProvisioned: {
-        severance: historicalProvisioned.severance.toString(),
-        severanceInterest: historicalProvisioned.severanceInterest.toString(),
-        serviceBonus: historicalProvisioned.serviceBonus.toString(),
-        vacation: historicalProvisioned.vacation.toString(),
+        severance: '0',
+        severanceInterest: '0',
+        serviceBonus: '0',
+        vacation: '0',
         total: benefitsProvisionedTotal.toString(),
       },
       benefitsCalculated: {
@@ -2677,74 +2636,36 @@ export class PayrollService {
         severance: severancePaid.toString(),
         severanceInterest: severanceInterestPaid.toString(),
         serviceBonus: serviceBonusPaid.toString(),
-        serviceBonusSemesterOne: serviceBonusPaid
-          .mul(serviceBonusCaused.equals(0) ? 0 : serviceBonusSemesterOneCaused)
-          .div(serviceBonusCaused.equals(0) ? 1 : serviceBonusCaused)
-          .toString(),
-        serviceBonusSemesterTwo: serviceBonusPaid
-          .mul(serviceBonusCaused.equals(0) ? 0 : serviceBonusSemesterTwoCaused)
-          .div(serviceBonusCaused.equals(0) ? 1 : serviceBonusCaused)
-          .toString(),
+        serviceBonusSemester1: '0',
+        serviceBonusSemester2: '0',
         vacation: vacationPaid.toString(),
       },
       causedBenefits: {
         severance: severanceCaused.toString(),
         severanceInterest: severanceInterestCaused.toString(),
         serviceBonus: serviceBonusCaused.toString(),
-        serviceBonusSemesterOne: serviceBonusSemesterOneCaused.toString(),
-        serviceBonusSemesterTwo: serviceBonusSemesterTwoCaused.toString(),
+        serviceBonusSemester1: serviceBonusSemesterOneCaused.toString(),
+        serviceBonusSemester2: serviceBonusSemesterTwoCaused.toString(),
         vacation: vacationCaused.toString(),
       },
       withholdingTax: '0',
       dayCountBasis: '30/360',
       formulas: {
-        salaryPending: 'salaryMonthly / 30 * totalWorkedDays30_360 - paidSalary',
-        benefitsTotal: 'severance + severanceInterest + serviceBonus + vacation',
-        settlementTotalPayable: 'salaryPending + benefitsTotal',
-        severance: '(salaryMonthly + transportAllowance) * benefitDays30_360 / 360',
-        severanceInterest: 'severance * 0.12 * benefitDays30_360 / 360',
-        serviceBonus: '(salaryMonthly + transportAllowance) * semesterDays30_360 / 360',
-        serviceBonusSemesterOne: '(salaryMonthly + transportAllowance) * semesterOneDays30_360 / 360',
-        serviceBonusSemesterTwo: '(salaryMonthly + transportAllowance) * semesterTwoDays30_360 / 360',
-        vacationDays: 'benefitDays30_360 * 15 / 360',
-        vacation: 'salaryMonthly * benefitDays30_360 / 720',
+        effectiveStartDate: 'max(contract.startDate, January 1st of calculationYear)',
+        effectiveEndDate: 'min(requestedEndDate, Dec 31 of calculationYear), or current semester end when requestedEndDate exceeds calculationYear',
+        salaryPending: 'hidden in MVP; complete real payment integration required',
+        benefitsTotal: 'severance + severanceInterest + serviceBonusSemester1 + serviceBonusSemester2 + vacation',
+        settlementTotalPayable: 'benefitsTotal',
+        severance: 'benefitSettlementBase * causedDays / 360',
+        severanceInterest: 'severance * 0.12 * causedDays / 360',
+        serviceBonusSemester1: 'benefitSettlementBase * semester1Days / 360',
+        serviceBonusSemester2: 'benefitSettlementBase * semester2Days / 360',
+        vacationDays: 'causedDays * 15 / 360',
+        vacation: 'vacationBase * causedDays / 720',
       },
     } as Prisma.InputJsonObject;
 
     const lines = [
-      this.settlementLine(
-        'SALARY_ACCRUED',
-        'Salario causado',
-        grossSalaryAccrued,
-        salaryMonthly,
-        daysWorkedTotal360,
-        {
-          basis: '30/360',
-          formula: 'grossSalaryMonthly / 30 * totalWorkedDays30_360',
-        },
-      ),
-      this.settlementLine(
-        'SALARY_PAID',
-        'Pagos salariales realizados',
-        salaryPaid.neg(),
-        salaryPaid,
-        undefined,
-        {
-          source: 'PayrollPayment PAID',
-          types: ['SALARY_PAYMENT', 'ADVANCE'],
-        },
-      ),
-      this.settlementLine(
-        'SALARY_PENDING',
-        'Salario bruto pendiente',
-        salaryPending,
-        grossSalaryAccrued,
-        daysWorkedTotal360,
-        {
-          formula: 'grossSalaryAccrued - grossSalaryPaid',
-          canBeNegative: true,
-        },
-      ),
       this.settlementLine(
         'SEVERANCE',
         'Cesantias',
@@ -2754,9 +2675,11 @@ export class PayrollService {
         {
           basis: '30/360',
           formula:
-            '(salaryMonthly + transportAllowance) * benefitDays30_360 / 360',
+            'benefitSettlementBase * causedDays / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          connectivityAllowance: settlementConnectivityAllowance.toString(),
+          salaryConceptsAmount: salaryConceptsAmount.toString(),
           causedAmount: severanceCaused.toString(),
           paidAmount: severancePaid.toString(),
         },
@@ -2769,7 +2692,7 @@ export class PayrollService {
         referenceBenefitDays,
         {
           basis: '30/360',
-          formula: 'severance * 0.12 * benefitDays30_360 / 360',
+          formula: 'severance * 0.12 * causedDays / 360',
           causedAmount: severanceInterestCaused.toString(),
           paidAmount: severanceInterestPaid.toString(),
         },
@@ -2783,10 +2706,11 @@ export class PayrollService {
         daysWorkedSemester1,
         {
           basis: '30/360',
-          formula:
-            '(salaryMonthly + transportAllowance) * semesterOneDays30_360 / 360',
+          formula: 'benefitSettlementBase * semester1Days / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          connectivityAllowance: settlementConnectivityAllowance.toString(),
+          salaryConceptsAmount: salaryConceptsAmount.toString(),
           causedAmount: serviceBonusSemesterOneCaused.toString(),
           paidAmount: serviceBonusPaid.toString(),
         },
@@ -2799,10 +2723,11 @@ export class PayrollService {
         daysWorkedSemester2,
         {
           basis: '30/360',
-          formula:
-            '(salaryMonthly + transportAllowance) * semesterTwoDays30_360 / 360',
+          formula: 'benefitSettlementBase * semester2Days / 360',
           salaryMonthly: salaryMonthly.toString(),
           transportAllowance: settlementTransportAllowance.toString(),
+          connectivityAllowance: settlementConnectivityAllowance.toString(),
+          salaryConceptsAmount: salaryConceptsAmount.toString(),
           causedAmount: serviceBonusSemesterTwoCaused.toString(),
           paidAmount: serviceBonusPaid.toString(),
         },
@@ -2811,11 +2736,11 @@ export class PayrollService {
         'VACATION',
         'Vacaciones',
         vacation,
-        salaryMonthly,
+        vacationBase,
         referenceBenefitDays,
         {
           basis: '30/360',
-          formula: 'salaryMonthly * benefitDays30_360 / 720',
+          formula: 'vacationBase * causedDays / 720',
           vacationDays: vacationDays.toDecimalPlaces(2).toString(),
           causedAmount: vacationCaused.toString(),
           paidAmount: vacationPaid.toString(),
@@ -2824,13 +2749,22 @@ export class PayrollService {
     ];
 
     return {
-      startDate,
+      startDate: effectiveStartDate,
       endDate: calculationEndDate,
+      cutoffStartDate: effectiveStartDate,
+      effectiveStartDate,
+      effectiveEndDate: calculationEndDate,
+      settlementDate: calculationEndDate,
+      causedDays,
       requestedEndDate,
       calculationEndDate,
-      totalWorkedDays: daysWorkedTotal360,
+      calculationYear,
+      settlementScope,
+      totalWorkedDays: causedDays,
       semesterOneDays: daysWorkedSemester1,
       semesterTwoDays: daysWorkedSemester2,
+      semester1Days: daysWorkedSemester1,
+      semester2Days: daysWorkedSemester2,
       grossSalaryAccrued: this.money(grossSalaryAccrued),
       grossSalaryPaid: this.money(grossSalaryPaid),
       grossSalaryPending: this.money(grossSalaryPending),
@@ -2841,10 +2775,10 @@ export class PayrollService {
       benefitsTotal: this.money(benefitsTotal),
       settlementTotalPayable: this.money(settlementTotalPayable),
       benefitsProvisioned: {
-        severance: this.money(historicalProvisioned.severance),
-        severanceInterest: this.money(historicalProvisioned.severanceInterest),
-        serviceBonus: this.money(historicalProvisioned.serviceBonus),
-        vacation: this.money(historicalProvisioned.vacation),
+        severance: this.money(this.decimal(0)),
+        severanceInterest: this.money(this.decimal(0)),
+        serviceBonus: this.money(this.decimal(0)),
+        vacation: this.money(this.decimal(0)),
         total: this.money(benefitsProvisionedTotal),
       },
       benefitsCalculated: {
@@ -2859,13 +2793,18 @@ export class PayrollService {
       benefitsReconciliation,
       severance: this.money(severance),
       severanceInterest: this.money(severanceInterest),
+      serviceBonus: this.money(serviceBonus),
+      serviceBonusSemester1: this.money(serviceBonusSemesterOne),
+      serviceBonusSemester2: this.money(serviceBonusSemesterTwo),
       serviceBonusSemesterOne: this.money(serviceBonusSemesterOne),
       serviceBonusSemesterTwo: this.money(serviceBonusSemesterTwo),
-      serviceBonusTotal: this.money(serviceBonusSemesterOne.add(serviceBonusSemesterTwo)),
+      serviceBonusTotal: this.money(serviceBonus),
       vacation: this.money(vacation),
       vacationDays: vacationDays.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
       hourlyRate: this.money(hourlyRate),
       totalAmount: this.money(settlementTotalPayable),
+      totalEstimated: this.money(settlementTotalPayable),
+      salaryPendingAvailable: false,
       usedParameters: snapshot,
       lines,
     };
@@ -2877,13 +2816,15 @@ export class PayrollService {
     type: PayrollSettlementType,
     endDate: Date,
     tx: PayrollTx,
+    options: { calculationYear?: number; salaryConceptsAmount?: number } = {},
   ) {
     const contract = await this.getContractForSettlement(businessId, contractId, tx);
-    const calculated = await this.calculateSettlementValues(
+    const calculated = await this.calculateAnnualSettlement(
       businessId,
       contract,
       endDate,
       tx,
+      options,
     );
 
     const settlement = await tx.payrollContractSettlement.create({
@@ -2930,11 +2871,15 @@ export class PayrollService {
       const endDate = dto.endDate
         ? this.parseDate(dto.endDate, 'endDate')
         : contract.endDate ?? new Date();
-      const calculated = await this.calculateSettlementValues(
+      const calculated = await this.calculateAnnualSettlement(
         businessId,
         contract,
         endDate,
         tx,
+        {
+          calculationYear: dto.calculationYear,
+          salaryConceptsAmount: dto.salaryConceptsAmount,
+        },
       );
       return this.withSettlementComputedFields({
         id: `simulation-${contract.id}-${this.startOfUtcDay(endDate).toISOString().slice(0, 10)}`,
@@ -2945,14 +2890,24 @@ export class PayrollService {
         status: PayrollSettlementStatus.CALCULATED,
         startDate: calculated.startDate,
         endDate: calculated.endDate,
+        cutoffStartDate: calculated.cutoffStartDate,
+        effectiveStartDate: calculated.effectiveStartDate,
+        effectiveEndDate: calculated.effectiveEndDate,
+        settlementDate: calculated.settlementDate,
+        causedDays: calculated.causedDays,
         semesterOneDays: calculated.semesterOneDays,
         semesterTwoDays: calculated.semesterTwoDays,
         totalWorkedDays: calculated.totalWorkedDays,
         requestedEndDate: calculated.requestedEndDate,
         calculationEndDate: calculated.calculationEndDate,
+        calculationYear: calculated.calculationYear,
+        settlementScope: calculated.settlementScope,
         salaryPending: calculated.salaryPending,
         benefitsTotal: calculated.benefitsTotal,
         settlementTotalPayable: calculated.settlementTotalPayable,
+        totalEstimated: calculated.totalEstimated,
+        salaryPendingAvailable: calculated.salaryPendingAvailable,
+        serviceBonus: calculated.serviceBonus,
         serviceBonusTotal: calculated.serviceBonusTotal,
         grossSalaryAccrued: calculated.grossSalaryAccrued,
         grossSalaryPaid: calculated.grossSalaryPaid,
@@ -2967,6 +2922,8 @@ export class PayrollService {
         benefitsReconciliation: calculated.benefitsReconciliation,
         severance: calculated.severance,
         severanceInterest: calculated.severanceInterest,
+        serviceBonusSemester1: calculated.serviceBonusSemester1,
+        serviceBonusSemester2: calculated.serviceBonusSemester2,
         serviceBonusSemesterOne: calculated.serviceBonusSemesterOne,
         serviceBonusSemesterTwo: calculated.serviceBonusSemesterTwo,
         vacation: calculated.vacation,
@@ -3018,6 +2975,7 @@ export class PayrollService {
         PayrollSettlementType.REAL_TERMINATION,
         endDate,
         tx,
+        { salaryConceptsAmount: dto.salaryConceptsAmount },
       );
 
       await tx.employeeContract.update({
