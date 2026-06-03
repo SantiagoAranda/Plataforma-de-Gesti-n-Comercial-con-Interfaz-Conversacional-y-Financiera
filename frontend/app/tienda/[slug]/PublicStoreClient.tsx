@@ -429,9 +429,9 @@ export default function PublicStoreClient() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
+    <div className="flex flex-col min-h-screen bg-white">
       <header
-        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur transition-transform duration-300 ease-in-out"
+        className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
         style={{
           paddingTop: "env(safe-area-inset-top, 0px)",
           transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
@@ -906,7 +906,7 @@ function ProductDetailOverlay({
 
         <div className="hidden h-full xl:flex">
           {/* LEFT: commercial info */}
-          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
+          <div className="min-w-0 flex-1 bg-white px-12 py-10">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className="max-w-2xl space-y-8 text-slate-900">
                 <button
@@ -1171,7 +1171,7 @@ function ReelLikeProductView({
   const badges = getItemBadges(item);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-white">
       {/* IMAGE (full-bleed, no margins, no radius) */}
       <div className="relative w-full bg-neutral-100">
         <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
