@@ -227,7 +227,7 @@ export default function SalesChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-[#f7f3ed] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (

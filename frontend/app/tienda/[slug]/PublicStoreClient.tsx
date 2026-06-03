@@ -118,6 +118,33 @@ export default function PublicStoreClient() {
   const [category, setCategory] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollYRef = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+
+      if (currentScrollY <= 10) {
+        setIsHeaderVisible(true);
+      } else if (currentScrollY > lastScrollYRef.current) {
+        // Scrolling down
+        if (currentScrollY > 60) {
+          setIsHeaderVisible(false);
+        }
+      } else {
+        // Scrolling up
+        setIsHeaderVisible(true);
+      }
+
+      lastScrollYRef.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
 
   const closeProductDetail = () => setSelectedProduct(null);
 
@@ -402,10 +429,13 @@ export default function PublicStoreClient() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F7FAF8]">
+    <div className="flex flex-col min-h-screen bg-white">
       <header
-        className="sticky top-0 z-40 bg-[#F7FAF8]/90 backdrop-blur"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
+        style={{
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
+        }}
       >
         <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
@@ -876,7 +906,7 @@ function ProductDetailOverlay({
 
         <div className="hidden h-full xl:flex">
           {/* LEFT: commercial info */}
-          <div className="min-w-0 flex-1 bg-[#F7FAF8] px-12 py-10">
+          <div className="min-w-0 flex-1 bg-white px-12 py-10">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className="max-w-2xl space-y-8 text-slate-900">
                 <button
@@ -1141,7 +1171,7 @@ function ReelLikeProductView({
   const badges = getItemBadges(item);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[#F7FAF8]">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-white">
       {/* IMAGE (full-bleed, no margins, no radius) */}
       <div className="relative w-full bg-neutral-100">
         <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
