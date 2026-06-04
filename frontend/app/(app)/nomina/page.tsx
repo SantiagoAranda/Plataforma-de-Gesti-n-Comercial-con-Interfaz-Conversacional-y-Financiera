@@ -23,6 +23,7 @@ import {
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { PayrollChatActionBar } from "@/src/components/payroll/PayrollChatActionBar";
+import { SearchSelect, type SearchSelectOption } from "@/src/components/shared/SearchSelect";
 import { AppApiError } from "@/src/lib/api";
 import {
   type ArlRiskClass,
@@ -507,6 +508,792 @@ function HeaderCalendar({
   );
 }
 
+type PayrollSheetMode = "editEmployee" | "createEmployee" | "createContract";
+
+type PayrollSheetTab<T extends string = string> = {
+  id: T;
+  label: string;
+};
+
+type EmployeeDraft = {
+  firstName: string;
+  lastName: string;
+  documentNumber: string;
+  position: string;
+  phone: string;
+  email: string;
+};
+
+type ContractDraft = {
+  salaryMonthly: string;
+  startDate: string;
+  endDate: string;
+  contractType: "INDEFINITE" | "FIXED_TERM";
+  arlRiskClassId: string;
+  applyLaw1819: boolean;
+  isRemote: boolean;
+  paymentCycle: "MONTHLY" | "BIWEEKLY";
+};
+
+type AdjustmentsDraft = {
+  workedDays: string;
+  loans: string;
+  commissions: string;
+  nonSalaryBonus: string;
+  otherDeductions: string;
+  simulatedEndDate: string;
+  overtimeHours: Record<OvertimeType, string>;
+};
+
+function PayrollEmployeeHeader({
+  title,
+  subtitle,
+  documentNumber,
+  role,
+  onClose,
+}: {
+  title: string;
+  subtitle: string;
+  documentNumber?: string | null;
+  role?: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="truncate text-lg font-bold text-slate-900">{title}</h2>
+        <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
+          {subtitle || [documentNumber || "Sin doc.", role || "Empleado"].filter(Boolean).join(" • ")}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+        aria-label="Cerrar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
+function PayrollEmployeeTabs<T extends string>({
+  tabs,
+  activeTab,
+  onChange,
+}: {
+  tabs: Array<PayrollSheetTab<T>>;
+  activeTab: T;
+  onChange: (tab: T) => void;
+}) {
+  return (
+    <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => onChange(tab.id)}
+          className={cn(
+            "flex-1 rounded-lg py-2 text-xs font-bold transition-colors",
+            activeTab === tab.id
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700",
+          )}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PayrollSheetFooter({
+  error,
+  primaryLabel,
+  submitting,
+  primaryDisabled,
+  onCancel,
+  onPrimary,
+}: {
+  error?: string | null;
+  primaryLabel: string;
+  submitting?: boolean;
+  primaryDisabled?: boolean;
+  onCancel: () => void;
+  onPrimary: () => void;
+}) {
+  return (
+    <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)]">
+      {error && <p className="mb-3 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
+      <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600 hover:bg-neutral-200"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={onPrimary}
+          disabled={submitting || primaryDisabled}
+          className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 hover:opacity-90 disabled:opacity-60"
+        >
+          {submitting ? "Guardando..." : primaryLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PayrollEmployeeSheetShell<T extends string>({
+  open,
+  title,
+  subtitle,
+  documentNumber,
+  role,
+  tabs,
+  activeTab,
+  onTabChange,
+  onClose,
+  footer,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  subtitle: string;
+  documentNumber?: string | null;
+  role?: string | null;
+  tabs: Array<PayrollSheetTab<T>>;
+  activeTab: T;
+  onTabChange: (tab: T) => void;
+  onClose: () => void;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  if (!open) return null;
+
+  const changeTab = (tab: T) => {
+    onTabChange(tab);
+    window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0 }));
+  };
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+      <div className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex h-[88dvh] max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl transition-transform animate-in slide-in-from-bottom sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[720px] sm:max-h-[calc(100dvh-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]">
+        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
+          <PayrollEmployeeHeader
+            title={title}
+            subtitle={subtitle}
+            documentNumber={documentNumber}
+            role={role}
+            onClose={onClose}
+          />
+          <PayrollEmployeeTabs tabs={tabs} activeTab={activeTab} onChange={changeTab} />
+        </div>
+        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 pb-28 overscroll-contain">
+          {children}
+        </div>
+        {footer}
+      </div>
+    </>
+  );
+}
+
+function EmployeeFormSection({
+  value,
+  onChange,
+}: {
+  value: EmployeeDraft;
+  onChange: (value: EmployeeDraft) => void;
+}) {
+  const update = (patch: Partial<EmployeeDraft>) => onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <FieldBlock label="Nombre">
+          <BigInput value={value.firstName} onChange={(event) => update({ firstName: event.target.value })} placeholder="Juan" />
+        </FieldBlock>
+        <FieldBlock label="Apellido">
+          <BigInput value={value.lastName} onChange={(event) => update({ lastName: event.target.value })} placeholder="Perez" />
+        </FieldBlock>
+        <FieldBlock label="Documento">
+          <BigInput value={value.documentNumber} onChange={(event) => update({ documentNumber: event.target.value })} placeholder="123456789" />
+        </FieldBlock>
+        <FieldBlock label="Cargo">
+          <BigInput value={value.position} onChange={(event) => update({ position: event.target.value })} placeholder="Auxiliar" />
+        </FieldBlock>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <FieldBlock label="Telefono">
+          <BigInput value={value.phone} onChange={(event) => update({ phone: event.target.value })} placeholder="3001234567" />
+        </FieldBlock>
+        <FieldBlock label="Correo opcional">
+          <BigInput value={value.email} onChange={(event) => update({ email: event.target.value })} placeholder="correo@empresa.com" type="email" />
+        </FieldBlock>
+      </div>
+    </div>
+  );
+}
+
+function ContractFormSection({
+  value,
+  arlRisks,
+  onChange,
+}: {
+  value: ContractDraft;
+  arlRisks: ArlRiskClass[];
+  onChange: (value: ContractDraft) => void;
+}) {
+  const update = (patch: Partial<ContractDraft>) => onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <FieldBlock label="Fecha ingreso">
+          <BigInput value={value.startDate} onChange={(event) => update({ startDate: event.target.value })} type="date" />
+        </FieldBlock>
+        <FieldBlock label="Fecha salida">
+          <BigInput value={value.endDate} onChange={(event) => update({ endDate: event.target.value })} type="date" />
+        </FieldBlock>
+      </div>
+
+      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+        <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
+        <div className="grid grid-cols-3 gap-2">
+          <SegmentedOption value="INDEFINITE" current={value.contractType} onChange={(contractType) => update({ contractType })}>Indefinido</SegmentedOption>
+          <SegmentedOption value="FIXED_TERM" current={value.contractType} onChange={(contractType) => update({ contractType })}>Fijo</SegmentedOption>
+          <button type="button" disabled className="h-10 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-xs font-bold text-neutral-400">
+            Obra labor
+          </button>
+        </div>
+      </div>
+
+      <FieldBlock label="Salario mensual">
+        <BigInput value={value.salaryMonthly} onChange={(event) => update({ salaryMonthly: event.target.value })} placeholder="3000000" type="number" />
+      </FieldBlock>
+
+      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+        <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">ARL</span>
+        <div className="grid grid-cols-5 gap-1.5">
+          {[1, 2, 3, 4, 5].map((level) => {
+            const risk = arlRisks.find((item) => item.level === level);
+            const selected = value.arlRiskClassId === risk?.id;
+            return (
+              <button
+                key={level}
+                type="button"
+                disabled={!risk}
+                onClick={() => risk && update({ arlRiskClassId: risk.id })}
+                className={cn(
+                  "h-10 rounded-xl text-[11px] font-bold transition disabled:opacity-40",
+                  selected ? "bg-blue-500 text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
+                )}
+              >
+                Riesgo {level}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+        <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => update({ isRemote: !value.isRemote })} className={cn("h-11 rounded-xl text-xs font-bold", value.isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+            Trabajo remoto
+          </button>
+          <button type="button" onClick={() => update({ applyLaw1819: !value.applyLaw1819 })} className={cn("h-11 rounded-xl text-xs font-bold", value.applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+            Exonerado Ley 1819
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+        <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
+        <div className="grid grid-cols-2 gap-2">
+          <SegmentedOption value="MONTHLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Mensual</SegmentedOption>
+          <SegmentedOption value="BIWEEKLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Quincenal</SegmentedOption>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PayrollAdjustmentsSection({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: AdjustmentsDraft;
+  onChange: (value: AdjustmentsDraft) => void;
+  disabled?: boolean;
+}) {
+  const update = (patch: Partial<AdjustmentsDraft>) => onChange({ ...value, ...patch });
+  const totalOvertimeHours = overtimeInputs.reduce(
+    (sum, item) => sum + numberValue(value.overtimeHours[item.type]),
+    0,
+  );
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <FieldBlock label="Dias trabajados">
+          <BigInput value={value.workedDays} onChange={(event) => update({ workedDays: event.target.value })} type="number" min="1" max="30" disabled={disabled} />
+        </FieldBlock>
+        <FieldBlock label="Prestamos">
+          <BigInput value={value.loans} onChange={(event) => update({ loans: event.target.value })} type="number" min="0" disabled={disabled} />
+        </FieldBlock>
+        <FieldBlock label="Comisiones salariales">
+          <BigInput value={value.commissions} onChange={(event) => update({ commissions: event.target.value })} type="number" min="0" disabled={disabled} />
+        </FieldBlock>
+        <FieldBlock label="Bonos no salariales">
+          <BigInput value={value.nonSalaryBonus} onChange={(event) => update({ nonSalaryBonus: event.target.value })} type="number" min="0" disabled={disabled} />
+        </FieldBlock>
+        <FieldBlock label="Otras deducciones">
+          <BigInput value={value.otherDeductions} onChange={(event) => update({ otherDeductions: event.target.value })} type="number" min="0" disabled={disabled} />
+        </FieldBlock>
+        <FieldBlock label="Fecha salida simulada">
+          <BigInput value={value.simulatedEndDate} onChange={(event) => update({ simulatedEndDate: event.target.value })} type="date" disabled={disabled} />
+        </FieldBlock>
+      </div>
+
+      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Trabajo suplementario</span>
+          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-bold text-neutral-500">{totalOvertimeHours} h</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {overtimeInputs.map((item) => (
+            <label key={item.type} className="rounded-2xl border border-neutral-100 bg-neutral-50 p-2">
+              <span className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-[11px] font-bold text-neutral-700">{item.label}</span>
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-[#0fb18f]">{item.hint}</span>
+              </span>
+              <input
+                value={value.overtimeHours[item.type]}
+                onChange={(event) =>
+                  update({
+                    overtimeHours: {
+                      ...value.overtimeHours,
+                      [item.type]: event.target.value,
+                    },
+                  })
+                }
+                type="number"
+                min="0"
+                disabled={disabled}
+                className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-right text-sm font-semibold outline-none focus:border-emerald-400 disabled:opacity-60"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const defaultOvertimeHours = (): Record<OvertimeType, string> => ({
+  OVERTIME_DAY: "0",
+  OVERTIME_NIGHT: "0",
+  NIGHT_SURCHARGE: "0",
+  SUNDAY_HOLIDAY_EXTRA_DAY: "0",
+  SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
+  SUNDAY_HOLIDAY_DAY: "0",
+});
+
+const createEmployeeTabs: Array<PayrollSheetTab<"empleado" | "contrato">> = [
+  { id: "empleado", label: "Empleado" },
+  { id: "contrato", label: "Contrato" },
+];
+
+function PayrollQuickEmployeeSheet({
+  open,
+  mode,
+  employees,
+  arlRisks,
+  selectedPeriod,
+  onClose,
+  onChanged,
+}: {
+  open: boolean;
+  mode: Exclude<PayrollSheetMode, "editEmployee"> | null;
+  employees: Employee[];
+  arlRisks: ArlRiskClass[];
+  selectedPeriod?: PayrollPeriod;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [activeTab, setActiveTab] = useState<"empleado" | "contrato">("empleado");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [employeeDraft, setEmployeeDraft] = useState<EmployeeDraft>({
+    firstName: "",
+    lastName: "",
+    documentNumber: "",
+    position: "",
+    phone: "",
+    email: "",
+  });
+  const [contractDraft, setContractDraft] = useState<ContractDraft>({
+    salaryMonthly: "",
+    startDate: todayIso,
+    endDate: "",
+    contractType: "INDEFINITE",
+    arlRiskClassId: "",
+    applyLaw1819: true,
+    isRemote: false,
+    paymentCycle: "MONTHLY",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedEmployee = employees.find((employee) => employee.id === employeeId) ?? null;
+  const activeContract = selectedEmployee
+    ? findActiveContract(selectedEmployee.contracts, selectedPeriod)
+      ?? selectedEmployee.contracts?.find((contract) => contract.isActive !== false && !contract.endDate)
+      ?? null
+    : null;
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setSubmitting(false);
+    setActiveTab("empleado");
+    setEmployeeId("");
+    setEmployeeDraft({
+      firstName: "",
+      lastName: "",
+      documentNumber: "",
+      position: "",
+      phone: "",
+      email: "",
+    });
+    setContractDraft({
+      salaryMonthly: "",
+      startDate: todayIso,
+      endDate: "",
+      contractType: "INDEFINITE",
+      arlRiskClassId: "",
+      applyLaw1819: true,
+      isRemote: false,
+      paymentCycle: "MONTHLY",
+    });
+  }, [open, mode, selectedPeriod, todayIso]);
+
+  if (!open || !mode) return null;
+
+  const closeWithDirtyCheck = () => {
+    const hasEmployeeData = Object.values(employeeDraft).some((value) => value.trim());
+    const hasContractData = contractDraft.salaryMonthly.trim() || contractDraft.endDate.trim() || employeeId;
+    if ((hasEmployeeData || hasContractData) && !window.confirm("Cerrar sin guardar los cambios?")) return;
+    onClose();
+  };
+
+  const validateEmployeeDraft = () => {
+    if (!employeeDraft.firstName.trim()) return "El nombre es obligatorio.";
+    if (!employeeDraft.lastName.trim()) return "El apellido es obligatorio.";
+    if (!employeeDraft.documentNumber.trim()) return "El documento es obligatorio.";
+    if (!employeeDraft.position.trim()) return "El cargo es obligatorio.";
+    return null;
+  };
+
+  const validateContractDraft = (requireEmployee: boolean) => {
+    if (requireEmployee && !employeeId) return "Selecciona un empleado.";
+    if (!contractDraft.startDate) return "La fecha de ingreso es obligatoria.";
+    if (numberValue(contractDraft.salaryMonthly) <= 0) return "El salario mensual debe ser mayor a 0.";
+    if (!contractDraft.contractType) return "Selecciona el tipo de contrato.";
+    if (!contractDraft.arlRiskClassId) return "Selecciona ARL.";
+    if (!contractDraft.paymentCycle) return "Selecciona el ciclo de pago.";
+    return null;
+  };
+
+  const buildContractPayload = () => ({
+    contractType: contractDraft.contractType,
+    salaryMonthly: numberValue(contractDraft.salaryMonthly),
+    startDate: contractDraft.startDate,
+    endDate: contractDraft.endDate || undefined,
+    isRemote: contractDraft.isRemote,
+    applyLaw1819: contractDraft.applyLaw1819,
+    paymentCycle: contractDraft.paymentCycle,
+    arlRiskClassId: contractDraft.arlRiskClassId,
+  });
+
+  const save = async () => {
+    const usingExistingEmployee = Boolean(selectedEmployee);
+    if (!usingExistingEmployee) {
+      const employeeValidation = validateEmployeeDraft();
+      if (employeeValidation) {
+        setActiveTab("empleado");
+        return setError(employeeValidation);
+      }
+    }
+    const contractValidation = validateContractDraft(false);
+    if (contractValidation) {
+      setActiveTab("contrato");
+      return setError(contractValidation);
+    }
+    if (usingExistingEmployee && activeContract) {
+      setActiveTab("contrato");
+      return setError("Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.");
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (usingExistingEmployee) {
+        await payrollApi.createContract(selectedEmployee!.id, buildContractPayload());
+        toast.success("Contrato creado.");
+      } else {
+        const employee = await payrollApi.createEmployee({
+          firstName: employeeDraft.firstName.trim(),
+          lastName: employeeDraft.lastName.trim(),
+          documentNumber: employeeDraft.documentNumber.trim(),
+          position: employeeDraft.position.trim(),
+          email: employeeDraft.email.trim() || undefined,
+          phone: employeeDraft.phone.trim() || undefined,
+        });
+        await payrollApi.createContract(employee.id, buildContractPayload());
+        toast.success("Empleado creado.");
+      }
+      onChanged();
+      onClose();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudo guardar.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const inactivateCurrentContract = async () => {
+    if (!activeContract) return toast("Función pendiente de implementación.");
+    setSubmitting(true);
+    setError(null);
+    try {
+      await payrollApi.deleteContract(activeContract.id);
+      toast.success("Contrato inactivado");
+      onChanged();
+    } catch (err) {
+      setError(err instanceof AppApiError ? err.message : "No se pudo inactivar el contrato.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  type EmployeeSearchOption = SearchSelectOption & { employee: Employee };
+  const selectedEmployeeOption: EmployeeSearchOption | null = selectedEmployee
+    ? {
+        id: selectedEmployee.id,
+        title: employeeName(selectedEmployee),
+        subtitle: selectedEmployee.documentNumber ?? "Sin doc.",
+        meta: selectedEmployee.position ?? "Sin cargo",
+        employee: selectedEmployee,
+      }
+    : null;
+
+  const searchEmployees = (query: string): EmployeeSearchOption[] => {
+    const term = query.trim().toLowerCase();
+    return employees
+      .filter((employee) => {
+        if (!term) return true;
+        return (
+          employee.firstName?.toLowerCase().includes(term) ||
+          employee.lastName?.toLowerCase().includes(term) ||
+          employeeName(employee).toLowerCase().includes(term) ||
+          employee.documentNumber?.toLowerCase().includes(term)
+        );
+      })
+      .slice(0, 12)
+      .map((employee) => ({
+        id: employee.id,
+        title: employeeName(employee),
+        subtitle: employee.documentNumber ?? "Sin doc.",
+        meta: employee.position ?? "Sin cargo",
+        employee,
+      }));
+  };
+  const createContractTabs = createEmployeeTabs;
+  const createContractTab = activeTab;
+  const setCreateContractTab = setActiveTab;
+  const createContract = save;
+  const filteredEmployees = searchEmployees(employeeSearch).map((option) => option.employee);
+
+  if (mode === "createEmployee") {
+    return (
+      <PayrollEmployeeSheetShell
+        open={open}
+        title="Nuevo empleado"
+        subtitle="Carga inicial de datos laborales"
+        tabs={createEmployeeTabs}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onClose={closeWithDirtyCheck}
+        footer={
+          <PayrollSheetFooter
+            error={error}
+            primaryLabel={selectedEmployee ? "Crear contrato" : "Crear empleado"}
+            submitting={submitting}
+            onCancel={closeWithDirtyCheck}
+            onPrimary={save}
+          />
+        }
+      >
+        {activeTab === "empleado" && (
+          selectedEmployee ? (
+            <div className="space-y-3">
+              <p className="rounded-[20px] border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold leading-relaxed text-emerald-800">
+                Se usara el empleado existente seleccionado en Contrato. No se creara un empleado duplicado.
+              </p>
+              <div className="rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <p className="text-sm font-bold text-slate-900">{employeeName(selectedEmployee)}</p>
+                <p className="mt-1 text-xs text-slate-500">{selectedEmployee.documentNumber ?? "Sin doc."} • {selectedEmployee.position || "Sin cargo"}</p>
+                <button
+                  type="button"
+                  onClick={() => setEmployeeId("")}
+                  className="mt-3 h-10 rounded-xl bg-slate-100 px-4 text-xs font-bold text-slate-600"
+                >
+                  Crear empleado nuevo
+                </button>
+              </div>
+            </div>
+          ) : (
+            <EmployeeFormSection value={employeeDraft} onChange={setEmployeeDraft} />
+          )
+        )}
+        {activeTab === "contrato" && (
+          <>
+            <SearchSelect<EmployeeSearchOption>
+              label="Buscar empleado existente"
+              value={selectedEmployeeOption}
+              placeholder="Buscar por nombre, apellido o documento"
+              emptyText="No se encontraron empleados para esa busqueda."
+              selectedLabel="Empleado seleccionado"
+              search={searchEmployees}
+              onSelect={(option) => {
+                setEmployeeId(option.employee.id);
+                setError(null);
+              }}
+              renderOption={(option) => (
+                <>
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-xs font-bold text-[#0f8f76]">
+                    {initials(option.employee)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-neutral-800">{option.title}</p>
+                    <p className="truncate text-xs text-neutral-500">{option.subtitle} • {option.meta}</p>
+                  </div>
+                </>
+              )}
+            />
+            {activeContract && (
+              <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                <p>Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.</p>
+                <button
+                  type="button"
+                  onClick={inactivateCurrentContract}
+                  disabled={submitting}
+                  className="h-10 w-full rounded-xl bg-white text-xs font-bold text-amber-800 shadow-sm disabled:opacity-60"
+                >
+                  Inactivar contrato actual
+                </button>
+              </div>
+            )}
+            <ContractFormSection value={contractDraft} arlRisks={arlRisks} onChange={setContractDraft} />
+          </>
+        )}
+      </PayrollEmployeeSheetShell>
+    );
+  }
+
+  return (
+    <PayrollEmployeeSheetShell
+      open={open}
+      title={selectedEmployee ? employeeName(selectedEmployee) : "Nuevo contrato"}
+      subtitle={selectedEmployee ? `${selectedEmployee.documentNumber ?? "Sin doc."} • ${employeeRole(selectedEmployee)}` : "Selecciona empleado activo"}
+      documentNumber={selectedEmployee?.documentNumber}
+      role={selectedEmployee?.position}
+      tabs={createContractTabs}
+      activeTab={createContractTab}
+      onTabChange={setCreateContractTab}
+      onClose={closeWithDirtyCheck}
+      footer={
+        <PayrollSheetFooter
+          error={error}
+          primaryLabel="Crear contrato"
+          submitting={submitting}
+          primaryDisabled={Boolean(activeContract)}
+          onCancel={closeWithDirtyCheck}
+          onPrimary={createContract}
+        />
+      }
+    >
+      {createContractTab === "empleado" && (
+        <div className="space-y-3">
+          <FieldBlock label="Buscar empleado">
+            <BigInput value={employeeSearch} onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Nombre, documento o cargo" />
+          </FieldBlock>
+          <div className="space-y-2">
+            {filteredEmployees.map((employee) => {
+              const selected = employee.id === employeeId;
+              return (
+                <button
+                  key={employee.id}
+                  type="button"
+                  onClick={() => {
+                    setEmployeeId(employee.id);
+                    setCreateContractTab("contrato");
+                    setError(null);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-[22px] bg-white p-3 text-left shadow-sm ring-1 ring-black/5 transition",
+                    selected && "ring-2 ring-[#0fb18f]",
+                  )}
+                >
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-sm font-bold text-[#0f8f76]">
+                    {initials(employee)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-slate-900">{employeeName(employee)}</p>
+                    <p className="truncate text-xs text-slate-500">{employee.documentNumber ?? "Sin doc."} • {employee.position || "Sin cargo"}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {createContractTab === "contrato" && (
+        <div className="space-y-3">
+          <div className="rounded-[20px] border border-neutral-100 bg-white p-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contrato nuevo</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{selectedEmployee ? employeeName(selectedEmployee) : "Selecciona un empleado"}</p>
+          </div>
+          {activeContract && (
+            <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+              <p>Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.</p>
+              <button
+                type="button"
+                onClick={inactivateCurrentContract}
+                disabled={submitting}
+                className="h-10 w-full rounded-xl bg-white text-xs font-bold text-amber-800 shadow-sm disabled:opacity-60"
+              >
+                Inactivar contrato actual
+              </button>
+            </div>
+          )}
+          <ContractFormSection value={contractDraft} arlRisks={arlRisks} onChange={setContractDraft} />
+        </div>
+      )}
+    </PayrollEmployeeSheetShell>
+  );
+}
+
 function EmployeePayrollEditorSheet({
   open,
   onClose,
@@ -541,9 +1328,6 @@ function EmployeePayrollEditorSheet({
   const [loans, setLoans] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
   const [simulatedEndDate, setSimulatedEndDate] = useState("");
-  const [preview, setPreview] = useState<PayrollRun | null>(null);
-  const [settlementPreview, setSettlementPreview] = useState<Settlement | null>(null);
-  const [previewing, setPreviewing] = useState(false);
   const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
     OVERTIME_DAY: "0",
     OVERTIME_NIGHT: "0",
@@ -565,12 +1349,14 @@ function EmployeePayrollEditorSheet({
   const [paymentCycle, setPaymentCycle] = useState<"MONTHLY" | "BIWEEKLY">("MONTHLY");
 
   // Tab 3: Empleado State
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [documentNumber, setDocumentNumber] = useState("");
   const [position, setPosition] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [active, setActive] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open || !run) return;
@@ -587,9 +1373,6 @@ function EmployeePayrollEditorSheet({
     setOtherDeductions(String(totalDeductions));
     
     setSimulatedEndDate(settlementDefaultEndDate(run.contract, selectedPeriod));
-    setPreview(run.preview ? run : null);
-    setSettlementPreview(null);
-    
     const defaultOvertime: Record<OvertimeType, string> = {
       OVERTIME_DAY: "0",
       OVERTIME_NIGHT: "0",
@@ -620,13 +1403,27 @@ function EmployeePayrollEditorSheet({
     }
 
     // Initialize Tab 3 (Empleado)
-    setFullName(employeeName(run.employee));
+    const existingFirstName = run.employee.firstName?.trim() ?? "";
+    const existingLastName = run.employee.lastName?.trim() ?? "";
+    if (existingFirstName || existingLastName) {
+      setFirstName(existingFirstName);
+      setLastName(existingLastName);
+    } else {
+      const parts = employeeName(run.employee).trim().split(/\s+/).filter(Boolean);
+      setFirstName(parts[0] ?? "");
+      setLastName(parts.slice(1).join(" "));
+    }
     setDocumentNumber(run.employee.documentNumber ?? "");
     setPosition(run.employee.position ?? "");
     setEmail(run.employee.email ?? "");
     setPhone(run.employee.phone ?? "");
     setActive(run.employee.isActive === false ? "INACTIVE" : "ACTIVE");
   }, [open, run, selectedPeriod, todayIso]);
+
+  const changeTab = (tab: "horas" | "contrato" | "empleado") => {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => contentRef.current?.scrollTo({ top: 0 }));
+  };
 
   const buildPayload = useCallback((): CalculatePayrollPayload | null => {
     const parsedWorkedDays = numberValue(workedDays);
@@ -648,47 +1445,6 @@ function EmployeePayrollEditorSheet({
       overtimeHours: overtimePayload.length ? overtimePayload : undefined,
     };
   }, [workedDays, commissions, nonSalaryBonus, loans, otherDeductions, overtimeHours]);
-
-  // Preview effect for Tab 1
-  useEffect(() => {
-    if (!open || !run || activeTab !== "horas" || !selectedPeriod) return;
-    const payload = buildPayload();
-    if (!payload) return;
-
-    let alive = true;
-    const timer = window.setTimeout(async () => {
-      setPreviewing(true);
-      try {
-        const [payrollPreview, settlementResult] = await Promise.all([
-          payrollApi.previewEmployee(selectedPeriod.id, run.employeeId, payload),
-          run.contract?.id
-            ? payrollApi.simulateSettlement(
-                run.contract.id,
-                {
-                  ...(simulatedEndDate ? { endDate: simulatedEndDate } : {}),
-                  calculationYear: selectedPeriod.year,
-                },
-              ).catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        if (!alive) return;
-        setPreview(payrollPreview);
-        if (settlementResult) {
-          setSettlementPreview(settlementResult);
-        }
-        setError(null);
-      } catch (err) {
-        if (alive) setError(err instanceof AppApiError ? err.message : "No se pudo calcular la vista previa.");
-      } finally {
-        if (alive) setPreviewing(false);
-      }
-    }, 500);
-
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-    };
-  }, [open, run, activeTab, selectedPeriod, buildPayload, simulatedEndDate]);
 
   if (!open || !run) return null;
 
@@ -750,16 +1506,14 @@ function EmployeePayrollEditorSheet({
   };
 
   const saveEmployee = async () => {
-    const parts = fullName.trim().split(/\s+/).filter(Boolean);
-    const firstName = parts[0] ?? "";
-    const lastName = parts.slice(1).join(" ") || parts[0] || "";
-    if (!fullName.trim()) return setError("El nombre completo es obligatorio.");
+    if (!firstName.trim()) return setError("El nombre es obligatorio.");
+    if (!lastName.trim()) return setError("El apellido es obligatorio.");
     if (!documentNumber.trim()) return setError("El documento es obligatorio.");
     setSubmitting(true);
     try {
       const payload = {
-        firstName,
-        lastName,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         documentNumber: documentNumber.trim(),
         position: position.trim() || undefined,
         email: email.trim() || undefined,
@@ -792,7 +1546,8 @@ function EmployeePayrollEditorSheet({
         className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
-      <div className="fixed bottom-0 left-0 right-0 z-[70] mx-auto max-w-3xl rounded-t-[28px] bg-white p-5 shadow-2xl transition-transform animate-in slide-in-from-bottom max-h-[90dvh] overflow-y-auto">
+      <div className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex h-[88dvh] max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl transition-transform animate-in slide-in-from-bottom sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[720px] sm:max-h-[calc(100dvh-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]">
+        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div>
@@ -802,37 +1557,43 @@ function EmployeePayrollEditorSheet({
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+            aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Tab switcher */}
-        <div className="mb-4 flex gap-1 rounded-xl bg-slate-100 p-1">
+        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
           <button
-            onClick={() => setActiveTab("horas")}
-            className={cn("flex-1 rounded-lg py-1.5 text-xs font-bold transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            type="button"
+            onClick={() => changeTab("horas")}
+            className={cn("flex-1 rounded-lg py-2 text-xs font-bold transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
           >
             Horas/Ajustes
           </button>
           <button
-            onClick={() => setActiveTab("contrato")}
-            className={cn("flex-1 rounded-lg py-1.5 text-xs font-bold transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            type="button"
+            onClick={() => changeTab("contrato")}
+            className={cn("flex-1 rounded-lg py-2 text-xs font-bold transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
           >
             Contrato
           </button>
           <button
-            onClick={() => setActiveTab("empleado")}
-            className={cn("flex-1 rounded-lg py-1.5 text-xs font-bold transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            type="button"
+            onClick={() => changeTab("empleado")}
+            className={cn("flex-1 rounded-lg py-2 text-xs font-bold transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
           >
             Empleado
           </button>
         </div>
+        </div>
 
         {/* Form Body */}
-        <div className="min-h-[200px] pb-6 space-y-4">
+        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 pb-28 overscroll-contain">
           {activeTab === "horas" && (
             <div className="space-y-3">
               {!editable && (
@@ -891,25 +1652,38 @@ function EmployeePayrollEditorSheet({
                   ))}
                 </div>
               </div>
-
-              {/* Calculations previews */}
-              {preview && (
-                <div className="rounded-[24px] border border-emerald-100 bg-white p-4 shadow-sm">
-                  <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-emerald-600">Vista previa de nomina</span>
-                  <div className="space-y-1.5">
-                    <MoneyLine label="Devengados" value={preview.grossIncome} color="text-slate-600" />
-                    <MoneyLine label="Deducciones" value={preview.totalEmployeeDeductions} color="text-rose-500" sign="-" />
-                    <MoneyLine label="Prestaciones" value={preview.totalBenefits} color="text-violet-600" />
-                    <MoneyLine label="Neto" value={preview.netPay} color="text-slate-900" medium />
-                    <MoneyLine label="Costo empresa" value={preview.realEmployerCost} color="text-[#0fb18f]" medium />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
           {activeTab === "contrato" && (
             <div className="space-y-3">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onCreateContract?.(run.employee); }}
+                  className="flex-1 rounded-xl border border-neutral-200 bg-white py-2.5 text-xs font-bold text-neutral-700 shadow-sm transition hover:bg-neutral-50"
+                >
+                  Nuevo contrato
+                </button>
+                <button
+                  type="button"
+                  disabled={!run.contract || run.contract.isActive === false}
+                  onClick={() => { onClose(); if (run.contract) onInactivateContract?.(run.contract); }}
+                  className="flex-1 rounded-xl border border-amber-200 bg-amber-50/80 py-2.5 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+                >
+                  Inactivar contrato
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Fecha ingreso">
+                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
+                </FieldBlock>
+                <FieldBlock label="Fecha salida">
+                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
+                </FieldBlock>
+              </div>
+
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
                 <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
                 <div className="grid grid-cols-3 gap-2">
@@ -950,14 +1724,6 @@ function EmployeePayrollEditorSheet({
               </div>
 
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
-                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle}>Quincenal</SegmentedOption>
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
                 <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
@@ -969,42 +1735,42 @@ function EmployeePayrollEditorSheet({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <FieldBlock label="Fecha ingreso">
-                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
-                </FieldBlock>
-                <FieldBlock label="Fecha salida">
-                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
-                </FieldBlock>
-              </div>
-
-              {/* Secondary Actions */}
-              <div className="flex gap-2 pt-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onCreateContract?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-neutral-200 bg-neutral-50 py-2.5 text-xs font-bold text-neutral-700 transition hover:bg-neutral-100"
-                >
-                  Nuevo contrato
-                </button>
-                <button
-                  type="button"
-                  disabled={!run.contract || run.contract.isActive === false}
-                  onClick={() => { onClose(); if (run.contract) onInactivateContract?.(run.contract); }}
-                  className="flex-1 rounded-xl border border-amber-200 bg-amber-50/50 py-2.5 text-xs font-bold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
-                >
-                  Inactivar contrato
-                </button>
+              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
+                <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
+                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle}>Quincenal</SegmentedOption>
+                </div>
               </div>
             </div>
           )}
 
           {activeTab === "empleado" && (
             <div className="space-y-3">
-              <FieldBlock label="Nombre completo">
-                <BigInput value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Juan Perez" />
-              </FieldBlock>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onInactivateEmployee?.(run.employee); }}
+                  className="flex-1 rounded-xl border border-orange-200 bg-orange-50/80 py-2.5 text-xs font-bold text-orange-700 transition hover:bg-orange-100"
+                >
+                  Inactivar empleado
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onHardDeleteEmployee?.(run.employee); }}
+                  className="flex-1 rounded-xl border border-rose-200 bg-rose-50/80 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
+                >
+                  Eliminar empleado
+                </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Nombre">
+                  <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
+                </FieldBlock>
+                <FieldBlock label="Apellido">
+                  <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
+                </FieldBlock>
                 <FieldBlock label="Documento">
                   <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
                 </FieldBlock>
@@ -1020,47 +1786,29 @@ function EmployeePayrollEditorSheet({
                   <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
                 </FieldBlock>
               </div>
-
-              {/* Secondary Actions */}
-              <div className="flex gap-2 pt-2 border-t border-neutral-100">
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onInactivateEmployee?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-orange-200 bg-orange-50/50 py-2.5 text-xs font-bold text-orange-700 transition hover:bg-orange-100"
-                >
-                  Inactivar empleado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onHardDeleteEmployee?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-rose-200 bg-rose-50/50 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
-                >
-                  Eliminar empleado
-                </button>
-              </div>
             </div>
           )}
         </div>
 
-        {error && <p className="mb-4 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
-
-        {/* Footer */}
-        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 border-t border-neutral-100 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600 hover:bg-neutral-200"
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={submitting}
-            className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 hover:opacity-90 disabled:opacity-60"
-          >
-            {submitting ? "Guardando..." : "Guardar"}
-          </button>
+        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)]">
+          {error && <p className="mb-3 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
+          <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-12 rounded-2xl bg-neutral-100 text-sm font-bold text-neutral-600 hover:bg-neutral-200"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={submitting || (activeTab === "horas" && !editable)}
+              className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-bold text-white shadow-lg shadow-emerald-100 hover:opacity-90 disabled:opacity-60"
+            >
+              {submitting ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
         </div>
       </div>
     </>
@@ -3310,6 +4058,7 @@ export default function PayrollPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
+  const [quickSheetMode, setQuickSheetMode] = useState<Exclude<PayrollSheetMode, "editEmployee"> | null>(null);
   const [newsSheetOpen, setNewsSheetOpen] = useState(false);
   const [settlementSheetOpen, setSettlementSheetOpen] = useState(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
@@ -3670,23 +4419,9 @@ export default function PayrollPage() {
     }
   }, [refreshRunPayments]);
 
-  const handleAction = (action: string) => {
-    if (action === "employees") {
-      setActionsOpen(false);
-      setEmployeeToEdit(null);
-      setEmployeeSheetOpen(true);
-      return;
-    }
-    if (action === "contracts") {
-      setActionsOpen(false);
-      setContractToEdit(null);
-      setContractEmployee(null);
-      setContractSheetOpen(true);
-      return;
-    }
-
-    setNotice("Accion no disponible en este flujo.");
-    window.setTimeout(() => setNotice(null), 2400);
+  const handleCreateFromChat = () => {
+    setActionsOpen(false);
+    setQuickSheetMode("createEmployee");
   };
 
   const handleRegisterPrima = useCallback(async (run: PayrollRun, amount: number) => {
@@ -3950,11 +4685,9 @@ export default function PayrollPage() {
       </main>
 
       <PayrollChatActionBar
-        open={actionsOpen}
         searchValue={search}
         onSearchChange={setSearch}
-        onToggle={() => setActionsOpen((value) => !value)}
-        onAction={handleAction}
+        onCreateEmployee={handleCreateFromChat}
       />
 
       {notice && (
@@ -4006,6 +4739,19 @@ export default function PayrollPage() {
         onInactivateContract={handleInactivateContract}
         onInactivateEmployee={handleInactivateEmployee}
         onHardDeleteEmployee={handleHardDeleteEmployee}
+      />
+      <PayrollQuickEmployeeSheet
+        open={quickSheetMode !== null}
+        mode={quickSheetMode}
+        employees={employees}
+        arlRisks={arlRisks}
+        selectedPeriod={selectedPeriod}
+        onClose={() => setQuickSheetMode(null)}
+        onChanged={() => {
+          loadEmployees();
+          loadPeriods();
+          setPeriodRefreshKey((value) => value + 1);
+        }}
       />
       <EmployeeFormSheet
         open={employeeSheetOpen}
