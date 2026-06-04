@@ -37,7 +37,6 @@ import {
   type PayrollPayment,
   type PayrollRun,
   type Settlement,
-  type PayrollBenefitPayment,
   numberValue,
   payrollApi,
 } from "@/src/lib/payroll/api";
@@ -289,12 +288,10 @@ function SummaryCard({
   period,
   totalCost,
   totalNet,
-  onPost,
 }: {
   period?: PayrollPeriod;
   totalCost: number;
   totalNet: number;
-  onPost?: () => void;
 }) {
   const diff = totalCost - totalNet;
   const percent = totalNet > 0 ? (diff / totalNet) * 100 : 0;
@@ -339,20 +336,83 @@ function SummaryCard({
             </div>
           </div>
         </div>
-
-        {period?.status === "CALCULATED" && onPost && (
-          <div className="mt-4 border-t border-white/20 pt-4">
-            <button
-              type="button"
-              onClick={onPost}
-              className="w-full rounded-2xl border border-white/20 bg-white/18 py-3 text-sm font-medium text-white transition hover:bg-white/30 active:scale-[0.98]"
-            >
-              Liquidar nómina mensual
-            </button>
-          </div>
-        )}
       </div>
     </section>
+  );
+}
+
+type PayrollConfirmIntent = "payroll" | "settlement" | "visual";
+
+function PayrollConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  cancelLabel = "Cancelar",
+  intent,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  intent: PayrollConfirmIntent;
+  loading?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+
+  const intentClasses: Record<PayrollConfirmIntent, string> = {
+    payroll: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    settlement: "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100",
+    visual: "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200",
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="w-full max-w-md rounded-t-[28px] border border-white/60 bg-white p-5 shadow-2xl sm:rounded-[28px]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">{title}</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">{description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 disabled:opacity-60"
+            aria-label="Cerrar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="h-11 rounded-2xl bg-slate-100 text-sm font-bold text-slate-600 transition hover:bg-slate-200 disabled:opacity-60"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={cn(
+              "h-11 rounded-2xl border text-sm font-bold transition disabled:opacity-60",
+              intentClasses[intent],
+            )}
+          >
+            {loading ? "Procesando..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -911,9 +971,18 @@ const createEmployeeTabs: Array<PayrollSheetTab<"empleado" | "contrato">> = [
   { id: "contrato", label: "Contrato" },
 ];
 
+const createEmployeeOnlyTabs: Array<PayrollSheetTab<"empleado">> = [
+  { id: "empleado", label: "Empleado" },
+];
+
+const createContractOnlyTabs: Array<PayrollSheetTab<"contrato">> = [
+  { id: "contrato", label: "Contrato" },
+];
+
 function PayrollQuickEmployeeSheet({
   open,
   mode,
+  initialEmployee,
   employees,
   arlRisks,
   selectedPeriod,
@@ -922,6 +991,7 @@ function PayrollQuickEmployeeSheet({
 }: {
   open: boolean;
   mode: Exclude<PayrollSheetMode, "editEmployee"> | null;
+  initialEmployee?: Employee | null;
   employees: Employee[];
   arlRisks: ArlRiskClass[];
   selectedPeriod?: PayrollPeriod;
@@ -932,6 +1002,7 @@ function PayrollQuickEmployeeSheet({
   const [activeTab, setActiveTab] = useState<"empleado" | "contrato">("empleado");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  const [createdEmployee, setCreatedEmployee] = useState<Employee | null>(null);
   const [employeeDraft, setEmployeeDraft] = useState<EmployeeDraft>({
     firstName: "",
     lastName: "",
@@ -953,7 +1024,9 @@ function PayrollQuickEmployeeSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedEmployee = employees.find((employee) => employee.id === employeeId) ?? null;
+  const selectedEmployee = employees.find((employee) => employee.id === employeeId)
+    ?? (createdEmployee?.id === employeeId ? createdEmployee : null)
+    ?? (initialEmployee?.id === employeeId ? initialEmployee : null);
   const activeContract = selectedEmployee
     ? findActiveContract(selectedEmployee.contracts, selectedPeriod)
       ?? selectedEmployee.contracts?.find((contract) => contract.isActive !== false && !contract.endDate)
@@ -965,7 +1038,8 @@ function PayrollQuickEmployeeSheet({
     setError(null);
     setSubmitting(false);
     setActiveTab("empleado");
-    setEmployeeId("");
+    setEmployeeId(initialEmployee?.id ?? "");
+    setCreatedEmployee(null);
     setEmployeeDraft({
       firstName: "",
       lastName: "",
@@ -984,7 +1058,7 @@ function PayrollQuickEmployeeSheet({
       isRemote: false,
       paymentCycle: "MONTHLY",
     });
-  }, [open, mode, selectedPeriod, todayIso]);
+  }, [initialEmployee, open, mode, selectedPeriod, todayIso]);
 
   if (!open || !mode) return null;
 
@@ -1025,31 +1099,20 @@ function PayrollQuickEmployeeSheet({
   });
 
   const save = async () => {
-    const usingExistingEmployee = Boolean(selectedEmployee);
-    if (!usingExistingEmployee) {
+    if (activeTab === "empleado") {
+      if (createdEmployee) {
+        setActiveTab("contrato");
+        setError(null);
+        return;
+      }
       const employeeValidation = validateEmployeeDraft();
       if (employeeValidation) {
         setActiveTab("empleado");
         return setError(employeeValidation);
       }
-    }
-    const contractValidation = validateContractDraft(false);
-    if (contractValidation) {
-      setActiveTab("contrato");
-      return setError(contractValidation);
-    }
-    if (usingExistingEmployee && activeContract) {
-      setActiveTab("contrato");
-      return setError("Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.");
-    }
-
-    setSubmitting(true);
-    setError(null);
-    try {
-      if (usingExistingEmployee) {
-        await payrollApi.createContract(selectedEmployee!.id, buildContractPayload());
-        toast.success("Contrato creado.");
-      } else {
+      setSubmitting(true);
+      setError(null);
+      try {
         const employee = await payrollApi.createEmployee({
           firstName: employeeDraft.firstName.trim(),
           lastName: employeeDraft.lastName.trim(),
@@ -1058,13 +1121,42 @@ function PayrollQuickEmployeeSheet({
           email: employeeDraft.email.trim() || undefined,
           phone: employeeDraft.phone.trim() || undefined,
         });
-        await payrollApi.createContract(employee.id, buildContractPayload());
         toast.success("Empleado creado.");
+        setCreatedEmployee(employee);
+        setEmployeeId(employee.id);
+        onChanged();
+        setActiveTab("contrato");
+      } catch (err) {
+        setError(err instanceof AppApiError ? err.message : "No se pudo crear el empleado.");
+      } finally {
+        setSubmitting(false);
       }
+      return;
+    }
+
+    if (!selectedEmployee) {
+      setActiveTab("contrato");
+      return setError("Selecciona un empleado.");
+    }
+    const contractValidation = validateContractDraft(true);
+    if (contractValidation) {
+      setActiveTab("contrato");
+      return setError(contractValidation);
+    }
+    if (activeContract) {
+      setActiveTab("contrato");
+      return setError("Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.");
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      await payrollApi.createContract(selectedEmployee.id, buildContractPayload());
+      toast.success("Contrato creado.");
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo guardar.");
+      setError(err instanceof AppApiError ? err.message : "No se pudo crear el contrato.");
     } finally {
       setSubmitting(false);
     }
@@ -1117,7 +1209,7 @@ function PayrollQuickEmployeeSheet({
         employee,
       }));
   };
-  const createContractTabs = createEmployeeTabs;
+  const createContractTabs = createContractOnlyTabs;
   const createContractTab = activeTab;
   const setCreateContractTab = setActiveTab;
   const createContract = save;
@@ -1136,7 +1228,7 @@ function PayrollQuickEmployeeSheet({
         footer={
           <PayrollSheetFooter
             error={error}
-            primaryLabel={selectedEmployee ? "Crear contrato" : "Crear empleado"}
+            primaryLabel={activeTab === "empleado" ? (createdEmployee ? "Ir a contrato" : "Crear empleado") : "Crear contrato"}
             submitting={submitting}
             onCancel={closeWithDirtyCheck}
             onPrimary={save}
@@ -1144,7 +1236,17 @@ function PayrollQuickEmployeeSheet({
         }
       >
         {activeTab === "empleado" && (
-          selectedEmployee ? (
+          createdEmployee ? (
+            <div className="space-y-3">
+              <p className="rounded-[20px] border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold leading-relaxed text-emerald-800">
+                Empleado creado
+              </p>
+              <div className="rounded-[22px] bg-white p-4 shadow-sm ring-1 ring-black/5">
+                <p className="text-sm font-bold text-slate-900">{employeeName(createdEmployee)}</p>
+                <p className="mt-1 text-xs text-slate-500">{createdEmployee.documentNumber ?? "Sin doc."} • {createdEmployee.position || "Sin cargo"}</p>
+              </div>
+            </div>
+          ) : selectedEmployee ? (
             <div className="space-y-3">
               <p className="rounded-[20px] border border-emerald-100 bg-emerald-50 p-3 text-xs font-bold leading-relaxed text-emerald-800">
                 Se usara el empleado existente seleccionado en Contrato. No se creara un empleado duplicado.
@@ -1167,6 +1269,13 @@ function PayrollQuickEmployeeSheet({
         )}
         {activeTab === "contrato" && (
           <>
+            {createdEmployee && (
+              <div className="rounded-[20px] border border-neutral-100 bg-white p-3 shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contrato para</p>
+                <p className="mt-1 text-sm font-bold text-slate-900">{employeeName(createdEmployee)}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{createdEmployee.documentNumber ?? "Sin doc."} • {createdEmployee.position || "Sin cargo"}</p>
+              </div>
+            )}
             <SearchSelect<EmployeeSearchOption>
               label="Buscar empleado existente"
               value={selectedEmployeeOption}
@@ -1270,6 +1379,29 @@ function PayrollQuickEmployeeSheet({
 
       {createContractTab === "contrato" && (
         <div className="space-y-3">
+          <SearchSelect<EmployeeSearchOption>
+            label="Buscar empleado existente"
+            value={selectedEmployeeOption}
+            placeholder="Buscar por nombre, apellido o documento"
+            emptyText="No se encontraron empleados para esa busqueda."
+            selectedLabel="Empleado seleccionado"
+            search={searchEmployees}
+            onSelect={(option) => {
+              setEmployeeId(option.employee.id);
+              setError(null);
+            }}
+            renderOption={(option) => (
+              <>
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-xs font-bold text-[#0f8f76]">
+                  {initials(option.employee)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-neutral-800">{option.title}</p>
+                  <p className="truncate text-xs text-neutral-500">{option.subtitle} • {option.meta}</p>
+                </div>
+              </>
+            )}
+          />
           <div className="rounded-[20px] border border-neutral-100 bg-white p-3 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contrato nuevo</p>
             <p className="mt-1 text-sm font-bold text-slate-900">{selectedEmployee ? employeeName(selectedEmployee) : "Selecciona un empleado"}</p>
@@ -1821,8 +1953,8 @@ function PayrollSummaryPanel({
   onToggleExpanded,
   onTogglePayment,
   selectedPeriod,
-  benefitPayments = [],
-  onRegisterPrima,
+  visualPaid,
+  onToggleVisualPaid,
   onOpenEditor,
 }: {
   run: PayrollRun;
@@ -1830,8 +1962,8 @@ function PayrollSummaryPanel({
   onToggleExpanded: () => void;
   onTogglePayment: (payment: PayrollPayment) => void;
   selectedPeriod?: PayrollPeriod;
-  benefitPayments?: PayrollBenefitPayment[];
-  onRegisterPrima?: (run: PayrollRun, amount: number) => void;
+  visualPaid?: boolean;
+  onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
   onOpenEditor?: (run: PayrollRun) => void;
 }) {
   const extras = [
@@ -1860,7 +1992,7 @@ function PayrollSummaryPanel({
 
   const isPrimaMonth = selectedPeriod?.month === 6 || selectedPeriod?.month === 12;
   const primaAmount = toNumber(run.serviceBonusPreview);
-  const isPrimaPaid = benefitPayments.some((bp) => bp.type === "PRIMA" && bp.status === "PAID");
+  const isPrimaPaid = Boolean(visualPaid);
   const hasPrima = isPrimaMonth && primaAmount > 0;
 
   return (
@@ -1960,12 +2092,11 @@ function PayrollSummaryPanel({
           <div className="flex items-center gap-2">
             <ChevronDown className={cn("h-4 w-4 transition", expanded && "rotate-180")} />
             {hasPrima && (
-              <span
+              <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!isPrimaPaid && onRegisterPrima) {
-                    onRegisterPrima(run, primaAmount);
-                  }
+                  onToggleVisualPaid?.(run, !isPrimaPaid);
                 }}
                 className={cn(
                   "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors",
@@ -1975,7 +2106,7 @@ function PayrollSummaryPanel({
                 )}
               >
                 {isPrimaPaid ? "Pagado" : "Pendiente"}
-              </span>
+              </button>
             )}
           </div>
         </div>
@@ -2158,7 +2289,17 @@ function SettlementPanelLegacy({ settlement }: { settlement?: Settlement }) {
   );
 }
 
-function SettlementPanel({ settlement }: { settlement?: Settlement }) {
+function SettlementPanel({
+  settlement,
+  onLiquidate,
+  liquidated,
+  posting,
+}: {
+  settlement?: Settlement;
+  onLiquidate?: () => void;
+  liquidated?: boolean;
+  posting?: boolean;
+}) {
   const [showInfo, setShowInfo] = useState(false);
 
   if (!settlement) {
@@ -2204,7 +2345,7 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
 
   return (
     <article className="min-w-full snap-start rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-      <div className="relative mb-4 flex items-center gap-2">
+      <div className="relative mb-4 flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-bold text-slate-900">Liquidacion año vigente</h3>
         <button
           type="button"
@@ -2217,9 +2358,28 @@ function SettlementPanel({ settlement }: { settlement?: Settlement }) {
         >
           <Info className="h-3.5 w-3.5" />
         </button>
+        {onLiquidate && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onLiquidate();
+            }}
+            disabled={posting || liquidated}
+            className={cn(
+              "ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold transition disabled:cursor-not-allowed",
+              liquidated
+                ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                : "border-violet-100 bg-violet-50 text-violet-700 hover:bg-violet-100",
+            )}
+          >
+            <ReceiptText className="h-3.5 w-3.5" />
+            {posting ? "Liquidando..." : liquidated ? "Liquidado" : "Liquidar contrato"}
+          </button>
+        )}
         {showInfo && (
           <div className="absolute left-0 top-7 z-10 max-w-[260px] rounded-2xl border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600 shadow-xl">
-            Esta estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual. No incluye historicos de anos anteriores. El calculo usa año laboral de 360 dias: meses de 30 dias.
+            Esta estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual. No incluye historicos de años anteriores. El calculo usa año laboral de 360 dias: meses de 30 dias.
           </div>
         )}
       </div>
@@ -2291,8 +2451,11 @@ function EmployeeCarousel({
   selected,
   onSelect,
   selectedPeriod,
-  benefitPayments = [],
-  onRegisterPrima,
+  visualPaid,
+  onToggleVisualPaid,
+  onLiquidateContract,
+  contractLiquidated,
+  settlementPosting,
   onOpenEditor,
 }: {
   run: PayrollRun;
@@ -2303,8 +2466,11 @@ function EmployeeCarousel({
   selected?: boolean;
   onSelect?: () => void;
   selectedPeriod?: PayrollPeriod;
-  benefitPayments?: PayrollBenefitPayment[];
-  onRegisterPrima?: (run: PayrollRun, amount: number) => void;
+  visualPaid?: boolean;
+  onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
+  onLiquidateContract?: (run: PayrollRun, settlement: Settlement) => void;
+  contractLiquidated?: boolean;
+  settlementPosting?: boolean;
   onOpenEditor?: (run: PayrollRun) => void;
 }) {
   return (
@@ -2319,11 +2485,16 @@ function EmployeeCarousel({
           onToggleExpanded={onToggleExpanded}
           onTogglePayment={onTogglePayment}
           selectedPeriod={selectedPeriod}
-          benefitPayments={benefitPayments}
-          onRegisterPrima={onRegisterPrima}
+          visualPaid={visualPaid}
+          onToggleVisualPaid={onToggleVisualPaid}
           onOpenEditor={onOpenEditor}
         />
-        <SettlementPanel settlement={settlement} />
+        <SettlementPanel
+          settlement={settlement}
+          onLiquidate={settlement ? () => onLiquidateContract?.(run, settlement) : undefined}
+          liquidated={contractLiquidated}
+          posting={settlementPosting}
+        />
       </div>
     </div>
   );
@@ -2438,13 +2609,17 @@ function EmployeeStandaloneCard({
 function DetailPanel({
   run,
   settlement,
+  onLiquidateContract,
+  contractLiquidated,
+  settlementPosting,
 }: {
   run?: PayrollRun;
   settlement?: Settlement;
   onTogglePayment: (payment: PayrollPayment) => void;
   selectedPeriod?: PayrollPeriod;
-  benefitPayments?: PayrollBenefitPayment[];
-  onRegisterPrima?: (run: PayrollRun, amount: number) => void;
+  onLiquidateContract?: (run: PayrollRun, settlement: Settlement) => void;
+  contractLiquidated?: boolean;
+  settlementPosting?: boolean;
 }) {
   if (!run) {
     return (
@@ -2457,7 +2632,12 @@ function DetailPanel({
 
   return (
     <aside className="hidden min-h-0 overflow-y-auto border-l border-black/5 bg-white p-5 pb-36 lg:block">
-      <SettlementPanel settlement={settlement} />
+      <SettlementPanel
+        settlement={settlement}
+        onLiquidate={run && settlement ? () => onLiquidateContract?.(run, settlement) : undefined}
+        liquidated={contractLiquidated}
+        posting={settlementPosting}
+      />
     </aside>
   );
 }
@@ -4048,17 +4228,16 @@ export default function PayrollPage() {
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [settlements, setSettlements] = useState<Record<string, Settlement>>({});
-  const [benefitPayments, setBenefitPayments] = useState<Record<string, PayrollBenefitPayment[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [actionsOpen, setActionsOpen] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
   const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [quickSheetMode, setQuickSheetMode] = useState<Exclude<PayrollSheetMode, "editEmployee"> | null>(null);
+  const [quickInitialEmployee, setQuickInitialEmployee] = useState<Employee | null>(null);
   const [newsSheetOpen, setNewsSheetOpen] = useState(false);
   const [settlementSheetOpen, setSettlementSheetOpen] = useState(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
@@ -4072,6 +4251,15 @@ export default function PayrollPage() {
   const [periodRefreshKey, setPeriodRefreshKey] = useState(0);
   const [simulationByEmployee, setSimulationByEmployee] = useState<Record<string, PayrollRun>>({});
   const [settlementPreviewByContract, setSettlementPreviewByContract] = useState<Record<string, Settlement>>({});
+  const [visualPaidRuns, setVisualPaidRuns] = useState<Record<string, boolean>>({});
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: "visual-payment"; run: PayrollRun; paid: boolean }
+    | { type: "post-period" }
+    | { type: "post-settlement"; run: PayrollRun; settlement: Settlement }
+    | null
+  >(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [postingSettlementContractId, setPostingSettlementContractId] = useState<string | null>(null);
 
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId),
@@ -4206,23 +4394,6 @@ export default function PayrollPage() {
             return acc;
           }, {}),
         );
-
-        // Load benefit payments for each run's contract
-        const benefitListPromises = runData.map(async (run) => {
-          try {
-            const list = await payrollApi.listBenefitPayments(run.contractId);
-            return { contractId: run.contractId, list };
-          } catch {
-            return { contractId: run.contractId, list: [] };
-          }
-        });
-        const benefitsResult = await Promise.all(benefitListPromises);
-        if (!alive) return;
-        const benefitsMap = benefitsResult.reduce<Record<string, PayrollBenefitPayment[]>>((acc, item) => {
-          acc[item.contractId] = item.list;
-          return acc;
-        }, {});
-        setBenefitPayments(benefitsMap);
       })
       .catch((err) => {
         console.error(err);
@@ -4420,45 +4591,23 @@ export default function PayrollPage() {
   }, [refreshRunPayments]);
 
   const handleCreateFromChat = () => {
-    setActionsOpen(false);
+    setQuickInitialEmployee(null);
     setQuickSheetMode("createEmployee");
   };
 
-  const handleRegisterPrima = useCallback(async (run: PayrollRun, amount: number) => {
-    if (!selectedPeriodId) return;
-    if (!amount || amount <= 0) {
-      toast.error("Falta el monto de la prima en el desglose. No se puede registrar un pago vacío.");
+  const handleToggleVisualPayment = useCallback((run: PayrollRun, paid: boolean) => {
+    setConfirmAction({ type: "visual-payment", run, paid });
+  }, []);
+
+  const handleLiquidateContractPrompt = useCallback((run: PayrollRun, settlement: Settlement) => {
+    const existingSettlement = settlements[run.employeeId];
+    if (existingSettlement && !existingSettlement.preview) {
+      toast.error("Este contrato ya tiene una liquidacion registrada.");
       return;
     }
-    
-    const currentBenefits = benefitPayments[run.contractId] ?? [];
-    if (currentBenefits.some(bp => bp.type === "PRIMA" && bp.status === "PAID")) {
-      toast.error("La prima ya está registrada como pagada.");
-      return;
-    }
+    setConfirmAction({ type: "post-settlement", run, settlement });
+  }, [settlements]);
 
-    try {
-      const response = await payrollApi.createBenefitPayment(run.contractId, {
-        type: "PRIMA",
-        amount,
-        paidAt: new Date().toISOString().split("T")[0],
-        periodId: selectedPeriodId,
-        payrollRunId: run.id,
-        status: "PAID",
-      });
-
-      setBenefitPayments(prev => ({
-        ...prev,
-        [run.contractId]: [...(prev[run.contractId] ?? []), response]
-      }));
-
-      toast.success("Prima registrada como pagada");
-    } catch (err) {
-      console.error(err);
-      const msg = err instanceof AppApiError ? err.message : "No se pudo registrar la prima.";
-      toast.error(msg);
-    }
-  }, [selectedPeriodId, benefitPayments]);
 
   const handlePayrollPreview = useCallback((preview: PayrollRun) => {
     setSimulationByEmployee((current) => ({
@@ -4560,15 +4709,87 @@ export default function PayrollPage() {
 
   const handlePostPeriod = async () => {
     if (!selectedPeriodId) return;
+    if (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED") {
+      toast("Este periodo ya fue liquidado.");
+      return;
+    }
     try {
       await payrollApi.updatePeriodStatus(selectedPeriodId, "POSTED");
-      toast.success("Nomina posteada");
+      toast.success("Nomina liquidada.");
       await loadPeriods();
+      setPeriodRefreshKey((value) => value + 1);
     } catch (err) {
-      setNotice(err instanceof AppApiError ? err.message : "No se pudo postear la nomina.");
+      setNotice(err instanceof AppApiError ? err.message : "No se pudo liquidar la nomina.");
       window.setTimeout(() => setNotice(null), 2800);
     }
   };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+
+    if (confirmAction.type === "visual-payment") {
+      setVisualPaidRuns((current) => ({
+        ...current,
+        [confirmAction.run.id]: confirmAction.paid,
+      }));
+      toast.success(confirmAction.paid ? "Nomina marcada como pagada." : "Nomina marcada como pendiente.");
+      setConfirmAction(null);
+      return;
+    }
+
+    setConfirmLoading(true);
+    try {
+      if (confirmAction.type === "post-period") {
+        await handlePostPeriod();
+        setConfirmAction(null);
+        return;
+      }
+
+      const { run, settlement } = confirmAction;
+      const existingSettlement = settlements[run.employeeId];
+      if (existingSettlement && !existingSettlement.preview) {
+        toast.error("Este contrato ya tiene una liquidacion registrada.");
+        setConfirmAction(null);
+        return;
+      }
+
+      const contractId = run.contractId ?? run.contract?.id;
+      if (!contractId) {
+        toast.error("No se encontro contrato para liquidar.");
+        setConfirmAction(null);
+        return;
+      }
+
+      setPostingSettlementContractId(contractId);
+      const calculated = await payrollApi.createSettlement(contractId, {
+        endDate: settlement.requestedEndDate ?? settlement.endDate ?? settlementDefaultEndDate(run.contract, selectedPeriod),
+        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+      });
+      const posted = await payrollApi.postSettlement(calculated.id);
+      setSettlements((current) => ({
+        ...current,
+        [posted.employeeId]: posted,
+      }));
+      setSettlementPreviewByContract((current) => {
+        const next = { ...current };
+        delete next[contractId];
+        return next;
+      });
+      await refreshPeople();
+      toast.success("Contrato liquidado.");
+      setConfirmAction(null);
+    } catch (err) {
+      const message = err instanceof AppApiError ? err.message : "No se pudo completar la liquidacion.";
+      toast.error(message);
+    } finally {
+      setConfirmLoading(false);
+      setPostingSettlementContractId(null);
+    }
+  };
+
+  const hasPayrollRows = filteredRows.some((row) => Boolean(row.run));
+  const periodAlreadyPosted = selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED";
+  const canLiquidatePayroll = Boolean(selectedPeriodId && hasPayrollRows && !periodAlreadyPosted && !loading);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
@@ -4580,12 +4801,28 @@ export default function PayrollPage() {
         <section className="h-full min-h-0 overflow-y-auto overscroll-contain px-4 py-4 pb-44 lg:pb-[150px]">
           <div className="mx-auto max-w-3xl">
             
-            <SummaryCard period={selectedPeriod} totalCost={totals.cost} totalNet={totals.net} onPost={handlePostPeriod} />
+            <SummaryCard period={selectedPeriod} totalCost={totals.cost} totalNet={totals.net} />
 
             <div className="mb-3 mt-5">
-              <div>
-                <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
-                <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
+                  <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction({ type: "post-period" })}
+                  disabled={!canLiquidatePayroll}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed",
+                    periodAlreadyPosted
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                      : "border-emerald-100 bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
+                  )}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  {periodAlreadyPosted ? "Liquidada" : "Liquidar nomina"}
+                </button>
               </div>
             </div>
 
@@ -4660,8 +4897,11 @@ export default function PayrollPage() {
                       }}
                       onTogglePayment={togglePayment}
                       selectedPeriod={selectedPeriod}
-                      benefitPayments={benefitPayments[run.contractId] ?? []}
-                      onRegisterPrima={handleRegisterPrima}
+                      visualPaid={visualPaidRuns[run.id]}
+                      onToggleVisualPaid={handleToggleVisualPayment}
+                      onLiquidateContract={handleLiquidateContractPrompt}
+                      contractLiquidated={Boolean(settlements[run.employeeId] && !settlements[run.employeeId].preview)}
+                      settlementPosting={postingSettlementContractId === run.contractId}
                       onOpenEditor={(selectedRun) => {
                         setSelectedRunId(selectedRun.id);
                         setEditorRun(selectedRun);
@@ -4679,8 +4919,9 @@ export default function PayrollPage() {
           settlement={selectedRun ? (settlements[selectedRun.employeeId] ?? settlementPreviewByContract[selectedRun.contractId]) : undefined}
           onTogglePayment={togglePayment}
           selectedPeriod={selectedPeriod}
-          benefitPayments={selectedRun ? (benefitPayments[selectedRun.contractId] ?? []) : []}
-          onRegisterPrima={handleRegisterPrima}
+          onLiquidateContract={handleLiquidateContractPrompt}
+          contractLiquidated={selectedRun ? Boolean(settlements[selectedRun.employeeId] && !settlements[selectedRun.employeeId].preview) : false}
+          settlementPosting={selectedRun ? postingSettlementContractId === selectedRun.contractId : false}
         />
       </main>
 
@@ -4743,10 +4984,14 @@ export default function PayrollPage() {
       <PayrollQuickEmployeeSheet
         open={quickSheetMode !== null}
         mode={quickSheetMode}
+        initialEmployee={quickInitialEmployee}
         employees={employees}
         arlRisks={arlRisks}
         selectedPeriod={selectedPeriod}
-        onClose={() => setQuickSheetMode(null)}
+        onClose={() => {
+          setQuickSheetMode(null);
+          setQuickInitialEmployee(null);
+        }}
         onChanged={() => {
           loadEmployees();
           loadPeriods();
@@ -4784,6 +5029,42 @@ export default function PayrollPage() {
         employees={employees}
         selectedPeriod={selectedPeriod}
         onFinished={handleSettlementPreview}
+      />
+      <PayrollConfirmDialog
+        open={Boolean(confirmAction)}
+        title={
+          confirmAction?.type === "visual-payment"
+            ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
+            : confirmAction?.type === "post-period"
+              ? "Liquidar la nomina mensual de este periodo?"
+              : "Liquidar este contrato?"
+        }
+        description={
+          confirmAction?.type === "visual-payment"
+            ? (confirmAction.paid
+              ? "Esta accion solo cambia el estado visual de pago. No crea asientos ni pagos de prestaciones."
+              : "Esta accion solo devuelve el estado visual a pendiente. No modifica contabilidad.")
+            : confirmAction?.type === "post-period"
+              ? "Esta accion generara la liquidacion del periodo y los asientos contables correspondientes. No uses este boton si solo quieres marcar el pago como realizado."
+              : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
+        }
+        confirmLabel={
+          confirmAction?.type === "visual-payment"
+            ? (confirmAction.paid ? "Marcar pagada" : "Marcar pendiente")
+            : confirmAction?.type === "post-period"
+              ? "Confirmar liquidacion"
+              : "Confirmar liquidacion"
+        }
+        intent={
+          confirmAction?.type === "visual-payment"
+            ? "visual"
+            : confirmAction?.type === "post-period"
+              ? "payroll"
+              : "settlement"
+        }
+        loading={confirmLoading}
+        onConfirm={handleConfirmAction}
+        onCancel={() => !confirmLoading && setConfirmAction(null)}
       />
     </div>
   );
