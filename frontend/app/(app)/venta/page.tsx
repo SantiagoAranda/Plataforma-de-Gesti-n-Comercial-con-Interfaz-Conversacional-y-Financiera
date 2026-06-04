@@ -484,7 +484,7 @@ export default function VentaPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
         {selectedSale ? (
           <SelectionActionBar
@@ -540,10 +540,10 @@ export default function VentaPage() {
                   <div className="p-2 bg-emerald-50 rounded-lg mb-3">
                     <WalletCards className="h-4 w-4 text-emerald-500" />
                   </div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
                     Total ventas
                   </span>
-                  <span className="text-xl font-black text-slate-900 tabular-nums">
+                  <span className="text-lg font-semibold text-slate-900 tabular-nums">
                     ${formatDisplayMoney(todayMetrics.total)}
                   </span>
                 </div>
@@ -552,10 +552,10 @@ export default function VentaPage() {
                   <div className="p-2 bg-indigo-50 rounded-lg mb-3">
                     <ShoppingBag className="h-4 w-4 text-indigo-500" />
                   </div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
                     Transacciones
                   </span>
-                  <span className="text-xl font-black text-slate-900">
+                  <span className="text-lg font-semibold text-slate-900">
                     {todayMetrics.transactions} realizadas
                   </span>
                 </div>

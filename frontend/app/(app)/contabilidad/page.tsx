@@ -395,8 +395,9 @@ export default function ContabilidadPage() {
   }, [movements.length, pendingSmoothScroll, scrollToBottom]);
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
-      <div className="shrink-0">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
+      {/* Header Fijo */}
+      <div className="sticky top-0 z-50 bg-white shrink-0 border-b border-black/5">
         {selectedMovement ? (
           <SelectionActionBar
             visible
@@ -417,7 +418,10 @@ export default function ContabilidadPage() {
             showBack
           />
         )}
+      </div>
 
+      {/* Resumen del Balance */}
+      <div className="shrink-0 bg-white">
         <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-3 sm:px-4">
           <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">

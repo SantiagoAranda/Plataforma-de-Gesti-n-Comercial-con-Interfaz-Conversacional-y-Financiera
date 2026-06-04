@@ -12,13 +12,15 @@ export class ReservationsService {
     if (!match) throw new BadRequestException('Invalid date');
 
     return new Date(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      0,
-      0,
-      0,
-      0,
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0,
+      )
     );
   }
 
@@ -33,9 +35,9 @@ export class ReservationsService {
   }
 
   private formatDateOnly(value: Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
@@ -56,7 +58,7 @@ export class ReservationsService {
       6: 'SAT',
     };
 
-    return weekdayMap[date.getDay()];
+    return weekdayMap[date.getUTCDay()];
   }
 
   private async getAvailabilitySlotsForItem(
@@ -117,12 +119,32 @@ export class ReservationsService {
     const step = 30;
     const slots: string[] = [];
 
+    // Past slots filter based on America/Bogota
+    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      )
+    );
+    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+
     for (const window of mergedWindows) {
       let cursor = window.startMinute;
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
         const end = cursor + duration;
+
+        if (date.getTime() === today.getTime() && start <= currentMinutes) {
+          cursor += step;
+          continue;
+        }
 
         const overlap = reservations.some(
           (reservation) => start < reservation.endMinute && end > reservation.startMinute,
@@ -177,8 +199,7 @@ export class ReservationsService {
       throw new BadRequestException('Invalid service');
     }
 
-    const dateOnly = new Date(dto.date);
-    dateOnly.setHours(0, 0, 0, 0);
+    const dateOnly = this.parseDateOnly(dto.date);
 
     const overlapping = await this.prisma.reservation.findFirst({
       where: {
@@ -217,8 +238,7 @@ export class ReservationsService {
   }
 
   async findByDate(businessId: string, date: string) {
-    const dateOnly = new Date(date);
-    dateOnly.setHours(0, 0, 0, 0);
+    const dateOnly = this.parseDateOnly(date);
 
     return this.prisma.reservation.findMany({
       where: {
@@ -244,10 +264,21 @@ export class ReservationsService {
   async getAvailabilityCalendar(businessId: string, itemId: string, month: string) {
     const item = await this.getBusinessService(businessId, itemId);
     const { year, monthIndex } = this.parseMonth(month);
-    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
+    
+    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      )
+    );
 
     const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
       where: { businessId, itemId: item.id },
@@ -258,22 +289,20 @@ export class ReservationsService {
     const availableDates: string[] = [];
 
     while (cursor <= lastDay) {
-      const current = new Date(cursor);
-
-      if (current >= today) {
+      if (cursor >= today) {
         const slots = await this.getAvailabilitySlotsForItem(
           businessId,
           item,
-          current,
+          new Date(cursor),
           hasSpecificWindows,
         );
 
         if (slots.length > 0) {
-          availableDates.push(this.formatDateOnly(current));
+          availableDates.push(this.formatDateOnly(cursor));
         }
       }
 
-      cursor.setDate(cursor.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     return availableDates;
@@ -351,8 +380,7 @@ export class ReservationsService {
       );
     }
 
-    const dateOnly = new Date(dto.date);
-    dateOnly.setHours(0, 0, 0, 0);
+    const dateOnly = this.parseDateOnly(dto.date);
 
     const overlapping = await this.prisma.reservation.findFirst({
       where: {

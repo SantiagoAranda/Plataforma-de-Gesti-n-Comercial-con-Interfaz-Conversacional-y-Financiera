@@ -77,7 +77,7 @@ export default function CarritoPage() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8]">
+    <div className="min-h-dvh bg-white">
       <AppHeader title="Mi Carrito" showBack />
 
       <main className="mx-auto w-full max-w-md px-4 pb-44 pt-3">

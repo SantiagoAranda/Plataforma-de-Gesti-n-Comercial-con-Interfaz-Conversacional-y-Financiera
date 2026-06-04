@@ -60,9 +60,8 @@ export function getAgendaEventsForDate(sales: Sale[], date: Date): AgendaEvent[]
     .map(saleToAgendaEvent)
     .filter((ev): ev is AgendaEvent => {
       if (!ev) return false;
-      const d = parseDate(ev.scheduledAt);
-      if (!d) return false;
-      return formatLocalDateKey(d) === key;
+      const datePart = ev.scheduledAt.split("T")[0];
+      return datePart === key;
     })
     .sort((a, b) => {
       const at = parseDate(a.scheduledAt)?.getTime() ?? 0;
@@ -74,9 +73,12 @@ export function getAgendaEventsForDate(sales: Sale[], date: Date): AgendaEvent[]
 export function getAgendaEventDateKeys(sales: Sale[]) {
   const keys = new Set<string>();
   for (const sale of sales) {
-    const d = parseDate(sale.scheduledAt);
-    if (!d) continue;
-    keys.add(formatLocalDateKey(d));
+    if (sale.scheduledAt) {
+      const datePart = sale.scheduledAt.split("T")[0];
+      if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        keys.add(datePart);
+      }
+    }
   }
   return keys;
 }

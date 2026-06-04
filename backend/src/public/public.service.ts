@@ -18,13 +18,15 @@ export class PublicService {
     }
 
     return new Date(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      0,
-      0,
-      0,
-      0,
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0,
+      )
     );
   }
 
@@ -41,9 +43,9 @@ export class PublicService {
   }
 
   private formatDateOnly(value: Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
@@ -70,7 +72,7 @@ export class PublicService {
       6: 'SAT',
     };
 
-    return weekdayMap[date.getDay()];
+    return weekdayMap[date.getUTCDay()];
   }
 
   private async getAvailabilitySlotsForItem(
@@ -134,12 +136,32 @@ export class PublicService {
     const step = 30;
     const slots: string[] = [];
 
+    // Past slots filter based on America/Bogota
+    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      )
+    );
+    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+
     for (const window of mergedWindows) {
       let cursor = window.startMinute;
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
         const end = cursor + duration;
+
+        if (date.getTime() === today.getTime() && start <= currentMinutes) {
+          cursor += step;
+          continue;
+        }
 
         const overlap = reservations.some(
           (reservation) => start < reservation.endMinute && end > reservation.startMinute,
@@ -310,10 +332,21 @@ export class PublicService {
       throw new BadRequestException('Invalid service');
 
     const { year, monthIndex } = this.parseMonth(month);
-    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
+    
+    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      )
+    );
 
     const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
       where: { businessId: business.id, itemId: item.id },
@@ -337,7 +370,7 @@ export class PublicService {
         }
       }
 
-      cursor.setDate(cursor.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     return availableDates;
@@ -380,8 +413,18 @@ export class PublicService {
 
       const selectedDate = this.parseDateOnly(date);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+      const today = new Date(
+        Date.UTC(
+          nowInBusiness.getFullYear(),
+          nowInBusiness.getMonth(),
+          nowInBusiness.getDate(),
+          0,
+          0,
+          0,
+          0,
+        )
+      );
 
       if (selectedDate < today)
         throw new BadRequestException('Cannot reserve past dates');
