@@ -408,6 +408,15 @@ export class PayrollController {
     );
   }
 
+  @Post('periods/:periodId/runs')
+  @Roles('BUSINESS')
+  liquidatePeriodPayroll(@Req() req: any, @Param('periodId') periodId: string) {
+    return this.payrollService.liquidatePeriodPayroll(
+      this.getBusinessId(req),
+      periodId,
+    );
+  }
+
   @Get('runs/:runId')
   @Roles('BUSINESS')
   getPayrollRun(@Req() req: any, @Param('runId') runId: string) {

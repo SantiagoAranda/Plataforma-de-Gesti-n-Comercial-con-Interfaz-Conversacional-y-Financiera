@@ -1,15 +1,125 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import {
+  AccountingMovementOriginType,
+  MovementNature,
+  PayrollAccountingSide,
+  PayrollAdjustmentType,
   PayrollContractType,
   PayrollPaymentCycle,
   PayrollPeriodStatus,
+  PayrollSettlementStatus,
+  PayrollSettlementType,
   Prisma,
 } from '@prisma/client';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parse } from 'csv-parse/sync';
 import { PayrollService } from './payroll.service';
+
+const businessId = 'biz-1';
+const periodId = 'period-1';
+const employeeId = 'emp-1';
+const contractId = 'contract-1';
+
+function seedPayrollAccountingMappingsFixture() {
+  const filePath = path.resolve(
+    __dirname,
+    '../../prisma/seed-data/payroll_accounting_mapping.csv',
+  );
+  const rows = parse(fs.readFileSync(filePath, 'utf8'), {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    bom: true,
+    record_delimiter: '\n',
+  }) as Array<{
+    concept_code: string;
+    concept_name: string;
+    account_code: string;
+    account_name: string;
+    side: PayrollAccountingSide;
+  }>;
+
+  return rows.map((row) => ({
+    businessId,
+    conceptCode: row.concept_code,
+    conceptName: row.concept_name,
+    accountCode: row.account_code,
+    accountName: row.account_name,
+    side: row.side,
+    isActive: true,
+  }));
+}
+
+function accountCodeFromMovement(movement: {
+  pucCuentaCode?: string | null;
+  pucSubcuentaId?: string | null;
+}) {
+  return movement.pucSubcuentaId ?? movement.pucCuentaCode;
+}
+
+function expectBalancedMovements(movements: Array<{ amount: unknown; nature: MovementNature }>) {
+  const total = movements.reduce(
+    (acc, movement) => {
+      const amount = new Prisma.Decimal(movement.amount as Prisma.Decimal.Value);
+      if (movement.nature === MovementNature.DEBIT) acc.debit = acc.debit.add(amount);
+      else acc.credit = acc.credit.add(amount);
+      return acc;
+    },
+    { debit: new Prisma.Decimal(0), credit: new Prisma.Decimal(0) },
+  );
+
+  expect(total.debit.equals(total.credit)).toBe(true);
+}
+
+function defaultEmployee() {
+  return {
+    id: employeeId,
+    businessId,
+    firstName: 'Ana',
+    lastName: 'Gomez',
+    documentNumber: '123',
+    documentType: 'CC',
+    position: 'Asistente',
+  };
+}
+
+function defaultContract() {
+  return {
+    id: contractId,
+    businessId,
+    employeeId,
+    employee: defaultEmployee(),
+    contractType: PayrollContractType.INDEFINITE,
+    startDate: new Date('2026-01-01T00:00:00.000Z'),
+    endDate: null,
+    isActive: true,
+    salaryMonthly: new Prisma.Decimal(3_000_000),
+    isRemote: false,
+    applyLaw1819: true,
+    paymentCycle: PayrollPaymentCycle.MONTHLY,
+    installmentsCount: 1,
+    arlRiskClassId: 'arl-1',
+    arlRiskClass: { id: 'arl-1', rate: new Prisma.Decimal('0.00522') },
+  };
+}
+
+function defaultPeriod(status: PayrollPeriodStatus = PayrollPeriodStatus.OPEN) {
+  return {
+    id: periodId,
+    businessId,
+    year: 2026,
+    month: 5,
+    paymentCycle: PayrollPaymentCycle.MONTHLY,
+    installmentNumber: 1,
+    status,
+  };
+}
 
 function createPrismaMock(overrides: Record<string, any> = {}) {
   const base = {
     employee: {
+      findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue({
         id: 'emp-1',
         businessId: 'biz-1',
@@ -40,11 +150,20 @@ function createPrismaMock(overrides: Record<string, any> = {}) {
       }),
       count: jest.fn().mockResolvedValue(0),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       upsert: jest.fn(),
       findUnique: jest.fn(),
     },
     payrollContractSettlement: {
       count: jest.fn().mockResolvedValue(0),
+      create: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+    },
+    payrollContractSettlementLine: {
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     payrollPayment: {
       count: jest.fn().mockResolvedValue(0),
@@ -116,6 +235,17 @@ function createPrismaMock(overrides: Record<string, any> = {}) {
     },
     accountingMovement: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    payrollAccountingMapping: {
+      findMany: jest.fn().mockResolvedValue([]),
+      upsert: jest.fn().mockResolvedValue({}),
+    },
+    pucCuenta: {
+      findUnique: jest.fn().mockResolvedValue({ code: '2505' }),
+    },
+    pucSubcuenta: {
+      findFirst: jest.fn().mockResolvedValue({ code: '510506' }),
     },
     payrollBenefitPayment: {
       groupBy: jest.fn().mockResolvedValue([]),
@@ -652,7 +782,7 @@ describe('PayrollService payroll history rules', () => {
   it('keeps monthly payroll hourly rate on monthlyHours while settlement uses the Excel divisor', async () => {
     const prisma = createPrismaMock();
     prisma.payrollOvertimeRate.findMany.mockResolvedValue([
-      { code: 'OVERTIME_DAY', name: 'Extra diurna', factor: 1.25 },
+      { code: 'HORA_EXTRA_DIURNA', name: 'Extra diurna', factor: 1.25 },
     ]);
     prisma.employeeContract.findFirst.mockResolvedValue({
       id: 'contract-1',
@@ -686,7 +816,7 @@ describe('PayrollService payroll history rules', () => {
       'emp-1',
       {
         workedDays: 30,
-        overtimeHours: [{ type: 'OVERTIME_DAY' as any, quantity: 720 }],
+        overtimeHours: [{ type: 'HORA_EXTRA_DIURNA', quantity: 720 }],
       },
     );
     const settlement: any = await service.simulateContractSettlement(
@@ -704,6 +834,408 @@ describe('PayrollService payroll history rules', () => {
     expect(settlement.usedParameters.hourlyRateSource).toBe(
       'EXCEL_COMPATIBILITY_INFORMATIVE_ONLY',
     );
+  });
+
+  it('rejects legacy frontend overtime codes with a clear configured-rate message', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollOvertimeRate.findMany.mockResolvedValue([
+      { code: 'HORA_EXTRA_DIURNA', name: 'Extra diurna', factor: 1.25 },
+    ]);
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: defaultEmployee(),
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(2_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+      arlRiskClass: { id: 'arl-1', rate: 0.00522 },
+    });
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.previewEmployeePayroll('biz-1', 'period-1', 'emp-1', {
+        workedDays: 30,
+        overtimeHours: [{ type: 'OVERTIME_DAY', quantity: 2 }],
+      }),
+    ).rejects.toThrow(
+      'Tipo de hora extra no configurado: OVERTIME_DAY. Codigos disponibles: HORA_EXTRA_DIURNA',
+    );
+  });
+
+  it('calculates preview overtime for every frontend-supported backend rate code', async () => {
+    const prisma = createPrismaMock();
+    const rates = [
+      { code: 'HORA_EXTRA_DIURNA', name: 'Extra diurna', factor: 1.25 },
+      { code: 'HORA_EXTRA_NOCTURNO', name: 'Extra nocturna', factor: 1.75 },
+      { code: 'HORA_ORDINARIA_NOCTURNA', name: 'Recargo nocturno', factor: 1.35 },
+      { code: 'HORA_EXTRA_DOM_FESTIVO', name: 'Extra dom/festiva', factor: 2.05 },
+      {
+        code: 'HORA_EXTRA_NOCTURNO_DOM_FESTIVO',
+        name: 'Extra nocturna dom/festiva',
+        factor: 2.55,
+      },
+      { code: 'HORA_DOMINICAL_FESTIVO', name: 'Recargo dominical/festivo', factor: 1.8 },
+    ];
+    prisma.payrollOvertimeRate.findMany.mockResolvedValue(rates);
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: defaultEmployee(),
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(2_000_000),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+      arlRiskClass: { id: 'arl-1', rate: 0.00522 },
+    });
+    const service = new PayrollService(prisma as any);
+
+    const preview: any = await service.previewEmployeePayroll(
+      'biz-1',
+      'period-1',
+      'emp-1',
+      {
+        workedDays: 30,
+        overtimeHours: rates.map((rate) => ({ type: rate.code, quantity: 2 })),
+      },
+    );
+
+    expect(Number(preview.overtimeAmount)).toBeGreaterThan(0);
+    expect(preview.usedParameters.overtimeHours).toEqual(
+      rates.map((rate) =>
+        expect.objectContaining({
+          type: rate.code,
+          code: rate.code,
+          quantity: 2,
+          hours: 2,
+        }),
+      ),
+    );
+  });
+
+  it('uses only surcharge multipliers for nocturnal and sunday surcharge overtime concepts', async () => {
+    const prisma = createPrismaMock();
+    const rates = [
+      { code: 'HORA_EXTRA_DIURNA', name: 'Extra diurna', factor: 1.25 },
+      { code: 'HORA_EXTRA_NOCTURNO', name: 'Extra nocturna', factor: 1.75 },
+      { code: 'HORA_ORDINARIA_NOCTURNA', name: 'Recargo nocturno', factor: 1.35 },
+      { code: 'HORA_EXTRA_DOM_FESTIVO', name: 'Extra dom/festiva', factor: 2.05 },
+      {
+        code: 'HORA_EXTRA_NOCTURNO_DOM_FESTIVO',
+        name: 'Extra nocturna dom/festiva',
+        factor: 2.55,
+      },
+      { code: 'HORA_DOMINICAL_FESTIVO', name: 'Recargo dominical/festivo', factor: 1.8 },
+    ];
+    prisma.payrollOvertimeRate.findMany.mockResolvedValue(rates);
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      ...defaultContract(),
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+    });
+    const service = new PayrollService(prisma as any);
+
+    const preview: any = await service.previewEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {
+        workedDays: 30,
+        overtimeHours: rates.map((rate) => ({ type: rate.code, quantity: 2 })),
+      },
+    );
+
+    expect(Number(preview.overtimeAmount)).toBe(139_277);
+    expect(preview.usedParameters.overtimeHours).toEqual([
+      expect.objectContaining({
+        code: 'HORA_EXTRA_DIURNA',
+        hours: 2,
+        configuredFactor: '1.25',
+        appliedMultiplier: '1.25',
+        amount: '19897',
+      }),
+      expect.objectContaining({
+        code: 'HORA_EXTRA_NOCTURNO',
+        hours: 2,
+        configuredFactor: '1.75',
+        appliedMultiplier: '1.75',
+        amount: '27855',
+      }),
+      expect.objectContaining({
+        code: 'HORA_ORDINARIA_NOCTURNA',
+        hours: 2,
+        configuredFactor: '1.35',
+        appliedMultiplier: '0.35',
+        amount: '5571',
+      }),
+      expect.objectContaining({
+        code: 'HORA_EXTRA_DOM_FESTIVO',
+        hours: 2,
+        configuredFactor: '2.05',
+        appliedMultiplier: '2.05',
+        amount: '32631',
+      }),
+      expect.objectContaining({
+        code: 'HORA_EXTRA_NOCTURNO_DOM_FESTIVO',
+        hours: 2,
+        configuredFactor: '2.55',
+        appliedMultiplier: '2.55',
+        amount: '40589',
+      }),
+      expect.objectContaining({
+        code: 'HORA_DOMINICAL_FESTIVO',
+        hours: 2,
+        configuredFactor: '1.8',
+        appliedMultiplier: '0.8',
+        amount: '12734',
+      }),
+    ]);
+
+    let runRecord: any;
+    let conceptResults: any[] = [];
+    prisma.payrollRun.upsert.mockImplementation(({ create }: any) => {
+      runRecord = { id: 'run-overtime-1', ...create };
+      return Promise.resolve(runRecord);
+    });
+    prisma.payrollConceptResult.createMany.mockImplementation(({ data }: any) => {
+      conceptResults = data;
+      return Promise.resolve({ count: data.length });
+    });
+    prisma.payrollRun.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        ...runRecord,
+        employee: defaultEmployee(),
+        contract: {
+          ...defaultContract(),
+          salaryMonthly: new Prisma.Decimal(1_750_905),
+        },
+        adjustments: [],
+        conceptResults,
+        payments: [],
+      }),
+    );
+    prisma.payrollPeriod.findUnique.mockResolvedValue(defaultPeriod());
+
+    const persisted: any = await service.calculateEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {
+        workedDays: 30,
+        overtimeHours: rates.map((rate) => ({ type: rate.code, quantity: 2 })),
+      },
+    );
+
+    const overtimeConcept = conceptResults.find(
+      (concept) => concept.code === 'OVERTIME_TOTAL',
+    );
+    expect(Number(persisted.overtimeAmount)).toBe(139_277);
+    expect(Number(overtimeConcept.amount)).toBe(139_277);
+    expect(runRecord.usedParameters.overtimeHours).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'HORA_ORDINARIA_NOCTURNA',
+          configuredFactor: '1.35',
+          appliedMultiplier: '0.35',
+        }),
+        expect.objectContaining({
+          code: 'HORA_DOMINICAL_FESTIVO',
+          configuredFactor: '1.8',
+          appliedMultiplier: '0.8',
+        }),
+      ]),
+    );
+  });
+
+  it('uses Dataico payroll bases after overtime without inflating social security or vacation', async () => {
+    const prisma = createPrismaMock();
+    const rates = [
+      { code: 'HORA_EXTRA_DIURNA', name: 'Extra diurna', factor: 1.25 },
+      { code: 'HORA_EXTRA_NOCTURNO', name: 'Extra nocturna', factor: 1.75 },
+      { code: 'HORA_ORDINARIA_NOCTURNA', name: 'Recargo nocturno', factor: 1.35 },
+      { code: 'HORA_EXTRA_DOM_FESTIVO', name: 'Extra dom/festiva', factor: 2.05 },
+      {
+        code: 'HORA_EXTRA_NOCTURNO_DOM_FESTIVO',
+        name: 'Extra nocturna dom/festiva',
+        factor: 2.55,
+      },
+      { code: 'HORA_DOMINICAL_FESTIVO', name: 'Recargo dominical/festivo', factor: 1.8 },
+    ];
+    prisma.payrollOvertimeRate.findMany.mockResolvedValue(rates);
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      ...defaultContract(),
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      applyLaw1819: false,
+    });
+    const service = new PayrollService(prisma as any);
+
+    const preview: any = await service.previewEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {
+        workedDays: 30,
+        overtimeHours: rates.map((rate) => ({ type: rate.code, quantity: 2 })),
+      },
+    );
+
+    expect(Number(preview.overtimeAmount)).toBe(139_277);
+    expect(Number(preview.grossIncome)).toBe(2_139_277);
+    expect(Number(preview.ibcAmount)).toBe(1_890_182);
+    expect(Number(preview.employeeHealth)).toBe(75_607);
+    expect(Number(preview.employeePension)).toBe(75_607);
+    expect(Number(preview.employerHealth)).toBe(160_665);
+    expect(Number(preview.employerPension)).toBe(226_822);
+    expect(Number(preview.employerArl)).toBe(9_867);
+    expect(Number(preview.compensationFund)).toBe(75_607);
+    expect(Number(preview.sena) + Number(preview.icbf)).toBe(94_509);
+    expect(Number(preview.severance)).toBe(178_202);
+    expect(Number(preview.severanceInterest)).toBe(21_384);
+    expect(Number(preview.serviceBonus)).toBe(178_202);
+    expect(Number(preview.vacation)).toBe(73_013);
+    expect(Number(preview.realEmployerCost)).toBe(3_157_547);
+    expect(preview.usedParameters.overtimeAmount).toBe('139277');
+    expect(preview.usedParameters.ibcBasePolicy).toBe(
+      'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',
+    );
+    expect(preview.usedParameters.ibcBase).toBe('1890181.5340909090909');
+    expect(preview.usedParameters.benefitBaseWithTransportPolicy).toBe(
+      'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_CONNECTIVITY_COMMISSIONS_AND_OVERTIME',
+    );
+    expect(preview.usedParameters.benefitBaseWithTransport).toBe(
+      '2139276.5340909090909',
+    );
+    expect(preview.usedParameters.vacationBasePolicy).toBe(
+      'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_CONNECTIVITY_AND_OVERTIME',
+    );
+    expect(preview.usedParameters.vacationBase).toBe('1750905');
+    expect(preview.usedParameters.overtimeIncludedInIbc).toBe(true);
+    expect(preview.usedParameters.overtimeIncludedInBenefits).toBe(true);
+    expect(preview.usedParameters.overtimeIncludedInVacation).toBe(false);
+  });
+
+  it('keeps loan deduction separated from other deductions in monthly payroll calculations', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      ...defaultContract(),
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+    });
+    const service = new PayrollService(prisma as any);
+
+    const preview: any = await service.previewEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {
+        workedDays: 30,
+        commissions: 100,
+        nonSalaryBonus: 100,
+        loanDeduction: 100,
+        otherDeductions: 100,
+      },
+    );
+
+    expect(Number(preview.commissions)).toBe(100);
+    expect(Number(preview.nonSalaryBonus)).toBe(100);
+    expect(Number(preview.loanDeduction)).toBe(100);
+    expect(Number(preview.otherDeductions)).toBe(100);
+    expect(Number(preview.grossIncome)).toBe(2_000_200);
+    expect(Number(preview.ibcAmount)).toBe(1_751_005);
+    expect(Number(preview.netPay)).toBe(1_859_920);
+    expect(preview.usedParameters.loanDeduction).toBe('100');
+    expect(preview.usedParameters.otherDeductions).toBe('100');
+    expect(preview.usedParameters.deductionsBreakdown).toEqual({
+      loanDeduction: '100',
+      otherDeductions: '100',
+    });
+    expect(preview.usedParameters.benefitBaseWithTransport).toBe('2000100');
+    expect(preview.usedParameters.vacationBase).toBe('1751005');
+  });
+
+  it('persists loan deduction separately through used parameters and payroll adjustments', async () => {
+    const prisma = createPrismaMock();
+    let runRecord: any;
+    let conceptResults: any[] = [];
+    prisma.payrollPeriod.findUnique.mockResolvedValue(defaultPeriod());
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      ...defaultContract(),
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+    });
+    prisma.payrollRun.upsert.mockImplementation(({ create }: any) => {
+      runRecord = { id: 'run-novelties-1', ...create };
+      return Promise.resolve(runRecord);
+    });
+    prisma.payrollConceptResult.createMany.mockImplementation(({ data }: any) => {
+      conceptResults = data;
+      return Promise.resolve({ count: data.length });
+    });
+    prisma.payrollRun.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        ...runRecord,
+        employee: defaultEmployee(),
+        contract: {
+          ...defaultContract(),
+          salaryMonthly: new Prisma.Decimal(1_750_905),
+        },
+        adjustments: [],
+        conceptResults,
+        payments: [],
+      }),
+    );
+    const service = new PayrollService(prisma as any);
+
+    const persisted: any = await service.calculateEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {
+        workedDays: 30,
+        commissions: 100,
+        nonSalaryBonus: 100,
+        loanDeduction: 100,
+        otherDeductions: 100,
+      },
+    );
+
+    const loanConcept = conceptResults.find(
+      (concept) => concept.code === 'LOAN_DEDUCTION',
+    );
+    const otherConcept = conceptResults.find(
+      (concept) => concept.code === 'OTHER_DEDUCTIONS',
+    );
+    expect(Number(persisted.commissions)).toBe(100);
+    expect(Number(persisted.nonSalaryBonus)).toBe(100);
+    expect(Number(persisted.loanDeduction)).toBe(100);
+    expect(Number(persisted.otherDeductions)).toBe(100);
+    expect(Number(loanConcept.amount)).toBe(100);
+    expect(Number(otherConcept.amount)).toBe(100);
+    expect(runRecord.usedParameters.deductionsBreakdown).toEqual({
+      loanDeduction: '100',
+      otherDeductions: '100',
+    });
+    expect(prisma.payrollAdjustment.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          payrollRunId: 'run-novelties-1',
+          type: PayrollAdjustmentType.LOAN_DEDUCTION,
+          amount: new Prisma.Decimal(100),
+          description: 'Prestamos',
+        },
+      ],
+    });
   });
 
   it('applies current semester cutoff only when the sent endDate is in 2027 for calculation year 2026', async () => {
@@ -1175,5 +1707,389 @@ describe('PayrollService payroll history rules', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('does not create accounting movements from monthly preview', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue(defaultContract());
+    const service = new PayrollService(prisma as any);
+
+    await service.previewEmployeePayroll(businessId, periodId, employeeId, {});
+
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('does not create accounting movements from contract settlement simulation', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue(defaultContract());
+    const service = new PayrollService(prisma as any);
+
+    await service.simulateContractSettlement(businessId, contractId, {
+      endDate: '2026-12-31',
+      calculationYear: 2026,
+    });
+
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('blocks monthly payroll liquidation when the period is already posted', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollPeriod.findFirst.mockResolvedValue(
+      defaultPeriod(PayrollPeriodStatus.POSTED),
+    );
+    const service = new PayrollService(prisma as any);
+    const calculateSpy = jest.spyOn(service, 'calculatePeriodPayroll');
+
+    await expect(
+      service.liquidatePeriodPayroll(businessId, periodId),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(calculateSpy).not.toHaveBeenCalled();
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('liquidates monthly payroll and creates balanced accounting movements with seed mappings', async () => {
+    const prisma = createPrismaMock();
+    const period = defaultPeriod();
+    const employee = defaultEmployee();
+    const contract = defaultContract();
+    const mappings = seedPayrollAccountingMappingsFixture();
+    const mappingCodes = new Set(mappings.map((mapping) => mapping.accountCode));
+    let runRecord: any;
+    let conceptResults: any[] = [];
+
+    prisma.payrollPeriod.findFirst.mockResolvedValue(period);
+    prisma.payrollPeriod.findUnique.mockResolvedValue(period);
+    prisma.employee.findMany.mockResolvedValue([employee]);
+    prisma.employee.findFirst.mockResolvedValue(employee);
+    prisma.employeeContract.findFirst.mockResolvedValue(contract);
+    prisma.payrollAccountingMapping.findMany.mockImplementation((args: any) => {
+      const codes = args.where.conceptCode.in as string[];
+      return Promise.resolve(
+        mappings.filter((mapping) => codes.includes(mapping.conceptCode)),
+      );
+    });
+    prisma.payrollRun.upsert.mockImplementation(({ create }: any) => {
+      runRecord = {
+        id: 'run-1',
+        ...create,
+        employee,
+        contract,
+      };
+      return Promise.resolve(runRecord);
+    });
+    prisma.payrollConceptResult.createMany.mockImplementation(({ data }: any) => {
+      conceptResults = data;
+      return Promise.resolve({ count: data.length });
+    });
+    prisma.payrollRun.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        ...runRecord,
+        employee,
+        contract,
+        adjustments: [],
+        conceptResults,
+        payments: [],
+      }),
+    );
+    prisma.payrollRun.findMany.mockImplementation(() =>
+      Promise.resolve([
+        {
+          ...runRecord,
+          employee,
+          contract,
+          adjustments: [],
+          conceptResults,
+          payments: [],
+        },
+      ]),
+    );
+    prisma.payrollPeriod.update.mockImplementation(({ data }: any) =>
+      Promise.resolve({ ...period, ...data }),
+    );
+    const service = new PayrollService(prisma as any);
+
+    const result = await service.liquidatePeriodPayroll(businessId, periodId);
+
+    const movements = prisma.accountingMovement.createMany.mock.calls[0][0].data;
+    expect(result.calculatedRuns).toBe(1);
+    expect(prisma.payrollRun.upsert).toHaveBeenCalled();
+    expect(prisma.payrollAccountingMapping.upsert).toHaveBeenCalled();
+    const upsertArgs = prisma.payrollRun.upsert.mock.calls[0][0];
+    expect(upsertArgs.create.serviceBonusPreview).toBeUndefined();
+    expect(upsertArgs.update.serviceBonusPreview).toBeUndefined();
+    expect(upsertArgs.create.serviceBonus).toBeDefined();
+    expect(upsertArgs.create.usedParameters.serviceBonusPreview).toBeDefined();
+    expect(prisma.payrollPeriod.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: PayrollPeriodStatus.POSTED }),
+      }),
+    );
+    expect(movements.length).toBeGreaterThan(0);
+    expectBalancedMovements(movements);
+    expect(movements.every((movement: any) => movement.businessId === businessId)).toBe(true);
+    expect(movements.every((movement: any) => movement.originType === AccountingMovementOriginType.PAYROLL_RUN)).toBe(true);
+    expect(movements.every((movement: any) => movement.originId === 'run-1')).toBe(true);
+    expect(movements.every((movement: any) => mappingCodes.has(accountCodeFromMovement(movement)!))).toBe(true);
+    expect(movements.every((movement: any) => Boolean(accountCodeFromMovement(movement)))).toBe(true);
+    expect(movements.some((movement: any) => accountCodeFromMovement(movement) === '510506')).toBe(true);
+    expect(movements.some((movement: any) => accountCodeFromMovement(movement) === '237005')).toBe(true);
+    expect(prisma.accountingMovement.deleteMany).toHaveBeenCalledWith({
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+    });
+  });
+
+  it('liquidates a contract and creates balanced accounting movements with seed mappings', async () => {
+    const prisma = createPrismaMock();
+    const contract = defaultContract();
+    const mappings = seedPayrollAccountingMappingsFixture();
+    const mappingCodes = new Set(mappings.map((mapping) => mapping.accountCode));
+    let settlementLines: any[] = [];
+
+    prisma.employeeContract.findFirst.mockResolvedValue(contract);
+    prisma.payrollContractSettlement.findFirst.mockResolvedValue(null);
+    prisma.payrollContractSettlement.create.mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: 'settlement-1', ...data }),
+    );
+    prisma.payrollContractSettlementLine.createMany.mockImplementation(({ data }: any) => {
+      settlementLines = data;
+      return Promise.resolve({ count: data.length });
+    });
+    prisma.payrollContractSettlement.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        id: 'settlement-1',
+        businessId,
+        employeeId,
+        contractId,
+        type: PayrollSettlementType.REAL_TERMINATION,
+        status: PayrollSettlementStatus.CALCULATED,
+        employee: defaultEmployee(),
+        contract,
+        lines: settlementLines,
+      }),
+    );
+    prisma.payrollContractSettlement.update.mockImplementation(({ data }: any) =>
+      Promise.resolve({
+        id: 'settlement-1',
+        businessId,
+        employeeId,
+        contractId,
+        type: PayrollSettlementType.REAL_TERMINATION,
+        status: data.status,
+        postedAt: data.postedAt,
+        employee: defaultEmployee(),
+        contract,
+        lines: settlementLines,
+      }),
+    );
+    prisma.payrollAccountingMapping.findMany.mockImplementation((args: any) => {
+      const codes = args.where.conceptCode.in as string[];
+      return Promise.resolve(
+        mappings.filter((mapping) => codes.includes(mapping.conceptCode)),
+      );
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.createContractSettlement(
+      businessId,
+      contractId,
+      {
+        endDate: '2026-12-31',
+        calculationYear: 2026,
+      },
+    );
+
+    const movements = prisma.accountingMovement.createMany.mock.calls[0][0].data;
+    expect(result.status).toBe(PayrollSettlementStatus.POSTED);
+    expect(prisma.payrollAccountingMapping.upsert).toHaveBeenCalled();
+    expect(prisma.employeeContract.update).toHaveBeenCalledWith({
+      where: { id: contractId },
+      data: { endDate: new Date('2026-12-31T00:00:00.000Z'), isActive: false },
+    });
+    expect(movements.length).toBeGreaterThan(0);
+    expectBalancedMovements(movements);
+    expect(movements.every((movement: any) => movement.businessId === businessId)).toBe(true);
+    expect(movements.every((movement: any) => movement.originType === AccountingMovementOriginType.PAYROLL_SETTLEMENT)).toBe(true);
+    expect(movements.every((movement: any) => movement.originId === 'settlement-1')).toBe(true);
+    expect(movements.every((movement: any) => mappingCodes.has(accountCodeFromMovement(movement)!))).toBe(true);
+    expect(movements.every((movement: any) => Boolean(accountCodeFromMovement(movement)))).toBe(true);
+    expect(movements.some((movement: any) => accountCodeFromMovement(movement) === '510530')).toBe(true);
+    expect(movements.some((movement: any) => accountCodeFromMovement(movement) === '251010')).toBe(true);
+  });
+
+  it('fails monthly payroll liquidation clearly when an accounting mapping is missing', async () => {
+    const prisma = createPrismaMock();
+    const period = defaultPeriod();
+    const employee = defaultEmployee();
+    const contract = defaultContract();
+    const mappings = seedPayrollAccountingMappingsFixture().filter(
+      (mapping) => mapping.conceptCode !== 'NET_PAY',
+    );
+    let runRecord: any;
+    let conceptResults: any[] = [];
+
+    prisma.payrollPeriod.findFirst.mockResolvedValue(period);
+    prisma.payrollPeriod.findUnique.mockResolvedValue(period);
+    prisma.employee.findMany.mockResolvedValue([employee]);
+    prisma.employee.findFirst.mockResolvedValue(employee);
+    prisma.employeeContract.findFirst.mockResolvedValue(contract);
+    prisma.payrollAccountingMapping.findMany.mockImplementation((args: any) => {
+      const codes = args.where.conceptCode.in as string[];
+      return Promise.resolve(
+        mappings.filter((mapping) => codes.includes(mapping.conceptCode)),
+      );
+    });
+    prisma.payrollRun.upsert.mockImplementation(({ create }: any) => {
+      runRecord = { id: 'run-1', ...create, employee, contract };
+      return Promise.resolve(runRecord);
+    });
+    prisma.payrollConceptResult.createMany.mockImplementation(({ data }: any) => {
+      conceptResults = data;
+      return Promise.resolve({ count: data.length });
+    });
+    prisma.payrollRun.findUnique.mockImplementation(() =>
+      Promise.resolve({
+        ...runRecord,
+        employee,
+        contract,
+        adjustments: [],
+        conceptResults,
+        payments: [],
+      }),
+    );
+    prisma.payrollRun.findMany.mockImplementation(() =>
+      Promise.resolve([
+        {
+          ...runRecord,
+          employee,
+          contract,
+          adjustments: [],
+          conceptResults,
+          payments: [],
+        },
+      ]),
+    );
+    prisma.payrollPeriod.update.mockImplementation(({ data }: any) =>
+      Promise.resolve({ ...period, ...data }),
+    );
+    const service = new PayrollService(prisma as any);
+
+    await expect(
+      service.liquidatePeriodPayroll(businessId, periodId),
+    ).rejects.toThrow(/NET_PAY/);
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    expect(prisma.payrollPeriod.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: PayrollPeriodStatus.POSTED }),
+      }),
+    );
+  });
+
+  it('balances a one-peso payroll accounting rounding difference by increasing NET_PAY credit', () => {
+    const service = new PayrollService(createPrismaMock() as any);
+    const movements: Prisma.AccountingMovementCreateManyInput[] = [
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_799),
+        nature: MovementNature.DEBIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Devengados',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_798),
+        nature: MovementNature.CREDIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Neto a pagar',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+    ];
+
+    const result = (service as any).balanceAccountingMovementsForRounding(
+      movements,
+      'NET_PAY',
+    );
+
+    expectBalancedMovements(result.movements);
+    expect(result.roundingAdjustment.toString()).toBe('1');
+    expect(result.roundingAdjustmentTarget).toBe('NET_PAY');
+    expect(result.movements[1].amount.toString()).toBe('3157799');
+    expect(result.movements[1].detail).toContain('Ajuste redondeo contable 1');
+    expect(result.movements.every((movement: any) => movement.originType === AccountingMovementOriginType.PAYROLL_RUN)).toBe(true);
+    expect(result.movements.every((movement: any) => movement.originId === 'run-1')).toBe(true);
+  });
+
+  it('balances an inverse one-peso payroll accounting rounding difference by reducing NET_PAY credit', () => {
+    const service = new PayrollService(createPrismaMock() as any);
+    const movements: Prisma.AccountingMovementCreateManyInput[] = [
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_798),
+        nature: MovementNature.DEBIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Devengados',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_799),
+        nature: MovementNature.CREDIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Neto a pagar',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+    ];
+
+    const result = (service as any).balanceAccountingMovementsForRounding(
+      movements,
+      'NET_PAY',
+    );
+
+    expectBalancedMovements(result.movements);
+    expect(result.roundingAdjustment.toString()).toBe('-1');
+    expect(result.roundingAdjustmentTarget).toBe('NET_PAY');
+    expect(result.movements[1].amount.toString()).toBe('3157798');
+    expect(result.movements[1].detail).toContain('Ajuste redondeo contable -1');
+  });
+
+  it('does not hide payroll accounting imbalances larger than one peso', () => {
+    const service = new PayrollService(createPrismaMock() as any);
+    const movements: Prisma.AccountingMovementCreateManyInput[] = [
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_799),
+        nature: MovementNature.DEBIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Devengados',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+      {
+        businessId,
+        amount: new Prisma.Decimal(3_157_699),
+        nature: MovementNature.CREDIT,
+        date: new Date(),
+        detail: 'Nomina 2026-05 Ana Gomez - Neto a pagar',
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: 'run-1',
+      },
+    ];
+
+    const result = (service as any).balanceAccountingMovementsForRounding(
+      movements,
+      'NET_PAY',
+    );
+
+    expect(result.roundingAdjustment.toString()).toBe('100');
+    expect(result.totals.debit.equals(result.totals.credit)).toBe(false);
+    expect(result.movements[1].amount.toString()).toBe('3157699');
   });
 });

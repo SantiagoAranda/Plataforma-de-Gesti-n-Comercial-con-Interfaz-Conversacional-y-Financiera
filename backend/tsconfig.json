@@ -8,6 +8,15 @@
     "esModuleInterop": true,
     "sourceMap": true,
     "incremental": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "types": ["node", "express", "multer"]
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
 }

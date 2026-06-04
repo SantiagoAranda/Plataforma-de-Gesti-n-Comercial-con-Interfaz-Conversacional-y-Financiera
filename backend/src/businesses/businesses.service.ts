@@ -1,14 +1,18 @@
 import {
   BadRequestException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { Business } from '@prisma/client';
+import { Business, PayrollAccountingSide, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { createClient } from '@supabase/supabase-js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parse } from 'csv-parse/sync';
 import sharp from 'sharp';
 
 type FooterPhone = {
@@ -27,6 +31,14 @@ type StoreFooterSettingsPayload = {
   email?: string | null;
   phones?: FooterPhone[];
   socials?: FooterSocial[];
+};
+
+type PayrollAccountingMappingTemplateRow = {
+  concept_code: string;
+  concept_name: string;
+  account_code: string;
+  account_name: string;
+  side: PayrollAccountingSide;
 };
 
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
@@ -132,6 +144,29 @@ function validateStoreFooterSettingsPayload(
   };
 }
 
+function parsePayrollAccountingMappingTemplate() {
+  const filePath = path.join(
+    process.cwd(),
+    'prisma',
+    'seed-data',
+    'payroll_accounting_mapping.csv',
+  );
+
+  if (!fs.existsSync(filePath)) {
+    throw new InternalServerErrorException(
+      'Plantilla de mapeo contable de nomina no encontrada',
+    );
+  }
+
+  return parse(fs.readFileSync(filePath, 'utf8'), {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true,
+    bom: true,
+    record_delimiter: '\n',
+  }) as PayrollAccountingMappingTemplateRow[];
+}
+
 @Injectable()
 export class BusinessesService {
   private readonly supabase: ReturnType<typeof createClient> | null;
@@ -175,15 +210,87 @@ export class BusinessesService {
     console.log(`[BusinessesService] Generated slug: "${slug}"`);
 
     try {
-      return await this.prisma.business.create({
-        data: {
-          ...data,
-          slug,
-          status: 'ACTIVE',
+      return await this.prisma.$transaction(async (tx) => {
+        const business = await tx.business.create({
+          data: {
+            ...data,
+            slug,
+            status: 'ACTIVE',
+          },
+        });
+
+        await this.initializePayrollAccountingMappingsForBusiness(
+          tx,
+          business.id,
+        );
+
+        return business;
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      throw new BadRequestException('Error creating business');
+    }
+  }
+
+  private async assertPucAccountExists(
+    tx: Prisma.TransactionClient,
+    accountCode: string,
+  ) {
+    const code = accountCode.trim();
+
+    if (code.length === 4) {
+      const account = await tx.pucCuenta.findUnique({
+        where: { code },
+        select: { code: true },
+      });
+      if (account) return;
+    }
+
+    if (code.length === 6) {
+      const subaccount = await tx.pucSubcuenta.findFirst({
+        where: { code, active: true },
+        select: { code: true },
+      });
+      if (subaccount) return;
+    }
+
+    throw new InternalServerErrorException(
+      `Cuenta PUC de nomina no existe o esta inactiva: ${code}`,
+    );
+  }
+
+  private async initializePayrollAccountingMappingsForBusiness(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+  ) {
+    const rows = parsePayrollAccountingMappingTemplate();
+
+    for (const row of rows) {
+      await this.assertPucAccountExists(tx, row.account_code);
+      await tx.payrollAccountingMapping.upsert({
+        where: {
+          businessId_conceptCode_side: {
+            businessId,
+            conceptCode: row.concept_code,
+            side: row.side,
+          },
+        },
+        update: {
+          conceptName: row.concept_name,
+          accountCode: row.account_code,
+          accountName: row.account_name,
+          isActive: true,
+        },
+        create: {
+          businessId,
+          conceptCode: row.concept_code,
+          conceptName: row.concept_name,
+          accountCode: row.account_code,
+          accountName: row.account_name,
+          side: row.side,
+          isActive: true,
         },
       });
-    } catch {
-      throw new BadRequestException('Error creating business');
     }
   }
 

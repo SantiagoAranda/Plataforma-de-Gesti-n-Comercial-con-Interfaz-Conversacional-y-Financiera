@@ -16,6 +16,7 @@ function parseCSV(filePath: string): Row[] {
         skip_empty_lines: true,
         trim: true,
         bom: true,
+        record_delimiter: "\n",
     }) as Row[];
 }
 
@@ -329,6 +330,27 @@ async function seedPayrollAccountingMappings(base: string) {
 
     for (const business of businesses) {
         for (const r of rows) {
+            const accountCode = r.account_code.trim();
+            if (accountCode.length === 4) {
+                const account = await prisma.pucCuenta.findUnique({
+                    where: { code: accountCode },
+                    select: { code: true },
+                });
+                if (!account) {
+                    throw new Error(`Payroll accounting PUC cuenta not found: ${accountCode}`);
+                }
+            } else if (accountCode.length === 6) {
+                const subaccount = await prisma.pucSubcuenta.findFirst({
+                    where: { code: accountCode, active: true },
+                    select: { code: true },
+                });
+                if (!subaccount) {
+                    throw new Error(`Payroll accounting PUC subcuenta not found or inactive: ${accountCode}`);
+                }
+            } else {
+                throw new Error(`Payroll accounting account_code invalid: ${accountCode}`);
+            }
+
             await prisma.payrollAccountingMapping.upsert({
                 where: {
                     businessId_conceptCode_side: {

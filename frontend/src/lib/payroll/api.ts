@@ -38,6 +38,17 @@ export type PayrollPeriod = {
   status: string;
 };
 
+export type PayrollRunUsedParameters = Record<string, unknown> & {
+  serviceBonusPreview?: MoneyLike;
+  serviceBonusProjected?: MoneyLike;
+  loanDeduction?: MoneyLike;
+  otherDeductions?: MoneyLike;
+  deductionsBreakdown?: {
+    loanDeduction?: MoneyLike;
+    otherDeductions?: MoneyLike;
+  };
+};
+
 export type PayrollRun = {
   id: string;
   payrollPeriodId?: string;
@@ -56,6 +67,7 @@ export type PayrollRun = {
   employeePension: MoneyLike;
   solidarityFund: MoneyLike;
   withholdingTax: MoneyLike;
+  loanDeduction?: MoneyLike;
   otherDeductions?: MoneyLike;
   totalEmployeeDeductions?: MoneyLike;
   netPay: MoneyLike;
@@ -68,11 +80,10 @@ export type PayrollRun = {
   severance: MoneyLike;
   severanceInterest: MoneyLike;
   serviceBonus: MoneyLike;
-  serviceBonusPreview?: MoneyLike;
   vacation: MoneyLike;
   totalBenefits?: MoneyLike;
   realEmployerCost: MoneyLike;
-  usedParameters?: Record<string, unknown>;
+  usedParameters?: PayrollRunUsedParameters;
   payments?: PayrollPayment[];
   preview?: boolean;
   warnings?: string[];
@@ -165,6 +176,14 @@ export type ArlRiskClass = {
   rate?: MoneyLike;
 };
 
+export type LiquidatePayrollPeriodResult = {
+  period: PayrollPeriod;
+  runs: PayrollRun[];
+  totalEmployees: number;
+  calculatedRuns: number;
+  skippedEmployees: Array<{ employeeId: string; reason: string }>;
+};
+
 export type CiiuActivity = {
   id: string;
   code: string;
@@ -172,12 +191,13 @@ export type CiiuActivity = {
 };
 
 export type OvertimeType =
-  | "OVERTIME_DAY"
-  | "OVERTIME_NIGHT"
-  | "NIGHT_SURCHARGE"
-  | "SUNDAY_HOLIDAY_EXTRA_DAY"
-  | "SUNDAY_HOLIDAY_EXTRA_NIGHT"
-  | "SUNDAY_HOLIDAY_DAY";
+  | "HORA_EXTRA_DIURNA"
+  | "HORA_EXTRA_NOCTURNO"
+  | "HORA_ORDINARIA_NOCTURNA"
+  | "HORA_EXTRA_DOM_FESTIVO"
+  | "HORA_EXTRA_NOCTURNO_DOM_FESTIVO"
+  | "HORA_DOMINICAL_FESTIVO"
+  | "HORA_DOM_FESTIVO_NOCTURNO";
 
 export type CreateEmployeePayload = {
   firstName: string;
@@ -216,6 +236,7 @@ export type CalculatePayrollPayload = {
   workedDays: number;
   commissions: number;
   nonSalaryBonus: number;
+  loanDeduction?: number;
   otherDeductions: number;
   overtimeHours?: Array<{ type: OvertimeType; quantity: number }>;
 };
@@ -255,6 +276,31 @@ export function numberValue(value: string | number | null | undefined) {
   return normalizeNumber(value);
 }
 
+function nonNegativeNumber(value: string | number | null | undefined) {
+  return Math.max(0, normalizeNumber(value));
+}
+
+function normalizeCalculatePayrollPayload(
+  payload: CalculatePayrollPayload,
+): CalculatePayrollPayload {
+  const workedDays = Math.trunc(nonNegativeNumber(payload.workedDays));
+  const overtimeHours = (payload.overtimeHours ?? [])
+    .map((item) => ({
+      type: item.type,
+      quantity: nonNegativeNumber(item.quantity),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  return {
+    workedDays,
+    commissions: nonNegativeNumber(payload.commissions),
+    nonSalaryBonus: nonNegativeNumber(payload.nonSalaryBonus),
+    loanDeduction: nonNegativeNumber(payload.loanDeduction),
+    otherDeductions: nonNegativeNumber(payload.otherDeductions),
+    ...(overtimeHours.length ? { overtimeHours } : {}),
+  };
+}
+
 async function payrollRequest<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -272,13 +318,20 @@ async function payrollRequest<T>(
     return response;
   } catch (error) {
     if (shouldLogPayroll) {
+      const appError = error instanceof AppApiError ? error : null;
+      const detailsMessage = Array.isArray(appError?.details?.message)
+        ? appError?.details?.message.join(" | ")
+        : appError?.details?.message;
       console.error("[payroll] error", {
         endpoint,
+        status: appError?.status,
+        message: appError?.message,
+        detailsMessage,
+        detailsError: appError?.details?.error,
+        details: appError?.details,
         payload,
-        error:
-          error instanceof AppApiError
-            ? { status: error.status, message: error.message, details: error.details }
-            : error,
+        raw: appError?.raw,
+        error: appError ? undefined : error,
       });
     }
     throw error;
@@ -372,15 +425,22 @@ export const payrollApi = {
     });
   },
   calculateEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
+    const normalizedPayload = normalizeCalculatePayrollPayload(payload);
     return payrollRequest<PayrollRun>(`/payroll/periods/${periodId}/calculate/${employeeId}`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizedPayload),
+    });
+  },
+  liquidatePeriod(periodId: string) {
+    return payrollRequest<LiquidatePayrollPeriodResult>(`/payroll/periods/${periodId}/runs`, {
+      method: "POST",
     });
   },
   previewEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
+    const normalizedPayload = normalizeCalculatePayrollPayload(payload);
     return payrollRequest<PayrollRun>(`/payroll/periods/${periodId}/preview/${employeeId}`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(normalizedPayload),
     });
   },
   updatePeriodStatus(periodId: string, status: "OPEN" | "CALCULATED" | "POSTED" | "CLOSED") {

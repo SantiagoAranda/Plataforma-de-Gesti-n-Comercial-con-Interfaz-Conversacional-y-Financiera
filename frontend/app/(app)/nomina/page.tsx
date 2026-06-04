@@ -43,14 +43,15 @@ import {
 import { cn } from "@/src/lib/utils";
 import { useLongPress } from "@/src/hooks/useLongPress";
 
-const overtimeInputs: Array<{ type: OvertimeType; label: string; hint: string }> = [
-  { type: "OVERTIME_DAY", label: "Extra diurna", hint: "+25%" },
-  { type: "OVERTIME_NIGHT", label: "Extra nocturna", hint: "+75%" },
-  { type: "NIGHT_SURCHARGE", label: "Recargo nocturno", hint: "+35%" },
-  { type: "SUNDAY_HOLIDAY_EXTRA_DAY", label: "Extra dom/festiva diurna", hint: "+100%" },
-  { type: "SUNDAY_HOLIDAY_EXTRA_NIGHT", label: "Extra dom/festiva nocturna", hint: "+150%" },
-  { type: "SUNDAY_HOLIDAY_DAY", label: "Recargo dominical/festivo", hint: "+75%" },
+const PAYROLL_OVERTIME_ITEMS: Array<{ type: OvertimeType; label: string; hint: string }> = [
+  { type: "HORA_EXTRA_DIURNA", label: "Extra diurna", hint: "+25%" },
+  { type: "HORA_EXTRA_NOCTURNO", label: "Extra nocturna", hint: "+75%" },
+  { type: "HORA_ORDINARIA_NOCTURNA", label: "Recargo nocturno", hint: "+35%" },
+  { type: "HORA_EXTRA_DOM_FESTIVO", label: "Extra dom/festiva diurna", hint: "+105%" },
+  { type: "HORA_EXTRA_NOCTURNO_DOM_FESTIVO", label: "Extra dom/festiva nocturna", hint: "+155%" },
+  { type: "HORA_DOMINICAL_FESTIVO", label: "Recargo dominical/festivo", hint: "+80%" },
 ];
+const overtimeInputs = PAYROLL_OVERTIME_ITEMS;
 
 type WizardStep = 0 | 1 | 2 | 3;
 
@@ -212,6 +213,40 @@ function shortMoney(value: MoneyLike) {
   if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1_000)}k`;
   return money(n);
+}
+
+function serviceBonusPreviewValue(run: PayrollRun) {
+  return (
+    run.usedParameters?.serviceBonusPreview ??
+    run.usedParameters?.serviceBonusProjected ??
+    (run as { serviceBonusPreview?: MoneyLike }).serviceBonusPreview
+  );
+}
+
+function payrollErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof AppApiError)) return fallback;
+  const detailsMessage = Array.isArray(error.details?.message)
+    ? error.details.message.join(" | ")
+    : error.details?.message;
+  return detailsMessage || error.message || fallback;
+}
+
+function runLoanDeductionValue(run?: PayrollRun | null) {
+  return (
+    run?.usedParameters?.deductionsBreakdown?.loanDeduction ??
+    run?.usedParameters?.loanDeduction ??
+    run?.loanDeduction ??
+    0
+  );
+}
+
+function runOtherDeductionsValue(run?: PayrollRun | null) {
+  return (
+    run?.usedParameters?.deductionsBreakdown?.otherDeductions ??
+    run?.usedParameters?.otherDeductions ??
+    run?.otherDeductions ??
+    0
+  );
 }
 
 function formatCivilDate(value?: string | Date | null) {
@@ -981,12 +1016,13 @@ function PayrollAdjustmentsSection({
 }
 
 const defaultOvertimeHours = (): Record<OvertimeType, string> => ({
-  OVERTIME_DAY: "0",
-  OVERTIME_NIGHT: "0",
-  NIGHT_SURCHARGE: "0",
-  SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-  SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-  SUNDAY_HOLIDAY_DAY: "0",
+  HORA_EXTRA_DIURNA: "0",
+  HORA_EXTRA_NOCTURNO: "0",
+  HORA_ORDINARIA_NOCTURNA: "0",
+  HORA_EXTRA_DOM_FESTIVO: "0",
+  HORA_EXTRA_NOCTURNO_DOM_FESTIVO: "0",
+  HORA_DOMINICAL_FESTIVO: "0",
+  HORA_DOM_FESTIVO_NOCTURNO: "0",
 });
 
 const createEmployeeTabs: Array<PayrollSheetTab<"empleado" | "contrato">> = [
@@ -1483,14 +1519,7 @@ function EmployeePayrollEditorSheet({
   const [loans, setLoans] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
   const [simulatedEndDate, setSimulatedEndDate] = useState("");
-  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
-    OVERTIME_DAY: "0",
-    OVERTIME_NIGHT: "0",
-    NIGHT_SURCHARGE: "0",
-    SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-    SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-    SUNDAY_HOLIDAY_DAY: "0",
-  });
+  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>(defaultOvertimeHours);
 
   // Tab 2: Contrato State
   const todayIso = new Date().toISOString().slice(0, 10);
@@ -1523,19 +1552,11 @@ function EmployeePayrollEditorSheet({
     setCommissions(String(run.commissions ?? "0"));
     setNonSalaryBonus(String(run.nonSalaryBonus ?? "0"));
     
-    const totalDeductions = numberValue(run.otherDeductions);
-    setLoans("0");
-    setOtherDeductions(String(totalDeductions));
+    setLoans(String(runLoanDeductionValue(run)));
+    setOtherDeductions(String(runOtherDeductionsValue(run)));
     
     setSimulatedEndDate(settlementDefaultEndDate(run.contract, selectedPeriod));
-    const defaultOvertime: Record<OvertimeType, string> = {
-      OVERTIME_DAY: "0",
-      OVERTIME_NIGHT: "0",
-      NIGHT_SURCHARGE: "0",
-      SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-      SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-      SUNDAY_HOLIDAY_DAY: "0",
-    };
+    const defaultOvertime = defaultOvertimeHours();
     if (run.usedParameters?.overtimeHours && Array.isArray(run.usedParameters.overtimeHours)) {
       run.usedParameters.overtimeHours.forEach((oh: any) => {
         if (oh.type in defaultOvertime) {
@@ -1596,7 +1617,8 @@ function EmployeePayrollEditorSheet({
       workedDays: parsedWorkedDays,
       commissions: numberValue(commissions),
       nonSalaryBonus: numberValue(nonSalaryBonus),
-      otherDeductions: numberValue(loans) + numberValue(otherDeductions),
+      loanDeduction: numberValue(loans),
+      otherDeductions: numberValue(otherDeductions),
       overtimeHours: overtimePayload.length ? overtimePayload : undefined,
     };
   }, [workedDays, commissions, nonSalaryBonus, loans, otherDeductions, overtimeHours]);
@@ -1612,7 +1634,7 @@ function EmployeePayrollEditorSheet({
 
   const saveNews = async () => {
     if (!selectedPeriod) return setError("Selecciona un periodo.");
-    if (!editable) return setError("Este período ya está posteado.");
+    if (!editable) return setError("Este per�odo ya fue liquidado. No se pueden modificar novedades.");
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
@@ -1626,7 +1648,9 @@ function EmployeePayrollEditorSheet({
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudieron guardar las novedades.");
+      const message = payrollErrorMessage(err, "No se pudieron guardar las novedades.");
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -1753,7 +1777,7 @@ function EmployeePayrollEditorSheet({
             <div className="space-y-3">
               {!editable && (
                 <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-                  Este período ya está posteado. No se pueden modificar novedades.
+                  Este per�odo ya fue liquidado. No se pueden modificar novedades.
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3">
@@ -2014,7 +2038,7 @@ function PayrollSummaryPanel({
   const canCalculateNews = run.contract?.isActive !== false && !run.contract?.endDate;
 
   const isPrimaMonth = selectedPeriod?.month === 6 || selectedPeriod?.month === 12;
-  const primaAmount = toNumber(run.serviceBonusPreview);
+  const primaAmount = toNumber(serviceBonusPreviewValue(run));
   const isPrimaPaid = Boolean(visualPaid);
   const hasPrima = isPrimaMonth && primaAmount > 0;
 
@@ -3308,14 +3332,7 @@ function PayrollRecordWizardSheet({
   const [nonSalaryBonus, setNonSalaryBonus] = useState("0");
   const [otherDeductions, setOtherDeductions] = useState("0");
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
-    OVERTIME_DAY: "0",
-    OVERTIME_NIGHT: "0",
-    NIGHT_SURCHARGE: "0",
-    SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-    SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-    SUNDAY_HOLIDAY_DAY: "0",
-  });
+  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>(defaultOvertimeHours);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -3353,14 +3370,7 @@ function PayrollRecordWizardSheet({
     setNonSalaryBonus("0");
     setOtherDeductions("0");
     setAdvancedOpen(false);
-    setOvertimeHours({
-      OVERTIME_DAY: "0",
-      OVERTIME_NIGHT: "0",
-      NIGHT_SURCHARGE: "0",
-      SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-      SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-      SUNDAY_HOLIDAY_DAY: "0",
-    });
+    setOvertimeHours(defaultOvertimeHours());
     setStep(0);
     setError(null);
   };
@@ -3571,7 +3581,7 @@ function PayrollRecordWizardSheet({
                 <div className="grid grid-cols-1 gap-2">
                   <input value={commissions} onChange={(event) => setCommissions(event.target.value)} placeholder="Comisiones salariales" type="number" min="0" className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
                   <input value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} placeholder="Bonos no salariales Ley 1393" type="number" min="0" className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
-                  <input value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} placeholder="Otras deducciones / prestamos" type="number" min="0" className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
+                  <input value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} placeholder="Otras deducciones" type="number" min="0" className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-300" />
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3 px-1">
@@ -3676,35 +3686,21 @@ function PayrollNewsSheet({
   const [preview, setPreview] = useState<PayrollRun | null>(null);
   const [settlementPreview, setSettlementPreview] = useState<Settlement | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>({
-    OVERTIME_DAY: "0",
-    OVERTIME_NIGHT: "0",
-    NIGHT_SURCHARGE: "0",
-    SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-    SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-    SUNDAY_HOLIDAY_DAY: "0",
-  });
+  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>(defaultOvertimeHours);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setWorkedDays("30");
-    setCommissions("0");
-    setNonSalaryBonus("0");
-    setLoans("0");
-    setOtherDeductions("0");
+    setCommissions(String(run?.commissions ?? "0"));
+    setNonSalaryBonus(String(run?.nonSalaryBonus ?? "0"));
+    setLoans(String(runLoanDeductionValue(run)));
+    setOtherDeductions(String(runOtherDeductionsValue(run)));
     setSimulatedEndDate(settlementDefaultEndDate(contract ?? run?.contract, selectedPeriod));
     setPreview(run?.preview ? run : null);
     setSettlementPreview(null);
-    setOvertimeHours({
-      OVERTIME_DAY: "0",
-      OVERTIME_NIGHT: "0",
-      NIGHT_SURCHARGE: "0",
-      SUNDAY_HOLIDAY_EXTRA_DAY: "0",
-      SUNDAY_HOLIDAY_EXTRA_NIGHT: "0",
-      SUNDAY_HOLIDAY_DAY: "0",
-    });
+    setOvertimeHours(defaultOvertimeHours());
     setError(null);
   }, [contract, open, run, selectedPeriod]);
 
@@ -3734,7 +3730,8 @@ function PayrollNewsSheet({
       workedDays: parsedWorkedDays,
       commissions: numberValue(commissions),
       nonSalaryBonus: numberValue(nonSalaryBonus),
-      otherDeductions: numberValue(loans) + numberValue(otherDeductions),
+      loanDeduction: numberValue(loans),
+      otherDeductions: numberValue(otherDeductions),
       overtimeHours: overtimePayload.length ? overtimePayload : undefined,
     };
   }, [commissions, loans, nonSalaryBonus, otherDeductions, overtimeHours, workedDays]);
@@ -3783,7 +3780,7 @@ function PayrollNewsSheet({
 
   const save = async () => {
     if (!employeeId || !selectedPeriod) return setError("Selecciona un periodo con empleado activo.");
-    if (!editable) return setError("Este período ya está posteado. No se pueden modificar novedades.");
+    if (!editable) return setError("Este per�odo ya fue liquidado. No se pueden modificar novedades.");
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
@@ -3800,7 +3797,9 @@ function PayrollNewsSheet({
       toast.success("Novedades guardadas");
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudieron guardar las novedades.");
+      const message = payrollErrorMessage(err, "No se pudieron guardar las novedades.");
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -3833,7 +3832,7 @@ function PayrollNewsSheet({
       <div className="space-y-3">
         {!editable && (
           <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-            Este período ya está posteado. No se pueden modificar novedades. Vista previa, no modifica el período posteado.
+            Este per�odo ya fue liquidado. No se pueden modificar novedades. Vista previa, no modifica el período posteado.
           </p>
         )}
         <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
@@ -4089,11 +4088,10 @@ function SettlementSimulationSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const calculated = await payrollApi.createSettlement(contractId, {
+      const posted = await payrollApi.createSettlement(contractId, {
         endDate,
         ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
       });
-      const posted = await payrollApi.postSettlement(calculated.id);
       setSettlement(posted);
       onFinished(posted);
       toast.success("Liquidacion posteada");
@@ -4736,12 +4734,14 @@ export default function PayrollPage() {
       return;
     }
     try {
-      await payrollApi.updatePeriodStatus(selectedPeriodId, "POSTED");
+      await payrollApi.liquidatePeriod(selectedPeriodId);
       toast.success("Nomina liquidada.");
       await loadPeriods();
       setPeriodRefreshKey((value) => value + 1);
     } catch (err) {
-      setNotice(err instanceof AppApiError ? err.message : "No se pudo liquidar la nomina.");
+      const message = payrollErrorMessage(err, "No se pudo liquidar la nomina.");
+      toast.error(message);
+      setNotice(message);
       window.setTimeout(() => setNotice(null), 2800);
     }
   };
@@ -4783,11 +4783,14 @@ export default function PayrollPage() {
       }
 
       setPostingSettlementContractId(contractId);
-      const calculated = await payrollApi.createSettlement(contractId, {
+      const salaryConceptsAmount = numberValue(
+        settlement.usedParameters?.salaryConceptsAmount as string | number | null | undefined,
+      );
+      const posted = await payrollApi.createSettlement(contractId, {
         endDate: settlement.requestedEndDate ?? settlement.endDate ?? settlementDefaultEndDate(run.contract, selectedPeriod),
-        ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
+        calculationYear: settlement.calculationYear ?? selectedPeriod?.year,
+        ...(salaryConceptsAmount > 0 ? { salaryConceptsAmount } : {}),
       });
-      const posted = await payrollApi.postSettlement(calculated.id);
       setSettlements((current) => ({
         ...current,
         [posted.employeeId]: posted,
@@ -5119,3 +5122,6 @@ export default function PayrollPage() {
     </div>
   );
 }
+
+
+

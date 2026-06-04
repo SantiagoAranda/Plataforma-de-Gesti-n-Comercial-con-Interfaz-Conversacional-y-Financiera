@@ -21,6 +21,9 @@ import {
   PayrollSettlementType,
   Prisma,
 } from '@prisma/client';
+import fs from 'node:fs';
+import path from 'node:path';
+import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateGlobalConfigDto } from './dto/update-global-config.dto';
 import { UpdateBusinessConfigDto } from './dto/update-business-config.dto';
@@ -66,7 +69,35 @@ const DATAICO_TRUNCATED_BENEFIT_PROFILE = 'DATAICO_TRUNCATED';
 const DATAICO_TRUNCATED_SEVERANCE_RATE = new Prisma.Decimal('0.0833');
 const DATAICO_TRUNCATED_SERVICE_BONUS_RATE = new Prisma.Decimal('0.0833');
 const DATAICO_TRUNCATED_VACATION_RATE = new Prisma.Decimal('0.0417');
+
+const OVERTIME_RATE_CODE_TO_ADJUSTMENT_TYPE: Record<string, PayrollAdjustmentType> = {
+  HORA_ORDINARIA_NOCTURNA: PayrollAdjustmentType.NIGHT_SURCHARGE,
+  HORA_EXTRA_DIURNA: PayrollAdjustmentType.OVERTIME_DAY,
+  HORA_EXTRA_NOCTURNO: PayrollAdjustmentType.OVERTIME_NIGHT,
+  HORA_DOMINICAL_FESTIVO: PayrollAdjustmentType.SUNDAY_HOLIDAY_DAY,
+  HORA_EXTRA_DOM_FESTIVO: PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_DAY,
+  HORA_DOM_FESTIVO_NOCTURNO: PayrollAdjustmentType.SUNDAY_HOLIDAY_NIGHT,
+  HORA_EXTRA_NOCTURNO_DOM_FESTIVO: PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_NIGHT,
+};
+
+const SUPPLEMENTARY_ADJUSTMENT_TYPES = new Set<PayrollAdjustmentType>([
+  PayrollAdjustmentType.NIGHT_SURCHARGE,
+  PayrollAdjustmentType.OVERTIME_DAY,
+  PayrollAdjustmentType.OVERTIME_NIGHT,
+  PayrollAdjustmentType.SUNDAY_HOLIDAY_DAY,
+  PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_DAY,
+  PayrollAdjustmentType.SUNDAY_HOLIDAY_NIGHT,
+  PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_NIGHT,
+]);
 const DATAICO_TRUNCATED_SEVERANCE_INTEREST_RATE = new Prisma.Decimal('0.12');
+
+type PayrollAccountingMappingTemplateRow = {
+  concept_code: string;
+  concept_name: string;
+  account_code: string;
+  account_name: string;
+  side: PayrollAccountingSide;
+};
 
 @Injectable()
 export class PayrollService {
@@ -88,6 +119,93 @@ export class PayrollService {
       throw new BadRequestException(`${fieldName} is invalid`);
     }
     return parsed;
+  }
+
+  private parsePayrollAccountingMappingTemplate() {
+    const filePath = path.join(
+      process.cwd(),
+      'prisma',
+      'seed-data',
+      'payroll_accounting_mapping.csv',
+    );
+
+    if (!fs.existsSync(filePath)) {
+      throw new BadRequestException(
+        'No se encontro la plantilla de cuentas contables de nomina.',
+      );
+    }
+
+    return parse(fs.readFileSync(filePath, 'utf8'), {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      bom: true,
+      record_delimiter: '\n',
+    }) as PayrollAccountingMappingTemplateRow[];
+  }
+
+  private async assertPayrollPucAccountExists(
+    tx: PayrollTx,
+    accountCode: string,
+  ) {
+    const code = accountCode.trim();
+
+    if (code.length === 4) {
+      const account = await tx.pucCuenta.findUnique({
+        where: { code },
+        select: { code: true },
+      });
+      if (account) return;
+    }
+
+    if (code.length === 6) {
+      const subaccount = await tx.pucSubcuenta.findFirst({
+        where: { code, active: true },
+        select: { code: true },
+      });
+      if (subaccount) return;
+    }
+
+    throw new BadRequestException(
+      `Cuenta PUC de nomina no existe o esta inactiva: ${code}`,
+    );
+  }
+
+  private async ensureDefaultPayrollAccountingMappingsForBusiness(
+    businessId: string,
+    tx: PayrollTx = this.prisma,
+  ) {
+    const rows = this.parsePayrollAccountingMappingTemplate();
+
+    for (const row of rows) {
+      await this.assertPayrollPucAccountExists(tx, row.account_code);
+      await tx.payrollAccountingMapping.upsert({
+        where: {
+          businessId_conceptCode_side: {
+            businessId,
+            conceptCode: row.concept_code,
+            side: row.side,
+          },
+        },
+        update: {
+          conceptName: row.concept_name,
+          accountCode: row.account_code,
+          accountName: row.account_name,
+          isActive: true,
+        },
+        create: {
+          businessId,
+          conceptCode: row.concept_code,
+          conceptName: row.concept_name,
+          accountCode: row.account_code,
+          accountName: row.account_name,
+          side: row.side,
+          isActive: true,
+        },
+      });
+    }
+
+    return rows.length;
   }
 
   private normalizeText(value?: string | null) {
@@ -748,17 +866,59 @@ export class PayrollService {
     }
   }
 
-  private isSupplementaryHourType(type: PayrollAdjustmentType) {
-    const supplementaryTypes: PayrollAdjustmentType[] = [
-      PayrollAdjustmentType.NIGHT_SURCHARGE,
-      PayrollAdjustmentType.OVERTIME_DAY,
-      PayrollAdjustmentType.OVERTIME_NIGHT,
-      PayrollAdjustmentType.SUNDAY_HOLIDAY_DAY,
-      PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_DAY,
-      PayrollAdjustmentType.SUNDAY_HOLIDAY_NIGHT,
-      PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_NIGHT,
-    ];
-    return supplementaryTypes.includes(type);
+  private isSupplementaryHourType(type: PayrollAdjustmentType | string) {
+    const value = String(type);
+    return (
+      SUPPLEMENTARY_ADJUSTMENT_TYPES.has(value as PayrollAdjustmentType) ||
+      Object.prototype.hasOwnProperty.call(
+        OVERTIME_RATE_CODE_TO_ADJUSTMENT_TYPE,
+        value,
+      )
+    );
+  }
+
+  private normalizeOvertimeCode(type: string) {
+    return String(type ?? '').trim();
+  }
+
+  private findOvertimeRate(
+    rates: Array<{ code: string; name?: string | null; factor: unknown }>,
+    code: string,
+  ) {
+    const rate = rates.find((entry) => entry.code === code);
+    if (!rate) {
+      const availableCodes = rates.map((entry) => entry.code).filter(Boolean);
+      const suffix = availableCodes.length
+        ? ` Codigos disponibles: ${availableCodes.join(', ')}`
+        : '';
+      throw new BadRequestException(
+        `Tipo de hora extra no configurado: ${code}.${suffix}`,
+      );
+    }
+    return rate;
+  }
+
+  private getPayableOvertimeMultiplier(code: string, factor: unknown) {
+    if (code === 'HORA_ORDINARIA_NOCTURNA') {
+      return this.decimal('0.35');
+    }
+    if (code === 'HORA_DOMINICAL_FESTIVO') {
+      return this.decimal('0.80');
+    }
+    if (code === 'HORA_DOM_FESTIVO_NOCTURNO') {
+      return this.decimal('1.15');
+    }
+    return this.decimal(factor);
+  }
+
+  private adjustmentTypeForOvertimeRateCode(code: string) {
+    const adjustmentType = OVERTIME_RATE_CODE_TO_ADJUSTMENT_TYPE[code];
+    if (!adjustmentType) {
+      throw new BadRequestException(
+        `Tipo de hora extra no soportado para novedades: ${code}`,
+      );
+    }
+    return adjustmentType;
   }
 
   private periodAccountingDate(year: number, month: number) {
@@ -829,7 +989,9 @@ export class PayrollService {
       period.status === PayrollPeriodStatus.POSTED ||
       period.status === PayrollPeriodStatus.CLOSED
     ) {
-      throw new BadRequestException('Payroll period is not editable');
+      throw new BadRequestException(
+        'Este periodo ya fue liquidado. No se pueden modificar novedades.',
+      );
     }
     return period;
   }
@@ -1125,6 +1287,11 @@ export class PayrollService {
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.status === PayrollPeriodStatus.POSTED) {
+        await this.ensureDefaultPayrollAccountingMappingsForBusiness(
+          businessId,
+          tx,
+        );
+
         const runs = await tx.payrollRun.findMany({
           where: { businessId, payrollPeriodId: id },
           include: {
@@ -1390,6 +1557,93 @@ export class PayrollService {
     };
   }
 
+  private accountingMovementTotals(
+    movements: Prisma.AccountingMovementCreateManyInput[],
+  ) {
+    return movements.reduce(
+      (acc, movement) => {
+        const amount = this.decimal(movement.amount);
+        if (movement.nature === MovementNature.DEBIT) {
+          acc.debit = acc.debit.plus(amount);
+        } else {
+          acc.credit = acc.credit.plus(amount);
+        }
+        return acc;
+      },
+      { debit: this.decimal(0), credit: this.decimal(0) },
+    );
+  }
+
+  private balanceAccountingMovementsForRounding(
+    movements: Prisma.AccountingMovementCreateManyInput[],
+    preferredTarget: 'NET_PAY' | 'AUTO' = 'AUTO',
+  ) {
+    const totals = this.accountingMovementTotals(movements);
+    const difference = totals.debit.minus(totals.credit);
+    if (difference.equals(0)) {
+      return { movements, totals, roundingAdjustment: this.decimal(0) };
+    }
+    if (difference.abs().gt(1)) {
+      return { movements, totals, roundingAdjustment: difference };
+    }
+
+    const adjustment = difference.abs();
+    const detailSuffix = ` Ajuste redondeo contable ${difference.toString()}`;
+    const netPayTarget =
+      preferredTarget === 'NET_PAY'
+        ? movements.find(
+            (movement) =>
+              movement.nature === MovementNature.CREDIT &&
+              String(movement.detail ?? '').toLowerCase().includes('neto a pagar'),
+          )
+        : undefined;
+
+    if (netPayTarget && difference.gt(0)) {
+      netPayTarget.amount = this.decimal(netPayTarget.amount).add(adjustment);
+      netPayTarget.detail = `${netPayTarget.detail ?? ''}${detailSuffix}`;
+      return {
+        movements,
+        totals: this.accountingMovementTotals(movements),
+        roundingAdjustment: difference,
+        roundingAdjustmentTarget: preferredTarget,
+      };
+    }
+
+    if (
+      netPayTarget &&
+      difference.lt(0) &&
+      this.decimal(netPayTarget.amount).greaterThan(adjustment)
+    ) {
+      netPayTarget.amount = this.decimal(netPayTarget.amount).sub(adjustment);
+      netPayTarget.detail = `${netPayTarget.detail ?? ''}${detailSuffix}`;
+      return {
+        movements,
+        totals: this.accountingMovementTotals(movements),
+        roundingAdjustment: difference,
+        roundingAdjustmentTarget: preferredTarget,
+      };
+    }
+
+    const target =
+      difference.gt(0)
+        ? movements.find((movement) => movement.nature === MovementNature.CREDIT)
+        : movements.find((movement) => movement.nature === MovementNature.DEBIT);
+
+    if (!target) {
+      return { movements, totals, roundingAdjustment: difference };
+    }
+
+    target.amount = this.decimal(target.amount).add(adjustment);
+    target.detail = `${target.detail ?? ''}${detailSuffix}`;
+
+    return {
+      movements,
+      totals: this.accountingMovementTotals(movements),
+      roundingAdjustment: difference,
+      roundingAdjustmentTarget: preferredTarget,
+    };
+  }
+
   private monthlyBenefitProfile() {
     return {
       benefitProfile: DATAICO_TRUNCATED_BENEFIT_PROFILE,
@@ -1430,12 +1684,19 @@ export class PayrollService {
     });
 
     const movements: Prisma.AccountingMovementCreateManyInput[] = [];
+    const missingMappings = new Set<string>();
     for (const concept of concepts) {
       if (this.decimal(concept.amount).equals(0)) continue;
 
       const conceptMappings = mappings.filter(
         (mapping) => mapping.conceptCode === concept.code,
       );
+      if (!conceptMappings.length) {
+        missingMappings.add(concept.code);
+        continue;
+      }
+
+      let createdMovementForConcept = false;
       for (const mapping of conceptMappings) {
         if (
           mapping.side === PayrollAccountingSide.CREDIT &&
@@ -1445,7 +1706,11 @@ export class PayrollService {
         }
 
         const accountCode = mapping.accountCode.trim();
-        if (accountCode.length !== 4 && accountCode.length !== 6) continue;
+        if (accountCode.length !== 4 && accountCode.length !== 6) {
+          missingMappings.add(concept.code);
+          continue;
+        }
+        createdMovementForConcept = true;
         movements.push({
           businessId,
           pucCuentaCode: accountCode.length === 4 ? accountCode : undefined,
@@ -1461,6 +1726,9 @@ export class PayrollService {
           originId: run.id,
         });
       }
+      if (!createdMovementForConcept) {
+        missingMappings.add(concept.code);
+      }
     }
 
     const netPay = this.decimal(run.netPay);
@@ -1469,6 +1737,10 @@ export class PayrollService {
         mapping.conceptCode === 'NET_PAY' &&
         mapping.side === PayrollAccountingSide.CREDIT,
     );
+
+    if (netPay.gt(0) && !netPayMapping) {
+      missingMappings.add('NET_PAY');
+    }
 
     if (netPay.gt(0) && netPayMapping) {
       const accountCode = netPayMapping.accountCode.trim();
@@ -1484,30 +1756,31 @@ export class PayrollService {
           originType: AccountingMovementOriginType.PAYROLL_RUN,
           originId: run.id,
         });
+      } else {
+        missingMappings.add('NET_PAY');
       }
+    }
+
+    if (missingMappings.size) {
+      throw new BadRequestException(
+        `No hay cuentas contables configuradas para nomina: ${Array.from(missingMappings).sort().join(', ')}`,
+      );
+    }
+
+    const balanced = this.balanceAccountingMovementsForRounding(
+      movements,
+      'NET_PAY',
+    );
+    const totals = balanced.totals;
+
+    if (!totals.debit.equals(totals.credit)) {
+      throw new BadRequestException(
+        `El asiento contable de nomina no esta balanceado. Debitos=${totals.debit.toFixed(2)} Creditos=${totals.credit.toFixed(2)}`,
+      );
     }
 
     if (movements.length) {
       await tx.accountingMovement.createMany({ data: movements });
-    }
-
-    const totals = movements.reduce(
-      (acc, movement) => {
-        const amount = this.decimal(movement.amount);
-        if (movement.nature === MovementNature.DEBIT) {
-          acc.debit = acc.debit.plus(amount);
-        } else {
-          acc.credit = acc.credit.plus(amount);
-        }
-        return acc;
-      },
-      { debit: this.decimal(0), credit: this.decimal(0) },
-    );
-
-    if (!totals.debit.equals(totals.credit)) {
-      this.logger.warn(
-        `Payroll accounting movements are unbalanced for payrollRunId=${run.id}, businessId=${businessId}, debit=${totals.debit.toFixed(2)}, credit=${totals.credit.toFixed(2)}, difference=${totals.debit.minus(totals.credit).toFixed(2)}`,
-      );
     }
   }
 
@@ -1536,7 +1809,11 @@ export class PayrollService {
       include: { arlRiskClass: true },
       orderBy: { startDate: 'desc' },
     });
-    if (!contract) throw new NotFoundException('Active contract not found');
+    if (!contract) {
+      throw new NotFoundException(
+        'El empleado no tiene contrato activo para este periodo.',
+      );
+    }
 
     const params = await this.resolvePayrollParameters(businessId, period.year, this.prisma);
     const workedDays =
@@ -1564,11 +1841,13 @@ export class PayrollService {
       : this.decimal(0);
     const commissions = this.decimal(dto.commissions);
     const nonSalaryBonus = this.decimal(dto.nonSalaryBonus);
+    const loanDeduction = this.decimal(dto.loanDeduction);
     const otherDeductions = this.decimal(dto.otherDeductions);
     const hourlyRate = salaryMonthly.div(params.monthlyHours);
 
-    const totalOvertimeQuantity = (dto.overtimeHours ?? []).reduce(
-      (sum, item) => sum + item.quantity,
+    const overtimeHours = dto.overtimeHours ?? [];
+    const totalOvertimeQuantity = overtimeHours.reduce(
+      (sum, item) => sum + Number(item.quantity ?? 0),
       0,
     );
     if (totalOvertimeQuantity > params.maxSupplementaryHours) {
@@ -1576,17 +1855,38 @@ export class PayrollService {
     }
 
     let overtimeAmount = this.decimal(0);
-    for (const item of dto.overtimeHours ?? []) {
-      if (!this.isSupplementaryHourType(item.type) || item.quantity <= 0) {
+    const overtimeHoursSnapshot: Array<{
+      type: string;
+      code: string;
+      quantity: number;
+      hours: number;
+      configuredFactor: string;
+      appliedMultiplier: string;
+      amount: string;
+    }> = [];
+    for (const item of overtimeHours) {
+      const code = this.normalizeOvertimeCode(item.type);
+      const quantity = Number(item.quantity);
+      if (!code || !Number.isFinite(quantity) || quantity <= 0) {
         throw new BadRequestException('Invalid overtimeHours item');
       }
-      const rate = params.overtimeRates.find((entry) => entry.code === item.type);
-      if (!rate) {
-        throw new BadRequestException(`Overtime rate not found for ${item.type}`);
-      }
-      overtimeAmount = overtimeAmount.add(
-        hourlyRate.mul(item.quantity).mul(this.decimal(rate.factor)),
+      const rate = this.findOvertimeRate(params.overtimeRates, code);
+      const configuredFactor = this.decimal(rate.factor);
+      const appliedMultiplier = this.getPayableOvertimeMultiplier(
+        code,
+        configuredFactor,
       );
+      const amount = hourlyRate.mul(quantity).mul(appliedMultiplier);
+      overtimeAmount = overtimeAmount.add(amount);
+      overtimeHoursSnapshot.push({
+        type: code,
+        code,
+        quantity,
+        hours: quantity,
+        configuredFactor: configuredFactor.toString(),
+        appliedMultiplier: appliedMultiplier.toString(),
+        amount: this.money(amount).toString(),
+      });
     }
 
     const grossIncome = salaryEarned
@@ -1615,6 +1915,7 @@ export class PayrollService {
       .add(employeePension)
       .add(solidarityFund)
       .add(withholdingTax)
+      .add(loanDeduction)
       .add(otherDeductions);
     const netPay = grossIncome.sub(totalEmployeeDeductions);
 
@@ -1636,7 +1937,7 @@ export class PayrollService {
       .add(connectivityAllowance)
       .add(commissions)
       .add(overtimeAmount);
-    const vacationBase = salaryEarned.add(commissions).add(overtimeAmount);
+    const vacationBase = salaryEarned.add(commissions);
     const benefitProfile = this.monthlyBenefitProfile();
     const severance = benefitBaseWithTransport.mul(benefitProfile.severanceRate);
     const monthlySeveranceInterestRate =
@@ -1691,6 +1992,7 @@ export class PayrollService {
       employeePension: this.money(employeePension),
       solidarityFund: this.money(solidarityFund),
       withholdingTax: this.money(withholdingTax),
+      loanDeduction: this.money(loanDeduction),
       otherDeductions: this.money(otherDeductions),
       totalEmployeeDeductions: this.money(totalEmployeeDeductions),
       netPay: this.money(netPay),
@@ -1731,6 +2033,26 @@ export class PayrollService {
         socialBenefits: costBreakdown.socialBenefits,
         parafiscals: costBreakdown.parafiscals,
         law1819Applied: law1819Applies,
+        overtimeHours: overtimeHoursSnapshot,
+        overtimeAmount: this.money(overtimeAmount).toString(),
+        ibcBasePolicy:
+          'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',
+        ibcBase: ibcAmount.toString(),
+        overtimeIncludedInIbc: true,
+        overtimeIncludedInBenefits: true,
+        overtimeIncludedInVacation: false,
+        loanDeduction: this.money(loanDeduction).toString(),
+        otherDeductions: this.money(otherDeductions).toString(),
+        deductionsBreakdown: {
+          loanDeduction: this.money(loanDeduction).toString(),
+          otherDeductions: this.money(otherDeductions).toString(),
+        },
+        benefitBaseWithTransport: benefitBaseWithTransport.toString(),
+        benefitBaseWithTransportPolicy:
+          'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_CONNECTIVITY_COMMISSIONS_AND_OVERTIME',
+        vacationBase: vacationBase.toString(),
+        vacationBasePolicy:
+          'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_CONNECTIVITY_AND_OVERTIME',
         exemptEmployerHealthLaw1819: params.exemptEmployerHealthLaw1819,
       },
       preview: true,
@@ -1761,7 +2083,11 @@ export class PayrollService {
         include: { arlRiskClass: true },
         orderBy: { startDate: 'desc' },
       });
-      if (!contract) throw new NotFoundException('Active contract not found');
+      if (!contract) {
+        throw new NotFoundException(
+          'El empleado no tiene contrato activo para este periodo.',
+        );
+      }
 
       const params = await this.resolvePayrollParameters(businessId, period.year, tx);
       const workedDays =
@@ -1789,11 +2115,13 @@ export class PayrollService {
         : this.decimal(0);
       const commissions = this.decimal(dto.commissions);
       const nonSalaryBonus = this.decimal(dto.nonSalaryBonus);
+      const loanDeduction = this.decimal(dto.loanDeduction);
       const otherDeductions = this.decimal(dto.otherDeductions);
       const hourlyRate = salaryMonthly.div(params.monthlyHours);
 
-      const totalOvertimeQuantity = (dto.overtimeHours ?? []).reduce(
-        (sum, item) => sum + item.quantity,
+      const overtimeHours = dto.overtimeHours ?? [];
+      const totalOvertimeQuantity = overtimeHours.reduce(
+        (sum, item) => sum + Number(item.quantity ?? 0),
         0,
       );
       if (totalOvertimeQuantity > params.maxSupplementaryHours) {
@@ -1801,25 +2129,46 @@ export class PayrollService {
       }
 
       let overtimeAmount = this.decimal(0);
+      const overtimeHoursSnapshot: Array<{
+        type: string;
+        code: string;
+        quantity: number;
+        hours: number;
+        configuredFactor: string;
+        appliedMultiplier: string;
+        amount: string;
+      }> = [];
       const overtimeAdjustments: Prisma.PayrollAdjustmentCreateManyInput[] = [];
-      for (const item of dto.overtimeHours ?? []) {
-        if (!this.isSupplementaryHourType(item.type) || item.quantity <= 0) {
+      for (const item of overtimeHours) {
+        const code = this.normalizeOvertimeCode(item.type);
+        const quantity = Number(item.quantity);
+        if (!code || !Number.isFinite(quantity) || quantity <= 0) {
           throw new BadRequestException('Invalid overtimeHours item');
         }
-        const rate = params.overtimeRates.find((entry) => entry.code === item.type);
-        if (!rate) {
-          throw new BadRequestException(`Overtime rate not found for ${item.type}`);
-        }
+        const rate = this.findOvertimeRate(params.overtimeRates, code);
         const factor = this.decimal(rate.factor);
-        const amount = hourlyRate.mul(item.quantity).mul(factor);
+        const appliedMultiplier = this.getPayableOvertimeMultiplier(
+          code,
+          factor,
+        );
+        const amount = hourlyRate.mul(quantity).mul(appliedMultiplier);
         overtimeAmount = overtimeAmount.add(amount);
         overtimeAdjustments.push({
           payrollRunId: '',
-          type: item.type,
-          quantity: item.quantity,
-          rate: factor,
+          type: this.adjustmentTypeForOvertimeRateCode(code),
+          quantity,
+          rate: appliedMultiplier,
           amount: this.money(amount),
           description: rate.name,
+        });
+        overtimeHoursSnapshot.push({
+          type: code,
+          code,
+          quantity,
+          hours: quantity,
+          configuredFactor: factor.toString(),
+          appliedMultiplier: appliedMultiplier.toString(),
+          amount: this.money(amount).toString(),
         });
       }
 
@@ -1849,6 +2198,7 @@ export class PayrollService {
         .add(employeePension)
         .add(solidarityFund)
         .add(withholdingTax)
+        .add(loanDeduction)
         .add(otherDeductions);
       const netPay = grossIncome.sub(totalEmployeeDeductions);
 
@@ -1870,7 +2220,7 @@ export class PayrollService {
       .add(connectivityAllowance)
       .add(commissions)
       .add(overtimeAmount);
-    const vacationBase = salaryEarned.add(commissions).add(overtimeAmount);
+    const vacationBase = salaryEarned.add(commissions);
       const benefitProfile = this.monthlyBenefitProfile();
       const severance = benefitBaseWithTransport.mul(
         benefitProfile.severanceRate,
@@ -1936,7 +2286,6 @@ export class PayrollService {
         severance: this.money(severance),
         severanceInterest: this.money(severanceInterest),
         serviceBonus: this.money(serviceBonus),
-        serviceBonusPreview: this.money(serviceBonus.mul(6)),
         vacation: this.money(vacation),
         totalEmployerContributions: this.money(totalEmployerContributions),
         totalParafiscals: this.money(totalParafiscals),
@@ -1976,6 +2325,22 @@ export class PayrollService {
           benefitProfile: benefitProfile.benefitProfile,
           severanceRateApplied: benefitProfile.severanceRate.toString(),
           serviceBonusRateApplied: benefitProfile.serviceBonusRate.toString(),
+          serviceBonusPreview: this.money(serviceBonus.mul(6)).toString(),
+          serviceBonusProjected: this.money(serviceBonus.mul(6)).toString(),
+          overtimeHours: overtimeHoursSnapshot,
+          overtimeAmount: this.money(overtimeAmount).toString(),
+          ibcBasePolicy:
+            'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',
+          ibcBase: ibcAmount.toString(),
+          overtimeIncludedInIbc: true,
+          overtimeIncludedInBenefits: true,
+          overtimeIncludedInVacation: false,
+          loanDeduction: this.money(loanDeduction).toString(),
+          otherDeductions: this.money(otherDeductions).toString(),
+          deductionsBreakdown: {
+            loanDeduction: this.money(loanDeduction).toString(),
+            otherDeductions: this.money(otherDeductions).toString(),
+          },
           vacationRateApplied: benefitProfile.vacationRate.toString(),
           severanceInterestFormula: benefitProfile.severanceInterestFormula,
           monthlySeveranceInterestProvision:
@@ -1988,10 +2353,10 @@ export class PayrollService {
           parafiscals: costBreakdown.parafiscals,
           benefitBaseWithTransport: benefitBaseWithTransport.toString(),
           benefitBaseWithTransportPolicy:
-            'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_AND_CONNECTIVITY_ALLOWANCE',
+            'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_CONNECTIVITY_COMMISSIONS_AND_OVERTIME',
           vacationBase: vacationBase.toString(),
           vacationBasePolicy:
-            'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_AND_CONNECTIVITY_ALLOWANCE',
+            'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_CONNECTIVITY_AND_OVERTIME',
           monthlySeveranceInterestRate: monthlySeveranceInterestRate.toString(),
           monthlySeveranceInterestPolicy:
             'MONTHLY_SEVERANCE_X_12_PERCENT',
@@ -2029,6 +2394,19 @@ export class PayrollService {
         });
       }
 
+      if (loanDeduction.gt(0)) {
+        await tx.payrollAdjustment.createMany({
+          data: [
+            {
+              payrollRunId: run.id,
+              type: PayrollAdjustmentType.LOAN_DEDUCTION,
+              amount: this.money(loanDeduction),
+              description: 'Prestamos',
+            },
+          ],
+        });
+      }
+
       const concepts = [
         this.concept('SALARY', 'Salary', PayrollConceptCategory.EARNING, salaryEarned, { quantity: workedDays, baseAmount: salaryMonthly }),
         this.concept('TRANSPORT_ALLOWANCE', 'Transport allowance', PayrollConceptCategory.EARNING, transportAllowance),
@@ -2040,6 +2418,7 @@ export class PayrollService {
         this.concept('EMPLOYEE_PENSION', 'Employee pension', PayrollConceptCategory.EMPLOYEE_DEDUCTION, employeePension, { baseAmount: ibcAmount, rate: params.pensionEmployeeRate }),
         this.concept('SOLIDARITY_FUND', 'Solidarity fund', PayrollConceptCategory.EMPLOYEE_DEDUCTION, solidarityFund, { baseAmount: ibcAmount, rate: bracket?.rate }),
         this.concept('WITHHOLDING_TAX', 'Withholding tax', PayrollConceptCategory.EMPLOYEE_DEDUCTION, withholdingTax),
+        this.concept('LOAN_DEDUCTION', 'Loan deduction', PayrollConceptCategory.EMPLOYEE_DEDUCTION, loanDeduction),
         this.concept('OTHER_DEDUCTIONS', 'Other deductions', PayrollConceptCategory.EMPLOYEE_DEDUCTION, otherDeductions),
         this.concept('EMPLOYER_HEALTH', 'Employer health', PayrollConceptCategory.EMPLOYER_CONTRIBUTION, employerHealth, { baseAmount: ibcAmount, rate: params.healthEmployerRate }),
         this.concept('EMPLOYER_PENSION', 'Employer pension', PayrollConceptCategory.EMPLOYER_CONTRIBUTION, employerPension, { baseAmount: ibcAmount, rate: params.pensionEmployerRate }),
@@ -2106,6 +2485,13 @@ export class PayrollService {
         });
         continue;
       }
+      const existingRun = await this.prisma.payrollRun.findFirst({
+        where: { businessId, payrollPeriodId: periodId, employeeId: employee.id },
+      });
+      if (existingRun) {
+        calculatedRuns += 1;
+        continue;
+      }
       await this.calculateEmployeePayroll(businessId, periodId, employee.id, {});
       calculatedRuns += 1;
     }
@@ -2114,6 +2500,36 @@ export class PayrollService {
       totalEmployees: employees.length,
       calculatedRuns,
       skippedEmployees,
+    };
+  }
+
+  async liquidatePeriodPayroll(businessId: string, periodId: string) {
+    const period = await this.getPeriodForBusiness(businessId, periodId);
+    if (
+      period.status === PayrollPeriodStatus.POSTED ||
+      period.status === PayrollPeriodStatus.CLOSED
+    ) {
+      throw new ConflictException('La nomina de este periodo ya fue liquidada.');
+    }
+
+    const calculation = await this.calculatePeriodPayroll(businessId, periodId);
+    if (calculation.calculatedRuns === 0) {
+      throw new BadRequestException(
+        'No hay empleados activos con contrato vigente para liquidar.',
+      );
+    }
+
+    const postedPeriod = await this.updatePayrollPeriodStatus(
+      businessId,
+      periodId,
+      { status: PayrollPeriodStatus.POSTED },
+    );
+    const runs = await this.listPayrollRuns(businessId, periodId);
+
+    return {
+      period: postedPeriod,
+      runs,
+      ...calculation,
     };
   }
 
@@ -2329,13 +2745,20 @@ export class PayrollService {
     };
   }
 
-  private withPayrollRunComputedFields<T extends { serviceBonus?: unknown } | null>(
+  private withPayrollRunComputedFields<
+    T extends { serviceBonus?: unknown; usedParameters?: unknown } | null
+  >(
     run: T,
   ) {
     if (!run) return run;
+    const params = (run.usedParameters ?? {}) as Record<string, unknown>;
+    const deductionsBreakdown =
+      (params.deductionsBreakdown ?? {}) as Record<string, unknown>;
     return {
       ...run,
       serviceBonusPreview: this.money(this.decimal(run.serviceBonus).mul(6)),
+      loanDeduction:
+        deductionsBreakdown.loanDeduction ?? params.loanDeduction ?? '0',
     };
   }
 
@@ -2988,7 +3411,10 @@ export class PayrollService {
         PayrollSettlementType.REAL_TERMINATION,
         endDate,
         tx,
-        { salaryConceptsAmount: dto.salaryConceptsAmount },
+        {
+          calculationYear: dto.calculationYear,
+          salaryConceptsAmount: dto.salaryConceptsAmount,
+        },
       );
 
       await tx.employeeContract.update({
@@ -3000,7 +3426,28 @@ export class PayrollService {
         where: { id: settlement.id },
         include: { employee: true, contract: true, lines: true },
       });
-      return this.withSettlementComputedFields(persisted);
+      if (!persisted) throw new NotFoundException('Settlement not found');
+
+      await this.ensureDefaultPayrollAccountingMappingsForBusiness(
+        businessId,
+        tx,
+      );
+
+      await this.recreateSettlementAccountingMovements(
+        businessId,
+        persisted,
+        tx,
+      );
+
+      const posted = await tx.payrollContractSettlement.update({
+        where: { id: settlement.id },
+        data: {
+          status: PayrollSettlementStatus.POSTED,
+          postedAt: new Date(),
+        },
+        include: { employee: true, contract: true, lines: true },
+      });
+      return this.withSettlementComputedFields(posted);
     });
   }
 
@@ -3059,15 +3506,26 @@ export class PayrollService {
     });
 
     const movements: Prisma.AccountingMovementCreateManyInput[] = [];
+    const missingMappings = new Set<string>();
     const employeeName = `${settlement.employee.firstName} ${settlement.employee.lastName}`;
     for (const line of settlement.lines) {
       if (this.decimal(line.amount).equals(0)) continue;
       const lineMappings = mappings.filter(
         (mapping) => mapping.conceptCode === line.code,
       );
+      if (!lineMappings.length) {
+        missingMappings.add(line.code);
+        continue;
+      }
+
+      let createdMovementForLine = false;
       for (const mapping of lineMappings) {
         const accountCode = mapping.accountCode.trim();
-        if (accountCode.length !== 4 && accountCode.length !== 6) continue;
+        if (accountCode.length !== 4 && accountCode.length !== 6) {
+          missingMappings.add(line.code);
+          continue;
+        }
+        createdMovementForLine = true;
         movements.push({
           businessId,
           pucCuentaCode: accountCode.length === 4 ? accountCode : undefined,
@@ -3083,6 +3541,24 @@ export class PayrollService {
           originId: settlement.id,
         });
       }
+      if (!createdMovementForLine) {
+        missingMappings.add(line.code);
+      }
+    }
+
+    if (missingMappings.size) {
+      throw new BadRequestException(
+        `No hay cuentas contables configuradas para liquidacion de contrato: ${Array.from(missingMappings).sort().join(', ')}`,
+      );
+    }
+
+    const balanced = this.balanceAccountingMovementsForRounding(movements);
+    const totals = balanced.totals;
+
+    if (!totals.debit.equals(totals.credit)) {
+      throw new BadRequestException(
+        `El asiento contable de liquidacion de contrato no esta balanceado. Debitos=${totals.debit.toFixed(2)} Creditos=${totals.credit.toFixed(2)}`,
+      );
     }
 
     if (movements.length) {

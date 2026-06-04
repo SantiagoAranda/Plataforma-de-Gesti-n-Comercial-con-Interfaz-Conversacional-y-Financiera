@@ -1,18 +1,19 @@
 import {
   IsArray,
-  IsEnum,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsString,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { PayrollAdjustmentType } from '@prisma/client';
 
 export class PayrollOvertimeInputDto {
-  @IsEnum(PayrollAdjustmentType)
-  type: PayrollAdjustmentType;
+  @IsString()
+  @IsNotEmpty()
+  type: string;
 
   @IsNumber()
   @Min(0)
@@ -39,6 +40,11 @@ export class CalculatePayrollDto {
   @IsNumber()
   @Min(0)
   otherDeductions?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  loanDeduction?: number;
 
   @IsOptional()
   @IsArray()
