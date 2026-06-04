@@ -597,6 +597,115 @@ describe('PayrollService payroll history rules', () => {
     expect(Number(result.totalAmount)).toBe(2_897_047);
   });
 
+  it('matches the Excel informative settlement fields for 2026-06-04 to 2026-12-31', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-06-04T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    expect(result.semester1Days).toBe(27);
+    expect(result.semester2Days).toBe(180);
+    expect(result.causedDays).toBe(207);
+    expect(Number(result.severance)).toBe(1_150_000);
+    expect(Number(result.severanceInterest)).toBe(79_350);
+    expect(Number(result.serviceBonusSemester1)).toBe(150_000);
+    expect(Number(result.serviceBonusSemester2)).toBe(1_000_000);
+    expect(Number(result.vacation)).toBe(503_385);
+    expect(Number(result.totalAmount)).toBe(2_882_735);
+    expect(Number(result.vacationDays)).toBe(8.7);
+    expect(Number(result.hourlyRate)).toBeCloseTo(1_750_905 / 141.390844, 1);
+    expect(result.usedParameters.vacationDaysRaw).toBe('8.625');
+    expect(result.usedParameters.vacationDaysFormula).toBe('causedDays * 15 / 360');
+    expect(result.usedParameters.vacationDaysRounding).toBe('CEIL_1_DECIMAL');
+    expect(result.usedParameters.monthlyPayrollHours).toBe('220');
+    expect(result.usedParameters.settlementInformativeHourlyDivisor).toBe('141.390844');
+    expect(result.usedParameters.hourlyRateSource).toBe('EXCEL_COMPATIBILITY_INFORMATIVE_ONLY');
+  });
+
+  it('keeps monthly payroll hourly rate on monthlyHours while settlement uses the Excel divisor', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollOvertimeRate.findMany.mockResolvedValue([
+      { code: 'OVERTIME_DAY', name: 'Extra diurna', factor: 1.25 },
+    ]);
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      businessId: 'biz-1',
+      employeeId: 'emp-1',
+      employee: {
+        id: 'emp-1',
+        firstName: 'Ana',
+        lastName: 'Gomez',
+        documentNumber: '123',
+        documentType: 'CC',
+        position: 'Asistente',
+      },
+      contractType: PayrollContractType.INDEFINITE,
+      startDate: new Date('2026-06-04T00:00:00.000Z'),
+      endDate: null,
+      isActive: true,
+      salaryMonthly: new Prisma.Decimal(1_750_905),
+      isRemote: false,
+      applyLaw1819: true,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentsCount: 1,
+      arlRiskClassId: 'arl-1',
+      arlRiskClass: { id: 'arl-1', rate: 0.00522 },
+    });
+    const service = new PayrollService(prisma as any);
+
+    const monthlyPreview: any = await service.previewEmployeePayroll(
+      'biz-1',
+      'period-1',
+      'emp-1',
+      {
+        workedDays: 30,
+        overtimeHours: [{ type: 'OVERTIME_DAY' as any, quantity: 720 }],
+      },
+    );
+    const settlement: any = await service.simulateContractSettlement(
+      'biz-1',
+      'contract-1',
+      { endDate: '2026-12-31', calculationYear: 2026 },
+    );
+
+    const operationalHourlyRate = Number(monthlyPreview.overtimeAmount) / 720 / 1.25;
+    expect(operationalHourlyRate).toBeCloseTo(1_750_905 / 220, 3);
+    expect(operationalHourlyRate).toBeCloseTo(7_958.659, 3);
+    expect(Number(settlement.hourlyRate)).toBeCloseTo(1_750_905 / 141.390844, 1);
+    expect(settlement.usedParameters.monthlyPayrollHours).toBe('220');
+    expect(settlement.usedParameters.settlementInformativeHourlyDivisor).toBe('141.390844');
+    expect(settlement.usedParameters.hourlyRateSource).toBe(
+      'EXCEL_COMPATIBILITY_INFORMATIVE_ONLY',
+    );
+  });
+
   it('applies current semester cutoff only when the sent endDate is in 2027 for calculation year 2026', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst.mockResolvedValue({

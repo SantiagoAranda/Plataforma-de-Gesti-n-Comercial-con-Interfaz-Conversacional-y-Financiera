@@ -40,6 +40,7 @@ export type PayrollPeriod = {
 
 export type PayrollRun = {
   id: string;
+  payrollPeriodId?: string;
   employeeId: string;
   contractId: string;
   employee: Employee;

@@ -2472,7 +2472,10 @@ export class PayrollService {
     const vacationBase = salaryMonthly.add(salaryConceptsAmount);
     const benefitDays = this.decimal(referenceBenefitDays);
     const dailySalary = salaryMonthly.div(params.maxWorkedDaysMonth);
-    const hourlyRate = salaryMonthly.div(params.monthlyHours);
+    // Compatibility-only divisor used by the client's Excel settlement sheet.
+    // Do not use for monthly payroll, overtime, or operational hourly calculations.
+    const EXCEL_SETTLEMENT_MONTHLY_HOURS = this.decimal('141.390844');
+    const hourlyRate = salaryMonthly.div(EXCEL_SETTLEMENT_MONTHLY_HOURS);
     const grossSalaryAccrued = this.decimal(0);
     const netSalaryPaid = this.decimal(0);
     const grossSalaryPaid = this.decimal(0);
@@ -2493,7 +2496,8 @@ export class PayrollService {
     const serviceBonusCaused = serviceBonusSemesterOneCaused.add(
       serviceBonusSemesterTwoCaused,
     );
-    const vacationDays = benefitDays.mul(15).div(360);
+    const vacationDaysRaw = benefitDays.mul(15).div(360);
+    const vacationDays = vacationDaysRaw.mul(10).ceil().div(10);
     const vacationCaused = vacationBase.mul(benefitDays).div(720);
     const serviceBonusPaid = this.decimal(0);
     const severancePaid = this.decimal(0);
@@ -2591,6 +2595,10 @@ export class PayrollService {
       daysWorkedForVacation: referenceBenefitDays,
       dailySalary: dailySalary.toString(),
       hourlyRate: hourlyRate.toString(),
+      hourlyRateFormula: 'salaryMonthly / settlementInformativeHourlyDivisor',
+      hourlyRateSource: 'EXCEL_COMPATIBILITY_INFORMATIVE_ONLY',
+      monthlyPayrollHours: params.monthlyHours.toString(),
+      settlementInformativeHourlyDivisor: EXCEL_SETTLEMENT_MONTHLY_HOURS.toString(),
       salaryMonthly: salaryMonthly.toString(),
       transportAllowance: settlementTransportAllowance.toString(),
       connectivityAllowance: settlementConnectivityAllowance.toString(),
@@ -2650,6 +2658,9 @@ export class PayrollService {
       },
       withholdingTax: '0',
       dayCountBasis: '30/360',
+      vacationDaysRaw: vacationDaysRaw.toString(),
+      vacationDaysFormula: 'causedDays * 15 / 360',
+      vacationDaysRounding: 'CEIL_1_DECIMAL',
       formulas: {
         effectiveStartDate: 'max(contract.startDate, January 1st of calculationYear)',
         effectiveEndDate: 'min(requestedEndDate, Dec 31 of calculationYear), or current semester end when requestedEndDate exceeds calculationYear',
@@ -2661,6 +2672,8 @@ export class PayrollService {
         serviceBonusSemester1: 'benefitSettlementBase * semester1Days / 360',
         serviceBonusSemester2: 'benefitSettlementBase * semester2Days / 360',
         vacationDays: 'causedDays * 15 / 360',
+        vacationDaysRounding: 'ceil(vacationDays * 10) / 10',
+        hourlyRate: 'salaryMonthly / settlementInformativeHourlyDivisor',
         vacation: 'vacationBase * causedDays / 720',
       },
     } as Prisma.InputJsonObject;
@@ -2801,7 +2814,7 @@ export class PayrollService {
       serviceBonusTotal: this.money(serviceBonus),
       vacation: this.money(vacation),
       vacationDays: vacationDays.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
-      hourlyRate: this.money(hourlyRate),
+      hourlyRate: hourlyRate.toDecimalPlaces(1, Prisma.Decimal.ROUND_HALF_UP),
       totalAmount: this.money(settlementTotalPayable),
       totalEstimated: this.money(settlementTotalPayable),
       salaryPendingAvailable: false,
