@@ -182,16 +182,27 @@ export default function SalesChatComposer({
       return;
     }
 
-    setItems((prev) => [
-      ...prev,
-      {
-        itemId: bi.id,
-        qty: newItem.qty === "" ? 1 : newItem.qty,
-        name: bi.name,
-        price: bi.price,
-        durationMin: bi.durationMinutes,
-      },
-    ]);
+
+    const addedQty = newItem.qty === "" ? 1 : newItem.qty;
+
+    setItems((prev) => {
+      const existingIdx = prev.findIndex((it) => it.itemId === bi.id);
+      if (existingIdx > -1) {
+        return prev.map((it, idx) =>
+          idx === existingIdx ? { ...it, qty: it.qty + addedQty } : it
+        );
+      }
+      return [
+        ...prev,
+        {
+          itemId: bi.id,
+          qty: addedQty,
+          name: bi.name,
+          price: bi.price,
+          durationMin: bi.durationMinutes,
+        },
+      ];
+    });
     setNewItem({itemId: "", qty: 1});
   };
 
