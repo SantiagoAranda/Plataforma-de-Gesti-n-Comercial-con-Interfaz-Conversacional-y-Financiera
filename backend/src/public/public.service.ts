@@ -1,15 +1,27 @@
-import {
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class PublicService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+  ) {}
+
+  private withPublicLogoUrl<
+    T extends { logoObjectKey?: string | null; logoUrl?: string | null },
+  >(business: T): T {
+    return {
+      ...business,
+      logoUrl: business.logoObjectKey
+        ? this.storageService.getPublicUrl(business.logoObjectKey)
+        : (business.logoUrl ?? null),
+    };
+  }
 
   private parseDateOnly(value: string) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
@@ -26,7 +38,7 @@ export class PublicService {
         0,
         0,
         0,
-      )
+      ),
     );
   }
 
@@ -54,9 +66,7 @@ export class PublicService {
       .toString()
       .padStart(2, '0');
 
-    const m = (minutes % 60)
-      .toString()
-      .padStart(2, '0');
+    const m = (minutes % 60).toString().padStart(2, '0');
 
     return `${h}:${m}`;
   }
@@ -99,7 +109,9 @@ export class PublicService {
           itemId: item.id,
           date,
           status: { not: 'CANCELLED' },
-          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+          ...(excludeReservationId
+            ? { id: { not: excludeReservationId } }
+            : {}),
         },
         select: {
           startMinute: true,
@@ -127,7 +139,10 @@ export class PublicService {
       if (last && last.endMinute >= w.startMinute) {
         last.endMinute = Math.max(last.endMinute, w.endMinute);
       } else {
-        mergedWindows.push({ startMinute: w.startMinute, endMinute: w.endMinute });
+        mergedWindows.push({
+          startMinute: w.startMinute,
+          endMinute: w.endMinute,
+        });
       }
     }
 
@@ -137,7 +152,9 @@ export class PublicService {
     const slots: string[] = [];
 
     // Past slots filter based on America/Bogota
-    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
     const today = new Date(
       Date.UTC(
         nowInBusiness.getFullYear(),
@@ -147,9 +164,10 @@ export class PublicService {
         0,
         0,
         0,
-      )
+      ),
     );
-    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+    const currentMinutes =
+      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
       let cursor = window.startMinute;
@@ -164,7 +182,8 @@ export class PublicService {
         }
 
         const overlap = reservations.some(
-          (reservation) => start < reservation.endMinute && end > reservation.startMinute,
+          (reservation) =>
+            start < reservation.endMinute && end > reservation.startMinute,
         );
 
         const blocked = blocks.some((block) => {
@@ -173,8 +192,7 @@ export class PublicService {
           }
 
           return (
-            start < (block.endMinute ?? 0) &&
-            end > (block.startMinute ?? 0)
+            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
           );
         });
 
@@ -201,6 +219,7 @@ export class PublicService {
         name: true,
         slug: true,
         logoUrl: true,
+        logoObjectKey: true,
         storeFooterSettings: {
           select: {
             description: true,
@@ -222,6 +241,7 @@ export class PublicService {
             name: true,
             slug: true,
             logoUrl: true,
+            logoObjectKey: true,
             storeFooterSettings: {
               select: {
                 description: true,
@@ -254,7 +274,11 @@ export class PublicService {
       },
     });
 
-    const { id: _businessId, ...publicBusiness } = business;
+    const {
+      id: _businessId,
+      logoObjectKey: _logoObjectKey,
+      ...publicBusiness
+    } = this.withPublicLogoUrl(business);
 
     return {
       business: publicBusiness,
@@ -281,8 +305,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -293,15 +316,19 @@ export class PublicService {
       },
     });
 
-    if (!item)
-      throw new BadRequestException('Invalid service');
+    if (!item) throw new BadRequestException('Invalid service');
 
     const selectedDate = this.parseDateOnly(date);
     const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
       where: { businessId: business.id, itemId: item.id },
     });
     const hasSpecificWindows = specificWindowsCount > 0;
-    return this.getAvailabilitySlotsForItem(business.id, item, selectedDate, hasSpecificWindows);
+    return this.getAvailabilitySlotsForItem(
+      business.id,
+      item,
+      selectedDate,
+      hasSpecificWindows,
+    );
   }
 
   async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
@@ -316,8 +343,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -328,14 +354,15 @@ export class PublicService {
       },
     });
 
-    if (!item)
-      throw new BadRequestException('Invalid service');
+    if (!item) throw new BadRequestException('Invalid service');
 
     const { year, monthIndex } = this.parseMonth(month);
     const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
     const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-    
-    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
     const today = new Date(
       Date.UTC(
         nowInBusiness.getFullYear(),
@@ -345,7 +372,7 @@ export class PublicService {
         0,
         0,
         0,
-      )
+      ),
     );
 
     const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
@@ -392,8 +419,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     return this.prisma.$transaction(async (tx) => {
       const {
@@ -413,7 +439,9 @@ export class PublicService {
 
       const selectedDate = this.parseDateOnly(date);
 
-      const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+      const nowInBusiness = new Date(
+        new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+      );
       const today = new Date(
         Date.UTC(
           nowInBusiness.getFullYear(),
@@ -423,7 +451,7 @@ export class PublicService {
           0,
           0,
           0,
-        )
+        ),
       );
 
       if (selectedDate < today)
@@ -438,8 +466,7 @@ export class PublicService {
         },
       });
 
-      if (!item)
-        throw new BadRequestException('Invalid service');
+      if (!item) throw new BadRequestException('Invalid service');
 
       const specificWindowsCount = await tx.serviceScheduleWindow.count({
         where: { businessId: business.id, itemId: item.id },
@@ -455,7 +482,9 @@ export class PublicService {
       const requestedSlot = this.formatTime(startMinute);
 
       if (!availableSlots.includes(requestedSlot)) {
-        throw new BadRequestException('Time slot already reserved or unavailable');
+        throw new BadRequestException(
+          'Time slot already reserved or unavailable',
+        );
       }
 
       const reservation = await tx.reservation.create({
@@ -472,7 +501,9 @@ export class PublicService {
         },
       });
 
-      console.log(`[PublicService] Created reservation origin: ${reservation.origin}`);
+      console.log(
+        `[PublicService] Created reservation origin: ${reservation.origin}`,
+      );
       return reservation;
     });
   }
@@ -493,8 +524,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     if (!dto.items || dto.items.length === 0)
       throw new BadRequestException('Order must contain items');
@@ -521,9 +551,7 @@ export class PublicService {
 
         items: {
           create: dto.items.map((input) => {
-            const item = dbItems.find(
-              (i) => i.id === input.itemId,
-            )!;
+            const item = dbItems.find((i) => i.id === input.itemId)!;
 
             const quantity = input.quantity;
             const unitPrice = item.price;
@@ -537,8 +565,7 @@ export class PublicService {
               lineTotal,
               itemNameSnapshot: item.name,
               itemTypeSnapshot: item.type,
-              durationMinutesSnapshot:
-                item.durationMinutes,
+              durationMinutesSnapshot: item.durationMinutes,
             };
           }),
         },
@@ -548,10 +575,7 @@ export class PublicService {
 
     console.log(`[PublicService] Created order origin: ${order.origin}`);
 
-    const total = order.items.reduce(
-      (acc, i) => acc + Number(i.lineTotal),
-      0,
-    );
+    const total = order.items.reduce((acc, i) => acc + Number(i.lineTotal), 0);
 
     await this.prisma.order.update({
       where: { id: order.id },

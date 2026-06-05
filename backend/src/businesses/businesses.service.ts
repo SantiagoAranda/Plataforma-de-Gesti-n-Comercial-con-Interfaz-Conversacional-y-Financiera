@@ -5,15 +5,14 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { Business, PayrollAccountingSide, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
-import { createClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
 import sharp from 'sharp';
+import { StorageService } from '../storage/storage.service';
 
 type FooterPhone = {
   label: string;
@@ -47,7 +46,6 @@ const ALLOWED_LOGO_MIME_TYPES = new Set([
   'image/png',
   'image/webp',
 ]);
-const BUSINESS_LOGOS_BUCKET = 'business-logos';
 const ALLOWED_SOCIAL_TYPES = new Set([
   'facebook',
   'instagram',
@@ -112,10 +110,14 @@ function validateSocials(value: unknown): FooterSocial[] {
 
       if (!type && !label && !socialValue) return null;
       if (!type || !socialValue) {
-        throw new BadRequestException('Cada red social debe tener tipo y valor');
+        throw new BadRequestException(
+          'Cada red social debe tener tipo y valor',
+        );
       }
       if (!ALLOWED_SOCIAL_TYPES.has(type)) {
-        throw new BadRequestException(`Tipo de red social no soportado: ${type}`);
+        throw new BadRequestException(
+          `Tipo de red social no soportado: ${type}`,
+        );
       }
 
       return {
@@ -169,25 +171,20 @@ function parsePayrollAccountingMappingTemplate() {
 
 @Injectable()
 export class BusinessesService {
-  private readonly supabase: ReturnType<typeof createClient> | null;
-  private readonly logosBucket: string;
-
   constructor(
     private prisma: PrismaService,
-    private configService: ConfigService,
-  ) {
-    const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
-    const supabaseKey =
-      this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') ??
-      this.configService.get<string>('SUPABASE_SERVICE_KEY');
+    private storageService: StorageService,
+  ) {}
 
-    this.supabase =
-      supabaseUrl && supabaseKey
-        ? createClient(supabaseUrl, supabaseKey)
-        : null;
-    this.logosBucket =
-      this.configService.get<string>('SUPABASE_BUSINESS_LOGOS_BUCKET') ??
-      BUSINESS_LOGOS_BUCKET;
+  private withPublicLogoUrl<
+    T extends { logoObjectKey?: string | null; logoUrl?: string | null },
+  >(business: T): T {
+    return {
+      ...business,
+      logoUrl: business.logoObjectKey
+        ? this.storageService.getPublicUrl(business.logoObjectKey)
+        : (business.logoUrl ?? null),
+    };
   }
 
   async createBusiness(data: {
@@ -295,7 +292,7 @@ export class BusinessesService {
   }
 
   async getActiveBusinesses() {
-    return this.prisma.business.findMany({
+    const businesses = await this.prisma.business.findMany({
       where: {
         status: 'ACTIVE',
       },
@@ -309,10 +306,12 @@ export class BusinessesService {
         status: true,
       },
     });
+
+    return businesses.map((business) => this.withPublicLogoUrl(business));
   }
 
   async getInactiveBusinesses() {
-    return this.prisma.business.findMany({
+    const businesses = await this.prisma.business.findMany({
       where: {
         status: 'INACTIVE',
       },
@@ -327,6 +326,8 @@ export class BusinessesService {
         inactivatedAt: true,
       },
     });
+
+    return businesses.map((business) => this.withPublicLogoUrl(business));
   }
 
   async inactivateBusiness(id: string) {
@@ -350,7 +351,7 @@ export class BusinessesService {
   }
 
   async getBusinessById(id: string) {
-    return this.prisma.business.findUnique({
+    const business = await this.prisma.business.findUnique({
       where: { id },
       include: {
         _count: {
@@ -360,6 +361,8 @@ export class BusinessesService {
         },
       },
     });
+
+    return business ? this.withPublicLogoUrl(business) : null;
   }
 
   async getProfile(businessId: string) {
@@ -383,7 +386,7 @@ export class BusinessesService {
       throw new NotFoundException('Negocio no encontrado');
     }
 
-    return business;
+    return this.withPublicLogoUrl(business);
   }
 
   async getStoreFooterSettings(businessId: string) {
@@ -457,12 +460,6 @@ export class BusinessesService {
       throw new BadRequestException('El logo no puede superar los 2 MB');
     }
 
-    if (!this.supabase) {
-      throw new InternalServerErrorException(
-        'Supabase Storage no está configurado',
-      );
-    }
-
     const previous = await this.prisma.business.findUnique({
       where: { id: businessId },
       select: { logoObjectKey: true },
@@ -481,30 +478,24 @@ export class BusinessesService {
       .webp({ quality: 80 })
       .toBuffer();
 
-    const objectKey = `businesses/${businessId}/logo-${Date.now()}.webp`;
+    const objectKey = `businesses/${businessId}/logos/${Date.now()}.webp`;
+    const logoUrl = this.storageService.getPublicUrl(objectKey);
 
-    const { error: uploadError } = await this.supabase.storage
-      .from(this.logosBucket)
-      .upload(objectKey, optimized, {
+    try {
+      await this.storageService.uploadObject({
+        objectKey,
+        body: optimized,
         contentType: 'image/webp',
-        upsert: false,
       });
-
-    if (uploadError) {
-      throw new InternalServerErrorException(
-        'No se pudo subir el logo al storage',
-      );
+    } catch (error) {
+      throw new InternalServerErrorException('No se pudo subir el logo a R2');
     }
-
-    const { data: publicUrlData } = this.supabase.storage
-      .from(this.logosBucket)
-      .getPublicUrl(objectKey);
 
     try {
       const business = await this.prisma.business.update({
         where: { id: businessId },
         data: {
-          logoUrl: publicUrlData.publicUrl,
+          logoUrl,
           logoObjectKey: objectKey,
           logoMimeType: 'image/webp',
           logoSizeBytes: optimized.length,
@@ -524,32 +515,31 @@ export class BusinessesService {
       });
 
       if (previous.logoObjectKey) {
-        const { error: removePreviousError } = await this.supabase.storage
-          .from(this.logosBucket)
-          .remove([previous.logoObjectKey]);
-
-        if (removePreviousError) {
+        try {
+          await this.storageService.deleteObject(previous.logoObjectKey);
+        } catch (error) {
           console.error(
             '[BusinessesService] Error deleting previous logo',
-            removePreviousError,
+            error,
           );
         }
       }
 
-      return business;
+      return this.withPublicLogoUrl(business);
     } catch (error) {
-      await this.supabase.storage.from(this.logosBucket).remove([objectKey]);
+      try {
+        await this.storageService.deleteObject(objectKey);
+      } catch (deleteError) {
+        console.error(
+          '[BusinessesService] Error deleting uploaded logo after DB failure',
+          deleteError,
+        );
+      }
       throw error;
     }
   }
 
   async deleteLogo(businessId: string) {
-    if (!this.supabase) {
-      throw new InternalServerErrorException(
-        'Supabase Storage no está configurado',
-      );
-    }
-
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
       select: { logoObjectKey: true },
@@ -560,18 +550,16 @@ export class BusinessesService {
     }
 
     if (business.logoObjectKey) {
-      const { error: deleteError } = await this.supabase.storage
-        .from(this.logosBucket)
-        .remove([business.logoObjectKey]);
-
-      if (deleteError) {
+      try {
+        await this.storageService.deleteObject(business.logoObjectKey);
+      } catch (error) {
         throw new InternalServerErrorException(
-          'No se pudo eliminar el logo del storage',
+          'No se pudo eliminar el logo de R2',
         );
       }
     }
 
-    return this.prisma.business.update({
+    const updatedBusiness = await this.prisma.business.update({
       where: { id: businessId },
       data: {
         logoUrl: null,
@@ -592,5 +580,7 @@ export class BusinessesService {
         status: true,
       },
     });
+
+    return this.withPublicLogoUrl(updatedBusiness);
   }
 }
