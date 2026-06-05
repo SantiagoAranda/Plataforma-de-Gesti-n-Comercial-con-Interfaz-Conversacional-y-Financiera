@@ -55,9 +55,7 @@ function createPrismaMock() {
       business: {
         findUnique: jest.fn().mockResolvedValue(null),
       },
-      $transaction: jest.fn((callback: (tx: any) => unknown) =>
-        callback(tx),
-      ),
+      $transaction: jest.fn((callback: (tx: any) => unknown) => callback(tx)),
     },
   };
 }
@@ -65,9 +63,12 @@ function createPrismaMock() {
 describe('BusinessesService payroll accounting defaults', () => {
   it('creates default payroll accounting mappings when a business is created', async () => {
     const { prisma, tx } = createPrismaMock();
-    const service = new BusinessesService(prisma as any, {
-      get: jest.fn().mockReturnValue(undefined),
-    } as any);
+    const service = new BusinessesService(
+      prisma as any,
+      {
+        getPublicUrl: jest.fn(),
+      } as any,
+    );
     const rows = payrollMappingTemplateRows();
 
     await service.createBusiness({
@@ -77,7 +78,9 @@ describe('BusinessesService payroll accounting defaults', () => {
     });
 
     expect(tx.business.create).toHaveBeenCalled();
-    expect(tx.payrollAccountingMapping.upsert).toHaveBeenCalledTimes(rows.length);
+    expect(tx.payrollAccountingMapping.upsert).toHaveBeenCalledTimes(
+      rows.length,
+    );
     expect(tx.payrollAccountingMapping.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -99,9 +102,12 @@ describe('BusinessesService payroll accounting defaults', () => {
   it('fails business creation when a payroll mapping account does not exist', async () => {
     const { prisma, tx } = createPrismaMock();
     tx.pucSubcuenta.findFirst.mockResolvedValueOnce(null);
-    const service = new BusinessesService(prisma as any, {
-      get: jest.fn().mockReturnValue(undefined),
-    } as any);
+    const service = new BusinessesService(
+      prisma as any,
+      {
+        getPublicUrl: jest.fn(),
+      } as any,
+    );
 
     await expect(
       service.createBusiness({
