@@ -8,6 +8,7 @@ import {
   type BusinessItem,
   mapAccountingActivity,
   mapBusinessActivity,
+  mapPayrollActivity,
   mapSalesActivity,
 } from "./moduleActivity";
 
@@ -118,6 +119,7 @@ export function useHomeModuleSummaries() {
       mapBusinessActivity(businessLatest.item),
       mapSalesActivity(orders),
       mapAccountingActivity(movements),
+      mapPayrollActivity(),
     ],
     [businessLatest, orders, movements],
   );

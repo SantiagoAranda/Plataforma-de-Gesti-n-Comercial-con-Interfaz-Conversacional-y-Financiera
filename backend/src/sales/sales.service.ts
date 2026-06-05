@@ -45,13 +45,15 @@ export class SalesService {
     }
 
     return new Date(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      0,
-      0,
-      0,
-      0,
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0,
+      )
     );
   }
 
@@ -68,9 +70,9 @@ export class SalesService {
   }
 
   private formatDateOnly(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
@@ -89,13 +91,15 @@ export class SalesService {
     }
 
     const dateOnly = new Date(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      0,
-      0,
-      0,
-      0,
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0,
+      )
     );
     const startMinute = Number(match[4]) * 60 + Number(match[5]);
 
@@ -619,31 +623,41 @@ export class SalesService {
     }
 
     const { year, monthIndex } = this.parseMonth(query.month);
-    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
+    
+    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      )
+    );
 
     const cursor = new Date(firstDay);
     const availableDates: string[] = [];
 
     while (cursor <= lastDay) {
-      const current = new Date(cursor);
-      if (current >= today || this.formatDateOnly(current) === this.formatDateOnly(reservation.date)) {
+      if (cursor >= today || this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date)) {
         const slots = await this.getReservationAvailabilitySlots(
           businessId,
           reservation.itemId,
-          current,
+          new Date(cursor),
           duration,
           reservation.id,
         );
 
         if (slots.length > 0) {
-          availableDates.push(this.formatDateOnly(current));
+          availableDates.push(this.formatDateOnly(cursor));
         }
       }
 
-      cursor.setDate(cursor.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     return availableDates;

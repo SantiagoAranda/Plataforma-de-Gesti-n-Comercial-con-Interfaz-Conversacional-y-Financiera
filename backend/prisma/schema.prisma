@@ -34,11 +34,18 @@ enum ItemStatus {
 enum AccountingMovementOriginType {
   MANUAL
   ORDER
+  PAYROLL_RUN
+  PAYROLL_SETTLEMENT
+  PAYROLL_PAYMENT
+  PAYROLL_BENEFIT_PAYMENT
+  PAYROLL_INITIAL_BALANCE
+  PAYROLL_COMPLEMENTARY_RUN
 }
 
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
+  OTHER
 }
 
 enum OrderStatus {
@@ -114,6 +121,21 @@ model Business {
   blocks              ServiceScheduleBlock[]
   accountingMovements AccountingMovement[]
   storeFooterSettings StoreFooterSettings?
+
+  payrollBusinessParameters PayrollBusinessParameter[]
+  payrollLegalUpdateNotices PayrollLegalUpdateNoticeBusiness[]
+
+  employees         Employee[]
+  employeeContracts EmployeeContract[]
+
+  payrollPeriods PayrollPeriod[]
+  payrollRuns    PayrollRun[]
+
+  payrollContractSettlements PayrollContractSettlement[]
+  payrollPayments            PayrollPayment[]
+  payrollBenefitPayments     PayrollBenefitPayment[]
+
+  payrollAccountingMappings PayrollAccountingMapping[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -220,7 +242,7 @@ model Order {
   pdfGeneratedAt DateTime?
   documentNumber String?
 
-  items OrderItem[]
+  items              OrderItem[]
   accountingPostedAt DateTime?
 
   archived Boolean @default(false)
@@ -416,24 +438,735 @@ enum MovementNature {
 }
 
 model AccountingMovement {
-  id              String                       @id @default(cuid())
-  businessId      String
-  pucCuentaCode   String?                      @db.VarChar(4)
-  pucSubcuentaId  String?
-  amount          Decimal                      @db.Decimal(18, 2)
-  nature          MovementNature              @default(DEBIT)
-  date            DateTime
-  detail          String?
-  originType      AccountingMovementOriginType
-  originId        String?
-  createdAt       DateTime                    @default(now())
-  updatedAt       DateTime                    @updatedAt
+  id             String                       @id @default(cuid())
+  businessId     String
+  pucCuentaCode  String?                      @db.VarChar(4)
+  pucSubcuentaId String?                      @db.VarChar(6)
+  amount         Decimal                      @db.Decimal(18, 2)
+  nature         MovementNature               @default(DEBIT)
+  date           DateTime
+  detail         String?
+  originType     AccountingMovementOriginType
+  originId       String?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
 
-  business        Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  pucCuenta       PucCuenta?                  @relation(fields: [pucCuentaCode], references: [code])
-  pucSubcuenta    PucSubcuenta?               @relation(fields: [pucSubcuentaId], references: [code])
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pucCuenta    PucCuenta?    @relation(fields: [pucCuentaCode], references: [code])
+  pucSubcuenta PucSubcuenta? @relation(fields: [pucSubcuentaId], references: [code])
 
   @@index([businessId, date])
   @@index([pucCuentaCode])
   @@index([pucSubcuentaId])
+}
+
+// ===============================
+// PAYROLL - COLOMBIA MVP
+// ===============================
+
+enum PayrollContractType {
+  INDEFINITE
+  FIXED_TERM
+}
+
+enum PayrollPaymentCycle {
+  MONTHLY
+  BIWEEKLY
+}
+
+enum PayrollPeriodStatus {
+  OPEN
+  CALCULATED
+  POSTED
+  CLOSED
+}
+
+enum PayrollNoticeStatus {
+  PENDING
+  REVIEWED
+  APPLIED
+  IGNORED
+}
+
+enum PayrollConceptCategory {
+  EARNING
+  EMPLOYEE_DEDUCTION
+  EMPLOYER_CONTRIBUTION
+  PARAFISCAL
+  BENEFIT_PROVISION
+  TAX
+  SETTLEMENT
+}
+
+enum PayrollAccountingSide {
+  DEBIT
+  CREDIT
+}
+
+enum PayrollAdjustmentType {
+  COMMISSION
+  NON_SALARY_BONUS
+  LOAN_DEDUCTION
+  NIGHT_SURCHARGE
+  OVERTIME_DAY
+  OVERTIME_NIGHT
+  SUNDAY_HOLIDAY_DAY
+  SUNDAY_HOLIDAY_EXTRA_DAY
+  SUNDAY_HOLIDAY_NIGHT
+  SUNDAY_HOLIDAY_EXTRA_NIGHT
+}
+
+enum PayrollSettlementType {
+  REAL_TERMINATION
+  SIMULATION_TO_DATE
+}
+
+enum PayrollSettlementStatus {
+  DRAFT
+  CALCULATED
+  POSTED
+  CANCELLED
+}
+
+enum PayrollWithholdingStatus {
+  DISABLED_FOR_FUTURE_UPDATE
+  ENABLED
+}
+
+enum PayrollPaymentType {
+  SALARY_PAYMENT
+  ADVANCE
+  ADJUSTMENT
+}
+
+enum PayrollPaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+enum PayrollBenefitPaymentType {
+  PRIMA
+  CESANTIAS
+  INTERESES_CESANTIAS
+  VACACIONES
+}
+
+// ===============================
+// CONFIGURACIÓN GLOBAL ADMIN
+// ===============================
+
+model PayrollGlobalParameter {
+  id       String  @id @default(uuid())
+  year     Int
+  version  Int     @default(1)
+  isActive Boolean @default(true)
+
+  smmlv              Decimal  @db.Decimal(20, 6)
+  transportAllowance Decimal  @db.Decimal(20, 6)
+  uvt                Decimal? @db.Decimal(20, 6)
+
+  weeklyHours  Decimal @default(44) @db.Decimal(10, 2)
+  monthlyHours Decimal @db.Decimal(10, 2)
+
+  healthEmployeeRate  Decimal @default(0.04) @db.Decimal(10, 6)
+  pensionEmployeeRate Decimal @default(0.04) @db.Decimal(10, 6)
+
+  healthEmployerRate  Decimal @default(0.085) @db.Decimal(10, 6)
+  pensionEmployerRate Decimal @default(0.12) @db.Decimal(10, 6)
+
+  compensationFundRate Decimal @default(0.04) @db.Decimal(10, 6)
+  senaRate             Decimal @default(0.02) @db.Decimal(10, 6)
+  icbfRate             Decimal @default(0.03) @db.Decimal(10, 6)
+
+  severanceRate         Decimal @default(0.0833) @db.Decimal(10, 6)
+  severanceInterestRate Decimal @default(0.01) @db.Decimal(10, 6)
+  serviceBonusRate      Decimal @default(0.0833) @db.Decimal(10, 6)
+  vacationRate          Decimal @default(0.0417) @db.Decimal(10, 6)
+
+  law1819ThresholdSmmlv Decimal @default(10) @db.Decimal(10, 2)
+  transportLimitSmmlv   Decimal @default(2) @db.Decimal(10, 2)
+
+  dailyHours            Decimal @default(8) @db.Decimal(10, 2)
+  maxWorkedDaysMonth    Int     @default(30)
+  maxSupplementaryHours Int     @default(720)
+
+  withholdingStatus PayrollWithholdingStatus @default(DISABLED_FOR_FUTURE_UPDATE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  businessParameters PayrollBusinessParameter[]
+  overtimeRates      PayrollOvertimeRate[]
+  solidarityBrackets PayrollSolidarityBracket[]
+  notices            PayrollLegalUpdateNotice[]
+
+  @@unique([year, version])
+  @@index([year, isActive])
+}
+
+// ===============================
+// CONFIGURACIÓN POR NEGOCIO
+// ===============================
+
+model PayrollBusinessParameter {
+  id                String  @id @default(uuid())
+  businessId        String
+  globalParameterId String?
+
+  year     Int
+  isActive Boolean @default(true)
+
+  weeklyHours  Decimal? @db.Decimal(10, 2)
+  monthlyHours Decimal? @db.Decimal(10, 2)
+
+  applyLaw1819        Boolean @default(true)
+  exemptEmployerHealthLaw1819 Boolean @default(true)
+  applySolidarityFund Boolean @default(true)
+  applyIncomeTax      Boolean @default(false)
+
+  customTransportAllowance Decimal? @db.Decimal(20, 6)
+  customSmmlv              Decimal? @db.Decimal(20, 6)
+
+  dailyHours            Decimal? @db.Decimal(10, 2)
+  maxWorkedDaysMonth    Int?
+  maxSupplementaryHours Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business        Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  globalParameter PayrollGlobalParameter? @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, year])
+  @@index([businessId, isActive])
+}
+
+// ===============================
+// AVISOS DE CAMBIOS LEGALES
+// ===============================
+
+model PayrollLegalUpdateNotice {
+  id String @id @default(uuid())
+
+  globalParameterId String?
+  year              Int
+
+  title         String
+  description   String?
+  changedFields Json?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  globalParameter PayrollGlobalParameter?            @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
+  businesses      PayrollLegalUpdateNoticeBusiness[]
+
+  @@index([year])
+}
+
+model PayrollLegalUpdateNoticeBusiness {
+  id String @id @default(uuid())
+
+  noticeId   String
+  businessId String
+
+  status PayrollNoticeStatus @default(PENDING)
+
+  reviewedAt DateTime?
+  appliedAt  DateTime?
+
+  notice   PayrollLegalUpdateNotice @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  business Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, businessId])
+  @@index([businessId, status])
+}
+
+// ===============================
+// CIIU / ARL
+// ===============================
+
+model EconomicActivityCiiu {
+  id String @id @default(uuid())
+
+  code        String  @unique @db.VarChar(8)
+  description String
+  section     String?
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts     EmployeeContract[]
+  arlActivities PayrollArlEconomicActivity[]
+}
+
+model PayrollArlRiskClass {
+  id String @id @default(uuid())
+
+  level    Int     @unique
+  name     String
+  rate     Decimal @db.Decimal(10, 6)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts          EmployeeContract[]
+  economicActivities PayrollArlEconomicActivity[]
+}
+
+model PayrollArlEconomicActivity {
+  id String @id @default(uuid())
+
+  ciiuId         String
+  arlRiskClassId String
+
+  ciiu         EconomicActivityCiiu @relation(fields: [ciiuId], references: [id])
+  arlRiskClass PayrollArlRiskClass  @relation(fields: [arlRiskClassId], references: [id])
+
+  @@unique([ciiuId, arlRiskClassId])
+}
+
+// ===============================
+// TASAS VARIABLES
+// ===============================
+
+model PayrollOvertimeRate {
+  id String @id @default(uuid())
+
+  globalParameterId String
+  code              String
+  name              String
+  factor            Decimal @db.Decimal(10, 6)
+  isActive          Boolean @default(true)
+
+  globalParameter PayrollGlobalParameter @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
+
+  @@unique([globalParameterId, code])
+}
+
+model PayrollSolidarityBracket {
+  id String @id @default(uuid())
+
+  globalParameterId String
+  fromSmmlv         Decimal  @db.Decimal(10, 2)
+  toSmmlv           Decimal? @db.Decimal(10, 2)
+  rate              Decimal  @db.Decimal(10, 6)
+
+  globalParameter PayrollGlobalParameter @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
+
+  @@index([globalParameterId])
+}
+
+// ===============================
+// EMPLEADOS Y CONTRATOS
+// ===============================
+
+model Employee {
+  id         String @id @default(uuid())
+  businessId String
+
+  firstName      String
+  lastName       String
+  documentType   String?
+  documentNumber String
+  position       String?
+
+  email String?
+  phone String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  contracts       EmployeeContract[]
+  payrollRuns     PayrollRun[]
+  settlements     PayrollContractSettlement[]
+  payrollPayments PayrollPayment[]
+  benefitPayments PayrollBenefitPayment[]
+
+  @@unique([businessId, documentNumber])
+  @@index([businessId, isActive])
+}
+
+model EmployeeContract {
+  id String @id @default(uuid())
+
+  businessId String
+  employeeId String
+
+  contractType  PayrollContractType
+  salaryMonthly Decimal             @db.Decimal(20, 6)
+
+  startDate DateTime
+  endDate   DateTime?
+
+  isRemote     Boolean @default(false)
+  applyLaw1819 Boolean @default(true)
+
+  paymentCycle      PayrollPaymentCycle @default(MONTHLY)
+  installmentsCount Int                 @default(1)
+
+  arlRiskClassId String?
+  ciiuId         String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  arlRiskClass PayrollArlRiskClass?  @relation(fields: [arlRiskClassId], references: [id])
+  ciiu         EconomicActivityCiiu? @relation(fields: [ciiuId], references: [id])
+
+  payrollRuns     PayrollRun[]
+  settlements     PayrollContractSettlement[]
+  payrollPayments PayrollPayment[]
+  benefitPayments PayrollBenefitPayment[]
+
+  @@index([businessId, employeeId])
+  @@index([businessId, isActive])
+}
+
+// ===============================
+// PERÍODOS Y LIQUIDACIÓN DE NÓMINA
+// ===============================
+
+model PayrollPeriod {
+  id         String @id @default(uuid())
+  businessId String
+
+  year  Int
+  month Int
+
+  paymentCycle      PayrollPaymentCycle @default(MONTHLY)
+  installmentNumber Int                 @default(1)
+
+  status PayrollPeriodStatus @default(OPEN)
+
+  openedAt     DateTime  @default(now())
+  calculatedAt DateTime?
+  postedAt     DateTime?
+  closedAt     DateTime?
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  runs            PayrollRun[]
+  benefitPayments PayrollBenefitPayment[]
+
+  @@unique([businessId, year, month, paymentCycle, installmentNumber])
+  @@index([businessId, status])
+}
+
+model PayrollRun {
+  id String @id @default(uuid())
+
+  businessId      String
+  payrollPeriodId String
+  employeeId      String
+  contractId      String
+
+  workedDays Int @default(30)
+
+  baseSalary   Decimal @db.Decimal(20, 6)
+  salaryEarned Decimal @db.Decimal(20, 6)
+
+  transportAllowance    Decimal @default(0) @db.Decimal(20, 6)
+  connectivityAllowance Decimal @default(0) @db.Decimal(20, 6)
+
+  commissions    Decimal @default(0) @db.Decimal(20, 6)
+  nonSalaryBonus Decimal @default(0) @db.Decimal(20, 6)
+  overtimeAmount Decimal @default(0) @db.Decimal(20, 6)
+
+  grossIncome Decimal @db.Decimal(20, 6)
+  ibcAmount   Decimal @db.Decimal(20, 6)
+
+  employeeHealth  Decimal @default(0) @db.Decimal(20, 6)
+  employeePension Decimal @default(0) @db.Decimal(20, 6)
+  solidarityFund  Decimal @default(0) @db.Decimal(20, 6)
+  withholdingTax  Decimal @default(0) @db.Decimal(20, 6)
+  otherDeductions Decimal @default(0) @db.Decimal(20, 6)
+
+  totalEmployeeDeductions Decimal @default(0) @db.Decimal(20, 6)
+  netPay                  Decimal @db.Decimal(20, 6)
+
+  employerHealth  Decimal @default(0) @db.Decimal(20, 6)
+  employerPension Decimal @default(0) @db.Decimal(20, 6)
+  employerArl     Decimal @default(0) @db.Decimal(20, 6)
+
+  compensationFund Decimal @default(0) @db.Decimal(20, 6)
+  sena             Decimal @default(0) @db.Decimal(20, 6)
+  icbf             Decimal @default(0) @db.Decimal(20, 6)
+
+  severance         Decimal @default(0) @db.Decimal(20, 6)
+  severanceInterest Decimal @default(0) @db.Decimal(20, 6)
+  serviceBonus      Decimal @default(0) @db.Decimal(20, 6)
+  vacation          Decimal @default(0) @db.Decimal(20, 6)
+
+  totalEmployerContributions Decimal @default(0) @db.Decimal(20, 6)
+  totalParafiscals           Decimal @default(0) @db.Decimal(20, 6)
+  totalBenefits              Decimal @default(0) @db.Decimal(20, 6)
+
+  realEmployerCost Decimal @db.Decimal(20, 6)
+
+  usedParameters Json
+
+  calculatedAt DateTime  @default(now())
+  postedAt     DateTime?
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  period   PayrollPeriod    @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  employee Employee         @relation(fields: [employeeId], references: [id])
+  contract EmployeeContract @relation(fields: [contractId], references: [id])
+
+  adjustments           PayrollAdjustment[]
+  conceptResults        PayrollConceptResult[]
+  withholdingTaxResults PayrollWithholdingTaxResult[]
+  payments              PayrollPayment[]
+  benefitPayments       PayrollBenefitPayment[]
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([businessId, calculatedAt])
+}
+
+model PayrollAdjustment {
+  id String @id @default(uuid())
+
+  payrollRunId String
+  type         PayrollAdjustmentType
+
+  quantity Decimal? @db.Decimal(20, 6)
+  rate     Decimal? @db.Decimal(10, 6)
+  amount   Decimal  @db.Decimal(20, 6)
+
+  description String?
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([payrollRunId, type])
+}
+
+model PayrollConceptResult {
+  id String @id @default(uuid())
+
+  payrollRunId String
+
+  code     String
+  name     String
+  category PayrollConceptCategory
+
+  quantity   Decimal? @db.Decimal(20, 6)
+  rate       Decimal? @db.Decimal(10, 6)
+  baseAmount Decimal? @db.Decimal(20, 6)
+  amount     Decimal  @db.Decimal(20, 6)
+
+  metadata Json?
+
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([payrollRunId, category])
+  @@index([code])
+}
+
+// ===============================
+// RETEFUENTE - BLOQUEADA PARA FUTURO
+// ===============================
+
+model PayrollWithholdingTaxConfig {
+  id String @id @default(uuid())
+
+  year   Int
+  status PayrollWithholdingStatus @default(DISABLED_FOR_FUTURE_UPDATE)
+
+  description String?
+  config      Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([year])
+}
+
+model PayrollWithholdingTaxResult {
+  id String @id @default(uuid())
+
+  payrollRunId String?
+
+  baseAmount Decimal                  @default(0) @db.Decimal(20, 6)
+  amount     Decimal                  @default(0) @db.Decimal(20, 6)
+  status     PayrollWithholdingStatus @default(DISABLED_FOR_FUTURE_UPDATE)
+
+  metadata Json?
+
+  payrollRun PayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+
+  @@index([payrollRunId])
+}
+
+// ===============================
+// LIQUIDACIÓN / SIMULACIÓN CONTRATO
+// ===============================
+
+model PayrollContractSettlement {
+  id String @id @default(uuid())
+
+  businessId String
+  employeeId String
+  contractId String
+
+  type   PayrollSettlementType
+  status PayrollSettlementStatus @default(DRAFT)
+
+  startDate DateTime
+  endDate   DateTime
+
+  semesterOneDays Int @default(0)
+  semesterTwoDays Int @default(0)
+  totalWorkedDays Int @default(0)
+
+  severance               Decimal @default(0) @db.Decimal(20, 6)
+  severanceInterest       Decimal @default(0) @db.Decimal(20, 6)
+  serviceBonusSemesterOne Decimal @default(0) @db.Decimal(20, 6)
+  serviceBonusSemesterTwo Decimal @default(0) @db.Decimal(20, 6)
+  vacation                Decimal @default(0) @db.Decimal(20, 6)
+
+  vacationDays Decimal @default(0) @db.Decimal(10, 2)
+  hourlyRate   Decimal @default(0) @db.Decimal(20, 6)
+
+  totalAmount Decimal @default(0) @db.Decimal(20, 6)
+
+  usedParameters Json
+
+  calculatedAt DateTime  @default(now())
+  postedAt     DateTime?
+
+  business Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employee Employee         @relation(fields: [employeeId], references: [id])
+  contract EmployeeContract @relation(fields: [contractId], references: [id])
+
+  lines           PayrollContractSettlementLine[]
+  benefitPayments PayrollBenefitPayment[]
+
+  @@index([businessId, employeeId])
+  @@index([businessId, status])
+}
+
+model PayrollPayment {
+  id String @id @default(uuid())
+
+  businessId   String
+  payrollRunId String
+  employeeId   String
+  contractId   String
+
+  installmentNumber Int?
+  paymentCycle      PayrollPaymentCycle
+  type              PayrollPaymentType   @default(SALARY_PAYMENT)
+  status            PayrollPaymentStatus @default(PENDING)
+
+  amount        Decimal        @db.Decimal(20, 6)
+  paidAt        DateTime?
+  paymentMethod PaymentMethod?
+  notes         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business   Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payrollRun PayrollRun       @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee   Employee         @relation(fields: [employeeId], references: [id])
+  contract   EmployeeContract @relation(fields: [contractId], references: [id])
+
+  @@unique([payrollRunId, installmentNumber, type])
+  @@index([businessId, status])
+  @@index([businessId, employeeId])
+  @@index([contractId, status])
+}
+
+model PayrollBenefitPayment {
+  id String @id @default(uuid())
+
+  businessId   String
+  employeeId   String
+  contractId   String
+  type         PayrollBenefitPaymentType
+  amount       Decimal                   @db.Decimal(20, 6)
+  status       PayrollPaymentStatus      @default(PAID)
+  paidAt       DateTime?
+  periodId     String?
+  payrollRunId String?
+  settlementId String?
+  notes        String?
+
+  year          Int?
+  semester      Int?
+  paymentMethod PaymentMethod?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business   Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employee   Employee                   @relation(fields: [employeeId], references: [id])
+  contract   EmployeeContract           @relation(fields: [contractId], references: [id])
+  period     PayrollPeriod?             @relation(fields: [periodId], references: [id], onDelete: SetNull)
+  payrollRun PayrollRun?                @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  settlement PayrollContractSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, contractId])
+  @@index([businessId, employeeId])
+  @@index([contractId, type])
+}
+
+model PayrollContractSettlementLine {
+  id String @id @default(uuid())
+
+  settlementId String
+
+  code   String
+  name   String
+  amount Decimal @db.Decimal(20, 6)
+
+  baseAmount Decimal? @db.Decimal(20, 6)
+  rate       Decimal? @db.Decimal(10, 6)
+  days       Int?
+
+  metadata Json?
+
+  settlement PayrollContractSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId])
+}
+
+// ===============================
+// MAPEO CONTABLE Y ASIENTOS
+// ===============================
+
+model PayrollAccountingMapping {
+  id String @id @default(uuid())
+
+  businessId String
+
+  conceptCode String
+  conceptName String
+
+  accountCode String
+  accountName String
+
+  side PayrollAccountingSide
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, conceptCode, side])
+  @@index([businessId, isActive])
 }

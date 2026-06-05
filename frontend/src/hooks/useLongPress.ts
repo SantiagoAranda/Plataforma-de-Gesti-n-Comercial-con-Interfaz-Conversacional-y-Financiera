@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useEffect } from "react";
 
 type Options = {
   onLongPress: () => void;
@@ -8,68 +8,43 @@ type Options = {
 };
 
 /**
- * Hook para detectar una pulsación larga (long press).
- * Soporta eventos de mouse y touch.
+ * Hook para detectar una pulsación larga (long press) usando PointerEvents.
+ * Evita conflictos con elementos clickeables dentro del contenedor.
  */
-export function useLongPress({ onLongPress, delay = 500 }: Options) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export function useLongPress({ onLongPress, delay = 600 }: Options) {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTriggeredRef = useRef(false);
-  const startPointRef = useRef<{ x: number; y: number } | null>(null);
-  const moveThreshold = 15; // píxeles
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+  const clear = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
   }, []);
 
-  const start = useCallback(
-    (e: any) => {
-      // Registrar punto de inicio para detectar movimiento
-      const point = e.touches ? e.touches[0] : e;
-      startPointRef.current = { x: point.clientX, y: point.clientY };
-      
-      isTriggeredRef.current = false;
-      clearTimer();
+  const start = useCallback((event: any) => {
+    const target = event.target as HTMLElement;
+    // Si se hace click en un botón, input, select, link o textarea, ignorar el long press.
+    if (target.closest("button, a, input, select, textarea")) return;
 
-      timerRef.current = setTimeout(() => {
-        isTriggeredRef.current = true;
-        onLongPress();
-      }, delay);
-    },
-    [clearTimer, delay, onLongPress]
-  );
+    isTriggeredRef.current = false;
+    clear();
+    timeoutRef.current = setTimeout(() => {
+      onLongPress();
+      isTriggeredRef.current = true;
+      timeoutRef.current = null;
+    }, delay);
+  }, [clear, delay, onLongPress]);
 
-  const move = useCallback(
-    (e: any) => {
-      if (!startPointRef.current) return;
-      
-      const point = e.touches ? e.touches[0] : e;
-      const dx = point.clientX - startPointRef.current.x;
-      const dy = point.clientY - startPointRef.current.y;
-
-      // Si se mueve más del umbral, cancelar el timer
-      if (Math.hypot(dx, dy) > moveThreshold) {
-        clearTimer();
-      }
-    },
-    [clearTimer]
-  );
-
-  const end = useCallback(() => {
-    clearTimer();
-  }, [clearTimer]);
+  // Limpiar el timeout al desmontar
+  useEffect(() => clear, [clear]);
 
   return {
     handlers: {
-      onMouseDown: start,
-      onMouseUp: end,
-      onMouseLeave: end,
-      onMouseMove: move,
-      onTouchStart: start,
-      onTouchEnd: end,
-      onTouchMove: move,
+      onPointerDown: start,
+      onPointerUp: clear,
+      onPointerLeave: clear,
+      onPointerCancel: clear,
     },
     isLongPressTriggered: () => isTriggeredRef.current,
   };

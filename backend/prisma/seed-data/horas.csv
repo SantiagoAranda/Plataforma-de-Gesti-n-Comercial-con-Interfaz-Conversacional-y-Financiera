@@ -1,0 +1,8 @@
+tipo_hora,porcentaje_texto,factor_multiplicador
+"Hora Ordinaria Nocturna","35%",1.35
+"Hora Extra Diurna","25%",1.25
+"Hora Extra Nocturno","75%",1.75
+"Hora Dominical/Festivo","80%",1.80
+"Hora Extra Dom/Festivo","105%",2.05
+"Hora Dom/Festivo Nocturno","115%",2.15
+"Hora Extra Nocturno Dom/Festivo","155%",2.55

@@ -107,17 +107,17 @@ export default function SaleCard({
               <User className="w-5 h-5 text-slate-300" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-800 leading-tight truncate">
+              <h3 className="text-sm font-medium text-slate-800 leading-tight truncate">
                 {sale.customerName ?? "Consumidor Final"}
               </h3>
-              <p className="text-[10px] text-slate-400 font-medium">
+              <p className="text-[10px] text-slate-400 font-normal">
                 Ref: {formatRef(sale.id)}
               </p>
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1">
-            <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 uppercase">
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 uppercase">
               {styles.label}
             </span>
             <button
@@ -142,30 +142,30 @@ export default function SaleCard({
                 key={`${sale.id}-${idx}`}
                 className="flex items-center gap-2 text-xs"
               >
-                <span className="flex-1 text-slate-600 font-semibold truncate">
+                <span className="flex-1 text-slate-600 font-medium truncate">
                   {it.name}
                 </span>
-                <span className="bg-white border border-slate-200 text-slate-900 font-black px-2 py-0.5 rounded-lg min-w-[28px] text-center shadow-sm text-[10px]">
+                <span className="bg-white border border-slate-200 text-slate-700 font-medium px-2 py-0.5 rounded-lg min-w-[28px] text-center shadow-sm text-[10px]">
                   {it.qty}
                 </span>
-                <span className="font-bold text-slate-700 tabular-nums min-w-[60px] text-right">
+                <span className="font-semibold text-slate-700 tabular-nums min-w-[60px] text-right">
                   ${formatDisplayMoney((it.unitPrice ?? it.price ?? 0) * it.qty)}
                 </span>
               </div>
             ))}
           </div>
 
-          <div className="pt-2 mt-1 border-t border-slate-200/60 flex justify-between items-center">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+          <div className="pt-2 mt-1 border-t border-slate-200/60 flex justify-between items-center gap-3">
+            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
               Monto total
             </span>
-            <span className="text-base font-black text-slate-900 tabular-nums">
+            <span className="text-sm font-semibold text-slate-900 tabular-nums">
               ${formatDisplayMoney(total)}
             </span>
           </div>
 
           {sale.type === "SERVICIO" && sale.scheduledAt && (
-            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100">
+            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-100">
               Turno: {formatAppointment(sale.scheduledAt)}
             </div>
           )}
@@ -203,11 +203,19 @@ export default function SaleCard({
         </div>
 
         <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-50">
-        <span className="flex items-center gap-1 text-[10px] font-bold text-[#34b7f1]">
-              {/*<ShieldCheck className="h-3.5 w-3.5" />
-            {validationLabel}*/} {/* Muestra la validacion */}
-          </span>
-          <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {sale.origin && (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">
+                {sale.origin === "PUBLIC_STORE" ? "Catálogo" : "Manual"}
+              </span>
+            )}
+            {sale.paymentMethod && (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">
+                {sale.paymentMethod === "BANK_TRANSFER" ? "Transferencia" : "Efectivo"}
+              </span>
+            )}
+          </div>
+          <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 shrink-0">
             {formatTime(sale.createdAt)}
             <CheckCheck className="w-4 h-4 text-[#34b7f1]" />
           </span>

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { Building2, Calculator, ShoppingBag } from "lucide-react";
+
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Building2, Calculator, ShoppingBag, WalletCards  } from "lucide-react";
+
 import { useRouter } from "next/navigation";
 
 import AppHeader from "../../../src/components/layout/AppHeader";
@@ -13,12 +15,14 @@ import {
 } from "../../../src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "../../../src/lib/home/useHomeModuleSummaries";
 import { readBusinessProfile } from "../../../src/lib/businessProfile";
+import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  PAYROLL: <WalletCards className="h-5 w-5" />,
 };
 
 export default function HomePage() {
@@ -26,6 +30,14 @@ export default function HomePage() {
   const [businessName, setBusinessName] = useState("Mi Negocio");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
   const { summaries, loading, error, orders } = useHomeModuleSummaries();
+  const [activeFilter, setActiveFilter] = useState("TODOS");
+
+  const handleFilterChange = useCallback((filter: string) => {
+    setActiveFilter(filter);
+  }, []);
+
+  const isFullScreen = activeFilter === "CLIENTES" || activeFilter === "PROVEEDORES";
+  const hideSummaries = activeFilter !== "TODOS";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -73,7 +85,10 @@ export default function HomePage() {
         variant="flat"
       />
 
-      <main className="flex-1 overflow-y-auto pb-24 lg:overflow-hidden lg:pb-0">
+      <main className={cn(
+        "flex-1 overflow-y-auto lg:overflow-hidden lg:pb-0",
+        isFullScreen ? "flex flex-col pb-0" : "pb-24",
+      )}>
         <div className="hidden lg:flex h-full">
           <div className="flex h-full flex-1 items-center justify-center px-6 py-10">
             <div className="w-full max-w-xl rounded-3xl bg-white p-8">
@@ -87,10 +102,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="lg:hidden">
-          <HomeAgenda sales={orders} />
+        <div className={`lg:hidden${isFullScreen ? " flex flex-col flex-1 min-h-0" : ""}`}>
+          <HomeAgenda sales={orders} onFilterChange={handleFilterChange} />
 
-          {loading && (
+          {!hideSummaries && loading && (
             <div>
               {[0, 1, 2].map((i) => (
                 <div key={i} className="h-[74px] animate-pulse px-4 py-3">
@@ -107,7 +122,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {error && !loading && (
+          {!hideSummaries && error && !loading && (
             <div className="px-4 py-4">
               <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
                 {error}
@@ -115,7 +130,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {!loading && !error && (
+          {!hideSummaries && !loading && !error && (
             <div>
               {summaries.map((summary) => (
                 <ThreadItem

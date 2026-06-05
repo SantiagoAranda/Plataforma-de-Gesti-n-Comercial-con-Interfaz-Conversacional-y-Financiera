@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Trash2 } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -81,6 +81,8 @@ export default function SalesChatComposer({
   }) => void;
 }) {
   const [customerName, setCustomerName] = useState("");
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const statusRef = useRef<HTMLDivElement>(null);
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState(""); 
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
@@ -93,6 +95,16 @@ export default function SalesChatComposer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
+        setIsStatusOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const fetchItems = async () => {
     try {
@@ -170,16 +182,27 @@ export default function SalesChatComposer({
       return;
     }
 
-    setItems((prev) => [
-      ...prev,
-      {
-        itemId: bi.id,
-        qty: newItem.qty === "" ? 1 : newItem.qty,
-        name: bi.name,
-        price: bi.price,
-        durationMin: bi.durationMinutes,
-      },
-    ]);
+
+    const addedQty = newItem.qty === "" ? 1 : newItem.qty;
+
+    setItems((prev) => {
+      const existingIdx = prev.findIndex((it) => it.itemId === bi.id);
+      if (existingIdx > -1) {
+        return prev.map((it, idx) =>
+          idx === existingIdx ? { ...it, qty: it.qty + addedQty } : it
+        );
+      }
+      return [
+        ...prev,
+        {
+          itemId: bi.id,
+          qty: addedQty,
+          name: bi.name,
+          price: bi.price,
+          durationMin: bi.durationMinutes,
+        },
+      ];
+    });
     setNewItem({itemId: "", qty: 1});
   };
 
@@ -231,64 +254,102 @@ export default function SalesChatComposer({
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
-            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 flex flex-col bg-white rounded-[28px] shadow-2xl overflow-hidden ring-1 ring-black/5 max-h-[75vh]">
+            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 flex flex-col bg-white rounded-[28px] border-t border-slate-100/80 overflow-hidden max-h-[75vh]">
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
                 <div className="flex flex-col">
-                   <h2 className="font-bold text-neutral-900 text-lg">Nueva Venta</h2>
-                   <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Creación Manual</span>
+                   <h2 className="font-semibold text-slate-900 text-base">Nueva Venta</h2>
+                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Creación Manual</span>
                 </div>
 
-                <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-neutral-50/50">
+                <div className="flex flex-col gap-4 p-2 bg-white">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest px-1">
-                      Cliente (Opcional)
+                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
+                      Cliente
                     </span>
                     <input
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Nombre del cliente"
-                      className="rounded-lg border border-neutral-200 px-3 py-2 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-400 bg-white"
+                      className="bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 focus:ring-0 focus:border-emerald-500 transition-colors outline-none"
                     />
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest px-1">
-                      WhatsApp (Opcional)
+                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
+                      WhatsApp
                     </span>
-                    <div className="bg-white rounded-lg">
+                    <div className="bg-transparent">
                       <PhoneSelector
                         countryCode={countryCode}
                         onCountryCodeChange={setCountryCode}
                         phoneNumber={phoneNumber}
                         onPhoneNumberChange={setPhoneNumber}
+                        flat
                       />
                     </div>
                   </div>
                   
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest px-1">
+                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
                         Estado Inicial
                       </span>
-                      <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value as "PENDIENTE" | "CERRADO")}
-                        className="rounded-lg border border-neutral-200 px-2 py-1.5 text-[13px] font-bold text-neutral-700 outline-none bg-white min-h-[34px]"
-                      >
-                        <option value="PENDIENTE">Pendiente</option>
-                        <option value="CERRADO">Cerrado</option>
-                      </select>
+                      <div className="relative w-full" ref={statusRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsStatusOpen(!isStatusOpen)}
+                          className="flex h-10 w-full items-center justify-between bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 outline-none focus:border-emerald-500 transition-colors"
+                        >
+                          <span>{status === "PENDIENTE" ? "Pendiente" : "Cerrado"}</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down text-slate-400 shrink-0"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+
+                        {isStatusOpen && (
+                          <div className="absolute left-0 top-[calc(100%+4px)] z-20 w-full flex flex-col overflow-hidden rounded-xl border border-slate-100 bg-white shadow-md animate-in fade-in slide-in-from-top-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStatus("PENDIENTE");
+                                setIsStatusOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${
+                                status === "PENDIENTE" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
+                              }`}
+                            >
+                              <span>Pendiente</span>
+                              {status === "PENDIENTE" && (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5"/></svg>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStatus("CERRADO");
+                                setIsStatusOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${
+                                status === "CERRADO" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
+                              }`}
+                            >
+                              <span>Cerrado</span>
+                              {status === "CERRADO" && (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5"/></svg>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-1 pt-0.5">
-                      <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest px-1">Medio de pago</span>
+                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">Medio de pago</span>
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("CASH")}
                           className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${
                             paymentMethod === "CASH"
-                              ? "bg-emerald-500 text-white"
-                              : "border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                              ? "bg-emerald-600 text-white rounded-xl"
+                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
                           }`}
                         >
                           Efectívo
@@ -298,8 +359,8 @@ export default function SalesChatComposer({
                           onClick={() => setPaymentMethod("BANK_TRANSFER")}
                           className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${
                             paymentMethod === "BANK_TRANSFER"
-                              ? "bg-emerald-500 text-white"
-                              : "border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                              ? "bg-emerald-600 text-white rounded-xl"
+                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
                           }`}
                         >
                           Transfere.
@@ -310,16 +371,16 @@ export default function SalesChatComposer({
                 </div>
 
                 {type === "SERVICIO" && items.length > 0 && (
-                  <div className="flex flex-col gap-3 p-4 rounded-xl border border-emerald-100 bg-emerald-50/40">
-                    <div className="rounded-2xl bg-white p-3 ring-1 ring-emerald-100">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">
+                  <div className="flex flex-col gap-3 p-4 rounded-xl border border-emerald-50 bg-emerald-50/20">
+                    <div className="rounded-xl bg-white p-3 border border-emerald-100">
+                      <span className="text-xs font-medium text-emerald-700">
                         Servicio seleccionado
                       </span>
                       <div className="mt-1 flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-black text-neutral-900">
+                        <span className="truncate text-sm font-medium text-slate-800">
                           {items[0].name}
                         </span>
-                        <span className="shrink-0 text-sm font-black text-neutral-900">
+                        <span className="shrink-0 text-sm font-medium text-slate-800">
                           ${formatMoney(items[0].price)}
                         </span>
                       </div>
@@ -338,15 +399,13 @@ export default function SalesChatComposer({
 
                     {!items[0]?.durationMin && (
                       <div className="flex flex-col gap-0.5">
-                        <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest px-1">
-                          Duración en minutos
-                        </span>
+                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Duración en minutos</span>
                         <input
                           type="number"
                           min="1"
                           value={manualDuration}
                           onChange={(e) => setManualDuration(e.target.value)}
-                          className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-[13px] font-semibold text-neutral-800 outline-none focus:border-emerald-500"
+                          className="h-10 rounded-xl border border-transparent bg-slate-50 px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
                         />
                       </div>
                     )}
@@ -360,13 +419,13 @@ export default function SalesChatComposer({
 
                 {type === "PRODUCTO" && (
                 <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
+                  <span className="text-xs font-medium text-slate-500 mb-1 px-1">Items de venta</span>
 
                   {/* Add items composer */}
-                  <div className="flex flex-col gap-3 p-3 bg-neutral-50/50 border border-neutral-100 rounded-xl">
+                  <div className="flex flex-col gap-3 p-3 bg-slate-50/30 rounded-xl">
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest px-1">Producto / Servicio</span>
-                      <div className="relative bg-white rounded-lg">
+                      <span className="text-xs font-medium text-slate-500 mb-1 px-1">Producto / Servicio</span>
+                      <div className="relative bg-white rounded-xl">
                          <ItemSelector
                            value={newItem.itemId}
                            onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
@@ -379,7 +438,7 @@ export default function SalesChatComposer({
                     </div>
                     {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
+                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Cantidad</span>
                         <input
                           type="number"
                           min="1"
@@ -401,14 +460,14 @@ export default function SalesChatComposer({
                               setNewItem(prev => ({ ...prev, qty: 1 }));
                             }
                           }}
-                          className="w-full h-9 bg-white border border-neutral-200 rounded-lg px-3 text-[13px] font-semibold outline-none focus:border-emerald-500 transition"
+                          className="w-full h-10 bg-slate-50 border border-transparent rounded-xl px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
                         />
                       </div>
                     )}
                     <button
                       onClick={handleAddItem}
                       disabled={!newItem.itemId}
-                      className="w-full h-9 mt-1 bg-emerald-100 text-emerald-700 rounded-lg font-bold text-xs hover:bg-emerald-200 transition active:scale-[0.98] disabled:opacity-40 disabled:bg-neutral-100 disabled:text-neutral-400"
+                      className="w-full h-10 mt-2 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40 disabled:bg-neutral-200"
                     >
                       Añadir a la venta
                     </button>
@@ -423,19 +482,19 @@ export default function SalesChatComposer({
                   {/* Items List */}
                   <div className="space-y-2">
                     {items.map((it, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+                      <div key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-100 rounded-xl">
                         <ItemThumbnail />
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-neutral-800 text-xs truncate">{it.name}</div>
-                          <div className="flex items-center gap-1 text-[9px] font-bold text-neutral-400 uppercase mt-0.5">
+                          <div className="font-semibold text-slate-800 text-xs truncate">{it.name}</div>
+                          <div className="flex items-center gap-1 text-[10px] font-normal text-slate-400 mt-0.5">
                              {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                           </div>
                         </div>
 
                         {type === "PRODUCTO" && (
-                          <div className="flex items-center gap-1.5 bg-neutral-50 px-1.5 py-1 rounded-md border border-neutral-100 mr-1">
+                          <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-transparent mr-1">
                             <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">-</button>
-                            <span className="text-[11px] font-black text-neutral-700 w-3 text-center">{it.qty}</span>
+                            <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
                             <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">+</button>
                           </div>
                         )}
@@ -473,8 +532,8 @@ export default function SalesChatComposer({
             centerContent={
               expanded ? (
                 <div className="flex h-full w-full items-center justify-between pt-0.5">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Total venta</span>
-                  <span className="text-sm font-black text-neutral-900">${formatMoney(total)}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Total venta</span>
+                  <span className="text-sm font-medium text-slate-800">${formatMoney(total)}</span>
                 </div>
               ) : undefined
             }

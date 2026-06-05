@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { Search, X, Save } from "lucide-react";
 import { useState, useEffect, type Dispatch, type SetStateAction } from "react";
 import type { AccountingFormState } from "@/src/types/accounting-form";
 import { AccountingExpandableForm } from "./AccountingExpandableForm";
@@ -93,7 +93,7 @@ export function AccountingChatComposer({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-white border-t border-slate-100/80 px-4 pb-3 pt-2 lg:left-[408px] lg:right-0 shadow-[0_-8px_30px_rgb(0,0,0,0.02)]">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
@@ -126,6 +126,9 @@ export function AccountingChatComposer({
             leftIconVariant={expanded ? "x" : "plus"}
             rightIconVariant={expanded ? "send" : "search"}
             hasError={isError}
+            className={expanded ? "border border-slate-200 bg-white shadow-sm p-1 rounded-[24px]" : ""}
+            rightButtonClassName={expanded ? "h-12 w-12 shrink-0 flex items-center justify-center bg-emerald-500 text-white rounded-2xl shadow-sm hover:bg-emerald-600 active:scale-95 transition" : ""}
+            rightIcon={expanded ? <Save className="h-5 w-5" /> : undefined}
             leadingIcon={
               !isComposeMode ? (
                 <Search className={`h-4 w-4 shrink-0 transition-colors ${isError ? "text-red-400" : "text-neutral-400"}`} />
