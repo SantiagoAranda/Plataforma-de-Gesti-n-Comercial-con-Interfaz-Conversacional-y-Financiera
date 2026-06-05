@@ -37,6 +37,7 @@ import {
   type PayrollPayment,
   type PayrollRun,
   type Settlement,
+  type PayrollBenefitPayment,
   numberValue,
   payrollApi,
 } from "@/src/lib/payroll/api";
@@ -2417,6 +2418,72 @@ function SettlementPanel({
 }) {
   const [showInfo, setShowInfo] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [payModal, setPayModal] = useState<{ semester: 1 | 2; amount: number } | null>(null);
+  const [regularizationModal, setRegularizationModal] = useState<{
+    requiredAmount: MoneyLike;
+    provisionedAmount: MoneyLike;
+    missingAmount: MoneyLike;
+    benefitType: "PRIMA";
+    year: number;
+    semester: 1 | 2;
+  } | null>(null);
+  const [submittingPrima, setSubmittingPrima] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "OTHER">("BANK_TRANSFER");
+  const [benefitPayments, setBenefitPayments] = useState<PayrollBenefitPayment[]>([]);
+  const paymentCalculationYear = settlement
+    ? settlement.calculationYear ?? new Date(settlement.effectiveEndDate ?? settlement.settlementDate ?? settlement.calculationEndDate ?? settlement.endDate).getFullYear()
+    : new Date().getFullYear();
+
+  useEffect(() => {
+    if (settlement?.contractId) {
+      payrollApi.listBenefitPayments(settlement.contractId)
+        .then(setBenefitPayments)
+        .catch(console.error);
+    }
+  }, [settlement?.contractId]);
+
+  const closePaymentModal = () => {
+    setPayModal(null);
+    setRegularizationModal(null);
+  };
+
+  const submitPrimaPayment = async (regularizeMissingProvision = false) => {
+    if (!settlement?.contractId || !payModal) return;
+    setSubmittingPrima(true);
+    try {
+      await payrollApi.createBenefitPayment(settlement.contractId, {
+        type: "PRIMA",
+        amount: payModal.amount,
+        year: paymentCalculationYear,
+        semester: payModal.semester,
+        paymentMethod,
+        status: "PAID",
+        regularizeMissingProvision,
+      });
+      toast.success(regularizeMissingProvision ? "Saldo regularizado y prima registrada como pagada." : "Prima registrada como pagada.");
+      closePaymentModal();
+      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments);
+    } catch (err: any) {
+      const details = err instanceof AppApiError ? err.details : null;
+      if (
+        details?.code === "INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION" &&
+        details.benefitType === "PRIMA"
+      ) {
+        setRegularizationModal({
+          requiredAmount: details.requiredAmount,
+          provisionedAmount: details.provisionedAmount,
+          missingAmount: details.missingAmount,
+          benefitType: "PRIMA",
+          year: Number(details.year),
+          semester: Number(details.semester) === 2 ? 2 : 1,
+        });
+        return;
+      }
+      toast.error(err.message || "Error al registrar el pago.");
+    } finally {
+      setSubmittingPrima(false);
+    }
+  };
 
   if (!settlement) {
     return (
@@ -2454,6 +2521,10 @@ function SettlementPanel({
   const formattedHourlyRate = hourlyRateVal > 0
     ? hourlyRateVal.toFixed(1).split(".")[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + (hourlyRateVal.toFixed(1).split(".")[1] || "0")
     : "0,0";
+
+  const calculationYear = settlement.calculationYear ?? new Date(effectiveEndDate).getFullYear();
+  const prima1Paid = benefitPayments.find((p) => p.type === "PRIMA" && p.year === calculationYear && p.semester === 1);
+  const prima2Paid = benefitPayments.find((p) => p.type === "PRIMA" && p.year === calculationYear && p.semester === 2);
 
   return (
     <article className="min-w-full snap-start rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
@@ -2547,8 +2618,46 @@ function SettlementPanel({
           <div className="min-h-0 overflow-hidden space-y-2 pb-3 mb-3 border-b border-slate-100">
             <MoneyLine label="Cesantias" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
             <MoneyLine label="Intereses cesantias" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
-            <MoneyLine label="Prima de servicios I" value={serviceBonusSemester1} color="text-slate-600" valueColor="text-slate-800" />
-            <MoneyLine label="Prima de servicios II" value={serviceBonusSemester2} color="text-slate-600" valueColor="text-slate-800" />
+            
+            <div className="flex items-center justify-between gap-3 text-[13px]">
+              <span className="font-normal text-slate-600">Prima de servicios I</span>
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester1)}</span>
+                {toNumber(serviceBonusSemester1) > 0 && !prima1Paid && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setPayModal({ semester: 1, amount: toNumber(serviceBonusSemester1) }) }}
+                    className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
+                  >
+                    Pagar
+                  </button>
+                )}
+                {prima1Paid && (
+                  <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-semibold text-green-600">
+                    Pagada
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 text-[13px]">
+              <span className="font-normal text-slate-600">Prima de servicios II</span>
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester2)}</span>
+                {toNumber(serviceBonusSemester2) > 0 && !prima2Paid && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setPayModal({ semester: 2, amount: toNumber(serviceBonusSemester2) }) }}
+                    className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
+                  >
+                    Pagar
+                  </button>
+                )}
+                {prima2Paid && (
+                  <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-semibold text-green-600">
+                    Pagada
+                  </span>
+                )}
+              </div>
+            </div>
             <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
           </div>
         </div>
@@ -2564,6 +2673,101 @@ function SettlementPanel({
           <span className="font-semibold text-slate-600">{formattedHourlyRate}</span>
         </div>
       </div>
+
+      <SheetShell
+        open={!!payModal}
+        onClose={closePaymentModal}
+        title={`Pagar Prima de Servicios ${payModal?.semester === 1 ? "I" : "II"}`}
+        subtitle={`Periodo ${calculationYear}-${payModal?.semester}`}
+        footer={
+          <div className="flex items-center gap-3 w-full">
+            <button
+              onClick={closePaymentModal}
+              className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+              disabled={submittingPrima}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => submitPrimaPayment(false)}
+              disabled={submittingPrima}
+              className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0da081] disabled:opacity-50"
+            >
+              {submittingPrima ? "Registrando..." : "Confirmar pago"}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4 pt-4">
+          <p className="text-sm text-slate-600">
+            ¿Confirmas el pago de la prima de servicios por valor de{" "}
+            <strong className="text-slate-900">{money(payModal?.amount)}</strong>?
+          </p>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase text-slate-500">Método de pago</label>
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value as any)}
+              className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-sm focus:outline-none"
+            >
+              <option value="BANK_TRANSFER">Transferencia bancaria</option>
+              <option value="CASH">Efectivo</option>
+            </select>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-xs text-amber-800">
+                Esta acción creará los movimientos contables correspondientes, debitando la provisión y acreditando la cuenta de pago. No se podrá deshacer automáticamente.
+              </p>
+            </div>
+          </div>
+        </div>
+      </SheetShell>
+
+      <SheetShell
+        open={!!regularizationModal}
+        onClose={() => setRegularizationModal(null)}
+        title="Regularizar saldo de prima"
+        subtitle={`Periodo ${regularizationModal?.year ?? calculationYear}-${regularizationModal?.semester ?? payModal?.semester}`}
+        footer={
+          <div className="flex items-center gap-3 w-full">
+            <button
+              onClick={() => setRegularizationModal(null)}
+              className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+              disabled={submittingPrima}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => submitPrimaPayment(true)}
+              disabled={submittingPrima}
+              className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0da081] disabled:opacity-50"
+            >
+              {submittingPrima ? "Registrando..." : "Regularizar y pagar"}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4 pt-4">
+          <p className="text-sm leading-relaxed text-slate-600">
+            La provisión acumulada en el sistema es menor al valor legal calculado. Esto puede ocurrir cuando comienzas a usar la app a mitad de año.
+          </p>
+          <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4">
+            <MoneyLine label="Prima calculada" value={regularizationModal?.requiredAmount} color="text-slate-600" valueColor="text-slate-900" />
+            <MoneyLine label="Provisionado" value={regularizationModal?.provisionedAmount} color="text-slate-600" valueColor="text-slate-900" />
+            <MoneyLine label="Faltante a regularizar" value={regularizationModal?.missingAmount} color="text-slate-600" valueColor="text-amber-700" />
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-xs leading-relaxed text-amber-800">
+                Al confirmar, se registrará un asiento de regularización y luego el pago de la prima.
+              </p>
+            </div>
+          </div>
+        </div>
+      </SheetShell>
     </article>
   );
 }
@@ -2636,6 +2840,8 @@ function EmployeeStandaloneCard({
   onInactivateContract,
   onInactivateEmployee,
   onHardDeleteEmployee,
+  complementaryAvailable,
+  onComplementaryRun,
 }: {
   employee: Employee;
   contract?: Contract | null;
@@ -2646,6 +2852,8 @@ function EmployeeStandaloneCard({
   onInactivateContract?: (contract: Contract) => void;
   onInactivateEmployee?: (employee: Employee) => void;
   onHardDeleteEmployee?: (employee: Employee) => void;
+  complementaryAvailable?: boolean;
+  onComplementaryRun?: (employee: Employee) => void;
 }) {
   const hasContract = Boolean(contract);
   const isBiweekly = contract?.paymentCycle === "BIWEEKLY";
@@ -2693,8 +2901,13 @@ function EmployeeStandaloneCard({
         </div>
       </div>
 
-      <p className="mb-3 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-500">
-        {hasContract ? "Sin nomina calculada en este periodo" : "Empleado activo visible sin contrato activo"}
+      <p className={cn(
+        "mb-3 rounded-2xl px-3 py-2 text-[11px] font-medium",
+        complementaryAvailable ? "bg-amber-50 text-amber-800" : "bg-slate-50 text-slate-500",
+      )}>
+        {complementaryAvailable
+          ? "Empleado sin nómina en este período liquidado."
+          : hasContract ? "Sin nomina calculada en este periodo" : "Empleado activo visible sin contrato activo"}
       </p>
 
       <div className={cn("grid gap-1.5 border-t border-slate-100 pt-3", hasContract ? "grid-cols-4" : "grid-cols-2")}>
@@ -2709,8 +2922,18 @@ function EmployeeStandaloneCard({
             <button type="button" disabled={!canCalculateNews} onClick={() => canCalculateNews && onOpenNews(employee, contract)} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 disabled:text-emerald-300">
               Novedades
             </button>
-            <button type="button" className="rounded-xl bg-violet-50 px-2 py-2 text-[10px] font-bold text-violet-300" disabled>
-              Liquidar
+            <button
+              type="button"
+              onClick={() => complementaryAvailable ? onComplementaryRun?.(employee) : undefined}
+              className={cn(
+                "rounded-xl px-2 py-2 text-[10px] font-bold",
+                complementaryAvailable
+                  ? "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                  : "bg-violet-50 text-violet-300",
+              )}
+              disabled={!complementaryAvailable}
+            >
+              {complementaryAvailable ? "Liquidar complementaria" : "Liquidar"}
             </button>
           </>
         )}
@@ -4171,6 +4394,7 @@ export default function PayrollPage() {
     | { type: "visual-payment"; run: PayrollRun; paid: boolean }
     | { type: "post-period" }
     | { type: "post-settlement"; run: PayrollRun; settlement: Settlement }
+    | { type: "complementary-run"; employee: Employee }
     | null
   >(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -4337,7 +4561,7 @@ export default function PayrollPage() {
     const rows = employees.map((employee) => {
       const run = runByEmployeeId.get(employee.id);
       const activeContract = run?.contract ?? findActiveContract(employee.contracts, selectedPeriod);
-      const preview = !run && activeContract
+      const preview = !run && activeContract && selectedPeriod?.status !== "POSTED" && selectedPeriod?.status !== "CLOSED"
         ? simulationByEmployee[payrollSimulationKey(employee.id, activeContract.id, selectedPeriod?.id)]
         : null;
       return {
@@ -4362,7 +4586,13 @@ export default function PayrollPage() {
   }, [employees, runs, selectedPeriod, simulationByEmployee]);
 
   useEffect(() => {
-    if (!selectedPeriod || employeesLoading || runsLoading) {
+    if (
+      !selectedPeriod ||
+      employeesLoading ||
+      runsLoading ||
+      selectedPeriod.status === "POSTED" ||
+      selectedPeriod.status === "CLOSED"
+    ) {
       setPreviewLoading(false);
       return;
     }
@@ -4704,6 +4934,28 @@ export default function PayrollPage() {
         return;
       }
 
+      if (confirmAction.type === "complementary-run") {
+        if (!selectedPeriodId) {
+          toast.error("Selecciona un periodo.");
+          setConfirmAction(null);
+          return;
+        }
+        const run = await payrollApi.createComplementaryRun(
+          selectedPeriodId,
+          confirmAction.employee.id,
+          { reason: "Empleado cargado después de liquidar período" },
+        );
+        setRuns((current) => (
+          current.some((item) => item.id === run.id) ? current : [run, ...current]
+        ));
+        await refreshPeople();
+        setPeriodRefreshKey((value) => value + 1);
+        setSelectedRunId(run.id);
+        toast.success("Nómina complementaria generada.");
+        setConfirmAction(null);
+        return;
+      }
+
       const { run, settlement } = confirmAction;
       const existingSettlement = settlements[run.employeeId];
       if (existingSettlement && !existingSettlement.preview) {
@@ -4867,6 +5119,11 @@ export default function PayrollPage() {
                         onInactivateContract={handleInactivateContract}
                         onInactivateEmployee={handleInactivateEmployee}
                         onHardDeleteEmployee={handleHardDeleteEmployee}
+                        complementaryAvailable={Boolean(
+                          row.contract &&
+                          (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED")
+                        )}
+                        onComplementaryRun={(employee) => setConfirmAction({ type: "complementary-run", employee })}
                       />
                     );
                   }
@@ -5010,7 +5267,9 @@ export default function PayrollPage() {
             ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
             : confirmAction?.type === "post-period"
               ? "Liquidar la nomina mensual de este periodo?"
-              : "Liquidar este contrato?"
+              : confirmAction?.type === "complementary-run"
+                ? "¿Liquidar nómina complementaria?"
+                : "Liquidar este contrato?"
         }
         description={
           confirmAction?.type === "visual-payment"
@@ -5019,21 +5278,27 @@ export default function PayrollPage() {
               : "Esta accion solo devuelve el estado visual a pendiente. No modifica contabilidad.")
             : confirmAction?.type === "post-period"
               ? "Esta accion generara la liquidacion del periodo y los asientos contables correspondientes. No uses este boton si solo quieres marcar el pago como realizado."
-              : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
+              : confirmAction?.type === "complementary-run"
+                ? "Se generará una liquidación adicional solo para este empleado y se registrará un asiento contable independiente. No se modificará la nómina original del período."
+                : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
         }
         confirmLabel={
           confirmAction?.type === "visual-payment"
             ? (confirmAction.paid ? "Marcar pagada" : "Marcar pendiente")
             : confirmAction?.type === "post-period"
               ? "Confirmar liquidacion"
-              : "Confirmar liquidacion"
+              : confirmAction?.type === "complementary-run"
+                ? "Confirmar"
+                : "Confirmar liquidacion"
         }
         intent={
           confirmAction?.type === "visual-payment"
             ? "visual"
             : confirmAction?.type === "post-period"
               ? "payroll"
-              : "settlement"
+              : confirmAction?.type === "complementary-run"
+                ? "payroll"
+                : "settlement"
         }
         loading={confirmLoading}
         onConfirm={handleConfirmAction}

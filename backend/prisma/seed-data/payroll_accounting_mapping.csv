@@ -36,3 +36,6 @@ SERVICE_BONUS_SEMESTER_ONE,Prima servicios I,510536,Prima de servicios,DEBIT
 SERVICE_BONUS_SEMESTER_TWO,Prima servicios II,510536,Prima de servicios,DEBIT
 SERVICE_BONUS_SEMESTER_ONE,Prima servicios I por pagar,2520,Prima de servicios,CREDIT
 SERVICE_BONUS_SEMESTER_TWO,Prima servicios II por pagar,2520,Prima de servicios,CREDIT
+PAYROLL_PAYMENT_CASH,Pago en Efectivo,110505,Caja general,CREDIT
+PAYROLL_PAYMENT_BANK,Pago en Banco,111005,Moneda nacional,CREDIT
+PAYROLL_PAYMENT_OTHER,Pago en Otros,111005,Moneda nacional,CREDIT

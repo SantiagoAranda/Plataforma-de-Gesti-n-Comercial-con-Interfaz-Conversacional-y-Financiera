@@ -167,6 +167,9 @@ export type PayrollBenefitPayment = {
   status: "PENDING" | "PAID" | "CANCELLED" | string;
   paidAt?: string | null;
   notes?: string | null;
+  year?: number | null;
+  semester?: number | null;
+  paymentMethod?: string | null;
 };
 
 export type ArlRiskClass = {
@@ -436,6 +439,15 @@ export const payrollApi = {
       method: "POST",
     });
   },
+  createComplementaryRun(periodId: string, employeeId: string, payload: { reason?: string } = {}) {
+    return payrollRequest<PayrollRun>(
+      `/payroll/periods/${periodId}/runs/complementary/${employeeId}`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
   previewEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
     const normalizedPayload = normalizeCalculatePayrollPayload(payload);
     return payrollRequest<PayrollRun>(`/payroll/periods/${periodId}/preview/${employeeId}`, {
@@ -487,6 +499,10 @@ export const payrollApi = {
       payrollRunId?: string | null;
       status?: "PENDING" | "PAID" | "CANCELLED" | string;
       notes?: string | null;
+      year?: number;
+      semester?: number;
+      paymentMethod?: "CASH" | "BANK_TRANSFER" | "OTHER" | string | null;
+      regularizeMissingProvision?: boolean;
     },
   ) {
     return payrollRequest<PayrollBenefitPayment>(

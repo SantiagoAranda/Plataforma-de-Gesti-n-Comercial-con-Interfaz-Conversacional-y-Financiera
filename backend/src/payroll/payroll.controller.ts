@@ -27,6 +27,7 @@ import { CreatePayrollPeriodDto } from './dto/create-payroll-period.dto';
 import { UpdatePayrollPeriodStatusDto } from './dto/update-payroll-period-status.dto';
 import { CreatePayrollAdjustmentDto } from './dto/create-payroll-adjustment.dto';
 import { CalculatePayrollDto } from './dto/calculate-payroll.dto';
+import { CreateComplementaryPayrollRunDto } from './dto/create-complementary-payroll-run.dto';
 import { CreateContractSettlementDto } from './dto/create-contract-settlement.dto';
 import { SimulateContractSettlementDto } from './dto/simulate-contract-settlement.dto';
 import { QueryContractSettlementsDto } from './dto/query-contract-settlements.dto';
@@ -414,6 +415,22 @@ export class PayrollController {
     return this.payrollService.liquidatePeriodPayroll(
       this.getBusinessId(req),
       periodId,
+    );
+  }
+
+  @Post('periods/:periodId/runs/complementary/:employeeId')
+  @Roles('BUSINESS')
+  createComplementaryPayrollRun(
+    @Req() req: any,
+    @Param('periodId') periodId: string,
+    @Param('employeeId') employeeId: string,
+    @Body() dto: CreateComplementaryPayrollRunDto,
+  ) {
+    return this.payrollService.createComplementaryPayrollRun(
+      this.getBusinessId(req),
+      periodId,
+      employeeId,
+      dto,
     );
   }
 

@@ -33,6 +33,7 @@ import {
   UpdateEmployeeContractDto,
 } from './dto/contract.dto';
 import { CreatePayrollPeriodDto } from './dto/create-payroll-period.dto';
+import { CreateComplementaryPayrollRunDto } from './dto/create-complementary-payroll-run.dto';
 import { UpdatePayrollPeriodStatusDto } from './dto/update-payroll-period-status.dto';
 import { CreatePayrollAdjustmentDto } from './dto/create-payroll-adjustment.dto';
 import { CalculatePayrollDto } from './dto/calculate-payroll.dto';
@@ -1662,11 +1663,13 @@ export class PayrollService {
     employeeName: string,
     concepts: Prisma.PayrollConceptResultCreateManyInput[],
     tx: PayrollTx,
+    originType: AccountingMovementOriginType = AccountingMovementOriginType.PAYROLL_RUN,
+    detailPrefix = 'Nomina',
   ) {
     await tx.accountingMovement.deleteMany({
       where: {
         businessId,
-        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originType,
         originId: run.id,
       },
     });
@@ -1721,8 +1724,8 @@ export class PayrollService {
               ? MovementNature.DEBIT
               : MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: `Nomina ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - ${concept.name}`,
-          originType: AccountingMovementOriginType.PAYROLL_RUN,
+          detail: `${detailPrefix} ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - ${concept.name}`,
+          originType,
           originId: run.id,
         });
       }
@@ -1752,8 +1755,8 @@ export class PayrollService {
           amount: this.money(netPay),
           nature: MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: `Nomina ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - Neto a pagar`,
-          originType: AccountingMovementOriginType.PAYROLL_RUN,
+          detail: `${detailPrefix} ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - Neto a pagar`,
+          originType,
           originId: run.id,
         });
       } else {
@@ -2069,15 +2072,41 @@ export class PayrollService {
     periodId: string,
     employeeId: string,
     dto: CalculatePayrollDto = {},
+    options: {
+      allowPostedPeriod?: boolean;
+      createOnlyIfMissing?: boolean;
+      skipPeriodStatusUpdate?: boolean;
+      postAccountingOriginType?: AccountingMovementOriginType;
+      accountingDetailPrefix?: string;
+      complementaryReason?: string;
+    } = {},
   ) {
     return this.prisma.$transaction(async (tx) => {
       const period = await this.getPeriodForBusiness(businessId, periodId, tx);
-      await this.assertPeriodIsEditable(period.id, tx);
+      if (!options.allowPostedPeriod) {
+        await this.assertPeriodIsEditable(period.id, tx);
+      }
       const employee = await this.assertEmployeeBelongsToBusiness(
         businessId,
         employeeId,
         tx,
       );
+      if (options.createOnlyIfMissing) {
+        const existingRun = await tx.payrollRun.findUnique({
+          where: {
+            payrollPeriodId_employeeId: {
+              payrollPeriodId: period.id,
+              employeeId,
+            },
+          },
+          select: { id: true },
+        });
+        if (existingRun) {
+          throw new ConflictException(
+            'Este empleado ya tiene nomina liquidada en este periodo.',
+          );
+        }
+      }
       const contract = await tx.employeeContract.findFirst({
         where: { businessId, employeeId, isActive: true, startDate: { lte: new Date(Date.UTC(period.year, period.month, 0)) }, OR: [{ endDate: null }, { endDate: { gte: new Date(Date.UTC(period.year, period.month - 1, 1)) } }] },
         include: { arlRiskClass: true },
@@ -2293,6 +2322,16 @@ export class PayrollService {
         realEmployerCost: this.money(realEmployerCost),
         usedParameters: {
           ...this.parametersSnapshot(params),
+          ...(options.postAccountingOriginType ===
+          ('PAYROLL_COMPLEMENTARY_RUN' as AccountingMovementOriginType)
+            ? {
+                isComplementary: true,
+                complementaryReason:
+                  options.complementaryReason ??
+                  'Empleado cargado después de liquidar período',
+                originalPeriodStatus: period.status,
+              }
+            : {}),
           employeeSnapshot: {
             id: employee.id,
             firstName: employee.firstName,
@@ -2364,23 +2403,27 @@ export class PayrollService {
         calculatedAt: new Date(),
       };
 
-      const run = await tx.payrollRun.upsert({
-        where: {
-          payrollPeriodId_employeeId: {
-            payrollPeriodId: period.id,
-            employeeId,
-          },
-        },
-        create: runData,
-        update: runData,
-      });
+      const run = options.createOnlyIfMissing
+        ? await tx.payrollRun.create({ data: runData })
+        : await tx.payrollRun.upsert({
+            where: {
+              payrollPeriodId_employeeId: {
+                payrollPeriodId: period.id,
+                employeeId,
+              },
+            },
+            create: runData,
+            update: runData,
+          });
 
       await tx.payrollConceptResult.deleteMany({ where: { payrollRunId: run.id } });
       await tx.payrollAdjustment.deleteMany({ where: { payrollRunId: run.id } });
       await tx.accountingMovement.deleteMany({
         where: {
           businessId,
-          originType: AccountingMovementOriginType.PAYROLL_RUN,
+          originType:
+            options.postAccountingOriginType ??
+            AccountingMovementOriginType.PAYROLL_RUN,
           originId: run.id,
         },
       });
@@ -2444,10 +2487,29 @@ export class PayrollService {
         },
         tx,
       );
-      await tx.payrollPeriod.update({
-        where: { id: period.id },
-        data: { status: PayrollPeriodStatus.CALCULATED, calculatedAt: new Date() },
-      });
+      if (options.postAccountingOriginType) {
+        await this.ensureDefaultPayrollAccountingMappingsForBusiness(
+          businessId,
+          tx,
+        );
+        await this.recreateAccountingMovements(
+          businessId,
+          period,
+          run,
+          `${employee.firstName} ${employee.lastName}`,
+          concepts,
+          tx,
+          options.postAccountingOriginType,
+          options.accountingDetailPrefix ?? 'Nomina',
+        );
+      }
+
+      if (!options.skipPeriodStatusUpdate) {
+        await tx.payrollPeriod.update({
+          where: { id: period.id },
+          data: { status: PayrollPeriodStatus.CALCULATED, calculatedAt: new Date() },
+        });
+      }
 
       const persistedRun = await tx.payrollRun.findUnique({
         where: { id: run.id },
@@ -2531,6 +2593,55 @@ export class PayrollService {
       runs,
       ...calculation,
     };
+  }
+
+  async createComplementaryPayrollRun(
+    businessId: string,
+    periodId: string,
+    employeeId: string,
+    dto: CreateComplementaryPayrollRunDto = {},
+  ) {
+    const period = await this.getPeriodForBusiness(businessId, periodId);
+    if (
+      period.status !== PayrollPeriodStatus.POSTED &&
+      period.status !== PayrollPeriodStatus.CLOSED
+    ) {
+      throw new BadRequestException(
+        'La complementaria solo aplica a periodos ya liquidados.',
+      );
+    }
+
+    const existingRun = await this.prisma.payrollRun.findUnique({
+      where: {
+        payrollPeriodId_employeeId: {
+          payrollPeriodId: periodId,
+          employeeId,
+        },
+      },
+      select: { id: true },
+    });
+    if (existingRun) {
+      throw new ConflictException(
+        'Este empleado ya tiene nomina liquidada en este periodo.',
+      );
+    }
+
+    return this.calculateEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      {},
+      {
+        allowPostedPeriod: true,
+        createOnlyIfMissing: true,
+        skipPeriodStatusUpdate: true,
+        postAccountingOriginType:
+          'PAYROLL_COMPLEMENTARY_RUN' as AccountingMovementOriginType,
+        accountingDetailPrefix: 'Nomina complementaria',
+        complementaryReason:
+          dto.reason ?? 'Empleado cargado después de liquidar período',
+      },
+    );
   }
 
   async getPayrollRun(businessId: string, runId: string) {
@@ -2693,21 +2804,347 @@ export class PayrollService {
     dto: CreatePayrollBenefitPaymentDto,
   ) {
     const contract = await this.getContractForSettlement(businessId, contractId);
-    return this.prisma.payrollBenefitPayment.create({
-      data: {
+
+    return this.prisma.$transaction(async (tx) => {
+      const isServiceBonusPayment =
+        dto.type === 'PRIMA' && !!dto.year && !!dto.semester;
+      const employeeName = `${contract.employee.firstName} ${contract.employee.lastName}`;
+      let provisionedAmount = new Prisma.Decimal(0);
+      let missingAmount = new Prisma.Decimal(0);
+      let roundingTolerance = new Prisma.Decimal(0);
+      let regularizationOriginId: string | null = null;
+      let roundingOriginId: string | null = null;
+      let existingRoundingRegularization = false;
+
+      if (isServiceBonusPayment) {
+        const existing = await tx.payrollBenefitPayment.findFirst({
+          where: {
+            businessId,
+            contractId,
+            type: dto.type,
+            year: dto.year,
+            semester: dto.semester,
+          },
+        });
+        if (existing) {
+          throw new ConflictException(`La prima de este semestre ya fue pagada.`);
+        }
+
+        const startMonth = dto.semester === 1 ? 1 : 7;
+        const endMonth = dto.semester === 1 ? 6 : 12;
+
+        const runs = await tx.payrollRun.findMany({
+          where: {
+            businessId,
+            contractId,
+            period: {
+              year: dto.year,
+              month: { gte: startMonth, lte: endMonth },
+            },
+          },
+          select: { serviceBonus: true },
+        });
+
+        const provisioned = runs.reduce(
+          (sum, run) => sum + Number(run.serviceBonus),
+          0,
+        );
+
+        provisionedAmount = this.money(this.decimal(provisioned));
+        const requiredAmount = this.money(this.decimal(dto.amount));
+        missingAmount = requiredAmount.sub(provisionedAmount);
+        roundingTolerance = Prisma.Decimal.max(
+          new Prisma.Decimal(1000),
+          requiredAmount.mul(0.001),
+        );
+
+        if (missingAmount.greaterThan(0)) {
+          regularizationOriginId = this.initialBenefitRegularizationOriginId(
+            contractId,
+            dto.type,
+            dto.year!,
+            dto.semester!,
+          );
+          roundingOriginId = this.roundingBenefitRegularizationOriginId(
+            contractId,
+            dto.type,
+            dto.year!,
+            dto.semester!,
+          );
+
+          const existingRegularization = await tx.accountingMovement.findFirst({
+            where: {
+              businessId,
+              originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+              originId: regularizationOriginId,
+            },
+          });
+          const existingRounding = await tx.accountingMovement.findFirst({
+            where: {
+              businessId,
+              originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+              originId: roundingOriginId,
+            },
+          });
+          existingRoundingRegularization = !!existingRounding;
+
+          if (
+            missingAmount.greaterThan(roundingTolerance) &&
+            !dto.regularizeMissingProvision
+          ) {
+            throw new ConflictException({
+              code: 'INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION',
+              message:
+                'La provisión acumulada de prima es menor al valor legal calculado.',
+              requiredAmount: requiredAmount.toFixed(0),
+              provisionedAmount: provisionedAmount.toFixed(0),
+              missingAmount: missingAmount.toFixed(0),
+              tolerance: roundingTolerance.toFixed(0),
+              benefitType: 'PRIMA',
+              year: dto.year,
+              semester: dto.semester,
+            });
+          }
+
+          if (
+            missingAmount.greaterThan(roundingTolerance) &&
+            existingRegularization
+          ) {
+            throw new ConflictException(
+              'Ya existe una regularización inicial para la prima de este semestre.',
+            );
+          }
+        }
+
+      }
+
+      const validationMappings = await tx.payrollAccountingMapping.findMany({
+        where: {
+          businessId,
+          isActive: true,
+        },
+      });
+
+      let validationLiabilityConcept = '';
+      if (dto.type === 'PRIMA') {
+        validationLiabilityConcept =
+          dto.semester === 1
+            ? 'SERVICE_BONUS_SEMESTER_ONE'
+            : 'SERVICE_BONUS_SEMESTER_TWO';
+      }
+
+      const validationExpenseMapping = validationMappings.find(
+        (m) =>
+          m.conceptCode === 'SERVICE_BONUS' &&
+          m.side === PayrollAccountingSide.DEBIT,
+      );
+      let validationLiabilityMapping = validationMappings.find(
+        (m) =>
+          m.conceptCode === validationLiabilityConcept &&
+          m.side === PayrollAccountingSide.CREDIT,
+      );
+      if (!validationLiabilityMapping && dto.type === 'PRIMA') {
+        validationLiabilityMapping = validationMappings.find(
+          (m) =>
+            m.conceptCode === 'SERVICE_BONUS' &&
+            m.side === PayrollAccountingSide.CREDIT,
+        );
+      }
+
+      const validationCreditConcept = this.paymentMethodCreditConcept(dto.paymentMethod);
+      const validationCreditMapping = validationMappings.find(
+        (m) =>
+          m.conceptCode === validationCreditConcept &&
+          m.side === PayrollAccountingSide.CREDIT,
+      );
+
+      if (!validationLiabilityMapping || !validationCreditMapping) {
+        throw new BadRequestException(
+          `Faltan configuraciones contables para procesar el pago. (Pasivo: ${!!validationLiabilityMapping}, Caja/Banco: ${!!validationCreditMapping})`,
+        );
+      }
+
+      if (
+        isServiceBonusPayment &&
+        missingAmount.greaterThan(0) &&
+        (dto.regularizeMissingProvision ||
+          missingAmount.lessThanOrEqualTo(roundingTolerance)) &&
+        !existingRoundingRegularization &&
+        !validationExpenseMapping
+      ) {
+        throw new BadRequestException(
+          'Falta configuración contable para regularizar la prima. (Gasto SERVICE_BONUS: false)',
+        );
+      }
+
+      const payment = await tx.payrollBenefitPayment.create({
+        data: {
+          businessId,
+          employeeId: contract.employeeId,
+          contractId,
+          type: dto.type,
+          amount: dto.amount,
+          status: dto.status ?? PayrollPaymentStatus.PAID,
+          paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
+          periodId: dto.periodId,
+          payrollRunId: dto.payrollRunId,
+          settlementId: dto.settlementId,
+          notes: this.normalizeNullableText(dto.notes),
+          year: dto.year,
+          semester: dto.semester,
+          paymentMethod: dto.paymentMethod,
+        },
+      });
+
+      const date = payment.paidAt ?? new Date();
+
+      const movements: Prisma.AccountingMovementCreateManyInput[] = [];
+      const amountDecimal = this.money(payment.amount);
+
+      if (
+        isServiceBonusPayment &&
+        missingAmount.greaterThan(0) &&
+        missingAmount.lessThanOrEqualTo(roundingTolerance) &&
+        !existingRoundingRegularization &&
+        roundingOriginId &&
+        validationExpenseMapping &&
+        validationLiabilityMapping
+      ) {
+        const metadata = {
+          type: 'ROUNDING_REGULARIZATION',
+          benefitType: 'PRIMA',
+          requiredAmount: this.money(this.decimal(dto.amount)).toFixed(0),
+          provisionedAmount: provisionedAmount.toFixed(0),
+          missingAmount: missingAmount.toFixed(0),
+          tolerance: roundingTolerance.toFixed(0),
+        };
+        const detail = `Ajuste redondeo prima ${dto.year}-${dto.semester} - ${employeeName} ${JSON.stringify(metadata)}`;
+        const expenseCode = validationExpenseMapping.accountCode.trim();
+        const liabilityCode = validationLiabilityMapping.accountCode.trim();
+
+        movements.push(
+          {
+            businessId,
+            pucCuentaCode: expenseCode.length === 4 ? expenseCode : undefined,
+            pucSubcuentaId: expenseCode.length === 6 ? expenseCode : undefined,
+            amount: missingAmount,
+            nature: MovementNature.DEBIT,
+            date,
+            detail,
+            originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+            originId: roundingOriginId,
+          },
+          {
+            businessId,
+            pucCuentaCode: liabilityCode.length === 4 ? liabilityCode : undefined,
+            pucSubcuentaId: liabilityCode.length === 6 ? liabilityCode : undefined,
+            amount: missingAmount,
+            nature: MovementNature.CREDIT,
+            date,
+            detail,
+            originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+            originId: roundingOriginId,
+          },
+        );
+      }
+
+      if (
+        isServiceBonusPayment &&
+        missingAmount.greaterThan(roundingTolerance) &&
+        dto.regularizeMissingProvision &&
+        regularizationOriginId &&
+        validationExpenseMapping &&
+        validationLiabilityMapping
+      ) {
+        const semesterLabel = dto.semester === 1 ? 'I' : 'II';
+        const metadata = {
+          type: 'INITIAL_BENEFIT_REGULARIZATION',
+          benefitType: 'PRIMA',
+          year: dto.year,
+          semester: dto.semester,
+          requiredAmount: this.money(this.decimal(dto.amount)).toFixed(0),
+          provisionedAmount: provisionedAmount.toFixed(0),
+          missingAmount: missingAmount.toFixed(0),
+          reason: 'INSUFFICIENT_HISTORICAL_PAYROLL_RUNS',
+        };
+        const detail = `Regularización inicial prima semestre ${semesterLabel} ${dto.year} - ${employeeName} ${JSON.stringify(metadata)}`;
+        const expenseCode = validationExpenseMapping.accountCode.trim();
+        const liabilityCode = validationLiabilityMapping.accountCode.trim();
+
+        movements.push(
+          {
+            businessId,
+            pucCuentaCode: expenseCode.length === 4 ? expenseCode : undefined,
+            pucSubcuentaId: expenseCode.length === 6 ? expenseCode : undefined,
+            amount: missingAmount,
+            nature: MovementNature.DEBIT,
+            date,
+            detail,
+            originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+            originId: regularizationOriginId,
+          },
+          {
+            businessId,
+            pucCuentaCode: liabilityCode.length === 4 ? liabilityCode : undefined,
+            pucSubcuentaId: liabilityCode.length === 6 ? liabilityCode : undefined,
+            amount: missingAmount,
+            nature: MovementNature.CREDIT,
+            date,
+            detail,
+            originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
+            originId: regularizationOriginId,
+          },
+        );
+      }
+
+      const debitCode = validationLiabilityMapping.accountCode.trim();
+      movements.push({
         businessId,
-        employeeId: contract.employeeId,
-        contractId,
-        type: dto.type,
-        amount: dto.amount,
-        status: dto.status ?? PayrollPaymentStatus.PAID,
-        paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
-        periodId: dto.periodId,
-        payrollRunId: dto.payrollRunId,
-        settlementId: dto.settlementId,
-        notes: this.normalizeNullableText(dto.notes),
-      },
+        pucCuentaCode: debitCode.length === 4 ? debitCode : undefined,
+        pucSubcuentaId: debitCode.length === 6 ? debitCode : undefined,
+        amount: amountDecimal,
+        nature: MovementNature.DEBIT,
+        date,
+        detail: `Pago ${dto.type} sem ${dto.semester} - ${dto.year} ${employeeName}`,
+        originType: AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT,
+        originId: payment.id,
+      });
+
+      const creditCode = validationCreditMapping.accountCode.trim();
+      movements.push({
+        businessId,
+        pucCuentaCode: creditCode.length === 4 ? creditCode : undefined,
+        pucSubcuentaId: creditCode.length === 6 ? creditCode : undefined,
+        amount: amountDecimal,
+        nature: MovementNature.CREDIT,
+        date,
+        detail: `Pago ${dto.type} sem ${dto.semester} - ${dto.year} ${employeeName}`,
+        originType: AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT,
+        originId: payment.id,
+      });
+
+      await tx.accountingMovement.createMany({ data: movements });
+
+      return payment;
     });
+  }
+
+  private initialBenefitRegularizationOriginId(
+    contractId: string,
+    benefitType: string,
+    year: number,
+    semester: number,
+  ) {
+    return `INITIAL_BENEFIT_REGULARIZATION:${contractId}:${benefitType}:${year}:${semester}`;
+  }
+
+  private roundingBenefitRegularizationOriginId(
+    contractId: string,
+    benefitType: string,
+    year: number,
+    semester: number,
+  ) {
+    return `ROUNDING_BENEFIT_REGULARIZATION:${contractId}:${benefitType}:${year}:${semester}`;
   }
 
   private async getContractForSettlement(
