@@ -223,12 +223,18 @@ function serviceBonusPreviewValue(run: PayrollRun) {
   );
 }
 
+function translatePayrollError(message: string): string {
+  if (message.includes("Employee has an active contract")) return "Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.";
+  if (message.includes("Employee has payroll history and cannot be hard deleted")) return "Este empleado tiene historial de nómina y no puede eliminarse definitivamente.";
+  return message;
+}
+
 function payrollErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof AppApiError)) return fallback;
   const detailsMessage = Array.isArray(error.details?.message)
     ? error.details.message.join(" | ")
     : error.details?.message;
-  return detailsMessage || error.message || fallback;
+  return translatePayrollError(detailsMessage || error.message || fallback);
 }
 
 function runLoanDeductionValue(run?: PayrollRun | null) {
@@ -626,7 +632,7 @@ function HeaderCalendar({
   );
 }
 
-type PayrollSheetMode = "editEmployee" | "createEmployee" | "createContract";
+type PayrollSheetMode = "editEmployee" | "createEmployee" | "createContract" | "createContractForEmployee";
 
 type PayrollSheetTab<T extends string = string> = {
   id: T;
@@ -1096,7 +1102,7 @@ function PayrollQuickEmployeeSheet({
     if (!open) return;
     setError(null);
     setSubmitting(false);
-    setActiveTab("empleado");
+    setActiveTab(mode === "createContractForEmployee" ? "contrato" : "empleado");
     setEmployeeId(initialEmployee?.id ?? "");
     setCreatedEmployee(null);
     setEmployeeDraft({
@@ -1124,7 +1130,18 @@ function PayrollQuickEmployeeSheet({
   const closeWithDirtyCheck = () => {
     const hasEmployeeData = Object.values(employeeDraft).some((value) => value.trim());
     const hasContractData = contractDraft.salaryMonthly.trim() || contractDraft.endDate.trim() || employeeId;
-    if ((hasEmployeeData || hasContractData) && !window.confirm("Cerrar sin guardar los cambios?")) return;
+    if (hasEmployeeData || hasContractData) {
+      toast((t) => (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-bold text-slate-900">Hay cambios sin guardar.</p>
+          <div className="flex gap-2">
+            <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Seguir editando</button>
+            <button onClick={() => { toast.dismiss(t.id); onClose(); }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100">Descartar</button>
+          </div>
+        </div>
+      ), { duration: Infinity });
+      return;
+    }
     onClose();
   };
 
@@ -1385,7 +1402,7 @@ function PayrollQuickEmployeeSheet({
       subtitle={selectedEmployee ? `${selectedEmployee.documentNumber ?? "Sin doc."} • ${employeeRole(selectedEmployee)}` : "Selecciona empleado activo"}
       documentNumber={selectedEmployee?.documentNumber}
       role={selectedEmployee?.position}
-      tabs={createContractTabs}
+      tabs={mode === "createContractForEmployee" ? [{ id: "contrato", label: "Contrato" }] : createContractTabs}
       activeTab={createContractTab}
       onTabChange={setCreateContractTab}
       onClose={closeWithDirtyCheck}
@@ -1438,34 +1455,38 @@ function PayrollQuickEmployeeSheet({
 
       {createContractTab === "contrato" && (
         <div className="space-y-3">
-          <SearchSelect<EmployeeSearchOption>
-            label="Buscar empleado existente"
-            value={selectedEmployeeOption}
-            placeholder="Buscar por nombre, apellido o documento"
-            emptyText="No se encontraron empleados para esa busqueda."
-            selectedLabel="Empleado seleccionado"
-            search={searchEmployees}
-            onSelect={(option) => {
-              setEmployeeId(option.employee.id);
-              setError(null);
-            }}
-            renderOption={(option) => (
-              <>
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-xs font-bold text-[#0f8f76]">
-                  {initials(option.employee)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-neutral-800">{option.title}</p>
-                  <p className="truncate text-xs text-neutral-500">{option.subtitle} • {option.meta}</p>
-                </div>
-              </>
-            )}
-          />
-          <div className="rounded-[20px] border border-neutral-100 bg-white p-3 shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contrato nuevo</p>
-            <p className="mt-1 text-sm font-bold text-slate-900">{selectedEmployee ? employeeName(selectedEmployee) : "Selecciona un empleado"}</p>
-          </div>
-          {activeContract && (
+          {mode !== "createContractForEmployee" && (
+            <SearchSelect<EmployeeSearchOption>
+              label="Buscar empleado existente"
+              value={selectedEmployeeOption}
+              placeholder="Buscar por nombre, apellido o documento"
+              emptyText="No se encontraron empleados para esa busqueda."
+              selectedLabel="Empleado seleccionado"
+              search={searchEmployees}
+              onSelect={(option) => {
+                setEmployeeId(option.employee.id);
+                setError(null);
+              }}
+              renderOption={(option) => (
+                <>
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-xs font-bold text-[#0f8f76]">
+                    {initials(option.employee)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-neutral-800">{option.title}</p>
+                    <p className="truncate text-xs text-neutral-500">{option.subtitle} • {option.meta}</p>
+                  </div>
+                </>
+              )}
+            />
+          )}
+          {mode !== "createContractForEmployee" && (
+            <div className="rounded-[20px] border border-neutral-100 bg-white p-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Contrato nuevo</p>
+              <p className="mt-1 text-sm font-bold text-slate-900">{selectedEmployee ? employeeName(selectedEmployee) : "Selecciona un empleado"}</p>
+            </div>
+          )}
+          {activeContract && mode !== "createContractForEmployee" && (
             <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">
               <p>Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.</p>
               <button
@@ -1541,6 +1562,7 @@ function EmployeePayrollEditorSheet({
   const [phone, setPhone] = useState("");
   const [active, setActive] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
   const contentRef = useRef<HTMLDivElement>(null);
+  const [initialSnapshot, setInitialSnapshot] = useState("");
 
   useEffect(() => {
     if (!open || !run) return;
@@ -1579,21 +1601,48 @@ function EmployeePayrollEditorSheet({
     }
 
     // Initialize Tab 3 (Empleado)
-    const existingFirstName = run.employee.firstName?.trim() ?? "";
-    const existingLastName = run.employee.lastName?.trim() ?? "";
-    if (existingFirstName || existingLastName) {
-      setFirstName(existingFirstName);
-      setLastName(existingLastName);
+    const currentFirstName = run.employee.firstName?.trim() ?? "";
+    const currentLastName = run.employee.lastName?.trim() ?? "";
+    let finalFirstName = currentFirstName;
+    let finalLastName = currentLastName;
+    if (currentFirstName || currentLastName) {
+      setFirstName(currentFirstName);
+      setLastName(currentLastName);
     } else {
       const parts = employeeName(run.employee).trim().split(/\s+/).filter(Boolean);
-      setFirstName(parts[0] ?? "");
-      setLastName(parts.slice(1).join(" "));
+      finalFirstName = parts[0] ?? "";
+      finalLastName = parts.slice(1).join(" ");
+      setFirstName(finalFirstName);
+      setLastName(finalLastName);
     }
     setDocumentNumber(run.employee.documentNumber ?? "");
     setPosition(run.employee.position ?? "");
     setEmail(run.employee.email ?? "");
     setPhone(run.employee.phone ?? "");
     setActive(run.employee.isActive === false ? "INACTIVE" : "ACTIVE");
+
+    setInitialSnapshot(JSON.stringify({
+      workedDays: String(run.usedParameters?.workedDays ?? "30"),
+      commissions: String(run.commissions ?? "0"),
+      nonSalaryBonus: String(run.nonSalaryBonus ?? "0"),
+      loans: String(runLoanDeductionValue(run)),
+      otherDeductions: String(runOtherDeductionsValue(run)),
+      salaryMonthly: String(run.contract?.salaryMonthly ?? ""),
+      startDate: run.contract?.startDate?.slice(0, 10) ?? todayIso,
+      endDate: run.contract?.endDate?.slice(0, 10) ?? "",
+      contractType: (run.contract?.contractType as "INDEFINITE" | "FIXED_TERM") ?? "INDEFINITE",
+      arlRiskClassId: run.contract?.arlRiskClassId ?? run.contract?.arlRiskClass?.id ?? "",
+      applyLaw1819: run.contract?.applyLaw1819 ?? true,
+      isRemote: run.contract?.isRemote ?? false,
+      paymentCycle: (run.contract?.paymentCycle as "MONTHLY" | "BIWEEKLY") ?? "MONTHLY",
+      firstName: finalFirstName,
+      lastName: finalLastName,
+      documentNumber: run.employee.documentNumber ?? "",
+      position: run.employee.position ?? "",
+      email: run.employee.email ?? "",
+      phone: run.employee.phone ?? "",
+      active: run.employee.isActive === false ? "INACTIVE" : "ACTIVE"
+    }));
   }, [open, run, selectedPeriod, todayIso]);
 
   const changeTab = (tab: "horas" | "contrato" | "empleado") => {
@@ -1634,7 +1683,7 @@ function EmployeePayrollEditorSheet({
 
   const saveNews = async () => {
     if (!selectedPeriod) return setError("Selecciona un periodo.");
-    if (!editable) return setError("Este per�odo ya fue liquidado. No se pueden modificar novedades.");
+    if (!editable) return setError("Este perodo ya fue liquidado. No se pueden modificar novedades.");
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
@@ -1728,21 +1777,57 @@ function EmployeePayrollEditorSheet({
       <div className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex h-[88dvh] max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl transition-transform animate-in slide-in-from-bottom sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[720px] sm:max-h-[calc(100dvh-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]">
         <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-slate-900">{employeeName(run.employee)}</h2>
-            <p className="text-xs font-medium text-slate-500">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-bold text-slate-900">{employeeName(run.employee)}</h2>
+            <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
               {run.employee.documentNumber ?? "Sin doc."} • {employeeRole(run.employee, run.contract)}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
-            aria-label="Cerrar"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (run.contract && run.contract.isActive !== false) {
+                  toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
+                  return;
+                }
+                onClose();
+                onInactivateEmployee?.(run.employee);
+              }}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+              aria-label="Inactivar"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const currentSnapshot = JSON.stringify({
+                  workedDays, commissions, nonSalaryBonus, loans, otherDeductions,
+                  salaryMonthly, startDate, endDate, contractType, arlRiskClassId, applyLaw1819, isRemote, paymentCycle,
+                  firstName, lastName, documentNumber, position, email, phone, active
+                });
+                if (currentSnapshot !== initialSnapshot) {
+                  toast((t) => (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-sm font-bold text-slate-900">Hay cambios sin guardar.</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Seguir editando</button>
+                        <button onClick={() => { toast.dismiss(t.id); onClose(); }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100">Descartar</button>
+                      </div>
+                    </div>
+                  ), { duration: Infinity });
+                } else {
+                  onClose();
+                }
+              }}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab switcher */}
@@ -1777,7 +1862,7 @@ function EmployeePayrollEditorSheet({
             <div className="space-y-3">
               {!editable && (
                 <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
-                  Este per�odo ya fue liquidado. No se pueden modificar novedades.
+                  Este perodo ya fue liquidado. No se pueden modificar novedades.
                 </p>
               )}
               <div className="grid grid-cols-2 gap-3">
@@ -1839,8 +1924,9 @@ function EmployeePayrollEditorSheet({
               <div className="flex gap-2">
                 <button
                   type="button"
+                  disabled={Boolean(run.contract && run.contract.isActive !== false)}
                   onClick={() => { onClose(); onCreateContract?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-neutral-200 bg-white py-2.5 text-xs font-bold text-neutral-700 shadow-sm transition hover:bg-neutral-50"
+                  className="flex-1 rounded-xl border border-neutral-200 bg-white py-2.5 text-xs font-bold text-neutral-700 shadow-sm transition hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Nuevo contrato
                 </button>
@@ -1853,6 +1939,11 @@ function EmployeePayrollEditorSheet({
                   Inactivar contrato
                 </button>
               </div>
+              {Boolean(run.contract && run.contract.isActive !== false) && (
+                <p className="mt-1 text-[11px] font-medium text-slate-500">
+                  Contrato activo vigente. Para crear uno nuevo, primero debes inactivar o liquidar el contrato actual.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <FieldBlock label="Fecha ingreso">
@@ -1926,23 +2017,6 @@ function EmployeePayrollEditorSheet({
 
           {activeTab === "empleado" && (
             <div className="space-y-3">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onInactivateEmployee?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-orange-200 bg-orange-50/80 py-2.5 text-xs font-bold text-orange-700 transition hover:bg-orange-100"
-                >
-                  Inactivar empleado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { onClose(); onHardDeleteEmployee?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-rose-200 bg-rose-50/80 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100"
-                >
-                  Eliminar empleado
-                </button>
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <FieldBlock label="Nombre">
                   <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
@@ -2342,6 +2416,7 @@ function SettlementPanel({
   posting?: boolean;
 }) {
   const [showInfo, setShowInfo] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   if (!settlement) {
     return (
@@ -2452,17 +2527,31 @@ function SettlementPanel({
         </div>
       </div>
 
-      <div className="space-y-2 pb-3 mb-3 border-b border-slate-100">
-        <MoneyLine label="Cesantias" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Intereses cesantias" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Prima de servicios I" value={serviceBonusSemester1} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Prima de servicios II" value={serviceBonusSemester2} color="text-slate-600" valueColor="text-slate-800" />
-        <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
-      </div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          setExpanded((prev) => !prev);
+        }}
+        className="cursor-pointer select-none"
+      >
+        <div className="flex justify-between items-center mb-4 pt-1">
+          <span className="text-[13px] font-bold text-slate-800">Total</span>
+          <div className="flex items-center gap-2">
+            <span className="text-base font-bold text-violet-700">{money(backendTotal)}</span>
+            <ChevronDown className={cn("h-4 w-4 transition-transform text-slate-400", expanded && "rotate-180")} />
+          </div>
+        </div>
 
-      <div className="flex justify-between items-center mb-4 pt-1">
-        <span className="text-[13px] font-bold text-slate-800">Total</span>
-        <span className="text-base font-bold text-violet-700">{money(backendTotal)}</span>
+        <div className={cn("grid transition-all duration-300", expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0")}>
+          <div className="min-h-0 overflow-hidden space-y-2 pb-3 mb-3 border-b border-slate-100">
+            <MoneyLine label="Cesantias" value={settlement.severance} color="text-slate-600" valueColor="text-slate-800" />
+            <MoneyLine label="Intereses cesantias" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
+            <MoneyLine label="Prima de servicios I" value={serviceBonusSemester1} color="text-slate-600" valueColor="text-slate-800" />
+            <MoneyLine label="Prima de servicios II" value={serviceBonusSemester2} color="text-slate-600" valueColor="text-slate-800" />
+            <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
+          </div>
+        </div>
       </div>
 
       <div className="space-y-1.5 pt-2 border-t border-slate-50">
@@ -3121,188 +3210,6 @@ function ContractManagementSheet({
         </div>
       </div>
     </div>
-  );
-}
-
-function ContractFormSheet({
-  open,
-  onClose,
-  employees,
-  arlRisks,
-  initialEmployee,
-  contract,
-  onChanged,
-}: {
-  open: boolean;
-  onClose: () => void;
-  employees: Employee[];
-  arlRisks: ArlRiskClass[];
-  initialEmployee?: Employee | null;
-  contract?: Contract | null;
-  onChanged: () => void;
-}) {
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const [employeeId, setEmployeeId] = useState("");
-  const [salaryMonthly, setSalaryMonthly] = useState("");
-  const [startDate, setStartDate] = useState(todayIso);
-  const [endDate, setEndDate] = useState("");
-  const [contractType, setContractType] = useState<"INDEFINITE" | "FIXED_TERM">("INDEFINITE");
-  const [arlRiskClassId, setArlRiskClassId] = useState("");
-  const [applyLaw1819, setApplyLaw1819] = useState(true);
-  const [isRemote, setIsRemote] = useState(false);
-  const [paymentCycle, setPaymentCycle] = useState<"MONTHLY" | "BIWEEKLY">("MONTHLY");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setEmployeeId(initialEmployee?.id ?? contract?.employeeId ?? "");
-    setSalaryMonthly(String(contract?.salaryMonthly ?? ""));
-    setStartDate(contract?.startDate?.slice(0, 10) ?? todayIso);
-    setEndDate(contract?.endDate?.slice(0, 10) ?? "");
-    setContractType((contract?.contractType as "INDEFINITE" | "FIXED_TERM") ?? "INDEFINITE");
-    setArlRiskClassId(contract?.arlRiskClassId ?? contract?.arlRiskClass?.id ?? "");
-    setApplyLaw1819(contract?.applyLaw1819 ?? true);
-    setIsRemote(contract?.isRemote ?? false);
-    setPaymentCycle((contract?.paymentCycle as "MONTHLY" | "BIWEEKLY") ?? "MONTHLY");
-    setError(null);
-  }, [contract, initialEmployee, open, todayIso]);
-
-  const save = async () => {
-    if (!employeeId) return setError("Selecciona un empleado.");
-    if (numberValue(salaryMonthly) <= 0) return setError("El salario mensual debe ser mayor a 0.");
-    if (!startDate) return setError("La fecha de ingreso es obligatoria.");
-    if (!arlRiskClassId) return setError("Selecciona ARL.");
-    setSubmitting(true);
-    setError(null);
-    try {
-      const payload = {
-        contractType,
-        salaryMonthly: numberValue(salaryMonthly),
-        startDate,
-        endDate: endDate || undefined,
-        isRemote,
-        applyLaw1819,
-        paymentCycle,
-        arlRiskClassId,
-      };
-      if (contract) {
-        await payrollApi.updateContract(contract.id, payload);
-        toast.success("Contrato actualizado");
-      } else {
-        await payrollApi.createContract(employeeId, payload);
-        toast.success("Contrato creado");
-      }
-      onChanged();
-      onClose();
-    } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el contrato.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <SheetShell
-      open={open}
-      title="Contrato Laboral"
-      subtitle="Configuracion contractual"
-      accent="text-blue-500"
-      onClose={onClose}
-      maxWidth="sm:max-w-xl"
-      footer={
-        <button type="button" onClick={save} disabled={submitting} className="h-12 w-full rounded-2xl bg-blue-500 text-sm font-bold text-white shadow-lg shadow-blue-100 disabled:opacity-60">
-          {submitting ? "Guardando..." : "Guardar contrato"}
-        </button>
-      }
-    >
-      <div className="space-y-3">
-        {!initialEmployee && (
-          <FieldBlock label="Empleado">
-            <select value={employeeId} onChange={(event) => setEmployeeId(event.target.value)} className="h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 outline-none focus:border-blue-300">
-              <option value="">Selecciona empleado</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>{employeeName(employee)} - {employee.documentNumber}</option>
-              ))}
-            </select>
-          </FieldBlock>
-        )}
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
-          <div className="grid grid-cols-3 gap-2">
-            <SegmentedOption value="INDEFINITE" current={contractType} onChange={setContractType}>Indefinido</SegmentedOption>
-            <SegmentedOption value="FIXED_TERM" current={contractType} onChange={setContractType}>Fijo</SegmentedOption>
-            <button type="button" disabled className="h-10 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-xs font-bold text-neutral-400">
-              Obra labor
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <FieldBlock label="Salario mensual">
-            <BigInput value={salaryMonthly} onChange={(event) => setSalaryMonthly(event.target.value)} placeholder="3000000" type="number" />
-          </FieldBlock>
-        </div>
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">ARL</span>
-          <div className="grid grid-cols-5 gap-1.5">
-            {[1, 2, 3, 4, 5].map((level) => {
-              const risk = arlRisks.find((item) => item.level === level);
-              const selected = arlRiskClassId === risk?.id;
-              return (
-                <button
-                  key={level}
-                  type="button"
-                  disabled={!risk}
-                  onClick={() => risk && setArlRiskClassId(risk.id)}
-                  className={cn(
-                    "h-10 rounded-xl text-[11px] font-bold transition disabled:opacity-40",
-                    selected ? "bg-blue-500 text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
-                  )}
-                >
-                  Riesgo {level}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-          <div className="grid grid-cols-2 gap-2">
-            <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
-            <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle}>Quincenal</SegmentedOption>
-          </div>
-        </div>
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
-              Trabajo remoto
-            </button>
-            <button type="button" onClick={() => setApplyLaw1819((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
-              Exonerado Ley 1819
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <FieldBlock label="Fecha ingreso">
-              <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
-            </FieldBlock>
-            <FieldBlock label="Fecha salida">
-              <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
-            </FieldBlock>
-          </div>
-        </div>
-
-        {error && <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600">{error}</p>}
-      </div>
-    </SheetShell>
   );
 }
 
@@ -4246,14 +4153,11 @@ export default function PayrollPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [employeeSheetOpen, setEmployeeSheetOpen] = useState(false);
-  const [contractSheetOpen, setContractSheetOpen] = useState(false);
   const [quickSheetMode, setQuickSheetMode] = useState<Exclude<PayrollSheetMode, "editEmployee"> | null>(null);
   const [quickInitialEmployee, setQuickInitialEmployee] = useState<Employee | null>(null);
   const [newsSheetOpen, setNewsSheetOpen] = useState(false);
   const [settlementSheetOpen, setSettlementSheetOpen] = useState(false);
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
-  const [contractToEdit, setContractToEdit] = useState<Contract | null>(null);
-  const [contractEmployee, setContractEmployee] = useState<Employee | null>(null);
   const [newsRun, setNewsRun] = useState<PayrollRun | null>(null);
   const [newsEmployee, setNewsEmployee] = useState<Employee | null>(null);
   const [newsContract, setNewsContract] = useState<Contract | null>(null);
@@ -4663,37 +4567,70 @@ export default function PayrollPage() {
     setPeriodRefreshKey((value) => value + 1);
   }, [loadEmployees]);
 
-  const handleInactivateContract = useCallback(async (contract: Contract) => {
-    if (!window.confirm("Inactivar este contrato?")) return;
-    try {
-      await payrollApi.deleteContract(contract.id);
-      toast.success("Contrato inactivado");
-      await refreshPeople();
-    } catch (err) {
-      toast.error(err instanceof AppApiError ? err.message : "No se pudo inactivar el contrato.");
-    }
+  const handleInactivateContract = useCallback((contract: Contract) => {
+    toast((t) => (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-bold text-slate-900">¿Inactivar este contrato?</p>
+        <p className="text-xs text-slate-500">El contrato dejará de estar activo. El historial se conservará.</p>
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            try {
+              await payrollApi.deleteContract(contract.id);
+              toast.success("Contrato inactivado");
+              await refreshPeople();
+            } catch (err) {
+              toast.error(payrollErrorMessage(err, "No se pudo inactivar el contrato."), { duration: 4000 });
+            }
+          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100">Inactivar contrato</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   }, [refreshPeople]);
 
-  const handleInactivateEmployee = useCallback(async (employee: Employee) => {
-    if (!window.confirm("Inactivar este empleado?")) return;
-    try {
-      await payrollApi.deleteEmployee(employee.id);
-      toast.success("Empleado inactivado");
-      await refreshPeople();
-    } catch (err) {
-      toast.error(err instanceof AppApiError ? err.message : "No se pudo inactivar el empleado.");
-    }
+  const handleInactivateEmployee = useCallback((employee: Employee) => {
+    toast((t) => (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-bold text-slate-900">¿Inactivar este empleado?</p>
+        <p className="text-xs text-slate-500">El empleado dejará de aparecer como activo. No se eliminará su historial.</p>
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            try {
+              await payrollApi.deleteEmployee(employee.id);
+              toast.success("Empleado inactivado");
+              await refreshPeople();
+            } catch (err) {
+              toast.error(payrollErrorMessage(err, "No se pudo inactivar el empleado."), { duration: 4000 });
+            }
+          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100">Inactivar empleado</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   }, [refreshPeople]);
 
-  const handleHardDeleteEmployee = useCallback(async (employee: Employee) => {
-    if (!window.confirm("Eliminar definitivamente este empleado? Solo funciona si no tiene historial.")) return;
-    try {
-      await payrollApi.hardDeleteEmployee(employee.id);
-      toast.success("Empleado eliminado");
-      await refreshPeople();
-    } catch (err) {
-      toast.error(err instanceof AppApiError ? err.message : "No se pudo eliminar definitivamente.");
-    }
+  const handleHardDeleteEmployee = useCallback((employee: Employee) => {
+    toast((t) => (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-bold text-slate-900">¿Eliminar este empleado?</p>
+        <p className="text-xs text-slate-500">Solo funciona si no tiene historial. Acción irreversible.</p>
+        <div className="flex gap-2 mt-1">
+          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+          <button onClick={async () => {
+            toast.dismiss(t.id);
+            try {
+              await payrollApi.hardDeleteEmployee(employee.id);
+              toast.success("Empleado eliminado");
+              await refreshPeople();
+            } catch (err) {
+              toast.error(payrollErrorMessage(err, "No se pudo eliminar definitivamente."), { duration: 4000 });
+            }
+          }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-100">Eliminar empleado</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   }, [refreshPeople]);
 
   
@@ -4918,9 +4855,8 @@ export default function PayrollPage() {
                           setEmployeeSheetOpen(true);
                         }}
                         onEditContract={(employee, contract) => {
-                          setContractEmployee(employee);
-                          setContractToEdit(contract ?? null);
-                          setContractSheetOpen(true);
+                          setQuickInitialEmployee(employee);
+                          setQuickSheetMode("createContractForEmployee");
                         }}
                         onOpenNews={(employee, contract) => {
                           setNewsRun(null);
@@ -5026,9 +4962,8 @@ export default function PayrollPage() {
           loadPeriods();
         }}
         onCreateContract={(employee) => {
-          setContractEmployee(employee);
-          setContractToEdit(null);
-          setContractSheetOpen(true);
+          setQuickInitialEmployee(employee);
+          setQuickSheetMode("createContractForEmployee");
         }}
         onInactivateContract={handleInactivateContract}
         onInactivateEmployee={handleInactivateEmployee}
@@ -5060,22 +4995,7 @@ export default function PayrollPage() {
         employee={employeeToEdit}
         onChanged={loadEmployees}
       />
-      <ContractFormSheet
-        open={contractSheetOpen}
-        onClose={() => {
-          setContractSheetOpen(false);
-          setContractToEdit(null);
-          setContractEmployee(null);
-        }}
-        employees={employees}
-        arlRisks={arlRisks}
-        initialEmployee={contractEmployee}
-        contract={contractToEdit}
-        onChanged={() => {
-          loadEmployees();
-          loadPeriods();
-        }}
-      />
+
       <SettlementSimulationSheet
         open={settlementSheetOpen}
         onClose={() => setSettlementSheetOpen(false)}
