@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
+import { cn } from "@/src/lib/utils";
 
 export type SearchSelectOption = {
   id: string;
@@ -22,6 +23,9 @@ type Props<T extends SearchSelectOption> = {
   onSelect: (option: T) => void;
   renderOption?: (option: T, active: boolean) => ReactNode;
   renderSelected?: (option: T) => ReactNode;
+  dark?: boolean;
+  labelClassName?: string;
+  variant?: "default" | "encapsulated";
 };
 
 export function SearchSelect<T extends SearchSelectOption>({
@@ -36,6 +40,9 @@ export function SearchSelect<T extends SearchSelectOption>({
   onSelect,
   renderOption,
   renderSelected,
+  dark = false,
+  labelClassName,
+  variant = "default",
 }: Props<T>) {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<T[]>([]);
@@ -126,9 +133,25 @@ export function SearchSelect<T extends SearchSelectOption>({
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs font-semibold text-neutral-600">{label}</span>
+      <span className={labelClassName || "text-xs font-semibold text-neutral-600"}>{label}</span>
 
-      <div className={`rounded-2xl border p-2 ${error ? "border-red-300 bg-red-50" : "border-neutral-200 bg-neutral-50"}`}>
+      <div className={cn(
+        "rounded-2xl transition-colors",
+        variant === "encapsulated"
+          ? error
+            ? "border border-red-300 bg-red-50/50 p-1 pl-3"
+            : "border border-transparent bg-slate-50/80 focus-within:bg-white focus-within:border-slate-100 p-1 pl-3"
+          : cn(
+              "border p-2",
+              dark
+                ? error
+                  ? "border-red-500/50 bg-red-950/20"
+                  : "border-slate-800 bg-slate-900/50 focus-within:border-slate-700"
+                : error
+                  ? "border-red-300 bg-red-50"
+                  : "border-neutral-200 bg-neutral-50"
+            )
+      )}>
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -140,7 +163,17 @@ export function SearchSelect<T extends SearchSelectOption>({
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className="min-w-0 flex-1 border-none bg-transparent px-2 py-2 text-sm focus:outline-none"
+            className={cn(
+              "min-w-0 flex-1 border-none bg-transparent py-2 text-sm focus:outline-none focus:ring-0",
+              variant === "encapsulated"
+                ? "px-2 text-slate-800 placeholder:text-slate-400"
+                : cn(
+                    "px-2",
+                    dark
+                      ? "text-white placeholder-slate-500"
+                      : "text-neutral-900 placeholder-neutral-400"
+                  )
+            )}
           />
 
           <button

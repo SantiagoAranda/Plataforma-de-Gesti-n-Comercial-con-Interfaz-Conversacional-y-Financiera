@@ -26,16 +26,21 @@ export function AccountingExpandableForm({
   lockFinancialFields = false,
 }: Props) {
   return (
-    <div className="max-h-[min(42vh,420px)] overflow-y-auto rounded-[28px] border border-black/5 bg-white p-4 shadow-[0_18px_40px_rgba(0,0,0,0.14)]">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
-          <div className="min-w-0">
-            <AccountingPucSearch value={value} onChange={onChange} error={errors.puc} />
-          </div>
+    <div className="rounded-[32px] bg-white p-6 border border-slate-200/80 shadow-[0_12px_32px_rgba(0,0,0,0.08)]">
+      <div className="flex flex-col gap-0.5 mb-5 px-1">
+        <h2 className="font-bold text-slate-900 text-lg">Movimiento Contable</h2>
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">GESTIÓN PUC</span>
+      </div>
 
-          <label className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-neutral-600">
-              Fecha <span className="text-red-500">*</span>
+      <div className="flex flex-col gap-4">
+        <div className="min-w-0">
+          <AccountingPucSearch value={value} onChange={onChange} error={errors.puc} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex min-w-0 flex-col">
+            <span className="text-[10px] font-bold text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
+              FECHA <span className="text-red-500">*</span>
             </span>
             <input
               type="date"
@@ -44,22 +49,18 @@ export function AccountingExpandableForm({
               onChange={(e) =>
                 onChange((prev) => ({ ...prev, date: e.target.value }))
               }
-              className={`w-full rounded-2xl border px-3 py-3 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
-                errors.date
-                  ? "border-red-300 bg-red-50 focus:border-red-400"
-                  : "border-neutral-200 bg-neutral-50 focus:border-emerald-400"
+              className={`w-full h-12 px-4 rounded-2xl bg-slate-50/80 border border-transparent text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-100 focus:ring-0 transition ${
+                errors.date ? "border-red-300 bg-red-50/50" : ""
               }`}
             />
             {errors.date && (
-              <span className="text-xs font-medium text-red-500">{errors.date}</span>
+              <span className="text-xs font-medium text-red-500 mt-1 px-1">{errors.date}</span>
             )}
           </label>
-        </div>
 
-        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3 sm:grid-cols-[130px_minmax(0,1fr)] md:grid-cols-[150px_minmax(0,1fr)]">
-          <label className="flex min-w-0 flex-col gap-1">
-            <span className="text-xs font-semibold text-neutral-600">
-              Valor <span className="text-red-500">*</span>
+          <label className="flex min-w-0 flex-col">
+            <span className="text-[10px] font-bold text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
+              VALOR <span className="text-red-500">*</span>
             </span>
             <input
               type="number"
@@ -70,28 +71,26 @@ export function AccountingExpandableForm({
               onChange={(e) =>
                 onChange((prev) => ({ ...prev, amount: e.target.value }))
               }
-              className={`w-full rounded-2xl border px-3 py-3 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 ${
-                errors.amount
-                  ? "border-red-300 bg-red-50 focus:border-red-400"
-                  : "border-neutral-200 bg-neutral-50 focus:border-emerald-400"
+              className={`w-full h-12 px-4 rounded-2xl bg-slate-50/80 border border-transparent text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-100 focus:ring-0 transition ${
+                errors.amount ? "border-red-300 bg-red-50/50" : ""
               }`}
               placeholder="0.00"
             />
             {errors.amount && (
-              <span className="text-xs font-medium text-red-500">{errors.amount}</span>
+              <span className="text-xs font-medium text-red-500 mt-1 px-1">{errors.amount}</span>
             )}
           </label>
+        </div>
 
-          <div className="min-w-0">
-            <AccountingNatureToggle
-              value={value.nature}
-              error={errors.nature}
-              disabled={lockFinancialFields}
-              onChange={(nature) =>
-                onChange((prev) => ({ ...prev, nature }))
-              }
-            />
-          </div>
+        <div className="min-w-0 mb-2">
+          <AccountingNatureToggle
+            value={value.nature}
+            error={errors.nature}
+            disabled={lockFinancialFields}
+            onChange={(nature) =>
+              onChange((prev) => ({ ...prev, nature }))
+            }
+          />
         </div>
       </div>
     </div>
