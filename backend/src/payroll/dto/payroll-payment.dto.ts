@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import {
   PaymentMethod,
   PayrollBenefitPaymentType,
@@ -31,6 +31,7 @@ export class CreatePayrollPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
 }
 
 export class UpdatePayrollPaymentStatusDto {
@@ -48,6 +49,7 @@ export class UpdatePayrollPaymentStatusDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
 }
 
 export class CreatePayrollBenefitPaymentDto {
@@ -57,6 +59,18 @@ export class CreatePayrollBenefitPaymentDto {
   @IsNumber()
   @Min(0)
   amount: number;
+
+  @IsOptional()
+  @IsInt()
+  year?: number;
+
+  @IsOptional()
+  @IsInt()
+  semester?: number;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
 
   @IsOptional()
   @IsEnum(PayrollPaymentStatus)
@@ -81,4 +95,8 @@ export class CreatePayrollBenefitPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  regularizeMissingProvision?: boolean;
 }

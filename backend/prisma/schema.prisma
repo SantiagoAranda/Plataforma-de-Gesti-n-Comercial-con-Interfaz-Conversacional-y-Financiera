@@ -37,6 +37,9 @@ enum AccountingMovementOriginType {
   PAYROLL_RUN
   PAYROLL_SETTLEMENT
   PAYROLL_PAYMENT
+  PAYROLL_BENEFIT_PAYMENT
+  PAYROLL_INITIAL_BALANCE
+  PAYROLL_COMPLEMENTARY_RUN
 }
 
 enum PaymentMethod {
@@ -1100,6 +1103,10 @@ model PayrollBenefitPayment {
   payrollRunId String?
   settlementId String?
   notes        String?
+
+  year          Int?
+  semester      Int?
+  paymentMethod PaymentMethod?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
