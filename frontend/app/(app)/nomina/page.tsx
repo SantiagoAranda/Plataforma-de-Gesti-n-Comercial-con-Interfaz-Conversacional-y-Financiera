@@ -193,6 +193,14 @@ function toNumber(value: MoneyLike) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function firstPositiveMoney(...values: unknown[]): number {
+  for (const value of values) {
+    const numberValue = Number(value);
+    if (Number.isFinite(numberValue) && numberValue > 0) return numberValue;
+  }
+  return 0;
+}
+
 function money(value: MoneyLike) {
   return toNumber(value).toLocaleString("es-CO", {
     style: "currency",
@@ -227,6 +235,7 @@ function serviceBonusPreviewValue(run: PayrollRun) {
 function translatePayrollError(message: string): string {
   if (message.includes("Employee has an active contract")) return "Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.";
   if (message.includes("Employee has payroll history and cannot be hard deleted")) return "Este empleado tiene historial de nómina y no puede eliminarse definitivamente.";
+  if (message.includes("Contract has posted payroll history")) return "Este contrato ya tiene nómina liquidada. Para cambiar datos críticos, crea una nueva versión de contrato.";
   return message;
 }
 
@@ -346,6 +355,29 @@ function choosePrimaryMonthlyPeriod(periods: PayrollPeriod[], year: number, mont
     ?? null;
 }
 
+function getPrimaDateRange(contract: Contract | null | undefined, currentYear: number) {
+  if (!contract?.startDate) return "1 ene \u2013 31 dic";
+  
+  const parseDateStr = (dateStr: string) => {
+    const parts = dateStr.slice(0, 10).split("-").map(Number);
+    return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  };
+  const formatDate = (date: Date) => {
+    return new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", timeZone: "UTC" }).format(date).replace(".", "");
+  };
+
+  const start = parseDateStr(contract.startDate);
+  const startYear = start.getUTCFullYear();
+  
+  const end = contract.endDate ? parseDateStr(contract.endDate) : null;
+  const endYear = end ? end.getUTCFullYear() : null;
+
+  const startStr = startYear < currentYear ? "1 ene" : formatDate(start);
+  const endStr = (!end || endYear! > currentYear) ? "31 dic" : formatDate(end);
+
+  return `${startStr} \u2013 ${endStr}`;
+}
+
 
 
 function SummaryCard({
@@ -367,10 +399,10 @@ function SummaryCard({
   else if (period?.status === "CLOSED") statusText = "Cerrado";
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] bg-[#0fb18f] bg-[linear-gradient(135deg,#0fb18f_0%,#26c7a6_48%,#80dcc7_100%)] p-5 text-white shadow-[0_18px_42px_rgba(15,177,143,0.28)]">
-      <div className="mb-5 flex items-start justify-between gap-3">
+    <section className="relative overflow-hidden rounded-[28px] bg-[#0fb18f] bg-[linear-gradient(135deg,#0fb18f_0%,#26c7a6_48%,#80dcc7_100%)] px-4 py-3.5 lg:px-4 lg:py-3 text-white shadow-[0_18px_42px_rgba(15,177,143,0.28)]">
+      <div className="mb-3 lg:mb-2.5 flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
+          <h1 className="text-xl lg:text-lg font-bold tracking-tight">
             {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
           </h1>
         </div>
@@ -379,22 +411,22 @@ function SummaryCard({
         </span>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3 lg:space-y-2.5">
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-white/78">Costo laboral real</p>
-          <p className="text-3xl font-bold tabular-nums">{money(totalCost)}</p>
+          <p className="mb-0.5 text-[10px] lg:text-[9px] font-bold uppercase tracking-wider text-white/78">Costo laboral real</p>
+          <p className="text-2xl lg:text-xl font-bold tabular-nums">{money(totalCost)}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-white/78">Neto a pagar</p>
-            <p className="text-lg font-bold tabular-nums">{money(totalNet)}</p>
+        <div className="grid grid-cols-2 gap-2 lg:gap-1.5">
+          <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
+            <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Neto a pagar</p>
+            <p className="text-base lg:text-sm font-bold tabular-nums">{money(totalNet)}</p>
           </div>
-          <div className="rounded-2xl bg-white/14 p-3 backdrop-blur">
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-white/78">Deducciones, cargas y provisiones</p>
-            <div className="flex flex-col gap-1">
-              <p className="text-lg font-bold tabular-nums">{money(diff)}</p>
-              <span className="self-start rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium text-white">
+          <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
+            <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Deducciones, cargas y provisiones</p>
+            <div className="flex flex-col gap-1 lg:gap-0.5">
+              <p className="text-base lg:text-sm font-bold tabular-nums">{money(diff)}</p>
+              <span className="self-start rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-medium text-white">
                 {percent.toFixed(1)}% sobre neto
               </span>
             </div>
@@ -888,19 +920,17 @@ function ContractFormSection({
         </FieldBlock>
       </div>
 
-      <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-        <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
-        <div className="grid grid-cols-3 gap-2">
-          <SegmentedOption value="INDEFINITE" current={value.contractType} onChange={(contractType) => update({ contractType })}>Indefinido</SegmentedOption>
-          <SegmentedOption value="FIXED_TERM" current={value.contractType} onChange={(contractType) => update({ contractType })}>Fijo</SegmentedOption>
-          <button type="button" disabled className="h-10 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-xs font-bold text-neutral-400">
-            Obra labor
-          </button>
-        </div>
-      </div>
-
       <FieldBlock label="Salario mensual">
-        <BigInput value={value.salaryMonthly} onChange={(event) => update({ salaryMonthly: event.target.value })} placeholder="3000000" type="number" />
+        <BigInput 
+          value={value.salaryMonthly ? Number(value.salaryMonthly.replace(/\D/g, "")).toLocaleString("es-CO") : ""} 
+          onChange={(event) => {
+            const val = event.target.value.replace(/\D/g, "");
+            update({ salaryMonthly: val });
+          }} 
+          placeholder="3.000.000" 
+          type="text" 
+          inputMode="numeric"
+        />
       </FieldBlock>
 
       <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
@@ -941,9 +971,8 @@ function ContractFormSection({
 
       <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
         <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 gap-2">
           <SegmentedOption value="MONTHLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Mensual</SegmentedOption>
-          <SegmentedOption value="BIWEEKLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Quincenal</SegmentedOption>
         </div>
       </div>
     </div>
@@ -1533,6 +1562,7 @@ function EmployeePayrollEditorSheet({
   const [activeTab, setActiveTab] = useState<"horas" | "contrato" | "empleado">("horas");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [hasPostedHistoryError, setHasPostedHistoryError] = useState(false);
 
   // Tab 1: Horas/Ajustes State
   const [workedDays, setWorkedDays] = useState("30");
@@ -1714,13 +1744,13 @@ function EmployeePayrollEditorSheet({
     setSubmitting(true);
     try {
       const payload = {
-        contractType,
+        contractType: "FIXED_TERM" as const,
         salaryMonthly: numberValue(salaryMonthly),
         startDate,
         endDate: endDate || undefined,
         isRemote,
         applyLaw1819,
-        paymentCycle,
+        paymentCycle: "MONTHLY" as const,
         arlRiskClassId,
       };
       await payrollApi.updateContract(run.contractId, payload);
@@ -1728,7 +1758,12 @@ function EmployeePayrollEditorSheet({
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el contrato.");
+      const message = payrollErrorMessage(err, "No se pudo guardar el contrato.");
+      if (err instanceof AppApiError && (err.message.includes("Contract has posted payroll history") || message.includes("nueva versi\u00f3n"))) {
+        setHasPostedHistoryError(true);
+      }
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -1946,28 +1981,33 @@ function EmployeePayrollEditorSheet({
                 </p>
               )}
 
+              {hasPostedHistoryError && (
+                <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-800">
+                  Este contrato tiene nómina liquidada. Los cambios críticos requieren una nueva versión de contrato.
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <FieldBlock label="Fecha ingreso">
-                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
+                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
                 </FieldBlock>
                 <FieldBlock label="Fecha salida">
-                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
+                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
                 </FieldBlock>
-              </div>
-
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Tipo contrato</span>
-                <div className="grid grid-cols-3 gap-2">
-                  <SegmentedOption value="INDEFINITE" current={contractType} onChange={setContractType}>Indefinido</SegmentedOption>
-                  <SegmentedOption value="FIXED_TERM" current={contractType} onChange={setContractType}>Fijo</SegmentedOption>
-                  <button type="button" disabled className="h-10 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-xs font-bold text-neutral-400">
-                    Obra labor
-                  </button>
-                </div>
               </div>
 
               <FieldBlock label="Salario mensual">
-                <BigInput value={salaryMonthly} onChange={(event) => setSalaryMonthly(event.target.value)} placeholder="3000000" type="number" />
+                <BigInput 
+                  value={salaryMonthly ? Number(String(salaryMonthly).replace(/\D/g, "")).toLocaleString("es-CO") : ""} 
+                  onChange={(event) => {
+                    const val = event.target.value.replace(/\D/g, "");
+                    setSalaryMonthly(val);
+                  }} 
+                  placeholder="3.000.000" 
+                  type="text" 
+                  inputMode="numeric"
+                  disabled={hasPostedHistoryError}
+                />
               </FieldBlock>
 
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
@@ -1980,7 +2020,7 @@ function EmployeePayrollEditorSheet({
                       <button
                         key={level}
                         type="button"
-                        disabled={!risk}
+                        disabled={!risk || hasPostedHistoryError}
                         onClick={() => risk && setArlRiskClassId(risk.id)}
                         className={cn(
                           "h-10 rounded-xl text-[11px] font-bold transition disabled:opacity-40",
@@ -1997,10 +2037,10 @@ function EmployeePayrollEditorSheet({
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
                 <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+                  <button type="button" disabled={hasPostedHistoryError} onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold disabled:opacity-50", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
                     Trabajo remoto
                   </button>
-                  <button type="button" onClick={() => setApplyLaw1819((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold", applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+                  <button type="button" disabled={hasPostedHistoryError} onClick={() => setApplyLaw1819((value) => !value)} className={cn("h-11 rounded-xl text-xs font-bold disabled:opacity-50", applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
                     Exonerado Ley 1819
                   </button>
                 </div>
@@ -2008,9 +2048,8 @@ function EmployeePayrollEditorSheet({
 
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
                 <span className="mb-2 block px-1 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
-                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle}>Quincenal</SegmentedOption>
                 </div>
               </div>
             </div>
@@ -2176,8 +2215,15 @@ function PayrollSummaryPanel({
           )}
           
           <MoneyLine
-            label="Auxilio transporte"
-            value={run.transportAllowance}
+            label={run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte"}
+            value={firstPositiveMoney(
+              run.transportAllowance,
+              run.connectivityAllowance,
+              run.usedParameters?.transportAllowance,
+              run.usedParameters?.connectivityAllowance,
+              (run as any).preview?.transportAllowance,
+              (run as any).preview?.connectivityAllowance
+            )}
             color="text-[#43856f]"
             valueColor="text-[#43856f]"
             sign="+"
@@ -2197,7 +2243,7 @@ function PayrollSummaryPanel({
                 <div>
                   <p className="text-[13px] font-semibold text-slate-800">Prima de servicios</p>
                   <p className="text-[11px] text-slate-400">
-                    {selectedPeriod?.month === 6 ? "1 ene – 30 jun · Pago en junio" : "1 jul – 31 dic · Pago en diciembre"}
+                    {getPrimaDateRange(run.contract, selectedPeriod?.year || new Date().getFullYear())}
                   </p>
                 </div>
                 <p className="text-[13px] font-bold text-amber-600">{money(primaAmount)}</p>
@@ -2235,37 +2281,6 @@ function PayrollSummaryPanel({
 
         <div className={cn("grid transition-all duration-300", expanded ? "grid-rows-[1fr] pt-4 opacity-100" : "grid-rows-[0fr] opacity-0")}>
           <div className="min-h-0 overflow-hidden space-y-3">
-            {salaryPayments.length > 0 && (
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Detalle de pagos</p>
-                <div className="space-y-1.5">
-                  {salaryPayments.map((payment, index) => (
-                    <button
-                      key={payment.id}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTogglePayment(payment);
-                      }}
-                      className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2 text-left shadow-sm border border-slate-100 hover:border-slate-200 transition"
-                    >
-                      <div>
-                        <span className="block text-[11px] font-semibold text-slate-700">
-                          {isBiweekly ? `Quincena ${payment.installmentNumber ?? index + 1}` : "Mensualidad"}
-                        </span>
-                        <span className="text-[9px] font-bold uppercase text-slate-400">
-                          {payment.status === "PAID" ? "Pagado" : "Pendiente"}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[11px] font-bold text-slate-900">{money(payment.amount)}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
             <SectionBreakdown
               title="Seguridad Social"
               color="#5b8def"
@@ -2834,31 +2849,15 @@ function EmployeeStandaloneCard({
   employee,
   contract,
   selectedPeriod,
-  onEditEmployee,
-  onEditContract,
-  onOpenNews,
-  onInactivateContract,
-  onInactivateEmployee,
-  onHardDeleteEmployee,
   complementaryAvailable,
   onComplementaryRun,
 }: {
   employee: Employee;
   contract?: Contract | null;
   selectedPeriod?: PayrollPeriod;
-  onEditEmployee: (employee: Employee) => void;
-  onEditContract: (employee: Employee, contract?: Contract | null) => void;
-  onOpenNews: (employee: Employee, contract?: Contract | null) => void;
-  onInactivateContract?: (contract: Contract) => void;
-  onInactivateEmployee?: (employee: Employee) => void;
-  onHardDeleteEmployee?: (employee: Employee) => void;
   complementaryAvailable?: boolean;
   onComplementaryRun?: (employee: Employee) => void;
 }) {
-  const hasContract = Boolean(contract);
-  const isBiweekly = contract?.paymentCycle === "BIWEEKLY";
-  const canCalculateNews = contract?.isActive !== false && !contract?.endDate;
-
   return (
     <article className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-start gap-3">
@@ -2869,28 +2868,9 @@ function EmployeeStandaloneCard({
           <p className="truncate text-[15px] font-medium text-slate-900">{employeeName(employee)}</p>
           <p className="mt-0.5 text-[12px] font-medium text-slate-500">{employeeRole(employee, contract)}</p>
           <p className="mt-0.5 text-[11px] text-slate-400">{employee.documentNumber ?? "Sin documento"}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Activo
-            </span>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-bold",
-                hasContract ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700",
-              )}
-            >
-              {hasContract ? "Contrato activo" : "Sin contrato"}
-            </span>
-            {hasContract && (
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                {isBiweekly ? "Quincenal" : "Mensual"}
-              </span>
-            )}
-          </div>
         </div>
         <div className="text-right">
-          {hasContract ? (
+          {contract ? (
             <>
               <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(contract?.salaryMonthly)}</p>
               <p className="text-[11px] text-slate-400">{selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Periodo"}</p>
@@ -2906,51 +2886,21 @@ function EmployeeStandaloneCard({
         complementaryAvailable ? "bg-amber-50 text-amber-800" : "bg-slate-50 text-slate-500",
       )}>
         {complementaryAvailable
-          ? "Empleado sin nómina en este período liquidado."
-          : hasContract ? "Sin nomina calculada en este periodo" : "Empleado activo visible sin contrato activo"}
+          ? "Empleado sin n\u00f3mina en este per\u00edodo liquidado."
+          : "Sin nomina calculada en este periodo"}
       </p>
 
-      <div className={cn("grid gap-1.5 border-t border-slate-100 pt-3", hasContract ? "grid-cols-4" : "grid-cols-2")}>
-        <button type="button" onClick={() => onEditEmployee(employee)} className="rounded-xl bg-slate-50 px-2 py-2 text-[10px] font-bold text-slate-600">
-          Editar
-        </button>
-        <button type="button" onClick={() => onEditContract(employee, contract)} className="rounded-xl bg-blue-50 px-2 py-2 text-[10px] font-bold text-blue-700">
-          {hasContract ? "Contrato" : "Crear contrato"}
-        </button>
-        {hasContract && (
-          <>
-            <button type="button" disabled={!canCalculateNews} onClick={() => canCalculateNews && onOpenNews(employee, contract)} className="rounded-xl bg-emerald-50 px-2 py-2 text-[10px] font-bold text-emerald-700 disabled:text-emerald-300">
-              Novedades
-            </button>
-            <button
-              type="button"
-              onClick={() => complementaryAvailable ? onComplementaryRun?.(employee) : undefined}
-              className={cn(
-                "rounded-xl px-2 py-2 text-[10px] font-bold",
-                complementaryAvailable
-                  ? "bg-violet-50 text-violet-700 hover:bg-violet-100"
-                  : "bg-violet-50 text-violet-300",
-              )}
-              disabled={!complementaryAvailable}
-            >
-              {complementaryAvailable ? "Liquidar complementaria" : "Liquidar"}
-            </button>
-          </>
-        )}
-      </div>
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
-        {contract && (
-          <button type="button" disabled={contract.isActive === false} onClick={() => onInactivateContract?.(contract)} className="rounded-xl bg-amber-50 px-2 py-2 text-[10px] font-bold text-amber-700 disabled:text-amber-300">
-            Inactivar contrato
+      {complementaryAvailable && (
+        <div className="flex justify-end border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={() => onComplementaryRun?.(employee)}
+            className="rounded-xl bg-violet-50 px-4 py-2 text-[10px] font-bold text-violet-700 hover:bg-violet-100"
+          >
+            Liquidar complementaria
           </button>
-        )}
-        <button type="button" onClick={() => onInactivateEmployee?.(employee)} className="rounded-xl bg-orange-50 px-2 py-2 text-[10px] font-bold text-orange-700">
-          Inactivar emp.
-        </button>
-        <button type="button" onClick={() => onHardDeleteEmployee?.(employee)} className="rounded-xl bg-rose-50 px-2 py-2 text-[10px] font-bold text-rose-700">
-          Eliminar
-        </button>
-      </div>
+        </div>
+      )}
     </article>
   );
 }
@@ -4399,6 +4349,7 @@ export default function PayrollPage() {
   >(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [postingSettlementContractId, setPostingSettlementContractId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const selectedPeriod = useMemo(
     () => periods.find((period) => period.id === selectedPeriodId && isPrimaryMonthlyPeriod(period)),
@@ -4661,8 +4612,9 @@ export default function PayrollPage() {
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return employeeRows;
-    return employeeRows.filter((row) => {
+    const rowsWithContract = employeeRows.filter((row) => Boolean(row.contract || row.run));
+    if (!term) return rowsWithContract;
+    return rowsWithContract.filter((row) => {
       const fullName = employeeName(row.employee).toLowerCase();
       return (
         fullName.includes(term) ||
@@ -5020,7 +4972,26 @@ export default function PayrollPage() {
     employees.length > 0 &&
     !periodAlreadyPosted,
   );
+  
+  const totalRowsInfo = useMemo(
+    () => ({
+      visible: filteredRows.length,
+      total: employees.length,
+    }),
+    [filteredRows],
+  );
+
   const isPayrollLoading = !error && !hasLoadedPayrollData;
+
+  useEffect(() => {
+    if (!isPayrollLoading && filteredRows.length > 0 && listRef.current) {
+      window.requestAnimationFrame(() => {
+        if (listRef.current) {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [isPayrollLoading, filteredRows.length]);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
@@ -5029,60 +5000,61 @@ export default function PayrollPage() {
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden lg:grid lg:grid-cols-[minmax(380px,520px)_minmax(360px,1fr)]">
-        <section className="h-full min-h-0 overflow-y-auto overscroll-contain px-4 py-4 pb-44 lg:pb-[150px]">
-          <div className="mx-auto max-w-3xl">
-            
-            {isPayrollLoading ? (
-              <section className="rounded-[28px] bg-white p-5 shadow-sm">
-                <div className="h-5 w-36 rounded-full bg-slate-100" />
-                <div className="mt-6 h-9 w-48 rounded-full bg-slate-100" />
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <div className="h-20 rounded-2xl bg-slate-100" />
-                  <div className="h-20 rounded-2xl bg-slate-100" />
-                </div>
-              </section>
-            ) : (
-              <SummaryCard period={selectedPeriod} totalCost={totals.cost} totalNet={totals.net} />
-            )}
+        <section className="flex flex-col h-full min-h-0 px-4 pt-4 lg:pb-0">
+          <div className="mx-auto flex w-full max-w-3xl flex-col min-h-0 h-full">
+            <div className="shrink-0">
+              {isPayrollLoading ? (
+                <section className="rounded-[28px] bg-white p-5 shadow-sm">
+                  <div className="h-5 w-36 rounded-full bg-slate-100" />
+                  <div className="mt-6 h-9 w-48 rounded-full bg-slate-100" />
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="h-20 rounded-2xl bg-slate-100" />
+                    <div className="h-20 rounded-2xl bg-slate-100" />
+                  </div>
+                </section>
+              ) : (
+                <SummaryCard period={selectedPeriod} totalCost={totals.cost} totalNet={totals.net} />
+              )}
 
-            <div className="mb-3 mt-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
-                  <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
+              <div className="mb-3 mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
+                    <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction({ type: "post-period" })}
+                    disabled={!canLiquidatePayroll}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed",
+                      periodAlreadyPosted
+                        ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                        : "border-emerald-100 bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
+                    )}
+                  >
+                    <ListChecks className="h-3.5 w-3.5" />
+                    {periodAlreadyPosted ? "Liquidada" : "Liquidar nomina"}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction({ type: "post-period" })}
-                  disabled={!canLiquidatePayroll}
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition disabled:cursor-not-allowed",
-                    periodAlreadyPosted
-                      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                      : "border-emerald-100 bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
-                  )}
-                >
-                  <ListChecks className="h-3.5 w-3.5" />
-                  {periodAlreadyPosted ? "Liquidada" : "Liquidar nomina"}
-                </button>
               </div>
             </div>
 
             {isPayrollLoading && (
-              <div className="py-16 text-center text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+              <div className="py-16 text-center text-xs font-medium uppercase tracking-[0.18em] text-slate-400 shrink-0">
                 Cargando nomina...
               </div>
             )}
 
             {!isPayrollLoading && error && (
-              <div className="rounded-3xl bg-white p-5 text-center shadow-sm">
+              <div className="rounded-3xl bg-white p-5 text-center shadow-sm shrink-0">
                 <AlertCircle className="mx-auto h-7 w-7 text-rose-400" />
                 <p className="mt-2 text-sm font-medium text-slate-800">{error}</p>
               </div>
             )}
 
             {!isPayrollLoading && !error && filteredRows.length === 0 && (
-              <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
+              <div className="rounded-3xl bg-white p-8 text-center shadow-sm shrink-0">
                 <Wallet className="mx-auto h-8 w-8 text-slate-300" />
                 <p className="mt-3 text-sm font-medium text-slate-700">No hay empleados activos</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
@@ -5091,7 +5063,7 @@ export default function PayrollPage() {
               </div>
             )}
 
-            <div className="space-y-2.5">
+            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto space-y-2.5 px-1 -mx-1 pb-44 lg:pb-[150px]">
               {!isPayrollLoading &&
                 !error &&
                 filteredRows.map((row) => {
@@ -5102,23 +5074,6 @@ export default function PayrollPage() {
                         employee={row.employee}
                         contract={row.contract}
                         selectedPeriod={selectedPeriod}
-                        onEditEmployee={(employee) => {
-                          setEmployeeToEdit(employee);
-                          setEmployeeSheetOpen(true);
-                        }}
-                        onEditContract={(employee, contract) => {
-                          setQuickInitialEmployee(employee);
-                          setQuickSheetMode("createContractForEmployee");
-                        }}
-                        onOpenNews={(employee, contract) => {
-                          setNewsRun(null);
-                          setNewsEmployee(employee);
-                          setNewsContract(contract ?? null);
-                          setNewsSheetOpen(true);
-                        }}
-                        onInactivateContract={handleInactivateContract}
-                        onInactivateEmployee={handleInactivateEmployee}
-                        onHardDeleteEmployee={handleHardDeleteEmployee}
                         complementaryAvailable={Boolean(
                           row.contract &&
                           (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED")
