@@ -185,6 +185,11 @@ export default function HomeAgenda({
     () => getAgendaEventsForDate(sales, selectedDate),
     [sales, selectedDate],
   );
+  const pendingEventsCount = useMemo(() => {
+    return dayEvents.filter(
+      (ev) => ev.status !== "COMPLETADO" && ev.status !== "CANCELADO"
+    ).length;
+  }, [dayEvents]);
 
   const hasEvents = dayEvents.length > 0;
   const visibleEvents = hasEvents ? dayEvents.slice(0, 3) : [];
@@ -444,6 +449,16 @@ export default function HomeAgenda({
                 >
                   {isClientes && <Lock className="h-3 w-3 shrink-0" />}
                   {opt.label}
+                  {opt.key === "EVENTOS" && pendingEventsCount > 0 && (
+                    <span
+                      className={cn(
+                        "w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-bold ml-1.5 shrink-0 leading-none",
+                        active ? "bg-emerald-600 text-white" : "bg-slate-500 text-white"
+                      )}
+                    >
+                      {pendingEventsCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
