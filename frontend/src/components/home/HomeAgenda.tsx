@@ -429,11 +429,11 @@ export default function HomeAgenda({
               ] as const
             ).map((opt) => {
               const active = filter === opt.key;
-              const isClientes = opt.key === "CLIENTES";
+              const isDisabled = opt.key === "CLIENTES" || opt.key === "PROVEEDORES";
               return (
                 <button
                   key={opt.key}
-                  disabled={isClientes}
+                  disabled={isDisabled}
                   onClick={() => {
                     setFilter(opt.key);
                     onFilterChange?.(opt.key);
@@ -443,11 +443,11 @@ export default function HomeAgenda({
                     active
                       ? "bg-emerald-100 text-emerald-800"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
-                    isClientes && "opacity-50 cursor-not-allowed bg-slate-100/70 text-slate-400"
+                    isDisabled && "opacity-50 cursor-not-allowed bg-slate-100/70 text-slate-400"
                   )}
                   type="button"
                 >
-                  {isClientes && <Lock className="h-3 w-3 shrink-0" />}
+                  {isDisabled && <Lock className="h-3 w-3 shrink-0" />}
                   {opt.label}
                   {opt.key === "EVENTOS" && pendingEventsCount > 0 && (
                     <span
