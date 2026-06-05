@@ -6,6 +6,7 @@ import {
   AlertCircle,
   CalendarDays,
   ChevronDown,
+  ChevronUp,
   ClipboardPlus,
   Edit3,
   FileText,
@@ -389,6 +390,7 @@ function SummaryCard({
   totalCost: number;
   totalNet: number;
 }) {
+  const [isMinimized, setIsMinimized] = useState(false);
   const diff = totalCost - totalNet;
   const percent = totalNet > 0 ? (diff / totalNet) * 100 : 0;
 
@@ -399,40 +401,81 @@ function SummaryCard({
   else if (period?.status === "CLOSED") statusText = "Cerrado";
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] bg-[#0fb18f] bg-[linear-gradient(135deg,#0fb18f_0%,#26c7a6_48%,#80dcc7_100%)] px-4 py-3.5 lg:px-4 lg:py-3 text-white shadow-[0_18px_42px_rgba(15,177,143,0.28)]">
-      <div className="mb-3 lg:mb-2.5 flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl lg:text-lg font-bold tracking-tight">
-            {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
-          </h1>
-        </div>
-        <span className="rounded-full bg-white/18 px-3 py-1 text-[11px] font-medium text-white backdrop-blur">
-          {statusText}
-        </span>
-      </div>
-
-      <div className="space-y-3 lg:space-y-2.5">
-        <div>
-          <p className="mb-0.5 text-[10px] lg:text-[9px] font-bold uppercase tracking-wider text-white/78">Costo laboral real</p>
-          <p className="text-2xl lg:text-xl font-bold tabular-nums">{money(totalCost)}</p>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 lg:gap-1.5">
-          <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
-            <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Neto a pagar</p>
-            <p className="text-base lg:text-sm font-bold tabular-nums">{money(totalNet)}</p>
-          </div>
-          <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
-            <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Deducciones, cargas y provisiones</p>
-            <div className="flex flex-col gap-1 lg:gap-0.5">
-              <p className="text-base lg:text-sm font-bold tabular-nums">{money(diff)}</p>
-              <span className="self-start rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-medium text-white">
-                {percent.toFixed(1)}% sobre neto
-              </span>
+    <section className={cn(
+      "relative overflow-hidden rounded-[28px] bg-[#0fb18f] bg-[linear-gradient(135deg,#0fb18f_0%,#26c7a6_48%,#80dcc7_100%)] text-white shadow-[0_18px_42px_rgba(15,177,143,0.28)] transition-all duration-300 ease-in-out",
+      isMinimized ? "px-4 py-3" : "px-4 py-3.5 lg:px-4 lg:py-3"
+    )}>
+      {isMinimized ? (
+        <div className="flex items-center justify-between w-full">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+            <h1 className="text-base font-bold tracking-tight shrink-0">
+              {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
+            </h1>
+            <span className="rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur shrink-0">
+              {statusText}
+            </span>
+            <span className="hidden sm:inline-block text-white/30 font-light">|</span>
+            <div className="flex items-center gap-1.5 text-xs text-white/95">
+              <span className="font-semibold text-[9px] uppercase tracking-wider text-white/78">Costo laboral real:</span>
+              <span className="font-bold text-sm tabular-nums">{money(totalCost)}</span>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setIsMinimized(false)}
+            className="ml-2 p-1.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition shrink-0 active:scale-95"
+            aria-label="Expandir resumen"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="mb-3 lg:mb-2.5 flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-xl lg:text-lg font-bold tracking-tight">
+                {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
+              </h1>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-white/18 px-3 py-1 text-[11px] font-medium text-white backdrop-blur">
+                {statusText}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsMinimized(true)}
+                className="p-1.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition active:scale-95"
+                aria-label="Minimizar resumen"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-3 lg:space-y-2.5">
+            <div>
+              <p className="mb-0.5 text-[10px] lg:text-[9px] font-bold uppercase tracking-wider text-white/78">Costo laboral real</p>
+              <p className="text-2xl lg:text-xl font-bold tabular-nums">{money(totalCost)}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 lg:gap-1.5">
+              <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
+                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Neto a pagar</p>
+                <p className="text-base lg:text-sm font-bold tabular-nums">{money(totalNet)}</p>
+              </div>
+              <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
+                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-wider text-white/78">Deducciones, cargas y provisiones</p>
+                <div className="flex flex-col gap-1 lg:gap-0.5">
+                  <p className="text-base lg:text-sm font-bold tabular-nums">{money(diff)}</p>
+                  <span className="self-start rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-medium text-white">
+                    {percent.toFixed(1)}% sobre neto
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
