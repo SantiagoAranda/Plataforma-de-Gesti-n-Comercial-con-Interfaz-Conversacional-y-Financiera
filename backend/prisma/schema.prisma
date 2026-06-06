@@ -204,6 +204,11 @@ model ItemImage {
   url   String
   order Int
 
+  // Campos para Cloudflare R2
+  objectKey String?
+  mimeType  String?
+  sizeBytes Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
