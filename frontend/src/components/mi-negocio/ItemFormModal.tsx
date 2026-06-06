@@ -9,23 +9,23 @@ import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
-import { 
-  Item, 
-  ItemType, 
-  ItemImage, 
-  PendingImage, 
-  WeeklySchedule, 
-  FormErrors 
+import {
+  Item,
+  ItemType,
+  ItemImage,
+  PendingImage,
+  WeeklySchedule,
+  FormErrors,
 } from "@/src/types/item";
-import { 
-  generateCreationId, 
-  formatPriceInput, 
-  parsePriceInput, 
+import {
+  generateCreationId,
+  formatPriceInput,
+  parsePriceInput,
   rangesOverlap,
   minutesToTime,
   timeToMinutes,
   createInitialWeek,
-  WEEKDAY_ENUM
+  WEEKDAY_ENUM,
 } from "@/src/lib/itemHelpers";
 import { ItemPanelLayout } from "./ItemPanelLayout";
 import { ItemFormContent } from "./ItemFormContent";
@@ -36,29 +36,22 @@ interface ItemFormModalProps {
   onClose: () => void;
   onSaved: (item: Item) => void;
   editingItem: Item | null;
-  setToast: (toast: { message: string; type: "success" | "error" } | null) => void;
+  setToast: (
+    toast: { message: string; type: "success" | "error" } | null,
+  ) => void;
 }
 
 function revokePendingImages(images: PendingImage[]) {
   images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
 }
 
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("No se pudo leer la imagen."));
-    };
-    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
-    reader.readAsDataURL(file);
-  });
-}
-
-export default function ItemFormModal({ open, onClose, onSaved, editingItem, setToast }: ItemFormModalProps) {
+export default function ItemFormModal({
+  open,
+  onClose,
+  onSaved,
+  editingItem,
+  setToast,
+}: ItemFormModalProps) {
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
   const [badgeText1, setBadgeText1] = useState("");
@@ -94,7 +87,9 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
       setBadgeColor2(badges[1]?.color ?? "#ef4444");
 
       setPrice(String(editingItem.price));
-      setPriceDisplay(formatPriceInput(String(editingItem.price).replace(".", ",")));
+      setPriceDisplay(
+        formatPriceInput(String(editingItem.price).replace(".", ",")),
+      );
       setDescription(editingItem.description ?? "");
       setExistingImages(editingItem.images ?? []);
       setNewImages([]);
@@ -102,23 +97,26 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
       setImageError(null);
       setDuration(editingItem.durationMinutes ?? 30);
       setDurationInput(String(editingItem.durationMinutes ?? 30));
-      
+
       const nextWeek = createInitialWeek();
       if (editingItem.type === "SERVICE" && editingItem.schedule?.length) {
-        nextWeek.forEach(d => { d.active = false; d.ranges = []; });
-        editingItem.schedule.forEach(slot => {
+        nextWeek.forEach((d) => {
+          d.active = false;
+          d.ranges = [];
+        });
+        editingItem.schedule.forEach((slot) => {
           const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
           if (dayIdx !== -1) {
             nextWeek[dayIdx].active = true;
             nextWeek[dayIdx].ranges.push({
               start: minutesToTime(slot.startMinute),
-              end: minutesToTime(slot.endMinute)
+              end: minutesToTime(slot.endMinute),
             });
           }
         });
       }
       setWeek(nextWeek);
-      const firstActive = nextWeek.findIndex(d => d.active);
+      const firstActive = nextWeek.findIndex((d) => d.active);
       setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
     } else {
       resetForm();
@@ -175,29 +173,34 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
     setNewImages((prev) => [...prev, ...nextPendingImages]);
 
     const errors: string[] = [];
-    if (selectedFiles.length > availableSlots) errors.push(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
-    if (rejectedBySize.length > 0) errors.push(`Máximo ${formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)} por imagen.`);
+    if (selectedFiles.length > availableSlots)
+      errors.push(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
+    if (rejectedBySize.length > 0)
+      errors.push(
+        `Máximo ${formatBytesToMb(MAX_ITEM_IMAGE_SIZE_BYTES)} por imagen.`,
+      );
     setImageError(errors.length > 0 ? errors.join(" ") : null);
   };
 
   const handleRemoveExistingImage = (id: string) => {
-    setExistingImages(prev => prev.filter(img => img.id !== id));
-    setRemovedImageIds(prev => prev.includes(id) ? prev : [...prev, id]);
+    setExistingImages((prev) => prev.filter((img) => img.id !== id));
+    setRemovedImageIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
   const handleRemoveNewImage = (id: string) => {
-    setNewImages(prev => {
-      const img = prev.find(i => i.id === id);
+    setNewImages((prev) => {
+      const img = prev.find((i) => i.id === id);
       if (img) URL.revokeObjectURL(img.previewUrl);
-      return prev.filter(i => i.id !== id);
+      return prev.filter((i) => i.id !== id);
     });
   };
 
   const handleSend = async () => {
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0) errors.price = "El precio debe ser mayor a 0";
-    
+    if (!price || parseFloat(price) <= 0)
+      errors.price = "El precio debe ser mayor a 0";
+
     if (type === "SERVICE") {
       if (duration < 5) errors.duration = "Mínimo 5 min";
       if (!week.some((d) => d.active && d.ranges.length > 0)) {
@@ -212,13 +215,18 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
 
     setIsSubmitting(true);
     try {
-      const schedule = type === "SERVICE" ? week.flatMap((day, dayIndex) => 
-        day.active ? day.ranges.map(r => ({
-          weekday: WEEKDAY_ENUM[dayIndex],
-          startMinute: timeToMinutes(r.start),
-          endMinute: timeToMinutes(r.end)
-        })) : []
-      ) : [];
+      const schedule =
+        type === "SERVICE"
+          ? week.flatMap((day, dayIndex) =>
+              day.active
+                ? day.ranges.map((r) => ({
+                    weekday: WEEKDAY_ENUM[dayIndex],
+                    startMinute: timeToMinutes(r.start),
+                    endMinute: timeToMinutes(r.end),
+                  }))
+                : [],
+            )
+          : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
       const cleanedBadgeColor1 = badgeColor1.trim();
@@ -258,13 +266,16 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         });
 
         for (const id of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
+          await api(`/items/${editingItem.id}/images/${id}`, {
+            method: "DELETE",
+          });
         }
         for (const img of newImages) {
-          const dataUrl = await fileToDataUrl(img.file);
-          await api(`/items/${editingItem.id}/images`, {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${editingItem.id}/images/upload`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: formData,
           });
         }
         savedItem = await api<Item>(`/items/${editingItem.id}`);
@@ -275,10 +286,11 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
         });
 
         for (const img of newImages) {
-          const dataUrl = await fileToDataUrl(img.file);
-          await api(`/items/${created.id}/images`, {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${created.id}/images/upload`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: formData,
           });
         }
         savedItem = await api<Item>(`/items/${created.id}`);
@@ -301,7 +313,15 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
     <ItemPanelLayout
       open={open}
       onClose={onClose}
-      title={editingItem ? (type === "PRODUCT" ? "Editar producto" : "Editar servicio") : (type === "PRODUCT" ? "Nuevo producto" : "Nuevo servicio")}
+      title={
+        editingItem
+          ? type === "PRODUCT"
+            ? "Editar producto"
+            : "Editar servicio"
+          : type === "PRODUCT"
+            ? "Nuevo producto"
+            : "Nuevo servicio"
+      }
       footer={
         <div className="flex justify-end">
           <button
@@ -311,12 +331,16 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
               isSubmitting ? "opacity-50 cursor-not-allowed" : ""
             }`}
           >
-            {isSubmitting ? "Guardando..." : (editingItem ? "Guardar cambios" : "Crear ítem")}
+            {isSubmitting
+              ? "Guardando..."
+              : editingItem
+                ? "Guardar cambios"
+                : "Crear ítem"}
           </button>
         </div>
       }
     >
-      <ItemFormContent 
+      <ItemFormContent
         type={type}
         setType={setType}
         name={name}
@@ -353,11 +377,20 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem, set
       {/* DESCRIPCION (Sólo visible en el Modal por ahora, se moverá al ChatComposer) */}
       <div className="space-y-2 pb-4">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Descripción</label>
-          <span className={`text-[9px] font-bold ${description.length >= 300 ? 'text-red-500' : 'text-neutral-400'}`}>{description.length}/300</span>
+          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+            Descripción
+          </label>
+          <span
+            className={`text-[9px] font-bold ${description.length >= 300 ? "text-red-500" : "text-neutral-400"}`}
+          >
+            {description.length}/300
+          </span>
         </div>
         <textarea
-          placeholder="Descripción (opcional)" rows={4} maxLength={300} value={description}
+          placeholder="Descripción (opcional)"
+          rows={4}
+          maxLength={300}
+          value={description}
           onChange={(e) => setDescription(e.target.value)}
           className="w-full rounded-2xl border border-neutral-100 bg-white p-4 text-sm shadow-sm outline-none resize-none focus:border-green-500 transition"
         />

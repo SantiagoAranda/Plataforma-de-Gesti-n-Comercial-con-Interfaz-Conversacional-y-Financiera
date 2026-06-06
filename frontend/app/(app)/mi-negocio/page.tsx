@@ -10,7 +10,14 @@ import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
 import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
-import { Item, ItemType, ItemImage, PendingImage, WeeklySchedule, FormErrors } from "@/src/types/item";
+import {
+  Item,
+  ItemType,
+  ItemImage,
+  PendingImage,
+  WeeklySchedule,
+  FormErrors,
+} from "@/src/types/item";
 import {
   generateCreationId,
   createInitialWeek,
@@ -30,7 +37,10 @@ export default function MiNegocioPage() {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
@@ -187,7 +197,6 @@ export default function MiNegocioPage() {
     }
 
     setWeek(nextWeek);
-
     const firstActive = nextWeek.findIndex((d) => d.active);
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
   };
@@ -264,6 +273,18 @@ export default function MiNegocioPage() {
     }
   }, [items.length, loading, scrollToBottom]);
 
+  const uploadPendingImages = async (itemId: string) => {
+    for (const img of newImages) {
+      const formData = new FormData();
+      formData.append("file", img.file);
+
+      await api(`/items/${itemId}/images/upload`, {
+        method: "POST",
+        body: formData,
+      });
+    }
+  };
+
   const handleSend = async () => {
     const errors: FormErrors = {};
 
@@ -289,14 +310,14 @@ export default function MiNegocioPage() {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-            day.active
-              ? day.ranges.map((r) => ({
-                weekday: WEEKDAY_ENUM[dayIndex],
-                startMinute: timeToMinutes(r.start),
-                endMinute: timeToMinutes(r.end),
-              }))
-              : []
-          )
+              day.active
+                ? day.ranges.map((r) => ({
+                    weekday: WEEKDAY_ENUM[dayIndex],
+                    startMinute: timeToMinutes(r.start),
+                    endMinute: timeToMinutes(r.end),
+                  }))
+                : []
+            )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -337,24 +358,12 @@ export default function MiNegocioPage() {
         });
 
         for (const id of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
-        }
-
-        for (const img of newImages) {
-          const reader = new FileReader();
-
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-
-          const dataUrl = await base64Promise;
-
-          await api(`/items/${editingItem.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+          await api(`/items/${editingItem.id}/images/${id}`, {
+            method: "DELETE",
           });
         }
+
+        await uploadPendingImages(editingItem.id);
 
         savedItem = await api<Item>(`/items/${editingItem.id}`);
       } else {
@@ -363,21 +372,7 @@ export default function MiNegocioPage() {
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
 
-        for (const img of newImages) {
-          const reader = new FileReader();
-
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-
-          const dataUrl = await base64Promise;
-
-          await api(`/items/${created.id}/images`, {
-            method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
-          });
-        }
+        await uploadPendingImages(created.id);
 
         savedItem = await api<Item>(`/items/${created.id}`);
       }
@@ -624,9 +619,12 @@ export default function MiNegocioPage() {
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-neutral-900 mb-2">¿Eliminar item?</h3>
+            <h3 className="text-lg font-bold text-neutral-900 mb-2">
+              ¿Eliminar item?
+            </h3>
             <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
-              Esta acción ocultará el item de tu catálogo activo. Podrás recuperarlo luego si es necesario.
+              Esta acción ocultará el item de tu catálogo activo. Podrás
+              recuperarlo luego si es necesario.
             </p>
 
             <div className="flex flex-col gap-2">
@@ -664,10 +662,11 @@ export default function MiNegocioPage() {
 
       {toast && (
         <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success"
-            ? "bg-green-600 shadow-green-100"
-            : "bg-red-600 shadow-red-100"
-            }`}
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${
+            toast.type === "success"
+              ? "bg-green-600 shadow-green-100"
+              : "bg-red-600 shadow-red-100"
+          }`}
         >
           {toast.message}
         </div>
