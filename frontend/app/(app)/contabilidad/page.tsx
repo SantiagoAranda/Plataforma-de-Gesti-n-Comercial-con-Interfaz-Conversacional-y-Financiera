@@ -12,7 +12,7 @@ import {
   type UpdateAccountingMovementDto,
 } from "@/src/services/accounting";
 
-import { AccountingChatComposer } from "@/src/components/accounting/AccountingChatComposer";
+import { AccountingChatComposer, type SearchFilters } from "@/src/components/accounting/AccountingChatComposer";
 import { AccountingMovementList } from "@/src/components/accounting/AccountingMovementList";
 import { AccountingEmptyState } from "@/src/components/accounting/AccountingEmptyState";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
@@ -129,8 +129,7 @@ export default function ContabilidadPage() {
 
   const [form, setForm] = useState<AccountingFormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<AccountingFormErrors>({});
-  const [searchText, setSearchText] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({ mode: 'text', query: '' });
   const [composerOpen, setComposerOpen] = useState(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -145,12 +144,16 @@ export default function ContabilidadPage() {
     });
   }, []);
 
-  const refresh = useCallback(async (searchQuery?: string) => {
+  const refresh = useCallback(async (filtersObj?: SearchFilters) => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await listMovements({ search: searchQuery || undefined });
+      const data = await listMovements({ 
+        search: filtersObj?.mode === 'text' ? (filtersObj.query || undefined) : undefined,
+        priceMin: filtersObj?.mode === 'price' ? filtersObj.priceMin : undefined,
+        priceMax: filtersObj?.mode === 'price' ? filtersObj.priceMax : undefined,
+      });
       setMovements(data ?? []);
     } catch (err) {
       console.error(err);
@@ -161,15 +164,8 @@ export default function ContabilidadPage() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchText.trim());
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchText]);
-
-  useEffect(() => {
-    refresh(debouncedSearch);
-  }, [debouncedSearch, refresh]);
+    refresh(searchFilters);
+  }, [searchFilters, refresh]);
 
   const resetForm = useCallback(() => {
     setForm({
@@ -274,7 +270,7 @@ export default function ContabilidadPage() {
       try {
         await deleteMovement(id);
         setSelectedMovement(null);
-        await refresh(debouncedSearch);
+        await refresh(searchFilters);
       } catch (err: any) {
         console.error(err);
         setError(
@@ -289,7 +285,7 @@ export default function ContabilidadPage() {
 
   const handleComposerSubmit = useCallback(async () => {
     if (!composerOpen) {
-      await refresh(debouncedSearch);
+      await refresh(searchFilters);
       return;
     }
 
@@ -340,7 +336,7 @@ export default function ContabilidadPage() {
 
       setComposerOpen(false);
       resetForm();
-      await refresh(debouncedSearch);
+      await refresh(searchFilters);
     } catch (err: any) {
       console.error("Error guardando movimiento:", err);
       console.error("status:", err?.status);
@@ -399,8 +395,9 @@ export default function ContabilidadPage() {
   }, [movements.length, pendingSmoothScroll, scrollToBottom]);
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f6f8f6]">
-      <div className="shrink-0">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
+      {/* Header Fijo */}
+      <div className="sticky top-0 z-50 bg-white shrink-0 border-b border-black/5">
         {selectedMovement ? (
           <SelectionActionBar
             visible
@@ -421,7 +418,10 @@ export default function ContabilidadPage() {
             showBack
           />
         )}
+      </div>
 
+      {/* Resumen del Balance */}
+      <div className="shrink-0 bg-white">
         <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-3 sm:px-4">
           <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
@@ -503,14 +503,13 @@ export default function ContabilidadPage() {
         errors={formErrors}
         expanded={composerOpen}
         isEditing={isEditing}
-        searchValue={searchText}
         onOpenComposer={() => {
           setComposerOpen(true);
           resetForm();
           setError(null);
         }}
         onChange={handleFormChange}
-        onSearchChange={setSearchText}
+        onSearchChange={setSearchFilters}
         onCancel={handleCancelComposer}
         onSubmit={handleComposerSubmit}
       />

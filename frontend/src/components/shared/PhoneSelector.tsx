@@ -8,18 +8,27 @@ type Props = {
   onCountryCodeChange: (val: string) => void;
   phoneNumber: string;
   onPhoneNumberChange: (val: string) => void;
+  dark?: boolean;
+  flat?: boolean;
 };
 
 const COUNTRIES = [
-  { code: "57", label: "Col.", flag: "🇨🇴" },
-  { code: "54", label: "Arg.", flag: "🇦🇷" },
-  { code: "52", label: "Méx.", flag: "🇲🇽" },
-  { code: "34", label: "Esp.", flag: "🇪🇸" },
-  { code: "56", label: "Chi.", flag: "🇨🇱" },
-  { code: "51", label: "Per.", flag: "🇵🇪" },
+  { code: "57", label: "Col.", flag: "co" },
+  { code: "54", label: "Arg.", flag: "ar" },
+  { code: "52", label: "Méx.", flag: "mx" },
+  { code: "34", label: "Esp.", flag: "es" },
+  { code: "56", label: "Chi.", flag: "cl" },
+  { code: "51", label: "Per.", flag: "pe" },
 ];
 
-export default function PhoneSelector({ countryCode, onCountryCodeChange, phoneNumber, onPhoneNumberChange }: Props) {
+export default function PhoneSelector({
+  countryCode,
+  onCountryCodeChange,
+  phoneNumber,
+  onPhoneNumberChange,
+  dark = false,
+  flat = false,
+}: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -35,17 +44,32 @@ export default function PhoneSelector({ countryCode, onCountryCodeChange, phoneN
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  let buttonClasses = "flex h-11 items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[13px] font-bold text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+  let inputClasses = "flex-1 h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-bold text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
+
+  if (dark) {
+    buttonClasses = "flex h-10 items-center gap-1.5 transition focus:outline-none bg-transparent border-0 text-white pl-1 pr-2 text-sm font-normal";
+    inputClasses = "flex-1 h-10 px-1 text-sm outline-none transition placeholder:text-neutral-500 focus:ring-0 border-0 border-b border-slate-800/60 rounded-none bg-transparent text-white placeholder:text-slate-500";
+  } else if (flat) {
+    buttonClasses = "flex h-10 items-center gap-1.5 transition focus:outline-none bg-transparent border-0 border-b border-slate-100 rounded-none text-slate-800 pl-0 pr-2 text-sm font-normal focus:border-emerald-500 focus:ring-0";
+    inputClasses = "flex-1 h-10 px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none focus:ring-0 border-0 border-b border-slate-100 rounded-none bg-transparent focus:border-emerald-500 transition-colors";
+  }
+
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 w-full">
       <div className="relative" ref={containerRef}>
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          className="flex h-11 items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[13px] font-bold text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className={buttonClasses}
         >
-          <span>{selectedCountry.flag}</span>
+          <img
+            src={`https://flagcdn.com/w20/${selectedCountry.flag}.png`}
+            alt={selectedCountry.label}
+            className="w-4 h-3 object-cover rounded-sm shrink-0 mr-1"
+          />
           <span>+{selectedCountry.code}</span>
-          <ChevronDown size={14} className="text-neutral-400 shrink-0" />
+          <ChevronDown size={14} className="text-neutral-400 shrink-0 ml-1.5" />
         </button>
 
         {open && (
@@ -64,7 +88,11 @@ export default function PhoneSelector({ countryCode, onCountryCodeChange, phoneN
                   }`}
                 >
                   <span className="flex items-center gap-2">
-                    <span>{c.flag}</span>
+                    <img
+                      src={`https://flagcdn.com/w20/${c.flag}.png`}
+                      alt={c.label}
+                      className="w-4 h-3 object-cover rounded-sm shrink-0"
+                    />
                     <span>+{c.code}</span>
                   </span>
                   {countryCode === c.code && <Check size={14} className="text-emerald-500" />}
@@ -80,7 +108,7 @@ export default function PhoneSelector({ countryCode, onCountryCodeChange, phoneN
         value={phoneNumber}
         onChange={(e) => onPhoneNumberChange(e.target.value.replace(/\D/g, ""))}
         placeholder="Ingrese número"
-        className="flex-1 h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-bold text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500"
+        className={inputClasses}
       />
     </div>
   );

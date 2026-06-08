@@ -5,7 +5,10 @@ import { NotificationProvider } from "../src/components/ui/NotificationProvider"
 import { Toaster } from "react-hot-toast";
 
 export const metadata = {
-  title: "Plataforma",
+  title: {
+    default: "Sactec",
+    template: "%s | Sactec",
+  },
   description: "MVP Gestión Comercial",
 };
 

@@ -35,6 +35,8 @@ export type AccountingMovementsFilters = {
   pucSubcuentaId?: string;
   originType?: AccountingMovementOriginType;
   search?: string;
+  priceMin?: number;
+  priceMax?: number;
 };
 
 export type BackendMovement = AccountingMovement; // compatibilidad con utilidades existentes
@@ -46,6 +48,8 @@ export async function listMovements(filters: AccountingMovementsFilters = {}) {
   if (filters.pucSubcuentaId) qs.set("pucSubcuentaId", filters.pucSubcuentaId);
   if (filters.originType) qs.set("originType", filters.originType);
   if (filters.search) qs.set("search", filters.search);
+  if (filters.priceMin !== undefined) qs.set("priceMin", filters.priceMin.toString());
+  if (filters.priceMax !== undefined) qs.set("priceMax", filters.priceMax.toString());
 
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<AccountingMovement[]>(`/accounting/movements${suffix}`);

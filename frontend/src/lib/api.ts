@@ -17,26 +17,12 @@ export class AppApiError extends Error {
   }
 }
 
-async function parseError(res: Response): Promise<AppApiError> {
-  const raw = await res.text();
-  let details: any = null;
-  let message = res.statusText || `HTTP Error ${res.status}`;
-
-  try {
-    if (raw) {
-      details = JSON.parse(raw);
-      if (details?.message) {
-        message = Array.isArray(details.message) ? details.message.join(" | ") : details.message;
-      }
-    }
-  } catch {}
-
-  return new AppApiError({
-    status: res.status,
-    message,
-    details,
-    raw,
-  });
+function messageFromErrorBody(
+  data: any,
+  fallback: string,
+) {
+  if (!data?.message) return fallback;
+  return Array.isArray(data.message) ? data.message.join(" | ") : data.message;
 }
 
 export async function api<T>(
@@ -47,7 +33,7 @@ export async function api<T>(
 
   const headers = new Headers(init.headers);
 
-  if (!headers.has("Content-Type") && init.body) {
+  if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -65,9 +51,24 @@ export async function api<T>(
     credentials: "include",
   });
 
-  // 🔥 Si el token expiró o es inválido
+  const raw = await res.text();
+  let data: any = null;
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      if (res.ok) {
+        throw new AppApiError({
+          status: res.status,
+          message: "Respuesta invalida del servidor",
+          raw,
+        });
+      }
+    }
+  }
+
   if (res.status === 401) {
-    // 👉 SOLO si la request requería auth
     if (auth) {
       removeToken();
 
@@ -77,18 +78,27 @@ export async function api<T>(
 
       throw new AppApiError({
         status: 401,
-        message: "Sesión expirada",
-        raw: "",
+        message: "Sesion expirada",
+        raw,
       });
     }
 
-    // 👉 login/register → NO redirigir
-    throw await parseError(res);
+    throw new AppApiError({
+      status: res.status,
+      message: messageFromErrorBody(data, res.statusText || `HTTP Error ${res.status}`),
+      details: data,
+      raw,
+    });
   }
 
   if (!res.ok) {
-    throw await parseError(res);
+    throw new AppApiError({
+      status: res.status,
+      message: messageFromErrorBody(data, res.statusText || `HTTP Error ${res.status}`),
+      details: data,
+      raw,
+    });
   }
 
-  return (await res.json()) as T;
+  return data as T;
 }

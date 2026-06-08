@@ -50,6 +50,10 @@ export function createSale(data: {
   note?: string;
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   origin?: "MANUAL" | "PUBLIC_STORE";
+  type?: "PRODUCTO" | "SERVICIO";
+  status?: "PENDIENTE" | "CERRADO";
+  scheduledAt?: string;
+  durationMinutes?: number;
   items: Array<{ itemId: string; quantity: number }>;
 }) {
   return api<ApiOrder>("/sales", {

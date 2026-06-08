@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, Filter } from "lucide-react";
+import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -12,13 +11,15 @@ import SalesList from "@/src/components/sales/SalesList";
 import SalesChatComposer from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
+import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, cancelSale, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
-import { Plus } from "lucide-react";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
+import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 
 function mapOrderToSale(order: ApiOrder): Sale {
   console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
@@ -47,7 +48,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     customerWhatsapp: order.customerWhatsapp,
     paymentMethod: order.paymentMethod,
     type: order.type,
-    status: order.status as any,
+    status: order.status as Sale["status"],
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
@@ -56,15 +57,30 @@ function mapOrderToSale(order: ApiOrder): Sale {
   };
 }
 
+function formatDisplayMoney(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value ?? 0);
+}
+
+function getCalendarBusinessDayKey(date: Date) {
+  return getBusinessDayKey(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12),
+  );
+}
+
 export default function VentaPage() {
-  const router = useRouter(); // Initialized useRouter
   const [q, setQ] = useState("");
+  const today = useMemo(() => new Date(), []);
+  const [selectedDate, setSelectedDate] = useState<Date>(today);
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
+  const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
 
@@ -138,8 +154,19 @@ export default function VentaPage() {
     loadOrders();
   }, [loadOrders]);
 
+  const salesForSelectedDate = useMemo(() => {
+    const selectedKey = getCalendarBusinessDayKey(selectedDate);
+    return sales.filter((sale) => {
+      try {
+        return getBusinessDayKey(sale.createdAt) === selectedKey;
+      } catch {
+        return false;
+      }
+    });
+  }, [sales, selectedDate]);
+
   const filtered = useMemo(() => {
-    let result = sales;
+    let result = salesForSelectedDate;
 
     if (filterStatus !== "ALL") {
       result = result.filter((s) => {
@@ -161,9 +188,31 @@ export default function VentaPage() {
 
     return result.filter((s) => {
       if (s.customerName?.toLowerCase().includes(term)) return true;
+      if (s.id.toLowerCase().includes(term)) return true;
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
-  }, [q, sales, filterStatus]);
+  }, [q, salesForSelectedDate, filterStatus]);
+
+  const todayMetrics = useMemo(() => {
+    return {
+      total: salesForSelectedDate
+        .filter((sale) => sale.status === "CERRADO")
+        .reduce((acc, sale) => acc + (sale.total ?? 0), 0),
+      transactions: salesForSelectedDate.length,
+    };
+  }, [salesForSelectedDate]);
+
+  const saleDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    sales.forEach((sale) => {
+      try {
+        keys.add(getBusinessDayKey(sale.createdAt));
+      } catch {}
+    });
+    return keys;
+  }, [sales]);
+
+  const hasDateFilter = !isSameCalendarDay(selectedDate, today);
 
   useEffect(() => {
     if (!loading && sales.length > 0 && !initialScrollDone.current) {
@@ -269,6 +318,8 @@ export default function VentaPage() {
     type: Sale["type"];
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
+    scheduledAt?: string;
+    durationMinutes?: number;
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
@@ -289,12 +340,18 @@ export default function VentaPage() {
       await loadOrders();
       setIsCreateOpen(false);
       setPendingSmoothScroll(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error creating sale:", error);
-      console.error("Status:", error?.status);
-      console.error("Details:", error?.details);
-      console.error("Raw:", error?.raw);
-      toast.error(error?.message || "Error al registrar la venta");
+      const apiError = error as {
+        status?: unknown;
+        details?: unknown;
+        raw?: unknown;
+        message?: string;
+      };
+      console.error("Status:", apiError.status);
+      console.error("Details:", apiError.details);
+      console.error("Raw:", apiError.raw);
+      toast.error(apiError.message || "Error al registrar la venta");
     }
   };
 
@@ -427,7 +484,7 @@ export default function VentaPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
         {selectedSale ? (
           <SelectionActionBar
@@ -476,8 +533,58 @@ export default function VentaPage() {
             </div>
           )}
 
+          {!loading && !error && (
+            <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
+                  <div className="p-2 bg-emerald-50 rounded-lg mb-3">
+                    <WalletCards className="h-4 w-4 text-emerald-500" />
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                    Total ventas
+                  </span>
+                  <span className="text-lg font-semibold text-slate-900 tabular-nums">
+                    ${formatDisplayMoney(todayMetrics.total)}
+                  </span>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
+                  <div className="p-2 bg-indigo-50 rounded-lg mb-3">
+                    <ShoppingBag className="h-4 w-4 text-indigo-500" />
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                    Transacciones
+                  </span>
+                  <span className="text-lg font-semibold text-slate-900">
+                    {todayMetrics.transactions} realizadas
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <DayPickerCalendar
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  markedDateKeys={saleDateKeys}
+                  id="sales-calendar"
+                />
+                {hasDateFilter && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(new Date())}
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {!loading && !error && filtered.length === 0 && (
-            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 mt-10 h-32">
+            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 h-32">
               No hay ventas {filterStatus !== "ALL" ? "con este estado" : "todavía"}
             </div>
           )}
@@ -488,6 +595,7 @@ export default function VentaPage() {
               selectedId={selectedSale?.id}
               onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
               onDetails={(sale) => setDetailsSale(sale)}
+              onReceipt={(sale) => setReceiptSale(sale)}
               onSendWhatsApp={handleSendWhatsApp}
             />
           )}
@@ -513,6 +621,19 @@ export default function VentaPage() {
           setDetailsSale(null);
         }}
         confirming={confirmingSaleId === detailsSale?.id}
+      />
+
+      <SaleReceiptModal
+        open={!!receiptSale}
+        sale={receiptSale}
+        onClose={() => setReceiptSale(null)}
+      />
+
+      <SalesFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        status={filterStatus}
+        onChange={setFilterStatus}
       />
 
       <SalesChatComposer

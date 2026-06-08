@@ -13,6 +13,7 @@ type Props = {
   onBack?: () => void;
   hrefBack?: string;
   rightIcon?: ReactNode;
+  rightContent?: ReactNode;
   rightAriaLabel?: string;
   onRightClick?: () => void;
   showLogout?: boolean;
@@ -26,6 +27,7 @@ export default function AppHeader({
   onBack,
   hrefBack = "/home",
   rightIcon,
+  rightContent,
   rightAriaLabel = "Accion",
   onRightClick,
   showLogout = true,
@@ -92,7 +94,9 @@ export default function AppHeader({
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2">
-          {rightIcon && (
+          {rightContent}
+          
+          {rightIcon && !rightContent && (
             <button
               aria-label={rightAriaLabel}
               onClick={onRightClick}

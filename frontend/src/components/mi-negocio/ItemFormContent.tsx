@@ -151,57 +151,6 @@ export function ItemFormContent({
         {formErrors.name && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.name}</p>}
       </div>
 
-      {/* BADGES (Badge 1 / Badge 2) */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-2">
-          <button
-            type="button"
-            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
-            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
-            aria-label="Badge anterior"
-          >
-            ‹
-          </button>
-          <p className="text-xs font-bold text-neutral-700 uppercase tracking-widest">
-            {isBadge1 ? "Badge 1" : "Badge 2"}
-          </p>
-          <button
-            type="button"
-            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
-            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
-            aria-label="Siguiente badge"
-          >
-            ›
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Texto</label>
-            <input
-              placeholder={currentPlaceholder}
-              value={currentBadgeText}
-              onChange={(e) => setCurrentBadgeText(e.target.value)}
-              className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm outline-none shadow-sm transition focus:border-green-500"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Color</label>
-            <div className="flex items-center gap-3 rounded-2xl border border-neutral-100 bg-white px-4 h-[48px] shadow-sm">
-              <input
-                type="color"
-                value={currentBadgeColor}
-                onChange={(e) => setCurrentBadgeColor(e.target.value)}
-                className="h-7 w-10 cursor-pointer rounded-md border border-neutral-200 bg-white p-0"
-                aria-label="Seleccionar color del badge"
-              />
-              <div className="text-xs font-semibold text-neutral-500">{currentBadgeColor.toUpperCase()}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* PRECIO + DURACION */}
       <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="space-y-2">
@@ -348,6 +297,57 @@ export function ItemFormContent({
           {formErrors.schedule && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.schedule}</p>}
         </div>
       )}
+
+      {/* BADGES (Badge 1 / Badge 2) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-2">
+          <button
+            type="button"
+            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
+            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
+            aria-label="Badge anterior"
+          >
+            ‹
+          </button>
+          <p className="text-xs font-bold text-neutral-700 uppercase tracking-widest">
+            {isBadge1 ? "Badge 1" : "Badge 2"}
+          </p>
+          <button
+            type="button"
+            onClick={() => setBadgeIndex((prev) => (prev === 0 ? 1 : 0))}
+            className="w-8 h-8 flex items-center justify-center text-neutral-400 transition"
+            aria-label="Siguiente badge"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Texto</label>
+            <input
+              placeholder={currentPlaceholder}
+              value={currentBadgeText}
+              onChange={(e) => setCurrentBadgeText(e.target.value)}
+              className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm outline-none shadow-sm transition focus:border-green-500"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Color</label>
+            <div className="flex items-center gap-3 rounded-2xl border border-neutral-100 bg-white px-4 h-[48px] shadow-sm">
+              <input
+                type="color"
+                value={currentBadgeColor}
+                onChange={(e) => setCurrentBadgeColor(e.target.value)}
+                className="h-7 w-10 cursor-pointer rounded-md border border-neutral-200 bg-white p-0"
+                aria-label="Seleccionar color del badge"
+              />
+              <div className="text-xs font-semibold text-neutral-500">{currentBadgeColor.toUpperCase()}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

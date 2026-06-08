@@ -159,7 +159,7 @@ export default function PublicStorePage() {
   };
 
   return (
-    <div className="min-h-dvh bg-[#F7FAF8]">
+    <div className="min-h-dvh bg-white">
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-4">
         <div className="flex items-center gap-3 rounded-full bg-white px-4 py-3 shadow-sm ring-1 ring-black/5">
           <Search className="h-5 w-5 text-black/40" />
@@ -198,16 +198,10 @@ export default function PublicStorePage() {
           setAvailableDates([]);
           setSelectedDate(null);
         }}
+        itemId={selectedService?.id}
+        businessSlug={token}
         title={selectedService?.name}
-        subtitle="Selecciona dia y horario disponible"
-        timeSlots={availableSlots}
-        availableDates={availableDates}
         selectedDateValue={selectedDate ? formatLocalDateKey(selectedDate) : null}
-        onDateChange={(date) => {
-          setSelectedDate(date);
-          fetchAvailability(date);
-        }}
-        onMonthChange={fetchAvailabilityCalendar}
         onConfirm={handleConfirmReservation}
       />
     </div>
