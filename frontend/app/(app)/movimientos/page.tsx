@@ -98,7 +98,8 @@ export default function MovimientosPage() {
       <AppHeader
         title="Movimientos"
         subtitle="Resumen del negocio"
-        showBack
+        showBack={false}
+        showLogout={false}
         rightIcon={<CalendarDays className="h-5 w-5 text-emerald-600" />}
         onRightClick={() => setShowPeriodPicker((p) => !p)}
       />

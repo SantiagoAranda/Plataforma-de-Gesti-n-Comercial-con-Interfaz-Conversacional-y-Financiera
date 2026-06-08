@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Trash2, X, Clock, Search, ArrowDown, Calendar as CalendarIcon } from "lucide-react";
+import {
+  Trash2,
+  X,
+  Clock,
+  Search,
+  ArrowDown,
+  Calendar as CalendarIcon,
+} from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -9,9 +16,7 @@ import { SelectionActionBar } from "@/src/components/shared/selection/SelectionA
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
-import {
-  ItemFormContent,
-} from "@/src/components/mi-negocio/ItemFormContent";
+import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
 import {
   Item,
   ItemType,
@@ -21,40 +26,44 @@ import {
   FormErrors,
   ItemInventoryMode,
 } from "@/src/types/item";
-import { 
-  generateCreationId, 
-  createInitialWeek, 
+import {
+  generateCreationId,
+  createInitialWeek,
   WEEKDAY_ENUM,
   formatPriceInput,
-  parsePriceInput,
   timeToMinutes,
-  minutesToTime
+  minutesToTime,
 } from "@/src/lib/itemHelpers";
 import { getItemBadges } from "@/src/lib/itemBadges";
-import { 
-  MAX_ITEM_IMAGES, 
-  MAX_ITEM_IMAGE_SIZE_BYTES 
+import {
+  MAX_ITEM_IMAGES,
+  MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
 
 export default function MiNegocioPage() {
-
   const [items, setItems] = useState<Item[]>([]);
   const [recipeLineCounts, setRecipeLineCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error";
+  } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
 
   // Composer / Form states
-  const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
+  const [composerMode, setComposerMode] = useState<
+    "closed" | "create" | "edit"
+  >("closed");
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
   const [badgeText1, setBadgeText1] = useState("");
@@ -82,20 +91,22 @@ export default function MiNegocioPage() {
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
-      const dbStatus = 'ACTIVE';
+      const dbStatus = "ACTIVE";
       const key = `mi-negocio:items:${dbStatus}`;
       const hasInstant = !!getInstantCache<Item[]>(key, 60_000);
-      
+
       if (!hasInstant && isInitial) {
         setLoading(true);
       }
 
-      const data = await getCached(key, 60_000, () => 
-        api<Item[]>(`/items?status=ACTIVE&lightweight=true`)
+      const data = await getCached(key, 60_000, () =>
+        api<Item[]>(`/items?status=ACTIVE&lightweight=true`),
       );
       // Sort oldest to newest (newest at bottom)
-      const sorted = [...data].sort((a, b) => 
-        new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+      const sorted = [...data].sort(
+        (a, b) =>
+          new Date(a.createdAt || 0).getTime() -
+          new Date(b.createdAt || 0).getTime(),
       );
       setItems(sorted);
 
@@ -125,7 +136,7 @@ export default function MiNegocioPage() {
     fetchItems(true);
   }, [fetchItems]);
 
-  const filteredItems = items.filter(item => {
+  const filteredItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
     return (
@@ -172,11 +183,11 @@ export default function MiNegocioPage() {
       resetForm();
       return;
     }
-    
+
     setEditingItem(item);
     setComposerMode("edit");
     setSelectedItem(null);
-    
+
     // Fill form
     setType(item.type);
     const nextInventoryMode: ItemInventoryMode =
@@ -199,23 +210,26 @@ export default function MiNegocioPage() {
     setImageError(null);
     setDuration(item.durationMinutes ?? 30);
     setDurationInput(String(item.durationMinutes ?? 30));
-    
+
     const nextWeek = createInitialWeek();
     if (item.type === "SERVICE" && item.schedule?.length) {
-      nextWeek.forEach(d => { d.active = false; d.ranges = []; });
-      item.schedule.forEach(slot => {
+      nextWeek.forEach((d) => {
+        d.active = false;
+        d.ranges = [];
+      });
+      item.schedule.forEach((slot) => {
         const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
         if (dayIdx !== -1) {
           nextWeek[dayIdx].active = true;
           nextWeek[dayIdx].ranges.push({
             start: minutesToTime(slot.startMinute),
-            end: minutesToTime(slot.endMinute)
+            end: minutesToTime(slot.endMinute),
           });
         }
       });
     }
     setWeek(nextWeek);
-    const firstActive = nextWeek.findIndex(d => d.active);
+    const firstActive = nextWeek.findIndex((d) => d.active);
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
   };
 
@@ -243,27 +257,31 @@ export default function MiNegocioPage() {
   };
 
   const handleRemoveExistingImage = (id: string) => {
-    setExistingImages(prev => prev.filter(img => img.id !== id));
-    setRemovedImageIds(prev => prev.includes(id) ? prev : [...prev, id]);
+    setExistingImages((prev) => prev.filter((img) => img.id !== id));
+    setRemovedImageIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
   };
 
   const handleRemoveNewImage = (id: string) => {
-    setNewImages(prev => {
-      const img = prev.find(i => i.id === id);
+    setNewImages((prev) => {
+      const img = prev.find((i) => i.id === id);
       if (img) URL.revokeObjectURL(img.previewUrl);
-      return prev.filter(i => i.id !== id);
+      return prev.filter((i) => i.id !== id);
     });
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    const el = scrollRef.current;
-    if (!el) return;
-    window.requestAnimationFrame(() => {
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior,
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    } else {
+      const el = scrollRef.current;
+      if (!el) return;
+      window.requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior,
+        });
       });
-    });
+    }
   }, []);
 
   // Auto-scroll tipo WhatsApp: al cargar y al aparecer nuevos items si el usuario está abajo
@@ -285,8 +303,9 @@ export default function MiNegocioPage() {
   const handleSend = async () => {
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0) errors.price = "El precio debe ser mayor a 0";
-    
+    if (!price || parseFloat(price) <= 0)
+      errors.price = "El precio debe ser mayor a 0";
+
     if (type === "SERVICE") {
       if (duration < 5) errors.duration = "Mínimo 5 min";
       if (!week.some((d) => d.active && d.ranges.length > 0)) {
@@ -308,13 +327,18 @@ export default function MiNegocioPage() {
 
     setIsSubmitting(true);
     try {
-      const schedule = type === "SERVICE" ? week.flatMap((day, dayIndex) => 
-        day.active ? day.ranges.map(r => ({
-          weekday: WEEKDAY_ENUM[dayIndex],
-          startMinute: timeToMinutes(r.start),
-          endMinute: timeToMinutes(r.end)
-        })) : []
-      ) : [];
+      const schedule =
+        type === "SERVICE"
+          ? week.flatMap((day, dayIndex) =>
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
+          : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
       const cleanedBadgeColor1 = badgeColor1.trim();
@@ -354,18 +378,16 @@ export default function MiNegocioPage() {
           body: JSON.stringify(body),
         });
         for (const id of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${id}`, { method: "DELETE" });
+          await api(`/items/${editingItem.id}/images/${id}`, {
+            method: "DELETE",
+          });
         }
         for (const img of newImages) {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-          const dataUrl = await base64Promise;
-          await api(`/items/${editingItem.id}/images`, {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${editingItem.id}/images/upload`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: formData,
           });
         }
         savedItem = await api<Item>(`/items/${editingItem.id}`);
@@ -375,15 +397,11 @@ export default function MiNegocioPage() {
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
         for (const img of newImages) {
-          const reader = new FileReader();
-          const base64Promise = new Promise<string>((resolve) => {
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(img.file);
-          });
-          const dataUrl = await base64Promise;
-          await api(`/items/${created.id}/images`, {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${created.id}/images/upload`, {
             method: "POST",
-            body: JSON.stringify({ url: dataUrl }),
+            body: formData,
           });
         }
         savedItem = await api<Item>(`/items/${created.id}`);
@@ -391,10 +409,11 @@ export default function MiNegocioPage() {
 
       invalidateCache("mi-negocio:items:ACTIVE");
       invalidateCache("home:businessActivity");
-      
-      setItems(prev => {
-        const exists = prev.find(i => i.id === savedItem.id);
-        if (exists) return prev.map(i => i.id === savedItem.id ? savedItem : i);
+
+      setItems((prev) => {
+        const exists = prev.find((i) => i.id === savedItem.id);
+        if (exists)
+          return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
         return [...prev, savedItem]; // Add to end (bottm)
       });
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
@@ -402,7 +421,10 @@ export default function MiNegocioPage() {
       // Forzar autoscroll al final al crear/editar (estilo WhatsApp)
       shouldStickToBottomRef.current = true;
 
-      setToast({ message: editingItem ? "Item actualizado" : "Item creado", type: "success" });
+      setToast({
+        message: editingItem ? "Item actualizado" : "Item creado",
+        type: "success",
+      });
       setComposerMode("closed");
       resetForm();
     } catch (err) {
@@ -419,7 +441,7 @@ export default function MiNegocioPage() {
         method: "PATCH",
         body: JSON.stringify({ status: "INACTIVE" }),
       });
-      setItems(prev => prev.filter(i => i.id !== item.id));
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
       setSelectedItem(null);
       invalidateCache("mi-negocio:items:ACTIVE");
       invalidateCache("home:businessActivity");
@@ -444,17 +466,20 @@ export default function MiNegocioPage() {
   const groupedItems = useMemo(() => {
     const groups: { dateLabel: string; items: Item[] }[] = [];
     const itemsToGroup = filteredItems.slice(0, visibleCount);
-    
-    itemsToGroup.forEach(item => {
+
+    itemsToGroup.forEach((item) => {
       const date = new Date(item.createdAt || Date.now());
       const now = new Date();
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
 
-      let label = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+      let label = date.toLocaleDateString("es-ES", {
+        day: "numeric",
+        month: "long",
+      });
       if (date.toDateString() === now.toDateString()) label = "HOY";
       else if (date.toDateString() === yesterday.toDateString()) label = "AYER";
-      
+
       const lastGroup = groups[groups.length - 1];
       if (lastGroup && lastGroup.dateLabel === label) {
         lastGroup.items.push(item);
@@ -466,7 +491,7 @@ export default function MiNegocioPage() {
   }, [filteredItems, visibleCount]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-neutral-100 lg:h-[100dvh] lg:overflow-hidden">
+    <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
         <SelectionActionBar
           visible
@@ -483,16 +508,22 @@ export default function MiNegocioPage() {
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
-      <main 
+      <main
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-24 lg:pb-[140px]"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-32 lg:pb-[140px]"
       >
-        {loading && <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">Cargando...</div>}
-        {!loading && items.length === 0 && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">No hay items creados</div>
+        {loading && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
+            Cargando...
+          </div>
         )}
-        
+        {!loading && items.length === 0 && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
+            No hay items creados
+          </div>
+        )}
+
         {groupedItems.map((group, gIdx) => (
           <div key={group.dateLabel} className="space-y-4">
             {/* DATE SEPARATOR */}
@@ -510,7 +541,11 @@ export default function MiNegocioPage() {
                   key={item.id}
                   item={item}
                   selected={selectedItem?.id === item.id}
-                  onSelect={() => setSelectedItem(prev => prev?.id === item.id ? null : item)}
+                  onSelect={() =>
+                    setSelectedItem((prev) =>
+                      prev?.id === item.id ? null : item,
+                    )
+                  }
                   recipeLineCount={recipeLineCounts[item.id] ?? 0}
                 />
               ))}
@@ -518,17 +553,21 @@ export default function MiNegocioPage() {
           </div>
         ))}
 
-        {composerMode === "closed" && searchQuery.trim() !== "" && filteredItems.length === 0 && (
-          <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
-            <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
-              <Search className="h-6 w-6 text-neutral-300" />
+        {composerMode === "closed" &&
+          searchQuery.trim() !== "" &&
+          filteredItems.length === 0 && (
+            <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
+              <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
+                <Search className="h-6 w-6 text-neutral-300" />
+              </div>
+              <h3 className="text-neutral-900 font-bold text-sm mb-1">
+                No se encontraron productos o servicios
+              </h3>
+              <p className="text-neutral-400 text-xs font-medium leading-relaxed">
+                Probá con otro nombre o descripción
+              </p>
             </div>
-            <h3 className="text-neutral-900 font-bold text-sm mb-1">No se encontraron productos o servicios</h3>
-            <p className="text-neutral-400 text-xs font-medium leading-relaxed">
-              Probá con otro nombre o descripción
-            </p>
-          </div>
-        )}
+          )}
 
         {filteredItems.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
@@ -540,6 +579,9 @@ export default function MiNegocioPage() {
             </button>
           </div>
         )}
+
+        {/* Referencia vacía para forzar el auto-scroll al fondo de la lista */}
+        <div ref={messagesEndRef} className="h-px" />
       </main>
 
       {/* COMPONENTES DE CHAT COMPOSER */}
@@ -592,12 +634,18 @@ export default function MiNegocioPage() {
       </MiNegocioChatComposer>
 
       {/* MODAL DE DETALLES */}
-      <ItemDetailModal 
+      <ItemDetailModal
         item={itemForDetail}
         open={!!itemForDetail}
         onClose={() => setItemForDetail(null)}
-        onEdit={(i) => { setItemForDetail(null); handleStartEdit(i); }}
-        onDelete={(i) => { setItemForDetail(null); setDeleteId(i.id); }}
+        onEdit={(i) => {
+          setItemForDetail(null);
+          handleStartEdit(i);
+        }}
+        onDelete={(i) => {
+          setItemForDetail(null);
+          setDeleteId(i.id);
+        }}
         recipeLineCount={itemForDetail ? recipeLineCounts[itemForDetail.id] ?? 0 : 0}
       />
 
@@ -605,14 +653,17 @@ export default function MiNegocioPage() {
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-neutral-900 mb-2">¿Eliminar item?</h3>
+            <h3 className="text-lg font-bold text-neutral-900 mb-2">
+              ¿Eliminar item?
+            </h3>
             <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
-              Esta acción ocultará el item de tu catálogo activo. Podrás recuperarlo luego si es necesario.
+              Esta acción ocultará el item de tu catálogo activo. Podrás
+              recuperarlo luego si es necesario.
             </p>
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
-                  const target = items.find(i => i.id === deleteId);
+                  const target = items.find((i) => i.id === deleteId);
                   if (target) handleDelete(target);
                   setDeleteId(null);
                 }}
@@ -644,7 +695,9 @@ export default function MiNegocioPage() {
 
       {/* TOAST DE NOTIFICACIÓN */}
       {toast && (
-        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}>
+        <div
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}
+        >
           {toast.message}
         </div>
       )}

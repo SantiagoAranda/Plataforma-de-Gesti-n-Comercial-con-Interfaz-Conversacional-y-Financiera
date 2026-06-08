@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsDateString,
   IsIn,
   IsInt,
   IsOptional,
@@ -46,6 +47,15 @@ export class CreateOrderDto {
   @IsString()
   @IsIn(['PENDIENTE', 'CERRADO'])
   status: 'PENDIENTE' | 'CERRADO';
+
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  durationMinutes?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

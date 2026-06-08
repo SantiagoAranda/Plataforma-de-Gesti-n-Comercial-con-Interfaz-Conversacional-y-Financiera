@@ -9,7 +9,10 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 
 import { ItemsService } from "./items.service";
 import { CreateItemDto } from "./dto/create-item.dto";
@@ -87,7 +90,7 @@ export class ItemsController {
     return this.itemsService.remove(req.user.businessId, id);
   }
 
-  // 🔹 Agregar imagen
+  // 🔹 Agregar imagen legacy
   @Post(":id/images")
   addImage(
     @Req() req: any,
@@ -98,6 +101,21 @@ export class ItemsController {
       req.user.businessId,
       id,
       dto
+    );
+  }
+
+  // 🔹 Agregar imagen multipart a R2
+  @Post(":id/images/upload")
+  @UseInterceptors(FileInterceptor('file'))
+  uploadImage(
+    @Req() req: any,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.itemsService.uploadImage(
+      req.user.businessId,
+      id,
+      file
     );
   }
 

@@ -131,7 +131,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
               ) : null}
             </div>
 
-            <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap">
+            <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap ml-auto">
               {formatCompactDate(item.createdAt)}
             </span>
           </div>

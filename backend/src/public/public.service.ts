@@ -1,15 +1,27 @@
-import {
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class PublicService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storageService: StorageService,
+  ) {}
+
+  private withPublicLogoUrl<
+    T extends { logoObjectKey?: string | null; logoUrl?: string | null },
+  >(business: T): T {
+    return {
+      ...business,
+      logoUrl: business.logoObjectKey
+        ? this.storageService.getPublicUrl(business.logoObjectKey)
+        : (business.logoUrl ?? null),
+    };
+  }
 
   private parseDateOnly(value: string) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
@@ -18,13 +30,15 @@ export class PublicService {
     }
 
     return new Date(
-      Number(match[1]),
-      Number(match[2]) - 1,
-      Number(match[3]),
-      0,
-      0,
-      0,
-      0,
+      Date.UTC(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0,
+      ),
     );
   }
 
@@ -41,9 +55,9 @@ export class PublicService {
   }
 
   private formatDateOnly(value: Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
 
@@ -52,9 +66,7 @@ export class PublicService {
       .toString()
       .padStart(2, '0');
 
-    const m = (minutes % 60)
-      .toString()
-      .padStart(2, '0');
+    const m = (minutes % 60).toString().padStart(2, '0');
 
     return `${h}:${m}`;
   }
@@ -70,13 +82,14 @@ export class PublicService {
       6: 'SAT',
     };
 
-    return weekdayMap[date.getDay()];
+    return weekdayMap[date.getUTCDay()];
   }
 
   private async getAvailabilitySlotsForItem(
     businessId: string,
     item: { id: string; durationMinutes: number | null },
     date: Date,
+    hasSpecificWindows: boolean,
     excludeReservationId?: string,
   ) {
     const weekday = this.getWeekday(date);
@@ -86,7 +99,7 @@ export class PublicService {
         where: {
           businessId,
           weekday,
-          OR: [{ itemId: item.id }, { itemId: null }],
+          itemId: hasSpecificWindows ? item.id : null,
         },
         orderBy: { startMinute: 'asc' },
       }),
@@ -96,7 +109,9 @@ export class PublicService {
           itemId: item.id,
           date,
           status: { not: 'CANCELLED' },
-          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+          ...(excludeReservationId
+            ? { id: { not: excludeReservationId } }
+            : {}),
         },
         select: {
           startMinute: true,
@@ -114,18 +129,61 @@ export class PublicService {
 
     if (windows.length === 0) return [];
 
+    // 1. Windows are already filtered at the database query level based on item-specific priority.
+    const filteredWindows = windows;
+
+    // 2. Fusionar ventanas superpuestas o contiguas para verificar la continuidad
+    const mergedWindows: { startMinute: number; endMinute: number }[] = [];
+    for (const w of filteredWindows) {
+      const last = mergedWindows[mergedWindows.length - 1];
+      if (last && last.endMinute >= w.startMinute) {
+        last.endMinute = Math.max(last.endMinute, w.endMinute);
+      } else {
+        mergedWindows.push({
+          startMinute: w.startMinute,
+          endMinute: w.endMinute,
+        });
+      }
+    }
+
     const duration = item.durationMinutes ?? 60;
+    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos)
+    const step = 30;
     const slots: string[] = [];
 
-    for (const window of windows) {
+    // Past slots filter based on America/Bogota
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+    const currentMinutes =
+      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+
+    for (const window of mergedWindows) {
       let cursor = window.startMinute;
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
         const end = cursor + duration;
 
+        if (date.getTime() === today.getTime() && start <= currentMinutes) {
+          cursor += step;
+          continue;
+        }
+
         const overlap = reservations.some(
-          (reservation) => start < reservation.endMinute && end > reservation.startMinute,
+          (reservation) =>
+            start < reservation.endMinute && end > reservation.startMinute,
         );
 
         const blocked = blocks.some((block) => {
@@ -134,8 +192,7 @@ export class PublicService {
           }
 
           return (
-            start < (block.endMinute ?? 0) &&
-            end > (block.startMinute ?? 0)
+            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
           );
         });
 
@@ -143,7 +200,7 @@ export class PublicService {
           slots.push(this.formatTime(start));
         }
 
-        cursor += duration;
+        cursor += step;
       }
     }
 
@@ -157,7 +214,21 @@ export class PublicService {
   async listPublicItems(slug: string, type?: string) {
     let business = await this.prisma.business.findFirst({
       where: { slug, status: 'ACTIVE' },
-      select: { id: true, name: true, slug: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        logoUrl: true,
+        logoObjectKey: true,
+        storeFooterSettings: {
+          select: {
+            description: true,
+            email: true,
+            phones: true,
+            socials: true,
+          },
+        },
+      },
     });
 
     if (!business) {
@@ -165,7 +236,21 @@ export class PublicService {
       if (normalized !== slug) {
         business = await this.prisma.business.findFirst({
           where: { slug: normalized, status: 'ACTIVE' },
-          select: { id: true, name: true, slug: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            logoObjectKey: true,
+            storeFooterSettings: {
+              select: {
+                description: true,
+                email: true,
+                phones: true,
+                socials: true,
+              },
+            },
+          },
         });
       }
     }
@@ -189,8 +274,14 @@ export class PublicService {
       },
     });
 
+    const {
+      id: _businessId,
+      logoObjectKey: _logoObjectKey,
+      ...publicBusiness
+    } = this.withPublicLogoUrl(business);
+
     return {
-      business,
+      business: publicBusiness,
       data: data.map((item) => ({
         ...item,
         price: Number(item.price),
@@ -214,8 +305,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -226,11 +316,19 @@ export class PublicService {
       },
     });
 
-    if (!item)
-      throw new BadRequestException('Invalid service');
+    if (!item) throw new BadRequestException('Invalid service');
 
     const selectedDate = this.parseDateOnly(date);
-    return this.getAvailabilitySlotsForItem(business.id, item, selectedDate);
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId: business.id, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
+    return this.getAvailabilitySlotsForItem(
+      business.id,
+      item,
+      selectedDate,
+      hasSpecificWindows,
+    );
   }
 
   async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
@@ -245,8 +343,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -257,14 +354,31 @@ export class PublicService {
       },
     });
 
-    if (!item)
-      throw new BadRequestException('Invalid service');
+    if (!item) throw new BadRequestException('Invalid service');
 
     const { year, monthIndex } = this.parseMonth(month);
-    const firstDay = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-    const lastDay = new Date(year, monthIndex + 1, 0, 0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
+
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
+    const today = new Date(
+      Date.UTC(
+        nowInBusiness.getFullYear(),
+        nowInBusiness.getMonth(),
+        nowInBusiness.getDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+
+    const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
+      where: { businessId: business.id, itemId: item.id },
+    });
+    const hasSpecificWindows = specificWindowsCount > 0;
 
     const cursor = new Date(firstDay);
     const availableDates: string[] = [];
@@ -275,6 +389,7 @@ export class PublicService {
           business.id,
           item,
           new Date(cursor),
+          hasSpecificWindows,
         );
 
         if (slots.length > 0) {
@@ -282,7 +397,7 @@ export class PublicService {
         }
       }
 
-      cursor.setDate(cursor.getDate() + 1);
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
     return availableDates;
@@ -304,8 +419,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     return this.prisma.$transaction(async (tx) => {
       const {
@@ -325,8 +439,20 @@ export class PublicService {
 
       const selectedDate = this.parseDateOnly(date);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const nowInBusiness = new Date(
+        new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+      );
+      const today = new Date(
+        Date.UTC(
+          nowInBusiness.getFullYear(),
+          nowInBusiness.getMonth(),
+          nowInBusiness.getDate(),
+          0,
+          0,
+          0,
+          0,
+        ),
+      );
 
       if (selectedDate < today)
         throw new BadRequestException('Cannot reserve past dates');
@@ -340,18 +466,25 @@ export class PublicService {
         },
       });
 
-      if (!item)
-        throw new BadRequestException('Invalid service');
+      if (!item) throw new BadRequestException('Invalid service');
+
+      const specificWindowsCount = await tx.serviceScheduleWindow.count({
+        where: { businessId: business.id, itemId: item.id },
+      });
+      const hasSpecificWindows = specificWindowsCount > 0;
 
       const availableSlots = await this.getAvailabilitySlotsForItem(
         business.id,
         item,
         selectedDate,
+        hasSpecificWindows,
       );
       const requestedSlot = this.formatTime(startMinute);
 
       if (!availableSlots.includes(requestedSlot)) {
-        throw new BadRequestException('Time slot already reserved or unavailable');
+        throw new BadRequestException(
+          'Time slot already reserved or unavailable',
+        );
       }
 
       const reservation = await tx.reservation.create({
@@ -368,7 +501,9 @@ export class PublicService {
         },
       });
 
-      console.log(`[PublicService] Created reservation origin: ${reservation.origin}`);
+      console.log(
+        `[PublicService] Created reservation origin: ${reservation.origin}`,
+      );
       return reservation;
     });
   }
@@ -389,8 +524,7 @@ export class PublicService {
       });
     }
 
-    if (!business)
-      throw new BadRequestException('Business not found');
+    if (!business) throw new BadRequestException('Business not found');
 
     if (!dto.items || dto.items.length === 0)
       throw new BadRequestException('Order must contain items');
@@ -417,9 +551,7 @@ export class PublicService {
 
         items: {
           create: dto.items.map((input) => {
-            const item = dbItems.find(
-              (i) => i.id === input.itemId,
-            )!;
+            const item = dbItems.find((i) => i.id === input.itemId)!;
 
             const quantity = input.quantity;
             const unitPrice = item.price;
@@ -433,8 +565,7 @@ export class PublicService {
               lineTotal,
               itemNameSnapshot: item.name,
               itemTypeSnapshot: item.type,
-              durationMinutesSnapshot:
-                item.durationMinutes,
+              durationMinutesSnapshot: item.durationMinutes,
             };
           }),
         },
@@ -444,10 +575,7 @@ export class PublicService {
 
     console.log(`[PublicService] Created order origin: ${order.origin}`);
 
-    const total = order.items.reduce(
-      (acc, i) => acc + Number(i.lineTotal),
-      0,
-    );
+    const total = order.items.reduce((acc, i) => acc + Number(i.lineTotal), 0);
 
     await this.prisma.order.update({
       where: { id: order.id },

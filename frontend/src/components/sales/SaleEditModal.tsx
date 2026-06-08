@@ -66,7 +66,7 @@ export default function SaleEditModal({
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const [newItem, setNewItem] = useState<{ itemId: string, qty: number }>({ itemId: "", qty: 1 });
+  const [newItem, setNewItem] = useState<{ itemId: string, qty: number | "" }>({ itemId: "", qty: 1 });
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -200,7 +200,7 @@ export default function SaleEditModal({
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty,
+        qty: newItem.qty === "" ? 1 : newItem.qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -435,7 +435,23 @@ export default function SaleEditModal({
                         type="number"
                         min="1"
                         value={newItem.qty}
-                        onChange={(e) => setNewItem(prev => ({ ...prev, qty: Number(e.target.value) }))}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "") {
+                            setNewItem(prev => ({ ...prev, qty: "" }));
+                            return;
+                          }
+                          const num = parseInt(val, 10);
+                          if (!isNaN(num)) {
+                            setNewItem(prev => ({ ...prev, qty: num }));
+                          }
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        onBlur={() => {
+                          if (newItem.qty === "" || newItem.qty <= 0) {
+                            setNewItem(prev => ({ ...prev, qty: 1 }));
+                          }
+                        }}
                         className="w-full h-11 bg-neutral-50 border border-neutral-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
                       />
                     </div>
@@ -488,21 +504,14 @@ export default function SaleEditModal({
         <ReservationDrawer
           open={reservationPickerOpen}
           onClose={() => setReservationPickerOpen(false)}
+          itemId={sale.items[0]?.itemId}
+          mode="private"
           title={sale.items[0]?.name ?? "Reserva"}
-          subtitle="Selecciona una nueva fecha y horario disponibles"
-          timeSlots={availableSlots}
-          availableDates={availableDates}
           selectedDateValue={scheduledDate || null}
           initialFullName={customerName}
           initialWhatsapp={
             phoneNumber ? `${countryCode}${phoneNumber}` : ""
           }
-          onMonthChange={loadReservationDates}
-          onDateChange={(date) => {
-            const key = formatLocalDateKey(date);
-            setScheduledDate(key);
-            loadReservationSlots(key);
-          }}
           onConfirm={(data) => {
             if (!data.date || !data.time) return;
             const dateKey = formatLocalDateKey(data.date);

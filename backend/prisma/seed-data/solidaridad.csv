@@ -1,0 +1,7 @@
+limite_inferior_smmlv,limite_superior_smmlv,porcentaje_decimal
+4.0,16.0,0.010
+16.0,17.0,0.012
+17.0,18.0,0.014
+18.0,19.0,0.016
+19.0,20.0,0.018
+20.0,,0.020

@@ -1,24 +1,23 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, PayrollWithholdingStatus } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
 import * as bcrypt from "bcrypt";
+import { parse } from "csv-parse/sync";
 
 const prisma = new PrismaClient();
-
-import { parse } from "csv-parse/sync";
 
 type Row = Record<string, string>;
 
 function parseCSV(filePath: string): Row[] {
-  const raw = fs.readFileSync(filePath, "utf8");
+    const raw = fs.readFileSync(filePath, "utf8");
 
-  const records = parse(raw, {
-    columns: true,          // usa el header como keys
-    skip_empty_lines: true,
-    trim: true,
-  }) as Row[];
-
-  return records;
+    return parse(raw, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+        record_delimiter: "\n",
+    }) as Row[];
 }
 
 function toBool(v: string | undefined) {
@@ -26,15 +25,30 @@ function toBool(v: string | undefined) {
     return ["true", "1", "yes", "y", "si", "sí"].includes(v.toLowerCase());
 }
 
-async function main() {
-    const base = path.join(process.cwd(), "prisma", "seed-data");
+function toDecimal(v: string | undefined) {
+    if (v === undefined || v === null || v === "") return null;
+    return v.replace(",", ".");
+}
 
+function normalizeCode(value: string | undefined, length: number) {
+    return String(value ?? "").trim().padStart(length, "0");
+}
+
+function normalizeOvertimeCode(name: string) {
+    return name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_|_$/g, "");
+}
+
+async function seedPuc(base: string) {
     const clases = parseCSV(path.join(base, "puc_clase.csv"));
     const grupos = parseCSV(path.join(base, "puc_grupo.csv"));
     const cuentas = parseCSV(path.join(base, "puc_cuenta.csv"));
     const subcuentas = parseCSV(path.join(base, "puc_subcuenta.csv"));
 
-    // Orden por FKs: Clase -> Grupo -> Cuenta -> Subcuenta
     for (const r of clases) {
         await prisma.pucClase.upsert({
             where: { code: r.code },
@@ -76,6 +90,12 @@ async function main() {
         });
     }
 
+    console.log(
+        `PUC seed OK: clases=${clases.length}, grupos=${grupos.length}, cuentas=${cuentas.length}, subcuentas=${subcuentas.length}`,
+    );
+}
+
+async function seedAdmin() {
     const adminEmail = "admin@sistema.com";
 
     const existingAdmin = await prisma.user.findUnique({
@@ -98,10 +118,283 @@ async function main() {
     } else {
         console.log("ADMIN ya existe");
     }
+}
+
+async function seedPayrollGlobalParameters(base: string) {
+    const rows = parseCSV(path.join(base, "payroll_global_parameters.csv"));
+
+    for (const r of rows) {
+        await prisma.payrollGlobalParameter.upsert({
+            where: {
+                year_version: {
+                    year: Number(r.year),
+                    version: Number(r.version),
+                },
+            },
+            update: {
+                isActive: toBool(r.is_active),
+                smmlv: toDecimal(r.smmlv)!,
+                transportAllowance: toDecimal(r.transport_allowance)!,
+                uvt: toDecimal(r.uvt),
+                weeklyHours: toDecimal(r.weekly_hours)!,
+                monthlyHours: toDecimal(r.monthly_hours)!,
+                dailyHours: toDecimal(r.daily_hours)!,
+                maxWorkedDaysMonth: Number(r.max_worked_days_month),
+                maxSupplementaryHours: Number(r.max_supplementary_hours),
+                healthEmployeeRate: toDecimal(r.health_employee_rate)!,
+                pensionEmployeeRate: toDecimal(r.pension_employee_rate)!,
+                healthEmployerRate: toDecimal(r.health_employer_rate)!,
+                pensionEmployerRate: toDecimal(r.pension_employer_rate)!,
+                compensationFundRate: toDecimal(r.compensation_fund_rate)!,
+                senaRate: toDecimal(r.sena_rate)!,
+                icbfRate: toDecimal(r.icbf_rate)!,
+                severanceRate: toDecimal(r.severance_rate)!,
+                severanceInterestRate: toDecimal(r.severance_interest_rate)!,
+                serviceBonusRate: toDecimal(r.service_bonus_rate)!,
+                vacationRate: toDecimal(r.vacation_rate)!,
+                law1819ThresholdSmmlv: toDecimal(r.law1819_threshold_smmlv)!,
+                transportLimitSmmlv: toDecimal(r.transport_limit_smmlv)!,
+                withholdingStatus: r.withholding_status as PayrollWithholdingStatus,
+            },
+            create: {
+                year: Number(r.year),
+                version: Number(r.version),
+                isActive: toBool(r.is_active),
+                smmlv: toDecimal(r.smmlv)!,
+                transportAllowance: toDecimal(r.transport_allowance)!,
+                uvt: toDecimal(r.uvt),
+                weeklyHours: toDecimal(r.weekly_hours)!,
+                monthlyHours: toDecimal(r.monthly_hours)!,
+                dailyHours: toDecimal(r.daily_hours)!,
+                maxWorkedDaysMonth: Number(r.max_worked_days_month),
+                maxSupplementaryHours: Number(r.max_supplementary_hours),
+                healthEmployeeRate: toDecimal(r.health_employee_rate)!,
+                pensionEmployeeRate: toDecimal(r.pension_employee_rate)!,
+                healthEmployerRate: toDecimal(r.health_employer_rate)!,
+                pensionEmployerRate: toDecimal(r.pension_employer_rate)!,
+                compensationFundRate: toDecimal(r.compensation_fund_rate)!,
+                senaRate: toDecimal(r.sena_rate)!,
+                icbfRate: toDecimal(r.icbf_rate)!,
+                severanceRate: toDecimal(r.severance_rate)!,
+                severanceInterestRate: toDecimal(r.severance_interest_rate)!,
+                serviceBonusRate: toDecimal(r.service_bonus_rate)!,
+                vacationRate: toDecimal(r.vacation_rate)!,
+                law1819ThresholdSmmlv: toDecimal(r.law1819_threshold_smmlv)!,
+                transportLimitSmmlv: toDecimal(r.transport_limit_smmlv)!,
+                withholdingStatus: r.withholding_status as PayrollWithholdingStatus,
+            },
+        });
+    }
+
+    console.log(`PayrollGlobalParameter seed OK: ${rows.length}`);
+}
+
+async function seedArlRiskClasses(base: string) {
+    const rows = parseCSV(path.join(base, "arl_risk_classes.csv"));
+
+    for (const r of rows) {
+        await prisma.payrollArlRiskClass.upsert({
+            where: { level: Number(r.level) },
+            update: {
+                name: r.name,
+                rate: toDecimal(r.rate)!,
+                isActive: true,
+            },
+            create: {
+                level: Number(r.level),
+                name: r.name,
+                rate: toDecimal(r.rate)!,
+                isActive: true,
+            },
+        });
+    }
+
+    console.log(`ARL seed OK: ${rows.length}`);
+}
+
+async function seedCiiu(base: string) {
+    const rows = parseCSV(path.join(base, "ciiu_codes.csv"));
+
+    let count = 0;
+
+    for (const r of rows) {
+        const code = normalizeCode(r.code ?? r.codigo, 4);
+        const description = r.description ?? r.descripcion;
+
+        if (!code || !description) continue;
+
+        await prisma.economicActivityCiiu.upsert({
+            where: { code },
+            update: {
+                description,
+                section: r.section ?? r.seccion ?? null,
+                isActive: true,
+            },
+            create: {
+                code,
+                description,
+                section: r.section ?? r.seccion ?? null,
+                isActive: true,
+            },
+        });
+
+        count++;
+    }
+
+    console.log(`CIIU seed OK: ${count}`);
+}
+
+async function seedOvertimeRates(base: string) {
+    const rows = parseCSV(path.join(base, "horas.csv"));
+
+    const globalParameter = await prisma.payrollGlobalParameter.findFirst({
+        where: { year: 2026, isActive: true },
+        orderBy: { version: "desc" },
+    });
+
+    if (!globalParameter) {
+        throw new Error("No existe PayrollGlobalParameter activo para 2026");
+    }
+
+    for (const r of rows) {
+        const name = r.tipo_hora ?? r.name;
+        const factor = r.factor_multiplicador ?? r.factor;
+        const code = normalizeOvertimeCode(name);
+
+        await prisma.payrollOvertimeRate.upsert({
+            where: {
+                globalParameterId_code: {
+                    globalParameterId: globalParameter.id,
+                    code,
+                },
+            },
+            update: {
+                name,
+                factor: toDecimal(factor)!,
+                isActive: true,
+            },
+            create: {
+                globalParameterId: globalParameter.id,
+                code,
+                name,
+                factor: toDecimal(factor)!,
+                isActive: true,
+            },
+        });
+    }
+
+    console.log(`Horas extra seed OK: ${rows.length}`);
+}
+
+async function seedSolidarityBrackets(base: string) {
+    const rows = parseCSV(path.join(base, "solidaridad.csv"));
+
+    const globalParameter = await prisma.payrollGlobalParameter.findFirst({
+        where: { year: 2026, isActive: true },
+        orderBy: { version: "desc" },
+    });
+
+    if (!globalParameter) {
+        throw new Error("No existe PayrollGlobalParameter activo para 2026");
+    }
+
+    await prisma.payrollSolidarityBracket.deleteMany({
+        where: { globalParameterId: globalParameter.id },
+    });
+
+    for (const r of rows) {
+        await prisma.payrollSolidarityBracket.create({
+            data: {
+                globalParameterId: globalParameter.id,
+                fromSmmlv: toDecimal(r.limite_inferior_smmlv ?? r.from_smmlv)!,
+                toSmmlv: toDecimal(r.limite_superior_smmlv ?? r.to_smmlv),
+                rate: toDecimal(r.porcentaje_decimal ?? r.rate)!,
+            },
+        });
+    }
+
+    console.log(`Solidaridad seed OK: ${rows.length}`);
+}
+
+async function seedPayrollAccountingMappings(base: string) {
+    const rows = parseCSV(path.join(base, "payroll_accounting_mapping.csv"));
+
+    const businesses = await prisma.business.findMany({
+        select: { id: true, name: true },
+    });
+
+    if (businesses.length === 0) {
+        console.log("PayrollAccountingMapping seed omitido: no hay negocios creados");
+        return;
+    }
+
+    for (const business of businesses) {
+        for (const r of rows) {
+            const accountCode = r.account_code.trim();
+            if (accountCode.length === 4) {
+                const account = await prisma.pucCuenta.findUnique({
+                    where: { code: accountCode },
+                    select: { code: true },
+                });
+                if (!account) {
+                    throw new Error(`Payroll accounting PUC cuenta not found: ${accountCode}`);
+                }
+            } else if (accountCode.length === 6) {
+                const subaccount = await prisma.pucSubcuenta.findFirst({
+                    where: { code: accountCode, active: true },
+                    select: { code: true },
+                });
+                if (!subaccount) {
+                    throw new Error(`Payroll accounting PUC subcuenta not found or inactive: ${accountCode}`);
+                }
+            } else {
+                throw new Error(`Payroll accounting account_code invalid: ${accountCode}`);
+            }
+
+            await prisma.payrollAccountingMapping.upsert({
+                where: {
+                    businessId_conceptCode_side: {
+                        businessId: business.id,
+                        conceptCode: r.concept_code,
+                        side: r.side as any,
+                    },
+                },
+                update: {
+                    conceptName: r.concept_name,
+                    accountCode: r.account_code,
+                    accountName: r.account_name,
+                    isActive: true,
+                },
+                create: {
+                    businessId: business.id,
+                    conceptCode: r.concept_code,
+                    conceptName: r.concept_name,
+                    accountCode: r.account_code,
+                    accountName: r.account_name,
+                    side: r.side as any,
+                    isActive: true,
+                },
+            });
+        }
+    }
 
     console.log(
-        `PUC seed OK: clases=${clases.length}, grupos=${grupos.length}, cuentas=${cuentas.length}, subcuentas=${subcuentas.length}`
+        `PayrollAccountingMapping seed OK: businesses=${businesses.length}, mappings=${rows.length}`,
     );
+}
+
+async function main() {
+    const base = path.join(process.cwd(), "prisma", "seed-data");
+
+    await seedPuc(base);
+    await seedAdmin();
+
+    await seedPayrollGlobalParameters(base);
+    await seedArlRiskClasses(base);
+    await seedCiiu(base);
+    await seedOvertimeRates(base);
+    await seedSolidarityBrackets(base);
+    await seedPayrollAccountingMappings(base);
 }
 
 main()

@@ -1,17 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Building2, Phone, Save, UserCircle2 } from "lucide-react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import {
+  Building2,
+  ImageIcon,
+  Loader2,
+  Phone,
+  Save,
+  Trash2,
+  Upload,
+  UserCircle2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import AppHeader from "@/src/components/layout/AppHeader";
+import { useNotification } from "@/src/components/ui/NotificationProvider";
+import {
+  BUSINESS_LOGO_ACCEPT,
+  BusinessLogoProfile,
+  deleteBusinessLogo,
+  getBusinessProfile,
+  readBusinessLogoFileError,
+  uploadBusinessLogo,
+} from "@/src/lib/businessLogo";
 import { readBusinessProfile, writeBusinessProfile } from "@/src/lib/businessProfile";
 
 export default function PerfilPage() {
   const router = useRouter();
+  const { notify } = useNotification();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [phone, setPhone] = useState("");
+  const [business, setBusiness] = useState<BusinessLogoProfile | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -19,7 +42,31 @@ export default function PerfilPage() {
     setName(profile.name || "Mi Negocio");
     setSubtitle(profile.subtitle || "");
     setPhone(profile.phone || "");
+
+    let cancelled = false;
+
+    getBusinessProfile()
+      .then((businessProfile) => {
+        if (cancelled) return;
+        setBusiness(businessProfile);
+        setName(businessProfile.name || profile.name || "Mi Negocio");
+        setPhone(businessProfile.phoneWhatsapp || profile.phone || "");
+      })
+      .catch((error) => {
+        console.error("Error cargando perfil del negocio", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const initials = (business?.name || name || "Mi Negocio")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 
   const handleSave = () => {
     writeBusinessProfile({
@@ -33,6 +80,54 @@ export default function PerfilPage() {
     window.setTimeout(() => setSaved(false), 1500);
   };
 
+  const handleLogoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    const fileError = readBusinessLogoFileError(file);
+    if (fileError) {
+      setLogoError(fileError);
+      notify({ type: "error", message: fileError });
+      return;
+    }
+
+    setLogoBusy(true);
+    setLogoError(null);
+
+    try {
+      const updated = await uploadBusinessLogo(file);
+      setBusiness(updated);
+      notify({ type: "success", message: "Logo actualizado" });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "No se pudo subir el logo";
+      setLogoError(message);
+      notify({ type: "error", message });
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleDeleteLogo = async () => {
+    setLogoBusy(true);
+    setLogoError(null);
+
+    try {
+      const updated = await deleteBusinessLogo();
+      setBusiness(updated);
+      notify({ type: "success", message: "Logo eliminado" });
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "No se pudo eliminar el logo";
+      setLogoError(message);
+      notify({ type: "error", message });
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
   return (
     <div className="flex h-screen flex-col bg-white">
       <AppHeader title="Perfil" subtitle="Datos del negocio" showBack hrefBack="/home" />
@@ -41,7 +136,81 @@ export default function PerfilPage() {
         <div className="mx-auto w-full max-w-xl space-y-4">
           <div className="flex justify-center pt-6 pb-2">
             <div className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-full bg-neutral-100 ring-1 ring-black/5">
-              <UserCircle2 className="h-16 w-16 text-neutral-400" />
+              {business?.logoUrl ? (
+                <img
+                  src={business.logoUrl}
+                  alt={`Logo de ${business.name}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <UserCircle2 className="h-16 w-16 text-neutral-400" />
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 text-slate-500">
+                {business?.logoUrl ? (
+                  <img
+                    src={business.logoUrl}
+                    alt={`Logo de ${business.name}`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : initials ? (
+                  <span className="text-xl font-bold text-slate-500">{initials}</span>
+                ) : (
+                  <ImageIcon className="h-8 w-8" />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  Logo de empresa
+                </p>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  JPG, PNG o WEBP hasta 2 MB. Se optimiza antes de guardarlo.
+                </p>
+                {logoError && (
+                  <p className="mt-2 text-xs font-semibold text-red-500">
+                    {logoError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={BUSINESS_LOGO_ACCEPT}
+                  className="hidden"
+                  onChange={handleLogoChange}
+                />
+                <button
+                  type="button"
+                  disabled={logoBusy}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {logoBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  Cambiar logo
+                </button>
+                {business?.logoUrl && (
+                  <button
+                    type="button"
+                    disabled={logoBusy}
+                    onClick={handleDeleteLogo}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

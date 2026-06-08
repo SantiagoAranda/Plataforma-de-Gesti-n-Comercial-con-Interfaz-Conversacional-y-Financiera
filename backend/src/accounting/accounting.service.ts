@@ -407,17 +407,42 @@ export class AccountingService {
     }
 
     if (q.originType) where.originType = q.originType;
+
+    if (q.priceMin !== undefined || q.priceMax !== undefined) {
+      where.amount = {};
+      if (q.priceMin !== undefined) where.amount.gte = q.priceMin;
+      if (q.priceMax !== undefined) where.amount.lte = q.priceMax;
+    }
+
     if (q.search) {
       if (!where.AND) where.AND = [];
       const search = q.search.trim();
-      const isNumeric = /^\d+$/.test(search);
+      const isNumeric = /^\d+(\.\d+)?$/.test(search);
+
+      let amountMatchIds: string[] = [];
+      if (isNumeric) {
+        const rawMatches = await this.prisma.$queryRaw<{id: string}[]>`
+          SELECT id FROM "AccountingMovement"
+          WHERE "businessId" = ${businessId}
+          AND CAST(amount AS TEXT) LIKE ${'%' + search + '%'}
+        `;
+        amountMatchIds = rawMatches.map((r) => r.id);
+      }
+
+      const numericOrs: Prisma.AccountingMovementWhereInput[] = [
+        { pucCuentaCode: { startsWith: search } },
+        { pucSubcuentaId: { startsWith: search } },
+        { detail: { contains: search, mode: 'insensitive' } },
+        { pucCuenta: { name: { contains: search, mode: 'insensitive' } } },
+        { pucSubcuenta: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+
+      if (amountMatchIds.length > 0) {
+        numericOrs.push({ id: { in: amountMatchIds } });
+      }
+
       const searchFilter: Prisma.AccountingMovementWhereInput = isNumeric
-        ? {
-            OR: [
-              { pucCuentaCode: { startsWith: search } },
-              { pucSubcuentaId: { startsWith: search } },
-            ],
-          }
+        ? { OR: numericOrs }
         : {
             OR: [
               { detail: { contains: search, mode: 'insensitive' } },
