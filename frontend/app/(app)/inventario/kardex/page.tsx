@@ -21,6 +21,7 @@ import {
 } from "@/src/components/inventory/InventoryChatActionBar";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { formatUnit } from "@/src/components/inventory/unitLabels";
+import { MovementForm } from "@/src/components/inventory/MovementForm";
 
 function KardexPageContent() {
   const router = useRouter();
@@ -48,26 +49,41 @@ function KardexPageContent() {
 
   const [chatValue, setChatValue] = useState("");
   const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
+  const [purchaseReturnIngredientId, setPurchaseReturnIngredientId] = useState(
+    initialIngredientId ?? "",
+  );
+
+  const loadIngredients = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await listIngredients({ status: "ACTIVE" });
+      setIngredients(data ?? []);
+    } catch (err) {
+      console.error(err);
+      toast.error(getErrorMessage(err, "No se pudo cargar ingredientes"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const data = await listIngredients({ status: "ACTIVE" });
-        setIngredients(data ?? []);
-      } catch (err) {
-        console.error(err);
-        toast.error(getErrorMessage(err, "No se pudo cargar ingredientes"));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void loadIngredients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedIngredient = useMemo(
     () => ingredients.find((i) => i.id === ingredientId) ?? null,
     [ingredients, ingredientId],
+  );
+
+  const selectedPurchaseReturnIngredient = useMemo(
+    () =>
+      ingredients.find(
+        (ingredient) =>
+          ingredient.id ===
+          (purchaseReturnIngredientId || ingredientId || ingredients[0]?.id),
+      ) ?? null,
+    [ingredients, purchaseReturnIngredientId, ingredientId],
   );
 
   useEffect(() => {
@@ -344,6 +360,7 @@ function KardexPageContent() {
         onChange={setChatValue}
         onSubmit={() => toast("Usá el menú + para seleccionar una acción")}
         onPickAction={handlePickAction}
+        onRegisterPurchaseReturn={() => setPurchaseReturnOpen(true)}
         placeholder="Buscar movimiento o ingrediente..."
         helperText={null}
       />
@@ -450,19 +467,44 @@ function KardexPageContent() {
       <ItemPanelLayout
         open={purchaseReturnOpen}
         title="Devolución de compras"
-        subtitle="Próximamente"
+        subtitle="Registrar devolución"
         onClose={() => setPurchaseReturnOpen(false)}
       >
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
-          Devolución de compras estará disponible próximamente
-        </div>
-        <button
-          type="button"
-          onClick={() => setPurchaseReturnOpen(false)}
-          className="h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99]"
-        >
-          Entendido
-        </button>
+        {ingredients.length === 0 ? (
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
+            No hay ingredientes activos para registrar devoluciones.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                Ingrediente
+              </p>
+              <select
+                value={purchaseReturnIngredientId || ingredientId || ingredients[0]?.id || ""}
+                onChange={(event) => setPurchaseReturnIngredientId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              >
+                {ingredients.map((ingredient) => (
+                  <option key={ingredient.id} value={ingredient.id}>
+                    {ingredient.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPurchaseReturnIngredient ? (
+              <MovementForm
+                ingredient={selectedPurchaseReturnIngredient}
+                initialAction="PURCHASE_RETURN"
+                onSuccess={async () => {
+                  setPurchaseReturnOpen(false);
+                  await Promise.all([loadIngredients(), loadKardex()]);
+                }}
+              />
+            ) : null}
+          </div>
+        )}
       </ItemPanelLayout>
     </div>
   );

@@ -68,7 +68,10 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
     action === "PURCHASE_RETURN" ||
     action === "ADJUSTMENT_POSITIVE";
   const allowsUnitCost = needsUnitCost;
-  const needsDetail = action === "ADJUSTMENT_POSITIVE" || action === "ADJUSTMENT_NEGATIVE";
+  const needsDetail =
+    action === "PURCHASE_RETURN" ||
+    action === "ADJUSTMENT_POSITIVE" ||
+    action === "ADJUSTMENT_NEGATIVE";
   const allowsReferenceId = action === "PURCHASE" || action === "PURCHASE_RETURN";
 
   useEffect(() => {
@@ -381,13 +384,20 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
               ? "Ej: faltante por conteo"
               : action === "ADJUSTMENT_POSITIVE"
                 ? "Ej: sobrante por conteo"
-                : "Ej: reposici\u00F3n semanal"
+                : action === "PURCHASE_RETURN"
+                  ? "Ej: devolución por mercadería defectuosa"
+                  : "Ej: reposici\u00F3n semanal"
           }
           className={cn(
             "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500",
             needsDetail && !detail.trim() ? "border-rose-200" : "border-neutral-100",
           )}
         />
+        {action === "PURCHASE_RETURN" && (
+          <p className="text-[11px] font-medium text-neutral-400">
+            La devolución de compra requiere un detalle/motivo.
+          </p>
+        )}
         {action === "ADJUSTMENT_NEGATIVE" && (
           <p className="text-[11px] font-medium text-neutral-400">
             El ajuste negativo requiere un detalle/motivo.

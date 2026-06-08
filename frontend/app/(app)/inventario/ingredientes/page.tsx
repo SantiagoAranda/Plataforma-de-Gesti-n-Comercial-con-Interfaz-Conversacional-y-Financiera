@@ -20,6 +20,7 @@ import {
 } from "@/src/components/inventory/InventoryChatActionBar";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
+import { MovementForm } from "@/src/components/inventory/MovementForm";
 
 export default function IngredientesPage() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export default function IngredientesPage() {
   const [chatValue, setChatValue] = useState("");
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
   const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
+  const [purchaseReturnIngredientId, setPurchaseReturnIngredientId] = useState("");
   const [creatingIngredient, setCreatingIngredient] = useState(false);
 
   const load = useCallback(async () => {
@@ -64,6 +66,15 @@ export default function IngredientesPage() {
     if (!q) return sorted;
     return sorted.filter((i) => i.name.toLowerCase().includes(q));
   }, [ingredients, chatValue]);
+
+  const selectedPurchaseReturnIngredient = useMemo(
+    () =>
+      ingredients.find(
+        (ingredient) =>
+          ingredient.id === (purchaseReturnIngredientId || ingredients[0]?.id),
+      ) ?? null,
+    [ingredients, purchaseReturnIngredientId],
+  );
 
   const handlePickAction = (action: InventoryChatMenuAction) => {
     if (action === "INGREDIENTES") {
@@ -151,6 +162,7 @@ export default function IngredientesPage() {
         onChange={setChatValue}
         onSubmit={openIngredientCreateFromChat}
         onPickAction={handlePickAction}
+        onRegisterPurchaseReturn={() => setPurchaseReturnOpen(true)}
         placeholder="Buscar insumo o producto..."
         helperText={null}
       />
@@ -200,19 +212,44 @@ export default function IngredientesPage() {
       <ItemPanelLayout
         open={purchaseReturnOpen}
         title="Devolución de compras"
-        subtitle="Próximamente"
+        subtitle="Registrar devolución"
         onClose={() => setPurchaseReturnOpen(false)}
       >
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
-          Devolución de compras estará disponible próximamente
-        </div>
-        <button
-          type="button"
-          onClick={() => setPurchaseReturnOpen(false)}
-          className="h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99]"
-        >
-          Entendido
-        </button>
+        {ingredients.length === 0 ? (
+          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
+            No hay ingredientes activos para registrar devoluciones.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                Ingrediente
+              </p>
+              <select
+                value={purchaseReturnIngredientId || ingredients[0]?.id || ""}
+                onChange={(event) => setPurchaseReturnIngredientId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+              >
+                {ingredients.map((ingredient) => (
+                  <option key={ingredient.id} value={ingredient.id}>
+                    {ingredient.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPurchaseReturnIngredient ? (
+              <MovementForm
+                ingredient={selectedPurchaseReturnIngredient}
+                initialAction="PURCHASE_RETURN"
+                onSuccess={async () => {
+                  setPurchaseReturnOpen(false);
+                  await load();
+                }}
+              />
+            ) : null}
+          </div>
+        )}
       </ItemPanelLayout>
     </div>
   );

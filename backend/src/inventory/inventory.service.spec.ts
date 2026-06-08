@@ -17,6 +17,7 @@ describe('InventoryService', () => {
       },
       inventoryMovement: {
         findMany: mockFn(),
+        findFirst: mockFn(),
         count: mockFn(),
         create: mockFn(),
       },
@@ -172,6 +173,130 @@ describe('InventoryService', () => {
     expect(movement.totalValue.toString()).toBe('24000');
     expect(movement.stockAfter.toString()).toBe('12');
     expect(movement.averageCostAfter.toString()).toBe('2000');
+  });
+
+  it('throws BadRequestException when purchaseToConsumptionFactor is zero in purchase-unit mode', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      purchaseToConsumptionFactor: new Prisma.Decimal(0),
+    });
+
+    await expect(
+      service.registerPurchase(businessId, {
+        ingredientId,
+        purchaseQuantity: '2',
+        purchaseUnitCost: '12000',
+      } as any),
+    ).rejects.toThrow(BadRequestException);
+
+    await expect(
+      service.registerPurchase(businessId, {
+        ingredientId,
+        purchaseQuantity: '2',
+        purchaseUnitCost: '12000',
+      } as any),
+    ).rejects.toThrow('factor de conversión del ingrediente debe ser mayor a cero');
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('creates INVENTORY_INITIAL movement and updates stock and average cost', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue(null);
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'initial-movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerInitial(businessId, {
+      ingredientId,
+      quantity: '10',
+      unitCost: '2.5',
+      detail: 'opening stock',
+    });
+
+    expect(movement.type).toBe('INVENTORY_INITIAL');
+    expect(movement.quantity.toString()).toBe('10');
+    expect(movement.unitCost.toString()).toBe('2.5');
+    expect(movement.stockAfter.toString()).toBe('10');
+    expect(movement.averageCostAfter.toString()).toBe('2.5');
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'INVENTORY_INITIAL',
+        quantity: new Prisma.Decimal(10),
+        unitCost: new Prisma.Decimal(2.5),
+        totalValue: new Prisma.Decimal(25),
+        stockAfter: new Prisma.Decimal(10),
+        averageCostAfter: new Prisma.Decimal(2.5),
+        referenceType: 'MANUAL',
+        detail: 'opening stock',
+      }),
+    });
+    expect(tx.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: {
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(2.5),
+      },
+    });
+  });
+
+  it('blocks INVENTORY_INITIAL when ingredient already has movements', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue({ id: 'existing-movement' });
+
+    await expect(
+      service.registerInitial(businessId, {
+        ingredientId,
+        quantity: '10',
+        unitCost: '2.5',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('blocks INVENTORY_INITIAL with quantity zero without changing stock or cost', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.registerInitial(businessId, {
+        ingredientId,
+        quantity: '0',
+        unitCost: '2.5',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
   });
 
   it('creates PURCHASE_RETURN movement, decreases stock, and recalculates average cost using return unitCost', async () => {

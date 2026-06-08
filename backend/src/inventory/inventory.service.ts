@@ -860,7 +860,9 @@ export class InventoryService {
 
       const factor = this.decimal(ingredient.purchaseToConsumptionFactor);
       if (factor.lte(0)) {
-        throw new BadRequestException('purchaseToConsumptionFactor must be greater than zero');
+        throw new BadRequestException(
+          'El factor de conversión del ingrediente debe ser mayor a cero',
+        );
       }
 
       const purchaseQuantity = this.decimal(dto.purchaseQuantity);

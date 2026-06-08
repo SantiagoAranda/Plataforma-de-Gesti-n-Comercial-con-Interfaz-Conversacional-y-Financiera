@@ -5,6 +5,7 @@ import {
   BookOpen,
   ClipboardList,
   PackageSearch,
+  RotateCcw,
   Search,
   Send,
   SlidersHorizontal,
@@ -18,6 +19,7 @@ import { cn } from "@/src/lib/utils";
 export type InventoryChatMenuAction =
   | "CREATE_INGREDIENT"
   | "REGISTER_PURCHASE"
+  | "REGISTER_PURCHASE_RETURN"
   | "INGREDIENTES"
   | "KARDEX"
   | "RECETAS";
@@ -31,6 +33,7 @@ export type InventoryChatActionBarProps = {
   onPickAction?: (action: InventoryChatMenuAction) => void;
   onCreateIngredient?: () => void;
   onRegisterPurchase?: () => void;
+  onRegisterPurchaseReturn?: () => void;
 };
 
 const MENU: Array<{
@@ -46,6 +49,12 @@ const MENU: Array<{
     tone: "bg-emerald-50 text-emerald-700",
   },
   { action: "REGISTER_PURCHASE", label: "Cargar compra", icon: TrendingUp, tone: "bg-sky-50 text-sky-700" },
+  {
+    action: "REGISTER_PURCHASE_RETURN",
+    label: "Devolver compra",
+    icon: RotateCcw,
+    tone: "bg-amber-50 text-amber-800",
+  },
   { action: "INGREDIENTES", label: "Ingredientes", icon: ClipboardList, tone: "bg-emerald-50 text-emerald-700" },
   { action: "KARDEX", label: "Kardex", icon: PackageSearch, tone: "bg-sky-50 text-sky-700" },
   { action: "RECETAS", label: "Recetas", icon: BookOpen, tone: "bg-amber-50 text-amber-800" },
@@ -60,6 +69,7 @@ export function InventoryChatActionBar({
   onPickAction,
   onCreateIngredient,
   onRegisterPurchase,
+  onRegisterPurchaseReturn,
 }: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [internalValue, setInternalValue] = useState("");
@@ -74,6 +84,7 @@ export function InventoryChatActionBar({
     return MENU.filter((item) => {
       if (item.action === "CREATE_INGREDIENT") return !!onCreateIngredient;
       if (item.action === "REGISTER_PURCHASE") return !!onRegisterPurchase;
+      if (item.action === "REGISTER_PURCHASE_RETURN") return !!onRegisterPurchaseReturn;
       if (item.action === "INGREDIENTES") return !!onPickAction;
       if (item.action === "KARDEX") return !!onPickAction;
       if (item.action === "RECETAS") return !!onPickAction;
@@ -88,6 +99,7 @@ export function InventoryChatActionBar({
   const runAction = (action: InventoryChatMenuAction) => {
     if (action === "CREATE_INGREDIENT") return onCreateIngredient?.();
     if (action === "REGISTER_PURCHASE") return onRegisterPurchase?.();
+    if (action === "REGISTER_PURCHASE_RETURN") return onRegisterPurchaseReturn?.();
     return handlePick(action);
   };
 

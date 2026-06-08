@@ -214,48 +214,41 @@ model StoreFooterSettings {
 }
 
 model Item {
-  id         String   @id @default(uuid())
+  id String @id @default(uuid())
+
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   type   ItemType
   status ItemStatus @default(ACTIVE)
 
-  // Defines whether this sellable item consumes no stock, one ingredient, or recipe ingredients.
-  inventoryMode InventoryMode @default(NONE)
-
   name        String
   price       Decimal @db.Decimal(10, 2)
   description String?
 
-  // Badge opcional para mostrar sobre la imagen en la tienda
   badgeText  String?
   badgeColor String?
   badges     Json?
 
-  // Solo para servicios (validar en app: requerido si type=SERVICE)
   durationMinutes Int?
 
-  images ItemImage[]
+  inventoryMode InventoryMode @default(NONE)
 
-  orderItems   OrderItem[]
-  reservations Reservation[]
-
+  images          ItemImage[]
   scheduleWindows ServiceScheduleWindow[]
   scheduleBlocks  ServiceScheduleBlock[]
-
-  // Ingredient consumption rules used for SIMPLE and RECIPE_BASED products.
-  recipes Recipe[]
+  reservations    Reservation[]
+  orderItems      OrderItem[]
+  recipes         Recipe[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // ✅ habilita FK compuesta desde OrderItem (y permite validar "carrito 1 negocio")
   @@unique([id, businessId])
   @@index([businessId])
-  @@index([type])
   @@index([status])
-  @@index([businessId, inventoryMode])
+  @@index([type])
+  @@index([inventoryMode])
 }
 
 model ItemImage {
@@ -659,20 +652,20 @@ enum MovementNature {
 }
 
 model AccountingMovement {
-  id             String                       @id @default(cuid())
-  businessId     String
-  pucCuentaCode  String?                      @db.VarChar(4)
+  id            String  @id @default(cuid())
+  businessId    String
+  pucCuentaCode String? @db.VarChar(4)
 
-  pucSubcuentaId String?                      @db.VarChar(6)
+  pucSubcuentaId String? @db.VarChar(6)
 
-  amount         Decimal                      @db.Decimal(18, 2)
-  nature         MovementNature               @default(DEBIT)
-  date           DateTime
-  detail         String?
-  originType     AccountingMovementOriginType
-  originId       String?
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
+  amount     Decimal                      @db.Decimal(18, 2)
+  nature     MovementNature               @default(DEBIT)
+  date       DateTime
+  detail     String?
+  originType AccountingMovementOriginType
+  originId   String?
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
 
   business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   pucCuenta    PucCuenta?    @relation(fields: [pucCuentaCode], references: [code])
@@ -843,10 +836,10 @@ model PayrollBusinessParameter {
   weeklyHours  Decimal? @db.Decimal(10, 2)
   monthlyHours Decimal? @db.Decimal(10, 2)
 
-  applyLaw1819        Boolean @default(true)
+  applyLaw1819                Boolean @default(true)
   exemptEmployerHealthLaw1819 Boolean @default(true)
-  applySolidarityFund Boolean @default(true)
-  applyIncomeTax      Boolean @default(false)
+  applySolidarityFund         Boolean @default(true)
+  applyIncomeTax              Boolean @default(false)
 
   customTransportAllowance Decimal? @db.Decimal(20, 6)
   customSmmlv              Decimal? @db.Decimal(20, 6)

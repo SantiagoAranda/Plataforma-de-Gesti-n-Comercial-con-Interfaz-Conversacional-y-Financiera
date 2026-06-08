@@ -376,6 +376,7 @@ export default function InventarioPage() {
         onSubmit={() => {}}
         onCreateIngredient={openCreateIngredientFromBar}
         onRegisterPurchase={() => openMovementSheet("PURCHASE")}
+        onRegisterPurchaseReturn={() => openMovementSheet("PURCHASE_RETURN")}
         onPickAction={(action) => {
           if (action === "INGREDIENTES") setTab("ingredients");
           if (action === "RECETAS") setTab("recipes");
@@ -461,7 +462,13 @@ export default function InventarioPage() {
 
       <ItemPanelLayout
         open={movementSheetOpen}
-        title={movementInitialAction === "PURCHASE" ? "Cargar stock" : "Registrar movimiento"}
+        title={
+          movementInitialAction === "PURCHASE"
+            ? "Cargar stock"
+            : movementInitialAction === "PURCHASE_RETURN"
+              ? "Devolución de compras"
+              : "Registrar movimiento"
+        }
         subtitle="Movimiento rápido"
         onClose={() => setMovementSheetOpen(false)}
       >

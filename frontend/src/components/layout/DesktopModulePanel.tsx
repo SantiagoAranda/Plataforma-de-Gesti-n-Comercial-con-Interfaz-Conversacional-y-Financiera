@@ -1,3 +1,5 @@
+"use client";
+
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
