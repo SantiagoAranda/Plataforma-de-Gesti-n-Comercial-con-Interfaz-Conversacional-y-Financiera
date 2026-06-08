@@ -21,6 +21,8 @@ import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/component
 import { getItemBadges } from "@/src/lib/itemBadges";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
+import PhoneSelector from "@/src/components/shared/PhoneSelector";
+import CartSummary from "@/src/components/shared/CartSummary";
 
 const formatPrice = (value: number) => {
   return formatPriceInput(value.toFixed(2).replace(".", ","));
@@ -64,28 +66,28 @@ type StoreFooterSettings = {
 function normalizeFooterPhones(value: unknown): FooterPhone[] {
   if (!Array.isArray(value)) return [];
   return value.reduce<FooterPhone[]>((acc, phone) => {
-      if (!phone || typeof phone !== "object") return acc;
-      const record = phone as Record<string, unknown>;
-      const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
-      const label = typeof record.label === "string" ? record.label.trim() : "";
-      if (!phoneValue) return acc;
-      acc.push({ label, value: phoneValue });
-      return acc;
-    }, []);
+    if (!phone || typeof phone !== "object") return acc;
+    const record = phone as Record<string, unknown>;
+    const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    if (!phoneValue) return acc;
+    acc.push({ label, value: phoneValue });
+    return acc;
+  }, []);
 }
 
 function normalizeFooterSocials(value: unknown): FooterSocial[] {
   if (!Array.isArray(value)) return [];
   return value.reduce<FooterSocial[]>((acc, social) => {
-      if (!social || typeof social !== "object") return acc;
-      const record = social as Record<string, unknown>;
-      const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
-      const label = typeof record.label === "string" ? record.label.trim() : "";
-      const socialValue = typeof record.value === "string" ? record.value.trim() : "";
-      if (!type || !socialValue) return acc;
-      acc.push({ type, label, value: socialValue });
-      return acc;
-    }, []);
+    if (!social || typeof social !== "object") return acc;
+    const record = social as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    const socialValue = typeof record.value === "string" ? record.value.trim() : "";
+    if (!type || !socialValue) return acc;
+    acc.push({ type, label, value: socialValue });
+    return acc;
+  }, []);
 }
 
 export default function PublicStoreClient() {
@@ -549,112 +551,26 @@ export default function PublicStoreClient() {
       {/* Cart entry now lives in the header */}
 
       {showCartModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/40"
             onClick={() => setShowCartModal(false)}
           />
 
-          <div className="relative w-full max-w-md bg-white rounded-3xl p-6 shadow-xl z-10">
-            <h2 className="text-lg font-semibold mb-4">
-              Finalizar compra
-            </h2>
-
-            {cartItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex justify-between items-center mb-3"
-              >
-                <div>
-                  <div className="font-medium">
-                    {item.name}
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    ${formatPrice(item.price)}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => decreaseQty(item.id)}
-                    className="px-2 border rounded"
-                  >
-                    -
-                  </button>
-
-                  <span>{item.quantity}</span>
-
-                  <button
-                    onClick={() => increaseQty(item.id)}
-                    className="px-2 border rounded"
-                  >
-                    +
-                  </button>
-
-                  <button
-                    onClick={() => removeItem(item.id)}
-                    className="text-red-500 text-sm"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            <div className="flex justify-between font-semibold mt-4">
-              <span>Total</span>
-              <span>${formatPrice(cartTotal)}</span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <input
-                placeholder="Nombre"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full border rounded-xl px-4 py-3"
-              />
-
-              <div className="flex gap-2">
-                <select
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                  className="w-[95px] border rounded-xl px-3 py-3 text-sm bg-white"
-                >
-                  <option value="57">🇨🇴 +57</option>
-                  <option value="54">🇦🇷 +54</option>
-                  <option value="52">🇲🇽 +52</option>
-                  <option value="34">🇪🇸 +34</option>
-                  <option value="56">🇨🇱 +56</option>
-                  <option value="51">🇵🇪 +51</option>
-                </select>
-
-                <input
-                  placeholder="WhatsApp"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
-                  className="flex-1 border rounded-xl px-4 py-3"
-                />
-              </div>
-              <p className="text-xs text-gray-400 -mt-1 px-1">
-                Usaremos este número para confirmar tu pedido
-              </p>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowCartModal(false)}
-                className="flex-1 border rounded-xl py-3"
-              >
-                Cancelar
-              </button>
-
-              <button
-                onClick={handleConfirmOrder}
-                className="flex-1 bg-emerald-600 text-white rounded-xl py-3"
-              >
-                Confirmar
-              </button>
-            </div>
+          <div className="relative z-10 w-full max-w-md">
+            <CartSummary
+              items={cartItems}
+              onIncreaseQty={increaseQty}
+              onDecreaseQty={decreaseQty}
+              customerName={customerName}
+              onCustomerNameChange={setCustomerName}
+              countryCode={countryCode}
+              onCountryCodeChange={setCountryCode}
+              phoneNumber={phoneNumber}
+              onPhoneNumberChange={setPhoneNumber}
+              onConfirm={handleConfirmOrder}
+              onClose={() => setShowCartModal(false)}
+            />
           </div>
         </div>
       )}

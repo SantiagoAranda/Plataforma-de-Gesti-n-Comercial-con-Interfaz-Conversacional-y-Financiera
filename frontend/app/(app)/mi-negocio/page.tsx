@@ -1,7 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Trash2, Search, ArrowDown } from "lucide-react";
+import {
+  Trash2,
+  X,
+  Clock,
+  Search,
+  ArrowDown,
+  Calendar as CalendarIcon,
+} from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
@@ -47,10 +54,14 @@ export default function MiNegocioPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
 
-  const [composerMode, setComposerMode] = useState<"closed" | "create" | "edit">("closed");
+  // Composer / Form states
+  const [composerMode, setComposerMode] = useState<
+    "closed" | "create" | "edit"
+  >("closed");
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
   const [badgeText1, setBadgeText1] = useState("");
@@ -64,8 +75,9 @@ export default function MiNegocioPage() {
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [duration, setDuration] = useState(30);
-  const [durationInput, setDurationInput] = useState("30");
+  const [duration, setDuration] = useState(60);
+  const [durationInput, setDurationInput] = useState("1");
+  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<string | null>(null);
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -78,18 +90,20 @@ export default function MiNegocioPage() {
       const key = `mi-negocio:items:${dbStatus}`;
       const hasInstant = !!getInstantCache<Item[]>(key, 60_000);
 
-      if (!hasInstant && isInitial) setLoading(true);
+      if (!hasInstant && isInitial) {
+        setLoading(true);
+      }
 
       const data = await getCached(key, 60_000, () =>
-        api<Item[]>(`/items?status=ACTIVE&lightweight=true`)
+        api<Item[]>(`/items?status=ACTIVE&lightweight=true`),
       );
 
+      // Mantiene el ordenamiento Newest-to-Oldest para la UI invertida estilo WhatsApp
       const sorted = [...data].sort(
         (a, b) =>
-          new Date(a.createdAt || 0).getTime() -
-          new Date(b.createdAt || 0).getTime()
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime(),
       );
-
       setItems(sorted);
     } catch (err) {
       console.error(err);
@@ -106,7 +120,6 @@ export default function MiNegocioPage() {
   const filteredItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
-
     return (
       item.name.toLowerCase().includes(query) ||
       (item.description && item.description.toLowerCase().includes(query))
@@ -126,8 +139,9 @@ export default function MiNegocioPage() {
     setExistingImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setDuration(30);
-    setDurationInput("30");
+    setDuration(60);
+    setDurationInput("1");
+    setDurationAdjustmentMessage(null);
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -139,10 +153,9 @@ export default function MiNegocioPage() {
     if (composerMode !== "closed") {
       setComposerMode("closed");
       resetForm();
-      return;
+    } else {
+      setComposerMode("create");
     }
-
-    setComposerMode("create");
   };
 
   const handleStartEdit = (item: Item | null) => {
@@ -172,20 +185,20 @@ export default function MiNegocioPage() {
     setNewImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setDuration(item.durationMinutes ?? 30);
-    setDurationInput(String(item.durationMinutes ?? 30));
+    setDuration(item.durationMinutes ?? 60);
+    setDurationInput(
+      item.durationMinutes ? String(item.durationMinutes / 60) : "1"
+    );
+    setDurationAdjustmentMessage(null);
 
     const nextWeek = createInitialWeek();
-
     if (item.type === "SERVICE" && item.schedule?.length) {
       nextWeek.forEach((d) => {
         d.active = false;
         d.ranges = [];
       });
-
       item.schedule.forEach((slot) => {
         const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
-
         if (dayIdx !== -1) {
           nextWeek[dayIdx].active = true;
           nextWeek[dayIdx].ranges.push({
@@ -195,7 +208,6 @@ export default function MiNegocioPage() {
         }
       });
     }
-
     setWeek(nextWeek);
     const firstActive = nextWeek.findIndex((d) => d.active);
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
@@ -203,7 +215,6 @@ export default function MiNegocioPage() {
 
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-
     const selectedFiles = Array.from(files);
     const totalImages = existingImages.length + newImages.length;
     const availableSlots = MAX_ITEM_IMAGES - totalImages;
@@ -214,17 +225,14 @@ export default function MiNegocioPage() {
     }
 
     const nextPendingImages: PendingImage[] = [];
-
     selectedFiles.slice(0, availableSlots).forEach((file) => {
       if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
-
       nextPendingImages.push({
         id: generateCreationId(),
         file,
         previewUrl: URL.createObjectURL(file),
       });
     });
-
     setNewImages((prev) => [...prev, ...nextPendingImages]);
   };
 
@@ -243,19 +251,17 @@ export default function MiNegocioPage() {
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior, block: "end" });
-      return;
-    }
-
-    const el = scrollRef.current;
-    if (!el) return;
-
-    window.requestAnimationFrame(() => {
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior,
+      messagesEndRef.current.scrollIntoView({ behavior });
+    } else {
+      const el = scrollRef.current;
+      if (!el) return;
+      window.requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior,
+        });
       });
-    });
+    }
   }, []);
 
   useEffect(() => {
@@ -273,27 +279,33 @@ export default function MiNegocioPage() {
     }
   }, [items.length, loading, scrollToBottom]);
 
-  const uploadPendingImages = async (itemId: string) => {
-    for (const img of newImages) {
-      const formData = new FormData();
-      formData.append("file", img.file);
-
-      await api(`/items/${itemId}/images/upload`, {
-        method: "POST",
-        body: formData,
-      });
-    }
-  };
-
   const handleSend = async () => {
     const errors: FormErrors = {};
-
     if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0) errors.price = "El precio debe ser mayor a 0";
+    if (!price || parseFloat(price) <= 0)
+      errors.price = "El precio debe ser mayor a 0";
 
+    let finalDuration = duration;
     if (type === "SERVICE") {
-      if (duration < 5) errors.duration = "Mínimo 5 min";
-
+      const n = parseFloat(durationInput);
+      if (!durationInput || isNaN(n)) {
+        finalDuration = 60;
+        setDuration(60);
+        setDurationInput("1");
+        setDurationAdjustmentMessage(null);
+      } else {
+        let rounded = Math.round(n);
+        if (rounded <= 0) rounded = 1;
+        finalDuration = rounded * 60;
+        setDuration(finalDuration);
+        setDurationInput(String(rounded));
+        if (n !== rounded) {
+          setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
+        } else {
+          setDurationAdjustmentMessage(null);
+        }
+      }
+      if (finalDuration < 5) errors.duration = "Mínimo 5 min";
       if (!week.some((d) => d.active && d.ranges.length > 0)) {
         errors.schedule = "Selecciona al menos un día con horario";
       }
@@ -305,19 +317,18 @@ export default function MiNegocioPage() {
     }
 
     setIsSubmitting(true);
-
     try {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : []
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -342,7 +353,7 @@ export default function MiNegocioPage() {
         name,
         price: parseFloat(price),
         description: description.trim() || null,
-        durationMinutes: type === "SERVICE" ? duration : null,
+        durationMinutes: type === "SERVICE" ? finalDuration : null,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
         badgeText: finalBadgeText,
@@ -350,30 +361,38 @@ export default function MiNegocioPage() {
       };
 
       let savedItem: Item;
-
       if (editingItem) {
         savedItem = await api<Item>(`/items/${editingItem.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-
         for (const id of removedImageIds) {
           await api(`/items/${editingItem.id}/images/${id}`, {
             method: "DELETE",
           });
         }
-
-        await uploadPendingImages(editingItem.id);
-
+        for (const img of newImages) {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${editingItem.id}/images/upload`, {
+            method: "POST",
+            body: formData,
+          });
+        }
         savedItem = await api<Item>(`/items/${editingItem.id}`);
       } else {
-        const created = await api<Item>("/items", {
+        const created = await api<Item>(`/items`, {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
-
-        await uploadPendingImages(created.id);
-
+        for (const img of newImages) {
+          const formData = new FormData();
+          formData.append("file", img.file);
+          await api(`/items/${created.id}/images/upload`, {
+            method: "POST",
+            body: formData,
+          });
+        }
         savedItem = await api<Item>(`/items/${created.id}`);
       }
 
@@ -382,10 +401,10 @@ export default function MiNegocioPage() {
 
       setItems((prev) => {
         const exists = prev.find((i) => i.id === savedItem.id);
-        if (exists) return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
-        return [...prev, savedItem];
+        if (exists)
+          return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
+        return [savedItem, ...prev]; // Agrega al inicio (prepend) para sostener flex-col-reverse
       });
-
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
       shouldStickToBottomRef.current = true;
@@ -394,7 +413,6 @@ export default function MiNegocioPage() {
         message: editingItem ? "Item actualizado" : "Item creado",
         type: "success",
       });
-
       setComposerMode("closed");
       resetForm();
     } catch (err) {
@@ -411,7 +429,6 @@ export default function MiNegocioPage() {
         method: "PATCH",
         body: JSON.stringify({ status: "INACTIVE" }),
       });
-
       setItems((prev) => prev.filter((i) => i.id !== item.id));
       setSelectedItem(null);
       invalidateCache("mi-negocio:items:ACTIVE");
@@ -421,18 +438,16 @@ export default function MiNegocioPage() {
       console.error(err);
       setToast({ message: "Error al eliminar", type: "error" });
     }
-
     setTimeout(() => setToast(null), 2500);
   };
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     const nearBottom = distanceFromBottom < 120;
-
     shouldStickToBottomRef.current = nearBottom;
+    setIsAtBottom(nearBottom);
     setShowScrollBottom(!nearBottom);
   }, []);
 
@@ -450,19 +465,16 @@ export default function MiNegocioPage() {
         day: "numeric",
         month: "long",
       });
-
       if (date.toDateString() === now.toDateString()) label = "HOY";
       else if (date.toDateString() === yesterday.toDateString()) label = "AYER";
 
       const lastGroup = groups[groups.length - 1];
-
       if (lastGroup && lastGroup.dateLabel === label) {
         lastGroup.items.push(item);
       } else {
         groups.push({ dateLabel: label, items: [item] });
       }
     });
-
     return groups;
   }, [filteredItems, visibleCount]);
 
@@ -484,25 +496,19 @@ export default function MiNegocioPage() {
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
+      {/* Main contenedor configurado con flex-col-reverse para el comportamiento WhatsApp */}
       <main
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 py-4 space-y-8 pb-32 lg:pb-[140px] scroll-smooth"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-32 lg:pb-[140px]"
       >
-        {loading && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
-            Cargando...
-          </div>
-        )}
+        {/* Referencia invisible para el tope inferior del scroll */}
+        <div ref={messagesEndRef} className="h-px" />
 
-        {!loading && items.length === 0 && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
-            No hay items creados
-          </div>
-        )}
-
+        {/* Mapeo de grupos de ítems cronológicos */}
         {groupedItems.map((group) => (
           <div key={group.dateLabel} className="space-y-4">
+            {/* SEPARADOR DE FECHA */}
             <div className="flex items-center gap-4 py-2">
               <div className="h-[1px] flex-1 bg-neutral-200" />
               <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
@@ -511,14 +517,17 @@ export default function MiNegocioPage() {
               <div className="h-[1px] flex-1 bg-neutral-200" />
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            {/* Sub-lista invertida por día para conservar coherencia posicional */}
+            <div className="flex flex-col-reverse gap-4">
               {group.items.map((item) => (
                 <ItemCard
                   key={item.id}
                   item={item}
                   selected={selectedItem?.id === item.id}
                   onSelect={() =>
-                    setSelectedItem((prev) => (prev?.id === item.id ? null : item))
+                    setSelectedItem((prev) =>
+                      prev?.id === item.id ? null : item,
+                    )
                   }
                 />
               ))}
@@ -526,22 +535,7 @@ export default function MiNegocioPage() {
           </div>
         ))}
 
-        {composerMode === "closed" &&
-          searchQuery.trim() !== "" &&
-          filteredItems.length === 0 && (
-            <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300">
-              <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
-                <Search className="h-6 w-6 text-neutral-300" />
-              </div>
-              <h3 className="text-neutral-900 font-bold text-sm mb-1">
-                No se encontraron productos o servicios
-              </h3>
-              <p className="text-neutral-400 text-xs font-medium leading-relaxed">
-                Probá con otro nombre o descripción
-              </p>
-            </div>
-          )}
-
+        {/* Botón "Cargar más" inyectado arriba lógicamente debido al flex-col-reverse */}
         {filteredItems.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
             <button
@@ -553,9 +547,37 @@ export default function MiNegocioPage() {
           </div>
         )}
 
-        <div ref={messagesEndRef} className="h-px" />
+        {/* Fallbacks y loaders contextuales */}
+        {composerMode === "closed" &&
+          searchQuery.trim() !== "" &&
+          filteredItems.length === 0 && (
+            <div className="text-center py-20 px-6 animate-in fade-in zoom-in-95 duration-300 flex flex-col justify-center items-center">
+              <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mb-4 border border-neutral-100/50">
+                <Search className="h-6 w-6 text-neutral-300" />
+              </div>
+              <h3 className="text-neutral-900 font-bold text-sm mb-1">
+                No se encontraron productos o servicios
+              </h3>
+              <p className="text-neutral-400 text-xs font-medium leading-relaxed">
+                Probá con otro nombre o descripción
+              </p>
+            </div>
+          )}
+
+        {!loading && items.length === 0 && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
+            No hay items creados
+          </div>
+        )}
+
+        {loading && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
+            Cargando...
+          </div>
+        )}
       </main>
 
+      {/* SECCIÓN DE COMPOSER */}
       <MiNegocioChatComposer
         mode={composerMode}
         onToggle={handleToggleComposer}
@@ -586,6 +608,8 @@ export default function MiNegocioPage() {
           durationInput={durationInput}
           setDurationInput={setDurationInput}
           setDuration={setDuration}
+          durationAdjustmentMessage={durationAdjustmentMessage}
+          setDurationAdjustmentMessage={setDurationAdjustmentMessage}
           week={week}
           setWeek={setWeek}
           currentDayIndex={currentDayIndex}
@@ -602,6 +626,7 @@ export default function MiNegocioPage() {
         />
       </MiNegocioChatComposer>
 
+      {/* DETAIL MODAL */}
       <ItemDetailModal
         item={itemForDetail}
         open={!!itemForDetail}
@@ -616,6 +641,7 @@ export default function MiNegocioPage() {
         }}
       />
 
+      {/* CONFIRM DELETE MODAL */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
@@ -626,7 +652,6 @@ export default function MiNegocioPage() {
               Esta acción ocultará el item de tu catálogo activo. Podrás
               recuperarlo luego si es necesario.
             </p>
-
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => {
@@ -638,7 +663,6 @@ export default function MiNegocioPage() {
               >
                 Eliminar definitivamente
               </button>
-
               <button
                 onClick={() => setDeleteId(null)}
                 className="w-full py-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-bold active:scale-95 transition"
@@ -650,6 +674,7 @@ export default function MiNegocioPage() {
         </div>
       )}
 
+      {/* BOTÓN FLOTANTE SCROLL TO BOTTOM */}
       {showScrollBottom && (
         <button
           onClick={() => scrollToBottom("smooth")}
@@ -660,13 +685,10 @@ export default function MiNegocioPage() {
         </button>
       )}
 
+      {/* SYSTEM TOAST */}
       {toast && (
         <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${
-            toast.type === "success"
-              ? "bg-green-600 shadow-green-100"
-              : "bg-red-600 shadow-red-100"
-          }`}
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}
         >
           {toast.message}
         </div>

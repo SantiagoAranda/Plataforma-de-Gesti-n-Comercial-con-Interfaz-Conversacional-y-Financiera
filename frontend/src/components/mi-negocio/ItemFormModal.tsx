@@ -65,8 +65,9 @@ export default function ItemFormModal({
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [duration, setDuration] = useState(30);
-  const [durationInput, setDurationInput] = useState("30");
+  const [duration, setDuration] = useState(60);
+  const [durationInput, setDurationInput] = useState("1");
+  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<string | null>(null);
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -95,8 +96,13 @@ export default function ItemFormModal({
       setNewImages([]);
       setRemovedImageIds([]);
       setImageError(null);
-      setDuration(editingItem.durationMinutes ?? 30);
-      setDurationInput(String(editingItem.durationMinutes ?? 30));
+      setDuration(editingItem.durationMinutes ?? 60);
+      setDurationInput(
+        editingItem.durationMinutes
+          ? String(editingItem.durationMinutes / 60)
+          : "1"
+      );
+      setDurationAdjustmentMessage(null);
 
       const nextWeek = createInitialWeek();
       if (editingItem.type === "SERVICE" && editingItem.schedule?.length) {
@@ -137,8 +143,9 @@ export default function ItemFormModal({
     setExistingImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setDuration(30);
-    setDurationInput("30");
+    setDuration(60);
+    setDurationInput("1");
+    setDurationAdjustmentMessage(null);
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -201,8 +208,28 @@ export default function ItemFormModal({
     if (!price || parseFloat(price) <= 0)
       errors.price = "El precio debe ser mayor a 0";
 
+    let finalDuration = duration;
     if (type === "SERVICE") {
-      if (duration < 5) errors.duration = "Mínimo 5 min";
+      const n = parseFloat(durationInput);
+      if (!durationInput || isNaN(n)) {
+        finalDuration = 60;
+        setDuration(60);
+        setDurationInput("1");
+        setDurationAdjustmentMessage(null);
+      } else {
+        let rounded = Math.round(n);
+        if (rounded <= 0) rounded = 1;
+        finalDuration = rounded * 60;
+        setDuration(finalDuration);
+        setDurationInput(String(rounded));
+        if (n !== rounded) {
+          setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
+        } else {
+          setDurationAdjustmentMessage(null);
+        }
+      }
+
+      if (finalDuration < 5) errors.duration = "Mínimo 5 min";
       if (!week.some((d) => d.active && d.ranges.length > 0)) {
         errors.schedule = "Selecciona al menos un día con horario";
       }
@@ -250,7 +277,7 @@ export default function ItemFormModal({
         name,
         price: parseFloat(price),
         description: description.trim() || null,
-        durationMinutes: type === "SERVICE" ? duration : null,
+        durationMinutes: type === "SERVICE" ? finalDuration : null,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
         // compatibilidad legacy: badge 1
@@ -359,6 +386,8 @@ export default function ItemFormModal({
         durationInput={durationInput}
         setDurationInput={setDurationInput}
         setDuration={setDuration}
+        durationAdjustmentMessage={durationAdjustmentMessage}
+        setDurationAdjustmentMessage={setDurationAdjustmentMessage}
         week={week}
         setWeek={setWeek}
         currentDayIndex={currentDayIndex}

@@ -24,6 +24,8 @@ import {
   uploadBusinessLogo,
 } from "@/src/lib/businessLogo";
 import { readBusinessProfile, writeBusinessProfile } from "@/src/lib/businessProfile";
+import PhoneSelector from "@/src/components/shared/PhoneSelector";
+import { validatePhoneNumber } from "@/src/constants/countryCodes";
 
 export default function PerfilPage() {
   const router = useRouter();
@@ -31,7 +33,8 @@ export default function PerfilPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState("");
   const [subtitle, setSubtitle] = useState("");
-  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("57");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [business, setBusiness] = useState<BusinessLogoProfile | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
@@ -41,7 +44,18 @@ export default function PerfilPage() {
     const profile = readBusinessProfile();
     setName(profile.name || "Mi Negocio");
     setSubtitle(profile.subtitle || "");
-    setPhone(profile.phone || "");
+    const parsePhone = (phoneStr: string) => {
+      const raw = phoneStr.replace(/\D/g, "");
+      const matched = ["57", "54", "52", "34", "56", "51"].find(code => raw.startsWith(code));
+      if (matched) {
+        return { code: matched, num: raw.slice(matched.length) };
+      }
+      return { code: "57", num: raw };
+    };
+
+    const parsedInit = parsePhone(profile.phone || "");
+    setCountryCode(parsedInit.code);
+    setPhoneNumber(parsedInit.num);
 
     let cancelled = false;
 
@@ -50,7 +64,9 @@ export default function PerfilPage() {
         if (cancelled) return;
         setBusiness(businessProfile);
         setName(businessProfile.name || profile.name || "Mi Negocio");
-        setPhone(businessProfile.phoneWhatsapp || profile.phone || "");
+        const parsedApi = parsePhone(businessProfile.phoneWhatsapp || profile.phone || "");
+        setCountryCode(parsedApi.code);
+        setPhoneNumber(parsedApi.num);
       })
       .catch((error) => {
         console.error("Error cargando perfil del negocio", error);
@@ -69,10 +85,20 @@ export default function PerfilPage() {
     .join("");
 
   const handleSave = () => {
+    if (phoneNumber.trim().length > 0) {
+      const validation = validatePhoneNumber(countryCode, phoneNumber);
+      if (!validation.isValid) {
+        notify({ type: "error", message: validation.error || "Número de teléfono inválido" });
+        return;
+      }
+    }
+
+    const fullPhone = phoneNumber.trim().length > 0 ? `${countryCode}${phoneNumber}` : "";
+
     writeBusinessProfile({
       name: name.trim(),
       subtitle: subtitle.trim(),
-      phone: phone.trim(),
+      phone: fullPhone,
     });
 
     // TODO: Persistir en backend cuando exista endpoint de perfil/negocio.
@@ -277,12 +303,11 @@ export default function PerfilPage() {
               <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">
                 Número
               </label>
-              <input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Ej: +54 11 1234-5678"
-                inputMode="tel"
-                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-800 shadow-sm outline-none focus:ring-2 focus:ring-emerald-200"
+              <PhoneSelector
+                countryCode={countryCode}
+                onCountryCodeChange={setCountryCode}
+                phoneNumber={phoneNumber}
+                onPhoneNumberChange={setPhoneNumber}
               />
             </div>
           </div>
