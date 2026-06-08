@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Trash2,
   X,
@@ -8,6 +9,8 @@ import {
   Search,
   ArrowDown,
   Calendar as CalendarIcon,
+  BookOpen,
+  Package,
 } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
@@ -35,12 +38,14 @@ import {
   minutesToTime,
 } from "@/src/lib/itemHelpers";
 import { getItemBadges } from "@/src/lib/itemBadges";
+import { getRecipesBulk } from "@/src/services/inventory";
 import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
 
 export default function MiNegocioPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [recipeLineCounts, setRecipeLineCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -113,17 +118,12 @@ export default function MiNegocioPage() {
       const recipeItems = sorted.filter(
         (item) => item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
       );
-      const counts = await Promise.all(
-        recipeItems.map(async (item) => {
-          try {
-            const recipe = await api<Array<unknown>>(`/items/${item.id}/recipe`);
-            return [item.id, recipe.length] as const;
-          } catch {
-            return [item.id, 0] as const;
-          }
-        }),
+      const recipesByItemId = await getRecipesBulk(recipeItems.map((item) => item.id));
+      setRecipeLineCounts(
+        Object.fromEntries(
+          recipeItems.map((item) => [item.id, recipesByItemId[item.id]?.length ?? 0]),
+        ),
       );
-      setRecipeLineCounts(Object.fromEntries(counts));
     } catch (err) {
       console.error(err);
     } finally {
@@ -490,6 +490,31 @@ export default function MiNegocioPage() {
     return groups;
   }, [filteredItems, visibleCount]);
 
+  const selectedInventoryAction = useMemo(() => {
+    if (
+      !selectedItem ||
+      selectedItem.type !== "PRODUCT" ||
+      !selectedItem.inventoryMode ||
+      selectedItem.inventoryMode === "NONE"
+    ) {
+      return null;
+    }
+
+    if (selectedItem.inventoryMode === "SIMPLE") {
+      return {
+        label: "Gestionar stock",
+        icon: Package,
+        href: "/inventario/ingredientes",
+      };
+    }
+
+    return {
+      label: "Configurar receta",
+      icon: BookOpen,
+      href: `/inventario/recetas?itemId=${encodeURIComponent(selectedItem.id)}`,
+    };
+  }, [selectedItem]);
+
   return (
     <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
@@ -503,6 +528,13 @@ export default function MiNegocioPage() {
           onDelete={() => setDeleteId(selectedItem.id)}
           deleteLabel="Eliminar"
           deleteIcon={Trash2}
+          onExtraAction={
+            selectedInventoryAction
+              ? () => router.push(selectedInventoryAction.href)
+              : undefined
+          }
+          extraActionLabel={selectedInventoryAction?.label}
+          extraActionIcon={selectedInventoryAction?.icon}
         />
       ) : (
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />

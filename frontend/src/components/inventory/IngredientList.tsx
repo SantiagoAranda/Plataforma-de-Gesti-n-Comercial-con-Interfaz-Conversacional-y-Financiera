@@ -49,12 +49,8 @@ export function IngredientList({
         const stockValue = parseNumber(it.stockValue);
         const unitLabel = formatIngredientUnit(it);
         const inactive = it.status !== "ACTIVE";
-        const outOfStock = Number.isFinite(currentStock) && currentStock <= 0;
-        const minStock = parseNumber((it as any).minStock ?? 0);
-        const lowStock =
-          it.lowStock !== undefined
-            ? it.lowStock
-            : Number.isFinite(minStock) && minStock > 0 && Number.isFinite(currentStock) && currentStock > 0 && currentStock <= minStock;
+        const outOfStock = !!it.outOfStock;
+        const lowStock = !!it.lowStock;
         const statusBadge = inactive
           ? { label: "Inactivo", tone: "bg-neutral-100 text-neutral-600" }
           : outOfStock

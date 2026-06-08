@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { ReplaceRecipeDto } from './dto/replace-recipe.dto';
@@ -21,5 +21,22 @@ export class RecipesController {
     @Body() dto: ReplaceRecipeDto,
   ) {
     return this.recipesService.replaceForItem(req.user.businessId, itemId, dto);
+  }
+}
+
+@UseGuards(JwtAuthGuard, BusinessActiveGuard)
+@Controller('recipes')
+export class RecipesBulkController {
+  constructor(private readonly recipesService: RecipesService) {}
+
+  @Get('bulk')
+  getBulk(@Req() req: any, @Query('itemIds') itemIds = '') {
+    return this.recipesService.getBulkForItems(
+      req.user.businessId,
+      itemIds
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
   }
 }

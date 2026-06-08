@@ -1,7 +1,6 @@
 "use client";
 
 import { memo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { api } from "@/src/lib/api";
 import { getCached } from "@/src/lib/cache";
 
@@ -9,7 +8,6 @@ import { SelectableCard } from "@/src/components/shared/selection/SelectableCard
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney, truncateText } from "@/src/lib/formatters";
 import { formatCompactDate } from "@/src/lib/datetime";
-import { useLongPress } from "@/src/hooks/useLongPress";
 
 type Props = {
   item: any; 
@@ -23,22 +21,19 @@ import { formatActiveDaysCompact } from "@/src/lib/availability";
 
 function inventoryMeta(item: any, recipeLineCount = 0) {
   if (item.type !== "PRODUCT" || item.inventoryMode === "NONE" || !item.inventoryMode) {
-    return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600", cta: null as null | string, href: null as null | string };
+    return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600" };
   }
   if (item.inventoryMode === "SIMPLE") {
-    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800", cta: "Cargar stock", href: "/inventario/ingredientes" };
+    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800" };
   }
   const configured = recipeLineCount > 0;
   return {
     label: configured ? "Receta configurada" : "Receta pendiente",
     tone: configured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800",
-    cta: "Configurar receta",
-    href: `/inventario/recetas?itemId=${encodeURIComponent(item.id)}`,
   };
 }
 
 function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount = 0 }: Props) {
-  const router = useRouter();
   const [hydratedImages, setHydratedImages] = useState<any[] | null>(null);
   const currentImages = hydratedImages ?? item.images ?? [];
   const imageCount = item._count?.images ?? currentImages.length;
@@ -117,18 +112,6 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
               <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
                 {inventory.label}
               </span>
-              {inventory.cta && inventory.href ? (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    router.push(inventory.href!);
-                  }}
-                  className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-100"
-                >
-                  {inventory.cta}
-                </button>
-              ) : null}
             </div>
 
             <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap ml-auto">

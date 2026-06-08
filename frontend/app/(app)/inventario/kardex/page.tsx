@@ -17,8 +17,8 @@ import {
 import { KardexList } from "@/src/components/inventory/KardexList";
 import {
   InventoryChatActionBar,
-  type InventoryChatMenuAction,
 } from "@/src/components/inventory/InventoryChatActionBar";
+import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { formatUnit } from "@/src/components/inventory/unitLabels";
 import { MovementForm } from "@/src/components/inventory/MovementForm";
@@ -152,21 +152,9 @@ function KardexPageContent() {
     { value: "ADJUSTMENT_NEGATIVE", label: "Ajuste -" },
   ];
 
-  const handlePickAction = (action: InventoryChatMenuAction) => {
-    if (action === "INGREDIENTES") {
-      router.push("/inventario/ingredientes");
-      return;
-    }
-    if (action === "KARDEX") {
-      router.push("/inventario/kardex");
-      return;
-    }
-    if (action === "RECETAS") {
-      router.push("/inventario/recetas");
-      return;
-    }
-    setPurchaseReturnOpen(true);
-  };
+  const handlePickAction = useInventoryNavigation({
+    onPurchaseReturn: () => setPurchaseReturnOpen(true),
+  });
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">

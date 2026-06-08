@@ -90,7 +90,7 @@ export function InventoryChatActionBar({
       if (item.action === "RECETAS") return !!onPickAction;
       return false;
     });
-  }, [onCreateIngredient, onRegisterPurchase, onPickAction]);
+  }, [onCreateIngredient, onRegisterPurchase, onRegisterPurchaseReturn, onPickAction]);
 
   const hasMenu = availableMenu.length > 0;
   const onlyCreateIngredient =

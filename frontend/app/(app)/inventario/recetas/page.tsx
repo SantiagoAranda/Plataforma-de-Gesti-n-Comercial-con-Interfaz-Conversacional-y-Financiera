@@ -11,12 +11,12 @@ import { formatMoney } from "@/src/lib/formatters";
 import { DateSeparator } from "@/src/components/shared/DateSeparator";
 import {
   InventoryChatActionBar,
-  type InventoryChatMenuAction,
 } from "@/src/components/inventory/InventoryChatActionBar";
+import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import {
   getInventorySummary,
-  getRecipe,
+  getRecipesBulk,
   type InventorySummaryIngredient,
   type RecipeLine,
 } from "@/src/services/inventory";
@@ -29,7 +29,6 @@ function RecetasPageContent() {
   const searchParams = useSearchParams();
   const [itemId, setItemId] = useState<string | null>(null);
   const [chatValue, setChatValue] = useState("");
-  const [purchaseReturnOpen, setPurchaseReturnOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
@@ -56,15 +55,9 @@ function RecetasPageContent() {
         (i) => i.type === "PRODUCT" && i.inventoryMode && i.inventoryMode !== "NONE",
       );
 
-      const productsWithRecipes = await Promise.all(
-        inventoryProducts.map(async (product) => {
-          let recipeLines: RecipeLine[] = [];
-          try {
-            recipeLines = (await getRecipe(product.id)) ?? [];
-          } catch (e) {
-            console.error("Failed to load recipe for", product.id, e);
-          }
-
+      const recipesByItemId = await getRecipesBulk(inventoryProducts.map((product) => product.id));
+      const productsWithRecipes = inventoryProducts.map((product) => {
+          const recipeLines: RecipeLine[] = recipesByItemId[product.id] ?? [];
           const ingredients = recipeLines.map((line) => {
             const summaryIng = summaryData?.find((s) => s.id === line.ingredientId);
             return {
@@ -89,8 +82,7 @@ function RecetasPageContent() {
             value: undefined,
             ingredients,
           } as ComposedProduct;
-        }),
-      );
+        });
 
       setProducts(productsWithRecipes);
     } catch (err) {
@@ -144,21 +136,7 @@ function RecetasPageContent() {
     }, 0);
   };
 
-  const handlePickAction = (action: InventoryChatMenuAction) => {
-    if (action === "INGREDIENTES") {
-      router.push("/inventario/ingredientes");
-      return;
-    }
-    if (action === "KARDEX") {
-      router.push("/inventario/kardex");
-      return;
-    }
-    if (action === "RECETAS") {
-      router.push("/inventario/recetas");
-      return;
-    }
-    setPurchaseReturnOpen(true);
-  };
+  const handlePickAction = useInventoryNavigation();
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -328,24 +306,6 @@ function RecetasPageContent() {
           onSearchChange={setChatValue}
           hideSearchInput
         />
-      </ItemPanelLayout>
-
-      <ItemPanelLayout
-        open={purchaseReturnOpen}
-        title="Devoluci\u00F3n de compras"
-        subtitle="Pr\u00F3ximamente"
-        onClose={() => setPurchaseReturnOpen(false)}
-      >
-        <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
-          Devoluci\u00F3n de compras estar\u00E1 disponible pr\u00F3ximamente
-        </div>
-        <button
-          type="button"
-          onClick={() => setPurchaseReturnOpen(false)}
-          className="h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99]"
-        >
-          Entendido
-        </button>
       </ItemPanelLayout>
     </div>
   );

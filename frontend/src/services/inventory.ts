@@ -165,6 +165,8 @@ export type ReplaceRecipeDto = {
   lines: RecipeLine[];
 };
 
+export type RecipeBulkResult = Record<string, RecipeLine[]>;
+
 export function listIngredients(query: { status?: IngredientStatus; search?: string } = {}) {
   const qs = new URLSearchParams();
   if (query.status) qs.set("status", query.status);
@@ -263,6 +265,13 @@ export function getInventoryKardex(query: InventoryKardexGlobalQuery = {}) {
 
 export function getRecipe(itemId: string) {
   return api<RecipeLine[]>(`/items/${itemId}/recipe`);
+}
+
+export function getRecipesBulk(itemIds: string[]): Promise<RecipeBulkResult> {
+  const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
+  if (!uniqueItemIds.length) return Promise.resolve({});
+  const qs = new URLSearchParams({ itemIds: uniqueItemIds.join(",") });
+  return api<RecipeBulkResult>(`/recipes/bulk?${qs.toString()}`);
 }
 
 export function replaceRecipe(itemId: string, dto: ReplaceRecipeDto) {

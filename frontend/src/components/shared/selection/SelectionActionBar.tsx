@@ -10,12 +10,15 @@ type Props = {
     onView?: () => void;
     onDelete?: () => void;
     onToggleStatus?: () => void;
+    onExtraAction?: () => void;
     editLabel?: string;
     viewLabel?: string;
     deleteLabel?: string;
     toggleStatusLabel?: string;
+    extraActionLabel?: string;
     deleteIcon?: LucideIcon;
     viewIcon?: LucideIcon;
+    extraActionIcon?: LucideIcon;
 };
 
 export function SelectionActionBar({
@@ -26,12 +29,15 @@ export function SelectionActionBar({
     onView,
     onDelete,
     onToggleStatus,
+    onExtraAction,
     editLabel = "",
     viewLabel = "Ver",
     deleteLabel = "",
     toggleStatusLabel = "Inhabilitar",
+    extraActionLabel = "Acción",
     deleteIcon: DeleteIcon = Trash2,
     viewIcon: ViewIcon = Eye,
+    extraActionIcon: ExtraActionIcon,
 }: Props) {
     if (!visible) return null;
 
@@ -95,6 +101,18 @@ export function SelectionActionBar({
                         </button>
                     )}
 
+                    {onExtraAction && ExtraActionIcon && (
+                        <button
+                            type="button"
+                            onClick={onExtraAction}
+                            title={extraActionLabel}
+                            aria-label={extraActionLabel}
+                            className="grid h-10 w-10 place-items-center rounded-full text-emerald-700 transition hover:bg-emerald-50 active:scale-95"
+                        >
+                            <ExtraActionIcon className="h-5 w-5" />
+                        </button>
+                    )}
+
                     {onDelete && (
                         <button
                             type="button"
@@ -111,4 +129,4 @@ export function SelectionActionBar({
             </div>
         </div>
     );
-}
+}

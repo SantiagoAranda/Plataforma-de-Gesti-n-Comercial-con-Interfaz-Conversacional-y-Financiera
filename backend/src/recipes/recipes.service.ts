@@ -22,6 +22,41 @@ export class RecipesService {
     });
   }
 
+  async getBulkForItems(businessId: string, itemIds: string[]) {
+    const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
+    if (!uniqueItemIds.length) return {};
+
+    const items = await this.prisma.item.findMany({
+      where: {
+        businessId,
+        id: { in: uniqueItemIds },
+      },
+      select: { id: true },
+    });
+    const allowedItemIds = items.map((item) => item.id);
+
+    if (!allowedItemIds.length) return {};
+
+    const recipes = await this.prisma.recipe.findMany({
+      where: {
+        businessId,
+        itemId: { in: allowedItemIds },
+      },
+      include: { ingredient: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const byItemId = Object.fromEntries(
+      allowedItemIds.map((id) => [id, [] as typeof recipes]),
+    );
+
+    for (const recipe of recipes) {
+      byItemId[recipe.itemId]?.push(recipe);
+    }
+
+    return byItemId;
+  }
+
   async replaceForItem(businessId: string, itemId: string, dto: ReplaceRecipeDto) {
     const item = await this.loadItemOrThrow(businessId, itemId);
     await this.validateRecipeForItem(businessId, item, dto.lines);

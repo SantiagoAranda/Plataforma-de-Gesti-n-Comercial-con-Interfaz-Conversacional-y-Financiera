@@ -90,4 +90,41 @@ describe('RecipesService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('loads recipes in bulk only for items from the same business', async () => {
+    const { service, prisma } = createService({
+      id: itemId,
+      businessId,
+      type: 'PRODUCT',
+      inventoryMode: 'RECIPE_BASED',
+    });
+    prisma.item.findMany = mockFn().mockResolvedValue([{ id: itemId }]);
+    prisma.recipe.findMany.mockResolvedValue([
+      { id: 'recipe-1', itemId, ingredientId, ingredient: { id: ingredientId } },
+    ]);
+
+    const result = await service.getBulkForItems(businessId, [
+      itemId,
+      itemId,
+      'other-business-item',
+    ]);
+
+    expect(prisma.item.findMany).toHaveBeenCalledWith({
+      where: {
+        businessId,
+        id: { in: [itemId, 'other-business-item'] },
+      },
+      select: { id: true },
+    });
+    expect(prisma.recipe.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          businessId,
+          itemId: { in: [itemId] },
+        },
+      }),
+    );
+    expect(Object.keys(result)).toEqual([itemId]);
+    expect(result[itemId]).toHaveLength(1);
+  });
 });

@@ -383,6 +383,204 @@ async function seedPayrollAccountingMappings(base: string) {
     );
 }
 
+async function seedInventoryDemoData() {
+    const business = await prisma.business.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+    });
+
+    if (!business) {
+        console.log("Inventory seed omitido: no hay negocios creados");
+        return;
+    }
+
+    const ingredientInputs = [
+        {
+            name: "Harina demo",
+            consumptionUnit: "G" as const,
+            purchaseUnit: "KG" as const,
+            purchaseToConsumptionFactor: "1000",
+            minStock: "1000",
+            quantity: "5000",
+            unitCost: "4",
+        },
+        {
+            name: "Queso demo",
+            consumptionUnit: "G" as const,
+            purchaseUnit: "KG" as const,
+            purchaseToConsumptionFactor: "1000",
+            minStock: "500",
+            quantity: "2000",
+            unitCost: "18",
+        },
+        {
+            name: "Salsa demo",
+            consumptionUnit: "ML" as const,
+            purchaseUnit: "L" as const,
+            purchaseToConsumptionFactor: "1000",
+            minStock: "500",
+            quantity: "3000",
+            unitCost: "6",
+        },
+    ];
+
+    const ingredients = [];
+    for (const input of ingredientInputs) {
+        const ingredient = await prisma.ingredient.upsert({
+            where: {
+                businessId_name: {
+                    businessId: business.id,
+                    name: input.name,
+                },
+            },
+            update: {
+                status: "ACTIVE",
+                consumptionUnit: input.consumptionUnit,
+                purchaseUnit: input.purchaseUnit,
+                purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
+                minStock: input.minStock,
+            },
+            create: {
+                businessId: business.id,
+                name: input.name,
+                consumptionUnit: input.consumptionUnit,
+                purchaseUnit: input.purchaseUnit,
+                purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
+                minStock: input.minStock,
+            },
+        });
+
+        const existingInitial = await prisma.inventoryMovement.findFirst({
+            where: {
+                businessId: business.id,
+                ingredientId: ingredient.id,
+                type: "INVENTORY_INITIAL",
+            },
+            select: { id: true },
+        });
+
+        if (!existingInitial) {
+            const quantity = input.quantity;
+            const unitCost = input.unitCost;
+            await prisma.inventoryMovement.create({
+                data: {
+                    businessId: business.id,
+                    ingredientId: ingredient.id,
+                    type: "INVENTORY_INITIAL",
+                    quantity,
+                    unitCost,
+                    totalValue: Number(quantity) * Number(unitCost),
+                    stockAfter: quantity,
+                    averageCostAfter: unitCost,
+                    referenceType: "MANUAL",
+                    detail: "Seed demo inventario",
+                },
+            });
+            await prisma.ingredient.update({
+                where: { id: ingredient.id },
+                data: {
+                    currentStock: quantity,
+                    averageCost: unitCost,
+                },
+            });
+        }
+
+        ingredients.push(ingredient);
+    }
+
+    let simpleItem = await prisma.item.findFirst({
+        where: { businessId: business.id, name: "Pan demo inventario" },
+    });
+    if (!simpleItem) {
+        simpleItem = await prisma.item.create({
+            data: {
+                businessId: business.id,
+                name: "Pan demo inventario",
+                type: "PRODUCT",
+                price: "2500",
+                status: "ACTIVE",
+                inventoryMode: "SIMPLE",
+            },
+        });
+    } else {
+        await prisma.item.update({
+            where: { id: simpleItem.id },
+            data: { inventoryMode: "SIMPLE", status: "ACTIVE" },
+        });
+    }
+
+    await prisma.recipe.upsert({
+        where: {
+            businessId_itemId_ingredientId: {
+                businessId: business.id,
+                itemId: simpleItem.id,
+                ingredientId: ingredients[0].id,
+            },
+        },
+        update: {
+            quantityRequired: "120",
+            isOptional: false,
+        },
+        create: {
+            businessId: business.id,
+            itemId: simpleItem.id,
+            ingredientId: ingredients[0].id,
+            quantityRequired: "120",
+            isOptional: false,
+        },
+    });
+
+    let recipeItem = await prisma.item.findFirst({
+        where: { businessId: business.id, name: "Pizza demo inventario" },
+    });
+    if (!recipeItem) {
+        recipeItem = await prisma.item.create({
+            data: {
+                businessId: business.id,
+                name: "Pizza demo inventario",
+                type: "PRODUCT",
+                price: "18000",
+                status: "ACTIVE",
+                inventoryMode: "RECIPE_BASED",
+            },
+        });
+    } else {
+        await prisma.item.update({
+            where: { id: recipeItem.id },
+            data: { inventoryMode: "RECIPE_BASED", status: "ACTIVE" },
+        });
+    }
+
+    for (const line of [
+        { ingredient: ingredients[0], quantityRequired: "250" },
+        { ingredient: ingredients[1], quantityRequired: "120" },
+        { ingredient: ingredients[2], quantityRequired: "80" },
+    ]) {
+        await prisma.recipe.upsert({
+            where: {
+                businessId_itemId_ingredientId: {
+                    businessId: business.id,
+                    itemId: recipeItem.id,
+                    ingredientId: line.ingredient.id,
+                },
+            },
+            update: {
+                quantityRequired: line.quantityRequired,
+                isOptional: false,
+            },
+            create: {
+                businessId: business.id,
+                itemId: recipeItem.id,
+                ingredientId: line.ingredient.id,
+                quantityRequired: line.quantityRequired,
+                isOptional: false,
+            },
+        });
+    }
+
+    console.log("Inventory demo seed OK");
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
@@ -395,6 +593,7 @@ async function main() {
     await seedOvertimeRates(base);
     await seedSolidarityBrackets(base);
     await seedPayrollAccountingMappings(base);
+    await seedInventoryDemoData();
 }
 
 main()

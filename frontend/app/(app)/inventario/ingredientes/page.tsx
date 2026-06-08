@@ -17,8 +17,8 @@ import {
 import { IngredientList } from "@/src/components/inventory/IngredientList";
 import {
   InventoryChatActionBar,
-  type InventoryChatMenuAction,
 } from "@/src/components/inventory/InventoryChatActionBar";
+import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { MovementForm } from "@/src/components/inventory/MovementForm";
@@ -77,21 +77,9 @@ export default function IngredientesPage() {
     [ingredients, purchaseReturnIngredientId],
   );
 
-  const handlePickAction = (action: InventoryChatMenuAction) => {
-    if (action === "INGREDIENTES") {
-      router.push("/inventario/ingredientes");
-      return;
-    }
-    if (action === "KARDEX") {
-      router.push("/inventario/kardex");
-      return;
-    }
-    if (action === "RECETAS") {
-      router.push("/inventario/recetas");
-      return;
-    }
-    setPurchaseReturnOpen(true);
-  };
+  const handlePickAction = useInventoryNavigation({
+    onPurchaseReturn: () => setPurchaseReturnOpen(true),
+  });
 
   const openIngredientCreateFromChat = useCallback(() => {
     const text = chatValue.trim();

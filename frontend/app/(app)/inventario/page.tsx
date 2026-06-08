@@ -13,6 +13,7 @@ import { formatMoney } from "@/src/lib/formatters";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
+import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
@@ -21,7 +22,7 @@ import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 import {
   createIngredient,
   getInventorySummary,
-  getRecipe,
+  getRecipesBulk,
   type InventorySummaryIngredient,
   type RecipeLine,
 } from "@/src/services/inventory";
@@ -82,18 +83,9 @@ export default function InventarioPage() {
         (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && (item.inventoryMode === "SIMPLE" || item.inventoryMode === "RECIPE_BASED"),
       );
 
-      const recipes = await Promise.all(
-        inventoryProducts.map(async (item) => {
-          try {
-            return [item.id, (await getRecipe(item.id)) ?? []] as const;
-          } catch (err) {
-            console.error("Failed to load recipe for", item.id, err);
-            return [item.id, []] as const;
-          }
-        }),
+      setRecipesByItemId(
+        await getRecipesBulk(inventoryProducts.map((item) => item.id)),
       );
-
-      setRecipesByItemId(Object.fromEntries(recipes));
     } catch (err) {
       console.error(err);
       setError(getErrorMessage(err, "No se pudo cargar el inventario"));
@@ -116,15 +108,8 @@ export default function InventarioPage() {
     const lowStock: InventorySummaryIngredient[] = [];
 
     for (const item of summary) {
-      const currentStock = parseNumber(item.currentStock);
-      const minStock = parseNumber(item.minStock ?? 0);
-      const isOut = item.outOfStock ?? (Number.isFinite(currentStock) && currentStock <= 0);
-      const isLow =
-        item.lowStock ??
-        (Number.isFinite(minStock) && minStock > 0 && Number.isFinite(currentStock) && currentStock > 0 && currentStock <= minStock);
-
-      if (isOut) outOfStock.push(item);
-      else if (isLow) lowStock.push(item);
+      if (item.outOfStock) outOfStock.push(item);
+      else if (item.lowStock) lowStock.push(item);
     }
 
     return { outOfStock, lowStock, count: outOfStock.length + lowStock.length };
@@ -180,6 +165,11 @@ export default function InventarioPage() {
     setPrefillIngredientName(text);
     setIngredientSheetOpen(true);
   }, [searchQuery]);
+
+  const handlePickAction = useInventoryNavigation({
+    onIngredients: () => setTab("ingredients"),
+    onRecipes: () => setTab("recipes"),
+  });
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -256,11 +246,8 @@ export default function InventarioPage() {
               ) : (
                 visibleIngredients.map((item) => {
                   const currentStock = parseNumber(item.currentStock);
-                  const minStock = parseNumber(item.minStock ?? 0);
-                  const outOfStock = item.outOfStock ?? (Number.isFinite(currentStock) && currentStock <= 0);
-                  const lowStock =
-                    item.lowStock ??
-                    (Number.isFinite(minStock) && minStock > 0 && Number.isFinite(currentStock) && currentStock > 0 && currentStock <= minStock);
+                  const outOfStock = !!item.outOfStock;
+                  const lowStock = !!item.lowStock;
                   const unitLabel = formatIngredientUnit(item);
                   const averageCost = parseNumber(item.averageCost);
                   const warning = outOfStock || lowStock;
@@ -377,11 +364,7 @@ export default function InventarioPage() {
         onCreateIngredient={openCreateIngredientFromBar}
         onRegisterPurchase={() => openMovementSheet("PURCHASE")}
         onRegisterPurchaseReturn={() => openMovementSheet("PURCHASE_RETURN")}
-        onPickAction={(action) => {
-          if (action === "INGREDIENTES") setTab("ingredients");
-          if (action === "RECETAS") setTab("recipes");
-          if (action === "KARDEX") router.push("/inventario/kardex");
-        }}
+        onPickAction={handlePickAction}
       />
 
       <ItemPanelLayout
