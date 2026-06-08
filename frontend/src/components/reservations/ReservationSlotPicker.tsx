@@ -225,14 +225,14 @@ export default function ReservationSlotPicker({
 
   return (
     <div className={className}>
-      <div className="mb-4">
-        <div className="text-2xl font-semibold">Selecciona una fecha</div>
-        <div className="text-sm text-black/50">
+      <div className="mb-3">
+        <div className="text-lg font-bold text-neutral-800">Selecciona una fecha</div>
+        <div className="text-xs text-neutral-500">
           Selecciona día y horario disponible
         </div>
       </div>
 
-      <div className="relative rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5 overflow-hidden">
+      <div className="relative rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5 overflow-hidden">
         {/* Spinner visual de carga cubriendo el calendario con glassmorphism */}
         {isLoadingDays && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/60 backdrop-blur-[1.5px] rounded-3xl transition-all duration-300">
@@ -292,13 +292,13 @@ export default function ReservationSlotPicker({
           </button>
         </div>
 
-        <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs text-black/40">
+        <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-neutral-400">
           {WEEKDAYS.map((w, i) => (
             <div key={`${w}-${i}`}>{w}</div>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-7 gap-2">
+        <div className="mt-2.5 grid grid-cols-7 gap-1.5">
           {grid.map(({ date, inMonth }, i) => {
             const dateKey = formatLocalDateKey(date);
             const selected = selectedDate && sameDay(new Date(`${selectedDate}T00:00:00`), date);
@@ -311,12 +311,12 @@ export default function ReservationSlotPicker({
                 disabled={isLoadingDays || !isAvailable}
                 onClick={() => handlePickDate(date, inMonth)}
                 className={cn(
-                  "h-10 rounded-full text-sm transition-all duration-200",
+                  "h-8 w-8 mx-auto flex items-center justify-center rounded-full text-xs font-semibold transition-all duration-200",
                   selected
-                    ? "bg-emerald-500 text-white"
+                    ? "bg-emerald-500 text-white shadow-sm"
                     : isAvailable
                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                      : "text-black/20",
+                      : "text-neutral-300",
                   isLoadingDays && "opacity-50 cursor-not-allowed",
                 )}
               >
@@ -333,8 +333,8 @@ export default function ReservationSlotPicker({
         )}
       </div>
 
-      <div className="mt-8">
-        <div className="text-xl font-semibold">Selecciona un horario</div>
+      <div className="mt-5">
+        <div className="text-xs font-black text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
 
         {selectedDate && !loadingSlots && timeSlots.length === 0 && (
           <div className="mt-3 text-sm text-black/40">
@@ -346,17 +346,17 @@ export default function ReservationSlotPicker({
           <div className="mt-3 text-sm text-black/40">Cargando horarios...</div>
         )}
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="mt-3 grid grid-cols-3 gap-2">
           {timeSlots.map((time) => (
             <button
               key={time}
               type="button"
               onClick={() => handlePickTime(time)}
               className={cn(
-                "h-12 rounded-full border text-sm font-semibold",
+                "h-10 rounded-xl border text-xs font-bold transition-all duration-150",
                 selectedTime === time
-                  ? "bg-[#CFF8DC]"
-                  : "border-black/10 bg-white",
+                  ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                  : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",
               )}
             >
               {time}

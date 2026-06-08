@@ -169,7 +169,7 @@ export class SalesService {
         });
 
         const overlapping = reservations.some(
-          (reservation) => start < reservation.endMinute && end > reservation.startMinute,
+          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
         if (!blocked && !overlapping) {

@@ -37,6 +37,8 @@ interface ItemFormContentProps {
   durationInput: string;
   setDurationInput: (val: string) => void;
   setDuration: (val: number) => void;
+  durationAdjustmentMessage: string | null;
+  setDurationAdjustmentMessage: (msg: string | null) => void;
   week: WeeklySchedule[];
   setWeek: (week: WeeklySchedule[]) => void;
   currentDayIndex: number;
@@ -71,6 +73,8 @@ export function ItemFormContent({
   durationInput,
   setDurationInput,
   setDuration,
+  durationAdjustmentMessage,
+  setDurationAdjustmentMessage,
   week,
   setWeek,
   currentDayIndex,
@@ -174,20 +178,50 @@ export function ItemFormContent({
             <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Duración</label>
             <div className="relative">
               <input
-                type="text" inputMode="numeric" value={durationInput}
+                type="text" inputMode="decimal" value={durationInput}
                 onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9]/g, "");
-                  setDurationInput(v); if (v && !isNaN(Number(v))) setDuration(Number(v));
+                  const v = e.target.value.replace(/[^0-9.,]/g, "").replace(",", ".");
+                  const parts = v.split(".");
+                  const cleanValue = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
+                  setDurationInput(cleanValue);
+                  setDurationAdjustmentMessage(null);
+                  setFormErrors(p => ({ ...p, duration: undefined }));
                 }}
                 onBlur={() => {
-                  const n = Number(durationInput);
-                  if (!durationInput || isNaN(n) || n < 5) { setDuration(5); setDurationInput("5"); }
-                  else { setDuration(n); setDurationInput(String(n)); }
+                  const n = parseFloat(durationInput);
+                  if (!durationInput || isNaN(n)) {
+                    setDuration(60);
+                    setDurationInput("1");
+                    setDurationAdjustmentMessage(null);
+                  } else {
+                    let rounded = Math.round(n);
+                    if (rounded <= 0) rounded = 1;
+                    
+                    if (n !== rounded) {
+                      setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
+                    } else {
+                      setDurationAdjustmentMessage(null);
+                    }
+                    setDuration(rounded * 60);
+                    setDurationInput(String(rounded));
+                  }
                 }}
-                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold shadow-sm outline-none"
+                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${
+                  formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-green-500"
+                }`}
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-bold uppercase">min</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-bold uppercase">horas</span>
             </div>
+            {durationAdjustmentMessage && (
+              <p className="text-[11px] font-medium text-amber-600 mt-1">
+                {durationAdjustmentMessage}
+              </p>
+            )}
+            {formErrors.duration && (
+              <p className="text-[10px] font-bold text-red-500 uppercase mt-1">
+                {formErrors.duration}
+              </p>
+            )}
           </div>
         )}
       </div>
