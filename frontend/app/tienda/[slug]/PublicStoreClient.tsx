@@ -391,7 +391,7 @@ export default function PublicStoreClient() {
     return () => window.clearTimeout(id);
   }, [isSearchOpen]);
 
-  const handleConfirmOrder = async () => {
+  const handleConfirmOrder = async (documentVal?: string) => {
     if (preview) {
       notify({
         type: "info",
@@ -413,6 +413,7 @@ export default function PublicStoreClient() {
             itemId: item.id,
             quantity: item.quantity,
           })),
+          note: documentVal?.trim() ? `CEDULA: ${documentVal.trim()}` : null,
         }),
       });
 
@@ -568,7 +569,7 @@ export default function PublicStoreClient() {
               onCountryCodeChange={setCountryCode}
               phoneNumber={phoneNumber}
               onPhoneNumberChange={setPhoneNumber}
-              onConfirm={handleConfirmOrder}
+              onConfirm={(doc) => handleConfirmOrder(doc)}
               onClose={() => setShowCartModal(false)}
             />
           </div>

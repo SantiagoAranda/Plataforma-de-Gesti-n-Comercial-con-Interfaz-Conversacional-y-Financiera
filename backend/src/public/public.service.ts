@@ -554,6 +554,7 @@ export class PublicService {
         origin: 'PUBLIC_STORE',
         customerName: dto.customerName,
         customerWhatsapp: dto.customerWhatsapp,
+        note: dto.note,
         sentAt: new Date(),
 
         items: {
