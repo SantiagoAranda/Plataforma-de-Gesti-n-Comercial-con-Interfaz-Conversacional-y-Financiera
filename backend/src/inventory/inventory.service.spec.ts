@@ -21,6 +21,13 @@ describe('InventoryService', () => {
         count: mockFn(),
         create: mockFn(),
       },
+      accountingMovement: {
+        findFirst: mockFn(),
+        create: mockFn(),
+      },
+      pucCuenta: {
+        findUnique: mockFn(),
+      },
       recipe: {
         findMany: mockFn(),
       },
@@ -40,6 +47,14 @@ describe('InventoryService', () => {
     } as any;
 
     return { service: new InventoryService(prisma), tx, prisma };
+  }
+
+  function createServiceWithAccounting(overrides: Record<string, any> = {}) {
+    const base = createService(overrides);
+    return {
+      ...base,
+      service: new InventoryService(base.prisma, {} as any),
+    };
   }
 
   it('recalculates weighted average cost on purchase', async () => {
@@ -175,6 +190,107 @@ describe('InventoryService', () => {
     expect(movement.averageCostAfter.toString()).toBe('2000');
   });
 
+  it('posts accounting movement for PURCHASE in the same inventory transaction', async () => {
+    const { service, tx } = createServiceWithAccounting();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({
+        id: 'purchase-movement-1',
+        ...data,
+        occurredAt: new Date('2026-06-01T00:00:00.000Z'),
+        ingredient: { id: ingredientId, name: 'Flour' },
+      }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.accountingMovement.findFirst.mockResolvedValue(null);
+    tx.pucCuenta.findUnique.mockResolvedValueOnce({ code: '1435' });
+    tx.accountingMovement.create.mockResolvedValue({ id: 'accounting-1' });
+
+    await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '2',
+      purchaseUnitCost: '12000',
+    } as any);
+
+    expect(tx.accountingMovement.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        businessId,
+        pucCuentaCode: '1435',
+        amount: new Prisma.Decimal(24000),
+        nature: 'DEBIT',
+        detail: 'Compra de inventario: Flour',
+        originType: 'MANUAL',
+        originId: 'purchase-movement-1',
+      }),
+    });
+  });
+
+  it('does not duplicate accounting movement for the same InventoryMovement origin', async () => {
+    const { service, tx } = createServiceWithAccounting();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({
+        id: 'adjustment-movement-1',
+        ...data,
+        occurredAt: new Date('2026-06-01T00:00:00.000Z'),
+        ingredient: { id: ingredientId, name: 'Flour' },
+      }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.accountingMovement.findFirst.mockResolvedValue({ id: 'accounting-existing' });
+
+    await service.registerNegativeAdjustment(businessId, {
+      ingredientId,
+      quantity: '1',
+      detail: 'waste',
+    });
+
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+    expect(tx.pucCuenta.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('does not post accounting automatically for INVENTORY_INITIAL', async () => {
+    const { service, tx } = createServiceWithAccounting();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue(null);
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({
+        id: 'initial-movement-1',
+        ...data,
+        occurredAt: new Date('2026-06-01T00:00:00.000Z'),
+        ingredient: { id: ingredientId, name: 'Flour' },
+      }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    await service.registerInitial(businessId, {
+      ingredientId,
+      quantity: '10',
+      unitCost: '2',
+    });
+
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+  });
+
   it('throws BadRequestException when purchaseToConsumptionFactor is zero in purchase-unit mode', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
@@ -232,7 +348,7 @@ describe('InventoryService', () => {
     expect(movement.unitCost.toString()).toBe('2.5');
     expect(movement.stockAfter.toString()).toBe('10');
     expect(movement.averageCostAfter.toString()).toBe('2.5');
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith({
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         type: 'INVENTORY_INITIAL',
         quantity: new Prisma.Decimal(10),
@@ -243,7 +359,7 @@ describe('InventoryService', () => {
         referenceType: 'MANUAL',
         detail: 'opening stock',
       }),
-    });
+    }));
     expect(tx.ingredient.update).toHaveBeenCalledWith({
       where: { id: ingredientId },
       data: {
@@ -297,6 +413,99 @@ describe('InventoryService', () => {
 
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
     expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('reconciles stock and average cost from kardex movements', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(999),
+      averageCost: new Prisma.Decimal(999),
+    });
+    tx.inventoryMovement.findMany.mockResolvedValue([
+      {
+        type: 'INVENTORY_INITIAL',
+        quantity: new Prisma.Decimal(10),
+        unitCost: new Prisma.Decimal(2),
+      },
+      {
+        type: 'PURCHASE',
+        quantity: new Prisma.Decimal(10),
+        unitCost: new Prisma.Decimal(4),
+      },
+      {
+        type: 'SALE',
+        quantity: new Prisma.Decimal(5),
+        unitCost: new Prisma.Decimal(3),
+      },
+      {
+        type: 'ADJUSTMENT_NEGATIVE',
+        quantity: new Prisma.Decimal(2),
+        unitCost: new Prisma.Decimal(3),
+      },
+      {
+        type: 'ADJUSTMENT_POSITIVE',
+        quantity: new Prisma.Decimal(7),
+        unitCost: new Prisma.Decimal(5),
+      },
+    ]);
+    tx.ingredient.update.mockResolvedValue({});
+
+    const result = await service.reconcileIngredient(businessId, ingredientId);
+
+    expect(result.previousStock.toString()).toBe('999');
+    expect(result.previousAverageCost.toString()).toBe('999');
+    expect(result.recalculatedStock.toString()).toBe('20');
+    expect(result.recalculatedAverageCost.toString()).toBe('3.7');
+    expect(result.movementsProcessed).toBe(5);
+    expect(tx.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: {
+        currentStock: new Prisma.Decimal(20),
+        averageCost: new Prisma.Decimal('3.7'),
+      },
+    });
+  });
+
+  it('does not reconcile an ingredient from another business', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.reconcileIngredient('business-2', ingredientId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('does not register purchase for an ingredient from another business', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.registerPurchase('business-2', {
+        ingredientId,
+        purchaseQuantity: '1',
+        purchaseUnitCost: '100',
+      } as any),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('does not list kardex for an ingredient from another business', async () => {
+    const { service, tx, prisma } = createService();
+    tx.ingredient.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.listKardex('business-2', ingredientId, {}),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.inventoryMovement.findMany).not.toHaveBeenCalled();
   });
 
   it('creates PURCHASE_RETURN movement, decreases stock, and recalculates average cost using return unitCost', async () => {
@@ -395,7 +604,7 @@ describe('InventoryService', () => {
     );
 
     expect(movements).toHaveLength(1);
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith({
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         businessId,
         ingredientId,
@@ -409,7 +618,7 @@ describe('InventoryService', () => {
         stockAfter: new Prisma.Decimal(8),
         averageCostAfter: new Prisma.Decimal(3),
       }),
-    });
+    }));
     expect(tx.ingredient.update).toHaveBeenCalledWith({
       where: { id: ingredientId },
       data: {
@@ -672,7 +881,7 @@ describe('InventoryService', () => {
 
     expect(returns).toHaveLength(2);
 
-    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(1, {
+    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
       data: expect.objectContaining({
         type: 'SALE_RETURN',
         ingredientId,
@@ -685,15 +894,15 @@ describe('InventoryService', () => {
         averageCostAfter: new Prisma.Decimal(4),
         detail: 'Cliente canceló',
       }),
-    });
+    }));
 
-    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(2, {
+    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
       data: expect.objectContaining({
         orderItemId: 'order-item-2',
         stockAfter: new Prisma.Decimal(8),
         averageCostAfter: new Prisma.Decimal(4),
       }),
-    });
+    }));
 
     expect(tx.ingredient.update).toHaveBeenNthCalledWith(1, {
       where: { id: ingredientId },

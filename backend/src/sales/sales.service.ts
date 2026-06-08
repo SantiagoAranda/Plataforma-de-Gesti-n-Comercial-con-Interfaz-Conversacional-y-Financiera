@@ -941,15 +941,6 @@ export class SalesService {
       });
 
       if (!order) throw new NotFoundException('Order not found');
-      if (order.status === 'CANCELLED') {
-        throw new BadRequestException('Cancelled orders cannot be reversed');
-      }
-      if (order.status !== 'COMPLETED') {
-        throw new BadRequestException('Only completed orders can be reversed');
-      }
-      if (!order.inventoryPostedAt) {
-        throw new BadRequestException('Order inventory was not posted');
-      }
 
       const existingReturn = await tx.inventoryMovement.findMany({
         where: {
@@ -963,6 +954,16 @@ export class SalesService {
 
       if (existingReturn.length) {
         throw new ConflictException('Order inventory already reversed');
+      }
+
+      if (order.status === 'CANCELLED') {
+        throw new BadRequestException('Cancelled orders cannot be reversed');
+      }
+      if (order.status !== 'COMPLETED') {
+        throw new BadRequestException('Only completed orders can be reversed');
+      }
+      if (!order.inventoryPostedAt) {
+        throw new BadRequestException('Order inventory was not posted');
       }
 
       const reversalMovements =

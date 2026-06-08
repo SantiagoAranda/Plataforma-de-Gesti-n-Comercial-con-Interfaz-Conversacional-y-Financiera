@@ -5,11 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AccountingMovementOriginType,
   Ingredient,
   InventoryMovementType,
   InventoryReferenceType,
+  MovementNature,
   Prisma,
 } from '@prisma/client';
+import { AccountingService } from '../accounting/accounting.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
@@ -62,7 +65,10 @@ type ApplyInventoryMovementInput = {
 
 @Injectable()
 export class InventoryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private accountingService?: AccountingService,
+  ) {}
 
   async registerInitial(businessId: string, dto: CreateInventoryInitialDto) {
     return this.runInventoryTransaction(async (tx) => {
@@ -87,7 +93,7 @@ export class InventoryService {
         dto,
       );
 
-      return this.applyInventoryMovement(tx, businessId, {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
         type: 'PURCHASE',
         quantity,
@@ -96,6 +102,10 @@ export class InventoryService {
         referenceId: dto.referenceId ?? null,
         detail: dto.detail ?? null,
       });
+
+      await this.postManualInventoryAccounting(tx, businessId, movement);
+
+      return movement;
     });
   }
 
@@ -103,8 +113,8 @@ export class InventoryService {
     businessId: string,
     dto: CreateInventoryPurchaseReturnDto,
   ) {
-    return this.runInventoryTransaction((tx) =>
-      this.applyInventoryMovement(tx, businessId, {
+    return this.runInventoryTransaction(async (tx) => {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
         type: 'PURCHASE_RETURN',
         quantity: dto.quantity,
@@ -112,39 +122,114 @@ export class InventoryService {
         referenceType: 'PURCHASE_MANUAL',
         referenceId: dto.referenceId ?? null,
         detail: dto.detail ?? null,
-      }),
-    );
+      });
+
+      await this.postManualInventoryAccounting(tx, businessId, movement);
+
+      return movement;
+    });
   }
 
   async registerPositiveAdjustment(
     businessId: string,
     dto: CreateInventoryAdjustmentDto,
   ) {
-    return this.runInventoryTransaction((tx) =>
-      this.applyInventoryMovement(tx, businessId, {
+    return this.runInventoryTransaction(async (tx) => {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
         type: 'ADJUSTMENT_POSITIVE',
         quantity: dto.quantity,
         unitCost: dto.unitCost,
         referenceType: 'MANUAL',
         detail: dto.detail,
-      }),
-    );
+      });
+
+      await this.postManualInventoryAccounting(tx, businessId, movement);
+
+      return movement;
+    });
   }
 
   async registerNegativeAdjustment(
     businessId: string,
     dto: CreateInventoryAdjustmentDto,
   ) {
-    return this.runInventoryTransaction((tx) =>
-      this.applyInventoryMovement(tx, businessId, {
+    return this.runInventoryTransaction(async (tx) => {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
         ingredientId: dto.ingredientId,
         type: 'ADJUSTMENT_NEGATIVE',
         quantity: dto.quantity,
         referenceType: 'MANUAL',
         detail: dto.detail,
-      }),
-    );
+      });
+
+      await this.postManualInventoryAccounting(tx, businessId, movement);
+
+      return movement;
+    });
+  }
+
+  async reconcileIngredient(businessId: string, ingredientId: string) {
+    return this.runInventoryTransaction(async (tx) => {
+      const ingredient = await this.loadIngredientOrThrow(
+        tx,
+        businessId,
+        ingredientId,
+      );
+
+      const movements = await tx.inventoryMovement.findMany({
+        where: { businessId, ingredientId },
+        orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+      });
+
+      let currentStock = this.decimal(0);
+      let averageCost = this.decimal(0);
+
+      for (const movement of movements) {
+        const quantity = this.decimal(movement.quantity);
+        const unitCost = this.decimal(movement.unitCost);
+        const stockIncrease = this.isStockIncrease(movement.type);
+        const stockAfter = stockIncrease
+          ? currentStock.add(quantity)
+          : currentStock.sub(quantity);
+
+        if (stockAfter.lt(0)) {
+          throw new BadRequestException(
+            `Cannot reconcile ingredient ${ingredient.name}: historical movement would make stock negative`,
+          );
+        }
+
+        averageCost = this.recalculatesAverageCost(movement.type)
+          ? this.calculateAverageCostAfter({
+              type: movement.type,
+              previousStock: currentStock,
+              previousAverageCost: averageCost,
+              quantity,
+              unitCost,
+              stockAfter,
+            })
+          : averageCost;
+
+        currentStock = stockAfter;
+      }
+
+      await tx.ingredient.update({
+        where: { id: ingredientId },
+        data: {
+          currentStock,
+          averageCost,
+        },
+      });
+
+      return {
+        ingredientId,
+        previousStock: this.decimal(ingredient.currentStock),
+        previousAverageCost: this.decimal(ingredient.averageCost),
+        recalculatedStock: currentStock,
+        recalculatedAverageCost: averageCost,
+        movementsProcessed: movements.length,
+      };
+    });
   }
 
   async listKardex(
@@ -668,6 +753,9 @@ export class InventoryService {
         orderItemId: input.orderItemId ?? null,
         detail: input.detail?.trim() || null,
       },
+      include: {
+        ingredient: true,
+      },
     });
 
     await tx.ingredient.update({
@@ -817,6 +905,88 @@ export class InventoryService {
 
   private decimal(value: number | string | Prisma.Decimal) {
     return new Prisma.Decimal(value);
+  }
+
+  private accountingDetail(type: InventoryMovementType, ingredientName: string) {
+    const labels: Partial<Record<InventoryMovementType, string>> = {
+      PURCHASE: 'Compra de inventario',
+      PURCHASE_RETURN: 'Devolución de compra de inventario',
+      ADJUSTMENT_POSITIVE: 'Ajuste positivo de inventario',
+      ADJUSTMENT_NEGATIVE: 'Ajuste negativo de inventario',
+    };
+
+    return `${labels[type] ?? 'Movimiento de inventario'}: ${ingredientName}`;
+  }
+
+  private accountingNatureForInventoryMovement(type: InventoryMovementType) {
+    if (type === 'PURCHASE' || type === 'ADJUSTMENT_POSITIVE') {
+      return MovementNature.DEBIT;
+    }
+
+    if (type === 'PURCHASE_RETURN' || type === 'ADJUSTMENT_NEGATIVE') {
+      return MovementNature.CREDIT;
+    }
+
+    return null;
+  }
+
+  private async resolveInventoryAccountingPucCuenta(
+    tx: Prisma.TransactionClient,
+  ) {
+    for (const code of ['1435', '1105']) {
+      const cuenta = await tx.pucCuenta.findUnique({ where: { code } });
+      if (cuenta) return cuenta.code;
+    }
+
+    throw new BadRequestException(
+      'No PUC account available to post inventory accounting movement',
+    );
+  }
+
+  private async postManualInventoryAccounting(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    movement: Prisma.InventoryMovementGetPayload<{ include: { ingredient: true } }>,
+  ) {
+    if (!this.accountingService) {
+      return null;
+    }
+
+    const nature = this.accountingNatureForInventoryMovement(movement.type);
+    if (!nature) {
+      // Initial inventory is intentionally not posted automatically: the
+      // patrimonial origin is not explicit in the current accounting model.
+      return null;
+    }
+
+    const existing = await tx.accountingMovement.findFirst({
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.MANUAL,
+        originId: movement.id,
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return null;
+    }
+
+    const pucCuentaCode = await this.resolveInventoryAccountingPucCuenta(tx);
+
+    return tx.accountingMovement.create({
+      data: {
+        businessId,
+        pucCuentaCode,
+        pucSubcuentaId: null,
+        amount: this.decimal(movement.totalValue),
+        nature,
+        date: movement.occurredAt,
+        detail: this.accountingDetail(movement.type, movement.ingredient.name),
+        originType: AccountingMovementOriginType.MANUAL,
+        originId: movement.id,
+      },
+    });
   }
 
   private async resolvePurchaseInput(

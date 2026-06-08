@@ -10,6 +10,7 @@ import { getErrorMessage } from "@/src/lib/errors";
 import {
   createIngredient,
   getInventorySummary,
+  reactivateIngredient,
   type InventorySummaryIngredient,
   type IngredientStatus,
 } from "@/src/services/inventory";
@@ -101,6 +102,24 @@ export default function IngredientesPage() {
     setIngredientSheetOpen(true);
   }, [chatValue]);
 
+  const handleReactivateIngredient = useCallback(
+    async (id: string) => {
+      const loadingId = "ingredient-reactivate-loading";
+      try {
+        toast.loading("Reactivando ingrediente...", { id: loadingId });
+        await reactivateIngredient(id);
+        toast.dismiss(loadingId);
+        toast.success("Ingrediente reactivado");
+        await load();
+      } catch (err) {
+        console.error(err);
+        toast.dismiss(loadingId);
+        toast.error(getErrorMessage(err, "No se pudo reactivar el ingrediente"));
+      }
+    },
+    [load],
+  );
+
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
@@ -151,6 +170,9 @@ export default function IngredientesPage() {
                 layout="chat"
                 ingredients={orderedIngredients}
                 onSelect={(id) => router.push(`/inventario/ingredientes/${id}`)}
+                onReactivate={
+                  status === "INACTIVE" ? handleReactivateIngredient : undefined
+                }
               />
             )}
           </div>

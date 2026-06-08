@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, INestApplication } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  INestApplication,
+} from '@nestjs/common';
 import { beforeAll, afterAll, describe, expect, it } from '@jest/globals';
 import { AppModule } from '../src/app.module';
 import { SalesService } from '../src/sales/sales.service';
@@ -368,6 +372,113 @@ describe('Sales Flow (Integration)', () => {
       expect(stockAfterFailedSale.currentStock.toString()).toBe('1');
       expect(failedSaleMovements).toBe(0);
       expect(failedOrder.inventoryPostedAt).toBeNull();
+    });
+
+    it('should reverse confirmed order inventory once and reject duplicated reversal', async () => {
+      const ingredient = await prisma.ingredient.create({
+        data: {
+          businessId,
+          name: `Reverse Flour ${Date.now()}`,
+          consumptionUnit: 'G',
+          purchaseUnit: 'KG',
+          purchaseToConsumptionFactor: 1000,
+          minStock: 0,
+        },
+      });
+
+      await inventoryService.registerInitial(businessId, {
+        ingredientId: ingredient.id,
+        quantity: '10',
+        unitCost: '2',
+        detail: 'initial reverse e2e stock',
+      });
+
+      const inventoryItem = await prisma.item.create({
+        data: {
+          businessId,
+          name: `Reverse Bread ${Date.now()}`,
+          type: 'PRODUCT',
+          price: 20,
+          status: 'ACTIVE',
+          inventoryMode: 'SIMPLE',
+        },
+      });
+
+      await prisma.recipe.create({
+        data: {
+          businessId,
+          itemId: inventoryItem.id,
+          ingredientId: ingredient.id,
+          quantityRequired: 3,
+          isOptional: false,
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          businessId,
+          status: 'SENT',
+          customerName: 'Reverse Customer',
+          customerWhatsapp: '997',
+          total: 40,
+          items: {
+            create: {
+              businessId,
+              itemId: inventoryItem.id,
+              quantity: 2,
+              itemNameSnapshot: inventoryItem.name,
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'SIMPLE',
+              unitPrice: 20,
+              lineTotal: 40,
+            },
+          },
+        },
+      });
+
+      await salesService.confirmOrder(businessId, order.id);
+
+      const stockAfterSale = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const saleMovement = await prisma.inventoryMovement.findFirst({
+        where: { businessId, orderId: order.id, ingredientId: ingredient.id, type: 'SALE' },
+      });
+
+      expect(saleMovement).toBeDefined();
+      expect(stockAfterSale.currentStock.toString()).toBe('4');
+
+      await salesService.reverseConfirmedOrder(businessId, order.id, {
+        reason: 'Customer cancellation',
+      });
+
+      const stockAfterReverse = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const saleReturnMovements = await prisma.inventoryMovement.findMany({
+        where: {
+          businessId,
+          orderId: order.id,
+          ingredientId: ingredient.id,
+          type: 'SALE_RETURN',
+        },
+      });
+
+      expect(stockAfterReverse.currentStock.toString()).toBe('10');
+      expect(saleReturnMovements).toHaveLength(1);
+      expect(saleReturnMovements[0]?.quantity.toString()).toBe('6');
+
+      await expect(
+        salesService.reverseConfirmedOrder(businessId, order.id, {
+          reason: 'Duplicate cancellation',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      const saleReturnCountAfterDuplicate = await prisma.inventoryMovement.count({
+        where: { businessId, orderId: order.id, type: 'SALE_RETURN' },
+      });
+
+      expect(saleReturnCountAfterDuplicate).toBe(1);
     });
   });
 

@@ -49,4 +49,9 @@ export class IngredientsController {
   deactivate(@Req() req: any, @Param('id') id: string) {
     return this.ingredientsService.deactivate(req.user.businessId, id);
   }
+
+  @Patch(':id/reactivate')
+  reactivate(@Req() req: any, @Param('id') id: string) {
+    return this.ingredientsService.reactivate(req.user.businessId, id);
+  }
 }

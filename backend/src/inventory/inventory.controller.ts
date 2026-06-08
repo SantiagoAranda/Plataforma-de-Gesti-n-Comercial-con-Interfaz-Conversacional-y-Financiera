@@ -33,6 +33,17 @@ export class InventoryController {
     return this.inventoryService.registerPurchaseReturn(req.user.businessId, dto);
   }
 
+  @Post('reconcile/:ingredientId')
+  reconcileIngredient(
+    @Req() req: any,
+    @Param('ingredientId') ingredientId: string,
+  ) {
+    return this.inventoryService.reconcileIngredient(
+      req.user.businessId,
+      ingredientId,
+    );
+  }
+
   @Post('adjustments/positive')
   registerPositiveAdjustment(
     @Req() req: any,

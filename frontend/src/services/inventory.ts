@@ -195,6 +195,10 @@ export function deactivateIngredient(id: string) {
   return api<Ingredient>(`/ingredients/${id}/deactivate`, { method: "PATCH" });
 }
 
+export function reactivateIngredient(id: string) {
+  return api<Ingredient>(`/ingredients/${id}/reactivate`, { method: "PATCH" });
+}
+
 export function getInventorySummary(query: InventorySummaryQuery = {}) {
   const qs = new URLSearchParams();
   if (query.status) qs.set("status", query.status);

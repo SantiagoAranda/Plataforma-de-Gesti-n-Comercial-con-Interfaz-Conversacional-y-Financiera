@@ -10,10 +10,16 @@ import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 type Props = {
   ingredients: InventorySummaryIngredient[];
   onSelect: (ingredientId: string) => void;
+  onReactivate?: (ingredientId: string) => void;
   layout?: "list" | "chat";
 };
 
-export function IngredientList({ ingredients, onSelect, layout = "list" }: Props) {
+export function IngredientList({
+  ingredients,
+  onSelect,
+  onReactivate,
+  layout = "list",
+}: Props) {
   if (!ingredients.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center">
@@ -65,12 +71,15 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
         const lastDate = formatShortDate((it as any).updatedAt ?? (it as any).createdAt ?? null);
 
         return (
-          <button
+          <article
             key={it.id}
-            type="button"
-            onClick={() => onSelect(it.id)}
-            className={`w-full rounded-2xl p-3 text-left shadow-sm transition active:scale-[0.99] ${cardTone}`}
+            className={`w-full rounded-2xl p-3 text-left shadow-sm ${cardTone}`}
           >
+            <button
+              type="button"
+              onClick={() => onSelect(it.id)}
+              className="w-full text-left transition active:scale-[0.99]"
+            >
             <div className="flex gap-3">
               <div className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/70 ring-1 ring-black/5">
                 <div className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
@@ -118,7 +127,18 @@ export function IngredientList({ ingredients, onSelect, layout = "list" }: Props
                 </div>
               </div>
             </div>
-          </button>
+            </button>
+
+            {inactive && onReactivate ? (
+              <button
+                type="button"
+                onClick={() => onReactivate(it.id)}
+                className="mt-3 h-10 w-full rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
+              >
+                Reactivar
+              </button>
+            ) : null}
+          </article>
         );
       })}
     </div>

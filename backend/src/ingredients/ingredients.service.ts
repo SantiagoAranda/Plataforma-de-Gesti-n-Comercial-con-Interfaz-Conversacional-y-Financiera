@@ -146,6 +146,19 @@ export class IngredientsService {
     });
   }
 
+  async reactivate(businessId: string, id: string) {
+    const ingredient = await this.findOne(businessId, id);
+
+    if (ingredient.status === 'ACTIVE') {
+      return ingredient;
+    }
+
+    return this.prisma.ingredient.update({
+      where: { id },
+      data: { status: 'ACTIVE' },
+    });
+  }
+
   private withMovementFlags<T extends { _count?: { inventoryMovements?: number } }>(
     ingredient: T,
   ) {

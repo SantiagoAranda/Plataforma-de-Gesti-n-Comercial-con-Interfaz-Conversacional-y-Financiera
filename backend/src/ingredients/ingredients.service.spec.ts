@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { IngredientsService } from './ingredients.service';
@@ -108,6 +108,61 @@ describe('IngredientsService (minStock)', () => {
         minStock: '0',
       } as any),
     ).resolves.toBeDefined();
+  });
+
+  it('reactivates an inactive ingredient', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'INACTIVE',
+    });
+    prisma.ingredient.update.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      status: 'ACTIVE',
+    });
+
+    const result = await service.reactivate(businessId, ingredientId);
+
+    expect(result.status).toBe('ACTIVE');
+    expect(prisma.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: { status: 'ACTIVE' },
+    });
+  });
+
+  it('returns active ingredient without updating when reactivate is idempotent', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+    });
+
+    const result = await service.reactivate(businessId, ingredientId);
+
+    expect(result.status).toBe('ACTIVE');
+    expect(prisma.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('does not expose ingredient from another business on findOne/update/reactivate', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue(null);
+
+    await expect(service.findOne('business-2', ingredientId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      service.update('business-2', ingredientId, { minStock: '1' } as any),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.reactivate('business-2', ingredientId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.ingredient.update).not.toHaveBeenCalled();
   });
 });
 
