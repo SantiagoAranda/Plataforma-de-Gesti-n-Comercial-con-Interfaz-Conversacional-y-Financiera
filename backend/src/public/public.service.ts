@@ -12,6 +12,23 @@ export class PublicService {
     private storageService: StorageService,
   ) {}
 
+  private normalizeExcludedOptionalIngredientIds(value: unknown) {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+    }
+    if (!value.every((id) => typeof id === 'string')) {
+      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+    }
+    return value;
+  }
+
+  private assertNoDuplicateIds(ids: string[]) {
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+    }
+  }
+
   private withPublicLogoUrl<
     T extends { logoObjectKey?: string | null; logoUrl?: string | null },
   >(business: T): T {
@@ -278,6 +295,20 @@ export class PublicService {
       orderBy: { createdAt: 'desc' },
       include: {
         images: { orderBy: { order: 'asc' } },
+        recipes: {
+          select: {
+            ingredientId: true,
+            quantityRequired: true,
+            isOptional: true,
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -292,6 +323,12 @@ export class PublicService {
       data: data.map((item) => ({
         ...item,
         price: Number(item.price),
+        recipes: item.recipes.map((recipe) => ({
+          ingredientId: recipe.ingredientId,
+          quantityRequired: Number(recipe.quantityRequired),
+          isOptional: recipe.isOptional,
+          ingredient: recipe.ingredient,
+        })),
       })),
     };
   }
@@ -542,10 +579,75 @@ export class PublicService {
         businessId: business.id,
         status: 'ACTIVE',
       },
+      include: {
+        recipes: {
+          include: {
+            ingredient: {
+              select: { id: true, name: true },
+            },
+          },
+        },
+      },
     });
 
     if (dbItems.length !== dto.items.length)
       throw new BadRequestException('Invalid items');
+
+    const visibleCustomizationNotes: string[] = [];
+    const normalizedInputs = dto.items.map((input) => {
+      const item = dbItems.find((i) => i.id === input.itemId)!;
+      const excludedIds = this.normalizeExcludedOptionalIngredientIds(
+        input.excludedOptionalIngredientIds,
+      );
+      this.assertNoDuplicateIds(excludedIds);
+
+      if (excludedIds.length > 0) {
+        if (item.type === 'SERVICE' || item.recipes.length === 0) {
+          throw new BadRequestException('Item does not allow optional ingredient exclusions');
+        }
+
+        const recipeIngredientIds = new Set(
+          item.recipes.map((recipe) => recipe.ingredientId),
+        );
+        const mandatoryIngredientIds = new Set(
+          item.recipes
+            .filter((recipe) => !recipe.isOptional)
+            .map((recipe) => recipe.ingredientId),
+        );
+
+        for (const ingredientId of excludedIds) {
+          if (!recipeIngredientIds.has(ingredientId)) {
+            throw new BadRequestException(
+              'excludedOptionalIngredientIds contains an ingredient outside the recipe',
+            );
+          }
+          if (mandatoryIngredientIds.has(ingredientId)) {
+            throw new BadRequestException('Mandatory ingredients cannot be excluded');
+          }
+        }
+
+        const excludedNames = excludedIds
+          .map(
+            (ingredientId) =>
+              item.recipes.find((recipe) => recipe.ingredientId === ingredientId)
+                ?.ingredient.name,
+          )
+          .filter(Boolean);
+
+        if (excludedNames.length > 0) {
+          visibleCustomizationNotes.push(`${item.name}: sin ${excludedNames.join(', ')}`);
+        }
+      }
+
+      return { input, item, excludedIds };
+    });
+
+    const visibleNote = [
+      dto.note?.trim() || null,
+      ...visibleCustomizationNotes,
+    ]
+      .filter(Boolean)
+      .join('\n') || null;
 
     const order = await this.prisma.order.create({
       data: {
@@ -554,13 +656,11 @@ export class PublicService {
         origin: 'PUBLIC_STORE',
         customerName: dto.customerName,
         customerWhatsapp: dto.customerWhatsapp,
-        note: dto.note,
+        note: visibleNote,
         sentAt: new Date(),
 
         items: {
-          create: dto.items.map((input) => {
-            const item = dbItems.find((i) => i.id === input.itemId)!;
-
+          create: normalizedInputs.map(({ input, item, excludedIds }) => {
             const quantity = input.quantity;
             const unitPrice = item.price;
             const lineTotal = unitPrice.mul(quantity);
@@ -573,7 +673,9 @@ export class PublicService {
               lineTotal,
               itemNameSnapshot: item.name,
               itemTypeSnapshot: item.type,
+              inventoryModeSnapshot: item.inventoryMode,
               durationMinutesSnapshot: item.durationMinutes,
+              excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
             };
           }),
         },

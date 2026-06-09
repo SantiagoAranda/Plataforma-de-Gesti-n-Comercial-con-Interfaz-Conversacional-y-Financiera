@@ -697,6 +697,122 @@ describe('InventoryService', () => {
     });
   });
 
+  it('consumes mandatory and optional ingredients when legacy order item has no exclusions', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(2),
+        isOptional: false,
+      },
+      {
+        ingredientId: 'ingredient-optional',
+        quantityRequired: new Prisma.Decimal(1),
+        isOptional: true,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      { id: 'ingredient-1', name: 'Bread', currentStock: new Prisma.Decimal(10) },
+      { id: 'ingredient-optional', name: 'Mayo', currentStock: new Prisma.Decimal(10) },
+    ]);
+    tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve({
+        id: where.id,
+        businessId,
+        name: where.id,
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(1),
+      }),
+    );
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.order.update.mockResolvedValue({});
+
+    const movements = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 1,
+            itemNameSnapshot: 'Burger',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      },
+    );
+
+    expect(movements).toHaveLength(2);
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
+    }));
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ ingredientId: 'ingredient-optional' }),
+    }));
+  });
+
+  it('does not consume excluded optional ingredients for RECIPE_BASED item sales', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(2),
+        isOptional: false,
+      },
+      {
+        ingredientId: 'ingredient-optional',
+        quantityRequired: new Prisma.Decimal(1),
+        isOptional: true,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      { id: 'ingredient-1', name: 'Bread', currentStock: new Prisma.Decimal(10) },
+    ]);
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: 'ingredient-1',
+      businessId,
+      name: 'Bread',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(1),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.order.update.mockResolvedValue({});
+
+    const movements = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 1,
+            itemNameSnapshot: 'Burger',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+            excludedOptionalIngredientIds: ['ingredient-optional'],
+          },
+        ],
+      },
+    );
+
+    expect(movements).toHaveLength(1);
+    expect(tx.inventoryMovement.create).toHaveBeenCalledTimes(1);
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
+    }));
+  });
+
   it('does not affect stock for SERVICE item sales', async () => {
     const { service, tx } = createService();
     tx.order.update.mockResolvedValue({});

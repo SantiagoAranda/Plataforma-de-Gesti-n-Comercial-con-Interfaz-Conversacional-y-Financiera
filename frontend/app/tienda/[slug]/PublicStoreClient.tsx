@@ -42,11 +42,22 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 type ItemType = "PRODUCT" | "SERVICE";
 
+type PublicRecipeLine = {
+  ingredientId: string;
+  quantityRequired: number;
+  isOptional: boolean;
+  ingredient?: {
+    id: string;
+    name: string;
+  } | null;
+};
+
 type Item = {
   id: string;
   name: string;
   price: number;
   type: ItemType;
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | null;
   description?: string;
   durationMinutes?: number;
   previousPrice?: number | null;
@@ -54,6 +65,13 @@ type Item = {
   badgeColor?: string | null;
   badges?: Array<{ text: string; color: string }> | null;
   images?: { id: string; url: string }[];
+  recipes?: PublicRecipeLine[];
+};
+
+type CartLine = {
+  itemId: string;
+  quantity: number;
+  excludedOptionalIngredientIds: string[];
 };
 
 type StoreFooterSettings = {
@@ -106,11 +124,13 @@ export default function PublicStoreClient() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<CartLine[]>([]);
   const [showCartModal, setShowCartModal] = useState(false);
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
+  const [customizingProduct, setCustomizingProduct] = useState<Item | null>(null);
+  const [draftExcludedOptionalIds, setDraftExcludedOptionalIds] = useState<string[]>([]);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
@@ -310,7 +330,15 @@ export default function PublicStoreClient() {
     }
   };
 
-  const addToCart = (id: string) => {
+  const getRequiredRecipeLines = (item: Item | null) => {
+    return (item?.recipes ?? []).filter((line) => !line.isOptional);
+  };
+
+  const getOptionalRecipeLines = (item: Item | null) => {
+    return (item?.recipes ?? []).filter((line) => line.isOptional);
+  };
+
+  const addToCart = (id: string, excludedOptionalIngredientIds: string[] = []) => {
     if (preview) {
       notify({
         type: "info",
@@ -319,41 +347,95 @@ export default function PublicStoreClient() {
       return;
     }
 
-    setCart((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
+    const uniqueExcludedIds = Array.from(new Set(excludedOptionalIngredientIds));
+    setCart((prev) => {
+      const existing = prev.find((line) => line.itemId === id);
+      if (existing) {
+        return prev.map((line) =>
+          line.itemId === id
+            ? {
+                ...line,
+                quantity: line.quantity + 1,
+                excludedOptionalIngredientIds: uniqueExcludedIds,
+              }
+            : line,
+        );
+      }
+      return [
+        ...prev,
+        {
+          itemId: id,
+          quantity: 1,
+          excludedOptionalIngredientIds: uniqueExcludedIds,
+        },
+      ];
+    });
     notify({ type: "success", message: "Producto agregado" });
   };
 
   const increaseQty = (id: string) => {
-    setCart((prev) => ({ ...prev, [id]: prev[id] + 1 }));
+    setCart((prev) =>
+      prev.map((line) =>
+        line.itemId === id ? { ...line, quantity: line.quantity + 1 } : line,
+      ),
+    );
   };
 
   const decreaseQty = (id: string) => {
-    setCart((prev) => {
-      if (prev[id] <= 1) {
-        const copy = { ...prev };
-        delete copy[id];
-        return copy;
-      }
-      return { ...prev, [id]: prev[id] - 1 };
-    });
+    setCart((prev) =>
+      prev
+        .map((line) =>
+          line.itemId === id ? { ...line, quantity: line.quantity - 1 } : line,
+        )
+        .filter((line) => line.quantity > 0),
+    );
   };
 
   const removeItem = (id: string) => {
-    setCart((prev) => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
+    setCart((prev) => prev.filter((line) => line.itemId !== id));
+  };
+
+  const openCustomizationOrAdd = (item: Item) => {
+    const optionalLines = getOptionalRecipeLines(item);
+    if (item.type === "PRODUCT" && optionalLines.length > 0) {
+      setDraftExcludedOptionalIds([]);
+      setCustomizingProduct(item);
+      return;
+    }
+    addToCart(item.id);
+  };
+
+  const confirmCustomizedProduct = () => {
+    if (!customizingProduct) return;
+    addToCart(customizingProduct.id, draftExcludedOptionalIds);
+    setCustomizingProduct(null);
+    setDraftExcludedOptionalIds([]);
   };
 
   const cartItems = useMemo(() => {
-    return Object.entries(cart)
-      .map(([id, qty]) => {
-        const item = items.find((i) => i.id === id);
+    return cart
+      .map((line) => {
+        const item = items.find((i) => i.id === line.itemId);
         if (!item) return null;
-        return { ...item, quantity: qty };
+        const excludedNames = line.excludedOptionalIngredientIds
+          .map(
+            (ingredientId) =>
+              item.recipes?.find((recipe) => recipe.ingredientId === ingredientId)
+                ?.ingredient?.name,
+          )
+          .filter(Boolean) as string[];
+        return {
+          ...item,
+          quantity: line.quantity,
+          excludedOptionalIngredientIds: line.excludedOptionalIngredientIds,
+          excludedOptionalIngredientNames: excludedNames,
+        };
       })
-      .filter(Boolean) as (Item & { quantity: number })[];
+      .filter(Boolean) as (Item & {
+        quantity: number;
+        excludedOptionalIngredientIds: string[];
+        excludedOptionalIngredientNames: string[];
+      })[];
   }, [cart, items]);
 
   const cartTotal = useMemo(() => {
@@ -364,7 +446,7 @@ export default function PublicStoreClient() {
   }, [cartItems]);
 
   const cartCount = useMemo(
-    () => Object.values(cart).reduce((a, b) => a + b, 0),
+    () => cart.reduce((acc, line) => acc + line.quantity, 0),
     [cart]
   );
 
@@ -401,6 +483,8 @@ export default function PublicStoreClient() {
     }
 
     try {
+      const note = documentVal?.trim() ? `CEDULA: ${documentVal.trim()}` : null;
+
       const res = await fetch(`${API_URL}/public/${slug}/order`, {
         method: "POST",
         headers: {
@@ -412,8 +496,9 @@ export default function PublicStoreClient() {
           items: cartItems.map((item) => ({
             itemId: item.id,
             quantity: item.quantity,
+            excludedOptionalIngredientIds: item.excludedOptionalIngredientIds,
           })),
-          note: documentVal?.trim() ? `CEDULA: ${documentVal.trim()}` : null,
+          note,
         }),
       });
 
@@ -421,7 +506,7 @@ export default function PublicStoreClient() {
 
       notify({ type: "success", message: "Compra enviada" });
 
-      setCart({});
+      setCart([]);
       setShowCartModal(false);
       setCustomerName("");
       setPhoneNumber("");
@@ -541,7 +626,7 @@ export default function PublicStoreClient() {
                   item.type === "SERVICE" ? setSelectedService(item) : setSelectedProduct(item)
                 }
                 onPlus={() =>
-                  item.type === "SERVICE" ? setSelectedService(item) : addToCart(item.id)
+                  item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
                 }
               />
             ))}
@@ -576,6 +661,117 @@ export default function PublicStoreClient() {
         </div>
       )}
 
+      {customizingProduct && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              setCustomizingProduct(null);
+              setDraftExcludedOptionalIds([]);
+            }}
+          />
+
+          <div className="relative z-10 w-full max-w-md rounded-3xl border border-neutral-100 bg-white p-5 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setCustomizingProduct(null);
+                setDraftExcludedOptionalIds([]);
+              }}
+              className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
+              aria-label="Cerrar personalizacion"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="pr-10">
+              <p className="text-[11px] font-black uppercase tracking-widest text-emerald-600">
+                Personalizar
+              </p>
+              <h2 className="mt-1 text-lg font-black text-neutral-900">
+                {customizingProduct.name}
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-neutral-500">
+                Los opcionales vienen incluidos. Desmarca los que no quieras.
+              </p>
+            </div>
+
+            {getRequiredRecipeLines(customizingProduct).length > 0 ? (
+              <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                  Incluye siempre
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {getRequiredRecipeLines(customizingProduct).map((line) => (
+                    <span
+                      key={line.ingredientId}
+                      className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-neutral-700 ring-1 ring-neutral-100"
+                    >
+                      {line.ingredient?.name ?? "Ingrediente"}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                Opcionales
+              </p>
+              {getOptionalRecipeLines(customizingProduct).map((line) => {
+                const checked = !draftExcludedOptionalIds.includes(line.ingredientId);
+                return (
+                  <label
+                    key={line.ingredientId}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
+                  >
+                    <span className="text-sm font-bold text-neutral-800">
+                      {line.ingredient?.name ?? "Ingrediente"}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        setDraftExcludedOptionalIds((prev) => {
+                          if (event.target.checked) {
+                            return prev.filter((id) => id !== line.ingredientId);
+                          }
+                          return Array.from(new Set([...prev, line.ingredientId]));
+                        });
+                      }}
+                      className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            {draftExcludedOptionalIds.length > 0 ? (
+              <p className="mt-3 text-xs font-semibold text-neutral-500">
+                Sin:{" "}
+                {draftExcludedOptionalIds
+                  .map(
+                    (id) =>
+                      customizingProduct.recipes?.find((line) => line.ingredientId === id)
+                        ?.ingredient?.name,
+                  )
+                  .filter(Boolean)
+                  .join(", ")}
+              </p>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={confirmCustomizedProduct}
+              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
+            >
+              <ShoppingBag className="h-4 w-4" />
+              Agregar al carrito
+            </button>
+          </div>
+        </div>
+      )}
+
       <ReservationDrawer
         open={!!selectedService}
         onClose={resetReservationUi}
@@ -601,7 +797,7 @@ export default function PublicStoreClient() {
             });
             return;
           }
-          addToCart(selectedProduct.id);
+          openCustomizationOrAdd(selectedProduct);
           closeProductDetail();
         }}
       />

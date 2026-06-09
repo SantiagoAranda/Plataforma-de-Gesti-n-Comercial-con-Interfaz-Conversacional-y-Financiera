@@ -34,6 +34,7 @@ type OrderItemForInventory = {
   itemNameSnapshot: string;
   itemTypeSnapshot: string;
   inventoryModeSnapshot?: string | null;
+  excludedOptionalIngredientIds?: unknown;
   item?: {
     inventoryMode?: string | null;
   } | null;
@@ -670,7 +671,21 @@ export class InventoryService {
         );
       }
 
-      for (const line of mandatoryLines) {
+      const excludedOptionalIngredientIds = new Set(
+        this.parseExcludedOptionalIngredientIds(
+          orderItem.excludedOptionalIngredientIds,
+        ),
+      );
+      const consumableLines =
+        inventoryMode === 'RECIPE_BASED'
+          ? recipe.filter(
+              (line) =>
+                !line.isOptional ||
+                !excludedOptionalIngredientIds.has(line.ingredientId),
+            )
+          : mandatoryLines;
+
+      for (const line of consumableLines) {
         consumptions.push({
           orderItemId: orderItem.id,
           itemId: orderItem.itemId,
@@ -905,6 +920,12 @@ export class InventoryService {
 
   private decimal(value: number | string | Prisma.Decimal) {
     return new Prisma.Decimal(value);
+  }
+
+  private parseExcludedOptionalIngredientIds(value: unknown): string[] {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) return [];
+    return value.filter((id): id is string => typeof id === 'string');
   }
 
   private accountingDetail(type: InventoryMovementType, ingredientName: string) {

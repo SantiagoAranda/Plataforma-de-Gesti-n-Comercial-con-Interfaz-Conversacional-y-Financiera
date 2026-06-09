@@ -8,6 +8,11 @@ class OrderItemInput {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  excludedOptionalIngredientIds?: string[];
 }
 
 export class CreatePublicOrderDto {

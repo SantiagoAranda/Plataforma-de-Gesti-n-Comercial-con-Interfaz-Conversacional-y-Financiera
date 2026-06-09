@@ -11,6 +11,7 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  excludedOptionalIngredientNames?: string[];
 }
 
 type Props = {
@@ -111,6 +112,11 @@ export default function CartSummary({
                 <span className="block text-sm font-bold text-emerald-600 mt-0.5">
                   ${formatPrice(item.price)}
                 </span>
+                {item.excludedOptionalIngredientNames?.length ? (
+                  <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
+                    Sin: {item.excludedOptionalIngredientNames.join(", ")}
+                  </span>
+                ) : null}
               </div>
 
               {/* Quantity controller */}

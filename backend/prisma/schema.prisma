@@ -483,6 +483,7 @@ model OrderItem {
   durationMinutesSnapshot Int?
   // Inventory behavior captured for this sale line when inventory is posted.
   inventoryModeSnapshot   InventoryMode?
+  excludedOptionalIngredientIds Json?
 
   unitPrice Decimal @db.Decimal(10, 2)
   lineTotal Decimal @db.Decimal(14, 2)
