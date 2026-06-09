@@ -10,6 +10,7 @@ type Props = {
   onPhoneNumberChange: (val: string) => void;
   dark?: boolean;
   flat?: boolean;
+  dropdownPosition?: "top" | "bottom";
 };
 
 const COUNTRIES = [
@@ -28,6 +29,7 @@ export default function PhoneSelector({
   onPhoneNumberChange,
   dark = false,
   flat = false,
+  dropdownPosition = "bottom",
 }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,7 +75,7 @@ export default function PhoneSelector({
         </button>
 
         {open && (
-          <div className="absolute left-0 top-[calc(100%+8px)] z-50 w-36 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl animate-in fade-in slide-in-from-top-2">
+          <div className={`absolute left-0 ${dropdownPosition === "top" ? "bottom-[calc(100%+8px)] origin-bottom animate-in fade-in slide-in-from-bottom-2" : "top-[calc(100%+8px)] origin-top animate-in fade-in slide-in-from-top-2"} z-50 w-36 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl`}>
             <div className="flex max-h-56 flex-col overflow-y-auto p-1">
               {COUNTRIES.map((c) => (
                 <button

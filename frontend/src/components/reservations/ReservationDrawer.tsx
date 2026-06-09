@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import ReservationSlotPicker from "./ReservationSlotPicker";
+import PhoneSelector from "@/src/components/shared/PhoneSelector";
 
 type ReservationData = {
   date: Date | null;
@@ -45,7 +46,7 @@ export default function ReservationDrawer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
 
   const [fullName, setFullName] = useState("");
-  const [countryCode, setCountryCode] = useState("+57");
+  const [countryCode, setCountryCode] = useState("57");
   const [phone, setPhone] = useState("");
 
   useEffect(() => {
@@ -55,7 +56,16 @@ export default function ReservationDrawer({
     setSelectedTime(null);
     setSelectedStartMinute(null);
     setFullName(initialFullName);
-    setPhone(initialWhatsapp);
+    
+    const raw = initialWhatsapp.replace(/\D/g, "");
+    const matched = ["57", "54", "52", "34", "56", "51"].find(code => raw.startsWith(code));
+    if (matched) {
+      setCountryCode(matched);
+      setPhone(raw.slice(matched.length));
+    } else {
+      setCountryCode("57");
+      setPhone(raw);
+    }
   }, [initialFullName, initialWhatsapp, open, selectedDateValue]);
 
   const canConfirm =
@@ -71,7 +81,7 @@ export default function ReservationDrawer({
       date: selectedDate ? new Date(`${selectedDate}T00:00:00`) : null,
       time: selectedTime,
       fullName: fullName.trim(),
-      whatsapp: `${countryCode}${phone}`,
+      whatsapp: `+${countryCode}${phone}`,
     });
   }
 
@@ -86,8 +96,8 @@ export default function ReservationDrawer({
 
       <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-md">
         <div className="relative h-[92vh] rounded-t-3xl bg-[#F4F6F4] shadow-2xl flex flex-col">
-          <div className="sticky top-0 z-10 rounded-t-3xl bg-white/70 backdrop-blur">
-            <div className="flex items-center gap-3 px-5 py-4">
+          <div className="sticky top-0 z-10 rounded-t-3xl bg-[#F4F6F4] border-b border-black/[0.04]">
+            <div className="flex items-center gap-3 px-5 py-3">
               <button
                 onClick={onClose}
                 className="grid h-10 w-10 place-items-center rounded-full bg-white shadow-sm ring-1 ring-black/5"
@@ -101,7 +111,7 @@ export default function ReservationDrawer({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-4">
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-5 pt-3">
             {itemId && (
               <ReservationSlotPicker
                 itemId={itemId}
@@ -117,33 +127,20 @@ export default function ReservationDrawer({
               />
             )}
 
-            <div className="mt-10 space-y-4">
+            <div className="mt-6 space-y-3">
               <input
                 placeholder="Nombre completo"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3"
+                className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
               />
-              <div className="flex gap-2">
-                <select
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                  className="rounded-xl border px-3 py-3 bg-white"
-                >
-                  <option value="+54">🇦🇷 +54</option>
-                  <option value="+57">🇨🇴 +57</option>
-                  <option value="+52">🇲🇽 +52</option>
-                  <option value="+34">🇪🇸 +34</option>
-                </select>
-
-                <input
-                  type="tel"
-                  placeholder="WhatsApp"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full rounded-xl border px-4 py-3"
-                />
-              </div>
+              <PhoneSelector
+                countryCode={countryCode}
+                onCountryCodeChange={setCountryCode}
+                phoneNumber={phone}
+                onPhoneNumberChange={setPhone}
+                dropdownPosition="top"
+              />
             </div>
           </div>
 

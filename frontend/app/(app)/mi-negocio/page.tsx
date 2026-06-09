@@ -47,7 +47,9 @@ import {
 export default function MiNegocioPage() {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
-  const [recipeLineCounts, setRecipeLineCounts] = useState<Record<string, number>>({});
+  const [recipeLineCounts, setRecipeLineCounts] = useState<
+    Record<string, number>
+  >({});
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
@@ -82,8 +84,11 @@ export default function MiNegocioPage() {
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
-  const [duration, setDuration] = useState(30);
-  const [durationInput, setDurationInput] = useState("30");
+  const [duration, setDuration] = useState(60);
+  const [durationInput, setDurationInput] = useState("1");
+  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<
+    string | null
+  >(null);
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,8 +96,7 @@ export default function MiNegocioPage() {
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
   // Inventory (PRODUCT only)
-  const [inventoryMode, setInventoryMode] =
-    useState<ItemInventoryMode>("NONE");
+  const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -107,21 +111,27 @@ export default function MiNegocioPage() {
       const data = await getCached(key, 60_000, () =>
         api<Item[]>(`/items?status=ACTIVE&lightweight=true`),
       );
-      // Sort oldest to newest (newest at bottom)
+      // Sort newest to oldest (newest at top of array)
       const sorted = [...data].sort(
         (a, b) =>
-          new Date(a.createdAt || 0).getTime() -
-          new Date(b.createdAt || 0).getTime(),
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime(),
       );
       setItems(sorted);
 
       const recipeItems = sorted.filter(
-        (item) => item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
+        (item) =>
+          item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
       );
-      const recipesByItemId = await getRecipesBulk(recipeItems.map((item) => item.id));
+      const recipesByItemId = await getRecipesBulk(
+        recipeItems.map((item) => item.id),
+      );
       setRecipeLineCounts(
         Object.fromEntries(
-          recipeItems.map((item) => [item.id, recipesByItemId[item.id]?.length ?? 0]),
+          recipeItems.map((item) => [
+            item.id,
+            recipesByItemId[item.id]?.length ?? 0,
+          ]),
         ),
       );
     } catch (err) {
@@ -158,8 +168,9 @@ export default function MiNegocioPage() {
     setExistingImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setDuration(30);
-    setDurationInput("30");
+    setDuration(60);
+    setDurationInput("1");
+    setDurationAdjustmentMessage(null);
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -208,8 +219,11 @@ export default function MiNegocioPage() {
     setNewImages([]);
     setRemovedImageIds([]);
     setImageError(null);
-    setDuration(item.durationMinutes ?? 30);
-    setDurationInput(String(item.durationMinutes ?? 30));
+    setDuration(item.durationMinutes ?? 60);
+    setDurationInput(
+      item.durationMinutes ? String(item.durationMinutes / 60) : "1",
+    );
+    setDurationAdjustmentMessage(null);
 
     const nextWeek = createInitialWeek();
     if (item.type === "SERVICE" && item.schedule?.length) {
@@ -306,8 +320,29 @@ export default function MiNegocioPage() {
     if (!price || parseFloat(price) <= 0)
       errors.price = "El precio debe ser mayor a 0";
 
+    let finalDuration = duration;
     if (type === "SERVICE") {
-      if (duration < 5) errors.duration = "Mínimo 5 min";
+      const n = parseFloat(durationInput);
+      if (!durationInput || isNaN(n)) {
+        finalDuration = 60;
+        setDuration(60);
+        setDurationInput("1");
+        setDurationAdjustmentMessage(null);
+      } else {
+        let rounded = Math.round(n);
+        if (rounded <= 0) rounded = 1;
+        finalDuration = rounded * 60;
+        setDuration(finalDuration);
+        setDurationInput(String(rounded));
+        if (n !== rounded) {
+          setDurationAdjustmentMessage(
+            `La duración se ha ajustado a ${rounded} hora(s)`,
+          );
+        } else {
+          setDurationAdjustmentMessage(null);
+        }
+      }
+      if (finalDuration < 5) errors.duration = "Mínimo 5 min";
       if (!week.some((d) => d.active && d.ranges.length > 0)) {
         errors.schedule = "Selecciona al menos un día con horario";
       }
@@ -330,14 +365,14 @@ export default function MiNegocioPage() {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-            day.active
-              ? day.ranges.map((r) => ({
-                weekday: WEEKDAY_ENUM[dayIndex],
-                startMinute: timeToMinutes(r.start),
-                endMinute: timeToMinutes(r.end),
-              }))
-              : [],
-          )
+              day.active
+                ? day.ranges.map((r) => ({
+                    weekday: WEEKDAY_ENUM[dayIndex],
+                    startMinute: timeToMinutes(r.start),
+                    endMinute: timeToMinutes(r.end),
+                  }))
+                : [],
+            )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -362,7 +397,7 @@ export default function MiNegocioPage() {
         name,
         price: parseFloat(price),
         description: description.trim() || null,
-        durationMinutes: type === "SERVICE" ? duration : null,
+        durationMinutes: type === "SERVICE" ? finalDuration : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
@@ -414,7 +449,7 @@ export default function MiNegocioPage() {
         const exists = prev.find((i) => i.id === savedItem.id);
         if (exists)
           return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
-        return [...prev, savedItem]; // Add to end (bottm)
+        return [savedItem, ...prev]; // Add to start (newest first)
       });
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
@@ -543,19 +578,12 @@ export default function MiNegocioPage() {
       <main
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-8 pb-32 lg:pb-[140px]"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-32 lg:pb-[140px]"
       >
-        {loading && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
-            Cargando...
-          </div>
-        )}
-        {!loading && items.length === 0 && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
-            No hay items creados
-          </div>
-        )}
+        {/* Referencia vacía para forzar el auto-scroll al fondo de la lista (Visualmente abajo) */}
+        <div ref={messagesEndRef} className="h-px" />
 
+        {/* Items agrupados */}
         {groupedItems.map((group, gIdx) => (
           <div key={group.dateLabel} className="space-y-4">
             {/* DATE SEPARATOR */}
@@ -567,7 +595,8 @@ export default function MiNegocioPage() {
               <div className="h-[1px] flex-1 bg-neutral-200" />
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            {/* Contenedor de items con flex-col-reverse para que los más viejos queden arriba */}
+            <div className="flex flex-col-reverse gap-4">
               {group.items.map((item) => (
                 <ItemCard
                   key={item.id}
@@ -585,6 +614,19 @@ export default function MiNegocioPage() {
           </div>
         ))}
 
+        {/* Botón "Cargar más" - Visualmente arriba (lógicamente abajo en el DOM pero arriba por flex-col-reverse) */}
+        {filteredItems.length > visibleCount && (
+          <div className="flex justify-center pb-8 pt-2">
+            <button
+              onClick={() => setVisibleCount((prev) => prev + 12)}
+              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-bold rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
+            >
+              Cargar más
+            </button>
+          </div>
+        )}
+
+        {/* Estado vacío de búsqueda */}
         {composerMode === "closed" &&
           searchQuery.trim() !== "" &&
           filteredItems.length === 0 && (
@@ -601,19 +643,19 @@ export default function MiNegocioPage() {
             </div>
           )}
 
-        {filteredItems.length > visibleCount && (
-          <div className="flex justify-center pb-8 pt-2">
-            <button
-              onClick={() => setVisibleCount((prev) => prev + 12)}
-              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-bold rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
-            >
-              Cargar más
-            </button>
+        {/* Sin items creados */}
+        {!loading && items.length === 0 && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
+            No hay items creados
           </div>
         )}
 
-        {/* Referencia vacía para forzar el auto-scroll al fondo de la lista */}
-        <div ref={messagesEndRef} className="h-px" />
+        {/* Cargando */}
+        {loading && (
+          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
+            Cargando...
+          </div>
+        )}
       </main>
 
       {/* COMPONENTES DE CHAT COMPOSER */}
@@ -649,6 +691,8 @@ export default function MiNegocioPage() {
           durationInput={durationInput}
           setDurationInput={setDurationInput}
           setDuration={setDuration}
+          durationAdjustmentMessage={durationAdjustmentMessage}
+          setDurationAdjustmentMessage={setDurationAdjustmentMessage}
           week={week}
           setWeek={setWeek}
           currentDayIndex={currentDayIndex}
@@ -678,7 +722,9 @@ export default function MiNegocioPage() {
           setItemForDetail(null);
           setDeleteId(i.id);
         }}
-        recipeLineCount={itemForDetail ? recipeLineCounts[itemForDetail.id] ?? 0 : 0}
+        recipeLineCount={
+          itemForDetail ? (recipeLineCounts[itemForDetail.id] ?? 0) : 0
+        }
       />
 
       {/* MODAL ELIMINAR (CONFIRMACION) */}
