@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { Bell, BookOpen, Package, TriangleAlert } from "lucide-react";
 
@@ -15,9 +15,11 @@ import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
 import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
+import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDetailSheet";
 import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
+import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
 
 import {
   createIngredient,
@@ -48,15 +50,24 @@ function recipeStatus(item: Item, lines: RecipeLine[]) {
   return { label: "Receta configurada", tone: "bg-emerald-50 text-emerald-800" };
 }
 
-export default function InventarioPage() {
+function InventarioPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get("tab");
+  const tab = tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId") ? "ingredients" : "recipes";
+  const expandedItemId = searchParams?.get("itemId");
+  const selectedIngredientIdParam = searchParams?.get("ingredientId") || null;
+
+  const setTab = (newTab: UITab) => {
+    const alias = newTab === "ingredients" ? "insumos" : "recipes";
+    router.push(`/inventario?tab=${alias}`, { scroll: false });
+  };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [recipesByItemId, setRecipesByItemId] = useState<Record<string, RecipeLine[]>>({});
-  const [tab, setTab] = useState<UITab>("recipes");
   const [searchQuery, setSearchQuery] = useState("");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
@@ -65,6 +76,34 @@ export default function InventarioPage() {
   const [movementSheetOpen, setMovementSheetOpen] = useState(false);
   const [movementIngredientId, setMovementIngredientId] = useState("");
   const [movementInitialAction, setMovementInitialAction] = useState<MovementAction>("PURCHASE");
+  const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
+
+  // Sync selectedIngredientId with searchParams if present
+  useEffect(() => {
+    if (selectedIngredientIdParam) {
+      setSelectedIngredientId(selectedIngredientIdParam);
+    } else {
+      setSelectedIngredientId(null);
+    }
+  }, [selectedIngredientIdParam]);
+
+  const handleSelectIngredient = (id: string) => {
+    setSelectedIngredientId(id);
+    const alias = tab === "ingredients" ? "insumos" : "recipes";
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", alias);
+    currentParams.set("ingredientId", id);
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
+
+  const handleCloseIngredientSheet = () => {
+    setSelectedIngredientId(null);
+    const alias = tab === "ingredients" ? "insumos" : "recipes";
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", alias);
+    currentParams.delete("ingredientId");
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -261,7 +300,7 @@ export default function InventarioPage() {
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => router.push(`/inventario/ingredientes/${item.id}`)}
+                      onClick={() => handleSelectIngredient(item.id)}
                       className={cn("w-full rounded-2xl p-3 text-left shadow-sm ring-1 transition active:scale-[0.99]", warning ? "bg-rose-50/70 ring-rose-100" : "bg-white ring-black/5")}
                     >
                       <div className="flex items-start gap-3">
@@ -299,57 +338,16 @@ export default function InventarioPage() {
                   No hay recetas para mostrar.
                 </div>
               ) : (
-                visibleRecipes.map((item) => {
-                  const lines = recipesByItemId[item.id] ?? [];
-                  const status = recipeStatus(item, lines);
-                  const cost = recipeCost(item.id);
-                  const price = typeof item.price === "number" ? item.price : Number(item.price ?? 0);
-                  const margin = cost === null || !Number.isFinite(price) ? null : price - cost;
-
-                  return (
-                    <article key={item.id} className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-                      <div className="flex items-start gap-3">
-                        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-800 ring-1 ring-amber-100">
-                          <BookOpen className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-black text-neutral-900">{item.name}</p>
-                              <p className="mt-1 text-[11px] font-medium text-neutral-500">
-                                {lines.length} insumo{lines.length === 1 ? "" : "s"} · Venta ${formatMoney(price)}
-                              </p>
-                            </div>
-                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", status.tone)}>
-                              {status.label}
-                            </span>
-                          </div>
-
-                          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 text-[10px]">
-                            <div>
-                              <p className="font-bold uppercase tracking-widest text-neutral-400">Costo est.</p>
-                              <p className="mt-1 font-black text-neutral-800">{cost === null ? "—" : `$${formatMoney(cost)}`}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold uppercase tracking-widest text-neutral-400">Margen est.</p>
-                              <p className={cn("mt-1 font-black", margin === null ? "text-neutral-800" : margin >= 0 ? "text-emerald-700" : "text-rose-700")}>
-                                {margin === null ? "—" : `${margin >= 0 ? "+" : "-"}$${formatMoney(Math.abs(margin))}`}
-                              </p>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => router.push(`/inventario/recetas?itemId=${encodeURIComponent(item.id)}`)}
-                            className="mt-3 h-10 w-full rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
-                          >
-                            Editar receta
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })
+                visibleRecipes.map((item) => (
+                  <ExpandableRecipeCard
+                    key={item.id}
+                    item={item}
+                    recipeLines={recipesByItemId[item.id] ?? []}
+                    allIngredients={summary}
+                    onSaveSuccess={load}
+                    initiallyExpanded={expandedItemId === item.id}
+                  />
+                ))
               )}
             </section>
           )}
@@ -388,7 +386,7 @@ export default function InventarioPage() {
                   type="button"
                   onClick={() => {
                     setAlertsOpen(false);
-                    router.push(`/inventario/ingredientes/${item.id}`);
+                    handleSelectIngredient(item.id);
                   }}
                   className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                 >
@@ -494,6 +492,36 @@ export default function InventarioPage() {
           </div>
         )}
       </ItemPanelLayout>
+
+      <IngredientDetailSheet
+        ingredientId={selectedIngredientId}
+        open={!!selectedIngredientId}
+        onClose={handleCloseIngredientSheet}
+        onChanged={load}
+      />
     </div>
+  );
+}
+
+export default function InventarioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+          <div className="shrink-0">
+            <AppHeader title="Inventario" showBack hrefBack="/home" />
+          </div>
+          <main className="min-h-0 flex-1 overflow-y-auto pb-40">
+            <div className="mx-auto w-full max-w-md space-y-3 px-4 py-4">
+              <div className="rounded-2xl bg-white p-4 text-center text-sm font-medium text-neutral-400 shadow-sm ring-1 ring-black/5">
+                Cargando inventario...
+              </div>
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <InventarioPageContent />
+    </Suspense>
   );
 }

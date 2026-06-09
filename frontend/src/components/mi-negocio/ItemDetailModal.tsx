@@ -44,14 +44,14 @@ function inventoryMeta(item: Item, recipeLineCount = 0) {
     return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600", cta: null as null | string, href: null as null | string };
   }
   if (item.inventoryMode === "SIMPLE") {
-    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800", cta: "Cargar stock", href: "/inventario/ingredientes" };
+    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800", cta: "Cargar stock", href: "/inventario?tab=insumos" };
   }
   const configured = recipeLineCount > 0;
   return {
     label: configured ? "Receta configurada" : "Receta pendiente",
     tone: configured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800",
     cta: "Configurar receta",
-    href: `/inventario/recetas?itemId=${encodeURIComponent(item.id)}`,
+    href: `/inventario?tab=recipes&itemId=${encodeURIComponent(item.id)}`,
   };
 }
 

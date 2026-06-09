@@ -504,14 +504,14 @@ export default function MiNegocioPage() {
       return {
         label: "Gestionar stock",
         icon: Package,
-        href: "/inventario/ingredientes",
+        href: "/inventario?tab=insumos",
       };
     }
 
     return {
       label: "Configurar receta",
       icon: BookOpen,
-      href: `/inventario/recetas?itemId=${encodeURIComponent(selectedItem.id)}`,
+      href: `/inventario?tab=recipes&itemId=${encodeURIComponent(selectedItem.id)}`,
     };
   }, [selectedItem]);
 

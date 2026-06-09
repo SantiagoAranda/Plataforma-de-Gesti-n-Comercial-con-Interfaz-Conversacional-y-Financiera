@@ -16,6 +16,11 @@ import { formatIngredientUnit, formatUnit } from "@/src/components/inventory/uni
 export default function IngredienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { id: ingredientId } = use(params);
+
+  useEffect(() => {
+    router.replace(`/inventario?tab=insumos&ingredientId=${ingredientId}`);
+  }, [ingredientId, router]);
+
   const [loading, setLoading] = useState(true);
   const [ingredient, setIngredient] = useState<Ingredient | null>(null);
   const [error, setError] = useState<string | null>(null);

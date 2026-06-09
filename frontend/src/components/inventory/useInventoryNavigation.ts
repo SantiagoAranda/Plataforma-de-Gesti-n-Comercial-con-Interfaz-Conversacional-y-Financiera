@@ -20,7 +20,7 @@ export function useInventoryNavigation(options: Options = {}) {
     (action: InventoryChatMenuAction) => {
       if (action === "INGREDIENTES") {
         if (onIngredients) return onIngredients();
-        router.push("/inventario/ingredientes");
+        router.push("/inventario?tab=insumos");
         return;
       }
 
@@ -32,7 +32,7 @@ export function useInventoryNavigation(options: Options = {}) {
 
       if (action === "RECETAS") {
         if (onRecipes) return onRecipes();
-        router.push("/inventario/recetas");
+        router.push("/inventario?tab=recipes");
         return;
       }
 

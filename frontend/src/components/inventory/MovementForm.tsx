@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 
 import type { Ingredient } from "@/src/services/inventory";
@@ -34,6 +34,12 @@ type Props = {
   ingredient: Ingredient;
   onSuccess?: () => void;
   initialAction?: MovementAction;
+  disabledActions?: MovementAction[];
+  compact?: boolean;
+  hideSubmitButton?: boolean;
+  onValidationChange?: (isValid: boolean) => void;
+  onSubmittingChange?: (isSubmitting: boolean) => void;
+  formRef?: RefObject<HTMLFormElement | null>;
 };
 
 function normalizeDecimalInput(value: string) {
@@ -50,7 +56,17 @@ function toDisplayNumber(value: string) {
   return Number.isFinite(num) ? num : NaN;
 }
 
-export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
+export function MovementForm({
+  ingredient,
+  onSuccess,
+  initialAction,
+  disabledActions,
+  compact = false,
+  hideSubmitButton = false,
+  onValidationChange,
+  onSubmittingChange,
+  formRef,
+}: Props) {
   const canCreateInitial = ingredient.canCreateInitialInventory ?? !ingredient.hasMovements;
   const suggestedAction = canCreateInitial ? "INITIAL" : "PURCHASE";
   const [action, setAction] = useState<MovementAction>(initialAction ?? suggestedAction);
@@ -80,8 +96,12 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
   }, [initialAction, suggestedAction, canCreateInitial]);
 
   const actions = useMemo(
-    () => ALL_ACTIONS.filter((item) => item.value !== "INITIAL" || canCreateInitial),
-    [canCreateInitial],
+    () => ALL_ACTIONS.filter((item) => {
+      if (item.value === "INITIAL" && !canCreateInitial) return false;
+      if (disabledActions?.includes(item.value)) return false;
+      return true;
+    }),
+    [canCreateInitial, disabledActions],
   );
 
   const consumptionUnitLabel = formatIngredientUnit(ingredient);
@@ -125,6 +145,37 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
     return parsedPurchaseUnitCost / purchaseFactor;
   }, [canShowPurchaseFormula, parsedPurchaseUnitCost, purchaseFactor]);
 
+  const compactConversionText = useMemo(() => {
+    const factorStr = `1 ${purchaseUnitLabel} = ${ingredient.purchaseToConsumptionFactor} ${consumptionUnitLabel}`;
+    const conversionBase = `Conversión: ${factorStr}`;
+    
+    const hasQty = Number.isFinite(parsedPurchaseQuantity) && parsedPurchaseQuantity > 0;
+    const hasCost = Number.isFinite(parsedPurchaseUnitCost) && parsedPurchaseUnitCost >= 0;
+
+    if (!hasQty && !hasCost) {
+      return conversionBase;
+    }
+
+    const parts = [conversionBase];
+    if (canShowPurchaseFormula && estimatedConsumptionQty !== null) {
+      parts.push(`Ingresan: ${estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })}`);
+    }
+    if (canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null) {
+      parts.push(`Costo unit.: $${estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`);
+    }
+
+    return parts.join(" · ");
+  }, [
+    purchaseUnitLabel,
+    ingredient.purchaseToConsumptionFactor,
+    consumptionUnitLabel,
+    parsedPurchaseQuantity,
+    parsedPurchaseUnitCost,
+    canShowPurchaseFormula,
+    estimatedConsumptionQty,
+    estimatedUnitCostPerConsumption,
+  ]);
+
   const canSubmit = useMemo(() => {
     if (action === "PURCHASE") {
       if (!isValidDecimalString(normalizedPurchaseQuantity)) return false;
@@ -155,6 +206,14 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
     needsDetail,
     detail,
   ]);
+
+  useEffect(() => {
+    onValidationChange?.(canSubmit);
+  }, [canSubmit, onValidationChange]);
+
+  useEffect(() => {
+    onSubmittingChange?.(submitting);
+  }, [submitting, onSubmittingChange]);
 
   const submit = async () => {
     const loadingId = "inventory-movement-loading";
@@ -227,48 +286,61 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
   };
 
   return (
-    <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-            Movimiento manual
-          </p>
-          <p className="mt-1 text-sm font-bold text-neutral-900">
-            {ingredient.name}
-          </p>
+    <form
+      ref={formRef}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSubmit && !submitting) {
+          void submit();
+        }
+      }}
+      className={cn("space-y-4", !compact && "rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5")}
+    >
+      {!compact && (
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              Movimiento manual
+            </p>
+            <p className="mt-1 text-sm font-bold text-neutral-900">
+              {ingredient.name}
+            </p>
+          </div>
+          <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-neutral-500">
+            {consumptionUnitLabel}
+          </span>
         </div>
-        <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-neutral-500">
-          {consumptionUnitLabel}
-        </span>
-      </div>
+      )}
 
-      {canCreateInitial ? (
+      {canCreateInitial && !compact ? (
         <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[11px] font-semibold text-emerald-900">
           Este insumo no tiene movimientos. La carga inicial aparece como primera acci&oacute;n sugerida.
         </div>
       ) : null}
 
-      <div className="mt-4 flex rounded-full bg-neutral-100 p-1">
-        {actions.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => setAction(opt.value)}
-            className={cn(
-              "flex-1 rounded-full py-2 text-[11px] font-black transition",
-              action === opt.value ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500",
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div className="mt-4 flex rounded-full bg-neutral-100 p-1">
+          {actions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setAction(opt.value)}
+              className={cn(
+                "flex-1 rounded-full py-2 text-[11px] font-semibold transition",
+                action === opt.value ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500",
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         {action === "PURCHASE" ? (
           <>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Cantidad comprada ({purchaseUnitLabel})
               </label>
               <input
@@ -276,12 +348,12 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                 onChange={(e) => setPurchaseQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
                 inputMode="decimal"
                 placeholder="0"
-                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Costo por {purchaseUnitLabel}
               </label>
               <input
@@ -289,42 +361,48 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                 onChange={(e) => setPurchaseUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
                 inputMode="decimal"
                 placeholder="0"
-                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500"
               />
             </div>
 
-            <div className="col-span-2 rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-500">
-              <p>
-                El sistema convierte esta compra a {consumptionUnitLabel} usando el factor configurado:{" "}
-                <span className="font-black text-neutral-700">
-                  1 {purchaseUnitLabel} = {ingredient.purchaseToConsumptionFactor} {consumptionUnitLabel}
-                </span>
-                .
-              </p>
-              {canShowPurchaseFormula && estimatedConsumptionQty !== null && (
-                <p className="mt-1">
-                  Ingresarán aprox.{" "}
-                  <span className="font-black text-neutral-700">
-                    {estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {consumptionUnitLabel}
+            {compact ? (
+              <div className="col-span-2 text-xs font-medium text-slate-400/80 px-1 py-0.5">
+                {compactConversionText}
+              </div>
+            ) : (
+              <div className="col-span-2 rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-500">
+                <p>
+                  El sistema convierte esta compra a {consumptionUnitLabel} usando el factor configurado:{" "}
+                  <span className="font-semibold text-slate-700">
+                    1 {purchaseUnitLabel} = {ingredient.purchaseToConsumptionFactor} {consumptionUnitLabel}
                   </span>
                   .
                 </p>
-              )}
-              {canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null && (
-                <p className="mt-1">
-                  Costo estimado por {consumptionUnitLabel}:{" "}
-                  <span className="font-black text-neutral-700">
-                    {estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 6 })}
-                  </span>
-                  .
-                </p>
-              )}
-            </div>
+                {canShowPurchaseFormula && estimatedConsumptionQty !== null && (
+                  <p className="mt-1">
+                    Ingresarán aprox.{" "}
+                    <span className="font-semibold text-slate-700">
+                      {estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {consumptionUnitLabel}
+                    </span>
+                    .
+                  </p>
+                )}
+                {canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null && (
+                  <p className="mt-1">
+                    Costo estimado por {consumptionUnitLabel}:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 6 })}
+                    </span>
+                    .
+                  </p>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <>
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Cantidad ({consumptionUnitLabel})
               </label>
               <input
@@ -332,12 +410,12 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                 onChange={(e) => setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
                 inputMode="decimal"
                 placeholder="0"
-                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+                className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Costo unit.
               </label>
               <input
@@ -347,7 +425,7 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                 placeholder={allowsUnitCost ? "0" : "No aplica"}
                 disabled={!allowsUnitCost}
                 className={cn(
-                  "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm",
+                  "w-full rounded-2xl border px-4 py-3 text-sm font-medium outline-none shadow-sm",
                   allowsUnitCost
                     ? "border-neutral-100 bg-white focus:border-emerald-500"
                     : "border-neutral-100 bg-neutral-50 text-neutral-400",
@@ -359,21 +437,21 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
       </div>
 
       {allowsReferenceId && (
-        <div className="mt-4 space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-            Referencia (opcional)
+        <div className="mt-3 space-y-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Nro factura
           </label>
           <input
             value={referenceId}
             onChange={(e) => setReferenceId(e.target.value)}
-            placeholder="Ej: factura 0001-000123"
-            className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
+            placeholder="Ej: 0001-000123"
+            className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500"
           />
         </div>
       )}
 
-      <div className="mt-4 space-y-2">
-        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+      <div className="mt-3 space-y-1.5">
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
           Detalle {needsDetail ? "(requerido)" : "(opcional)"}
         </label>
         <input
@@ -389,7 +467,7 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
                   : "Ej: reposici\u00F3n semanal"
           }
           className={cn(
-            "w-full rounded-2xl border px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500",
+            "w-full rounded-2xl border px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500",
             needsDetail && !detail.trim() ? "border-rose-200" : "border-neutral-100",
           )}
         />
@@ -405,15 +483,16 @@ export function MovementForm({ ingredient, onSuccess, initialAction }: Props) {
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => void submit()}
-        disabled={!canSubmit || submitting}
-        className="mt-5 h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
-      >
-        {submitting ? "Enviando..." : "Confirmar movimiento"}
-      </button>
-    </div>
+      {!hideSubmitButton && (
+        <button
+          type="submit"
+          disabled={!canSubmit || submitting}
+          className="mt-5 h-12 w-full rounded-2xl bg-neutral-900 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+        >
+          {submitting ? "Enviando..." : "Confirmar movimiento"}
+        </button>
+      )}
+    </form>
   );
 }
 
