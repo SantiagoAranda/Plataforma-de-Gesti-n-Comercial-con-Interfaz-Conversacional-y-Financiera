@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
 import { api } from "@/src/lib/api";
 import { invalidateCache } from "@/src/lib/cache";
 import {
@@ -16,12 +15,11 @@ import {
   PendingImage,
   WeeklySchedule,
   FormErrors,
+  ItemInventoryMode,
 } from "@/src/types/item";
 import {
   generateCreationId,
   formatPriceInput,
-  parsePriceInput,
-  rangesOverlap,
   minutesToTime,
   timeToMinutes,
   createInitialWeek,
@@ -67,11 +65,15 @@ export default function ItemFormModal({
   const [imageError, setImageError] = useState<string | null>(null);
   const [duration, setDuration] = useState(60);
   const [durationInput, setDurationInput] = useState("1");
-  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<string | null>(null);
+  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<
+    string | null
+  >(null);
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
+
+  const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
 
   const totalImages = existingImages.length + newImages.length;
 
@@ -79,6 +81,11 @@ export default function ItemFormModal({
   useEffect(() => {
     if (editingItem) {
       setType(editingItem.type);
+      setInventoryMode(
+        editingItem.type === "SERVICE"
+          ? "NONE"
+          : (editingItem.inventoryMode ?? "NONE"),
+      );
       setName(editingItem.name);
 
       const badges = getItemBadges(editingItem);
@@ -100,7 +107,7 @@ export default function ItemFormModal({
       setDurationInput(
         editingItem.durationMinutes
           ? String(editingItem.durationMinutes / 60)
-          : "1"
+          : "1",
       );
       setDurationAdjustmentMessage(null);
 
@@ -146,6 +153,7 @@ export default function ItemFormModal({
     setDuration(60);
     setDurationInput("1");
     setDurationAdjustmentMessage(null);
+    setInventoryMode("NONE");
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -223,7 +231,9 @@ export default function ItemFormModal({
         setDuration(finalDuration);
         setDurationInput(String(rounded));
         if (n !== rounded) {
-          setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
+          setDurationAdjustmentMessage(
+            `La duración se ha ajustado a ${rounded} hora(s)`,
+          );
         } else {
           setDurationAdjustmentMessage(null);
         }
@@ -278,6 +288,7 @@ export default function ItemFormModal({
         price: parseFloat(price),
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
+        inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
         // compatibilidad legacy: badge 1
@@ -370,6 +381,8 @@ export default function ItemFormModal({
       <ItemFormContent
         type={type}
         setType={setType}
+        inventoryMode={inventoryMode}
+        setInventoryMode={setInventoryMode}
         name={name}
         setName={setName}
         badgeText1={badgeText1}

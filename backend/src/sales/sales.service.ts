@@ -1,11 +1,19 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Weekday } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { OrderStatus, Prisma, Weekday } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
+import { ReverseOrderDto } from './dto/reverse-order.dto';
+import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -18,16 +26,31 @@ export interface UnifiedSaleDto {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   total: number;
   status: UnifiedStatus;
+  inventoryPostedAt?: Date | null;
   createdAt: Date;
   scheduledAt?: string;
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   items: Array<{
+    orderItemId?: string;
     name: string;
     qty: number;
     unitPrice: number;
     price: number;
     itemId: string;
+    itemInventoryMode?: string | null;
+    excludedOptionalIngredientIds?: string[];
+    recipe?: Array<{
+      ingredientId: string;
+      isOptional: boolean;
+      quantityRequired: number;
+      ingredient: {
+        id: string;
+        name: string;
+        consumptionUnit?: string | null;
+        customUnitLabel?: string | null;
+      };
+    }>;
     durationMin?: number | null;
   }>;
 }
@@ -36,7 +59,63 @@ export class SalesService {
   constructor(
     private prisma: PrismaService,
     private accountingService: AccountingService,
+    private inventoryService: InventoryService,
   ) { }
+
+  private readonly orderItemRecipeInclude = {
+    item: {
+      include: {
+        recipes: {
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    },
+  } satisfies Prisma.OrderItemInclude;
+
+  private parseExcludedOptionalIngredientIdsForResponse(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((id): id is string => typeof id === 'string');
+  }
+
+  private normalizeExcludedOptionalIngredientIds(value: unknown): string[] {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+    }
+    if (!value.every((id) => typeof id === 'string')) {
+      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+    }
+    if (new Set(value).size !== value.length) {
+      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+    }
+    return value;
+  }
+
+  private mapRecipeForSales(item: any) {
+    return (item?.recipes ?? []).map((recipe: any) => ({
+      ingredientId: recipe.ingredientId,
+      isOptional: Boolean(recipe.isOptional),
+      quantityRequired: Number(recipe.quantityRequired),
+      ingredient: {
+        id: recipe.ingredient.id,
+        name: recipe.ingredient.name,
+        consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
+        customUnitLabel: recipe.ingredient.customUnitLabel ?? null,
+      },
+    }));
+  }
 
   private parseDateOnly(value: string) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
@@ -315,6 +394,7 @@ export class SalesService {
         lineTotal,
         itemNameSnapshot: item.name,
         itemTypeSnapshot: item.type,
+        inventoryModeSnapshot: item.inventoryMode,
         durationMinutesSnapshot: item.durationMinutes,
       };
     });
@@ -361,9 +441,7 @@ export class SalesService {
         },
         include: {
           items: {
-            include: {
-              item: true,
-            },
+            include: this.orderItemRecipeInclude,
           },
         },
         orderBy: {
@@ -397,15 +475,22 @@ export class SalesService {
       paymentMethod: ((o as any).paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
       total: Number(o.total),
       status: this.mapOrderStatus(o.status),
+      inventoryPostedAt: o.inventoryPostedAt,
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       items: o.items.map((it) => ({
+        orderItemId: it.id,
         name: it.itemNameSnapshot,
         qty: it.quantity,
         unitPrice: Number(it.unitPrice),
         price: Number(it.lineTotal),
         itemId: it.itemId,
+        itemInventoryMode: it.inventoryModeSnapshot ?? it.item?.inventoryMode ?? null,
+        excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
+          it.excludedOptionalIngredientIds,
+        ),
+        recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
     }));
@@ -478,52 +563,78 @@ export class SalesService {
         throw new BadRequestException('Order must contain at least one item');
       if (order.status === 'CANCELLED')
         throw new BadRequestException('Cancelled orders cannot be confirmed');
-      if (order.accountingPostedAt)
-        return { order, accountingCreated: false, alreadyPosted: true };
+      if (order.accountingPostedAt && order.inventoryPostedAt)
+        return {
+          order,
+          accountingCreated: false,
+          inventoryCreated: false,
+          alreadyPosted: true,
+        };
 
       const confirmableStatuses: OrderStatus[] = ['DRAFT', 'SENT', 'COMPLETED'];
       if (!confirmableStatuses.includes(order.status))
         throw new BadRequestException('Order cannot be confirmed');
 
       const postingDate = new Date();
-      const claim = await tx.order.updateMany({
-        where: {
-          id,
-          businessId,
-          accountingPostedAt: null,
-          status: { in: confirmableStatuses },
-        },
-        data: {
-          status: 'COMPLETED',
-          accountingPostedAt: postingDate,
-        },
-      });
-
-      if (claim.count === 0) {
-        const currentOrder = await tx.order.findFirst({
-          where: { id, businessId },
-          include: { items: { include: { item: true } } },
+      if (!order.accountingPostedAt) {
+        const claim = await tx.order.updateMany({
+          where: {
+            id,
+            businessId,
+            accountingPostedAt: null,
+            status: { in: confirmableStatuses },
+          },
+          data: {
+            status: 'COMPLETED',
+            accountingPostedAt: postingDate,
+          },
         });
-        if (!currentOrder) throw new NotFoundException('Order not found');
-        return {
-          order: currentOrder,
-          accountingCreated: false,
-          alreadyPosted: Boolean(currentOrder.accountingPostedAt),
-        };
+
+        if (claim.count === 0) {
+          const currentOrder = await tx.order.findFirst({
+            where: { id, businessId },
+            include: { items: { include: { item: true } } },
+          });
+          if (!currentOrder) throw new NotFoundException('Order not found');
+          return {
+            order: currentOrder,
+            accountingCreated: false,
+            inventoryCreated: Boolean(currentOrder.inventoryPostedAt),
+            alreadyPosted: Boolean(
+              currentOrder.accountingPostedAt && currentOrder.inventoryPostedAt,
+            ),
+          };
+        }
+      } else if (order.status !== 'COMPLETED') {
+        await tx.order.update({
+          where: { id },
+          data: { status: 'COMPLETED' },
+        });
       }
 
       const finalizedOrder = {
         ...order,
         status: 'COMPLETED' as const,
-        accountingPostedAt: postingDate,
+        accountingPostedAt: order.accountingPostedAt ?? postingDate,
         updatedAt: postingDate,
       };
 
-      const movements = await this.accountingService.postOrderMovements(
-        tx,
-        businessId,
-        finalizedOrder as any,
-      );
+      const inventoryMovements = order.inventoryPostedAt
+        ? []
+        : await this.inventoryService.applyInventoryConsumptionForOrder(
+            tx,
+            businessId,
+            finalizedOrder as any,
+            postingDate,
+          );
+
+      const movements = order.accountingPostedAt
+        ? []
+        : await this.accountingService.postOrderMovements(
+            tx,
+            businessId,
+            finalizedOrder as any,
+          );
 
       const updatedOrder = await tx.order.findUniqueOrThrow({
         where: { id },
@@ -532,10 +643,14 @@ export class SalesService {
 
       return {
         order: updatedOrder,
-        accountingCreated: true,
+        accountingCreated: !order.accountingPostedAt,
+        inventoryCreated: !order.inventoryPostedAt,
         alreadyPosted: false,
+        inventoryMovements,
         movements,
       };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
 
@@ -711,6 +826,88 @@ export class SalesService {
     return order;
   }
 
+  async updateOrderItemOptionalIngredients(
+    businessId: string,
+    orderId: string,
+    orderItemId: string,
+    dto: UpdateOrderItemOptionalsDto,
+  ) {
+    const excludedIds = this.normalizeExcludedOptionalIngredientIds(
+      dto.excludedOptionalIngredientIds,
+    );
+
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId },
+      include: {
+        items: {
+          where: { id: orderItemId },
+          include: this.orderItemRecipeInclude,
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.inventoryPostedAt) {
+      throw new ConflictException('Order inventory has already been posted');
+    }
+
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
+      throw new BadRequestException('Order not editable');
+    }
+
+    const orderItem = order.items[0];
+    if (!orderItem) throw new NotFoundException('OrderItem not found');
+
+    const inventoryMode =
+      orderItem.inventoryModeSnapshot ?? orderItem.item?.inventoryMode ?? null;
+    if (inventoryMode !== 'RECIPE_BASED') {
+      throw new BadRequestException(
+        'Optional ingredients can only be edited for recipe-based items',
+      );
+    }
+
+    const recipe = orderItem.item?.recipes ?? [];
+    const optionalIds = new Set(
+      recipe
+        .filter((line: any) => line.isOptional)
+        .map((line: any) => line.ingredientId),
+    );
+    const mandatoryIds = new Set(
+      recipe
+        .filter((line: any) => !line.isOptional)
+        .map((line: any) => line.ingredientId),
+    );
+
+    for (const ingredientId of excludedIds) {
+      if (mandatoryIds.has(ingredientId)) {
+        throw new BadRequestException('Mandatory ingredients cannot be excluded');
+      }
+      if (!optionalIds.has(ingredientId)) {
+        throw new BadRequestException(
+          'excludedOptionalIngredientIds contains an ingredient outside the optional recipe',
+        );
+      }
+    }
+
+    const updated = await this.prisma.orderItem.update({
+      where: { id: orderItem.id },
+      data: {
+        excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
+      },
+      include: this.orderItemRecipeInclude,
+    });
+
+    return {
+      id: updated.id,
+      itemId: updated.itemId,
+      excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
+        updated.excludedOptionalIngredientIds,
+      ),
+      recipe: this.mapRecipeForSales(updated.item),
+    };
+  }
+
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOrderOrThrow(businessId, orderId);
 
@@ -746,6 +943,7 @@ export class SalesService {
           quantity: dto.quantity,
           itemNameSnapshot: item.name,
           itemTypeSnapshot: item.type,
+          inventoryModeSnapshot: item.inventoryMode,
           durationMinutesSnapshot: item.durationMinutes,
           unitPrice,
           lineTotal,
@@ -843,9 +1041,7 @@ export class SalesService {
       where: { id: orderId, businessId },
       include: {
         items: {
-          include: {
-            item: true,
-          },
+          include: this.orderItemRecipeInclude,
         },
       },
     });
@@ -891,6 +1087,68 @@ export class SalesService {
     });
   }
 
+  async reverseConfirmedOrder(businessId: string, id: string, dto: ReverseOrderDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findFirst({
+        where: { id, businessId },
+        include: {
+          items: { include: { item: true } },
+        },
+      });
+
+      if (!order) throw new NotFoundException('Order not found');
+
+      const existingReturn = await tx.inventoryMovement.findMany({
+        where: {
+          businessId,
+          orderId: id,
+          type: 'SALE_RETURN',
+        },
+        take: 1,
+        select: { id: true },
+      });
+
+      if (existingReturn.length) {
+        throw new ConflictException('Order inventory already reversed');
+      }
+
+      if (order.status === 'CANCELLED') {
+        throw new BadRequestException('Cancelled orders cannot be reversed');
+      }
+      if (order.status !== 'COMPLETED') {
+        throw new BadRequestException('Only completed orders can be reversed');
+      }
+      if (!order.inventoryPostedAt) {
+        throw new BadRequestException('Order inventory was not posted');
+      }
+
+      const reversalMovements =
+        await this.inventoryService.reverseInventoryConsumptionForOrder(
+          tx,
+          businessId,
+          { orderId: id, reason: dto.reason },
+        );
+
+      const updatedOrder = await tx.order.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+        },
+        include: {
+          items: { include: { item: true } },
+        },
+      });
+
+      return {
+        order: updatedOrder,
+        inventoryReversed: reversalMovements.length > 0,
+        reversalMovements,
+      };
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+
   async remove(
     businessId: string,
     id: string,
@@ -914,6 +1172,12 @@ export class SalesService {
     });
 
     if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status === 'COMPLETED' && order.inventoryPostedAt) {
+      throw new BadRequestException(
+        'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
+      );
+    }
 
     return this.prisma.order.update({
       where: { id },
@@ -994,6 +1258,7 @@ export class SalesService {
             lineTotal,
             itemNameSnapshot: item.name,
             itemTypeSnapshot: item.type,
+            inventoryModeSnapshot: item.inventoryMode,
             durationMinutesSnapshot: item.durationMinutes,
           };
         });

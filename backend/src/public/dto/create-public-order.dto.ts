@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsString, ValidateNested, IsUUID, IsInt, Min } from 'class-validator';
+import { IsArray, IsNotEmpty, IsString, ValidateNested, IsUUID, IsInt, Min, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class OrderItemInput {
@@ -8,6 +8,11 @@ class OrderItemInput {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  excludedOptionalIngredientIds?: string[];
 }
 
 export class CreatePublicOrderDto {
@@ -18,6 +23,10 @@ export class CreatePublicOrderDto {
   @IsString()
   @IsNotEmpty()
   customerWhatsapp: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

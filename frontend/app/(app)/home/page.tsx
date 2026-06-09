@@ -1,9 +1,13 @@
 "use client";
 
-
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Building2, Calculator, ShoppingBag, WalletCards  } from "lucide-react";
-
+import {
+  Building2,
+  Calculator,
+  PackageSearch,
+  ShoppingBag,
+  WalletCards,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import AppHeader from "../../../src/components/layout/AppHeader";
@@ -22,6 +26,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  INVENTORY: <PackageSearch className="h-5 w-5" />,
   PAYROLL: <WalletCards className="h-5 w-5" />,
 };
 
@@ -69,8 +74,8 @@ export default function HomePage() {
         | { businessName?: string; name?: string; business?: { name?: string } }
         | null;
 
-      const nextName =
-        parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+      const nextName = parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+
       if (nextName?.trim()) {
         setBusinessName(nextName.trim());
       }
@@ -85,11 +90,13 @@ export default function HomePage() {
         variant="flat"
       />
 
-      <main className={cn(
-        "flex-1 overflow-y-auto lg:overflow-hidden lg:pb-0",
-        isFullScreen ? "flex flex-col pb-0" : "pb-24",
-      )}>
-        <div className="hidden lg:flex h-full">
+      <main
+        className={cn(
+          "flex-1 overflow-y-auto lg:overflow-hidden lg:pb-0",
+          isFullScreen ? "flex flex-col pb-0" : "pb-24",
+        )}
+      >
+        <div className="hidden h-full lg:flex">
           <div className="flex h-full flex-1 items-center justify-center px-6 py-10">
             <div className="w-full max-w-xl rounded-3xl bg-white p-8">
               <h2 className="text-lg font-semibold text-neutral-900">
@@ -102,12 +109,17 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className={`lg:hidden${isFullScreen ? " flex flex-col flex-1 min-h-0" : ""}`}>
+        <div
+          className={cn(
+            "lg:hidden",
+            isFullScreen && "flex min-h-0 flex-1 flex-col",
+          )}
+        >
           <HomeAgenda sales={orders} onFilterChange={handleFilterChange} />
 
           {!hideSummaries && loading && (
             <div>
-              {[0, 1, 2].map((i) => (
+              {[0, 1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-[74px] animate-pulse px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="h-11 w-11 rounded-full bg-neutral-100" />
@@ -154,4 +166,3 @@ export default function HomePage() {
     </div>
   );
 }
-

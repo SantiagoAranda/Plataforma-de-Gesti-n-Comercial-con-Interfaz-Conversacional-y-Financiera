@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ShoppingBag, Minus, Plus, X } from "lucide-react";
 import PhoneSelector from "./PhoneSelector";
 import toast from "react-hot-toast";
@@ -10,6 +11,7 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  excludedOptionalIngredientNames?: string[];
 }
 
 type Props = {
@@ -22,7 +24,7 @@ type Props = {
   onCountryCodeChange: (val: string) => void;
   phoneNumber: string;
   onPhoneNumberChange: (val: string) => void;
-  onConfirm: () => void;
+  onConfirm: (documentVal?: string) => void;
   onClose: () => void;
 };
 
@@ -39,6 +41,7 @@ export default function CartSummary({
   onConfirm,
   onClose,
 }: Props) {
+  const [document, setDocument] = useState("");
   const total = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
 
   const formatPrice = (value: number) => {
@@ -68,7 +71,8 @@ export default function CartSummary({
       return;
     }
     
-    onConfirm();
+    // Pasa la cédula opcional al confirmar
+    onConfirm(document);
   };
 
   return (
@@ -108,6 +112,11 @@ export default function CartSummary({
                 <span className="block text-sm font-bold text-emerald-600 mt-0.5">
                   ${formatPrice(item.price)}
                 </span>
+                {item.excludedOptionalIngredientNames?.length ? (
+                  <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
+                    Sin: {item.excludedOptionalIngredientNames.join(", ")}
+                  </span>
+                ) : null}
               </div>
 
               {/* Quantity controller */}
@@ -147,6 +156,14 @@ export default function CartSummary({
             placeholder="Nombre completo"
             value={customerName}
             onChange={(e) => onCustomerNameChange(e.target.value)}
+            className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+          />
+
+          <input
+            type="text"
+            placeholder="Cédula / NIT (Opcional)"
+            value={document}
+            onChange={(e) => setDocument(e.target.value)}
             className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
           />
 

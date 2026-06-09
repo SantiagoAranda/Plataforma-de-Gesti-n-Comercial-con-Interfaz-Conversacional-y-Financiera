@@ -2,12 +2,21 @@
 
 import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Calculator, ShoppingBag, WalletCards } from "lucide-react";
+import {
+  Building2,
+  Calculator,
+  PackageSearch,
+  ShoppingBag,
+  WalletCards,
+} from "lucide-react";
 
 import ThreadItem from "@/src/components/chat/ThreadItem";
 import HomeAgenda from "@/src/components/home/HomeAgenda";
 import { useDesktopSidePanel } from "@/src/components/layout/DesktopSidePanelContext";
-import { formatActivityTime, type ModuleActivitySummary } from "@/src/lib/home/moduleActivity";
+import {
+  formatActivityTime,
+  type ModuleActivitySummary,
+} from "@/src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "@/src/lib/home/useHomeModuleSummaries";
 
 type ModuleItem = {
@@ -25,6 +34,7 @@ const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
   SALES: <ShoppingBag className="h-5 w-5" />,
   ACCOUNTING: <Calculator className="h-5 w-5" />,
+  INVENTORY: <PackageSearch className="h-5 w-5" />,
   PAYROLL: <WalletCards className="h-5 w-5" />,
 };
 
@@ -49,6 +59,7 @@ export default function DesktopModulePanel() {
   const pathname = usePathname();
   const sidePanel = useDesktopSidePanel();
   const { summaries, loading, orders } = useHomeModuleSummaries();
+
   const businessName = useSyncExternalStore(
     subscribeBusinessName,
     getBusinessNameSnapshot,
@@ -78,7 +89,7 @@ export default function DesktopModulePanel() {
             {businessName}
           </p>
           <p className="truncate text-[12px] font-medium text-neutral-500">
-            Modulos
+            Módulos
           </p>
         </div>
       </div>
@@ -91,7 +102,7 @@ export default function DesktopModulePanel() {
 
         {loading && modules.length === 0 && (
           <div>
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2, 3, 4].map((i) => (
               <div key={i} className="h-[74px] animate-pulse px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="h-11 w-11 rounded-full bg-neutral-100" />
@@ -108,6 +119,7 @@ export default function DesktopModulePanel() {
 
         {modules.map((mod) => {
           const isSelected = !!pathname?.startsWith(mod.href);
+
           return (
             <div key={mod.key}>
               <ThreadItem

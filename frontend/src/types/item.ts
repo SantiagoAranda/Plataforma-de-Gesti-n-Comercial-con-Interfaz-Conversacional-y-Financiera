@@ -1,5 +1,7 @@
 export type ItemType = "PRODUCT" | "SERVICE";
 
+export type ItemInventoryMode = "NONE" | "SIMPLE" | "RECIPE_BASED";
+
 export type Schedule = {
   weekday: string;
   startMinute: number;
@@ -16,6 +18,7 @@ export type Item = {
   badgeColor?: string | null;
   description?: string;
   durationMinutes?: number;
+  inventoryMode?: ItemInventoryMode | null;
   schedule?: Schedule[];
   images?: { id: string; url: string; order: number }[];
   status: "ACTIVE" | "INACTIVE";
@@ -40,6 +43,7 @@ export type FormErrors = {
   price?: string;
   duration?: string;
   schedule?: string;
+  inventory?: string;
 };
 
 export type ItemImage = {

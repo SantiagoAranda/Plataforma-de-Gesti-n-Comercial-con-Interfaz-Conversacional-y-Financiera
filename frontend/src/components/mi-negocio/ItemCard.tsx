@@ -8,23 +8,38 @@ import { SelectableCard } from "@/src/components/shared/selection/SelectableCard
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney, truncateText } from "@/src/lib/formatters";
 import { formatCompactDate } from "@/src/lib/datetime";
-import { useLongPress } from "@/src/hooks/useLongPress";
 
 type Props = {
   item: any; 
   selected?: boolean;
   onSelect: () => void;
   onOpen?: () => void;
+  recipeLineCount?: number;
 };
 
 import { formatActiveDaysCompact } from "@/src/lib/availability";
 
-function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
+function inventoryMeta(item: any, recipeLineCount = 0) {
+  if (item.type !== "PRODUCT" || item.inventoryMode === "NONE" || !item.inventoryMode) {
+    return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600" };
+  }
+  if (item.inventoryMode === "SIMPLE") {
+    return { label: "Stock simple", tone: "bg-emerald-50 text-emerald-800" };
+  }
+  const configured = recipeLineCount > 0;
+  return {
+    label: configured ? "Receta configurada" : "Receta pendiente",
+    tone: configured ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800",
+  };
+}
+
+function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount = 0 }: Props) {
   const [hydratedImages, setHydratedImages] = useState<any[] | null>(null);
   const currentImages = hydratedImages ?? item.images ?? [];
   const imageCount = item._count?.images ?? currentImages.length;
 
   const activeDays = item.type === "SERVICE" ? formatActiveDaysCompact(item.schedule) : "";
+  const inventory = inventoryMeta(item, recipeLineCount);
 
   return (
     <div className="relative group">
@@ -93,6 +108,11 @@ function ItemCardComponent({ item, selected, onSelect, onOpen }: Props) {
 
           {/* FOOTER: PILL LEFT, DATE RIGHT */}
           <div className="mt-auto pt-2 flex items-center justify-between gap-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
+                {inventory.label}
+              </span>
+            </div>
 
             <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap ml-auto">
               {formatCompactDate(item.createdAt)}
@@ -113,6 +133,8 @@ export const ItemCard = memo(ItemCardComponent, (prev, next) => {
     prev.item.type === next.item.type &&
     prev.item.durationMinutes === next.item.durationMinutes &&
     prev.item.description === next.item.description &&
+    prev.item.inventoryMode === next.item.inventoryMode &&
+    prev.recipeLineCount === next.recipeLineCount &&
     prev.item._count?.images === next.item._count?.images &&
     prev.item.images?.[0]?.url === next.item.images?.[0]?.url
   );

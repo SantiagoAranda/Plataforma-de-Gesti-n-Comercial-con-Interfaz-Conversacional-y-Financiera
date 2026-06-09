@@ -21,6 +21,13 @@ enum BusinessStatus {
   INACTIVE
 }
 
+enum BusinessCategory {
+  FOOD
+  RETAIL
+  BEAUTY
+  SERVICES
+}
+
 enum ItemType {
   PRODUCT
   SERVICE
@@ -29,6 +36,42 @@ enum ItemType {
 enum ItemStatus {
   ACTIVE
   INACTIVE
+}
+
+enum InventoryMode {
+  NONE
+  SIMPLE
+  RECIPE_BASED
+}
+
+enum IngredientStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum IngredientUnit {
+  UNIT
+  G
+  KG
+  ML
+  L
+}
+
+enum InventoryMovementType {
+  INVENTORY_INITIAL
+  PURCHASE
+  PURCHASE_RETURN
+  SALE
+  SALE_RETURN
+  ADJUSTMENT_POSITIVE
+  ADJUSTMENT_NEGATIVE
+}
+
+enum InventoryReferenceType {
+  ORDER
+  ORDER_ITEM
+  MANUAL
+  PURCHASE_MANUAL
 }
 
 enum AccountingMovementOriginType {
@@ -110,6 +153,9 @@ model Business {
   status        BusinessStatus @default(ACTIVE)
   inactivatedAt DateTime?
 
+  // Business classification used to drive inventory defaults and module behavior.
+  businessCategory BusinessCategory @default(RETAIL)
+
   // 1–1 (derivada del @unique en User.businessId)
   user User?
 
@@ -137,8 +183,17 @@ model Business {
 
   payrollAccountingMappings PayrollAccountingMapping[]
 
+  // Physical stock inputs owned by this business.
+  ingredients        Ingredient[]
+  // Tenant-scoped item-to-ingredient consumption rules.
+  recipes            Recipe[]
+  // Tenant-scoped Kardex entries for ingredient stock.
+  inventoryMovements InventoryMovement[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([businessCategory])
 }
 
 model StoreFooterSettings {
@@ -159,7 +214,8 @@ model StoreFooterSettings {
 }
 
 model Item {
-  id         String   @id @default(uuid())
+  id String @id @default(uuid())
+
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -170,30 +226,29 @@ model Item {
   price       Decimal @db.Decimal(10, 2)
   description String?
 
-  // Badge opcional para mostrar sobre la imagen en la tienda
   badgeText  String?
   badgeColor String?
   badges     Json?
 
-  // Solo para servicios (validar en app: requerido si type=SERVICE)
   durationMinutes Int?
 
-  images ItemImage[]
+  inventoryMode InventoryMode @default(NONE)
 
-  orderItems   OrderItem[]
-  reservations Reservation[]
-
+  images          ItemImage[]
   scheduleWindows ServiceScheduleWindow[]
   scheduleBlocks  ServiceScheduleBlock[]
+  reservations    Reservation[]
+  orderItems      OrderItem[]
+  recipes         Recipe[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // ✅ habilita FK compuesta desde OrderItem (y permite validar "carrito 1 negocio")
   @@unique([id, businessId])
   @@index([businessId])
-  @@index([type])
   @@index([status])
+  @@index([type])
+  @@index([inventoryMode])
 }
 
 model ItemImage {
@@ -216,10 +271,152 @@ model ItemImage {
   @@index([itemId])
 }
 
+// Physical stock unit tracked by inventory. All stock balances live here.
+model Ingredient {
+  id String @id @default(uuid())
+
+  // Tenant owner for this physical stock unit.
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // Human-readable ingredient/input name inside the business.
+  name String
+
+  // Operational lifecycle for stock inputs, independent from sellable Item.status.
+  status IngredientStatus @default(ACTIVE)
+
+  // Base unit used by recipes, Kardex, sale consumption, and currentStock.
+  consumptionUnit IngredientUnit
+
+  // Unit used when manually registering purchases or initial stock inputs.
+  purchaseUnit IngredientUnit
+
+  // Optional user-facing unit label for business-specific wording.
+  customUnitLabel String?
+
+  // Number of consumption units contained in one purchase unit.
+  purchaseToConsumptionFactor Decimal @db.Decimal(20, 6)
+
+  // Persisted current stock balance in consumptionUnit for fast sale validation.
+  currentStock Decimal @default(0) @db.Decimal(20, 6)
+
+  // Persisted weighted average cost per consumptionUnit for output valuation.
+  averageCost Decimal @default(0) @db.Decimal(20, 6)
+
+  // Stock threshold used for low-stock alerts (in consumptionUnit).
+  minStock Decimal @default(0) @db.Decimal(20, 6)
+
+  // Recipe rows that consume this ingredient when items are sold.
+  recipes Recipe[]
+
+  // Kardex movements affecting this ingredient.
+  inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessId, name])
+  @@unique([id, businessId])
+  @@index([businessId])
+  @@index([businessId, status])
+}
+
+// Item-to-ingredient consumption rule used by SIMPLE and RECIPE_BASED inventory.
+model Recipe {
+  id String @id @default(uuid())
+
+  // Tenant owner. Explicit to keep recipe queries and constraints tenant-scoped.
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // Sellable item whose sale consumes this ingredient.
+  itemId String
+  item   Item   @relation(fields: [itemId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  // Physical stock unit consumed by the item.
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  // Ingredient quantity consumed per 1 sold item unit, in Ingredient.consumptionUnit.
+  quantityRequired Decimal @db.Decimal(20, 6)
+
+  // Marks ingredients that are part of configurable/optional consumption.
+  isOptional Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessId, itemId, ingredientId])
+  @@index([businessId])
+  @@index([businessId, itemId])
+  @@index([businessId, ingredientId])
+}
+
+// Ingredient-based Kardex entry. Purchases, sales, returns, and adjustments are recorded here.
+model InventoryMovement {
+  id String @id @default(uuid())
+
+  // Tenant owner for this Kardex entry.
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // Ingredient affected by this Kardex entry. Inventory remains ingredient-based only.
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  // Business reason for the stock movement and its input/output direction.
+  type InventoryMovementType
+
+  // Positive movement quantity in Ingredient.consumptionUnit. Direction comes from type.
+  quantity Decimal @db.Decimal(20, 6)
+
+  // Cost per Ingredient.consumptionUnit used for this movement.
+  unitCost Decimal @db.Decimal(20, 6)
+
+  // quantity * unitCost, preserved with six decimals for inventory valuation.
+  totalValue Decimal @db.Decimal(20, 6)
+
+  // Ingredient stock balance after this movement is applied.
+  stockAfter Decimal @db.Decimal(20, 6)
+
+  // Ingredient weighted average cost after this movement is applied.
+  averageCostAfter Decimal @db.Decimal(20, 6)
+
+  // High-level source category for traceability without adding Purchase models in Phase 1.
+  referenceType InventoryReferenceType
+
+  // Optional external/manual/source id for traceability.
+  referenceId String?
+
+  // Sale order that generated this movement, nullable for purchases and manual adjustments.
+  orderId String?
+  order   Order?  @relation(fields: [orderId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  // Sale line that generated this movement, nullable for purchases and manual adjustments.
+  orderItemId String?
+  orderItem   OrderItem? @relation(fields: [orderItemId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  // Human-readable detail or adjustment reason.
+  detail String?
+
+  // Business-effective timestamp for Kardex ordering and reports.
+  occurredAt DateTime @default(now())
+
+  // Immutable creation timestamp for audit ordering.
+  createdAt DateTime @default(now())
+
+  @@unique([businessId, orderItemId, ingredientId, type])
+  @@index([businessId, occurredAt])
+  @@index([businessId, ingredientId, occurredAt])
+  @@index([businessId, type])
+  @@index([businessId, referenceType, referenceId])
+  @@index([businessId, orderId])
+  @@index([businessId, orderItemId])
+}
+
 //
 // ÓRDENES / VENTAS (carrito de 1 solo negocio por orden)
 //
-
 model Order {
   id String @id @default(uuid())
 
@@ -231,32 +428,37 @@ model Order {
   status OrderStatus @default(DRAFT)
   origin SaleOrigin  @default(MANUAL)
 
-  // Cliente final sin registro
   customerName     String?
   customerWhatsapp String?
   note             String?
   paymentMethod    PaymentMethod @default(CASH)
 
-  // Totales “congelados”
   total    Decimal @default(0) @db.Decimal(14, 2)
   currency String  @default("COP") @db.VarChar(3)
 
-  // envío / documento (PDF)
   sentAt         DateTime?
   pdfUrl         String?
   pdfGeneratedAt DateTime?
   documentNumber String?
 
-  items              OrderItem[]
+  items OrderItem[]
+
   accountingPostedAt DateTime?
+
+  // Marks that inventory validation, stock decrement, and sale movements were posted.
+  inventoryPostedAt DateTime?
+
+  // Ingredient-based Kardex movements generated by this sale.
+  inventoryMovements InventoryMovement[]
 
   archived Boolean @default(false)
 
-  // asiento automático generado por esta orden (opcional)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([id, businessId])
   @@index([businessId, createdAt])
+  @@index([businessId, inventoryPostedAt])
   @@index([status])
 }
 
@@ -279,16 +481,24 @@ model OrderItem {
   itemNameSnapshot        String
   itemTypeSnapshot        ItemType
   durationMinutesSnapshot Int?
+  // Inventory behavior captured for this sale line when inventory is posted.
+  inventoryModeSnapshot   InventoryMode?
+  excludedOptionalIngredientIds Json?
 
   unitPrice Decimal @db.Decimal(10, 2)
   lineTotal Decimal @db.Decimal(14, 2)
 
+  // Ingredient-based Kardex movements generated by this sale line.
+  inventoryMovements InventoryMovement[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orderId, itemId])
+  @@unique([id, businessId])
   @@index([orderId])
+  @@index([orderId, itemId])
   @@index([itemId])
+  @@index([businessId, itemId])
 }
 
 //
@@ -443,18 +653,20 @@ enum MovementNature {
 }
 
 model AccountingMovement {
-  id             String                       @id @default(cuid())
-  businessId     String
-  pucCuentaCode  String?                      @db.VarChar(4)
-  pucSubcuentaId String?                      @db.VarChar(6)
-  amount         Decimal                      @db.Decimal(18, 2)
-  nature         MovementNature               @default(DEBIT)
-  date           DateTime
-  detail         String?
-  originType     AccountingMovementOriginType
-  originId       String?
-  createdAt      DateTime                     @default(now())
-  updatedAt      DateTime                     @updatedAt
+  id            String  @id @default(cuid())
+  businessId    String
+  pucCuentaCode String? @db.VarChar(4)
+
+  pucSubcuentaId String? @db.VarChar(6)
+
+  amount     Decimal                      @db.Decimal(18, 2)
+  nature     MovementNature               @default(DEBIT)
+  date       DateTime
+  detail     String?
+  originType AccountingMovementOriginType
+  originId   String?
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
 
   business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   pucCuenta    PucCuenta?    @relation(fields: [pucCuentaCode], references: [code])
@@ -625,10 +837,10 @@ model PayrollBusinessParameter {
   weeklyHours  Decimal? @db.Decimal(10, 2)
   monthlyHours Decimal? @db.Decimal(10, 2)
 
-  applyLaw1819        Boolean @default(true)
+  applyLaw1819                Boolean @default(true)
   exemptEmployerHealthLaw1819 Boolean @default(true)
-  applySolidarityFund Boolean @default(true)
-  applyIncomeTax      Boolean @default(false)
+  applySolidarityFund         Boolean @default(true)
+  applyIncomeTax              Boolean @default(false)
 
   customTransportAllowance Decimal? @db.Decimal(20, 6)
   customSmmlv              Decimal? @db.Decimal(20, 6)

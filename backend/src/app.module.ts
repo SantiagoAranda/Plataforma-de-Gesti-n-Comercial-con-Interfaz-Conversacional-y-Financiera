@@ -14,9 +14,11 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { PublicModule } from './public/public.module';
 import { MovementsModule } from './movements/movements.module';
 import { AccountingModule } from './accounting/accounting.module';
+
+import { IngredientsModule } from './ingredients/ingredients.module';
+import { RecipesModule } from './recipes/recipes.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { PayrollModule } from './payroll/payroll.module';
-
-
 
 @Module({
   imports: [
@@ -34,6 +36,9 @@ import { PayrollModule } from './payroll/payroll.module';
     PublicModule,
     MovementsModule,
     AccountingModule,
+    IngredientsModule,
+    RecipesModule,
+    InventoryModule,
     PayrollModule,
   ],
   controllers: [AppController],

@@ -1,13 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  INestApplication,
+} from '@nestjs/common';
+import { beforeAll, afterAll, describe, expect, it } from '@jest/globals';
 import { AppModule } from '../src/app.module';
 import { SalesService } from '../src/sales/sales.service';
+import { InventoryService } from '../src/inventory/inventory.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { OrderStatus, AccountingMovementOriginType, MovementNature } from '@prisma/client';
 
 describe('Sales Flow (Integration)', () => {
   let app: INestApplication;
   let salesService: SalesService;
+  let inventoryService: InventoryService;
   let prisma: PrismaService;
   let businessId: string;
   let itemId: string;
@@ -22,6 +29,7 @@ describe('Sales Flow (Integration)', () => {
     await app.init();
 
     salesService = app.get<SalesService>(SalesService);
+    inventoryService = app.get<InventoryService>(InventoryService);
     prisma = app.get<PrismaService>(PrismaService);
 
     // Setup: Create a test business
@@ -77,10 +85,13 @@ describe('Sales Flow (Integration)', () => {
   afterAll(async () => {
     // Cleanup
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
+    await prisma.inventoryMovement.deleteMany({ where: { businessId } });
+    await prisma.recipe.deleteMany({ where: { businessId } });
     await prisma.reservation.deleteMany({ where: { businessId } });
     await prisma.orderItem.deleteMany({ where: { businessId } });
     await prisma.order.deleteMany({ where: { businessId } });
     await prisma.item.deleteMany({ where: { businessId } });
+    await prisma.ingredient.deleteMany({ where: { businessId } });
     await prisma.business.delete({ where: { id: businessId } });
     await app.close();
   });
@@ -240,6 +251,234 @@ describe('Sales Flow (Integration)', () => {
       });
       expect(movements).toHaveLength(2);
       expect(movements.every((movement) => Number(movement.amount) === 150)).toBe(true);
+    });
+
+    it('should post inventory SALE movement, decrease stock, and reject insufficient stock atomically', async () => {
+      const ingredient = await prisma.ingredient.create({
+        data: {
+          businessId,
+          name: `Inventory Flour ${Date.now()}`,
+          consumptionUnit: 'G',
+          purchaseUnit: 'KG',
+          purchaseToConsumptionFactor: 1000,
+          minStock: 0,
+        },
+      });
+
+      await inventoryService.registerInitial(businessId, {
+        ingredientId: ingredient.id,
+        quantity: '5',
+        unitCost: '2',
+        detail: 'initial e2e stock',
+      });
+
+      const inventoryItem = await prisma.item.create({
+        data: {
+          businessId,
+          name: `Inventory Bread ${Date.now()}`,
+          type: 'PRODUCT',
+          price: 20,
+          status: 'ACTIVE',
+          inventoryMode: 'SIMPLE',
+        },
+      });
+
+      await prisma.recipe.create({
+        data: {
+          businessId,
+          itemId: inventoryItem.id,
+          ingredientId: ingredient.id,
+          quantityRequired: 2,
+          isOptional: false,
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          businessId,
+          status: 'SENT',
+          customerName: 'Inventory Customer',
+          customerWhatsapp: '999',
+          total: 40,
+          items: {
+            create: {
+              businessId,
+              itemId: inventoryItem.id,
+              quantity: 2,
+              itemNameSnapshot: inventoryItem.name,
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'SIMPLE',
+              unitPrice: 20,
+              lineTotal: 40,
+            },
+          },
+        },
+      });
+
+      const result = (await salesService.confirmOrder(businessId, order.id)) as any;
+
+      const confirmedOrder = await prisma.order.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+      const stockAfterSale = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const saleMovement = await prisma.inventoryMovement.findFirst({
+        where: { businessId, orderId: order.id, ingredientId: ingredient.id, type: 'SALE' },
+      });
+
+      expect(result.inventoryCreated).toBe(true);
+      expect(confirmedOrder.inventoryPostedAt).not.toBeNull();
+      expect(saleMovement).toBeDefined();
+      expect(saleMovement?.quantity.toString()).toBe('4');
+      expect(stockAfterSale.currentStock.toString()).toBe('1');
+
+      const insufficientOrder = await prisma.order.create({
+        data: {
+          businessId,
+          status: 'SENT',
+          customerName: 'Insufficient Inventory Customer',
+          customerWhatsapp: '998',
+          total: 20,
+          items: {
+            create: {
+              businessId,
+              itemId: inventoryItem.id,
+              quantity: 1,
+              itemNameSnapshot: inventoryItem.name,
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'SIMPLE',
+              unitPrice: 20,
+              lineTotal: 20,
+            },
+          },
+        },
+      });
+
+      await expect(
+        salesService.confirmOrder(businessId, insufficientOrder.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      const stockAfterFailedSale = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const failedSaleMovements = await prisma.inventoryMovement.count({
+        where: { businessId, orderId: insufficientOrder.id, type: 'SALE' },
+      });
+      const failedOrder = await prisma.order.findUniqueOrThrow({
+        where: { id: insufficientOrder.id },
+      });
+
+      expect(stockAfterFailedSale.currentStock.toString()).toBe('1');
+      expect(failedSaleMovements).toBe(0);
+      expect(failedOrder.inventoryPostedAt).toBeNull();
+    });
+
+    it('should reverse confirmed order inventory once and reject duplicated reversal', async () => {
+      const ingredient = await prisma.ingredient.create({
+        data: {
+          businessId,
+          name: `Reverse Flour ${Date.now()}`,
+          consumptionUnit: 'G',
+          purchaseUnit: 'KG',
+          purchaseToConsumptionFactor: 1000,
+          minStock: 0,
+        },
+      });
+
+      await inventoryService.registerInitial(businessId, {
+        ingredientId: ingredient.id,
+        quantity: '10',
+        unitCost: '2',
+        detail: 'initial reverse e2e stock',
+      });
+
+      const inventoryItem = await prisma.item.create({
+        data: {
+          businessId,
+          name: `Reverse Bread ${Date.now()}`,
+          type: 'PRODUCT',
+          price: 20,
+          status: 'ACTIVE',
+          inventoryMode: 'SIMPLE',
+        },
+      });
+
+      await prisma.recipe.create({
+        data: {
+          businessId,
+          itemId: inventoryItem.id,
+          ingredientId: ingredient.id,
+          quantityRequired: 3,
+          isOptional: false,
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          businessId,
+          status: 'SENT',
+          customerName: 'Reverse Customer',
+          customerWhatsapp: '997',
+          total: 40,
+          items: {
+            create: {
+              businessId,
+              itemId: inventoryItem.id,
+              quantity: 2,
+              itemNameSnapshot: inventoryItem.name,
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'SIMPLE',
+              unitPrice: 20,
+              lineTotal: 40,
+            },
+          },
+        },
+      });
+
+      await salesService.confirmOrder(businessId, order.id);
+
+      const stockAfterSale = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const saleMovement = await prisma.inventoryMovement.findFirst({
+        where: { businessId, orderId: order.id, ingredientId: ingredient.id, type: 'SALE' },
+      });
+
+      expect(saleMovement).toBeDefined();
+      expect(stockAfterSale.currentStock.toString()).toBe('4');
+
+      await salesService.reverseConfirmedOrder(businessId, order.id, {
+        reason: 'Customer cancellation',
+      });
+
+      const stockAfterReverse = await prisma.ingredient.findUniqueOrThrow({
+        where: { id: ingredient.id },
+      });
+      const saleReturnMovements = await prisma.inventoryMovement.findMany({
+        where: {
+          businessId,
+          orderId: order.id,
+          ingredientId: ingredient.id,
+          type: 'SALE_RETURN',
+        },
+      });
+
+      expect(stockAfterReverse.currentStock.toString()).toBe('10');
+      expect(saleReturnMovements).toHaveLength(1);
+      expect(saleReturnMovements[0]?.quantity.toString()).toBe('6');
+
+      await expect(
+        salesService.reverseConfirmedOrder(businessId, order.id, {
+          reason: 'Duplicate cancellation',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      const saleReturnCountAfterDuplicate = await prisma.inventoryMovement.count({
+        where: { businessId, orderId: order.id, type: 'SALE_RETURN' },
+      });
+
+      expect(saleReturnCountAfterDuplicate).toBe(1);
     });
   });
 

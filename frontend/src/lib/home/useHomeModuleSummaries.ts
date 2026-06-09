@@ -8,6 +8,7 @@ import {
   type BusinessItem,
   mapAccountingActivity,
   mapBusinessActivity,
+  mapInventoryActivity,
   mapPayrollActivity,
   mapSalesActivity,
 } from "./moduleActivity";
@@ -24,6 +25,7 @@ export function useHomeModuleSummaries() {
     "home:movements",
     HOME_CACHE_TTL,
   );
+
   const isAllCached = !!(
     initialBusinessLatest &&
     initialSales &&
@@ -33,6 +35,7 @@ export function useHomeModuleSummaries() {
   const [businessLatest, setBusinessLatest] = useState<{
     item: BusinessItem | null;
   }>(initialBusinessLatest ?? { item: null });
+
   const [orders, setOrders] = useState<Sale[]>(initialSales ?? []);
   const [movements, setMovements] = useState<BackendMovement[]>(
     initialMovements ?? [],
@@ -55,6 +58,7 @@ export function useHomeModuleSummaries() {
       if (!isAllCached) {
         setLoading(true);
       }
+
       setError(null);
 
       try {
@@ -119,6 +123,7 @@ export function useHomeModuleSummaries() {
       mapBusinessActivity(businessLatest.item),
       mapSalesActivity(orders),
       mapAccountingActivity(movements),
+      mapInventoryActivity(businessLatest.item),
       mapPayrollActivity(),
     ],
     [businessLatest, orders, movements],
@@ -126,4 +131,3 @@ export function useHomeModuleSummaries() {
 
   return { summaries, loading, error, orders };
 }
-

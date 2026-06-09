@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Trash2,
   X,
@@ -8,6 +9,8 @@ import {
   Search,
   ArrowDown,
   Calendar as CalendarIcon,
+  BookOpen,
+  Package,
 } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
@@ -24,6 +27,7 @@ import {
   PendingImage,
   WeeklySchedule,
   FormErrors,
+  ItemInventoryMode,
 } from "@/src/types/item";
 import {
   generateCreationId,
@@ -34,13 +38,18 @@ import {
   minutesToTime,
 } from "@/src/lib/itemHelpers";
 import { getItemBadges } from "@/src/lib/itemBadges";
+import { getRecipesBulk } from "@/src/services/inventory";
 import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
 
 export default function MiNegocioPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
+  const [recipeLineCounts, setRecipeLineCounts] = useState<
+    Record<string, number>
+  >({});
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
@@ -77,12 +86,17 @@ export default function MiNegocioPage() {
   const [imageError, setImageError] = useState<string | null>(null);
   const [duration, setDuration] = useState(60);
   const [durationInput, setDurationInput] = useState("1");
-  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<string | null>(null);
+  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<
+    string | null
+  >(null);
   const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+
+  // Inventory (PRODUCT only)
+  const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -105,6 +119,22 @@ export default function MiNegocioPage() {
           new Date(a.createdAt || 0).getTime(),
       );
       setItems(sorted);
+
+      const recipeItems = sorted.filter(
+        (item) =>
+          item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
+      );
+      const recipesByItemId = await getRecipesBulk(
+        recipeItems.map((item) => item.id),
+      );
+      setRecipeLineCounts(
+        Object.fromEntries(
+          recipeItems.map((item) => [
+            item.id,
+            recipesByItemId[item.id]?.length ?? 0,
+          ]),
+        ),
+      );
     } catch (err) {
       console.error(err);
     } finally {
@@ -146,6 +176,7 @@ export default function MiNegocioPage() {
     setCurrentDayIndex(0);
     setFormErrors({});
     setType("PRODUCT");
+    setInventoryMode("NONE");
     setEditingItem(null);
   }, []);
 
@@ -170,6 +201,9 @@ export default function MiNegocioPage() {
     setSelectedItem(null);
 
     setType(item.type);
+    const nextInventoryMode: ItemInventoryMode =
+      item.type === "SERVICE" ? "NONE" : (item.inventoryMode ?? "NONE");
+    setInventoryMode(nextInventoryMode);
     setName(item.name);
 
     const badges = getItemBadges(item);
@@ -187,7 +221,7 @@ export default function MiNegocioPage() {
     setImageError(null);
     setDuration(item.durationMinutes ?? 60);
     setDurationInput(
-      item.durationMinutes ? String(item.durationMinutes / 60) : "1"
+      item.durationMinutes ? String(item.durationMinutes / 60) : "1",
     );
     setDurationAdjustmentMessage(null);
 
@@ -300,7 +334,9 @@ export default function MiNegocioPage() {
         setDuration(finalDuration);
         setDurationInput(String(rounded));
         if (n !== rounded) {
-          setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
+          setDurationAdjustmentMessage(
+            `La duración se ha ajustado a ${rounded} hora(s)`,
+          );
         } else {
           setDurationAdjustmentMessage(null);
         }
@@ -310,6 +346,13 @@ export default function MiNegocioPage() {
         errors.schedule = "Selecciona al menos un día con horario";
       }
     }
+
+    if (type === "SERVICE" && inventoryMode !== "NONE") {
+      // UX rule: services never affect inventory
+      setInventoryMode("NONE");
+    }
+
+    // Mi Negocio no configura recetas ni stock. Eso se gestiona desde Inventario.
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -354,6 +397,7 @@ export default function MiNegocioPage() {
         price: parseFloat(price),
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
+        inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
         schedule,
         badges: nextBadges.length ? nextBadges : null,
         badgeText: finalBadgeText,
@@ -478,6 +522,31 @@ export default function MiNegocioPage() {
     return groups;
   }, [filteredItems, visibleCount]);
 
+  const selectedInventoryAction = useMemo(() => {
+    if (
+      !selectedItem ||
+      selectedItem.type !== "PRODUCT" ||
+      !selectedItem.inventoryMode ||
+      selectedItem.inventoryMode === "NONE"
+    ) {
+      return null;
+    }
+
+    if (selectedItem.inventoryMode === "SIMPLE") {
+      return {
+        label: "Gestionar stock",
+        icon: Package,
+        href: "/inventario?tab=insumos",
+      };
+    }
+
+    return {
+      label: "Configurar receta",
+      icon: BookOpen,
+      href: `/inventario?tab=recipes&itemId=${encodeURIComponent(selectedItem.id)}`,
+    };
+  }, [selectedItem]);
+
   return (
     <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
@@ -491,6 +560,13 @@ export default function MiNegocioPage() {
           onDelete={() => setDeleteId(selectedItem.id)}
           deleteLabel="Eliminar"
           deleteIcon={Trash2}
+          onExtraAction={
+            selectedInventoryAction
+              ? () => router.push(selectedInventoryAction.href)
+              : undefined
+          }
+          extraActionLabel={selectedInventoryAction?.label}
+          extraActionIcon={selectedInventoryAction?.icon}
         />
       ) : (
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
@@ -529,6 +605,7 @@ export default function MiNegocioPage() {
                       prev?.id === item.id ? null : item,
                     )
                   }
+                  recipeLineCount={recipeLineCounts[item.id] ?? 0}
                 />
               ))}
             </div>
@@ -592,6 +669,8 @@ export default function MiNegocioPage() {
         <ItemFormContent
           type={type}
           setType={setType}
+          inventoryMode={inventoryMode}
+          setInventoryMode={setInventoryMode}
           name={name}
           setName={setName}
           badgeText1={badgeText1}
@@ -639,6 +718,9 @@ export default function MiNegocioPage() {
           setItemForDetail(null);
           setDeleteId(i.id);
         }}
+        recipeLineCount={
+          itemForDetail ? (recipeLineCounts[itemForDetail.id] ?? 0) : 0
+        }
       />
 
       {/* CONFIRM DELETE MODAL */}

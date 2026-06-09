@@ -9,6 +9,7 @@ export type SourceType = "ORDER" | "RESERVATION";
 export type PaymentMethod = "CASH" | "BANK_TRANSFER";
 
 export interface SaleItem {
+  orderItemId?: string;
   itemId?: string;
   qty: number;
   name: string;
@@ -21,6 +22,20 @@ export interface SaleItem {
 
   // solo para servicios
   durationMin?: number | null;
+
+  itemInventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+  excludedOptionalIngredientIds?: string[];
+  recipe?: Array<{
+    ingredientId: string;
+    isOptional: boolean;
+    quantityRequired: number;
+    ingredient: {
+      id: string;
+      name: string;
+      consumptionUnit?: string | null;
+      customUnitLabel?: string | null;
+    };
+  }>;
 }
 
 export interface Sale {
@@ -33,6 +48,7 @@ export interface Sale {
 
   type: SaleType;
   status: SaleStatus;
+  inventoryPostedAt?: string | null;
 
   items: SaleItem[];
 

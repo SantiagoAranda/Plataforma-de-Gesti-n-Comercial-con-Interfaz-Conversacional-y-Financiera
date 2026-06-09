@@ -7,7 +7,7 @@ import {
 import type { Sale } from "@/src/types/sales";
 
 export type ModuleActivitySummary = {
-  module: "BUSINESS" | "SALES" | "ACCOUNTING" | "PAYROLL";
+  module: "BUSINESS" | "SALES" | "ACCOUNTING" | "INVENTORY" | "PAYROLL";
   title: string;
   subtitle: string;
   lastActivityAt?: string | null;
@@ -100,14 +100,12 @@ export function formatActivityTime(date?: string | null) {
 
   if (diffMinutes < 2) return "AHORA";
   if (diffMinutes < 60) return `hace ${diffMinutes} min`;
-  if (isSameDay) {
-    return formatBusinessTime(d, "es-AR");
-  }
+  if (isSameDay) return formatBusinessTime(d, "es-AR");
   if (isYesterday) return "Ayer";
   if (diffDays < 7) {
-    return formatBusinessDateTime(d, "es-AR", { weekday: "short" })
-      .replace(/\.$/, "");
+    return formatBusinessDateTime(d, "es-AR", { weekday: "short" }).replace(/\.$/, "");
   }
+
   return formatBusinessDateTime(d, "es-AR", {
     day: "2-digit",
     month: "short",
@@ -136,8 +134,13 @@ export function mapBusinessActivity(latest: BusinessItem | null): ModuleActivity
   if (latest) {
     const itemType = latest.type === "SERVICE" ? "Servicio" : "Producto";
     const itemName = latest.name?.trim();
-    const action = isUpdatedAfterCreate(latest.createdAt, latest.updatedAt) ? "actualizado" : "creado";
-    activityText = itemName ? `${itemType} "${itemName}" ${action}` : `${itemType} ${action}`;
+    const action = isUpdatedAfterCreate(latest.createdAt, latest.updatedAt)
+      ? "actualizado"
+      : "creado";
+
+    activityText = itemName
+      ? `${itemType} "${itemName}" ${action}`
+      : `${itemType} ${action}`;
   }
 
   return {
@@ -169,6 +172,7 @@ export function mapSalesActivity(orders: Sale[]): ModuleActivitySummary {
 
     const base = statusLabel[latest.status] ?? "Venta registrada";
     const customer = latest.customerName?.trim();
+
     if (customer && total) {
       activityText = `${base} de ${customer} por ${formatCurrency(total)}`;
     } else if (customer) {
@@ -195,7 +199,9 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
   const sorted = byDateDesc(movements, (m) => m.updatedAt ?? m.createdAt ?? m.date);
   const latest = sorted[0];
 
-  const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt, latest.date) : null;
+  const lastActivityAt = latest
+    ? getLatestTimestamp(latest.updatedAt, latest.createdAt, latest.date)
+    : null;
 
   let activityText: string | null = null;
   if (latest) {
@@ -206,9 +212,12 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
         .replace(/product/gi, "producto")
         .replace(/service/gi, "servicio");
     }
+
     const accountName = latest.pucName?.trim();
     const accountCode = latest.pucCode?.trim();
-    const amount = Number.isFinite(latest.amount) ? formatCurrency(Math.abs(latest.amount)) : "";
+    const amount = Number.isFinite(latest.amount)
+      ? formatCurrency(Math.abs(latest.amount))
+      : "";
 
     if (detail) {
       activityText = detail;
@@ -234,14 +243,31 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
   };
 }
 
+export function mapInventoryActivity(latest: BusinessItem | null): ModuleActivitySummary {
+  const lastActivityAt = latest ? getLatestTimestamp(latest.updatedAt, latest.createdAt) : null;
+  const productName = latest?.type === "PRODUCT" ? latest.name?.trim() : "";
+
+  return {
+    module: "INVENTORY",
+    title: "Inventario",
+    subtitle: productName
+      ? ` Control de stock para "${productName}"`
+      : " Stock, costo promedio y kardex",
+    lastActivityAt,
+    isRecent: isRecentActivity(lastActivityAt),
+    href: "/inventario",
+    accent: "green",
+  };
+}
+
 export function mapPayrollActivity(): ModuleActivitySummary {
   return {
     module: "PAYROLL",
-    title: "Nomina",
+    title: "Nómina",
     subtitle: " Planilla, pagos y liquidaciones",
     lastActivityAt: null,
     isRecent: false,
     href: "/nomina",
-    accent: "green",
+    accent: "blue",
   };
 }

@@ -3,13 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service'; // ajustá si ya lo tenés distinto
+import { InventoryMode, ItemStatus, Prisma } from '@prisma/client';
+import sharp from 'sharp';
+
+import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { UpdateItemDto } from './dto/update-item.dto';
-import { ItemStatus } from '@prisma/client';
 import { AddItemImageDto } from './dto/add-item-image.dto';
 import { CreateItemDto } from './dto/create-item.dto';
-import { StorageService } from '../storage/storage.service';
-import sharp from 'sharp';
 
 @Injectable()
 export class ItemsService {
@@ -20,6 +21,7 @@ export class ItemsService {
 
   private normalizeBadges(input: any) {
     if (!Array.isArray(input)) return [];
+
     return input
       .map((b) => ({
         text: typeof b?.text === 'string' ? b.text.trim() : '',
@@ -42,6 +44,7 @@ export class ItemsService {
     };
 
     let resolvedImages = images;
+
     if (images) {
       resolvedImages = images.map((img) => ({
         ...img,
@@ -76,24 +79,26 @@ export class ItemsService {
         const legacyBadgeText = cleanedBadgeText ? cleanedBadgeText : null;
         const cleanedBadgeColor = dto.badgeColor?.trim() ?? '';
         const legacyBadgeColor = legacyBadgeText
-          ? cleanedBadgeColor
-            ? cleanedBadgeColor
-            : '#ef4444'
+          ? cleanedBadgeColor || '#ef4444'
           : null;
 
         const nextBadges = [...cleanedBadges];
+
         if (legacyBadgeText) {
           const legacy = {
             text: legacyBadgeText,
             color: legacyBadgeColor ?? '#ef4444',
           };
+
           const exists = nextBadges.some(
             (b) =>
               b.text.toUpperCase() === legacy.text.toUpperCase() &&
               b.color.toLowerCase() === legacy.color.toLowerCase(),
           );
+
           if (!exists) nextBadges.unshift(legacy);
         }
+
         const finalBadges = nextBadges.slice(0, 2);
         const firstBadge = finalBadges[0] ?? null;
 
@@ -102,6 +107,10 @@ export class ItemsService {
             id: dto.id,
             businessId,
             type: dto.type,
+            inventoryMode: this.resolveInventoryMode(
+              dto.type,
+              dto.inventoryMode,
+            ),
             name: dto.name,
             price: dto.price,
             description: dto.description?.trim() || null,
@@ -112,7 +121,6 @@ export class ItemsService {
           },
         });
 
-        // 🔥 Si es SERVICE y tiene horarios → crear ventanas
         if (dto.type === 'SERVICE' && dto.schedule?.length) {
           await tx.serviceScheduleWindow.createMany({
             data: dto.schedule.map((s) => ({
@@ -140,9 +148,11 @@ export class ItemsService {
         return this.mapItemWithSchedule(created);
       });
     } catch (error) {
-      // Si el error es una colisión de ID único (P2002)
-      if (error.code === 'P2002' && dto.id) {
-        // Buscamos el item existente para validar que pertenezca al mismo negocio
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        dto.id
+      ) {
         const existingItem = await this.prisma.item.findUnique({
           where: { id: dto.id },
           include: {
@@ -153,12 +163,11 @@ export class ItemsService {
           },
         });
 
-        // Si existe y es del mismo negocio, lo retornamos como respuesta idempotente
         if (existingItem && existingItem.businessId === businessId) {
           return this.mapItemWithSchedule(existingItem);
         }
       }
-      // Si es otro error o la validación de negocio falla, re-lanzamos el error
+
       throw error;
     }
   }
@@ -186,6 +195,7 @@ export class ItemsService {
     });
 
     let resolvedItem = item;
+
     if (item && item.images) {
       resolvedItem = {
         ...item,
@@ -215,6 +225,7 @@ export class ItemsService {
           price: true,
           type: true,
           status: true,
+          inventoryMode: true,
           description: true,
           durationMinutes: true,
           badgeText: true,
@@ -235,7 +246,7 @@ export class ItemsService {
           },
         },
       });
-      // Normalizar al mismo shape que el full para compatibilidad con el frontend
+
       return items.map((item) => this.mapItemWithSchedule(item));
     }
 
@@ -268,21 +279,29 @@ export class ItemsService {
         },
       },
     });
+
     if (!item) throw new NotFoundException('Item not found');
+
     return this.mapItemWithSchedule(item);
   }
+
   async update(businessId: string, id: string, dto: UpdateItemDto) {
     const existing = await this.prisma.item.findFirst({
       where: { id, businessId },
     });
+
     if (!existing) throw new NotFoundException('Item not found');
 
     const nextType = dto.type ?? existing.type;
 
-    // si queda como SERVICE, durationMinutes no puede quedar null/undefined
+    const nextInventoryMode = this.resolveInventoryMode(
+      nextType,
+      dto.inventoryMode ?? existing.inventoryMode,
+    );
+
     const nextDuration =
       nextType === 'SERVICE'
-        ? (dto.durationMinutes ?? existing.durationMinutes ?? 0)
+        ? dto.durationMinutes ?? existing.durationMinutes ?? 0
         : null;
 
     if (
@@ -309,25 +328,20 @@ export class ItemsService {
         : (existing.badgeColor ?? '').trim();
 
       nextBadgeText = finalText;
-      nextBadgeColor = finalText
-        ? cleanedColor
-          ? cleanedColor
-          : '#ef4444'
-        : null;
+      nextBadgeColor = finalText ? cleanedColor || '#ef4444' : null;
     } else if (hasBadgeColorField) {
       const cleanedColor = (dto.badgeColor ?? '').trim();
       const hasExistingText = (existing.badgeText ?? '').trim().length > 0;
+
       nextBadgeColor = hasExistingText
-        ? cleanedColor
-          ? cleanedColor
-          : '#ef4444'
+        ? cleanedColor || '#ef4444'
         : cleanedColor || null;
     }
 
     if (hasBadgesField) {
       const cleaned = this.normalizeBadges((dto as any).badges);
       nextBadges = cleaned.length ? cleaned : null;
-      // mantener compatibilidad legacy: primer badge
+
       nextBadgeText = cleaned[0]?.text ?? null;
       nextBadgeColor = cleaned[0]?.color ?? null;
     }
@@ -337,6 +351,10 @@ export class ItemsService {
         where: { id },
         data: {
           type: dto.type,
+          inventoryMode:
+            dto.inventoryMode === undefined && dto.type === undefined
+              ? undefined
+              : nextInventoryMode,
           name: dto.name,
           price: dto.price,
           description:
@@ -366,6 +384,7 @@ export class ItemsService {
 
       const shouldReplaceSchedule =
         dto.schedule !== undefined || nextType !== 'SERVICE';
+
       if (shouldReplaceSchedule) {
         await tx.serviceScheduleWindow.deleteMany({
           where: { businessId, itemId: id },
@@ -397,10 +416,12 @@ export class ItemsService {
       return this.mapItemWithSchedule(updated);
     });
   }
+
   async setStatus(businessId: string, id: string, status: ItemStatus) {
     const existing = await this.prisma.item.findFirst({
       where: { id, businessId },
     });
+
     if (!existing) throw new NotFoundException('Item not found');
 
     return this.prisma.item.update({
@@ -416,7 +437,6 @@ export class ItemsService {
 
     if (!existing) throw new NotFoundException('Item not found');
 
-    // En lugar de borrar, lo archivamos
     await this.prisma.item.update({
       where: { id },
       data: { status: ItemStatus.INACTIVE },
@@ -429,6 +449,7 @@ export class ItemsService {
     const item = await this.prisma.item.findFirst({
       where: { id: itemId, businessId },
     });
+
     if (!item) throw new NotFoundException('Item not found');
 
     if (dto.url?.startsWith('data:')) {
@@ -439,27 +460,34 @@ export class ItemsService {
 
     const nextOrder =
       dto.order ??
-      ((
+      (
         await this.prisma.itemImage.aggregate({
           where: { itemId },
           _max: { order: true },
         })
-      )._max.order ?? 0) + 1;
+      )._max.order ??
+      0 + 1;
 
-    // si por algún motivo el order choca, Prisma tirará error por unique(itemId, order)
     return this.prisma.itemImage.create({
-      data: { itemId, url: dto.url, order: nextOrder },
+      data: {
+        itemId,
+        url: dto.url,
+        order: nextOrder,
+      },
     });
   }
+
   async deleteImage(businessId: string, itemId: string, imageId: string) {
     const item = await this.prisma.item.findFirst({
       where: { id: itemId, businessId },
     });
+
     if (!item) throw new NotFoundException('Item not found');
 
     const img = await this.prisma.itemImage.findFirst({
       where: { id: imageId, itemId },
     });
+
     if (!img) throw new NotFoundException('Image not found');
 
     if (img.objectKey) {
@@ -473,7 +501,10 @@ export class ItemsService {
       }
     }
 
-    await this.prisma.itemImage.delete({ where: { id: imageId } });
+    await this.prisma.itemImage.delete({
+      where: { id: imageId },
+    });
+
     return { ok: true };
   }
 
@@ -485,6 +516,7 @@ export class ItemsService {
     const item = await this.prisma.item.findFirst({
       where: { id: itemId, businessId },
     });
+
     if (!item) throw new NotFoundException('Item not found');
 
     if (!file) {
@@ -494,7 +526,9 @@ export class ItemsService {
     if (file.size > 2 * 1024 * 1024) {
       throw new BadRequestException('La imagen no puede superar los 2 MB');
     }
+
     const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
     if (!allowedMimeTypes.has(file.mimetype)) {
       throw new BadRequestException('La imagen debe ser JPG, PNG o WEBP');
     }
@@ -518,12 +552,12 @@ export class ItemsService {
 
     try {
       const nextOrder =
-        ((
+        (
           await this.prisma.itemImage.aggregate({
             where: { itemId },
             _max: { order: true },
           })
-        )._max.order ?? 0) + 1;
+        )._max.order ?? 0;
 
       const publicUrl = this.storageService.getPublicUrl(objectKey);
 
@@ -534,7 +568,7 @@ export class ItemsService {
           objectKey,
           mimeType: 'image/webp',
           sizeBytes: optimized.length,
-          order: nextOrder,
+          order: nextOrder + 1,
         },
       });
     } catch (error) {
@@ -543,7 +577,21 @@ export class ItemsService {
       } catch (e) {
         console.error('[ItemsService] Failed to rollback image from R2', e);
       }
+
       throw error;
     }
+  }
+
+  private resolveInventoryMode(
+    type: 'PRODUCT' | 'SERVICE',
+    inventoryMode?: InventoryMode | null,
+  ) {
+    const nextInventoryMode = inventoryMode ?? InventoryMode.NONE;
+
+    if (type === 'SERVICE' && nextInventoryMode !== InventoryMode.NONE) {
+      throw new BadRequestException('SERVICE items must use inventoryMode NONE');
+    }
+
+    return nextInventoryMode;
   }
 }

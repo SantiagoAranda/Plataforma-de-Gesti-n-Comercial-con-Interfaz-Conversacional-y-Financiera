@@ -15,7 +15,7 @@ import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, deleteSale, updateSale, createSale, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
@@ -28,12 +28,16 @@ function mapOrderToSale(order: ApiOrder): Sale {
     const unitPrice = it.unitPrice ?? it.price;
 
     return {
+      orderItemId: it.orderItemId,
       itemId: it.itemId,
       qty: it.qty,
       name: it.name,
       unitPrice,
-      price: unitPrice,
+      price: it.price ?? unitPrice * it.qty,
       durationMin: it.durationMin,
+      itemInventoryMode: it.itemInventoryMode,
+      excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
+      recipe: it.recipe ?? [],
     };
   });
 
@@ -49,6 +53,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     paymentMethod: order.paymentMethod,
     type: order.type,
     status: order.status as Sale["status"],
+    inventoryPostedAt: order.inventoryPostedAt ?? null,
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
@@ -311,6 +316,46 @@ export default function VentaPage() {
       "emerald"
     );
   }, [loadOrders]);
+
+  const handleSaveOptionalIngredients = useCallback(
+    async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
+      await updateOrderItemOptionalIngredients(
+        sale.id,
+        orderItemId,
+        excludedOptionalIngredientIds,
+      );
+
+      setSales((current) =>
+        current.map((currentSale) =>
+          currentSale.id === sale.id && currentSale.sourceType === sale.sourceType
+            ? {
+                ...currentSale,
+                items: currentSale.items.map((item) =>
+                  item.orderItemId === orderItemId
+                    ? { ...item, excludedOptionalIngredientIds }
+                    : item,
+                ),
+              }
+            : currentSale,
+        ),
+      );
+      setDetailsSale((currentSale) =>
+        currentSale?.id === sale.id && currentSale.sourceType === sale.sourceType
+          ? {
+              ...currentSale,
+              items: currentSale.items.map((item) =>
+                item.orderItemId === orderItemId
+                  ? { ...item, excludedOptionalIngredientIds }
+                  : item,
+              ),
+            }
+          : currentSale,
+      );
+      invalidateCache("home:sales");
+      await loadOrders();
+    },
+    [loadOrders],
+  );
 
   const handleCreateSale = async (data: {
     customerName?: string;
@@ -615,6 +660,7 @@ export default function VentaPage() {
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
         onConfirm={handleConfirmSale}
+        onSaveOptionalIngredients={handleSaveOptionalIngredients}
         onCancel={handleDeleteSale}
         onEdit={(sale) => {
           setEditingSale(sale);
