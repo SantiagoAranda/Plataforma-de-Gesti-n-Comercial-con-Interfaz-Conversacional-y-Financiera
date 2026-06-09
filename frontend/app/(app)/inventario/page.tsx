@@ -13,10 +13,8 @@ import { formatMoney } from "@/src/lib/formatters";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
-import { useInventoryNavigation } from "@/src/components/inventory/useInventoryNavigation";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDetailSheet";
-import { MovementForm, type MovementAction } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
@@ -71,11 +69,7 @@ function InventarioPageContent() {
   const [searchQuery, setSearchQuery] = useState("");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
-  const [prefillIngredientName, setPrefillIngredientName] = useState("");
   const [creatingIngredient, setCreatingIngredient] = useState(false);
-  const [movementSheetOpen, setMovementSheetOpen] = useState(false);
-  const [movementIngredientId, setMovementIngredientId] = useState("");
-  const [movementInitialAction, setMovementInitialAction] = useState<MovementAction>("PURCHASE");
   const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
 
   // Sync selectedIngredientId with searchParams if present
@@ -190,25 +184,9 @@ function InventarioPageContent() {
     [recipesByItemId, summary],
   );
 
-  const openMovementSheet = (action: MovementAction) => {
-    setMovementInitialAction(action);
-    setMovementSheetOpen(true);
-  };
-
-  const openCreateIngredientFromBar = useCallback(() => {
-    const text = searchQuery.trim();
-    if (!text) {
-      toast.error("Escribí un ingrediente para crearlo o buscarlo");
-      return;
-    }
-    setPrefillIngredientName(text);
-    setIngredientSheetOpen(true);
-  }, [searchQuery]);
-
-  const handlePickAction = useInventoryNavigation({
-    onIngredients: () => setTab("ingredients"),
-    onRecipes: () => setTab("recipes"),
-  });
+  const toggleIngredientSheetFromBar = useCallback(() => {
+    setIngredientSheetOpen((open) => !open);
+  }, []);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -359,10 +337,8 @@ function InventarioPageContent() {
         onChange={setSearchQuery}
         placeholder={tab === "ingredients" ? "Buscar insumo..." : "Buscar receta..."}
         onSubmit={() => {}}
-        onCreateIngredient={openCreateIngredientFromBar}
-        onRegisterPurchase={() => openMovementSheet("PURCHASE")}
-        onRegisterPurchaseReturn={() => openMovementSheet("PURCHASE_RETURN")}
-        onPickAction={handlePickAction}
+        onCreateIngredient={toggleIngredientSheetFromBar}
+        createIngredientActive={ingredientSheetOpen}
       />
 
       <ItemPanelLayout
@@ -406,10 +382,10 @@ function InventarioPageContent() {
         )}
       </ItemPanelLayout>
 
-      <ItemPanelLayout open={ingredientSheetOpen} title="Nuevo ingrediente" subtitle="Crear desde el chat" onClose={() => setIngredientSheetOpen(false)}>
+      <ItemPanelLayout open={ingredientSheetOpen} title="Nuevo ingrediente" subtitle="Crear insumo" onClose={() => setIngredientSheetOpen(false)}>
         <IngredientForm
           mode="create"
-          defaults={{ name: prefillIngredientName }}
+          defaults={{ name: "" }}
           submitting={creatingIngredient}
           onCancel={() => setIngredientSheetOpen(false)}
           onSubmit={async (values) => {
@@ -439,58 +415,6 @@ function InventarioPageContent() {
             }
           }}
         />
-      </ItemPanelLayout>
-
-      <ItemPanelLayout
-        open={movementSheetOpen}
-        title={
-          movementInitialAction === "PURCHASE"
-            ? "Cargar stock"
-            : movementInitialAction === "PURCHASE_RETURN"
-              ? "Devolución de compras"
-              : "Registrar movimiento"
-        }
-        subtitle="Movimiento rápido"
-        onClose={() => setMovementSheetOpen(false)}
-      >
-        {summary.length === 0 ? (
-          <div className="rounded-2xl border border-neutral-100 bg-white p-4 text-sm font-medium text-neutral-700 shadow-sm">
-            No hay ingredientes activos para registrar movimientos.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingrediente</p>
-              <select
-                value={movementIngredientId || summary[0]?.id || ""}
-                onChange={(event) => setMovementIngredientId(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-semibold outline-none shadow-sm focus:border-emerald-500"
-              >
-                {summary.map((ingredient) => (
-                  <option key={ingredient.id} value={ingredient.id}>
-                    {ingredient.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {(() => {
-              const selected = summary.find((item) => item.id === (movementIngredientId || summary[0]?.id)) ?? null;
-              if (!selected) return null;
-              return (
-                <MovementForm
-                  ingredient={selected}
-                  initialAction={movementInitialAction}
-                  onSuccess={async () => {
-                    setMovementSheetOpen(false);
-                    setSearchQuery("");
-                    await load();
-                  }}
-                />
-              );
-            })()}
-          </div>
-        )}
       </ItemPanelLayout>
 
       <IngredientDetailSheet

@@ -5,6 +5,7 @@ import {
   BookOpen,
   ClipboardList,
   PackageSearch,
+  Plus,
   RotateCcw,
   Search,
   Send,
@@ -34,6 +35,7 @@ export type InventoryChatActionBarProps = {
   onCreateIngredient?: () => void;
   onRegisterPurchase?: () => void;
   onRegisterPurchaseReturn?: () => void;
+  createIngredientActive?: boolean;
 };
 
 const MENU: Array<{
@@ -70,6 +72,7 @@ export function InventoryChatActionBar({
   onCreateIngredient,
   onRegisterPurchase,
   onRegisterPurchaseReturn,
+  createIngredientActive = false,
 }: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [internalValue, setInternalValue] = useState("");
@@ -181,7 +184,13 @@ export function InventoryChatActionBar({
                       : "Abrir menú"
                 }
               >
-                {menuOpen && hasMenu ? <X className="h-5 w-5" /> : <SlidersHorizontal className="h-5 w-5" />}
+                {onlyCreateIngredient && onCreateIngredient ? (
+                  createIngredientActive ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />
+                ) : menuOpen && hasMenu ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <SlidersHorizontal className="h-5 w-5" />
+                )}
               </button>
 
               <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center">
