@@ -161,3 +161,213 @@ describe('SalesService.reverseConfirmedOrder', () => {
     );
   });
 });
+
+describe('SalesService.updateOrderItemOptionalIngredients', () => {
+  const businessId = 'business-1';
+  const orderId = 'order-1';
+  const orderItemId = 'order-item-1';
+  const requiredIngredientId = 'ingredient-required';
+  const optionalIngredientId = 'ingredient-optional';
+  const outsideIngredientId = 'ingredient-outside';
+  const mockFn = () => jest.fn() as any;
+
+  function createRecipeOrder(overrides: Record<string, any> = {}) {
+    return {
+      id: orderId,
+      businessId,
+      status: 'SENT',
+      inventoryPostedAt: null,
+      items: [
+        {
+          id: orderItemId,
+          orderId,
+          businessId,
+          itemId: 'item-1',
+          inventoryModeSnapshot: 'RECIPE_BASED',
+          excludedOptionalIngredientIds: null,
+          item: {
+            id: 'item-1',
+            inventoryMode: 'RECIPE_BASED',
+            recipes: [
+              {
+                ingredientId: requiredIngredientId,
+                isOptional: false,
+                quantityRequired: 1,
+                ingredient: {
+                  id: requiredIngredientId,
+                  name: 'Pan',
+                  consumptionUnit: 'UNIT',
+                  customUnitLabel: null,
+                },
+              },
+              {
+                ingredientId: optionalIngredientId,
+                isOptional: true,
+                quantityRequired: 1,
+                ingredient: {
+                  id: optionalIngredientId,
+                  name: 'Mayonesa',
+                  consumptionUnit: 'GRAM',
+                  customUnitLabel: null,
+                },
+              },
+            ],
+          },
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  function createService(order: Record<string, any> | null = createRecipeOrder()) {
+    const prisma = {
+      order: {
+        findFirst: mockFn().mockResolvedValue(order),
+      },
+      orderItem: {
+        update: mockFn().mockResolvedValue({
+          ...createRecipeOrder().items[0],
+          excludedOptionalIngredientIds: [optionalIngredientId],
+        }),
+      },
+    } as any;
+
+    const accountingService = {} as any;
+    const inventoryService = {} as any;
+
+    return { service: new SalesService(prisma, accountingService, inventoryService), prisma };
+  }
+
+  it('persists optional ingredient exclusions before inventory is posted', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
+        excludedOptionalIngredientIds: [optionalIngredientId],
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: orderItemId,
+        excludedOptionalIngredientIds: [optionalIngredientId],
+      }),
+    );
+
+    expect(prisma.orderItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: orderItemId },
+        data: { excludedOptionalIngredientIds: [optionalIngredientId] },
+      }),
+    );
+  });
+
+  it('rejects excluding mandatory ingredients', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
+        excludedOptionalIngredientIds: [requiredIngredientId],
+      }),
+    ).rejects.toThrow('Mandatory ingredients cannot be excluded');
+
+    expect(prisma.orderItem.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects ingredients outside the optional recipe', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
+        excludedOptionalIngredientIds: [outsideIngredientId],
+      }),
+    ).rejects.toThrow('outside the optional recipe');
+
+    expect(prisma.orderItem.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate exclusions', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
+        excludedOptionalIngredientIds: [optionalIngredientId, optionalIngredientId],
+      }),
+    ).rejects.toThrow('contains duplicates');
+
+    expect(prisma.orderItem.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects updates after inventory was posted', async () => {
+    const { service, prisma } = createService(
+      createRecipeOrder({ inventoryPostedAt: new Date() }),
+    );
+
+    await expect(
+      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
+        excludedOptionalIngredientIds: [optionalIngredientId],
+      }),
+    ).rejects.toThrow('Order inventory has already been posted');
+
+    expect(prisma.orderItem.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalesService.confirmOrder optional ingredient exclusions', () => {
+  const businessId = 'business-1';
+  const orderId = 'order-1';
+
+  it('passes the persisted exclusions to InventoryService when confirming', async () => {
+    const order = {
+      id: orderId,
+      businessId,
+      status: 'SENT',
+      accountingPostedAt: new Date(),
+      inventoryPostedAt: null,
+      items: [
+        {
+          id: 'order-item-1',
+          excludedOptionalIngredientIds: ['ingredient-optional'],
+          item: { id: 'item-1' },
+        },
+      ],
+    };
+
+    const tx = {
+      order: {
+        findFirst: (jest.fn() as any).mockResolvedValue(order),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        findUniqueOrThrow: (jest.fn() as any).mockResolvedValue({
+          ...order,
+          status: 'COMPLETED',
+          inventoryPostedAt: new Date(),
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    } as any;
+    const inventoryService = {
+      applyInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue([]),
+    } as any;
+    const accountingService = {
+      postOrderMovements: jest.fn(),
+    } as any;
+    const service = new SalesService(prisma, accountingService, inventoryService);
+
+    await service.confirmOrder(businessId, orderId, 'ORDER');
+
+    expect(inventoryService.applyInventoryConsumptionForOrder).toHaveBeenCalledWith(
+      tx,
+      businessId,
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            excludedOptionalIngredientIds: ['ingredient-optional'],
+          }),
+        ],
+      }),
+      expect.any(Date),
+    );
+    expect(accountingService.postOrderMovements).not.toHaveBeenCalled();
+  });
+});

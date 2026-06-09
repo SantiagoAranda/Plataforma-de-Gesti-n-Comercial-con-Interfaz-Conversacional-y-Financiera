@@ -19,16 +19,31 @@ export interface ApiOrder {
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   total: number;
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
+  inventoryPostedAt?: string | null;
   origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
   items: Array<{
+    orderItemId?: string;
     name: string;
     qty: number;
     unitPrice: number;
     price: number;
     itemId: string;
+    itemInventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+    excludedOptionalIngredientIds?: string[];
+    recipe?: Array<{
+      ingredientId: string;
+      isOptional: boolean;
+      quantityRequired: number;
+      ingredient: {
+        id: string;
+        name: string;
+        consumptionUnit?: string | null;
+        customUnitLabel?: string | null;
+      };
+    }>;
     durationMin?: number | null;
   }>;
 };
@@ -114,6 +129,17 @@ export function updateOrderItem(saleId: string, orderItemId: string, quantity: n
   return api(`/sales/${saleId}/items/${orderItemId}`, {
     method: "PATCH",
     body: JSON.stringify({ quantity }),
+  });
+}
+
+export function updateOrderItemOptionalIngredients(
+  saleId: string,
+  orderItemId: string,
+  excludedOptionalIngredientIds: string[],
+) {
+  return api(`/sales/orders/${saleId}/items/${orderItemId}/optional-ingredients`, {
+    method: "PATCH",
+    body: JSON.stringify({ excludedOptionalIngredientIds }),
   });
 }
 

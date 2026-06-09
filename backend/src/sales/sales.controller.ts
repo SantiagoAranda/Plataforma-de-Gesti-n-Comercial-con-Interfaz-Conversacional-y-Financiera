@@ -19,6 +19,7 @@ import { AddOrderItemDto } from "./dto/add-order-item.dto";
 import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
 import { ReverseOrderDto } from './dto/reverse-order.dto';
+import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('sales')
@@ -93,6 +94,21 @@ export class SalesController {
     @Body() dto: UpdateOrderItemDto
   ) {
     return this.salesService.updateItem(req.user.businessId, id, orderItemId, dto);
+  }
+
+  @Patch("orders/:id/items/:orderItemId/optional-ingredients")
+  updateItemOptionalIngredients(
+    @Req() req: any,
+    @Param("id") id: string,
+    @Param("orderItemId") orderItemId: string,
+    @Body() dto: UpdateOrderItemOptionalsDto
+  ) {
+    return this.salesService.updateOrderItemOptionalIngredients(
+      req.user.businessId,
+      id,
+      orderItemId,
+      dto,
+    );
   }
 
   @Delete(":id/items/:orderItemId")

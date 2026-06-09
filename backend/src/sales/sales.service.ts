@@ -13,6 +13,7 @@ import { AddOrderItemDto } from './dto/add-order-item.dto';
 import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { ReverseOrderDto } from './dto/reverse-order.dto';
+import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -25,16 +26,31 @@ export interface UnifiedSaleDto {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   total: number;
   status: UnifiedStatus;
+  inventoryPostedAt?: Date | null;
   createdAt: Date;
   scheduledAt?: string;
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   items: Array<{
+    orderItemId?: string;
     name: string;
     qty: number;
     unitPrice: number;
     price: number;
     itemId: string;
+    itemInventoryMode?: string | null;
+    excludedOptionalIngredientIds?: string[];
+    recipe?: Array<{
+      ingredientId: string;
+      isOptional: boolean;
+      quantityRequired: number;
+      ingredient: {
+        id: string;
+        name: string;
+        consumptionUnit?: string | null;
+        customUnitLabel?: string | null;
+      };
+    }>;
     durationMin?: number | null;
   }>;
 }
@@ -45,6 +61,61 @@ export class SalesService {
     private accountingService: AccountingService,
     private inventoryService: InventoryService,
   ) { }
+
+  private readonly orderItemRecipeInclude = {
+    item: {
+      include: {
+        recipes: {
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    },
+  } satisfies Prisma.OrderItemInclude;
+
+  private parseExcludedOptionalIngredientIdsForResponse(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.filter((id): id is string => typeof id === 'string');
+  }
+
+  private normalizeExcludedOptionalIngredientIds(value: unknown): string[] {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+    }
+    if (!value.every((id) => typeof id === 'string')) {
+      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+    }
+    if (new Set(value).size !== value.length) {
+      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+    }
+    return value;
+  }
+
+  private mapRecipeForSales(item: any) {
+    return (item?.recipes ?? []).map((recipe: any) => ({
+      ingredientId: recipe.ingredientId,
+      isOptional: Boolean(recipe.isOptional),
+      quantityRequired: Number(recipe.quantityRequired),
+      ingredient: {
+        id: recipe.ingredient.id,
+        name: recipe.ingredient.name,
+        consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
+        customUnitLabel: recipe.ingredient.customUnitLabel ?? null,
+      },
+    }));
+  }
 
   private parseDateOnly(value: string) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((value ?? '').trim());
@@ -370,9 +441,7 @@ export class SalesService {
         },
         include: {
           items: {
-            include: {
-              item: true,
-            },
+            include: this.orderItemRecipeInclude,
           },
         },
         orderBy: {
@@ -406,15 +475,22 @@ export class SalesService {
       paymentMethod: ((o as any).paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
       total: Number(o.total),
       status: this.mapOrderStatus(o.status),
+      inventoryPostedAt: o.inventoryPostedAt,
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       items: o.items.map((it) => ({
+        orderItemId: it.id,
         name: it.itemNameSnapshot,
         qty: it.quantity,
         unitPrice: Number(it.unitPrice),
         price: Number(it.lineTotal),
         itemId: it.itemId,
+        itemInventoryMode: it.inventoryModeSnapshot ?? it.item?.inventoryMode ?? null,
+        excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
+          it.excludedOptionalIngredientIds,
+        ),
+        recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
     }));
@@ -750,6 +826,88 @@ export class SalesService {
     return order;
   }
 
+  async updateOrderItemOptionalIngredients(
+    businessId: string,
+    orderId: string,
+    orderItemId: string,
+    dto: UpdateOrderItemOptionalsDto,
+  ) {
+    const excludedIds = this.normalizeExcludedOptionalIngredientIds(
+      dto.excludedOptionalIngredientIds,
+    );
+
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, businessId },
+      include: {
+        items: {
+          where: { id: orderItemId },
+          include: this.orderItemRecipeInclude,
+        },
+      },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.inventoryPostedAt) {
+      throw new ConflictException('Order inventory has already been posted');
+    }
+
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
+      throw new BadRequestException('Order not editable');
+    }
+
+    const orderItem = order.items[0];
+    if (!orderItem) throw new NotFoundException('OrderItem not found');
+
+    const inventoryMode =
+      orderItem.inventoryModeSnapshot ?? orderItem.item?.inventoryMode ?? null;
+    if (inventoryMode !== 'RECIPE_BASED') {
+      throw new BadRequestException(
+        'Optional ingredients can only be edited for recipe-based items',
+      );
+    }
+
+    const recipe = orderItem.item?.recipes ?? [];
+    const optionalIds = new Set(
+      recipe
+        .filter((line: any) => line.isOptional)
+        .map((line: any) => line.ingredientId),
+    );
+    const mandatoryIds = new Set(
+      recipe
+        .filter((line: any) => !line.isOptional)
+        .map((line: any) => line.ingredientId),
+    );
+
+    for (const ingredientId of excludedIds) {
+      if (mandatoryIds.has(ingredientId)) {
+        throw new BadRequestException('Mandatory ingredients cannot be excluded');
+      }
+      if (!optionalIds.has(ingredientId)) {
+        throw new BadRequestException(
+          'excludedOptionalIngredientIds contains an ingredient outside the optional recipe',
+        );
+      }
+    }
+
+    const updated = await this.prisma.orderItem.update({
+      where: { id: orderItem.id },
+      data: {
+        excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
+      },
+      include: this.orderItemRecipeInclude,
+    });
+
+    return {
+      id: updated.id,
+      itemId: updated.itemId,
+      excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
+        updated.excludedOptionalIngredientIds,
+      ),
+      recipe: this.mapRecipeForSales(updated.item),
+    };
+  }
+
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOrderOrThrow(businessId, orderId);
 
@@ -883,9 +1041,7 @@ export class SalesService {
       where: { id: orderId, businessId },
       include: {
         items: {
-          include: {
-            item: true,
-          },
+          include: this.orderItemRecipeInclude,
         },
       },
     });
