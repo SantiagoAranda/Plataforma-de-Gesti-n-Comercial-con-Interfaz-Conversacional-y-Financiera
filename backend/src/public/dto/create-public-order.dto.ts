@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsString, ValidateNested, IsUUID, IsInt, Min } from 'class-validator';
+import { IsArray, IsNotEmpty, IsString, ValidateNested, IsUUID, IsInt, Min, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class OrderItemInput {
@@ -18,6 +18,10 @@ export class CreatePublicOrderDto {
   @IsString()
   @IsNotEmpty()
   customerWhatsapp: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

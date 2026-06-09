@@ -147,8 +147,8 @@ export class PublicService {
     }
 
     const duration = item.durationMinutes ?? 60;
-    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos)
-    const step = 30;
+    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos) -> Ajustado a 60
+    const step = 60;
     const slots: string[] = [];
 
     // Past slots filter based on America/Bogota
@@ -171,8 +171,16 @@ export class PublicService {
 
     for (const window of mergedWindows) {
       let cursor = window.startMinute;
+      if (cursor % 60 !== 0) {
+        cursor = cursor + (60 - (cursor % 60)); // Redondea al siguiente minuto 00
+      }
 
       while (cursor + duration <= window.endMinute) {
+        if (cursor % 60 !== 0) {
+          cursor += step;
+          continue;
+        }
+
         const start = cursor;
         const end = cursor + duration;
 
@@ -182,8 +190,7 @@ export class PublicService {
         }
 
         const overlap = reservations.some(
-          (reservation) =>
-            start < reservation.endMinute && end > reservation.startMinute,
+          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
         const blocked = blocks.some((block) => {
@@ -547,6 +554,7 @@ export class PublicService {
         origin: 'PUBLIC_STORE',
         customerName: dto.customerName,
         customerWhatsapp: dto.customerWhatsapp,
+        note: dto.note,
         sentAt: new Date(),
 
         items: {
