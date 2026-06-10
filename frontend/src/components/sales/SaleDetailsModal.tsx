@@ -317,11 +317,10 @@ export default function SaleDetailsModal({
                                 return (
                                   <label
                                     key={line.ingredientId}
-                                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
-                                      checked
+                                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${checked
                                         ? "border-emerald-100 bg-emerald-50/50"
                                         : "border-neutral-100 bg-neutral-50"
-                                    } ${isEditableLine ? "cursor-pointer" : "cursor-default opacity-80"}`}
+                                      } ${isEditableLine ? "cursor-pointer" : "cursor-default opacity-80"}`}
                                   >
                                     <span className="min-w-0">
                                       <span className="block truncate text-xs font-bold text-neutral-700">

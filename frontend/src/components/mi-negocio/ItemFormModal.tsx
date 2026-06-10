@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "@/src/lib/api";
 import { invalidateCache } from "@/src/lib/cache";
 import {
@@ -34,9 +35,6 @@ interface ItemFormModalProps {
   onClose: () => void;
   onSaved: (item: Item) => void;
   editingItem: Item | null;
-  setToast: (
-    toast: { message: string; type: "success" | "error" } | null,
-  ) => void;
 }
 
 function revokePendingImages(images: PendingImage[]) {
@@ -48,7 +46,6 @@ export default function ItemFormModal({
   onClose,
   onSaved,
   editingItem,
-  setToast,
 }: ItemFormModalProps) {
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
@@ -341,7 +338,7 @@ export default function ItemFormModal({
       resetForm();
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al guardar item", type: "error" });
+      toast.error("Error al guardar item");
     } finally {
       setIsSubmitting(false);
     }

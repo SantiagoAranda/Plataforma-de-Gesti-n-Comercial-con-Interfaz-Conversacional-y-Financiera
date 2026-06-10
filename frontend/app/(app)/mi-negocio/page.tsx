@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import {
   Trash2,
   X,
@@ -53,10 +54,6 @@ export default function MiNegocioPage() {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
-  const [toast, setToast] = useState<{
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
   const [searchQuery, setSearchQuery] = useState("");
@@ -365,14 +362,14 @@ export default function MiNegocioPage() {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : [],
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -456,15 +453,12 @@ export default function MiNegocioPage() {
       // Forzar autoscroll al final al crear/editar (estilo WhatsApp)
       shouldStickToBottomRef.current = true;
 
-      setToast({
-        message: editingItem ? "Item actualizado" : "Item creado",
-        type: "success",
-      });
+      toast.success(editingItem ? "Item actualizado" : "Item creado");
       setComposerMode("closed");
       resetForm();
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al guardar", type: "error" });
+      toast.error("Error al guardar");
     } finally {
       setIsSubmitting(false);
     }
@@ -480,12 +474,11 @@ export default function MiNegocioPage() {
       setSelectedItem(null);
       invalidateCache("mi-negocio:items:ACTIVE");
       invalidateCache("home:businessActivity");
-      setToast({ message: "Item eliminado", type: "success" });
+      toast.success("Item eliminado");
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al eliminar", type: "error" });
+      toast.error("Error al eliminar");
     }
-    setTimeout(() => setToast(null), 2500);
   };
 
   const handleScroll = useCallback(() => {
@@ -771,14 +764,6 @@ export default function MiNegocioPage() {
         </button>
       )}
 
-      {/* TOAST DE NOTIFICACIÓN */}
-      {toast && (
-        <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}
-        >
-          {toast.message}
-        </div>
-      )}
     </div>
   );
 }

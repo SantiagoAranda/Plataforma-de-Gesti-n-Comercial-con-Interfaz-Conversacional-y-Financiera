@@ -50,7 +50,7 @@ function ItemThumbnail() {
   return (
     <div className="h-9 w-9 shrink-0 rounded-lg bg-neutral-100 flex items-center justify-center overflow-hidden border border-neutral-200">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+        <path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" />
       </svg>
     </div>
   );
@@ -84,13 +84,13 @@ export default function SalesChatComposer({
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const [countryCode, setCountryCode] = useState("57");
-  const [phoneNumber, setPhoneNumber] = useState(""); 
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
   const [status, setStatus] = useState<"PENDIENTE" | "CERRADO">("PENDIENTE");
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
-  const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
+  const [newItem, setNewItem] = useState<{ itemId: string, qty: number | "" }>({ itemId: "", qty: 1 });
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
@@ -203,7 +203,7 @@ export default function SalesChatComposer({
         },
       ];
     });
-    setNewItem({itemId: "", qty: 1});
+    setNewItem({ itemId: "", qty: 1 });
   };
 
   const handleSave = () => {
@@ -257,8 +257,8 @@ export default function SalesChatComposer({
             <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 flex flex-col bg-white rounded-[28px] border-t border-slate-100/80 overflow-hidden max-h-[75vh]">
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
                 <div className="flex flex-col">
-                   <h2 className="font-semibold text-slate-900 text-base">Nueva Venta</h2>
-                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Creación Manual</span>
+                  <h2 className="font-semibold text-slate-900 text-base">Nueva Venta</h2>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Creación Manual</span>
                 </div>
 
                 <div className="flex flex-col gap-4 p-2 bg-white">
@@ -287,7 +287,7 @@ export default function SalesChatComposer({
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
@@ -300,7 +300,7 @@ export default function SalesChatComposer({
                           className="flex h-10 w-full items-center justify-between bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 outline-none focus:border-emerald-500 transition-colors"
                         >
                           <span>{status === "PENDIENTE" ? "Pendiente" : "Cerrado"}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down text-slate-400 shrink-0"><path d="m6 9 6 6 6-6"/></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down text-slate-400 shrink-0"><path d="m6 9 6 6 6-6" /></svg>
                         </button>
 
                         {isStatusOpen && (
@@ -311,13 +311,12 @@ export default function SalesChatComposer({
                                 setStatus("PENDIENTE");
                                 setIsStatusOpen(false);
                               }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${
-                                status === "PENDIENTE" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
-                              }`}
+                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "PENDIENTE" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
+                                }`}
                             >
                               <span>Pendiente</span>
                               {status === "PENDIENTE" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
                               )}
                             </button>
                             <button
@@ -326,13 +325,12 @@ export default function SalesChatComposer({
                                 setStatus("CERRADO");
                                 setIsStatusOpen(false);
                               }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${
-                                status === "CERRADO" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
-                              }`}
+                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "CERRADO" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
+                                }`}
                             >
                               <span>Cerrado</span>
                               {status === "CERRADO" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
                               )}
                             </button>
                           </div>
@@ -346,22 +344,20 @@ export default function SalesChatComposer({
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("CASH")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${
-                            paymentMethod === "CASH"
+                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${paymentMethod === "CASH"
                               ? "bg-emerald-600 text-white rounded-xl"
                               : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                          }`}
+                            }`}
                         >
                           Efectívo
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${
-                            paymentMethod === "BANK_TRANSFER"
+                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${paymentMethod === "BANK_TRANSFER"
                               ? "bg-emerald-600 text-white rounded-xl"
                               : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                          }`}
+                            }`}
                         >
                           Transfere.
                         </button>
@@ -418,94 +414,94 @@ export default function SalesChatComposer({
                 )}
 
                 {type === "PRODUCTO" && (
-                <div className="space-y-3">
-                  <span className="text-xs font-medium text-slate-500 mb-1 px-1">Items de venta</span>
+                  <div className="space-y-3">
+                    <span className="text-xs font-medium text-slate-500 mb-1 px-1">Items de venta</span>
 
-                  {/* Add items composer */}
-                  <div className="flex flex-col gap-3 p-3 bg-slate-50/30 rounded-xl">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-medium text-slate-500 mb-1 px-1">Producto / Servicio</span>
-                      <div className="relative bg-white rounded-xl">
-                         <ItemSelector
-                           value={newItem.itemId}
-                           onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                           options={businessItems.filter(bi => 
-                             items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
-                           )}
-                           placeholder="Buscar ítem..."
-                         />
-                      </div>
-                    </div>
-                    {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
+                    {/* Add items composer */}
+                    <div className="flex flex-col gap-3 p-3 bg-slate-50/30 rounded-xl">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Cantidad</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={newItem.qty}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === "") {
-                              setNewItem(prev => ({ ...prev, qty: "" }));
-                              return;
-                            }
-                            const num = parseInt(val, 10);
-                            if (!isNaN(num)) {
-                              setNewItem(prev => ({ ...prev, qty: num }));
-                            }
-                          }}
-                          onFocus={(e) => e.target.select()}
-                          onBlur={() => {
-                            if (newItem.qty === "" || newItem.qty <= 0) {
-                              setNewItem(prev => ({ ...prev, qty: 1 }));
-                            }
-                          }}
-                          className="w-full h-10 bg-slate-50 border border-transparent rounded-xl px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
-                        />
+                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Producto / Servicio</span>
+                        <div className="relative bg-white rounded-xl">
+                          <ItemSelector
+                            value={newItem.itemId}
+                            onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
+                            options={businessItems.filter(bi =>
+                              items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                            )}
+                            placeholder="Buscar ítem..."
+                          />
+                        </div>
+                      </div>
+                      {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs font-medium text-slate-500 mb-1 px-1">Cantidad</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={newItem.qty}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === "") {
+                                setNewItem(prev => ({ ...prev, qty: "" }));
+                                return;
+                              }
+                              const num = parseInt(val, 10);
+                              if (!isNaN(num)) {
+                                setNewItem(prev => ({ ...prev, qty: num }));
+                              }
+                            }}
+                            onFocus={(e) => e.target.select()}
+                            onBlur={() => {
+                              if (newItem.qty === "" || newItem.qty <= 0) {
+                                setNewItem(prev => ({ ...prev, qty: 1 }));
+                              }
+                            }}
+                            className="w-full h-10 bg-slate-50 border border-transparent rounded-xl px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
+                          />
+                        </div>
+                      )}
+                      <button
+                        onClick={handleAddItem}
+                        disabled={!newItem.itemId}
+                        className="w-full h-10 mt-2 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40 disabled:bg-neutral-200"
+                      >
+                        Añadir a la venta
+                      </button>
+                    </div>
+
+                    {formError && (
+                      <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                        {formError}
                       </div>
                     )}
-                    <button
-                      onClick={handleAddItem}
-                      disabled={!newItem.itemId}
-                      className="w-full h-10 mt-2 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40 disabled:bg-neutral-200"
-                    >
-                      Añadir a la venta
-                    </button>
-                  </div>
 
-                  {formError && (
-                    <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                      {formError}
-                    </div>
-                  )}
-
-                  {/* Items List */}
-                  <div className="space-y-2">
-                    {items.map((it, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-100 rounded-xl">
-                        <ItemThumbnail />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-slate-800 text-xs truncate">{it.name}</div>
-                          <div className="flex items-center gap-1 text-[10px] font-normal text-slate-400 mt-0.5">
-                             {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+                    {/* Items List */}
+                    <div className="space-y-2">
+                      {items.map((it, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-100 rounded-xl">
+                          <ItemThumbnail />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-slate-800 text-xs truncate">{it.name}</div>
+                            <div className="flex items-center gap-1 text-[10px] font-normal text-slate-400 mt-0.5">
+                              {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+                            </div>
                           </div>
+
+                          {type === "PRODUCTO" && (
+                            <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-transparent mr-1">
+                              <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">-</button>
+                              <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
+                              <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">+</button>
+                            </div>
+                          )}
+
+                          <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition mr-1">
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-
-                        {type === "PRODUCTO" && (
-                          <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-transparent mr-1">
-                            <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">-</button>
-                            <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
-                            <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">+</button>
-                          </div>
-                        )}
-
-                        <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition mr-1">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
                 )}
 
                 {type === "SERVICIO" && formError && (
@@ -514,7 +510,7 @@ export default function SalesChatComposer({
                   </div>
                 )}
 
-                 <div className="h-4" />
+                <div className="h-4" />
               </div>
             </div>
           )}

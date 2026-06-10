@@ -212,7 +212,7 @@ export default function VentaPage() {
     sales.forEach((sale) => {
       try {
         keys.add(getBusinessDayKey(sale.createdAt));
-      } catch {}
+      } catch { }
     });
     return keys;
   }, [sales]);
@@ -329,19 +329,6 @@ export default function VentaPage() {
         current.map((currentSale) =>
           currentSale.id === sale.id && currentSale.sourceType === sale.sourceType
             ? {
-                ...currentSale,
-                items: currentSale.items.map((item) =>
-                  item.orderItemId === orderItemId
-                    ? { ...item, excludedOptionalIngredientIds }
-                    : item,
-                ),
-              }
-            : currentSale,
-        ),
-      );
-      setDetailsSale((currentSale) =>
-        currentSale?.id === sale.id && currentSale.sourceType === sale.sourceType
-          ? {
               ...currentSale,
               items: currentSale.items.map((item) =>
                 item.orderItemId === orderItemId
@@ -349,6 +336,19 @@ export default function VentaPage() {
                   : item,
               ),
             }
+            : currentSale,
+        ),
+      );
+      setDetailsSale((currentSale) =>
+        currentSale?.id === sale.id && currentSale.sourceType === sale.sourceType
+          ? {
+            ...currentSale,
+            items: currentSale.items.map((item) =>
+              item.orderItemId === orderItemId
+                ? { ...item, excludedOptionalIngredientIds }
+                : item,
+            ),
+          }
           : currentSale,
       );
       invalidateCache("home:sales");

@@ -70,7 +70,7 @@ export default function CartSummary({
       toast.error(error || "El número de teléfono es incorrecto.");
       return;
     }
-    
+
     // Pasa la cédula opcional al confirmar
     onConfirm(document);
   };
@@ -191,9 +191,8 @@ export default function CartSummary({
           type="button"
           onClick={handleConfirm}
           disabled={items.length === 0}
-          className={`w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 mt-4 ${
-            !isFormValid ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+          className={`w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 mt-4 ${!isFormValid ? "opacity-50 cursor-not-allowed" : ""
+            }`}
         >
           <ShoppingBag size={16} />
           Confirmar Pedido

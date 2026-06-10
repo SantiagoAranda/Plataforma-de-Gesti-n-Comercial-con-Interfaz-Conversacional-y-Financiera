@@ -354,10 +354,10 @@ export default function PublicStoreClient() {
         return prev.map((line) =>
           line.itemId === id
             ? {
-                ...line,
-                quantity: line.quantity + 1,
-                excludedOptionalIngredientIds: uniqueExcludedIds,
-              }
+              ...line,
+              quantity: line.quantity + 1,
+              excludedOptionalIngredientIds: uniqueExcludedIds,
+            }
             : line,
         );
       }
