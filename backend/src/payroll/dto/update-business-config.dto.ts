@@ -1,4 +1,5 @@
-import { IsBoolean, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import { LegalPersonType } from '@prisma/client';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
 
 export class UpdateBusinessConfigDto {
   @IsOptional()
@@ -33,6 +34,19 @@ export class UpdateBusinessConfigDto {
   @IsOptional()
   @IsBoolean()
   exemptEmployerHealthLaw1819?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isIncomeTaxFiler?: boolean;
+
+  @IsOptional()
+  @IsEnum(LegalPersonType)
+  legalPersonType?: LegalPersonType;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  employeeCountForExemption?: number;
 
   @IsOptional()
   @IsBoolean()

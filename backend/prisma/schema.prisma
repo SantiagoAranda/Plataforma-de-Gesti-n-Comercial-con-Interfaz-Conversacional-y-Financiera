@@ -28,6 +28,11 @@ enum BusinessCategory {
   SERVICES
 }
 
+enum LegalPersonType {
+  LEGAL_ENTITY
+  NATURAL_PERSON
+}
+
 enum ItemType {
   PRODUCT
   SERVICE
@@ -839,6 +844,9 @@ model PayrollBusinessParameter {
 
   applyLaw1819                Boolean @default(true)
   exemptEmployerHealthLaw1819 Boolean @default(true)
+  isIncomeTaxFiler            Boolean @default(false)
+  legalPersonType             LegalPersonType @default(LEGAL_ENTITY)
+  employeeCountForExemption   Int?
   applySolidarityFund         Boolean @default(true)
   applyIncomeTax              Boolean @default(false)
 
@@ -1338,6 +1346,7 @@ model PayrollBenefitPayment {
   @@index([businessId, contractId])
   @@index([businessId, employeeId])
   @@index([contractId, type])
+  @@unique([contractId, type, year, semester])
 }
 
 model PayrollContractSettlementLine {

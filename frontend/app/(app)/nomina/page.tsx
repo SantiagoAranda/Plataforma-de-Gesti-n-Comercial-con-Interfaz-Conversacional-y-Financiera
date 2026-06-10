@@ -194,14 +194,6 @@ function toNumber(value: MoneyLike) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function firstPositiveMoney(...values: unknown[]): number {
-  for (const value of values) {
-    const numberValue = Number(value);
-    if (Number.isFinite(numberValue) && numberValue > 0) return numberValue;
-  }
-  return 0;
-}
-
 function money(value: MoneyLike) {
   return toNumber(value).toLocaleString("es-CO", {
     style: "currency",
@@ -231,6 +223,31 @@ function serviceBonusPreviewValue(run: PayrollRun) {
     run.usedParameters?.serviceBonusProjected ??
     (run as { serviceBonusPreview?: MoneyLike }).serviceBonusPreview
   );
+}
+
+function payrollRunViewModel(run: PayrollRun) {
+  const transportAllowance = toNumber(run.transportAllowance);
+  const connectivityAllowance = toNumber(run.connectivityAllowance);
+  const allowanceValue = run.contract?.isRemote ? connectivityAllowance : transportAllowance;
+  const allowanceLabel = run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte";
+  const deductions =
+    toNumber(run.employeeHealth) +
+    toNumber(run.employeePension) +
+    toNumber(run.solidarityFund) +
+    toNumber(run.withholdingTax);
+  const salaryPayments = (run.payments ?? [])
+    .filter((payment) => payment.type === "SALARY_PAYMENT")
+    .sort((a, b) => (a.installmentNumber ?? 1) - (b.installmentNumber ?? 1));
+  const allPaid = salaryPayments.length > 0 && salaryPayments.every((payment) => payment.status === "PAID");
+
+  return {
+    allowanceLabel,
+    allowanceValue,
+    deductions,
+    salaryPayments,
+    allPaid,
+    paymentStatusLabel: allPaid ? "Pagada" : "Pendiente pago",
+  };
 }
 
 function translatePayrollError(message: string): string {
@@ -395,8 +412,8 @@ function SummaryCard({
   const percent = totalNet > 0 ? (diff / totalNet) * 100 : 0;
 
   let statusText = "Sin periodo";
-  if (period?.status === "POSTED") statusText = "Liquidado";
-  else if (period?.status === "CALCULATED") statusText = "Sin liquidar";
+  if (period?.status === "POSTED") statusText = "Pagada";
+  else if (period?.status === "CALCULATED") statusText = "Pendiente pago";
   else if (period?.status === "OPEN") statusText = "Abierto";
   else if (period?.status === "CLOSED") statusText = "Cerrado";
 
@@ -1787,7 +1804,7 @@ function EmployeePayrollEditorSheet({
     setSubmitting(true);
     try {
       const payload = {
-        contractType: "FIXED_TERM" as const,
+        contractType,
         salaryMonthly: numberValue(salaryMonthly),
         startDate,
         endDate: endDate || undefined,
@@ -2175,11 +2192,7 @@ function PayrollSummaryPanel({
     { label: "Comisiones", value: run.commissions },
     { label: "Bonificaciones", value: run.nonSalaryBonus },
   ].filter((item) => toNumber(item.value) > 0);
-  const deductions =
-    toNumber(run.employeeHealth) +
-    toNumber(run.employeePension) +
-    toNumber(run.solidarityFund) +
-    toNumber(run.withholdingTax);
+  const viewModel = payrollRunViewModel(run);
 
   const longPress = useLongPress({
     onLongPress: () => onOpenEditor?.(run),
@@ -2187,17 +2200,8 @@ function PayrollSummaryPanel({
   });
 
   const isBiweekly = run.contract?.paymentCycle === "BIWEEKLY";
-  const payments = run.payments ?? [];
-  const salaryPayments = payments
-    .filter((payment) => payment.type === "SALARY_PAYMENT")
-    .sort((a, b) => (a.installmentNumber ?? 1) - (b.installmentNumber ?? 1));
-  const allPaid = salaryPayments.length > 0 && salaryPayments.every((payment) => payment.status === "PAID");
   const canCalculateNews = run.contract?.isActive !== false && !run.contract?.endDate;
-
-  const isPrimaMonth = selectedPeriod?.month === 6 || selectedPeriod?.month === 12;
-  const primaAmount = toNumber(serviceBonusPreviewValue(run));
-  const isPrimaPaid = Boolean(visualPaid);
-  const hasPrima = isPrimaMonth && primaAmount > 0;
+  const primarySalaryPayment = viewModel.salaryPayments[0];
 
   return (
     <div
@@ -2258,41 +2262,20 @@ function PayrollSummaryPanel({
           )}
           
           <MoneyLine
-            label={run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte"}
-            value={firstPositiveMoney(
-              run.transportAllowance,
-              run.connectivityAllowance,
-              run.usedParameters?.transportAllowance,
-              run.usedParameters?.connectivityAllowance,
-              (run as any).preview?.transportAllowance,
-              (run as any).preview?.connectivityAllowance
-            )}
+            label={viewModel.allowanceLabel}
+            value={viewModel.allowanceValue}
             color="text-[#43856f]"
             valueColor="text-[#43856f]"
             sign="+"
           />
           <MoneyLine
             label="Deducciones salud/pensión"
-            value={deductions}
+            value={viewModel.deductions}
             color="text-[#e5a5ba]"
             valueColor="text-[#d985a1]"
             sign="-"
           />
 
-          {hasPrima && (
-            <>
-              <div className="border-t border-slate-100 my-2 pt-2" />
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-[13px] font-semibold text-slate-800">Prima de servicios</p>
-                  <p className="text-[11px] text-slate-400">
-                    {getPrimaDateRange(run.contract, selectedPeriod?.year || new Date().getFullYear())}
-                  </p>
-                </div>
-                <p className="text-[13px] font-bold text-amber-600">{money(primaAmount)}</p>
-              </div>
-            </>
-          )}
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
@@ -2301,24 +2284,29 @@ function PayrollSummaryPanel({
             <p className="text-[15px] font-bold tabular-nums text-slate-800">{money(run.realEmployerCost)}</p>
           </div>
           <div className="flex items-center gap-2">
-            <ChevronDown className={cn("h-4 w-4 transition", expanded && "rotate-180")} />
-            {hasPrima && (
+            {primarySalaryPayment && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onToggleVisualPaid?.(run, !isPrimaPaid);
+                  onTogglePayment(primarySalaryPayment);
                 }}
                 className={cn(
                   "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors",
-                  isPrimaPaid 
+                  viewModel.allPaid 
                     ? "bg-emerald-50 text-emerald-700" 
                     : "bg-slate-100 text-slate-500 hover:bg-slate-200 cursor-pointer"
                 )}
               >
-                {isPrimaPaid ? "Pagado" : "Pendiente"}
+                {viewModel.paymentStatusLabel}
               </button>
             )}
+            {!primarySalaryPayment && (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Pendiente pago
+              </span>
+            )}
+            <ChevronDown className={cn("h-4 w-4 transition", expanded && "rotate-180")} />
           </div>
         </div>
 
@@ -2599,25 +2587,6 @@ function SettlementPanel({
         >
           <Info className="h-3.5 w-3.5" />
         </button>
-        {onLiquidate && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onLiquidate();
-            }}
-            disabled={posting || liquidated}
-            className={cn(
-              "ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold transition disabled:cursor-not-allowed",
-              liquidated
-                ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                : "border-violet-100 bg-violet-50 text-violet-700 hover:bg-violet-100",
-            )}
-          >
-            <ReceiptText className="h-3.5 w-3.5" />
-            {posting ? "Liquidando..." : liquidated ? "Liquidado" : "Liquidar contrato"}
-          </button>
-        )}
         {showInfo && (
           <div className="absolute left-0 top-7 z-10 max-w-[260px] rounded-2xl border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600 shadow-xl">
             Esta estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual. No incluye historicos de años anteriores. El calculo usa año laboral de 360 dias: meses de 30 dias.
@@ -2940,7 +2909,7 @@ function EmployeeStandaloneCard({
             onClick={() => onComplementaryRun?.(employee)}
             className="rounded-xl bg-violet-50 px-4 py-2 text-[10px] font-bold text-violet-700 hover:bg-violet-100"
           >
-            Liquidar complementaria
+            Pagar complementaria
           </button>
         </div>
       )}
@@ -4342,7 +4311,7 @@ function SettlementSimulationSheet({
             disabled={submitting}
             className="mt-2 h-12 w-full rounded-2xl bg-slate-900 text-sm font-medium text-white disabled:opacity-60"
           >
-            {confirmingPost ? "Confirmar liquidación definitiva" : "Liquidar contrato"}
+            {confirmingPost ? "Confirmar registro definitivo" : "Registrar liquidacion"}
           </button>
         )}
       </div>
@@ -5077,7 +5046,7 @@ export default function PayrollPage() {
                     )}
                   >
                     <ListChecks className="h-3.5 w-3.5" />
-                    {periodAlreadyPosted ? "Liquidada" : "Liquidar nomina"}
+                    {periodAlreadyPosted ? "Pagada" : "Pagar nomina"}
                   </button>
                 </div>
               </div>
@@ -5264,10 +5233,10 @@ export default function PayrollPage() {
           confirmAction?.type === "visual-payment"
             ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
             : confirmAction?.type === "post-period"
-              ? "Liquidar la nomina mensual de este periodo?"
+              ? "Pagar la nomina mensual de este periodo?"
               : confirmAction?.type === "complementary-run"
-                ? "¿Liquidar nómina complementaria?"
-                : "Liquidar este contrato?"
+                ? "¿Pagar nómina complementaria?"
+                : "Pagar este contrato?"
         }
         description={
           confirmAction?.type === "visual-payment"
