@@ -78,7 +78,7 @@ export default function SalesChatComposer({
     scheduledAt?: string;
     durationMinutes?: number;
     items: { itemId: string; quantity: number }[];
-  }) => void;
+  }) => Promise<void> | void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [isStatusOpen, setIsStatusOpen] = useState(false);
@@ -95,6 +95,16 @@ export default function SalesChatComposer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -138,6 +148,7 @@ export default function SalesChatComposer({
       setSelectedStartMinute(null);
       setManualDuration("60");
       setFormError(null);
+      setIsSubmitting(false);
     }
   }, [expanded]);
 
@@ -206,7 +217,9 @@ export default function SalesChatComposer({
     setNewItem({ itemId: "", qty: 1 });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSubmitting) return;
+
     setFormError(null);
     const cleanedName = customerName.trim();
     const rawPhone = phoneNumber.replace(/\D/g, "");
@@ -237,16 +250,25 @@ export default function SalesChatComposer({
       return;
     }
 
-    onSave({
-      customerName: cleanedName || undefined,
-      customerWhatsapp: cleanedWhatsapp,
-      type,
-      status,
-      paymentMethod: paymentMethod || "CASH",
-      scheduledAt,
-      durationMinutes: isService ? serviceDuration : undefined,
-      items: cleanedItems,
-    });
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        customerName: cleanedName || undefined,
+        customerWhatsapp: cleanedWhatsapp,
+        type,
+        status,
+        paymentMethod: paymentMethod || "CASH",
+        scheduledAt,
+        durationMinutes: isService ? serviceDuration : undefined,
+        items: cleanedItems,
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (isMounted.current && expanded) {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   return (
@@ -525,6 +547,7 @@ export default function SalesChatComposer({
             leftIconVariant={expanded ? "x" : "plus"}
             rightIconVariant={expanded ? "send" : "search"}
             submitDisabled={expanded && items.length === 0}
+            isSubmitting={isSubmitting}
             centerContent={
               expanded ? (
                 <div className="flex h-full w-full items-center justify-between pt-0.5">

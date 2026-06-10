@@ -1,27 +1,24 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
 import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
-import { MovementPercentBarChart } from "@/src/components/movements/MovementPercentBarChart";
 import { MovementPeriodFilter } from "@/src/components/movements/MovementPeriodFilter";
 import { MovementProfitHero } from "@/src/components/movements/MovementProfitHero";
 import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
-import { mapMovementMetrics } from "@/src/lib/movements/mapMovementMetrics";
 import { periodRange } from "@/src/lib/movements/movementPeriod";
-import { listMovements, type BackendMovement } from "@/src/services/accounting";
+import { getAccountingSummary, type AccountingSummary } from "@/src/services/accounting";
 import type { MovementPeriodKey } from "@/src/types/movements-ui";
 
 export default function MovimientosPage() {
   const [period, setPeriod] = useState<MovementPeriodKey>("THIS_MONTH");
-  const [rows, setRows] = useState<BackendMovement[]>([]);
+  const [summary, setSummary] = useState<AccountingSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
-  const [activePanel, setActivePanel] = useState<"summary" | "percentages">("summary");
 
   useEffect(() => {
     (async () => {
@@ -29,14 +26,15 @@ export default function MovimientosPage() {
       try {
         setError(null);
         const range = periodRange(period);
-        const data = await listMovements({
+        const data = await getAccountingSummary({
           from: range.from,
           to: range.to,
         });
-        setRows(data ?? []);
+        console.log("🔍 AUDITORÍA DE PAYLOAD - MOVIMIENTOS REALES:", data);
+        setSummary(data);
       } catch (e: unknown) {
         console.error(e);
-        setRows([]);
+        setSummary(null);
         const message = e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
           ? (e as { message: string }).message
           : "No se pudieron cargar los movimientos";
@@ -48,50 +46,25 @@ export default function MovimientosPage() {
   }, [period]);
 
   const range = periodRange(period);
-  const metrics = useMemo(() => mapMovementMetrics(rows, range.label), [rows, range.label]);
-  const { view } = metrics;
-  const chartItems = view.chartData.map((c) => {
-    const tone: "blue" | "red" | "green" =
-      c.key === "netProfit"
-        ? "blue"
-        : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
-          ? "red"
-          : "green";
-
-    return {
-      ...c,
-      tone,
-    };
-  });
-
-  const togglePanel = () => {
-    setActivePanel((current) => (current === "summary" ? "percentages" : "summary"));
-  };
-
-  const mobileNavButtonClassName =
-    "inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm ring-1 ring-black/5 transition hover:text-neutral-900";
-
-  const mobileLeftButton = (
-    <button
-      type="button"
-      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
-      onClick={togglePanel}
-      className={mobileNavButtonClassName}
-    >
-      <ChevronLeft className="h-4 w-4" />
-    </button>
-  );
-
-  const mobileRightButton = (
-    <button
-      type="button"
-      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
-      onClick={togglePanel}
-      className={mobileNavButtonClassName}
-    >
-      <ChevronRight className="h-4 w-4" />
-    </button>
-  );
+  
+  const hasData = useMemo(() => {
+    if (!summary) return false;
+    const op = summary.operacionComercial;
+    const ga = summary.gastosAdministrativos;
+    const ir = summary.impuestosReservas;
+    return (
+      op.ventasNetas !== 0 ||
+      op.costosMercancia !== 0 ||
+      op.utilidadBruta !== 0 ||
+      op.devoluciones !== 0 ||
+      ga.nominaSueldos !== 0 ||
+      ga.insumosOperativos !== 0 ||
+      ga.serviciosFijos !== 0 ||
+      ir.iva !== 0 ||
+      ir.retenciones !== 0 ||
+      ir.fondosReserva !== 0
+    );
+  }, [summary]);
 
   return (
     <div className="min-h-dvh bg-zinc-50">
@@ -144,35 +117,14 @@ export default function MovimientosPage() {
           </div>
         )}
 
-        {!loading && !error && !metrics.hasData && <MovementEmptyState />}
+        {!loading && !error && !hasData && <MovementEmptyState />}
 
-        {!loading && !error && metrics.hasData && (
+        {!loading && !error && hasData && summary && (
           <>
-            <MovementProfitHero amount={metrics.netProfit} />
+            <MovementProfitHero metrics={summary} />
 
-            <section className="space-y-3">
-              <div className="md:hidden">
-                <div className="min-h-[320px]">
-                  {activePanel === "summary" ? (
-                    <MovementSummaryList
-                      metrics={view.summaryMetrics}
-                      headerLeft={mobileLeftButton}
-                      headerRight={mobileRightButton}
-                    />
-                  ) : (
-                    <MovementPercentBarChart
-                      items={chartItems}
-                      headerLeft={mobileLeftButton}
-                      headerRight={mobileRightButton}
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div className="hidden items-stretch gap-4 md:grid md:grid-cols-2">
-                <MovementSummaryList metrics={view.summaryMetrics} />
-                <MovementPercentBarChart items={chartItems} />
-              </div>
+            <section className="space-y-5">
+              <MovementSummaryList metrics={summary} />
             </section>
           </>
         )}

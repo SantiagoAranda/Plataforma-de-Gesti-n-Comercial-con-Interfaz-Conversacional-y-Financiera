@@ -189,9 +189,16 @@ export function WhatsappComposer({
             disabled={isSubmitDisabled}
             className={rightButtonClassName || cn(
               "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-emerald-400/35 active:scale-95",
-              isSubmitDisabled && "cursor-not-allowed bg-slate-200 text-slate-400",
-              !isSubmitDisabled && rightButtonVariant === "primary" && "bg-[#25D366] text-white hover:bg-emerald-600",
-              !isSubmitDisabled && rightButtonVariant === "plain" && "bg-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700",
+              isSubmitting
+                ? (rightButtonVariant === "primary"
+                    ? "bg-[#25D366] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    : "bg-transparent text-slate-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed")
+                : (isSubmitDisabled
+                    ? "cursor-not-allowed bg-slate-200 text-slate-400"
+                    : (rightButtonVariant === "primary"
+                        ? "bg-[#25D366] text-white hover:bg-emerald-600"
+                        : "bg-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700")
+                  )
             )}
             aria-label={submitAriaLabel}
           >

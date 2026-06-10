@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Plus, Trash2, Send } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -58,7 +58,7 @@ export default function SaleCreateModal({
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
     items: { itemId: string; quantity: number }[];
-  }) => void;
+  }) => Promise<void> | void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
@@ -70,6 +70,16 @@ export default function SaleCreateModal({
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const fetchItems = async () => {
     try {
@@ -100,6 +110,7 @@ export default function SaleCreateModal({
     setItems([]);
     setExpanded(false);
     setNewItem({ itemId: "", qty: 1 });
+    setIsSubmitting(false);
   }, [open]);
 
   const total = useMemo(() => {
@@ -140,7 +151,9 @@ export default function SaleCreateModal({
     setNewItem({itemId: "", qty: 1});
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSubmitting) return;
+
     const cleanedName = customerName.trim() || "Cliente Local";
     const cleanedWhatsapp = phoneNumber.trim().length > 0 ? `${countryCode}${phoneNumber}` : "0000000000";
 
@@ -152,14 +165,23 @@ export default function SaleCreateModal({
 
     if (cleanedItems.length === 0) return;
 
-    onSave({
-      customerName: cleanedName,
-      customerWhatsapp: cleanedWhatsapp,
-      type,
-      status,
-      paymentMethod: paymentMethod || "CASH",
-      items: cleanedItems,
-    });
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        customerName: cleanedName,
+        customerWhatsapp: cleanedWhatsapp,
+        type,
+        status,
+        paymentMethod: paymentMethod || "CASH",
+        items: cleanedItems,
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (isMounted.current && open) {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   return (
@@ -371,8 +393,8 @@ export default function SaleCreateModal({
 
                     <button
                       onClick={handleSave}
-                      disabled={items.length === 0}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90 disabled:opacity-40 disabled:hover:bg-emerald-500"
+                      disabled={items.length === 0 || isSubmitting}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl hover:bg-emerald-600 active:scale-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <Send className="h-4 w-4" />
                     </button>

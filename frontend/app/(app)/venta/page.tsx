@@ -397,6 +397,7 @@ export default function VentaPage() {
       console.error("Details:", apiError.details);
       console.error("Raw:", apiError.raw);
       toast.error(apiError.message || "Error al registrar la venta");
+      throw error;
     }
   };
 
