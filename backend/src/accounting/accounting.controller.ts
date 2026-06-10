@@ -35,6 +35,11 @@ export class AccountingController {
     return this.accountingService.findAllMovements(req.user.businessId, q);
   }
 
+  @Get('summary')
+  getSummary(@Req() req: any, @Query() q: AccountingMovementsQueryDto) {
+    return this.accountingService.getSummary(req.user.businessId, q);
+  }
+
   @Get('movements/:id')
   getMovement(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.findOneMovement(req.user.businessId, id);

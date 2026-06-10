@@ -41,6 +41,27 @@ export type AccountingMovementsFilters = {
 
 export type BackendMovement = AccountingMovement; // compatibilidad con utilidades existentes
 
+export type AccountingSummary = {
+  balanceTotal: number;
+  eficiencia: number;
+  operacionComercial: {
+    ventasNetas: number;
+    costosMercancia: number;
+    utilidadBruta: number;
+    devoluciones: number;
+  };
+  gastosAdministrativos: {
+    nominaSueldos: number;
+    insumosOperativos: number;
+    serviciosFijos: number;
+  };
+  impuestosReservas: {
+    iva: number;
+    retenciones: number;
+    fondosReserva: number;
+  };
+};
+
 export async function listMovements(filters: AccountingMovementsFilters = {}) {
   const qs = new URLSearchParams();
   if (filters.from) qs.set("from", filters.from);
@@ -53,6 +74,15 @@ export async function listMovements(filters: AccountingMovementsFilters = {}) {
 
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<AccountingMovement[]>(`/accounting/movements${suffix}`);
+}
+
+export async function getAccountingSummary(filters: { from?: string; to?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (filters.from) qs.set("from", filters.from);
+  if (filters.to) qs.set("to", filters.to);
+
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<AccountingSummary>(`/accounting/summary${suffix}`);
 }
 
 export async function getMovement(id: string) {
