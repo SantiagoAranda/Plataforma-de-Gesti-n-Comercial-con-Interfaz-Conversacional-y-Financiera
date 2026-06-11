@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
@@ -598,7 +598,7 @@ export default function ContabilidadPage() {
               <div>Diferencia</div>
             </div>
 
-            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-bold">
+            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-medium">
               <div className="text-neutral-900">
                 {formatCurrency(balanceSummary.totalDebit)}
               </div>

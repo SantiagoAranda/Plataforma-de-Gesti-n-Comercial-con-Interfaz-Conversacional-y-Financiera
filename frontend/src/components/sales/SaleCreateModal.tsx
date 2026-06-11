@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Plus, Trash2, Send } from "lucide-react";
@@ -194,8 +194,8 @@ export default function SaleCreateModal({
 
         <div className="px-5 pt-7 pb-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-             <h2 className="font-bold text-neutral-900 text-lg">Nueva Venta</h2>
-             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Creación Manual</span>
+             <h2 className="font-medium text-neutral-900 text-lg">Nueva Venta</h2>
+             <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Creación Manual</span>
           </div>
 
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500">
@@ -206,7 +206,7 @@ export default function SaleCreateModal({
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/20">
           <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-white">
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                 Cliente (Opcional)
               </span>
 
@@ -218,7 +218,7 @@ export default function SaleCreateModal({
               />
             </div>
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                 WhatsApp (Opcional)
               </span>
 
@@ -231,13 +231,13 @@ export default function SaleCreateModal({
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                   Estado Inicial
                 </span>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as "PENDIENTE" | "CERRADO")}
-                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-neutral-700 outline-none bg-neutral-50 h-8"
+                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-medium text-neutral-700 outline-none bg-neutral-50 h-8"
                 >
                   <option value="PENDIENTE">Pendiente</option>
                   <option value="CERRADO">Cerrado</option>
@@ -248,12 +248,12 @@ export default function SaleCreateModal({
               </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Medio de pago</span>
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">Medio de pago</span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("CASH")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
                     paymentMethod === "CASH"
                       ? "bg-emerald-500 text-white"
                       : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
@@ -264,7 +264,7 @@ export default function SaleCreateModal({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
                     paymentMethod === "BANK_TRANSFER"
                       ? "bg-emerald-500 text-white"
                       : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
@@ -277,24 +277,24 @@ export default function SaleCreateModal({
           </div>
 
           <div className="space-y-3">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
 
             <div className="space-y-2">
               {items.map((it, idx) => (
                 <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
                   <ItemThumbnail />
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
+                    <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-neutral-400 uppercase">
                        {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
 
                   {type === "PRODUCTO" && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
-                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">-</button>
-                      <span className="text-xs font-black text-neutral-700 w-3 text-center">{it.qty}</span>
-                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">+</button>
+                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
+                      <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
+                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
                     </div>
                   )}
 
@@ -309,7 +309,7 @@ export default function SaleCreateModal({
 
               {items.length === 0 && (
                 <div className="text-center py-10 border-2 border-dashed border-neutral-200 bg-neutral-50 rounded-2xl">
-                   <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
+                   <p className="text-[11px] font-medium text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
                 </div>
               )}
             </div>
@@ -324,7 +324,7 @@ export default function SaleCreateModal({
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Item</span>
+                        <span className="text-[10px] font-medium text-neutral-500 uppercase tracking-widest px-1">Item</span>
                         <div className="relative">
                            <ItemSelector
                              value={newItem.itemId}
@@ -339,7 +339,7 @@ export default function SaleCreateModal({
 
                       {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
+                          <span className="text-[10px] font-medium text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
                           <input
                             type="number"
                             min="1"
@@ -369,7 +369,7 @@ export default function SaleCreateModal({
                       <button
                         onClick={handleAddItem}
                         disabled={!newItem.itemId}
-                        className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
+                        className="w-full h-11 bg-emerald-600 text-white rounded-xl font-medium text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
                       >
                         Añadir a la lista
                       </button>
@@ -387,8 +387,8 @@ export default function SaleCreateModal({
                     </button>
 
                     <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
-                       <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
-                       <span className="text-lg font-black text-neutral-900">${formatMoney(total)}</span>
+                       <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">Total venta</span>
+                       <span className="text-lg font-semibold text-neutral-900">${formatMoney(total)}</span>
                     </div>
 
                     <button
@@ -402,7 +402,7 @@ export default function SaleCreateModal({
               </div>
            </div>
 
-           <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
+           <div className="text-[9px] text-neutral-400 font-medium text-center mt-3 uppercase tracking-widest opacity-60">
              Pulsa el icono de enviar para registrar la venta
            </div>
         </div>

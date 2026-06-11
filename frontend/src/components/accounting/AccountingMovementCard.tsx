@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   Banknote,
@@ -236,7 +236,7 @@ export function AccountingMovementCard({
           </div>
         </div>
 
-        <div className={`shrink-0 text-base font-bold ${kindStyle.amount}`}>
+        <div className={`shrink-0 text-base font-medium ${kindStyle.amount}`}>
           {formatCurrency(amount)}
         </div>
       </div>

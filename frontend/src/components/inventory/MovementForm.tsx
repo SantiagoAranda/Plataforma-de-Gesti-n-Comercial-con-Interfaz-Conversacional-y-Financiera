@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
@@ -299,14 +299,14 @@ export function MovementForm({
       {!compact && (
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
               Movimiento manual
             </p>
-            <p className="mt-1 text-sm font-bold text-neutral-900">
+            <p className="mt-1 text-sm font-medium text-neutral-900">
               {ingredient.name}
             </p>
           </div>
-          <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-neutral-500">
+          <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
             {consumptionUnitLabel}
           </span>
         </div>

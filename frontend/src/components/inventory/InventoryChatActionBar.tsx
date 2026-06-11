@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -152,10 +152,10 @@ export function InventoryChatActionBar({
                         <Icon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-neutral-900">{item.label}</span>
+                        <span className="block truncate text-sm font-medium text-neutral-900">{item.label}</span>
                         <span className="mt-0.5 block text-[11px] font-medium text-neutral-400">Abrir</span>
                       </span>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-neutral-300">&rarr;</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-300">&rarr;</span>
                     </button>
                   );
                 })}
@@ -221,7 +221,7 @@ export function InventoryChatActionBar({
           </div>
 
           {helperText ? (
-            <div className="text-[10px] text-neutral-400 font-bold text-center mt-4 uppercase tracking-widest opacity-70">
+            <div className="text-[10px] text-neutral-400 font-medium text-center mt-4 uppercase tracking-widest opacity-70">
               {helperText}
             </div>
           ) : null}

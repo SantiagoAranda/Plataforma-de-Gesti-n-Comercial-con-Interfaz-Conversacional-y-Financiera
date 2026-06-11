@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   ArrowDownLeft,
@@ -88,43 +88,43 @@ export function KardexList({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-neutral-900">{meta.label}</p>
+                      <p className="text-sm font-medium text-neutral-900">{meta.label}</p>
                       {m.detail && (
                         <p className="mt-1 text-[11px] font-medium leading-snug text-neutral-500">
                           {m.detail}
                         </p>
                       )}
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${meta.bubble}`}>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${meta.bubble}`}>
                       {new Date(m.occurredAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 text-[10px]">
                     <div>
-                      <p className="font-bold uppercase tracking-widest text-neutral-400">
+                      <p className="font-medium uppercase tracking-widest text-neutral-400">
                         {isOutput ? "Salida" : "Entrada"}
                       </p>
-                      <p className={`mt-1 font-black ${isOutput ? "text-rose-600" : "text-emerald-600"}`}>
+                      <p className={`mt-1 font-semibold ${isOutput ? "text-rose-600" : "text-emerald-600"}`}>
                         {isOutput ? "-" : "+"}
                         {formatMoney(qty)}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold uppercase tracking-widest text-neutral-400">Valor</p>
-                      <p className="mt-1 font-black text-neutral-800">${formatMoney(totalValue)}</p>
+                      <p className="font-medium uppercase tracking-widest text-neutral-400">Valor</p>
+                      <p className="mt-1 font-semibold text-neutral-800">${formatMoney(totalValue)}</p>
                     </div>
                     <div>
-                      <p className="font-bold uppercase tracking-widest text-neutral-400">Costo unit.</p>
-                      <p className="mt-1 font-black text-neutral-800">${formatMoney(unitCost)}</p>
+                      <p className="font-medium uppercase tracking-widest text-neutral-400">Costo unit.</p>
+                      <p className="mt-1 font-semibold text-neutral-800">${formatMoney(unitCost)}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold uppercase tracking-widest text-neutral-400">Stock despu&eacute;s</p>
-                      <p className="mt-1 font-black text-neutral-800">{formatMoney(stockAfter)}</p>
+                      <p className="font-medium uppercase tracking-widest text-neutral-400">Stock despu&eacute;s</p>
+                      <p className="mt-1 font-semibold text-neutral-800">{formatMoney(stockAfter)}</p>
                     </div>
                     <div className="col-span-2">
-                      <p className="font-bold uppercase tracking-widest text-neutral-400">Costo prom. despu&eacute;s</p>
-                      <p className="mt-1 font-black text-neutral-800">${formatMoney(avgAfter)}</p>
+                      <p className="font-medium uppercase tracking-widest text-neutral-400">Costo prom. despu&eacute;s</p>
+                      <p className="mt-1 font-semibold text-neutral-800">${formatMoney(avgAfter)}</p>
                     </div>
                   </div>
                 </div>

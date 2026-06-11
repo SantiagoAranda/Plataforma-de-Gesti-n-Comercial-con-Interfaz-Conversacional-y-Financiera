@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
@@ -116,11 +116,11 @@ export default function VentaPage() {
             <AlertTriangle size={16} />
           </div>
           <div className="flex-1">
-            <p className="text-[13px] font-bold text-neutral-800 leading-tight mb-3">{title}</p>
+            <p className="text-[13px] font-medium text-neutral-800 leading-tight mb-3">{title}</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => toast.dismiss(t.id)}
-                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider hover:bg-neutral-100 transition"
+                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-medium uppercase tracking-wider hover:bg-neutral-100 transition"
               >
                 Cancelar
               </button>
@@ -129,7 +129,7 @@ export default function VentaPage() {
                   toast.dismiss(t.id);
                   onAction();
                 }}
-                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-bold uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-medium uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
               >
                 {actionLabel}
               </button>
@@ -619,7 +619,7 @@ export default function VentaPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDate(new Date())}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
                     >
                       Limpiar
                     </button>

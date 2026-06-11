@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -582,7 +582,7 @@ export default function MiNegocioPage() {
             {/* DATE SEPARATOR */}
             <div className="flex items-center gap-4 py-2">
               <div className="h-[1px] flex-1 bg-neutral-200" />
-              <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
+              <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-[0.2em]">
                 {group.dateLabel}
               </span>
               <div className="h-[1px] flex-1 bg-neutral-200" />
@@ -612,7 +612,7 @@ export default function MiNegocioPage() {
           <div className="flex justify-center pb-8 pt-2">
             <button
               onClick={() => setVisibleCount((prev) => prev + 12)}
-              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-bold rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
+              className="px-6 py-2.5 bg-white border border-neutral-100 text-neutral-500 font-medium rounded-full shadow-sm active:scale-95 transition text-[10px] uppercase tracking-widest"
             >
               Cargar más
             </button>
@@ -627,7 +627,7 @@ export default function MiNegocioPage() {
               <div className="w-16 h-16 bg-neutral-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-neutral-100/50">
                 <Search className="h-6 w-6 text-neutral-300" />
               </div>
-              <h3 className="text-neutral-900 font-bold text-sm mb-1">
+              <h3 className="text-neutral-900 font-medium text-sm mb-1">
                 No se encontraron productos o servicios
               </h3>
               <p className="text-neutral-400 text-xs font-medium leading-relaxed">
@@ -638,14 +638,14 @@ export default function MiNegocioPage() {
 
         {/* Sin items creados */}
         {!loading && items.length === 0 && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
+          <div className="text-center py-20 text-neutral-400 font-medium text-[10px] uppercase tracking-widest">
             No hay items creados
           </div>
         )}
 
         {/* Cargando */}
         {loading && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest animate-pulse">
+          <div className="text-center py-20 text-neutral-400 font-medium text-[10px] uppercase tracking-widest animate-pulse">
             Cargando...
           </div>
         )}
@@ -724,7 +724,7 @@ export default function MiNegocioPage() {
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-neutral-900 mb-2">
+            <h3 className="text-lg font-medium text-neutral-900 mb-2">
               ¿Eliminar item?
             </h3>
             <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
@@ -738,13 +738,13 @@ export default function MiNegocioPage() {
                   if (target) handleDelete(target);
                   setDeleteId(null);
                 }}
-                className="w-full py-3 rounded-xl bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-100 active:scale-95 transition"
+                className="w-full py-3 rounded-xl bg-red-500 text-white text-xs font-medium shadow-lg shadow-red-100 active:scale-95 transition"
               >
                 Eliminar definitivamente
               </button>
               <button
                 onClick={() => setDeleteId(null)}
-                className="w-full py-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-bold active:scale-95 transition"
+                className="w-full py-3 rounded-xl bg-neutral-100 text-neutral-500 text-xs font-medium active:scale-95 transition"
               >
                 Cancelar
               </button>

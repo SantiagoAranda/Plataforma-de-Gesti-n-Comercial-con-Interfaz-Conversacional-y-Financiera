@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { CheckCheck, ExternalLink, MessageCircle, MoreVertical, ShieldCheck, User } from "lucide-react";
@@ -180,7 +180,7 @@ export default function SaleCard({
                 onSendWhatsApp(sale);
               }}
               disabled={!sale.customerWhatsapp}
-              className="flex-[2] flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5b] text-white py-2.5 rounded-xl font-bold text-xs transition-colors shadow-sm uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-[2] flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#20bd5b] text-white py-2.5 rounded-xl font-medium text-xs transition-colors shadow-sm uppercase tracking-wide disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <MessageCircle className="h-3.5 w-3.5 fill-white" />
               WhatsApp
@@ -195,7 +195,7 @@ export default function SaleCard({
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
             }}
-            className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl font-bold text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-tight"
+            className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl font-medium text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-tight"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Ver factura

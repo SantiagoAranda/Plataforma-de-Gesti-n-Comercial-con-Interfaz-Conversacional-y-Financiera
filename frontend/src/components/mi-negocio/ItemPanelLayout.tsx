@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { X } from "lucide-react";
 
@@ -30,11 +30,11 @@ export function ItemPanelLayout({
         {/* HEADER (FIXED) */}
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-            <h2 className="font-bold text-neutral-900 text-lg">
+            <h2 className="font-medium text-neutral-900 text-lg">
               {title}
             </h2>
             {subtitle && (
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none mt-1">
+              <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest leading-none mt-1">
                 {subtitle}
               </span>
             )}

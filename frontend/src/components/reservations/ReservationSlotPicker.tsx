@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -226,7 +226,7 @@ export default function ReservationSlotPicker({
   return (
     <div className={className}>
       <div className="mb-3">
-        <div className="text-lg font-bold text-neutral-800">Selecciona una fecha</div>
+        <div className="text-lg font-medium text-neutral-800">Selecciona una fecha</div>
         <div className="text-xs text-neutral-500">
           Selecciona día y horario disponible
         </div>
@@ -292,7 +292,7 @@ export default function ReservationSlotPicker({
           </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-neutral-400">
+        <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-[10px] font-medium text-neutral-400">
           {WEEKDAYS.map((w, i) => (
             <div key={`${w}-${i}`}>{w}</div>
           ))}
@@ -334,7 +334,7 @@ export default function ReservationSlotPicker({
       </div>
 
       <div className="mt-5">
-        <div className="text-xs font-black text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
+        <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
 
         {selectedDate && !loadingSlots && timeSlots.length === 0 && (
           <div className="mt-3 text-sm text-black/40">
@@ -353,7 +353,7 @@ export default function ReservationSlotPicker({
               type="button"
               onClick={() => handlePickTime(time)}
               className={cn(
-                "h-10 rounded-xl border text-xs font-bold transition-all duration-150",
+                "h-10 rounded-xl border text-xs font-medium transition-all duration-150",
                 selectedTime === time
                   ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
                   : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",

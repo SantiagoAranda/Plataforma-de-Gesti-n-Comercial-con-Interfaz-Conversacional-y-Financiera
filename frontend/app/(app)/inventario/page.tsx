@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -201,7 +201,7 @@ function InventarioPageContent() {
             <div className="relative">
               <Bell className="h-5 w-5" />
               {alertGroups.count > 0 ? (
-                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-black leading-none text-white">
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-none text-white">
                   {alertGroups.count > 99 ? "99+" : String(alertGroups.count)}
                 </span>
               ) : null}
@@ -216,17 +216,17 @@ function InventarioPageContent() {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.12)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
             <div className="relative flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">INVENTARIO TOTAL</p>
-                <p className="mt-1 truncate text-2xl font-black text-white">${formatMoney(inventoryTotalValue)} COP</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/60">INVENTARIO TOTAL</p>
+                <p className="mt-1 truncate text-2xl font-semibold text-white">${formatMoney(inventoryTotalValue)} COP</p>
               </div>
               <div className="space-y-1 border-l border-white/10 pl-4">
-                <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
                   <span>Recetas</span>
-                  <span className="font-black text-white">{formatMoney(recipeItems.length)}</span>
+                  <span className="font-semibold text-white">{formatMoney(recipeItems.length)}</span>
                 </div>
-                <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
                   <span>Alertas</span>
-                  <span className="font-black text-rose-300">{formatMoney(alertGroups.count)}</span>
+                  <span className="font-semibold text-rose-300">{formatMoney(alertGroups.count)}</span>
                 </div>
               </div>
             </div>
@@ -240,7 +240,7 @@ function InventarioPageContent() {
                   type="button"
                   onClick={() => setTab(nextTab)}
                   className={cn(
-                    "h-9 rounded-2xl text-xs font-black transition active:scale-[0.99]",
+                    "h-9 rounded-2xl text-xs font-semibold transition active:scale-[0.99]",
                     tab === nextTab ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5" : "bg-transparent text-neutral-500",
                   )}
                 >
@@ -282,7 +282,7 @@ function InventarioPageContent() {
                       className={cn("w-full rounded-2xl p-3 text-left shadow-sm ring-1 transition active:scale-[0.99]", warning ? "bg-rose-50/70 ring-rose-100" : "bg-white ring-black/5")}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-black text-neutral-700 ring-1 ring-black/5">
+                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-semibold text-neutral-700 ring-1 ring-black/5">
                           {(item.name ?? "I").trim().slice(0, 1).toUpperCase()}
                           {warning ? (
                             <span className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-rose-600 text-white shadow-sm">
@@ -293,12 +293,12 @@ function InventarioPageContent() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-black text-neutral-900">{item.name}</p>
+                              <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
                               <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
                                 {Number.isFinite(averageCost) ? `Costo $${formatMoney(averageCost)} / ${unitLabel}` : "Costo —"}
                               </p>
                             </div>
-                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", badge.tone)}>
+                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", badge.tone)}>
                               {badge.label}
                             </span>
                           </div>
@@ -367,12 +367,12 @@ function InventarioPageContent() {
                   className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-neutral-900">{item.name}</p>
+                    <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
                     <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
                       {out ? "Acción recomendada: cargar stock" : "Acción recomendada: revisar mínimo"} · Stock {formatMoney(parseNumber(item.currentStock))} {unitLabel}
                     </p>
                   </div>
-                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", out ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")}>
+                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", out ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")}>
                     {out ? "SIN STOCK" : "BAJO"}
                   </span>
                 </button>

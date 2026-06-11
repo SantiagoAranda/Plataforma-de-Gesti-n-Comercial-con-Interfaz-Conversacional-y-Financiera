@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Plus, Save, Trash2 } from "lucide-react";
@@ -203,7 +203,7 @@ export default function ConfiguracionPage() {
                 type="button"
                 onClick={save}
                 disabled={saving || loading}
-                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save className="h-4 w-4" />
                 {saving ? "Guardando" : "Guardar"}
@@ -212,7 +212,7 @@ export default function ConfiguracionPage() {
 
             <div className="mt-5 space-y-5">
               <label className="block">
-                <span className="text-xs font-bold uppercase tracking-wide text-neutral-500">
+                <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Descripcion
                 </span>
                 <textarea
@@ -224,7 +224,7 @@ export default function ConfiguracionPage() {
               </label>
 
               <label className="block">
-                <span className="text-xs font-bold uppercase tracking-wide text-neutral-500">
+                <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Email
                 </span>
                 <input
@@ -237,13 +237,13 @@ export default function ConfiguracionPage() {
 
               <section>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-neutral-500">
+                  <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                     Telefonos
                   </span>
                   <button
                     type="button"
                     onClick={addPhone}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-bold text-neutral-700 transition hover:bg-neutral-200"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-medium text-neutral-700 transition hover:bg-neutral-200"
                   >
                     <Plus className="h-4 w-4" />
                     Agregar telefono
@@ -298,13 +298,13 @@ export default function ConfiguracionPage() {
 
               <section>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-neutral-500">
+                  <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                     Redes sociales
                   </span>
                   <button
                     type="button"
                     onClick={addSocial}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-bold text-neutral-700 transition hover:bg-neutral-200"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-medium text-neutral-700 transition hover:bg-neutral-200"
                   >
                     <Plus className="h-4 w-4" />
                     Agregar red social

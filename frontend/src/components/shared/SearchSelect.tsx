@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
@@ -194,7 +194,7 @@ export function SearchSelect<T extends SearchSelectOption>({
 
         {value && (
           <div className="mt-2 rounded-2xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-            {selectedLabel && <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-600">{selectedLabel}</div>}
+            {selectedLabel && <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-emerald-600">{selectedLabel}</div>}
             {renderSelected ? (
               renderSelected(value)
             ) : (

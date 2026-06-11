@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import {
@@ -184,7 +184,7 @@ export default function PerfilPage() {
                     className="h-full w-full object-cover"
                   />
                 ) : initials ? (
-                  <span className="text-xl font-bold text-slate-500">{initials}</span>
+                  <span className="text-xl font-medium text-slate-500">{initials}</span>
                 ) : (
                   <ImageIcon className="h-8 w-8" />
                 )}
@@ -258,7 +258,7 @@ export default function PerfilPage() {
 
             <div className="mt-4 space-y-3">
               <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
                   Nombre
                 </label>
                 <input
@@ -270,7 +270,7 @@ export default function PerfilPage() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+                <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
                   Subtítulo
                 </label>
                 <input
@@ -300,7 +300,7 @@ export default function PerfilPage() {
             </div>
 
             <div className="mt-4 space-y-1">
-              <label className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">
+              <label className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
                 Número
               </label>
               <PhoneSelector

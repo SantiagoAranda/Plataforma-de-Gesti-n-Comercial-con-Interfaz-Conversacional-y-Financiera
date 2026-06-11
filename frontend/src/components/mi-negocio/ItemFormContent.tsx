@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { X, Clock } from "lucide-react";
 import { useState } from "react";
@@ -133,7 +133,7 @@ export function ItemFormContent({
 
       {/* FOTOS */}
       <div className="space-y-3">
-        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Fotos</label>
+        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Fotos</label>
         <div className="flex flex-wrap gap-3">
           <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl ${totalImages >= MAX_ITEM_IMAGES ? "border-neutral-200 text-neutral-200 cursor-not-allowed" : "border-green-500 text-green-600 bg-green-50/50"}`}>
             +
@@ -152,25 +152,25 @@ export function ItemFormContent({
             </div>
           ))}
         </div>
-        {imageError && <p className="text-[10px] font-bold text-red-500 uppercase">{imageError}</p>}
+        {imageError && <p className="text-[10px] font-medium text-red-500 uppercase">{imageError}</p>}
       </div>
 
       {/* NOMBRE */}
       <div className="space-y-2">
-        <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Nombre</label>
+        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Nombre</label>
         <input
           placeholder={type === "PRODUCT" ? "Ej: Hamburguesa Simple" : "Ej: Corte de Cabello"}
           value={name}
           onChange={(e) => { setName(e.target.value); setFormErrors(p => ({ ...p, name: undefined })); }}
           className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-green-500"}`}
         />
-        {formErrors.name && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.name}</p>}
+        {formErrors.name && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.name}</p>}
       </div>
 
       {/* PRECIO + DURACION */}
       <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Precio</label>
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio</label>
           <div className={`flex items-center rounded-2xl border px-4 h-[48px] shadow-sm transition ${formErrors.price ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white"}`}>
             <span className="text-neutral-400 text-sm mr-2">$</span>
             <input
@@ -182,12 +182,12 @@ export function ItemFormContent({
               className="flex-1 bg-transparent outline-none text-sm font-semibold"
             />
           </div>
-          {formErrors.price && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.price}</p>}
+          {formErrors.price && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.price}</p>}
         </div>
 
         {type === "SERVICE" && (
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Duración</label>
+            <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Duración</label>
             <div className="relative">
               <input
                 type="text" inputMode="decimal" value={durationInput}
@@ -222,7 +222,7 @@ export function ItemFormContent({
                   formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-green-500"
                 }`}
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-bold uppercase">horas</span>
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-medium uppercase">horas</span>
             </div>
             {durationAdjustmentMessage && (
               <p className="text-[11px] font-medium text-amber-600 mt-1">
@@ -230,7 +230,7 @@ export function ItemFormContent({
               </p>
             )}
             {formErrors.duration && (
-              <p className="text-[10px] font-bold text-red-500 uppercase mt-1">
+              <p className="text-[10px] font-medium text-red-500 uppercase mt-1">
                 {formErrors.duration}
               </p>
             )}
@@ -241,7 +241,7 @@ export function ItemFormContent({
       {/* INVENTARIO (PRODUCT ONLY) */}
       {type === "PRODUCT" && (
         <div className="space-y-4">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
             Inventario
           </label>
 
@@ -291,7 +291,7 @@ export function ItemFormContent({
           </div>
 
           {formErrors.inventory && (
-            <p className="text-[10px] font-bold text-red-500 uppercase">
+            <p className="text-[10px] font-medium text-red-500 uppercase">
               {formErrors.inventory}
             </p>
           )}
@@ -301,7 +301,7 @@ export function ItemFormContent({
       {/* HORARIOS (SERVICE ONLY) */}
       {type === "SERVICE" && (
         <div className="space-y-4">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Disponibilidad semanal</label>
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Disponibilidad semanal</label>
           <div className="flex justify-between gap-1">
             {week.map((day, i) => (
               <button
@@ -320,7 +320,7 @@ export function ItemFormContent({
                   }
                   setFormErrors(p => ({ ...p, schedule: undefined }));
                 }}
-                className={`flex-1 h-9 rounded-xl text-[10px] font-bold transition ${day.active ? "bg-green-600 text-white shadow-md shadow-green-100" : "bg-neutral-100 text-neutral-500"}`}
+                className={`flex-1 h-9 rounded-xl text-[10px] font-medium transition ${day.active ? "bg-green-600 text-white shadow-md shadow-green-100" : "bg-neutral-100 text-neutral-500"}`}
               >
                 {day.day.slice(0, 2).toUpperCase()}
               </button>
@@ -330,7 +330,7 @@ export function ItemFormContent({
           {!week.some(d => d.active) ? (
             <div className="flex flex-col items-center justify-center py-8 bg-neutral-50 rounded-2xl border border-dashed border-neutral-200">
               <Clock size={20} className="text-neutral-300 mb-2" />
-              <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Selecciona un día</p>
+              <p className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Selecciona un día</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -346,7 +346,7 @@ export function ItemFormContent({
                   disabled={week.filter(d => d.active).length <= 1} 
                   className="w-8 h-8 flex items-center justify-center text-neutral-400 disabled:opacity-20 transition"
                 >‹</button>
-                <p className="text-xs font-bold text-neutral-700 uppercase tracking-widest">{week[currentDayIndex].day}</p>
+                <p className="text-xs font-medium text-neutral-700 uppercase tracking-widest">{week[currentDayIndex].day}</p>
                 <button 
                   type="button"
                   onClick={() => {
@@ -394,13 +394,13 @@ export function ItemFormContent({
                       else if (r.length === 1) r.push({ start: "14:00", end: "18:00" });
                       setWeek(c);
                     }} 
-                    className="w-full py-2 text-[10px] font-bold text-green-600 uppercase tracking-widest hover:bg-green-50 rounded-xl transition"
+                    className="w-full py-2 text-[10px] font-medium text-green-600 uppercase tracking-widest hover:bg-green-50 rounded-xl transition"
                   >+ Agregar horario</button>
                 )}
               </div>
             </div>
           )}
-          {formErrors.schedule && <p className="text-[10px] font-bold text-red-500 uppercase">{formErrors.schedule}</p>}
+          {formErrors.schedule && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.schedule}</p>}
         </div>
       )}
 
@@ -415,7 +415,7 @@ export function ItemFormContent({
           >
             ‹
           </button>
-          <p className="text-xs font-bold text-neutral-700 uppercase tracking-widest">
+          <p className="text-xs font-medium text-neutral-700 uppercase tracking-widest">
             {isBadge1 ? "Badge 1" : "Badge 2"}
           </p>
           <button
@@ -430,7 +430,7 @@ export function ItemFormContent({
 
         <div className="grid grid-cols-1 gap-4">
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Texto</label>
+            <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Texto</label>
             <input
               placeholder={currentPlaceholder}
               value={currentBadgeText}
@@ -440,7 +440,7 @@ export function ItemFormContent({
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Color</label>
+            <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Color</label>
             <div className="flex items-center gap-3 rounded-2xl border border-neutral-100 bg-white px-4 h-[48px] shadow-sm">
               <input
                 type="color"
