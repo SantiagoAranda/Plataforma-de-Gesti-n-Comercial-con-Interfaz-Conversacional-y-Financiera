@@ -230,9 +230,11 @@ function payrollRunViewModel(run: PayrollRun) {
   const connectivityAllowance = toNumber(run.connectivityAllowance);
   const allowanceValue = run.contract?.isRemote ? connectivityAllowance : transportAllowance;
   const allowanceLabel = run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte";
+  const employeeHealth = toNumber(run.employeeHealth);
+  const employeePension = toNumber(run.employeePension);
   const deductions =
-    toNumber(run.employeeHealth) +
-    toNumber(run.employeePension) +
+    employeeHealth +
+    employeePension +
     toNumber(run.solidarityFund) +
     toNumber(run.withholdingTax);
   const salaryPayments = (run.payments ?? [])
@@ -243,6 +245,8 @@ function payrollRunViewModel(run: PayrollRun) {
   return {
     allowanceLabel,
     allowanceValue,
+    employeeHealth,
+    employeePension,
     deductions,
     salaryPayments,
     allPaid,
@@ -277,8 +281,8 @@ function runLoanDeductionValue(run?: PayrollRun | null) {
 function runOtherDeductionsValue(run?: PayrollRun | null) {
   return (
     run?.usedParameters?.deductionsBreakdown?.otherDeductions ??
-    run?.usedParameters?.otherDeductions ??
     run?.otherDeductions ??
+    run?.usedParameters?.otherDeductions ??
     0
   );
 }
@@ -711,7 +715,7 @@ function HeaderCalendar({
                     "rounded-xl py-2 text-[13px] font-medium transition-colors",
                     isSelected 
                       ? "bg-[#0fb18f] text-white" 
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
                   )}
                 >
                   {name.substring(0, 3)}
@@ -2269,8 +2273,15 @@ function PayrollSummaryPanel({
             sign="+"
           />
           <MoneyLine
-            label="Deducciones salud/pensión"
-            value={viewModel.deductions}
+            label="Deducción salud"
+            value={viewModel.employeeHealth}
+            color="text-[#e5a5ba]"
+            valueColor="text-[#d985a1]"
+            sign="-"
+          />
+          <MoneyLine
+            label="Deducción pensión"
+            value={viewModel.employeePension}
             color="text-[#e5a5ba]"
             valueColor="text-[#d985a1]"
             sign="-"
@@ -5095,7 +5106,7 @@ export default function PayrollPage() {
   }, [isPayrollLoading, filteredRows.length]);
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#f7f3ed]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
         <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar periods={periods} selectedId={selectedPeriodId} onChange={setSelectedPeriodId} onCreateOrSelect={handleCreateOrSelectPeriod} />} />
       </div>
