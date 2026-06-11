@@ -385,7 +385,7 @@ describe('PayrollService payroll history rules', () => {
     expect(Math.round(Number(result.realEmployerCost))).toBe(2_715_489);
   });
 
-  it('matches Dataico non-exempt employer cost when Law 1819 exemption is disabled', async () => {
+  it('exempts SENA and ICBF below 10 SMMLV when Law 1819 employer health exemption is disabled', async () => {
     const prisma = createPrismaMock();
     prisma.payrollBusinessParameter.findUnique.mockResolvedValue({
       applyLaw1819: true,
@@ -429,16 +429,16 @@ describe('PayrollService payroll history rules', () => {
     expect(Number(result.employerPension)).toBe(360_000);
     expect(Number(result.employerArl)).toBe(15_660);
     expect(Number(result.compensationFund)).toBe(120_000);
-    expect(Number(result.sena)).toBe(60_000);
-    expect(Number(result.icbf)).toBe(90_000);
+    expect(Number(result.sena)).toBe(0);
+    expect(Number(result.icbf)).toBe(0);
     expect(Number(result.severance)).toBe(270_650);
     expect(Number(result.severanceInterest)).toBe(32_478);
     expect(Number(result.serviceBonus)).toBe(270_650);
     expect(Number(result.vacation)).toBe(125_100);
     expect(Number(result.totalEmployerContributions)).toBe(630_660);
-    expect(Number(result.totalParafiscals)).toBe(270_000);
+    expect(Number(result.totalParafiscals)).toBe(120_000);
     expect(Number(result.totalBenefits)).toBe(698_877);
-    expect(Number(result.realEmployerCost)).toBe(4_848_632);
+    expect(Number(result.realEmployerCost)).toBe(4_698_632);
     expect(result.usedParameters.costFormula).toBe(
       'TOTAL_ACCRUED_PLUS_EMPLOYER_CONTRIBUTIONS_AND_PROVISIONS',
     );
@@ -447,7 +447,7 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.employeeDeductions).toBe('240000');
     expect(result.usedParameters.employerContributions).toBe('630660');
     expect(result.usedParameters.socialBenefits).toBe('698877');
-    expect(result.usedParameters.parafiscals).toBe('270000');
+    expect(result.usedParameters.parafiscals).toBe('120000');
     expect(result.usedParameters.law1819Applied).toBe(false);
     expect(result.usedParameters.exemptEmployerHealthLaw1819).toBe(false);
     expect(result.usedParameters.benefitProfile).toBe('DATAICO_TRUNCATED_MONTHLY');
@@ -582,7 +582,7 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.law1819Applied).toBe(true);
   });
 
-  it('matches Dataico non-exempt employer cost for salary 4.000.000', async () => {
+  it('keeps employer health but exempts SENA and ICBF below 10 SMMLV without Law 1819', async () => {
     const prisma = createPrismaMock();
     prisma.payrollBusinessParameter.findUnique.mockResolvedValue({
       applyLaw1819: false,
@@ -613,12 +613,12 @@ describe('PayrollService payroll history rules', () => {
     expect(Number(result.employerPension)).toBe(480_000);
     expect(Number(result.employerArl)).toBe(20_880);
     expect(Number(result.compensationFund)).toBe(160_000);
-    expect(Number(result.sena)).toBe(80_000);
-    expect(Number(result.icbf)).toBe(120_000);
+    expect(Number(result.sena)).toBe(0);
+    expect(Number(result.icbf)).toBe(0);
     expect(Number(result.totalEmployerContributions)).toBe(840_880);
-    expect(Number(result.totalParafiscals)).toBe(360_000);
+    expect(Number(result.totalParafiscals)).toBe(160_000);
     expect(Number(result.totalBenefits)).toBe(873_184);
-    expect(Number(result.realEmployerCost)).toBe(6_074_064);
+    expect(Number(result.realEmployerCost)).toBe(5_874_064);
     expect(result.usedParameters.law1819Applied).toBe(false);
   });
 
@@ -721,7 +721,33 @@ describe('PayrollService payroll history rules', () => {
     expect(result.usedParameters.law1819Applied).toBe(false);
   });
 
-  it('does not apply Law 1819 to a natural person business with one or two employees', async () => {
+  it('applies health, SENA and ICBF when salary is exactly 10 SMMLV', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst.mockResolvedValue({
+      ...defaultContract(),
+      salaryMonthly: new Prisma.Decimal(17_509_050),
+      isRemote: false,
+      applyLaw1819: true,
+    });
+    const service = new PayrollService(prisma as any);
+
+    const result: any = await service.previewEmployeePayroll(
+      businessId,
+      periodId,
+      employeeId,
+      { workedDays: 30 },
+    );
+
+    expect(Number(result.employerHealth)).toBeGreaterThan(0);
+    expect(Number(result.sena)).toBeGreaterThan(0);
+    expect(Number(result.icbf)).toBeGreaterThan(0);
+    expect(Number(result.employerPension)).toBeGreaterThan(0);
+    expect(Number(result.employerArl)).toBeGreaterThan(0);
+    expect(Number(result.compensationFund)).toBeGreaterThan(0);
+    expect(result.usedParameters.law1819Applied).toBe(false);
+  });
+
+  it('applies employer health Law 1819 exemption independently from SENA and ICBF below 10 SMMLV', async () => {
     const prisma = createPrismaMock();
     prisma.payrollBusinessParameter.findUnique.mockResolvedValue({
       applyLaw1819: true,
@@ -747,12 +773,12 @@ describe('PayrollService payroll history rules', () => {
       { workedDays: 30 },
     );
 
-    expect(Number(result.employerHealth)).toBe(255_000);
+    expect(Number(result.employerHealth)).toBe(0);
     expect(Number(result.employerPension)).toBe(360_000);
     expect(Number(result.compensationFund)).toBe(120_000);
-    expect(Number(result.sena)).toBe(60_000);
-    expect(Number(result.icbf)).toBe(90_000);
-    expect(result.usedParameters.law1819Applied).toBe(false);
+    expect(Number(result.sena)).toBe(0);
+    expect(Number(result.icbf)).toBe(0);
+    expect(result.usedParameters.law1819Applied).toBe(true);
     expect(result.usedParameters.legalPersonType).toBe('NATURAL_PERSON');
     expect(result.usedParameters.law1819EmployeeCountForExemption).toBe(2);
   });
@@ -1419,12 +1445,12 @@ describe('PayrollService payroll history rules', () => {
     expect(Number(preview.employerPension)).toBe(226_822);
     expect(Number(preview.employerArl)).toBe(9_867);
     expect(Number(preview.compensationFund)).toBe(75_607);
-    expect(Number(preview.sena) + Number(preview.icbf)).toBe(94_509);
+    expect(Number(preview.sena) + Number(preview.icbf)).toBe(0);
     expect(Number(preview.severance)).toBe(178_202);
     expect(Number(preview.severanceInterest)).toBe(21_384);
     expect(Number(preview.serviceBonus)).toBe(178_202);
     expect(Number(preview.vacation)).toBe(73_013);
-    expect(Number(preview.realEmployerCost)).toBe(3_157_547);
+    expect(Number(preview.realEmployerCost)).toBe(3_063_038);
     expect(preview.usedParameters.overtimeAmount).toBe('139277');
     expect(preview.usedParameters.ibcBasePolicy).toBe(
       'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',

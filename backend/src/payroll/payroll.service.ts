@@ -1686,17 +1686,20 @@ export class PayrollService {
     const belowSalaryThreshold = values.salaryMonthly.lessThan(
       values.params.smmlv.mul(values.params.law1819ThresholdSmmlv),
     );
-    const naturalPersonTooSmall =
-      values.params.legalPersonType === LegalPersonType.NATURAL_PERSON &&
-      values.employeeCountForExemption <= 2;
 
     return (
       values.contractApplyLaw1819 &&
       values.params.applyLaw1819 &&
       values.params.exemptEmployerHealthLaw1819 &&
-      belowSalaryThreshold &&
-      !naturalPersonTooSmall
+      belowSalaryThreshold
     );
+  }
+
+  private salaryBelowLaw1819Threshold(
+    salaryMonthly: Prisma.Decimal,
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>,
+  ) {
+    return salaryMonthly.lessThan(params.smmlv.mul(params.law1819ThresholdSmmlv));
   }
 
   private async recreateAccountingMovements(
@@ -1976,14 +1979,22 @@ export class PayrollService {
       params,
       employeeCountForExemption,
     });
+    const salaryBelowLaw1819Threshold = this.salaryBelowLaw1819Threshold(
+      salaryMonthly,
+      params,
+    );
     const employerHealth = law1819Applies
       ? this.decimal(0)
       : ibcAmount.mul(params.healthEmployerRate);
     const employerPension = ibcAmount.mul(params.pensionEmployerRate);
     const employerArl = ibcAmount.mul(contract.arlRiskClass?.rate ?? 0);
     const compensationFund = ibcAmount.mul(params.compensationFundRate);
-    const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
-    const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
+    const sena = salaryBelowLaw1819Threshold
+      ? this.decimal(0)
+      : ibcAmount.mul(params.senaRate);
+    const icbf = salaryBelowLaw1819Threshold
+      ? this.decimal(0)
+      : ibcAmount.mul(params.icbfRate);
 
     const benefitBaseWithTransport = salaryEarned
       .add(transportAllowance)
@@ -2297,14 +2308,22 @@ export class PayrollService {
         params,
         employeeCountForExemption,
       });
+      const salaryBelowLaw1819Threshold = this.salaryBelowLaw1819Threshold(
+        salaryMonthly,
+        params,
+      );
       const employerHealth = law1819Applies
         ? this.decimal(0)
         : ibcAmount.mul(params.healthEmployerRate);
       const employerPension = ibcAmount.mul(params.pensionEmployerRate);
       const employerArl = ibcAmount.mul(contract.arlRiskClass?.rate ?? 0);
       const compensationFund = ibcAmount.mul(params.compensationFundRate);
-      const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
-      const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
+      const sena = salaryBelowLaw1819Threshold
+        ? this.decimal(0)
+        : ibcAmount.mul(params.senaRate);
+      const icbf = salaryBelowLaw1819Threshold
+        ? this.decimal(0)
+        : ibcAmount.mul(params.icbfRate);
 
     const benefitBaseWithTransport = salaryEarned
       .add(transportAllowance)
