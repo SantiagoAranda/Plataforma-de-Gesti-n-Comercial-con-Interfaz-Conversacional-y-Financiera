@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { IsBoolean, IsDateString, IsEnum, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import {
   PaymentMethod,
@@ -97,6 +98,7 @@ export class CreatePayrollBenefitPaymentDto {
   notes?: string;
 
   @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   regularizeMissingProvision?: boolean;
 }

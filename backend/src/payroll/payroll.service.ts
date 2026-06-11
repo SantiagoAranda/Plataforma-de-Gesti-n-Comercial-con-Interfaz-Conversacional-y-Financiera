@@ -2862,6 +2862,9 @@ export class PayrollService {
     contractId: string,
     dto: CreatePayrollBenefitPaymentDto,
   ) {
+    this.logger.debug(
+      `[payroll][benefit-payment] regularizeMissingProvision: ${dto.regularizeMissingProvision}, type: ${dto.type}, year: ${dto.year}, semester: ${dto.semester}, amount: ${dto.amount}`,
+    );
     const contract = await this.getContractForSettlement(businessId, contractId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -2875,20 +2878,21 @@ export class PayrollService {
       let regularizationOriginId: string | null = null;
       let roundingOriginId: string | null = null;
       let existingRoundingRegularization = false;
+      let existingRegularization = false;
+
+      const existing = isServiceBonusPayment
+        ? await tx.payrollBenefitPayment.findFirst({
+            where: {
+              businessId,
+              contractId,
+              type: dto.type,
+              year: dto.year,
+              semester: dto.semester,
+            },
+          })
+        : null;
 
       if (isServiceBonusPayment) {
-        const existing = await tx.payrollBenefitPayment.findFirst({
-          where: {
-            businessId,
-            contractId,
-            type: dto.type,
-            year: dto.year,
-            semester: dto.semester,
-          },
-        });
-        if (existing?.status === PayrollPaymentStatus.PAID) {
-          throw new ConflictException(`La prima de este semestre ya fue pagada.`);
-        }
         if (existing && requestedStatus === PayrollPaymentStatus.PENDING) {
           return tx.payrollBenefitPayment.update({
             where: { id: existing.id },
@@ -2947,13 +2951,23 @@ export class PayrollService {
             dto.semester!,
           );
 
-          const existingRegularization = await tx.accountingMovement.findFirst({
+          const dbRegularization = await tx.accountingMovement.findFirst({
             where: {
               businessId,
               originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
-              originId: regularizationOriginId,
+              OR: [
+                { originId: regularizationOriginId },
+                { originId: `INITIAL_BENEFIT_REGULARIZATION:${contract.employeeId}:PRIMA:${dto.year}:${dto.semester}` },
+                {
+                  originId: {
+                    contains: `INITIAL_BENEFIT_REGULARIZATION:${contractId}:PRIMA:${dto.year}:${dto.semester}`
+                  }
+                }
+              ]
             },
           });
+          existingRegularization = !!dbRegularization;
+
           const existingRounding = await tx.accountingMovement.findFirst({
             where: {
               businessId,
@@ -2965,7 +2979,8 @@ export class PayrollService {
 
           if (
             missingAmount.greaterThan(roundingTolerance) &&
-            !dto.regularizeMissingProvision
+            dto.regularizeMissingProvision !== true &&
+            existing?.status !== PayrollPaymentStatus.PAID
           ) {
             throw new ConflictException({
               code: 'INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION',
@@ -2980,17 +2995,7 @@ export class PayrollService {
               semester: dto.semester,
             });
           }
-
-          if (
-            missingAmount.greaterThan(roundingTolerance) &&
-            existingRegularization
-          ) {
-            throw new ConflictException(
-              'Ya existe una regularización inicial para la prima de este semestre.',
-            );
-          }
         }
-
       }
 
       const validationMappings = await tx.payrollAccountingMapping.findMany({
@@ -3045,64 +3050,70 @@ export class PayrollService {
         (dto.regularizeMissingProvision ||
           missingAmount.lessThanOrEqualTo(roundingTolerance)) &&
         !existingRoundingRegularization &&
-        !validationExpenseMapping
+        !validationExpenseMapping &&
+        existing?.status !== PayrollPaymentStatus.PAID
       ) {
         throw new BadRequestException(
           'Falta configuración contable para regularizar la prima. (Gasto SERVICE_BONUS: false)',
         );
       }
 
-      const existingPending =
-        isServiceBonusPayment && requestedStatus === PayrollPaymentStatus.PAID
-          ? await tx.payrollBenefitPayment.findFirst({
-              where: {
-                businessId,
-                contractId,
-                type: dto.type,
-                year: dto.year,
-                semester: dto.semester,
-                status: PayrollPaymentStatus.PENDING,
+      let payment;
+      if (existing?.status === PayrollPaymentStatus.PAID) {
+        payment = existing;
+      } else {
+        const existingPending =
+          isServiceBonusPayment && requestedStatus === PayrollPaymentStatus.PAID
+            ? await tx.payrollBenefitPayment.findFirst({
+                where: {
+                  businessId,
+                  contractId,
+                  type: dto.type,
+                  year: dto.year,
+                  semester: dto.semester,
+                  status: PayrollPaymentStatus.PENDING,
+                },
+              })
+            : null;
+
+        payment = existingPending
+          ? await tx.payrollBenefitPayment.update({
+              where: { id: existingPending.id },
+              data: {
+                amount: dto.amount,
+                status: PayrollPaymentStatus.PAID,
+                paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
+                periodId: dto.periodId ?? existingPending.periodId,
+                payrollRunId: dto.payrollRunId ?? existingPending.payrollRunId,
+                settlementId: dto.settlementId ?? existingPending.settlementId,
+                notes: this.normalizeNullableText(dto.notes) ?? existingPending.notes,
+                paymentMethod: dto.paymentMethod ?? existingPending.paymentMethod,
               },
             })
-          : null;
-
-      const payment = existingPending
-        ? await tx.payrollBenefitPayment.update({
-            where: { id: existingPending.id },
-            data: {
-              amount: dto.amount,
-              status: PayrollPaymentStatus.PAID,
-              paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
-              periodId: dto.periodId ?? existingPending.periodId,
-              payrollRunId: dto.payrollRunId ?? existingPending.payrollRunId,
-              settlementId: dto.settlementId ?? existingPending.settlementId,
-              notes: this.normalizeNullableText(dto.notes) ?? existingPending.notes,
-              paymentMethod: dto.paymentMethod ?? existingPending.paymentMethod,
-            },
-          })
-        : await tx.payrollBenefitPayment.create({
-            data: {
-              businessId,
-              employeeId: contract.employeeId,
-              contractId,
-              type: dto.type,
-              amount: dto.amount,
-              status: requestedStatus,
-              paidAt:
-                requestedStatus === PayrollPaymentStatus.PAID
-                  ? dto.paidAt
-                    ? this.parseDate(dto.paidAt, 'paidAt')
-                    : new Date()
-                  : null,
-              periodId: dto.periodId,
-              payrollRunId: dto.payrollRunId,
-              settlementId: dto.settlementId,
-              notes: this.normalizeNullableText(dto.notes),
-              year: dto.year,
-              semester: dto.semester,
-              paymentMethod: dto.paymentMethod,
-            },
-          });
+          : await tx.payrollBenefitPayment.create({
+              data: {
+                businessId,
+                employeeId: contract.employeeId,
+                contractId,
+                type: dto.type,
+                amount: dto.amount,
+                status: requestedStatus,
+                paidAt:
+                  requestedStatus === PayrollPaymentStatus.PAID
+                    ? dto.paidAt
+                      ? this.parseDate(dto.paidAt, 'paidAt')
+                      : new Date()
+                    : null,
+                periodId: dto.periodId,
+                payrollRunId: dto.payrollRunId,
+                settlementId: dto.settlementId,
+                notes: this.normalizeNullableText(dto.notes),
+                year: dto.year,
+                semester: dto.semester,
+                paymentMethod: dto.paymentMethod,
+              },
+            });
+      }
 
       if (requestedStatus !== PayrollPaymentStatus.PAID) {
         return payment;
@@ -3164,6 +3175,7 @@ export class PayrollService {
         isServiceBonusPayment &&
         missingAmount.greaterThan(roundingTolerance) &&
         dto.regularizeMissingProvision &&
+        !existingRegularization &&
         regularizationOriginId &&
         validationExpenseMapping &&
         validationLiabilityMapping
@@ -3235,7 +3247,34 @@ export class PayrollService {
         originId: payment.id,
       });
 
-      await tx.accountingMovement.createMany({ data: movements });
+      // Query existing movements for this payment and regularization/rounding
+      const originIds = [payment.id];
+      if (roundingOriginId) originIds.push(roundingOriginId);
+      if (regularizationOriginId) originIds.push(regularizationOriginId);
+
+      const dbMovements = await tx.accountingMovement.findMany({
+        where: {
+          businessId,
+          originId: { in: originIds },
+        },
+      });
+
+      const missingMovements = movements.filter((expected) => {
+        const found = dbMovements.find((ext) => {
+          const matchOrigin = ext.originType === expected.originType && ext.originId === expected.originId;
+          const matchNature = ext.nature === expected.nature;
+          const matchAmount = new Prisma.Decimal(ext.amount).equals(new Prisma.Decimal(expected.amount as any));
+          const matchAccount = 
+            (expected.pucSubcuentaId && ext.pucSubcuentaId === expected.pucSubcuentaId) ||
+            (expected.pucCuentaCode && ext.pucCuentaCode === expected.pucCuentaCode);
+          return matchOrigin && matchNature && matchAmount && matchAccount;
+        });
+        return !found;
+      });
+
+      if (missingMovements.length > 0) {
+        await tx.accountingMovement.createMany({ data: missingMovements });
+      }
 
       return payment;
     });

@@ -155,6 +155,86 @@ function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   return null;
 }
 
+function getReadableDetail(detailStr: string | null | undefined, originType?: string): string {
+  if (!detailStr) return "";
+  const trimmed = detailStr.trim();
+  
+  const jsonStart = trimmed.indexOf("{");
+  const prefix = jsonStart >= 0 ? trimmed.slice(0, jsonStart).trim() : "";
+  const jsonCandidate = jsonStart >= 0 ? trimmed.slice(jsonStart).trim() : trimmed;
+
+  if (jsonCandidate.startsWith("{") && jsonCandidate.endsWith("}")) {
+    try {
+      const data = JSON.parse(jsonCandidate);
+
+      const isRegularization = data.type === "INITIAL_BENEFIT_REGULARIZATION" || originType === "PAYROLL_INITIAL_BALANCE";
+      
+      if (isRegularization && data.benefitType === "PRIMA") {
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Regularización inicial de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Regularización inicial de prima ${semesterText} ${yearText}`;
+      }
+
+      if (originType === "PAYROLL_BENEFIT_PAYMENT" || data.type === "PAYROLL_BENEFIT_PAYMENT" || data.type === "BENEFIT_PAYMENT") {
+        const benefitType = data.benefitType || data.type || "PRIMA";
+        const benefitLabel = benefitType === "PRIMA" ? "prima" : benefitType;
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Pago de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Pago de prima ${semesterText} ${yearText}`;
+      }
+
+      const parts: string[] = [];
+      if (data.employee) {
+        parts.push(`Empleado: ${data.employee}`);
+      }
+      if (data.benefitType || data.type) {
+        const typeStr = data.benefitType || data.type;
+        const typeLabel = typeStr === "PRIMA" ? "Prima de Servicios" : typeStr;
+        
+        let periodStr = "";
+        if (data.year && data.semester) {
+          periodStr = ` (${data.year}-S${data.semester})`;
+        } else if (data.period) {
+          periodStr = ` (${data.period})`;
+        }
+        parts.push(`Pago de ${typeLabel}${periodStr}`);
+      }
+      if (data.reason) {
+        let reasonLabel = data.reason;
+        if (data.reason === "INSUFFICIENT_HISTORICAL_PAYROLL_RUNS") {
+          reasonLabel = "Insuficiencia de históricos de nómina";
+        } else if (data.reason === "ROUNDING") {
+          reasonLabel = "Ajuste por redondeo";
+        } else if (data.reason === "INITIAL_BALANCE") {
+          reasonLabel = "Saldo inicial de provisión";
+        }
+        parts.push(`Regularización (${reasonLabel})`);
+      }
+      
+      if (parts.length > 0) {
+        return parts.join(" - ");
+      }
+      
+      return Object.entries(data)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+    } catch {
+      // fallback
+    }
+  }
+  return detailStr;
+}
+
 export function AccountingMovementCard({
   movement,
   selected = false,
@@ -177,13 +257,13 @@ export function AccountingMovementCard({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
             {iconForCategory(kind)}
           </div>
-
+ 
           <div className="min-w-0 space-y-1">
             <div className="text-sm font-semibold text-neutral-900">
               {movement.pucCode} - {movement.pucName}
             </div>
             <div className="text-sm text-neutral-600">
-              {movement.detail || ""}
+              {getReadableDetail(movement.detail, movement.originType)}
             </div>
           </div>
         </div>

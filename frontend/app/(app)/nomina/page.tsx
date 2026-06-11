@@ -2181,7 +2181,7 @@ function PayrollSummaryPanel({
   run: PayrollRun;
   expanded: boolean;
   onToggleExpanded: () => void;
-  onTogglePayment: (payment: PayrollPayment) => void;
+  onTogglePayment: (run: PayrollRun) => void;
   selectedPeriod?: PayrollPeriod;
   visualPaid?: boolean;
   onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
@@ -2289,7 +2289,7 @@ function PayrollSummaryPanel({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onTogglePayment(primarySalaryPayment);
+                  onTogglePayment(run);
                 }}
                 className={cn(
                   "rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors",
@@ -2466,12 +2466,17 @@ function SettlementPanel({
   const [expanded, setExpanded] = useState(false);
   const [payModal, setPayModal] = useState<{ semester: 1 | 2; amount: number } | null>(null);
   const [regularizationModal, setRegularizationModal] = useState<{
-    requiredAmount: MoneyLike;
-    provisionedAmount: MoneyLike;
-    missingAmount: MoneyLike;
+    contractId: string;
     benefitType: "PRIMA";
+    amount: number;
     year: number;
     semester: 1 | 2;
+    missingProvision: number;
+    calculatedAmount: number;
+    provisionedAmount: number;
+    paymentMethod?: "CASH" | "BANK_TRANSFER" | "OTHER";
+    requiredAmount?: number;
+    missingAmount?: number;
   } | null>(null);
   const [submittingPrima, setSubmittingPrima] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "OTHER">("BANK_TRANSFER");
@@ -2493,8 +2498,8 @@ function SettlementPanel({
     setRegularizationModal(null);
   };
 
-  const submitPrimaPayment = async (regularizeMissingProvision = false) => {
-    if (!settlement?.contractId || !payModal) return;
+  const submitPrimaPayment = async () => {
+    if (!settlement?.contractId || !payModal || submittingPrima) return;
     setSubmittingPrima(true);
     try {
       await payrollApi.createBenefitPayment(settlement.contractId, {
@@ -2504,25 +2509,100 @@ function SettlementPanel({
         semester: payModal.semester,
         paymentMethod,
         status: "PAID",
-        regularizeMissingProvision,
       });
-      toast.success(regularizeMissingProvision ? "Saldo regularizado y prima registrada como pagada." : "Prima registrada como pagada.");
+      toast.success("Prima registrada como pagada.");
       closePaymentModal();
-      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments);
+      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
     } catch (err: any) {
-      const details = err instanceof AppApiError ? err.details : null;
-      if (
-        details?.code === "INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION" &&
-        details.benefitType === "PRIMA"
-      ) {
-        setRegularizationModal({
-          requiredAmount: details.requiredAmount,
-          provisionedAmount: details.provisionedAmount,
-          missingAmount: details.missingAmount,
-          benefitType: "PRIMA",
-          year: Number(details.year),
-          semester: Number(details.semester) === 2 ? 2 : 1,
+      if (process.env.NODE_ENV === "development") {
+        console.log("[payroll][prima-payment-catch]", {
+          err,
+          code: err?.code,
+          detailsCode: err?.details?.code,
+          raw: err?.raw,
+          details: err?.details,
         });
+      }
+
+      const isAlreadyPaidConflict =
+        err instanceof AppApiError &&
+        err.status === 409 &&
+        (err.message?.toLowerCase().includes("ya fue pagada") ||
+          err.message?.toLowerCase().includes("already paid") ||
+          err.message?.toLowerCase().includes("exist"));
+
+      if (isAlreadyPaidConflict) {
+        toast.success("Prima registrada como pagada.");
+        closePaymentModal();
+        payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+        return;
+      }
+
+      let rawParsed: any = {};
+      try {
+        if (typeof err?.raw === "string") rawParsed = JSON.parse(err.raw);
+        else if (typeof err?.details?.raw === "string") rawParsed = JSON.parse(err.details.raw);
+      } catch (_) {}
+
+      const code = err?.details?.code || err?.code || rawParsed?.code || "";
+
+      if (
+        code === "INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION" ||
+        code === "INSUFFICIENT_PROVISION_REQUIRED"
+      ) {
+        setPayModal(null);
+        setRegularizationModal({
+          contractId: settlement.contractId,
+          benefitType: "PRIMA",
+          amount: payModal.amount,
+          year: Number(err.details?.year ?? rawParsed?.year ?? paymentCalculationYear),
+          semester: ((err.details?.semester ?? rawParsed?.semester ?? payModal.semester) === 2 ? 2 : 1) as 1 | 2,
+          paymentMethod,
+          requiredAmount: Number(err.details?.requiredAmount ?? rawParsed?.requiredAmount ?? payModal.amount),
+          provisionedAmount: Number(err.details?.provisionedAmount ?? rawParsed?.provisionedAmount ?? 0),
+          missingAmount: Number(err.details?.missingAmount ?? rawParsed?.missingAmount ?? payModal.amount),
+          calculatedAmount: Number(err.details?.requiredAmount ?? rawParsed?.requiredAmount ?? payModal.amount),
+          missingProvision: Number(err.details?.missingAmount ?? rawParsed?.missingAmount ?? payModal.amount),
+        });
+        return;
+      }
+      toast.error(err.message || "Error al registrar el pago.");
+    } finally {
+      setSubmittingPrima(false);
+    }
+  };
+
+  const submitRegularizedPrimaPayment = async () => {
+    if (!settlement?.contractId || !regularizationModal || submittingPrima) return;
+    setSubmittingPrima(true);
+    const payload = {
+      type: "PRIMA",
+      amount: regularizationModal.amount,
+      year: regularizationModal.year,
+      semester: regularizationModal.semester,
+      paymentMethod: regularizationModal.paymentMethod ?? "BANK_TRANSFER",
+      regularizeMissingProvision: true,
+    };
+    if (process.env.NODE_ENV === "development") {
+      console.log("[payroll][regularized-prima-payment] payload", payload);
+    }
+    try {
+      await payrollApi.createBenefitPayment(settlement.contractId, payload);
+      toast.success("Saldo regularizado y prima registrada como pagada.");
+      closePaymentModal();
+      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+    } catch (err: any) {
+      const isAlreadyPaidConflict =
+        err instanceof AppApiError &&
+        err.status === 409 &&
+        (err.message?.toLowerCase().includes("ya fue pagada") ||
+          err.message?.toLowerCase().includes("already paid") ||
+          err.message?.toLowerCase().includes("exist"));
+
+      if (isAlreadyPaidConflict) {
+        toast.success("Saldo regularizado y prima registrada como pagada.");
+        closePaymentModal();
+        payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
         return;
       }
       toast.error(err.message || "Error al registrar el pago.");
@@ -2647,9 +2727,8 @@ function SettlementPanel({
             <MoneyLine label="Intereses cesantias" value={settlement.severanceInterest} color="text-slate-600" valueColor="text-slate-800" />
             
             <div className="flex items-center justify-between gap-3 text-[13px]">
-              <span className="font-normal text-slate-600">Prima de servicios I</span>
               <div className="flex items-center gap-2">
-                <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester1)}</span>
+                <span className="font-normal text-slate-600">Prima de servicios I</span>
                 {toNumber(serviceBonusSemester1) > 0 && !prima1Paid && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); setPayModal({ semester: 1, amount: toNumber(serviceBonusSemester1) }) }}
@@ -2664,12 +2743,12 @@ function SettlementPanel({
                   </span>
                 )}
               </div>
+              <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester1)}</span>
             </div>
 
             <div className="flex items-center justify-between gap-3 text-[13px]">
-              <span className="font-normal text-slate-600">Prima de servicios II</span>
               <div className="flex items-center gap-2">
-                <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester2)}</span>
+                <span className="font-normal text-slate-600">Prima de servicios II</span>
                 {toNumber(serviceBonusSemester2) > 0 && !prima2Paid && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); setPayModal({ semester: 2, amount: toNumber(serviceBonusSemester2) }) }}
@@ -2684,6 +2763,7 @@ function SettlementPanel({
                   </span>
                 )}
               </div>
+              <span className="tabular-nums font-normal text-slate-800">{money(serviceBonusSemester2)}</span>
             </div>
             <MoneyLine label="Vacaciones" value={settlement.vacation} color="text-slate-600" valueColor="text-slate-800" />
           </div>
@@ -2716,7 +2796,7 @@ function SettlementPanel({
               Cancelar
             </button>
             <button
-              onClick={() => submitPrimaPayment(false)}
+              onClick={() => submitPrimaPayment()}
               disabled={submittingPrima}
               className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0da081] disabled:opacity-50"
             >
@@ -2756,7 +2836,7 @@ function SettlementPanel({
         open={!!regularizationModal}
         onClose={() => setRegularizationModal(null)}
         title="Regularizar saldo de prima"
-        subtitle={`Periodo ${regularizationModal?.year ?? calculationYear}-${regularizationModal?.semester ?? payModal?.semester}`}
+        subtitle={`Periodo ${regularizationModal?.year ?? paymentCalculationYear}-${regularizationModal?.semester}`}
         footer={
           <div className="flex items-center gap-3 w-full">
             <button
@@ -2767,7 +2847,7 @@ function SettlementPanel({
               Cancelar
             </button>
             <button
-              onClick={() => submitPrimaPayment(true)}
+              onClick={() => submitRegularizedPrimaPayment()}
               disabled={submittingPrima}
               className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0da081] disabled:opacity-50"
             >
@@ -2781,9 +2861,9 @@ function SettlementPanel({
             La provisión acumulada en el sistema es menor al valor legal calculado. Esto puede ocurrir cuando comienzas a usar la app a mitad de año.
           </p>
           <div className="space-y-2 rounded-2xl border border-slate-100 bg-white p-4">
-            <MoneyLine label="Prima calculada" value={regularizationModal?.requiredAmount} color="text-slate-600" valueColor="text-slate-900" />
+            <MoneyLine label="Prima calculada" value={regularizationModal?.calculatedAmount} color="text-slate-600" valueColor="text-slate-900" />
             <MoneyLine label="Provisionado" value={regularizationModal?.provisionedAmount} color="text-slate-600" valueColor="text-slate-900" />
-            <MoneyLine label="Faltante a regularizar" value={regularizationModal?.missingAmount} color="text-slate-600" valueColor="text-amber-700" />
+            <MoneyLine label="Faltante a regularizar" value={regularizationModal?.missingProvision} color="text-slate-600" valueColor="text-amber-700" />
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-start gap-3">
@@ -2819,7 +2899,7 @@ function EmployeeCarousel({
   settlement?: Settlement;
   expanded: boolean;
   onToggleExpanded: () => void;
-  onTogglePayment: (payment: PayrollPayment) => void;
+  onTogglePayment: (run: PayrollRun) => void;
   selected?: boolean;
   onSelect?: () => void;
   selectedPeriod?: PayrollPeriod;
@@ -2926,7 +3006,7 @@ function DetailPanel({
 }: {
   run?: PayrollRun;
   settlement?: Settlement;
-  onTogglePayment: (payment: PayrollPayment) => void;
+  onTogglePayment: (run: PayrollRun) => void;
   selectedPeriod?: PayrollPeriod;
   onLiquidateContract?: (run: PayrollRun, settlement: Settlement) => void;
   contractLiquidated?: boolean;
@@ -4701,14 +4781,23 @@ export default function PayrollPage() {
     );
   }, []);
 
-  const togglePayment = useCallback(async (payment: PayrollPayment) => {
+  const togglePayment = useCallback(async (run: PayrollRun) => {
     try {
-      const nextStatus = payment.status === "PAID" ? "PENDING" : "PAID";
-      await payrollApi.updatePaymentStatus(payment.id, {
-        status: nextStatus,
-        paymentMethod: "BANK_TRANSFER",
-      });
-      await refreshRunPayments(payment.payrollRunId);
+      const viewModel = payrollRunViewModel(run);
+      if (!viewModel.salaryPayments.length) {
+        toast.error("No hay pagos generados para esta nómina.");
+        return;
+      }
+      const nextStatus = viewModel.allPaid ? "PENDING" : "PAID";
+      await Promise.all(
+        viewModel.salaryPayments.map((payment) =>
+          payrollApi.updatePaymentStatus(payment.id, {
+            status: nextStatus,
+            paymentMethod: "BANK_TRANSFER",
+          })
+        )
+      );
+      await refreshRunPayments(run.id);
       toast.success(nextStatus === "PAID" ? "Pago registrado" : "Pago marcado pendiente");
     } catch (err) {
       setNotice(err instanceof AppApiError ? err.message : "No se pudo actualizar el pago.");

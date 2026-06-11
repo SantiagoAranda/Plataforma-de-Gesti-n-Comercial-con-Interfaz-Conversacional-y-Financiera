@@ -195,6 +195,86 @@ export function mapSalesActivity(orders: Sale[]): ModuleActivitySummary {
   };
 }
 
+function getReadableDetail(detailStr: string | null | undefined): string {
+  if (!detailStr) return "";
+  const trimmed = detailStr.trim();
+  
+  const jsonStart = trimmed.indexOf("{");
+  const prefix = jsonStart >= 0 ? trimmed.slice(0, jsonStart).trim() : "";
+  const jsonCandidate = jsonStart >= 0 ? trimmed.slice(jsonStart).trim() : trimmed;
+
+  if (jsonCandidate.startsWith("{") && jsonCandidate.endsWith("}")) {
+    try {
+      const data = JSON.parse(jsonCandidate);
+
+      const isRegularization = data.type === "INITIAL_BENEFIT_REGULARIZATION";
+      
+      if (isRegularization && data.benefitType === "PRIMA") {
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Regularización inicial de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Regularización inicial de prima ${semesterText} ${yearText}`;
+      }
+
+      if (data.type === "PAYROLL_BENEFIT_PAYMENT" || data.type === "BENEFIT_PAYMENT") {
+        const benefitType = data.benefitType || data.type || "PRIMA";
+        const benefitLabel = benefitType === "PRIMA" ? "prima" : benefitType;
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Pago de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Pago de prima ${semesterText} ${yearText}`;
+      }
+
+      const parts: string[] = [];
+      if (data.employee) {
+        parts.push(`Empleado: ${data.employee}`);
+      }
+      if (data.benefitType || data.type) {
+        const typeStr = data.benefitType || data.type;
+        const typeLabel = typeStr === "PRIMA" ? "Prima de Servicios" : typeStr;
+        
+        let periodStr = "";
+        if (data.year && data.semester) {
+          periodStr = ` (${data.year}-S${data.semester})`;
+        } else if (data.period) {
+          periodStr = ` (${data.period})`;
+        }
+        parts.push(`Pago de ${typeLabel}${periodStr}`);
+      }
+      if (data.reason) {
+        let reasonLabel = data.reason;
+        if (data.reason === "INSUFFICIENT_HISTORICAL_PAYROLL_RUNS") {
+          reasonLabel = "Insuficiencia de históricos de nómina";
+        } else if (data.reason === "ROUNDING") {
+          reasonLabel = "Ajuste por redondeo";
+        } else if (data.reason === "INITIAL_BALANCE") {
+          reasonLabel = "Saldo inicial de provisión";
+        }
+        parts.push(`Regularización (${reasonLabel})`);
+      }
+      
+      if (parts.length > 0) {
+        return parts.join(" - ");
+      }
+      
+      return Object.entries(data)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+    } catch {
+      // fallback
+    }
+  }
+  return detailStr;
+}
+
 export function mapAccountingActivity(movements: BackendMovement[]): ModuleActivitySummary {
   const sorted = byDateDesc(movements, (m) => m.updatedAt ?? m.createdAt ?? m.date);
   const latest = sorted[0];
@@ -205,7 +285,7 @@ export function mapAccountingActivity(movements: BackendMovement[]): ModuleActiv
 
   let activityText: string | null = null;
   if (latest) {
-    let detail = latest.detail?.trim();
+    let detail = getReadableDetail(latest.detail);
 
     if (detail) {
       detail = detail

@@ -325,17 +325,32 @@ async function payrollRequest<T>(
       const detailsMessage = Array.isArray(appError?.details?.message)
         ? appError?.details?.message.join(" | ")
         : appError?.details?.message;
-      console.error("[payroll] error", {
-        endpoint,
-        status: appError?.status,
-        message: appError?.message,
-        detailsMessage,
-        detailsError: appError?.details?.error,
-        details: appError?.details,
-        payload,
-        raw: appError?.raw,
-        error: appError ? undefined : error,
-      });
+
+      const rawParsed = appError?.details?.raw ? safeJsonParse(appError.details.raw) : {};
+      const errorCode = appError?.details?.code || (appError as any)?.code || rawParsed?.code || "";
+      const isRegularizationConflict = 
+        appError?.status === 409 && 
+        (errorCode === "INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION" || errorCode === "INSUFFICIENT_PROVISION_REQUIRED");
+
+      if (isRegularizationConflict) {
+        console.warn("[payroll] expected regularization conflict", {
+          endpoint,
+          status: appError?.status,
+          code: errorCode,
+        });
+      } else {
+        console.error("[payroll] error", {
+          endpoint,
+          status: appError?.status,
+          message: appError?.message,
+          detailsMessage,
+          detailsError: appError?.details?.error,
+          details: appError?.details,
+          payload,
+          raw: appError?.raw,
+          error: appError ? undefined : error,
+        });
+      }
     }
     throw error;
   }

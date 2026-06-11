@@ -244,6 +244,7 @@ function createPrismaMock(overrides: Record<string, any> = {}) {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
     payrollAccountingMapping: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -2841,24 +2842,132 @@ describe('PayrollService benefit payments', () => {
     expect(movements[0].detail).toContain('"reason":"INSUFFICIENT_HISTORICAL_PAYROLL_RUNS"');
   });
 
-  it('blocks benefit payment if it was already paid', async () => {
+  it('handles benefit payment creation idempotently if already paid, not throwing 409, not duplicating, and recreating missing movements', async () => {
     const prisma = createPrismaMock();
     prisma.employeeContract.findFirst = jest.fn().mockResolvedValue({
       id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
     });
-    prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue({ id: 'existing' });
+    prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+    
+    const existingPayment = { id: 'payment-1', status: 'PAID' as any, amount: new Prisma.Decimal(50000) };
+    prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(existingPayment);
+    // Pretend 1 of the 2 movements is already in the DB, so only 1 is missing and should be recreated
+    prisma.accountingMovement.findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'mv-1',
+        businessId: 'biz-1',
+        pucCuentaCode: '2520',
+        amount: new Prisma.Decimal(50000),
+        nature: MovementNature.DEBIT,
+        originType: AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT,
+        originId: 'payment-1',
+      }
+    ]);
 
     const service = new PayrollService(prisma as any);
 
-    await expect(service.createContractBenefitPayment('biz-1', 'contract-1', {
+    const result = await service.createContractBenefitPayment('biz-1', 'contract-1', {
       type: 'PRIMA',
       amount: 50000,
       year: 2026,
       semester: 1,
-    } as any)).rejects.toBeInstanceOf(ConflictException);
+      paymentMethod: PaymentMethod.BANK_TRANSFER,
+    } as any);
+
+    expect(result).toEqual(existingPayment);
+    expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
+    expect(prisma.accountingMovement.createMany).toHaveBeenCalledTimes(1);
+    
+    // Check that only the credit movement (111005) was recreated since debit (2520) was already in DB
+    const callArgs = prisma.accountingMovement.createMany.mock.calls[0][0].data;
+    expect(callArgs.length).toBe(1);
+    expect(callArgs[0].nature).toBe(MovementNature.CREDIT);
+    expect(callArgs[0].pucSubcuentaId).toBe('111005');
+  });
+
+  it('does not duplicate service bonus initial regularization if it already exists (improved contractId/employeeId check)', async () => {
+    const prisma = createPrismaMock();
+    const contract = {
+      id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
+    };
+    prisma.employeeContract.findFirst = jest.fn().mockResolvedValue(contract);
+    prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+    prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(null);
+    prisma.payrollBenefitPayment.create = jest.fn().mockResolvedValue({ id: 'payment-1', amount: new Prisma.Decimal(983333) });
+    prisma.payrollRun.findMany.mockResolvedValue([{ serviceBonus: 499800 }]);
+    
+    // Mock existing regularization in the DB matching either contractId or employeeId
+    prisma.accountingMovement.findFirst = jest.fn().mockResolvedValue({ id: 'existing-regularization' });
+
+    const service = new PayrollService(prisma as any);
+
+    await service.createContractBenefitPayment('biz-1', 'contract-1', {
+      type: 'PRIMA',
+      amount: 983333,
+      year: 2026,
+      semester: 1,
+      paymentMethod: PaymentMethod.BANK_TRANSFER,
+      regularizeMissingProvision: true,
+    } as any);
+
+    expect(prisma.payrollBenefitPayment.create).toHaveBeenCalledTimes(1);
+    const movements = prisma.accountingMovement.createMany.mock.calls[0][0].data;
+    // Should contain only the 2 benefit payment movements, and 0 regularization movements because it already exists!
+    expect(movements.length).toBe(2);
+    expect(movements.every((m: any) => m.originType === AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT)).toBe(true);
+  });
+
+  it('handles second call with regularizeMissingProvision true idempotently, not duplicating payment nor movements', async () => {
+    const prisma = createPrismaMock();
+    prisma.employeeContract.findFirst = jest.fn().mockResolvedValue({
+      id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
+    });
+    prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+    
+    const existingPayment = { id: 'payment-1', status: 'PAID' as any, amount: new Prisma.Decimal(983333) };
+    prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(existingPayment);
+    prisma.payrollRun.findMany.mockResolvedValue([{ serviceBonus: 499800 }]);
+    
+    // Both regularization and rounding adjustments already exist in DB
+    prisma.accountingMovement.findFirst = jest.fn().mockResolvedValue({ id: 'existing-regularization' });
+    prisma.accountingMovement.findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'mv-1',
+        businessId: 'biz-1',
+        pucCuentaCode: '2520',
+        amount: new Prisma.Decimal(983333),
+        nature: MovementNature.DEBIT,
+        originType: AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT,
+        originId: 'payment-1',
+      },
+      {
+        id: 'mv-2',
+        businessId: 'biz-1',
+        pucSubcuentaId: '111005',
+        amount: new Prisma.Decimal(983333),
+        nature: MovementNature.CREDIT,
+        originType: AccountingMovementOriginType.PAYROLL_BENEFIT_PAYMENT,
+        originId: 'payment-1',
+      }
+    ]);
+
+    const service = new PayrollService(prisma as any);
+
+    const result = await service.createContractBenefitPayment('biz-1', 'contract-1', {
+      type: 'PRIMA',
+      amount: 983333,
+      year: 2026,
+      semester: 1,
+      paymentMethod: PaymentMethod.BANK_TRANSFER,
+      regularizeMissingProvision: true,
+    } as any);
+
+    expect(result).toEqual(existingPayment);
     expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
     expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
   });
+
+
 
   it('does not create benefit payment when an accounting mapping is missing', async () => {
     const prisma = createPrismaMock();
@@ -2882,5 +2991,106 @@ describe('PayrollService benefit payments', () => {
     } as any)).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
     expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  describe('Regularization and Payment Validation Scenarios (Caso A, B, C)', () => {
+    it('Caso A: provision = 0, amount = 2000000, regularizeMissingProvision absent -> rejects with ConflictException and creates nothing', async () => {
+      const prisma = createPrismaMock();
+      prisma.employeeContract.findFirst = jest.fn().mockResolvedValue({
+        id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
+      });
+      prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+      prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(null);
+      prisma.payrollRun.findMany.mockResolvedValue([]); // Provision = 0
+      prisma.accountingMovement.findFirst = jest.fn().mockResolvedValue(null);
+
+      const service = new PayrollService(prisma as any);
+
+      await expect(service.createContractBenefitPayment('biz-1', 'contract-1', {
+        type: 'PRIMA',
+        amount: 2000000,
+        year: 2026,
+        semester: 1,
+        paymentMethod: PaymentMethod.BANK_TRANSFER,
+      } as any)).rejects.toThrow(ConflictException);
+
+      expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
+      expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    });
+
+    it('Caso B: provision = 0, amount = 2000000, regularizeMissingProvision = true -> creates regularization, payment and movements without error', async () => {
+      const prisma = createPrismaMock();
+      prisma.employeeContract.findFirst = jest.fn().mockResolvedValue({
+        id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
+      });
+      prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+      prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(null);
+      prisma.payrollRun.findMany.mockResolvedValue([]); // Provision = 0
+      prisma.accountingMovement.findFirst = jest.fn().mockResolvedValue(null);
+      prisma.payrollBenefitPayment.create = jest.fn().mockResolvedValue({
+        id: 'payment-1',
+        amount: new Prisma.Decimal(2000000),
+        status: 'PAID',
+        paidAt: new Date(),
+      });
+
+      const service = new PayrollService(prisma as any);
+
+      const result = await service.createContractBenefitPayment('biz-1', 'contract-1', {
+        type: 'PRIMA',
+        amount: 2000000,
+        year: 2026,
+        semester: 1,
+        paymentMethod: PaymentMethod.BANK_TRANSFER,
+        regularizeMissingProvision: true,
+      } as any);
+
+      expect(result.id).toBe('payment-1');
+      expect(prisma.payrollBenefitPayment.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accountingMovement.createMany).toHaveBeenCalledTimes(1);
+      const movements = prisma.accountingMovement.createMany.mock.calls[0][0].data;
+      // 2 for initial regularization + 2 for payment = 4
+      expect(movements.length).toBe(4);
+    });
+
+    it('Caso C: repeat Caso B -> returns existing payment, does not duplicate payment nor movements', async () => {
+      const prisma = createPrismaMock();
+      prisma.employeeContract.findFirst = jest.fn().mockResolvedValue({
+        id: 'contract-1', employeeId: 'emp-1', employee: { firstName: 'Juan', lastName: 'Perez' }
+      });
+      prisma.payrollAccountingMapping.findMany.mockResolvedValue(benefitPaymentMappings());
+      
+      const existingPayment = {
+        id: 'payment-1',
+        amount: new Prisma.Decimal(2000000),
+        status: 'PAID' as any,
+        year: 2026,
+        semester: 1,
+      };
+      prisma.payrollBenefitPayment.findFirst = jest.fn().mockResolvedValue(existingPayment);
+      prisma.payrollRun.findMany.mockResolvedValue([]); // Provision = 0
+      prisma.accountingMovement.findFirst = jest.fn().mockResolvedValue({ id: 'existing-regularization' });
+      prisma.accountingMovement.findMany = jest.fn().mockResolvedValue([
+        { id: 'mv-1', originType: 'PAYROLL_INITIAL_BALANCE', originId: 'reg-1', amount: 2000000, nature: 'DEBIT', pucSubcuentaId: '510536' },
+        { id: 'mv-2', originType: 'PAYROLL_INITIAL_BALANCE', originId: 'reg-1', amount: 2000000, nature: 'CREDIT', pucCuentaCode: '2520' },
+        { id: 'mv-3', originType: 'PAYROLL_BENEFIT_PAYMENT', originId: 'payment-1', amount: 2000000, nature: 'DEBIT', pucCuentaCode: '2520' },
+        { id: 'mv-4', originType: 'PAYROLL_BENEFIT_PAYMENT', originId: 'payment-1', amount: 2000000, nature: 'CREDIT', pucSubcuentaId: '111005' },
+      ]);
+
+      const service = new PayrollService(prisma as any);
+
+      const result = await service.createContractBenefitPayment('biz-1', 'contract-1', {
+        type: 'PRIMA',
+        amount: 2000000,
+        year: 2026,
+        semester: 1,
+        paymentMethod: PaymentMethod.BANK_TRANSFER,
+        regularizeMissingProvision: true,
+      } as any);
+
+      expect(result).toEqual(existingPayment);
+      expect(prisma.payrollBenefitPayment.create).not.toHaveBeenCalled();
+      expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    });
   });
 });
