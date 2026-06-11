@@ -122,7 +122,7 @@ export function WhatsappComposer({
         className,
       )}
     >
-      <div className="flex items-end gap-2">
+      <div className="flex min-w-0 items-end gap-2">
         <button
           type="button"
           onClick={resolvedLeftAction}
@@ -140,7 +140,7 @@ export function WhatsappComposer({
 
         <div
           className={cn(
-            "min-h-11 flex-1 rounded-[24px] bg-transparent px-3 py-3 ring-1 ring-transparent transition-colors",
+            "min-h-11 min-w-0 flex-1 rounded-[24px] bg-transparent px-3 py-3 ring-1 ring-transparent transition-colors",
             hasError ? "ring-red-300" : "focus-within:ring-emerald-300/70",
           )}
         >

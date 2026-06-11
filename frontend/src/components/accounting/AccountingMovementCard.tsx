@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import type {
   AccountingMovement,
-  AccountingMovementOriginType,
 } from "@/src/services/accounting";
 import { SelectableCard } from "@/src/components/shared/selection/SelectableCard";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
@@ -65,16 +64,6 @@ const categoryStyles: Record<
   },
 };
 
-const originBadgeColor: Record<
-  AccountingMovementOriginType | "RECURRENTE" | "SISTEMA",
-  string
-> = {
-  MANUAL: "bg-neutral-100 text-neutral-700",
-  ORDER: "bg-emerald-50 text-emerald-700",
-  RECURRENTE: "bg-emerald-50 text-emerald-700",
-  SISTEMA: "bg-sky-50 text-sky-700",
-};
-
 function categoryFromPuc(code?: string): MovementKind {
   const c = (code ?? "").trim();
   const first = c[0];
@@ -116,39 +105,18 @@ function iconForCategory(kind: MovementKind) {
   return <Banknote className="h-5 w-5 text-neutral-500" />;
 }
 
-function badgeForOrigin(
-  origin?: AccountingMovementOriginType | "RECURRENTE" | "SISTEMA"
-) {
-  const label =
-    origin === "ORDER"
-      ? "Automatica"
-      : origin === "MANUAL"
-        ? "Manual"
-        : origin ?? "Manual";
-  const colorKey = origin ?? "MANUAL";
-  const cls = originBadgeColor[colorKey] ?? "bg-neutral-100 text-neutral-700";
-
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}
-    >
-      {label}
-    </span>
-  );
-}
-
 function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   if (nature === "DEBIT") {
     return (
-      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
-        Debito
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+        Débito
       </span>
     );
   }
   if (nature === "CREDIT") {
     return (
-      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
-        Credito
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+        Crédito
       </span>
     );
   }
@@ -274,27 +242,30 @@ export function AccountingMovementCard({
       </div>
 
       <div className="mt-3 border-t border-neutral-100 pt-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-neutral-400" />
+        <div className="flex flex-col gap-1 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid min-w-0 grid-cols-[56px_60px_auto] items-center gap-1 sm:grid-cols-[88px_88px_auto] sm:gap-2">
+            <div className="w-[56px] sm:w-[88px]">
+              {movement.nature === "DEBIT" ? badgeForNature(movement.nature) : null}
+            </div>
+            <div className="w-[60px] sm:w-[88px]">
+              {movement.nature === "CREDIT" ? badgeForNature(movement.nature) : null}
+            </div>
+            <div className="min-w-0 overflow-visible">
+              <span
+                className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none uppercase tracking-wide sm:text-[11px] ${kindStyle.badge}`}
+                title={kindStyle.label}
+              >
+                {kindStyle.label}
+              </span>
+            </div>
+          </div>
+
+          <span className="self-end whitespace-nowrap text-[10px] text-neutral-400 sm:self-auto sm:text-[11px]">
             {formatBusinessDateTime(movement.createdAt || movement.date, "es-AR", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
             })}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {badgeForOrigin(movement.originType)}
-            {badgeForNature(movement.nature)}
-            <span
-              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${kindStyle.badge}`}
-            >
-              {kindStyle.label}
-            </span>
-          </div>
+          </span>
         </div>
       </div>
     </SelectableCard>
