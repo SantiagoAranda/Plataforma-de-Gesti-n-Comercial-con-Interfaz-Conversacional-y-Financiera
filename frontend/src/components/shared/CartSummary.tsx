@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { ShoppingBag, Minus, Plus, X } from "lucide-react";
@@ -70,7 +70,7 @@ export default function CartSummary({
       toast.error(error || "El número de teléfono es incorrecto.");
       return;
     }
-    
+
     // Pasa la cédula opcional al confirmar
     onConfirm(document);
   };
@@ -91,7 +91,7 @@ export default function CartSummary({
       <div className="px-6 pt-6 pb-4 border-b border-neutral-100 flex items-center gap-3">
         <ShoppingBag className="h-5 w-5 text-emerald-500" />
         <div>
-          <h2 className="text-[17px] font-extrabold text-neutral-800 leading-tight">Resumen de Pedido</h2>
+          <h2 className="text-[17px] font-semibold text-neutral-800 leading-tight">Resumen de Pedido</h2>
           <p className="text-[11px] text-neutral-400 font-medium mt-0.5">Gestiona tu pago de forma clara</p>
         </div>
       </div>
@@ -109,7 +109,7 @@ export default function CartSummary({
                 <span className="block text-sm font-semibold text-neutral-800 truncate">
                   {item.name}
                 </span>
-                <span className="block text-sm font-bold text-emerald-600 mt-0.5">
+                <span className="block text-sm font-medium text-emerald-600 mt-0.5">
                   ${formatPrice(item.price)}
                 </span>
                 {item.excludedOptionalIngredientNames?.length ? (
@@ -124,17 +124,17 @@ export default function CartSummary({
                 <button
                   type="button"
                   onClick={() => onDecreaseQty(item.id)}
-                  className="text-neutral-500 hover:text-neutral-800 font-extrabold text-sm w-4 h-4 flex items-center justify-center transition"
+                  className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Minus size={12} />
                 </button>
-                <span className="text-xs font-black text-neutral-700 w-4 text-center select-none">
+                <span className="text-xs font-semibold text-neutral-700 w-4 text-center select-none">
                   {item.quantity}
                 </span>
                 <button
                   type="button"
                   onClick={() => onIncreaseQty(item.id)}
-                  className="text-neutral-500 hover:text-neutral-800 font-extrabold text-sm w-4 h-4 flex items-center justify-center transition"
+                  className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Plus size={12} />
                 </button>
@@ -143,7 +143,7 @@ export default function CartSummary({
           ))}
 
           {items.length === 0 && (
-            <div className="text-center py-6 text-xs text-neutral-400 font-bold uppercase tracking-wider">
+            <div className="text-center py-6 text-xs text-neutral-400 font-medium uppercase tracking-wider">
               Tu carrito está vacío
             </div>
           )}
@@ -182,8 +182,8 @@ export default function CartSummary({
 
         {/* Total Final */}
         <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
-          <span className="text-base font-bold text-neutral-800">Total a pagar</span>
-          <span className="text-2xl font-black text-neutral-900">${formatPrice(total)}</span>
+          <span className="text-base font-medium text-neutral-800">Total a pagar</span>
+          <span className="text-2xl font-semibold text-neutral-900">${formatPrice(total)}</span>
         </div>
 
         {/* Action Button - Verde corporativo y estilo integrado */}
@@ -191,9 +191,8 @@ export default function CartSummary({
           type="button"
           onClick={handleConfirm}
           disabled={items.length === 0}
-          className={`w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-md transition flex items-center justify-center gap-2 mt-4 ${
-            !isFormValid ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+          className={`w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium text-sm shadow-md transition flex items-center justify-center gap-2 mt-4 ${!isFormValid ? "opacity-50 cursor-not-allowed" : ""
+            }`}
         >
           <ShoppingBag size={16} />
           Confirmar Pedido

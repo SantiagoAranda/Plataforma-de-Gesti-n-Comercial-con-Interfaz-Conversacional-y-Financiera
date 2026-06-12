@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import ReservationSlotPicker from "./ReservationSlotPicker";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 
@@ -49,15 +49,36 @@ export default function ReservationDrawer({
   const [countryCode, setCountryCode] = useState("57");
   const [phone, setPhone] = useState("");
 
+  // Refs para capturar los valores iniciales en el momento en que el drawer se abre,
+  // sin agregarlos como dependencias del efecto (evita el reset al re-renderizar el padre).
+  const initialFullNameRef = useRef(initialFullName);
+  const initialWhatsappRef = useRef(initialWhatsapp);
+  const selectedDateValueRef = useRef(selectedDateValue);
+
+  useEffect(() => {
+    initialFullNameRef.current = initialFullName;
+  }, [initialFullName]);
+
+  useEffect(() => {
+    initialWhatsappRef.current = initialWhatsapp;
+  }, [initialWhatsapp]);
+
+  useEffect(() => {
+    selectedDateValueRef.current = selectedDateValue;
+  }, [selectedDateValue]);
+
+  // Solo se ejecuta cuando el drawer se ABRE (open: false → true).
+  // No depende de initialFullName/initialWhatsapp/selectedDateValue para evitar
+  // que un re-render del padre resetee la fecha y los slots seleccionados.
   useEffect(() => {
     if (!open) return;
 
-    setSelectedDate(selectedDateValue ?? null);
+    setSelectedDate(selectedDateValueRef.current ?? null);
     setSelectedTime(null);
     setSelectedStartMinute(null);
-    setFullName(initialFullName);
-    
-    const raw = initialWhatsapp.replace(/\D/g, "");
+    setFullName(initialFullNameRef.current);
+
+    const raw = initialWhatsappRef.current.replace(/\D/g, "");
     const matched = ["57", "54", "52", "34", "56", "51"].find(code => raw.startsWith(code));
     if (matched) {
       setCountryCode(matched);
@@ -66,7 +87,8 @@ export default function ReservationDrawer({
       setCountryCode("57");
       setPhone(raw);
     }
-  }, [initialFullName, initialWhatsapp, open, selectedDateValue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const canConfirm =
     !!selectedDate &&

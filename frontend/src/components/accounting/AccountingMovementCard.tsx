@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   Banknote,
@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import type {
   AccountingMovement,
-  AccountingMovementOriginType,
 } from "@/src/services/accounting";
 import { SelectableCard } from "@/src/components/shared/selection/SelectableCard";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
@@ -65,16 +64,6 @@ const categoryStyles: Record<
   },
 };
 
-const originBadgeColor: Record<
-  AccountingMovementOriginType | "RECURRENTE" | "SISTEMA",
-  string
-> = {
-  MANUAL: "bg-neutral-100 text-neutral-700",
-  ORDER: "bg-emerald-50 text-emerald-700",
-  RECURRENTE: "bg-emerald-50 text-emerald-700",
-  SISTEMA: "bg-sky-50 text-sky-700",
-};
-
 function categoryFromPuc(code?: string): MovementKind {
   const c = (code ?? "").trim();
   const first = c[0];
@@ -116,43 +105,102 @@ function iconForCategory(kind: MovementKind) {
   return <Banknote className="h-5 w-5 text-neutral-500" />;
 }
 
-function badgeForOrigin(
-  origin?: AccountingMovementOriginType | "RECURRENTE" | "SISTEMA"
-) {
-  const label =
-    origin === "ORDER"
-      ? "Automatica"
-      : origin === "MANUAL"
-        ? "Manual"
-        : origin ?? "Manual";
-  const colorKey = origin ?? "MANUAL";
-  const cls = originBadgeColor[colorKey] ?? "bg-neutral-100 text-neutral-700";
-
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-[11px] font-semibold ${cls}`}
-    >
-      {label}
-    </span>
-  );
-}
-
 function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   if (nature === "DEBIT") {
     return (
-      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
-        Debito
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+        Débito
       </span>
     );
   }
   if (nature === "CREDIT") {
     return (
-      <span className="rounded-full bg-neutral-100 px-3 py-1 text-[11px] font-medium text-neutral-600">
-        Credito
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+        Crédito
       </span>
     );
   }
   return null;
+}
+
+function getReadableDetail(detailStr: string | null | undefined, originType?: string): string {
+  if (!detailStr) return "";
+  const trimmed = detailStr.trim();
+  
+  const jsonStart = trimmed.indexOf("{");
+  const prefix = jsonStart >= 0 ? trimmed.slice(0, jsonStart).trim() : "";
+  const jsonCandidate = jsonStart >= 0 ? trimmed.slice(jsonStart).trim() : trimmed;
+
+  if (jsonCandidate.startsWith("{") && jsonCandidate.endsWith("}")) {
+    try {
+      const data = JSON.parse(jsonCandidate);
+
+      const isRegularization = data.type === "INITIAL_BENEFIT_REGULARIZATION" || originType === "PAYROLL_INITIAL_BALANCE";
+      
+      if (isRegularization && data.benefitType === "PRIMA") {
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Regularización inicial de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Regularización inicial de prima ${semesterText} ${yearText}`;
+      }
+
+      if (originType === "PAYROLL_BENEFIT_PAYMENT" || data.type === "PAYROLL_BENEFIT_PAYMENT" || data.type === "BENEFIT_PAYMENT") {
+        const benefitType = data.benefitType || data.type || "PRIMA";
+        const benefitLabel = benefitType === "PRIMA" ? "prima" : benefitType;
+        const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
+        const yearText = data.year || "";
+        const nameText = data.employeeName || data.employee || "";
+        
+        if (nameText) {
+          return `Pago de prima ${semesterText} ${yearText} - ${nameText}`;
+        }
+        return `Pago de prima ${semesterText} ${yearText}`;
+      }
+
+      const parts: string[] = [];
+      if (data.employee) {
+        parts.push(`Empleado: ${data.employee}`);
+      }
+      if (data.benefitType || data.type) {
+        const typeStr = data.benefitType || data.type;
+        const typeLabel = typeStr === "PRIMA" ? "Prima de Servicios" : typeStr;
+        
+        let periodStr = "";
+        if (data.year && data.semester) {
+          periodStr = ` (${data.year}-S${data.semester})`;
+        } else if (data.period) {
+          periodStr = ` (${data.period})`;
+        }
+        parts.push(`Pago de ${typeLabel}${periodStr}`);
+      }
+      if (data.reason) {
+        let reasonLabel = data.reason;
+        if (data.reason === "INSUFFICIENT_HISTORICAL_PAYROLL_RUNS") {
+          reasonLabel = "Insuficiencia de históricos de nómina";
+        } else if (data.reason === "ROUNDING") {
+          reasonLabel = "Ajuste por redondeo";
+        } else if (data.reason === "INITIAL_BALANCE") {
+          reasonLabel = "Saldo inicial de provisión";
+        }
+        parts.push(`Regularización (${reasonLabel})`);
+      }
+      
+      if (parts.length > 0) {
+        return parts.join(" - ");
+      }
+      
+      return Object.entries(data)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ");
+    } catch {
+      // fallback
+    }
+  }
+  return detailStr;
 }
 
 export function AccountingMovementCard({
@@ -177,44 +225,47 @@ export function AccountingMovementCard({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
             {iconForCategory(kind)}
           </div>
-
+ 
           <div className="min-w-0 space-y-1">
             <div className="text-sm font-semibold text-neutral-900">
               {movement.pucCode} - {movement.pucName}
             </div>
             <div className="text-sm text-neutral-600">
-              {movement.detail || ""}
+              {getReadableDetail(movement.detail, movement.originType)}
             </div>
           </div>
         </div>
 
-        <div className={`shrink-0 text-base font-bold ${kindStyle.amount}`}>
+        <div className={`shrink-0 text-base font-medium ${kindStyle.amount}`}>
           {formatCurrency(amount)}
         </div>
       </div>
 
       <div className="mt-3 border-t border-neutral-100 pt-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-2 w-2 rounded-full bg-neutral-400" />
+        <div className="flex flex-col gap-1 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid min-w-0 grid-cols-[56px_60px_auto] items-center gap-1 sm:grid-cols-[88px_88px_auto] sm:gap-2">
+            <div className="w-[56px] sm:w-[88px]">
+              {movement.nature === "DEBIT" ? badgeForNature(movement.nature) : null}
+            </div>
+            <div className="w-[60px] sm:w-[88px]">
+              {movement.nature === "CREDIT" ? badgeForNature(movement.nature) : null}
+            </div>
+            <div className="min-w-0 overflow-visible">
+              <span
+                className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none uppercase tracking-wide sm:text-[11px] ${kindStyle.badge}`}
+                title={kindStyle.label}
+              >
+                {kindStyle.label}
+              </span>
+            </div>
+          </div>
+
+          <span className="self-end whitespace-nowrap text-[10px] text-neutral-400 sm:self-auto sm:text-[11px]">
             {formatBusinessDateTime(movement.createdAt || movement.date, "es-AR", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
               hour: "2-digit",
               minute: "2-digit",
             })}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {badgeForOrigin(movement.originType)}
-            {badgeForNature(movement.nature)}
-            <span
-              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${kindStyle.badge}`}
-            >
-              {kindStyle.label}
-            </span>
-          </div>
+          </span>
         </div>
       </div>
     </SelectableCard>

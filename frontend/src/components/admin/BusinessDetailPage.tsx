@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState } from "react";
 import { api } from "@/src/lib/api";
@@ -108,14 +108,14 @@ export function BusinessDetailPage({ businessId }: Props) {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <span className="text-4xl font-bold text-neutral-300">
+                <span className="text-4xl font-medium text-neutral-300">
                   {business.name.charAt(0).toUpperCase()}
                 </span>
               )}
             </div>
 
             <div className="text-center">
-              <h2 className="text-2xl font-bold text-neutral-900">
+              <h2 className="text-2xl font-medium text-neutral-900">
                 {business.name}
               </h2>
               <p className="text-sm font-medium text-neutral-500">
@@ -136,8 +136,8 @@ export function BusinessDetailPage({ businessId }: Props) {
                 value={business.status === "ACTIVE" ? "Activo" : "Inactivo"}
                 valueClassName={
                   business.status === "ACTIVE"
-                    ? "text-emerald-600 font-bold"
-                    : "text-neutral-500 font-bold"
+                    ? "text-emerald-600 font-medium"
+                    : "text-neutral-500 font-medium"
                 }
               />
 
@@ -175,7 +175,7 @@ export function BusinessDetailPage({ businessId }: Props) {
           onClick={() => setShowConfirm(true)}
           disabled={updating}
           className={cn(
-            "w-full py-4 rounded-2xl font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50",
+            "w-full py-4 rounded-2xl font-medium text-white transition-all active:scale-[0.98] disabled:opacity-50",
             business.status === "ACTIVE"
               ? "bg-red-500 hover:bg-red-600 shadow-lg shadow-red-100"
               : "bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-100"
@@ -249,7 +249,7 @@ function DetailItem({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+      <span className="text-[11px] font-medium uppercase tracking-wider text-neutral-400">
         {label}
       </span>
 

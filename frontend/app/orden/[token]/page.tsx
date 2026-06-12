@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -229,7 +229,7 @@ function ProductCard({
 
       <div className="p-3 flex flex-col gap-2">
         <div className="text-sm font-semibold">{item.name}</div>
-        <div className="text-emerald-600 font-bold text-sm">
+        <div className="text-emerald-600 font-medium text-sm">
           ${item.price.toFixed(2)}
         </div>
 

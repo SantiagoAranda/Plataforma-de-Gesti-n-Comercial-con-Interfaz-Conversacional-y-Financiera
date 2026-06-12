@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Plus, Trash2, Send } from "lucide-react";
+import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
@@ -19,8 +20,15 @@ type BusinessItem = {
   name: string;
   price: number;
   type: "PRODUCT" | "SERVICE";
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+  currentStock?: number | string | null;
   durationMinutes?: number;
 };
+
+function isAvailableForSale(item: BusinessItem) {
+  if (item.inventoryMode !== "SIMPLE") return true;
+  return Number(item.currentStock ?? 0) > 0;
+}
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -58,7 +66,7 @@ export default function SaleCreateModal({
     status: "PENDIENTE" | "CERRADO";
     paymentMethod: "CASH" | "BANK_TRANSFER";
     items: { itemId: string; quantity: number }[];
-  }) => void;
+  }) => Promise<void> | void;
 }) {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
@@ -71,10 +79,20 @@ export default function SaleCreateModal({
   const [expanded, setExpanded] = useState(false);
   const [newItem, setNewItem] = useState<{itemId: string, qty: number | ""}>({itemId: "", qty: 1});
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   const fetchItems = async () => {
     try {
       const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -100,6 +118,7 @@ export default function SaleCreateModal({
     setItems([]);
     setExpanded(false);
     setNewItem({ itemId: "", qty: 1 });
+    setIsSubmitting(false);
   }, [open]);
 
   const total = useMemo(() => {
@@ -121,6 +140,22 @@ export default function SaleCreateModal({
   const handleAddItem = () => {
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
+    const qty = newItem.qty === "" ? 1 : newItem.qty;
+    const existingQty = items
+      .filter((it) => it.itemId === bi.id)
+      .reduce((acc, it) => acc + it.qty, 0);
+    if (bi.inventoryMode === "SIMPLE") {
+      const available = Number(bi.currentStock ?? 0);
+      const required = existingQty + qty;
+      if (available <= 0) {
+        toast.error(`${bi.name} no tiene stock disponible.`);
+        return;
+      }
+      if (required > available) {
+        toast.error(`Stock insuficiente para ${bi.name}. Disponible: ${available}, requerido: ${required}.`);
+        return;
+      }
+    }
 
     if (items.length === 0) {
       setType(bi.type === "SERVICE" ? "SERVICIO" : "PRODUCTO");
@@ -130,7 +165,7 @@ export default function SaleCreateModal({
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty === "" ? 1 : newItem.qty,
+        qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -140,7 +175,9 @@ export default function SaleCreateModal({
     setNewItem({itemId: "", qty: 1});
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSubmitting) return;
+
     const cleanedName = customerName.trim() || "Cliente Local";
     const cleanedWhatsapp = phoneNumber.trim().length > 0 ? `${countryCode}${phoneNumber}` : "0000000000";
 
@@ -152,14 +189,23 @@ export default function SaleCreateModal({
 
     if (cleanedItems.length === 0) return;
 
-    onSave({
-      customerName: cleanedName,
-      customerWhatsapp: cleanedWhatsapp,
-      type,
-      status,
-      paymentMethod: paymentMethod || "CASH",
-      items: cleanedItems,
-    });
+    setIsSubmitting(true);
+    try {
+      await onSave({
+        customerName: cleanedName,
+        customerWhatsapp: cleanedWhatsapp,
+        type,
+        status,
+        paymentMethod: paymentMethod || "CASH",
+        items: cleanedItems,
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (isMounted.current && open) {
+        setIsSubmitting(false);
+      }
+    }
   };
 
   return (
@@ -172,8 +218,8 @@ export default function SaleCreateModal({
 
         <div className="px-5 pt-7 pb-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-             <h2 className="font-bold text-neutral-900 text-lg">Nueva Venta</h2>
-             <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Creación Manual</span>
+             <h2 className="font-medium text-neutral-900 text-lg">Nueva Venta</h2>
+             <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Creación Manual</span>
           </div>
 
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-neutral-100 transition text-neutral-500">
@@ -184,7 +230,7 @@ export default function SaleCreateModal({
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/20">
           <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-white">
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                 Cliente (Opcional)
               </span>
 
@@ -196,7 +242,7 @@ export default function SaleCreateModal({
               />
             </div>
             <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                 WhatsApp (Opcional)
               </span>
 
@@ -209,13 +255,13 @@ export default function SaleCreateModal({
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">
+                <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                   Estado Inicial
                 </span>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as "PENDIENTE" | "CERRADO")}
-                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-bold text-neutral-700 outline-none bg-neutral-50 h-8"
+                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-medium text-neutral-700 outline-none bg-neutral-50 h-8"
                 >
                   <option value="PENDIENTE">Pendiente</option>
                   <option value="CERRADO">Cerrado</option>
@@ -226,12 +272,12 @@ export default function SaleCreateModal({
               </div>
             </div>
             <div className="col-span-2 flex flex-col gap-1 pt-2">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">Medio de pago</span>
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">Medio de pago</span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("CASH")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
                     paymentMethod === "CASH"
                       ? "bg-emerald-500 text-white"
                       : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
@@ -242,7 +288,7 @@ export default function SaleCreateModal({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition ${
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
                     paymentMethod === "BANK_TRANSFER"
                       ? "bg-emerald-500 text-white"
                       : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
@@ -255,24 +301,24 @@ export default function SaleCreateModal({
           </div>
 
           <div className="space-y-3">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
 
             <div className="space-y-2">
               {items.map((it, idx) => (
                 <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
                   <ItemThumbnail />
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400 uppercase">
+                    <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-neutral-400 uppercase">
                        {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                     </div>
                   </div>
 
                   {type === "PRODUCTO" && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
-                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">-</button>
-                      <span className="text-xs font-black text-neutral-700 w-3 text-center">{it.qty}</span>
-                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-bold text-sm">+</button>
+                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
+                      <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
+                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
                     </div>
                   )}
 
@@ -287,7 +333,7 @@ export default function SaleCreateModal({
 
               {items.length === 0 && (
                 <div className="text-center py-10 border-2 border-dashed border-neutral-200 bg-neutral-50 rounded-2xl">
-                   <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
+                   <p className="text-[11px] font-medium text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
                 </div>
               )}
             </div>
@@ -302,13 +348,14 @@ export default function SaleCreateModal({
                 <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                    <div className="flex flex-col gap-4">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Item</span>
+                        <span className="text-[10px] font-medium text-neutral-500 uppercase tracking-widest px-1">Item</span>
                         <div className="relative">
                            <ItemSelector
                              value={newItem.itemId}
                              onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
                              options={businessItems.filter(bi => 
-                               items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                               (items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")) &&
+                               isAvailableForSale(bi)
                              )}
                              placeholder="Elegí un item..."
                            />
@@ -317,7 +364,7 @@ export default function SaleCreateModal({
 
                       {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
+                          <span className="text-[10px] font-medium text-neutral-500 uppercase tracking-widest px-1">Cantidad</span>
                           <input
                             type="number"
                             min="1"
@@ -347,7 +394,7 @@ export default function SaleCreateModal({
                       <button
                         onClick={handleAddItem}
                         disabled={!newItem.itemId}
-                        className="w-full h-11 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
+                        className="w-full h-11 bg-emerald-600 text-white rounded-xl font-medium text-sm shadow-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40"
                       >
                         Añadir a la lista
                       </button>
@@ -365,14 +412,14 @@ export default function SaleCreateModal({
                     </button>
 
                     <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center justify-between">
-                       <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Total venta</span>
-                       <span className="text-lg font-black text-neutral-900">${formatMoney(total)}</span>
+                       <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest">Total venta</span>
+                       <span className="text-lg font-semibold text-neutral-900">${formatMoney(total)}</span>
                     </div>
 
                     <button
                       onClick={handleSave}
-                      disabled={items.length === 0}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90 disabled:opacity-40 disabled:hover:bg-emerald-500"
+                      disabled={items.length === 0 || isSubmitting}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl hover:bg-emerald-600 active:scale-90 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <Send className="h-4 w-4" />
                     </button>
@@ -380,7 +427,7 @@ export default function SaleCreateModal({
               </div>
            </div>
 
-           <div className="text-[9px] text-neutral-400 font-bold text-center mt-3 uppercase tracking-widest opacity-60">
+           <div className="text-[9px] text-neutral-400 font-medium text-center mt-3 uppercase tracking-widest opacity-60">
              Pulsa el icono de enviar para registrar la venta
            </div>
         </div>

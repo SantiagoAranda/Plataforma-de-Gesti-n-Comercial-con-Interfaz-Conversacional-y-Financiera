@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
@@ -39,6 +39,34 @@ const formatCop = (value: number) => {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+async function readApiError(res: Response) {
+  const fallback = "No se pudo confirmar el pedido.";
+  let raw = "";
+
+  try {
+    raw = await res.text();
+  } catch {
+    return fallback;
+  }
+
+  if (!raw.trim()) return fallback;
+
+  try {
+    const payload = JSON.parse(raw);
+    const message =
+      payload?.message ??
+      payload?.error ??
+      payload?.details?.message ??
+      payload?.details?.error;
+    if (Array.isArray(message)) return message.join(" | ");
+    if (typeof message === "string" && message.trim()) return message;
+  } catch {
+    return raw;
+  }
+
+  return fallback;
+}
 
 type ItemType = "PRODUCT" | "SERVICE";
 
@@ -354,10 +382,10 @@ export default function PublicStoreClient() {
         return prev.map((line) =>
           line.itemId === id
             ? {
-                ...line,
-                quantity: line.quantity + 1,
-                excludedOptionalIngredientIds: uniqueExcludedIds,
-              }
+              ...line,
+              quantity: line.quantity + 1,
+              excludedOptionalIngredientIds: uniqueExcludedIds,
+            }
             : line,
         );
       }
@@ -502,7 +530,11 @@ export default function PublicStoreClient() {
         }),
       });
 
-      if (!res.ok) throw new Error("Error sending order");
+      if (!res.ok) {
+        const message = await readApiError(res);
+        notify({ type: "error", message });
+        return;
+      }
 
       notify({ type: "success", message: "Compra enviada" });
 
@@ -565,7 +597,7 @@ export default function PublicStoreClient() {
             >
               <ShoppingBag className="h-5 w-5" />
               {cartCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-black text-white shadow-sm">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-semibold text-white shadow-sm">
                   {cartCount}
                 </span>
               )}
@@ -685,10 +717,10 @@ export default function PublicStoreClient() {
             </button>
 
             <div className="pr-10">
-              <p className="text-[11px] font-black uppercase tracking-widest text-emerald-600">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
                 Personalizar
               </p>
-              <h2 className="mt-1 text-lg font-black text-neutral-900">
+              <h2 className="mt-1 text-lg font-semibold text-neutral-900">
                 {customizingProduct.name}
               </h2>
               <p className="mt-1 text-xs font-semibold text-neutral-500">
@@ -698,14 +730,14 @@ export default function PublicStoreClient() {
 
             {getRequiredRecipeLines(customizingProduct).length > 0 ? (
               <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
                   Incluye siempre
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {getRequiredRecipeLines(customizingProduct).map((line) => (
                     <span
                       key={line.ingredientId}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-neutral-700 ring-1 ring-neutral-100"
+                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-100"
                     >
                       {line.ingredient?.name ?? "Ingrediente"}
                     </span>
@@ -715,7 +747,7 @@ export default function PublicStoreClient() {
             ) : null}
 
             <div className="mt-4 space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
                 Opcionales
               </p>
               {getOptionalRecipeLines(customizingProduct).map((line) => {
@@ -725,7 +757,7 @@ export default function PublicStoreClient() {
                     key={line.ingredientId}
                     className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
                   >
-                    <span className="text-sm font-bold text-neutral-800">
+                    <span className="text-sm font-medium text-neutral-800">
                       {line.ingredient?.name ?? "Ingrediente"}
                     </span>
                     <input
@@ -763,7 +795,7 @@ export default function PublicStoreClient() {
             <button
               type="button"
               onClick={confirmCustomizedProduct}
-              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
+              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
             >
               <ShoppingBag className="h-4 w-4" />
               Agregar al carrito
@@ -872,7 +904,7 @@ function ProductCard({
                 {badges.map((badge) => (
                   <div
                     key={`${badge.text}-${badge.color}`}
-                    className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                     style={{ background: badge.color }}
                   >
                     {badge.text}
@@ -922,7 +954,7 @@ function ProductCard({
       </div>
 
       <div className="mt-3 px-1">
-        <div className="truncate text-[15px] font-extrabold leading-[1.2] text-[#0f172a]">
+        <div className="truncate text-[15px] font-semibold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
         {item.description?.trim() ? (
@@ -930,7 +962,7 @@ function ProductCard({
             {item.description.trim()}
           </div>
         ) : null}
-        <div className="mt-1 text-[16px] font-black text-black">
+        <div className="mt-1 text-[16px] font-semibold text-black">
           {formatCop(item.price)}
         </div>
       </div>
@@ -1047,7 +1079,7 @@ function ProductDetailOverlay({
                     {badges.map((badge) => (
                       <div
                         key={`${badge.text}-${badge.color}`}
-                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                         style={{ background: badge.color }}
                       >
                         {badge.text}
@@ -1060,11 +1092,11 @@ function ProductDetailOverlay({
 
                 <div className="flex flex-wrap items-end justify-between gap-8">
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       PRECIO
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <div className="text-4xl font-black tracking-tight text-slate-900">
+                      <div className="text-4xl font-semibold tracking-tight text-slate-900">
                         ${formatPrice(item.price)}
                       </div>
                       {item.previousPrice != null &&
@@ -1081,7 +1113,7 @@ function ProductDetailOverlay({
                     type="button"
                     disabled={preview}
                     onClick={onPrimaryAction}
-                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <ShoppingBag className="h-4 w-4" />
                     Comprar
@@ -1093,7 +1125,7 @@ function ProductDetailOverlay({
 
                 {item.description && (
                   <div className="space-y-3">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       Descripción
                     </div>
                     <p className="text-[16px] leading-relaxed text-slate-600 whitespace-pre-wrap">
@@ -1347,7 +1379,7 @@ function ReelLikeProductView({
       {/* FOOTER (full width bar, no rounded “card”) */}
       <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
         <div className="space-y-2 pb-3">
-          <div className="text-[18px] font-extrabold leading-tight text-slate-900">
+          <div className="text-[18px] font-semibold leading-tight text-slate-900">
             {item.name}
           </div>
           {businessName && (
@@ -1361,7 +1393,7 @@ function ReelLikeProductView({
               {badges.map((badge) => (
                 <div
                   key={`${badge.text}-${badge.color}`}
-                  className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                   style={{ background: badge.color }}
                 >
                   {badge.text}
@@ -1373,11 +1405,11 @@ function ReelLikeProductView({
 
         <div className="flex w-full flex-wrap items-center justify-between gap-6">
           <div className="min-w-0 flex-1 space-y-1">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
               PRECIO
             </div>
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-              <div className="text-3xl font-black tracking-tight text-slate-900">
+              <div className="text-3xl font-semibold tracking-tight text-slate-900">
                 ${formatPrice(item.price)}
               </div>
               {item.previousPrice != null &&
@@ -1394,7 +1426,7 @@ function ReelLikeProductView({
             type="button"
             disabled={preview}
             onClick={onPrimaryAction}
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-bold text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ShoppingBag className="h-4 w-4" />
             Comprar

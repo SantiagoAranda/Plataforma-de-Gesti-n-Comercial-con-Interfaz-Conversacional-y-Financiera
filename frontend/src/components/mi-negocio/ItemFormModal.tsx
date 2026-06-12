@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "@/src/lib/api";
 import { invalidateCache } from "@/src/lib/cache";
 import {
@@ -34,9 +35,6 @@ interface ItemFormModalProps {
   onClose: () => void;
   onSaved: (item: Item) => void;
   editingItem: Item | null;
-  setToast: (
-    toast: { message: string; type: "success" | "error" } | null,
-  ) => void;
 }
 
 function revokePendingImages(images: PendingImage[]) {
@@ -48,7 +46,6 @@ export default function ItemFormModal({
   onClose,
   onSaved,
   editingItem,
-  setToast,
 }: ItemFormModalProps) {
   const [type, setType] = useState<ItemType>("PRODUCT");
   const [name, setName] = useState("");
@@ -211,6 +208,24 @@ export default function ItemFormModal({
   };
 
   const handleSend = async () => {
+    if (type === "SERVICE") {
+      const hasOverlap = week.some((day) => {
+        if (!day.active || day.ranges.length !== 2) return false;
+        const m1s = timeToMinutes(day.ranges[0].start);
+        const m1e = timeToMinutes(day.ranges[0].end);
+        const m2s = timeToMinutes(day.ranges[1].start);
+        const m2e = timeToMinutes(day.ranges[1].end);
+        
+        const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+        const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+        return first.e >= second.s;
+      });
+
+      if (hasOverlap) {
+        return;
+      }
+    }
+
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || parseFloat(price) <= 0)
@@ -255,14 +270,14 @@ export default function ItemFormModal({
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : [],
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -341,11 +356,22 @@ export default function ItemFormModal({
       resetForm();
     } catch (err) {
       console.error(err);
-      setToast({ message: "Error al guardar item", type: "error" });
+      toast.error("Error al guardar item");
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const hasScheduleOverlap = type === "SERVICE" && week.some((day) => {
+    if (!day.active || day.ranges.length !== 2) return false;
+    const m1s = timeToMinutes(day.ranges[0].start);
+    const m1e = timeToMinutes(day.ranges[0].end);
+    const m2s = timeToMinutes(day.ranges[1].start);
+    const m2e = timeToMinutes(day.ranges[1].end);
+    const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+    const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+    return first.e >= second.s;
+  });
 
   return (
     <ItemPanelLayout
@@ -364,9 +390,9 @@ export default function ItemFormModal({
         <div className="flex justify-end">
           <button
             onClick={handleSend}
-            disabled={isSubmitting}
-            className={`w-full py-4 rounded-xl bg-green-600 text-white font-bold shadow-lg flex items-center justify-center active:scale-95 transition ${
-              isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+            disabled={isSubmitting || hasScheduleOverlap}
+            className={`w-full py-4 rounded-xl bg-green-600 text-white font-medium shadow-lg flex items-center justify-center active:scale-95 transition ${
+              isSubmitting || hasScheduleOverlap ? "opacity-50 cursor-not-allowed" : ""
             }`}
           >
             {isSubmitting
@@ -419,11 +445,11 @@ export default function ItemFormModal({
       {/* DESCRIPCION (Sólo visible en el Modal por ahora, se moverá al ChatComposer) */}
       <div className="space-y-2 pb-4">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
             Descripción
           </label>
           <span
-            className={`text-[9px] font-bold ${description.length >= 300 ? "text-red-500" : "text-neutral-400"}`}
+            className={`text-[9px] font-medium ${description.length >= 300 ? "text-red-500" : "text-neutral-400"}`}
           >
             {description.length}/300
           </span>

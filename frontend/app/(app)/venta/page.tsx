@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
@@ -17,6 +17,7 @@ import { SelectionActionBar } from "@/src/components/shared/selection/SelectionA
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
+import { getErrorMessage } from "@/src/lib/errors";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
@@ -116,11 +117,11 @@ export default function VentaPage() {
             <AlertTriangle size={16} />
           </div>
           <div className="flex-1">
-            <p className="text-[13px] font-bold text-neutral-800 leading-tight mb-3">{title}</p>
+            <p className="text-[13px] font-medium text-neutral-800 leading-tight mb-3">{title}</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => toast.dismiss(t.id)}
-                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-bold uppercase tracking-wider hover:bg-neutral-100 transition"
+                className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-medium uppercase tracking-wider hover:bg-neutral-100 transition"
               >
                 Cancelar
               </button>
@@ -129,7 +130,7 @@ export default function VentaPage() {
                   toast.dismiss(t.id);
                   onAction();
                 }}
-                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-bold uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                className={`flex-1 h-9 rounded-xl text-white text-[11px] font-medium uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
               >
                 {actionLabel}
               </button>
@@ -212,7 +213,7 @@ export default function VentaPage() {
     sales.forEach((sale) => {
       try {
         keys.add(getBusinessDayKey(sale.createdAt));
-      } catch {}
+      } catch { }
     });
     return keys;
   }, [sales]);
@@ -296,19 +297,20 @@ export default function VentaPage() {
           }, 2100);
         } catch (err) {
           console.error(err);
-          setError("No se pudo finalizar la venta");
+          const message = getErrorMessage(err, "No se pudo finalizar la venta");
+          setError(message);
           await loadOrders();
 
           toast.dismiss(loadingId);
 
-          toast.error("Error al confirmar venta", {
+          toast.error(message, {
             id: errorId,
-            duration: 3000,
+            duration: 5000,
           });
 
           setTimeout(() => {
             toast.dismiss(errorId);
-          }, 3100);
+          }, 5100);
         } finally {
           setConfirmingSaleId(null);
         }
@@ -329,19 +331,6 @@ export default function VentaPage() {
         current.map((currentSale) =>
           currentSale.id === sale.id && currentSale.sourceType === sale.sourceType
             ? {
-                ...currentSale,
-                items: currentSale.items.map((item) =>
-                  item.orderItemId === orderItemId
-                    ? { ...item, excludedOptionalIngredientIds }
-                    : item,
-                ),
-              }
-            : currentSale,
-        ),
-      );
-      setDetailsSale((currentSale) =>
-        currentSale?.id === sale.id && currentSale.sourceType === sale.sourceType
-          ? {
               ...currentSale,
               items: currentSale.items.map((item) =>
                 item.orderItemId === orderItemId
@@ -349,6 +338,19 @@ export default function VentaPage() {
                   : item,
               ),
             }
+            : currentSale,
+        ),
+      );
+      setDetailsSale((currentSale) =>
+        currentSale?.id === sale.id && currentSale.sourceType === sale.sourceType
+          ? {
+            ...currentSale,
+            items: currentSale.items.map((item) =>
+              item.orderItemId === orderItemId
+                ? { ...item, excludedOptionalIngredientIds }
+                : item,
+            ),
+          }
           : currentSale,
       );
       invalidateCache("home:sales");
@@ -397,6 +399,7 @@ export default function VentaPage() {
       console.error("Details:", apiError.details);
       console.error("Raw:", apiError.raw);
       toast.error(apiError.message || "Error al registrar la venta");
+      throw error;
     }
   };
 
@@ -618,7 +621,7 @@ export default function VentaPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDate(new Date())}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
                     >
                       Limpiar
                     </button>

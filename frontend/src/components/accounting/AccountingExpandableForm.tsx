@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { Dispatch, SetStateAction } from "react";
 import type { AccountingFormState } from "@/src/types/accounting-form";
@@ -28,8 +28,8 @@ export function AccountingExpandableForm({
   return (
     <div className="rounded-[32px] bg-white p-6 border border-slate-200/80 shadow-[0_12px_32px_rgba(0,0,0,0.08)]">
       <div className="flex flex-col gap-0.5 mb-5 px-1">
-        <h2 className="font-bold text-slate-900 text-lg">Movimiento Contable</h2>
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">GESTIÓN PUC</span>
+        <h2 className="font-medium text-slate-900 text-lg">Movimiento Contable</h2>
+        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">GESTIÓN PUC</span>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -39,7 +39,7 @@ export function AccountingExpandableForm({
 
         <div className="grid grid-cols-2 gap-3">
           <label className="flex min-w-0 flex-col">
-            <span className="text-[10px] font-bold text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
+            <span className="text-[10px] font-medium text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
               FECHA <span className="text-red-500">*</span>
             </span>
             <input
@@ -59,7 +59,7 @@ export function AccountingExpandableForm({
           </label>
 
           <label className="flex min-w-0 flex-col">
-            <span className="text-[10px] font-bold text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
+            <span className="text-[10px] font-medium text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
               VALOR <span className="text-red-500">*</span>
             </span>
             <input

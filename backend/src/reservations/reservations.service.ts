@@ -70,6 +70,12 @@ export class ReservationsService {
   ) {
     const weekday = this.getWeekday(date);
 
+    const dateKey = [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+
     const [windows, reservations, blocks] = await Promise.all([
       this.prisma.serviceScheduleWindow.findMany({
         where: {
@@ -115,41 +121,34 @@ export class ReservationsService {
     }
 
     const duration = item.durationMinutes ?? 60;
-    // 3. Incremento fijo para no descartar franjas (ej. 30 minutos) -> Ajustado a 60
+    // Fixed 60-minute step — NEVER use durationMinutes as step or slots will be skipped.
     const step = 60;
     const slots: string[] = [];
 
-    // Past slots filter based on America/Bogota
+    // Compute "today" and current time in the business timezone (America/Bogota).
+    // Use a YYYY-MM-DD string key comparison — avoids getTime() drift from toLocaleString parsing.
     const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
-    const today = new Date(
-      Date.UTC(
-        nowInBusiness.getFullYear(),
-        nowInBusiness.getMonth(),
-        nowInBusiness.getDate(),
-        0,
-        0,
-        0,
-        0,
-      )
-    );
+    const todayKey = [
+      nowInBusiness.getFullYear(),
+      String(nowInBusiness.getMonth() + 1).padStart(2, '0'),
+      String(nowInBusiness.getDate()).padStart(2, '0'),
+    ].join('-');
+    const isToday = dateKey === todayKey;
+    // Use < (not <=) so a slot that starts exactly at the current minute is still offered.
     const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
+      // Align cursor to the next full-hour boundary (slots are always HH:00).
       let cursor = window.startMinute;
       if (cursor % 60 !== 0) {
-        cursor = cursor + (60 - (cursor % 60)); // Redondea al siguiente minuto 00
+        cursor = cursor + (60 - (cursor % 60));
       }
 
       while (cursor + duration <= window.endMinute) {
-        if (cursor % 60 !== 0) {
-          cursor += step;
-          continue;
-        }
-
         const start = cursor;
         const end = cursor + duration;
 
-        if (date.getTime() === today.getTime() && start <= currentMinutes) {
+        if (isToday && start < currentMinutes) {
           cursor += step;
           continue;
         }
@@ -171,6 +170,7 @@ export class ReservationsService {
 
     return slots;
   }
+
 
   private async getBusinessService(businessId: string, itemId: string) {
     const item = await this.prisma.item.findFirst({

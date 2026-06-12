@@ -40,11 +40,13 @@ export class ItemsController {
     @Req() req: any,
     @Query('status') status?: string,
     @Query('lightweight') lightweight?: string,
+    @Query('context') context?: 'management' | 'sales' | 'public-store',
   ) {
     return this.itemsService.findAll(
       req.user.businessId,
       status,
       lightweight === 'true',
+      context ?? 'management',
     );
   }
 

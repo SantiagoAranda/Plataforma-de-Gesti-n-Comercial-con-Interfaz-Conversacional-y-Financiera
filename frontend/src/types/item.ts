@@ -1,6 +1,30 @@
 export type ItemType = "PRODUCT" | "SERVICE";
 
 export type ItemInventoryMode = "NONE" | "SIMPLE" | "RECIPE_BASED";
+export type ItemSellabilityStatus =
+  | "SELLABLE"
+  | "NO_STOCK"
+  | "LOW_STOCK"
+  | "MISSING_INITIAL_STOCK"
+  | "MISSING_RECIPE"
+  | "EMPTY_RECIPE"
+  | "INSUFFICIENT_RECIPE_STOCK"
+  | "INACTIVE";
+
+export type ItemSellability = {
+  sellable: boolean;
+  status: ItemSellabilityStatus;
+  message?: string;
+  currentStock?: number | string;
+  averageCost?: number | string;
+  missingItems?: Array<{
+    id: string;
+    name: string;
+    required: number | string;
+    available: number | string;
+    unit?: string | null;
+  }>;
+};
 
 export type Schedule = {
   weekday: string;
@@ -19,6 +43,10 @@ export type Item = {
   description?: string;
   durationMinutes?: number;
   inventoryMode?: ItemInventoryMode | null;
+  minStock?: number | string;
+  sellability?: ItemSellability;
+  currentStock?: number | string;
+  averageCost?: number | string;
   schedule?: Schedule[];
   images?: { id: string; url: string; order: number }[];
   status: "ACTIVE" | "INACTIVE";

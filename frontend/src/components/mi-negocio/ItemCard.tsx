@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { memo, useState } from "react";
 import { api } from "@/src/lib/api";
@@ -20,6 +20,21 @@ type Props = {
 import { formatActiveDaysCompact } from "@/src/lib/availability";
 
 function inventoryMeta(item: any, recipeLineCount = 0) {
+  const status = item.sellability?.status;
+  if (status) {
+    const map: Record<string, { label: string; tone: string }> = {
+      SELLABLE: { label: "Listo para vender", tone: "bg-emerald-50 text-emerald-800" },
+      LOW_STOCK: { label: "Stock bajo", tone: "bg-amber-50 text-amber-800" },
+      NO_STOCK: { label: "Sin stock", tone: "bg-rose-50 text-rose-700" },
+      MISSING_INITIAL_STOCK: { label: "Sin inventario inicial", tone: "bg-rose-50 text-rose-700" },
+      MISSING_RECIPE: { label: "Receta incompleta", tone: "bg-amber-50 text-amber-800" },
+      EMPTY_RECIPE: { label: "Receta sin ingredientes", tone: "bg-amber-50 text-amber-800" },
+      INSUFFICIENT_RECIPE_STOCK: { label: "Stock insuficiente para receta", tone: "bg-rose-50 text-rose-700" },
+      INACTIVE: { label: "Inactivo", tone: "bg-neutral-100 text-neutral-600" },
+    };
+    return map[status] ?? { label: "Revisar inventario", tone: "bg-amber-50 text-amber-800" };
+  }
+
   if (item.type !== "PRODUCT" || item.inventoryMode === "NONE" || !item.inventoryMode) {
     return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600" };
   }
@@ -77,7 +92,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
             <p className="text-sm font-semibold text-neutral-900 flex-1 line-clamp-1">
               {item.name}
             </p>
-            <p className="text-emerald-600 font-bold text-sm whitespace-nowrap">
+            <p className="text-emerald-600 font-medium text-sm whitespace-nowrap">
               ${formatMoney(item.price)}
             </p>
           </div>
@@ -109,7 +124,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
           {/* FOOTER: PILL LEFT, DATE RIGHT */}
           <div className="mt-auto pt-2 flex items-center justify-between gap-4">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
+              <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${inventory.tone}`}>
                 {inventory.label}
               </span>
             </div>

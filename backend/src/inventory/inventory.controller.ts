@@ -25,6 +25,29 @@ export class InventoryController {
     return this.inventoryService.registerPurchase(req.user.businessId, dto);
   }
 
+  @Post('items/:itemId/movements')
+  registerItemMovement(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Body() dto: (CreateInventoryInitialDto | CreateInventoryPurchaseDto) & {
+      type: 'INVENTORY_INITIAL' | 'PURCHASE';
+    },
+  ) {
+    if (dto.type === 'INVENTORY_INITIAL') {
+      return this.inventoryService.registerInitial(req.user.businessId, {
+        ...dto,
+        itemId,
+        ingredientId: undefined,
+      } as CreateInventoryInitialDto);
+    }
+
+    return this.inventoryService.registerPurchase(req.user.businessId, {
+      ...dto,
+      itemId,
+      ingredientId: undefined,
+    } as CreateInventoryPurchaseDto);
+  }
+
   @Post('purchase-return')
   registerPurchaseReturn(
     @Req() req: any,
@@ -71,6 +94,11 @@ export class InventoryController {
     return this.inventoryService.getSummary(req.user.businessId, query);
   }
 
+  @Get('items/summary')
+  getSimpleItemsSummary(@Req() req: any) {
+    return this.inventoryService.getSimpleItemsSummary(req.user.businessId);
+  }
+
   @Get('kardex')
   listGlobalKardex(@Req() req: any, @Query() query: InventoryKardexGlobalQueryDto) {
     return this.inventoryService.listGlobalKardex(req.user.businessId, query);
@@ -85,6 +113,19 @@ export class InventoryController {
     return this.inventoryService.listKardex(
       req.user.businessId,
       ingredientId,
+      query,
+    );
+  }
+
+  @Get('items/:itemId/kardex')
+  listItemKardex(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Query() query: InventoryKardexQueryDto,
+  ) {
+    return this.inventoryService.listItemKardex(
+      req.user.businessId,
+      itemId,
       query,
     );
   }

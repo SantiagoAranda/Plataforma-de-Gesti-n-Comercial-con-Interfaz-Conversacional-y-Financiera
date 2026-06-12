@@ -8,6 +8,7 @@ import sharp from 'sharp';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { AddItemImageDto } from './dto/add-item-image.dto';
 import { CreateItemDto } from './dto/create-item.dto';
@@ -17,6 +18,7 @@ export class ItemsService {
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
+    private inventoryService: InventoryService,
   ) {}
 
   private normalizeBadges(input: any) {
@@ -114,6 +116,10 @@ export class ItemsService {
             name: dto.name,
             price: dto.price,
             description: dto.description?.trim() || null,
+            minStock:
+              dto.minStock === undefined
+                ? undefined
+                : new Prisma.Decimal(dto.minStock),
             badgeText: firstBadge?.text ?? legacyBadgeText,
             badgeColor: firstBadge?.color ?? legacyBadgeColor,
             badges: finalBadges.length ? finalBadges : null,
@@ -211,7 +217,12 @@ export class ItemsService {
     return { item: resolvedItem };
   }
 
-  async findAll(businessId: string, status?: string, lightweight = false) {
+  async findAll(
+    businessId: string,
+    status?: string,
+    lightweight = false,
+    context: 'management' | 'sales' | 'public-store' = 'management',
+  ) {
     const itemStatus =
       status === 'INACTIVE' ? ItemStatus.INACTIVE : ItemStatus.ACTIVE;
 
@@ -247,7 +258,11 @@ export class ItemsService {
         },
       });
 
-      return items.map((item) => this.mapItemWithSchedule(item));
+      return this.withSellabilityForItems(
+        items.map((item) => this.mapItemWithSchedule(item)),
+        businessId,
+        context,
+      );
     }
 
     const items = await this.prisma.item.findMany({
@@ -266,7 +281,35 @@ export class ItemsService {
       },
     });
 
-    return items.map((item) => this.mapItemWithSchedule(item));
+    return this.withSellabilityForItems(
+      items.map((item) => this.mapItemWithSchedule(item)),
+      businessId,
+      context,
+    );
+  }
+
+  private async withSellabilityForItems<T extends { id: string; inventoryMode?: string | null }>(
+    items: T[],
+    businessId: string,
+    context: 'management' | 'sales' | 'public-store',
+  ) {
+    const enriched = await Promise.all(
+      items.map(async (item) => {
+        const sellability = await this.inventoryService.getItemSellability(
+          businessId,
+          item.id,
+        );
+        return {
+          ...item,
+          sellability,
+          currentStock: sellability.currentStock,
+          averageCost: sellability.averageCost,
+        };
+      }),
+    );
+
+    if (context === 'management') return enriched;
+    return enriched.filter((item) => item.sellability.sellable);
   }
 
   async findOne(businessId: string, id: string) {
@@ -361,6 +404,10 @@ export class ItemsService {
             dto.description === undefined
               ? undefined
               : dto.description?.trim() || null,
+          minStock:
+            dto.minStock === undefined
+              ? undefined
+              : new Prisma.Decimal(dto.minStock),
           badgeText:
             hasBadgesField || hasBadgeTextField ? nextBadgeText : undefined,
           badgeColor:

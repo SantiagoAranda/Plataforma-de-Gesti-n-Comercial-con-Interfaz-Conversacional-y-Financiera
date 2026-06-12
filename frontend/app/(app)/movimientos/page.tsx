@@ -1,42 +1,75 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { Filter } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
 import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
-import { MovementPercentBarChart } from "@/src/components/movements/MovementPercentBarChart";
-import { MovementPeriodFilter } from "@/src/components/movements/MovementPeriodFilter";
 import { MovementProfitHero } from "@/src/components/movements/MovementProfitHero";
 import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
-import { mapMovementMetrics } from "@/src/lib/movements/mapMovementMetrics";
-import { periodRange } from "@/src/lib/movements/movementPeriod";
-import { listMovements, type BackendMovement } from "@/src/services/accounting";
-import type { MovementPeriodKey } from "@/src/types/movements-ui";
+import { getAccountingSummary, type AccountingSummary } from "@/src/services/accounting";
+import { cn } from "@/src/lib/utils";
+import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
+
+type MovementFilterMode = "custom-day" | "7days" | "month";
 
 export default function MovimientosPage() {
-  const [period, setPeriod] = useState<MovementPeriodKey>("THIS_MONTH");
-  const [rows, setRows] = useState<BackendMovement[]>([]);
+  const [filterMode, setFilterMode] = useState<MovementFilterMode>("custom-day");
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [summary, setSummary] = useState<AccountingSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
-  const [activePanel, setActivePanel] = useState<"summary" | "percentages">("summary");
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+
+    if (filterMode === "custom-day") {
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
+      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
+    } else if (filterMode === "7days") {
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      start = new Date(todayStart);
+      start.setDate(todayStart.getDate() - 7);
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    } else { // 'month'
+      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    const formatLocalISO = (d: Date) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const hh = String(d.getHours()).padStart(2, '0');
+      const min = String(d.getMinutes()).padStart(2, '0');
+      const ss = String(d.getSeconds()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
+    };
+
+    return {
+      from: formatLocalISO(start),
+      to: formatLocalISO(end),
+    };
+  }, [filterMode, selectedDate]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         setError(null);
-        const range = periodRange(period);
-        const data = await listMovements({
-          from: range.from,
-          to: range.to,
+        const data = await getAccountingSummary({
+          from: dateRange.from,
+          to: dateRange.to,
         });
-        setRows(data ?? []);
+        console.log("🔍 AUDITORÍA DE PAYLOAD - MOVIMIENTOS REALES:", data);
+        setSummary(data);
       } catch (e: unknown) {
         console.error(e);
-        setRows([]);
+        setSummary(null);
         const message = e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
           ? (e as { message: string }).message
           : "No se pudieron cargar los movimientos";
@@ -45,53 +78,26 @@ export default function MovimientosPage() {
         setLoading(false);
       }
     })();
-  }, [period]);
+  }, [dateRange]);
 
-  const range = periodRange(period);
-  const metrics = useMemo(() => mapMovementMetrics(rows, range.label), [rows, range.label]);
-  const { view } = metrics;
-  const chartItems = view.chartData.map((c) => {
-    const tone: "blue" | "red" | "green" =
-      c.key === "netProfit"
-        ? "blue"
-        : c.key === "returns" || c.key === "costs" || c.key === "operatingExpenses" || c.key === "nonOperatingExpenses" || c.key === "taxProvision" || c.key === "legalReserve"
-          ? "red"
-          : "green";
-
-    return {
-      ...c,
-      tone,
-    };
-  });
-
-  const togglePanel = () => {
-    setActivePanel((current) => (current === "summary" ? "percentages" : "summary"));
-  };
-
-  const mobileNavButtonClassName =
-    "inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm ring-1 ring-black/5 transition hover:text-neutral-900";
-
-  const mobileLeftButton = (
-    <button
-      type="button"
-      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
-      onClick={togglePanel}
-      className={mobileNavButtonClassName}
-    >
-      <ChevronLeft className="h-4 w-4" />
-    </button>
-  );
-
-  const mobileRightButton = (
-    <button
-      type="button"
-      aria-label={activePanel === "summary" ? "Ver porcentajes del periodo" : "Ver resumen del periodo"}
-      onClick={togglePanel}
-      className={mobileNavButtonClassName}
-    >
-      <ChevronRight className="h-4 w-4" />
-    </button>
-  );
+  const hasData = useMemo(() => {
+    if (!summary) return false;
+    const op = summary.operacionComercial;
+    const ga = summary.gastosAdministrativos;
+    const ir = summary.impuestosReservas;
+    return (
+      op.ventasNetas !== 0 ||
+      op.costosMercancia !== 0 ||
+      op.utilidadBruta !== 0 ||
+      op.devoluciones !== 0 ||
+      ga.nominaSueldos !== 0 ||
+      ga.insumosOperativos !== 0 ||
+      ga.serviciosFijos !== 0 ||
+      ir.iva !== 0 ||
+      ir.retenciones !== 0 ||
+      ir.fondosReserva !== 0
+    );
+  }, [summary]);
 
   return (
     <div className="min-h-dvh bg-zinc-50">
@@ -100,33 +106,52 @@ export default function MovimientosPage() {
         subtitle="Resumen del negocio"
         showBack={false}
         showLogout={false}
-        rightIcon={<CalendarDays className="h-5 w-5 text-emerald-600" />}
-        onRightClick={() => setShowPeriodPicker((p) => !p)}
+        rightIcon={<Filter className="h-5 w-5 text-slate-600 hover:text-slate-900 transition-colors" />}
+        onRightClick={() => setShowDropdown((d) => !d)}
       />
 
       <main className="mx-auto w-full max-w-4xl space-y-5 px-3 pb-28 pt-3 sm:px-4">
-        {/* Selector de periodo desplegable desde el icono */}
+        {/* Menú Desplegable Flotante (Dropdown) */}
         <div className="relative">
-          {showPeriodPicker && (
+          {showDropdown && (
             <>
               <button
-                aria-label="Cerrar periodos"
+                aria-label="Cerrar filtros"
                 className="fixed inset-0 z-40"
-                onClick={() => setShowPeriodPicker(false)}
+                onClick={() => setShowDropdown(false)}
                 type="button"
               />
-              <div className="absolute right-0 z-50 mt-2 w-full max-w-sm rounded-2xl bg-white p-4 shadow-lg ring-1 ring-neutral-200">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-neutral-700">
-                  <CalendarDays className="h-4 w-4 text-emerald-600" />
-                  <span>Periodo: {range.label}</span>
-                </div>
-                <MovementPeriodFilter
-                  value={period}
-                  onChange={(v) => {
-                    setPeriod(v);
-                    setShowPeriodPicker(false);
+              <div className="absolute right-0 z-50 mt-2 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-48 text-left">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterMode("month");
+                    setShowDropdown(false);
                   }}
-                />
+                  className={cn(
+                    "w-full text-left px-4 py-2 text-sm transition-colors hover:bg-slate-50",
+                    filterMode === "month"
+                      ? "text-slate-900 font-semibold bg-slate-50"
+                      : "text-slate-600 hover:text-slate-800"
+                  )}
+                >
+                  Este mes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterMode("7days");
+                    setShowDropdown(false);
+                  }}
+                  className={cn(
+                    "w-full text-left px-4 py-2 text-sm transition-colors hover:bg-slate-50",
+                    filterMode === "7days"
+                      ? "text-slate-900 font-semibold bg-slate-50"
+                      : "text-slate-600 hover:text-slate-800"
+                  )}
+                >
+                  Últimos 7 días
+                </button>
               </div>
             </>
           )}
@@ -144,36 +169,53 @@ export default function MovimientosPage() {
           </div>
         )}
 
-        {!loading && !error && !metrics.hasData && <MovementEmptyState />}
-
-        {!loading && !error && metrics.hasData && (
+        {!loading && !error && (
           <>
-            <MovementProfitHero amount={metrics.netProfit} />
+            {summary && <MovementProfitHero metrics={summary} />}
 
-            <section className="space-y-3">
-              <div className="md:hidden">
-                <div className="min-h-[320px]">
-                  {activePanel === "summary" ? (
-                    <MovementSummaryList
-                      metrics={view.summaryMetrics}
-                      headerLeft={mobileLeftButton}
-                      headerRight={mobileRightButton}
-                    />
-                  ) : (
-                    <MovementPercentBarChart
-                      items={chartItems}
-                      headerLeft={mobileLeftButton}
-                      headerRight={mobileRightButton}
-                    />
-                  )}
-                </div>
+            {/* Calendario de filtrado diario de Movimientos */}
+            {filterMode === "custom-day" ? (
+              <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all duration-300">
+                <DayPickerCalendar
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  markedDateKeys={new Set<string>()}
+                  id="movements-calendar"
+                />
+                {!isSameCalendarDay(selectedDate, new Date()) && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(new Date())}
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 transition-all"
+                    >
+                      Hoy
+                    </button>
+                  </div>
+                )}
               </div>
+            ) : (
+              /* Renderiza un banner o badge plano ultra-limpio indicando el filtro activo */
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600 flex justify-between items-center mb-6">
+                <span>
+                  Mostrando movimientos de: <strong>{filterMode === "month" ? "Este mes" : "Últimos 7 días"}</strong>
+                </span>
+                <button 
+                  onClick={() => setFilterMode("custom-day")}
+                  className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-medium transition-colors"
+                >
+                  Volver al día individual
+                </button>
+              </div>
+            )}
 
-              <div className="hidden items-stretch gap-4 md:grid md:grid-cols-2">
-                <MovementSummaryList metrics={view.summaryMetrics} />
-                <MovementPercentBarChart items={chartItems} />
-              </div>
-            </section>
+            {hasData && summary ? (
+              <section className="space-y-5">
+                <MovementSummaryList metrics={summary} />
+              </section>
+            ) : (
+              <MovementEmptyState />
+            )}
           </>
         )}
       </main>

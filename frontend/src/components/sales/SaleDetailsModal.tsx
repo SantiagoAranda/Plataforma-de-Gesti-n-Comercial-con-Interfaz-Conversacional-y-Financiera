@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
@@ -175,8 +175,8 @@ export default function SaleDetailsModal({
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-2xl sm:rounded-2xl shadow-xl overflow-hidden max-h-[90vh] sm:h-auto animate-in slide-in-from-bottom-full duration-300">
         <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between bg-white sticky top-0 z-20">
           <div className="flex flex-col">
-            <h2 className="font-bold text-neutral-900 text-lg">Detalle de Venta</h2>
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">#{sale.id?.slice(-6) || "N/A"}</span>
+            <h2 className="font-medium text-neutral-900 text-lg">Detalle de Venta</h2>
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">#{sale.id?.slice(-6) || "N/A"}</span>
           </div>
 
           <button
@@ -191,11 +191,11 @@ export default function SaleDetailsModal({
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Cliente</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Cliente</span>
                 <span className="text-sm font-semibold text-neutral-800">{sale.customerName ?? "Sin nombre"}</span>
               </div>
               <div className="space-y-1 text-right">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">WhatsApp</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">WhatsApp</span>
                 <span className="text-sm font-semibold text-emerald-600">
                   {sale.customerWhatsapp || "-"}
                 </span>
@@ -204,7 +204,7 @@ export default function SaleDetailsModal({
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-neutral-50">
               <div className="space-y-1 text-right col-start-2">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Estado</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Estado</span>
                 <div className="flex items-center justify-end gap-1.5">
                   <span className={`h-2 w-2 rounded-full ${styles.dotColor || "bg-neutral-300"}`} />
                   <span className="text-sm font-semibold text-neutral-700">{styles.label}</span>
@@ -214,27 +214,27 @@ export default function SaleDetailsModal({
 
             <div className="grid grid-cols-2 gap-4 pt-3 border-t border-neutral-50">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Medio de pago</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Medio de pago</span>
                 <span className="text-sm font-semibold text-neutral-700">
                   {paymentMethodLabel(sale.paymentMethod)}
                 </span>
               </div>
               <div className="space-y-1 text-right">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Registrada</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Registrada</span>
                 <span className="text-sm font-semibold text-neutral-700">{formatDateTime(sale.createdAt)}</span>
               </div>
             </div>
 
             {sale.type === "SERVICIO" && sale.scheduledAt && (
               <div className="pt-3 border-t border-neutral-50">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Horario reservado</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Horario reservado</span>
                 <span className="text-sm font-semibold text-neutral-700">{formatDateTime(sale.scheduledAt)}</span>
               </div>
             )}
 
             {sale.origin && (
               <div className="pt-3 border-t border-neutral-50">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block mb-1">Origen</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block mb-1">Origen</span>
                 <span className="text-sm font-semibold text-neutral-700">
                   {getSaleOriginLabel(sale.origin)}
                 </span>
@@ -246,7 +246,7 @@ export default function SaleDetailsModal({
           </div>
 
           <div className="space-y-3">
-            <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest px-1">Items de la venta</span>
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items de la venta</span>
 
             <div className="space-y-3">
               {sale.items.map((it, idx) => {
@@ -271,12 +271,12 @@ export default function SaleDetailsModal({
                     <div className="flex items-center gap-3">
                       <ItemThumbnail />
                       <div className="flex-1 min-w-0">
-                        <div className="font-bold text-neutral-800 text-sm truncate">{it.name}</div>
-                        <div className="text-[10px] font-bold text-neutral-400 uppercase">
+                        <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
+                        <div className="text-[10px] font-medium text-neutral-400 uppercase">
                           {it.qty} unidades x ${formatMoney(it.unitPrice)} {it.durationMin ? `· ${it.durationMin} min` : ""}
                         </div>
                       </div>
-                      <div className="text-sm font-black text-neutral-900">
+                      <div className="text-sm font-semibold text-neutral-900">
                         ${formatMoney(it.price)}
                       </div>
                     </div>
@@ -285,12 +285,12 @@ export default function SaleDetailsModal({
                       <div className="pt-3 border-t border-neutral-50 space-y-3">
                         {requiredLines.length > 0 && (
                           <div className="space-y-1.5">
-                            <div className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Incluye</div>
+                            <div className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400">Incluye</div>
                             <div className="flex flex-wrap gap-1.5">
                               {requiredLines.map((line) => (
                                 <span
                                   key={line.ingredientId}
-                                  className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-bold text-neutral-600"
+                                  className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-medium text-neutral-600"
                                 >
                                   {line.ingredient.name}
                                   {formatQuantity(line.quantityRequired) ? ` · ${formatQuantity(line.quantityRequired)} ${ingredientUnitLabel(line)}` : ""}
@@ -303,9 +303,9 @@ export default function SaleDetailsModal({
                         {optionalLines.length > 0 && (
                           <div className="space-y-2">
                             <div className="flex items-center justify-between gap-2">
-                              <div className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Opcionales</div>
+                              <div className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400">Opcionales</div>
                               {excludedNames.length > 0 && (
-                                <span className="text-[10px] font-bold text-rose-500 truncate">
+                                <span className="text-[10px] font-medium text-rose-500 truncate">
                                   Sin: {excludedNames.join(", ")}
                                 </span>
                               )}
@@ -317,17 +317,16 @@ export default function SaleDetailsModal({
                                 return (
                                   <label
                                     key={line.ingredientId}
-                                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
-                                      checked
+                                    className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${checked
                                         ? "border-emerald-100 bg-emerald-50/50"
                                         : "border-neutral-100 bg-neutral-50"
-                                    } ${isEditableLine ? "cursor-pointer" : "cursor-default opacity-80"}`}
+                                      } ${isEditableLine ? "cursor-pointer" : "cursor-default opacity-80"}`}
                                   >
                                     <span className="min-w-0">
-                                      <span className="block truncate text-xs font-bold text-neutral-700">
+                                      <span className="block truncate text-xs font-medium text-neutral-700">
                                         {line.ingredient.name}
                                       </span>
-                                      <span className="block text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                                      <span className="block text-[10px] font-medium uppercase tracking-wider text-neutral-400">
                                         {formatQuantity(line.quantityRequired)} {ingredientUnitLabel(line)}
                                       </span>
                                     </span>
@@ -349,7 +348,7 @@ export default function SaleDetailsModal({
                                   type="button"
                                   onClick={() => handleSaveOptionalIngredients(it.orderItemId!, lineKey)}
                                   disabled={savingItemId === it.orderItemId}
-                                  className="h-8 rounded-full bg-emerald-600 px-3 text-[10px] font-black uppercase tracking-widest text-white shadow-sm shadow-emerald-100 transition hover:bg-emerald-700 disabled:opacity-60"
+                                  className="h-8 rounded-full bg-emerald-600 px-3 text-[10px] font-semibold uppercase tracking-widest text-white shadow-sm shadow-emerald-100 transition hover:bg-emerald-700 disabled:opacity-60"
                                 >
                                   {savingItemId === it.orderItemId ? "Guardando..." : "Guardar cambios"}
                                 </button>
@@ -366,7 +365,7 @@ export default function SaleDetailsModal({
 
             {sale.items.length === 0 && (
               <div className="text-center py-8 opacity-40">
-                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Sin items registrados</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Sin items registrados</p>
               </div>
             )}
           </div>
@@ -382,8 +381,8 @@ export default function SaleDetailsModal({
         <div className="p-4 sm:p-5 bg-white border-t border-neutral-100/50">
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col min-w-0">
-              <span className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest leading-none mb-1">Total Venta</span>
-              <span className="text-xl font-black text-neutral-900 leading-none truncate">${formatMoney(total)}</span>
+              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest leading-none mb-1">Total Venta</span>
+              <span className="text-xl font-semibold text-neutral-900 leading-none truncate">${formatMoney(total)}</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -391,7 +390,7 @@ export default function SaleDetailsModal({
                 <button
                   onClick={handleCancelAction}
                   disabled={confirming}
-                  className="h-10 px-4 rounded-full border border-rose-100 text-rose-500 font-bold text-[11px] uppercase tracking-widest hover:bg-rose-50 transition active:scale-95 whitespace-nowrap disabled:opacity-50"
+                  className="h-10 px-4 rounded-full border border-rose-100 text-rose-500 font-medium text-[11px] uppercase tracking-widest hover:bg-rose-50 transition active:scale-95 whitespace-nowrap disabled:opacity-50"
                 >
                   Eliminar
                 </button>
@@ -401,14 +400,14 @@ export default function SaleDetailsModal({
                 <button
                   onClick={handleConfirmAction}
                   disabled={confirming}
-                  className="h-10 px-6 rounded-full bg-emerald-600 text-white font-bold text-[11px] uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center min-w-[100px] whitespace-nowrap"
+                  className="h-10 px-6 rounded-full bg-emerald-600 text-white font-medium text-[11px] uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center min-w-[100px] whitespace-nowrap"
                 >
                   {confirming ? <Loader2 className="animate-spin" size={16} /> : "Confirmar"}
                 </button>
               ) : (
                 <button
                   onClick={onClose}
-                  className="h-10 px-6 rounded-full bg-neutral-900 text-white font-bold text-[11px] uppercase tracking-widest hover:brightness-110 transition active:scale-95 whitespace-nowrap"
+                  className="h-10 px-6 rounded-full bg-neutral-900 text-white font-medium text-[11px] uppercase tracking-widest hover:brightness-110 transition active:scale-95 whitespace-nowrap"
                 >
                   Cerrar
                 </button>

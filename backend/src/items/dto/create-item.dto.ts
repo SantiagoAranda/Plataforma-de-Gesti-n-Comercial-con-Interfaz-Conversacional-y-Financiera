@@ -5,6 +5,7 @@ import {
   IsString,
   IsArray,
   IsUUID,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 
@@ -25,9 +26,11 @@ export class ScheduleInput {
   weekday!: Weekday;
 
   @IsNumber()
+  @Type(() => Number)
   startMinute!: number;
 
   @IsNumber()
+  @Type(() => Number)
   endMinute!: number;
 }
 
@@ -52,6 +55,11 @@ export class CreateItemDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  minStock?: string;
 
   @IsOptional()
   @IsString()

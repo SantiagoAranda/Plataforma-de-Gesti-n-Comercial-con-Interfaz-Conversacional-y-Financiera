@@ -101,6 +101,15 @@ function timeFromMinutes(value: number | null | undefined) {
   return `${hour}:${minute}`;
 }
 
+/** Convierte un string 24h ("14:00") al formato colombiano 12h ("02:00 PM"). */
+function formatAMPM(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return time;
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 || 12;
+  return `${String(hour12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+
 export default function ReservationSlotPicker({
   itemId,
   businessSlug,
@@ -178,9 +187,6 @@ export default function ReservationSlotPicker({
     }
     if (mode === "public" && !businessSlug) return;
 
-    // Si aún se están consultando las fechas disponibles del mes, no buscamos horarios aún
-    if (isLoadingDays) return;
-
     const path =
       mode === "public"
         ? `/public/${businessSlug}/availability?itemId=${itemId}&date=${selectedDate}`
@@ -188,13 +194,19 @@ export default function ReservationSlotPicker({
 
     let alive = true;
     setLoadingSlots(true);
+    setTimeSlots([]);
     fetchJson<string[]>(path)
       .then((data) => {
         if (!alive) return;
         const slots = Array.isArray(data) ? data : [];
         setTimeSlots(slots);
-        if (selectedTime && !slots.includes(selectedTime)) {
-          onChangeRef.current({ date: selectedDate, time: null, startMinute: null });
+        if (selectedStartMinute != null) {
+          const stillValid = slots.some(
+            (s) => minutesFromTime(s) === selectedStartMinute,
+          );
+          if (!stillValid) {
+            onChangeRef.current({ date: selectedDate, time: null, startMinute: null });
+          }
         }
       })
       .catch(() => {
@@ -207,7 +219,8 @@ export default function ReservationSlotPicker({
     return () => {
       alive = false;
     };
-  }, [businessSlug, fetchJson, itemId, mode, selectedDate, selectedTime, isLoadingDays]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessSlug, fetchJson, itemId, mode, selectedDate]);
 
   function handlePickDate(date: Date, inMonth: boolean) {
     const key = formatLocalDateKey(date);
@@ -226,7 +239,7 @@ export default function ReservationSlotPicker({
   return (
     <div className={className}>
       <div className="mb-3">
-        <div className="text-lg font-bold text-neutral-800">Selecciona una fecha</div>
+        <div className="text-lg font-medium text-neutral-800">Selecciona una fecha</div>
         <div className="text-xs text-neutral-500">
           Selecciona día y horario disponible
         </div>
@@ -292,7 +305,7 @@ export default function ReservationSlotPicker({
           </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-neutral-400">
+        <div className="mt-3 grid grid-cols-7 gap-1.5 text-center text-[10px] font-medium text-neutral-400">
           {WEEKDAYS.map((w, i) => (
             <div key={`${w}-${i}`}>{w}</div>
           ))}
@@ -334,7 +347,7 @@ export default function ReservationSlotPicker({
       </div>
 
       <div className="mt-5">
-        <div className="text-xs font-black text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
+        <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
 
         {selectedDate && !loadingSlots && timeSlots.length === 0 && (
           <div className="mt-3 text-sm text-black/40">
@@ -347,19 +360,19 @@ export default function ReservationSlotPicker({
         )}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {timeSlots.map((time) => (
+          {timeSlots.map((slot) => (
             <button
-              key={time}
+              key={slot}
               type="button"
-              onClick={() => handlePickTime(time)}
+              onClick={() => handlePickTime(slot)}
               className={cn(
-                "h-10 rounded-xl border text-xs font-bold transition-all duration-150",
-                selectedTime === time
+                "h-10 rounded-xl border text-xs font-medium transition-all duration-150",
+                selectedTime === slot
                   ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
                   : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",
               )}
             >
-              {time}
+              {formatAMPM(slot)}
             </button>
           ))}
         </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Trash2,
   X,
@@ -44,8 +44,9 @@ import {
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
 
-export default function MiNegocioPage() {
+function MiNegocioPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
   const [recipeLineCounts, setRecipeLineCounts] = useState<
     Record<string, number>
@@ -112,7 +113,6 @@ export default function MiNegocioPage() {
         api<Item[]>(`/items?status=ACTIVE&lightweight=true`),
       );
 
-      // Mantiene el ordenamiento Newest-to-Oldest para la UI invertida estilo WhatsApp
       const sorted = [...data].sort(
         (a, b) =>
           new Date(b.createdAt || 0).getTime() -
@@ -247,6 +247,16 @@ export default function MiNegocioPage() {
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
   };
 
+  useEffect(() => {
+    const itemId = searchParams.get("itemId") ?? searchParams.get("editItem");
+    if (!itemId || !items.length) return;
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (item) {
+      handleStartEdit(item);
+      router.replace("/mi-negocio", { scroll: false });
+    }
+  }, [items, router, searchParams]);
+
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const selectedFiles = Array.from(files);
@@ -314,6 +324,24 @@ export default function MiNegocioPage() {
   }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
+    if (type === "SERVICE") {
+      const hasOverlap = week.some((day) => {
+        if (!day.active || day.ranges.length !== 2) return false;
+        const m1s = timeToMinutes(day.ranges[0].start);
+        const m1e = timeToMinutes(day.ranges[0].end);
+        const m2s = timeToMinutes(day.ranges[1].start);
+        const m2e = timeToMinutes(day.ranges[1].end);
+
+        const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+        const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+        return first.e >= second.s;
+      });
+
+      if (hasOverlap) {
+        return;
+      }
+    }
+
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || parseFloat(price) <= 0)
@@ -348,11 +376,8 @@ export default function MiNegocioPage() {
     }
 
     if (type === "SERVICE" && inventoryMode !== "NONE") {
-      // UX rule: services never affect inventory
       setInventoryMode("NONE");
     }
-
-    // Mi Negocio no configura recetas ni stock. Eso se gestiona desde Inventario.
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -447,7 +472,7 @@ export default function MiNegocioPage() {
         const exists = prev.find((i) => i.id === savedItem.id);
         if (exists)
           return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
-        return [savedItem, ...prev]; // Agrega al inicio (prepend) para sostener flex-col-reverse
+        return [savedItem, ...prev];
       });
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
@@ -547,6 +572,17 @@ export default function MiNegocioPage() {
     };
   }, [selectedItem]);
 
+  const hasScheduleOverlap = type === "SERVICE" && week.some((day) => {
+    if (!day.active || day.ranges.length !== 2) return false;
+    const m1s = timeToMinutes(day.ranges[0].start);
+    const m1e = timeToMinutes(day.ranges[0].end);
+    const m2s = timeToMinutes(day.ranges[1].start);
+    const m2e = timeToMinutes(day.ranges[1].end);
+    const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+    const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+    return first.e >= second.s;
+  });
+
   return (
     <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
@@ -572,19 +608,15 @@ export default function MiNegocioPage() {
         <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
       )}
 
-      {/* Main contenedor configurado con flex-col-reverse para el comportamiento WhatsApp */}
       <main
         ref={scrollRef}
         onScroll={handleScroll}
         className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-32 lg:pb-[140px]"
       >
-        {/* Referencia invisible para el tope inferior del scroll */}
         <div ref={messagesEndRef} className="h-px" />
 
-        {/* Mapeo de grupos de ítems cronológicos */}
         {groupedItems.map((group) => (
           <div key={group.dateLabel} className="space-y-4">
-            {/* SEPARADOR DE FECHA */}
             <div className="flex items-center gap-4 py-2">
               <div className="h-[1px] flex-1 bg-neutral-200" />
               <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
@@ -593,7 +625,6 @@ export default function MiNegocioPage() {
               <div className="h-[1px] flex-1 bg-neutral-200" />
             </div>
 
-            {/* Sub-lista invertida por día para conservar coherencia posicional */}
             <div className="flex flex-col-reverse gap-4">
               {group.items.map((item) => (
                 <ItemCard
@@ -612,7 +643,6 @@ export default function MiNegocioPage() {
           </div>
         ))}
 
-        {/* Botón "Cargar más" inyectado arriba lógicamente debido al flex-col-reverse */}
         {filteredItems.length > visibleCount && (
           <div className="flex justify-center pb-8 pt-2">
             <button
@@ -624,7 +654,6 @@ export default function MiNegocioPage() {
           </div>
         )}
 
-        {/* Fallbacks y loaders contextuales */}
         {composerMode === "closed" &&
           searchQuery.trim() !== "" &&
           filteredItems.length === 0 && (
@@ -654,7 +683,6 @@ export default function MiNegocioPage() {
         )}
       </main>
 
-      {/* SECCIÓN DE COMPOSER */}
       <MiNegocioChatComposer
         mode={composerMode}
         onToggle={handleToggleComposer}
@@ -665,6 +693,7 @@ export default function MiNegocioPage() {
         onSubmit={handleSend}
         isSubmitting={isSubmitting}
         type={type}
+        submitDisabled={hasScheduleOverlap}
       >
         <ItemFormContent
           type={type}
@@ -705,7 +734,6 @@ export default function MiNegocioPage() {
         />
       </MiNegocioChatComposer>
 
-      {/* DETAIL MODAL */}
       <ItemDetailModal
         item={itemForDetail}
         open={!!itemForDetail}
@@ -723,7 +751,6 @@ export default function MiNegocioPage() {
         }
       />
 
-      {/* CONFIRM DELETE MODAL */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[10000] backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl p-6 w-full max-w-xs shadow-2xl animate-in zoom-in-95 duration-200">
@@ -756,7 +783,6 @@ export default function MiNegocioPage() {
         </div>
       )}
 
-      {/* BOTÓN FLOTANTE SCROLL TO BOTTOM */}
       {showScrollBottom && (
         <button
           onClick={() => scrollToBottom("smooth")}
@@ -767,14 +793,33 @@ export default function MiNegocioPage() {
         </button>
       )}
 
-      {/* SYSTEM TOAST */}
       {toast && (
         <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"}`}
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold uppercase tracking-widest px-6 py-3 rounded-full shadow-2xl animate-in slide-in-from-bottom-4 duration-300 z-[10001] ${toast.type === "success" ? "bg-green-600 shadow-green-100" : "bg-red-600 shadow-red-100"
+            }`}
         >
           {toast.message}
         </div>
       )}
     </div>
+  );
+}
+
+export default function MiNegocioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col min-h-screen bg-white">
+          <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
+          <main className="flex-1 flex items-center justify-center">
+            <div className="text-neutral-400 font-medium text-[10px] uppercase tracking-widest animate-pulse">
+              Cargando mi negocio...
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <MiNegocioPageContent />
+    </Suspense>
   );
 }

@@ -29,7 +29,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-white">
         <NotificationProvider>{children}</NotificationProvider>
-        <Toaster position="top-center" toastOptions={{ duration: 6000 }} />
+        <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
       </body>
     </html>
   );

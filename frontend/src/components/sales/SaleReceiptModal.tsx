@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState, type RefObject } from "react";
 import { AlertTriangle, Download, Loader2, Printer, ReceiptText, Share2, X } from "lucide-react";
@@ -191,7 +191,7 @@ function SaleReceiptView({
             </div>
           )}
 
-          <h2 className="text-lg font-black text-slate-900">
+          <h2 className="text-lg font-semibold text-slate-900">
             {business.name}
           </h2>
           {business.identification && (
@@ -212,27 +212,27 @@ function SaleReceiptView({
 
           <div className="my-5 border-t border-dashed border-slate-200" />
 
-          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
             TICKET DE VENTA
           </p>
-          <p className="mt-1 text-xl font-black text-slate-900">
+          <p className="mt-1 text-xl font-semibold text-slate-900">
             N° {formatReceiptNumber(sale.id)}
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3 text-left">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Fecha
               </p>
-              <p className="mt-0.5 text-sm font-bold text-slate-800">
+              <p className="mt-0.5 text-sm font-medium text-slate-800">
                 {formatDate(sale.createdAt)}
               </p>
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Hora
               </p>
-              <p className="mt-0.5 text-sm font-bold text-slate-800">
+              <p className="mt-0.5 text-sm font-medium text-slate-800">
                 {formatTime(sale.createdAt)}
               </p>
             </div>
@@ -241,23 +241,23 @@ function SaleReceiptView({
 
         <section className="px-6 pb-5">
           <div className="rounded-2xl border border-slate-100 p-4">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               Cliente
             </p>
             <div className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Cliente:</span>
-                <span className="text-right font-bold text-slate-800">
+                <span className="text-right font-medium text-slate-800">
                   {sale.customerName || "Consumidor Final"}
                 </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Documento:</span>
-                <span className="text-right font-bold text-slate-800">-</span>
+                <span className="text-right font-medium text-slate-800">-</span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Teléfono:</span>
-                <span className="text-right font-bold text-slate-800">
+                <span className="text-right font-medium text-slate-800">
                   {sale.customerWhatsapp || "-"}
                 </span>
               </div>
@@ -267,7 +267,7 @@ function SaleReceiptView({
 
         <section className="px-6 pb-5">
           <div className="overflow-hidden rounded-2xl border border-slate-100">
-            <div className="grid grid-cols-[44px_1fr_72px_72px] gap-2 bg-slate-50 px-3 py-3 text-[9px] font-black uppercase tracking-wider text-slate-400">
+            <div className="grid grid-cols-[44px_1fr_72px_72px] gap-2 bg-slate-50 px-3 py-3 text-[9px] font-semibold uppercase tracking-wider text-slate-400">
               <span>Cant.</span>
               <span>Descripción</span>
               <span className="text-right">Unit.</span>
@@ -279,21 +279,21 @@ function SaleReceiptView({
                 key={`${sale.id}-receipt-${index}`}
                 className="grid grid-cols-[44px_1fr_72px_72px] gap-2 border-t border-slate-100 px-3 py-3 text-xs"
               >
-                <span className="font-black text-slate-900">{item.qty}</span>
+                <span className="font-semibold text-slate-900">{item.qty}</span>
                 <span className="min-w-0 font-semibold text-slate-700">
                   {item.name}
                 </span>
-                <span className="text-right font-bold tabular-nums text-slate-600">
+                <span className="text-right font-medium tabular-nums text-slate-600">
                   ${formatMoney(getLineUnitPrice(item))}
                 </span>
-                <span className="text-right font-black tabular-nums text-slate-900">
+                <span className="text-right font-semibold tabular-nums text-slate-900">
                   ${formatMoney(getLineTotal(item))}
                 </span>
               </div>
             ))}
 
             {sale.items.length === 0 && (
-              <div className="border-t border-slate-100 px-3 py-6 text-center text-xs font-bold text-slate-400">
+              <div className="border-t border-slate-100 px-3 py-6 text-center text-xs font-medium text-slate-400">
                 Sin items registrados
               </div>
             )}
@@ -305,29 +305,29 @@ function SaleReceiptView({
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-slate-500">
                 <span>Subtotal</span>
-                <span className="font-bold tabular-nums text-slate-700">
+                <span className="font-medium tabular-nums text-slate-700">
                   ${formatMoney(subtotal)}
                 </span>
               </div>
               <div className="flex justify-between text-slate-500">
                 <span>Descuentos</span>
-                <span className="font-bold tabular-nums text-slate-700">
+                <span className="font-medium tabular-nums text-slate-700">
                   ${formatMoney(discounts)}
                 </span>
               </div>
               <div className="flex justify-between text-slate-500">
                 <span>Impuestos</span>
-                <span className="font-bold tabular-nums text-slate-700">
+                <span className="font-medium tabular-nums text-slate-700">
                   ${formatMoney(taxes)}
                 </span>
               </div>
             </div>
 
             <div className="mt-4 flex items-end justify-between border-t border-slate-200 pt-4">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Total
               </span>
-              <span className="text-2xl font-black text-slate-900 tabular-nums">
+              <span className="text-2xl font-semibold text-slate-900 tabular-nums">
                 ${formatMoney(total)}
               </span>
             </div>
@@ -337,19 +337,19 @@ function SaleReceiptView({
         <section className="px-6 pb-5">
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl border border-slate-100 p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Método de pago
               </p>
-              <span className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+              <span className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                 {paymentMethodLabel(sale.paymentMethod)}
               </span>
             </div>
             <div className="rounded-2xl border border-slate-100 p-4">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Estado
               </p>
               <span
-                className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${statusBadgeClass(sale.status)}`}
+                className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(sale.status)}`}
               >
                 {statusStyles.label}
               </span>
@@ -377,7 +377,7 @@ function SaleReceiptView({
           <button
             type="button"
             onClick={onPrint}
-            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-black uppercase tracking-tight text-slate-600 hover:bg-slate-50"
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-semibold uppercase tracking-tight text-slate-600 hover:bg-slate-50"
           >
             <Printer className="h-3.5 w-3.5" />
             Imprimir
@@ -386,7 +386,7 @@ function SaleReceiptView({
             type="button"
             onClick={onDownload}
             disabled={isExporting}
-            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-black uppercase tracking-tight text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-semibold uppercase tracking-tight text-slate-600 hover:bg-slate-50 disabled:opacity-60"
           >
             {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             Descargar
@@ -395,7 +395,7 @@ function SaleReceiptView({
             type="button"
             onClick={onShare}
             disabled={isExporting}
-            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-black uppercase tracking-tight text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            className="flex items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-2 py-3 text-[10px] font-semibold uppercase tracking-tight text-slate-600 hover:bg-slate-50 disabled:opacity-60"
           >
             {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Share2 className="h-3.5 w-3.5" />}
             Compartir
@@ -403,7 +403,7 @@ function SaleReceiptView({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-2xl bg-slate-900 px-2 py-3 text-[10px] font-black uppercase tracking-wide text-white hover:bg-slate-800"
+            className="rounded-2xl bg-slate-900 px-2 py-3 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-slate-800"
           >
             Cerrar
           </button>

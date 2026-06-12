@@ -33,7 +33,7 @@ describe('RecipesService', () => {
     return { service: new RecipesService(prisma), prisma, tx };
   }
 
-  it('accepts exactly one mandatory line for SIMPLE items', async () => {
+  it('rejects recipes for SIMPLE items', async () => {
     const { service, tx } = createService({
       id: itemId,
       businessId,
@@ -41,24 +41,12 @@ describe('RecipesService', () => {
       inventoryMode: 'SIMPLE',
     });
 
-    await service.replaceForItem(businessId, itemId, {
+    await expect(service.replaceForItem(businessId, itemId, {
       lines: [{ ingredientId, quantityRequired: '1' }],
-    });
+    })).rejects.toBeInstanceOf(BadRequestException);
 
-    expect(tx.recipe.deleteMany).toHaveBeenCalledWith({
-      where: { businessId, itemId },
-    });
-    expect(tx.recipe.createMany).toHaveBeenCalledWith({
-      data: [
-        {
-          businessId,
-          itemId,
-          ingredientId,
-          quantityRequired: '1',
-          isOptional: false,
-        },
-      ],
-    });
+    expect(tx.recipe.deleteMany).not.toHaveBeenCalled();
+    expect(tx.recipe.createMany).not.toHaveBeenCalled();
   });
 
   it('rejects invalid SIMPLE recipes', async () => {

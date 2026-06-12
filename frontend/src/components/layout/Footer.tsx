@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   Facebook,
   Globe,
@@ -70,7 +70,7 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
           {/* Columna Izquierda: Branding */}
           <div className="flex flex-col items-center md:items-start text-center md:text-left">
             {titulo && (
-              <div className="text-sm font-bold tracking-tight leading-none text-[#064e3b]">
+              <div className="text-sm font-medium tracking-tight leading-none text-[#064e3b]">
                 {titulo}
               </div>
             )}

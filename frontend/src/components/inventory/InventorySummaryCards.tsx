@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Layers, PackageCheck, TriangleAlert } from "lucide-react";
 
@@ -28,8 +28,8 @@ export function InventorySummaryCards({ items }: { items: InventorySummaryIngred
           <PackageCheck className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Valor inventario</p>
-          <p className="mt-0.5 truncate text-base font-black text-neutral-900">${formatMoney(totalValue)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Valor inventario</p>
+          <p className="mt-0.5 truncate text-base font-semibold text-neutral-900">${formatMoney(totalValue)}</p>
           <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Costo total</p>
         </div>
       </div>
@@ -39,8 +39,8 @@ export function InventorySummaryCards({ items }: { items: InventorySummaryIngred
           <Layers className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Stock total</p>
-          <p className="mt-0.5 truncate text-base font-black text-neutral-900">{formatMoney(totalStock)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Stock total</p>
+          <p className="mt-0.5 truncate text-base font-semibold text-neutral-900">{formatMoney(totalStock)}</p>
           <p className="mt-0.5 text-[11px] font-medium text-neutral-400">En todos los insumos</p>
         </div>
       </div>
@@ -50,8 +50,8 @@ export function InventorySummaryCards({ items }: { items: InventorySummaryIngred
           <TriangleAlert className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Alertas</p>
-          <p className="mt-0.5 truncate text-base font-black text-neutral-900">{formatMoney(alertCount)}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Alertas</p>
+          <p className="mt-0.5 truncate text-base font-semibold text-neutral-900">{formatMoney(alertCount)}</p>
           <p className="mt-0.5 text-[11px] font-medium text-neutral-400">Insumos cr&iacute;ticos</p>
         </div>
       </div>

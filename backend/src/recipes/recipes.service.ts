@@ -144,10 +144,8 @@ export class RecipesService {
     const mandatoryCount = lines.filter((line) => !(line.isOptional ?? false)).length;
 
     if (item.inventoryMode === 'SIMPLE') {
-      if (lines.length !== 1 || mandatoryCount !== 1 || lines.some((line) => line.isOptional)) {
-        throw new BadRequestException(
-          'SIMPLE items must have exactly one mandatory recipe line',
-        );
+      if (lines.length > 0) {
+        throw new BadRequestException('SIMPLE items cannot have recipes');
       }
       return;
     }

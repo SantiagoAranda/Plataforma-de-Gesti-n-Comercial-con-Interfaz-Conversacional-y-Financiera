@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AccountingMovementOriginType,
+  LegalPersonType,
   MovementNature,
   PaymentMethod,
   PayrollAccountingSide,
@@ -66,10 +67,7 @@ const EARNING_CODES_WITHOUT_CREDIT = new Set([
   'OVERTIME_TOTAL',
 ]);
 
-const DATAICO_TRUNCATED_BENEFIT_PROFILE = 'DATAICO_TRUNCATED';
-const DATAICO_TRUNCATED_SEVERANCE_RATE = new Prisma.Decimal('0.0833');
-const DATAICO_TRUNCATED_SERVICE_BONUS_RATE = new Prisma.Decimal('0.0833');
-const DATAICO_TRUNCATED_VACATION_RATE = new Prisma.Decimal('0.0417');
+const DAILY_BASIS_BENEFIT_PROFILE = 'DAYS_360_720';
 
 const OVERTIME_RATE_CODE_TO_ADJUSTMENT_TYPE: Record<string, PayrollAdjustmentType> = {
   HORA_ORDINARIA_NOCTURNA: PayrollAdjustmentType.NIGHT_SURCHARGE,
@@ -90,8 +88,6 @@ const SUPPLEMENTARY_ADJUSTMENT_TYPES = new Set<PayrollAdjustmentType>([
   PayrollAdjustmentType.SUNDAY_HOLIDAY_NIGHT,
   PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_NIGHT,
 ]);
-const DATAICO_TRUNCATED_SEVERANCE_INTEREST_RATE = new Prisma.Decimal('0.12');
-
 type PayrollAccountingMappingTemplateRow = {
   concept_code: string;
   concept_name: string;
@@ -1458,7 +1454,7 @@ export class PayrollService {
       senaRate: this.decimal(globalParameter?.senaRate ?? 0.02),
       icbfRate: this.decimal(globalParameter?.icbfRate ?? 0.03),
       severanceRate: this.decimal(globalParameter?.severanceRate ?? 0.0833),
-      severanceInterestRate: this.decimal(globalParameter?.severanceInterestRate ?? 0.01),
+      severanceInterestRate: this.decimal(globalParameter?.severanceInterestRate ?? 0.12),
       serviceBonusRate: this.decimal(globalParameter?.serviceBonusRate ?? 0.0833),
       vacationRate: this.decimal(globalParameter?.vacationRate ?? 0.0417),
       law1819ThresholdSmmlv: this.decimal(globalParameter?.law1819ThresholdSmmlv ?? 10),
@@ -1466,6 +1462,10 @@ export class PayrollService {
       applyLaw1819: businessParameter?.applyLaw1819 ?? true,
       exemptEmployerHealthLaw1819:
         businessParameter?.exemptEmployerHealthLaw1819 ?? true,
+      isIncomeTaxFiler: businessParameter?.isIncomeTaxFiler ?? false,
+      legalPersonType:
+        businessParameter?.legalPersonType ?? LegalPersonType.LEGAL_ENTITY,
+      employeeCountForExemption: businessParameter?.employeeCountForExemption ?? null,
       applySolidarityFund: businessParameter?.applySolidarityFund ?? true,
       applyIncomeTax: businessParameter?.applyIncomeTax ?? false,
       withholdingStatus:
@@ -1500,6 +1500,9 @@ export class PayrollService {
       transportLimitSmmlv: params.transportLimitSmmlv.toString(),
       applyLaw1819: params.applyLaw1819,
       exemptEmployerHealthLaw1819: params.exemptEmployerHealthLaw1819,
+      isIncomeTaxFiler: params.isIncomeTaxFiler,
+      legalPersonType: params.legalPersonType,
+      employeeCountForExemption: params.employeeCountForExemption,
       applySolidarityFund: params.applySolidarityFund,
       applyIncomeTax: params.applyIncomeTax,
       withholdingStatus: params.withholdingStatus,
@@ -1645,15 +1648,58 @@ export class PayrollService {
     };
   }
 
-  private monthlyBenefitProfile() {
+  private monthlyBenefitProfile(
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>,
+  ) {
     return {
-      benefitProfile: DATAICO_TRUNCATED_BENEFIT_PROFILE,
-      severanceRate: DATAICO_TRUNCATED_SEVERANCE_RATE,
-      serviceBonusRate: DATAICO_TRUNCATED_SERVICE_BONUS_RATE,
-      vacationRate: DATAICO_TRUNCATED_VACATION_RATE,
-      severanceInterestRate: DATAICO_TRUNCATED_SEVERANCE_INTEREST_RATE,
-      severanceInterestFormula: 'MONTHLY_SEVERANCE_X_12_PERCENT',
+      benefitProfile: 'DATAICO_TRUNCATED_MONTHLY',
+      severanceRate: params.severanceRate,
+      serviceBonusRate: params.serviceBonusRate,
+      vacationRate: params.vacationRate,
+      severanceFormula: 'benefitBase * severanceRate',
+      serviceBonusFormula: 'benefitBase * serviceBonusRate',
+      vacationFormula: 'vacationBase * vacationRate',
+      severanceInterestRate: params.severanceInterestRate,
+      severanceInterestFormula: 'MONTHLY_SEVERANCE_X_SEVERANCE_INTEREST_RATE',
     };
+  }
+
+  private async getEmployeeCountForLaw1819(
+    businessId: string,
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>,
+    tx: PayrollTx,
+  ) {
+    if (params.employeeCountForExemption !== null && params.employeeCountForExemption !== undefined) {
+      return params.employeeCountForExemption;
+    }
+    return tx.employeeContract.count({
+      where: { businessId, isActive: true },
+    });
+  }
+
+  private qualifiesForLaw1819Exemption(values: {
+    contractApplyLaw1819: boolean;
+    salaryMonthly: Prisma.Decimal;
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>;
+    employeeCountForExemption: number;
+  }) {
+    const belowSalaryThreshold = values.salaryMonthly.lessThan(
+      values.params.smmlv.mul(values.params.law1819ThresholdSmmlv),
+    );
+
+    return (
+      values.contractApplyLaw1819 &&
+      values.params.applyLaw1819 &&
+      values.params.exemptEmployerHealthLaw1819 &&
+      belowSalaryThreshold
+    );
+  }
+
+  private salaryBelowLaw1819Threshold(
+    salaryMonthly: Prisma.Decimal,
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>,
+  ) {
+    return salaryMonthly.lessThan(params.smmlv.mul(params.law1819ThresholdSmmlv));
   }
 
   private async recreateAccountingMovements(
@@ -1922,18 +1968,33 @@ export class PayrollService {
       .add(otherDeductions);
     const netPay = grossIncome.sub(totalEmployeeDeductions);
 
-    const law1819Applies =
-      contract.applyLaw1819 &&
-      params.applyLaw1819 &&
-      salaryMonthly.lessThan(params.smmlv.mul(params.law1819ThresholdSmmlv));
-    const employerHealth = law1819Applies && params.exemptEmployerHealthLaw1819
+    const employeeCountForExemption = await this.getEmployeeCountForLaw1819(
+      businessId,
+      params,
+      this.prisma,
+    );
+    const law1819Applies = this.qualifiesForLaw1819Exemption({
+      contractApplyLaw1819: contract.applyLaw1819,
+      salaryMonthly,
+      params,
+      employeeCountForExemption,
+    });
+    const salaryBelowLaw1819Threshold = this.salaryBelowLaw1819Threshold(
+      salaryMonthly,
+      params,
+    );
+    const employerHealth = law1819Applies
       ? this.decimal(0)
       : ibcAmount.mul(params.healthEmployerRate);
     const employerPension = ibcAmount.mul(params.pensionEmployerRate);
     const employerArl = ibcAmount.mul(contract.arlRiskClass?.rate ?? 0);
     const compensationFund = ibcAmount.mul(params.compensationFundRate);
-    const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
-    const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
+    const sena = salaryBelowLaw1819Threshold
+      ? this.decimal(0)
+      : ibcAmount.mul(params.senaRate);
+    const icbf = salaryBelowLaw1819Threshold
+      ? this.decimal(0)
+      : ibcAmount.mul(params.icbfRate);
 
     const benefitBaseWithTransport = salaryEarned
       .add(transportAllowance)
@@ -1941,7 +2002,7 @@ export class PayrollService {
       .add(commissions)
       .add(overtimeAmount);
     const vacationBase = salaryEarned.add(commissions);
-    const benefitProfile = this.monthlyBenefitProfile();
+    const benefitProfile = this.monthlyBenefitProfile(params);
     const severance = benefitBaseWithTransport.mul(benefitProfile.severanceRate);
     const monthlySeveranceInterestRate =
       benefitProfile.severanceInterestRate;
@@ -2023,10 +2084,14 @@ export class PayrollService {
         costRoundingStrategy: costBreakdown.roundingStrategy,
         costBreakdown,
         benefitProfile: benefitProfile.benefitProfile,
+        severanceFormulaApplied: benefitProfile.severanceFormula,
         severanceRateApplied: benefitProfile.severanceRate.toString(),
+        serviceBonusFormulaApplied: benefitProfile.serviceBonusFormula,
         serviceBonusRateApplied: benefitProfile.serviceBonusRate.toString(),
+        vacationFormulaApplied: benefitProfile.vacationFormula,
         vacationRateApplied: benefitProfile.vacationRate.toString(),
         severanceInterestFormula: benefitProfile.severanceInterestFormula,
+        monthlySeveranceInterestRate: monthlySeveranceInterestRate.toString(),
         monthlySeveranceInterestProvision:
           monthlySeveranceInterestProvision.toString(),
         totalAccrued: costBreakdown.totalAccrued,
@@ -2036,6 +2101,7 @@ export class PayrollService {
         socialBenefits: costBreakdown.socialBenefits,
         parafiscals: costBreakdown.parafiscals,
         law1819Applied: law1819Applies,
+        law1819EmployeeCountForExemption: employeeCountForExemption,
         overtimeHours: overtimeHoursSnapshot,
         overtimeAmount: this.money(overtimeAmount).toString(),
         ibcBasePolicy:
@@ -2231,26 +2297,41 @@ export class PayrollService {
         .add(otherDeductions);
       const netPay = grossIncome.sub(totalEmployeeDeductions);
 
-      const law1819Applies =
-        contract.applyLaw1819 &&
-        params.applyLaw1819 &&
-        salaryMonthly.lessThan(params.smmlv.mul(params.law1819ThresholdSmmlv));
-      const employerHealth = law1819Applies && params.exemptEmployerHealthLaw1819
+      const employeeCountForExemption = await this.getEmployeeCountForLaw1819(
+        businessId,
+        params,
+        tx,
+      );
+      const law1819Applies = this.qualifiesForLaw1819Exemption({
+        contractApplyLaw1819: contract.applyLaw1819,
+        salaryMonthly,
+        params,
+        employeeCountForExemption,
+      });
+      const salaryBelowLaw1819Threshold = this.salaryBelowLaw1819Threshold(
+        salaryMonthly,
+        params,
+      );
+      const employerHealth = law1819Applies
         ? this.decimal(0)
         : ibcAmount.mul(params.healthEmployerRate);
       const employerPension = ibcAmount.mul(params.pensionEmployerRate);
       const employerArl = ibcAmount.mul(contract.arlRiskClass?.rate ?? 0);
       const compensationFund = ibcAmount.mul(params.compensationFundRate);
-      const sena = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.senaRate);
-      const icbf = law1819Applies ? this.decimal(0) : ibcAmount.mul(params.icbfRate);
+      const sena = salaryBelowLaw1819Threshold
+        ? this.decimal(0)
+        : ibcAmount.mul(params.senaRate);
+      const icbf = salaryBelowLaw1819Threshold
+        ? this.decimal(0)
+        : ibcAmount.mul(params.icbfRate);
 
     const benefitBaseWithTransport = salaryEarned
       .add(transportAllowance)
       .add(connectivityAllowance)
       .add(commissions)
       .add(overtimeAmount);
-    const vacationBase = salaryEarned.add(commissions);
-      const benefitProfile = this.monthlyBenefitProfile();
+      const vacationBase = salaryEarned.add(commissions);
+      const benefitProfile = this.monthlyBenefitProfile(params);
       const severance = benefitBaseWithTransport.mul(
         benefitProfile.severanceRate,
       );
@@ -2362,7 +2443,9 @@ export class PayrollService {
           costRoundingStrategy: costBreakdown.roundingStrategy,
           costBreakdown,
           benefitProfile: benefitProfile.benefitProfile,
+          severanceFormulaApplied: benefitProfile.severanceFormula,
           severanceRateApplied: benefitProfile.severanceRate.toString(),
+          serviceBonusFormulaApplied: benefitProfile.serviceBonusFormula,
           serviceBonusRateApplied: benefitProfile.serviceBonusRate.toString(),
           serviceBonusPreview: this.money(serviceBonus.mul(6)).toString(),
           serviceBonusProjected: this.money(serviceBonus.mul(6)).toString(),
@@ -2380,6 +2463,7 @@ export class PayrollService {
             loanDeduction: this.money(loanDeduction).toString(),
             otherDeductions: this.money(otherDeductions).toString(),
           },
+          vacationFormulaApplied: benefitProfile.vacationFormula,
           vacationRateApplied: benefitProfile.vacationRate.toString(),
           severanceInterestFormula: benefitProfile.severanceInterestFormula,
           monthlySeveranceInterestProvision:
@@ -2390,6 +2474,7 @@ export class PayrollService {
           employerContributions: costBreakdown.employerContributions,
           socialBenefits: costBreakdown.socialBenefits,
           parafiscals: costBreakdown.parafiscals,
+          law1819EmployeeCountForExemption: employeeCountForExemption,
           benefitBaseWithTransport: benefitBaseWithTransport.toString(),
           benefitBaseWithTransportPolicy:
             'DATAICO_MONTHLY_SEVERANCE_AND_SERVICE_BONUS_INCLUDE_TRANSPORT_CONNECTIVITY_COMMISSIONS_AND_OVERTIME',
@@ -2398,7 +2483,7 @@ export class PayrollService {
             'DATAICO_MONTHLY_VACATION_EXCLUDES_TRANSPORT_CONNECTIVITY_AND_OVERTIME',
           monthlySeveranceInterestRate: monthlySeveranceInterestRate.toString(),
           monthlySeveranceInterestPolicy:
-            'MONTHLY_SEVERANCE_X_12_PERCENT',
+            'MONTHLY_SEVERANCE_X_SEVERANCE_INTEREST_RATE',
         },
         calculatedAt: new Date(),
       };
@@ -2545,13 +2630,6 @@ export class PayrollService {
           employeeId: employee.id,
           reason: 'Active contract not found',
         });
-        continue;
-      }
-      const existingRun = await this.prisma.payrollRun.findFirst({
-        where: { businessId, payrollPeriodId: periodId, employeeId: employee.id },
-      });
-      if (existingRun) {
-        calculatedRuns += 1;
         continue;
       }
       await this.calculateEmployeePayroll(businessId, periodId, employee.id, {});
@@ -2803,11 +2881,15 @@ export class PayrollService {
     contractId: string,
     dto: CreatePayrollBenefitPaymentDto,
   ) {
+    this.logger.debug(
+      `[payroll][benefit-payment] regularizeMissingProvision: ${dto.regularizeMissingProvision}, type: ${dto.type}, year: ${dto.year}, semester: ${dto.semester}, amount: ${dto.amount}`,
+    );
     const contract = await this.getContractForSettlement(businessId, contractId);
 
     return this.prisma.$transaction(async (tx) => {
       const isServiceBonusPayment =
         dto.type === 'PRIMA' && !!dto.year && !!dto.semester;
+      const requestedStatus = dto.status ?? PayrollPaymentStatus.PAID;
       const employeeName = `${contract.employee.firstName} ${contract.employee.lastName}`;
       let provisionedAmount = new Prisma.Decimal(0);
       let missingAmount = new Prisma.Decimal(0);
@@ -2815,19 +2897,35 @@ export class PayrollService {
       let regularizationOriginId: string | null = null;
       let roundingOriginId: string | null = null;
       let existingRoundingRegularization = false;
+      let existingRegularization = false;
+
+      const existing = isServiceBonusPayment
+        ? await tx.payrollBenefitPayment.findFirst({
+            where: {
+              businessId,
+              contractId,
+              type: dto.type,
+              year: dto.year,
+              semester: dto.semester,
+            },
+          })
+        : null;
 
       if (isServiceBonusPayment) {
-        const existing = await tx.payrollBenefitPayment.findFirst({
-          where: {
-            businessId,
-            contractId,
-            type: dto.type,
-            year: dto.year,
-            semester: dto.semester,
-          },
-        });
-        if (existing) {
-          throw new ConflictException(`La prima de este semestre ya fue pagada.`);
+        if (existing && requestedStatus === PayrollPaymentStatus.PENDING) {
+          return tx.payrollBenefitPayment.update({
+            where: { id: existing.id },
+            data: {
+              amount: dto.amount,
+              status: PayrollPaymentStatus.PENDING,
+              paidAt: null,
+              periodId: dto.periodId ?? existing.periodId,
+              payrollRunId: dto.payrollRunId ?? existing.payrollRunId,
+              settlementId: dto.settlementId ?? existing.settlementId,
+              notes: this.normalizeNullableText(dto.notes) ?? existing.notes,
+              paymentMethod: dto.paymentMethod ?? existing.paymentMethod,
+            },
+          });
         }
 
         const startMonth = dto.semester === 1 ? 1 : 7;
@@ -2872,13 +2970,23 @@ export class PayrollService {
             dto.semester!,
           );
 
-          const existingRegularization = await tx.accountingMovement.findFirst({
+          const dbRegularization = await tx.accountingMovement.findFirst({
             where: {
               businessId,
               originType: 'PAYROLL_INITIAL_BALANCE' as AccountingMovementOriginType,
-              originId: regularizationOriginId,
+              OR: [
+                { originId: regularizationOriginId },
+                { originId: `INITIAL_BENEFIT_REGULARIZATION:${contract.employeeId}:PRIMA:${dto.year}:${dto.semester}` },
+                {
+                  originId: {
+                    contains: `INITIAL_BENEFIT_REGULARIZATION:${contractId}:PRIMA:${dto.year}:${dto.semester}`
+                  }
+                }
+              ]
             },
           });
+          existingRegularization = !!dbRegularization;
+
           const existingRounding = await tx.accountingMovement.findFirst({
             where: {
               businessId,
@@ -2890,7 +2998,8 @@ export class PayrollService {
 
           if (
             missingAmount.greaterThan(roundingTolerance) &&
-            !dto.regularizeMissingProvision
+            dto.regularizeMissingProvision !== true &&
+            existing?.status !== PayrollPaymentStatus.PAID
           ) {
             throw new ConflictException({
               code: 'INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION',
@@ -2905,17 +3014,7 @@ export class PayrollService {
               semester: dto.semester,
             });
           }
-
-          if (
-            missingAmount.greaterThan(roundingTolerance) &&
-            existingRegularization
-          ) {
-            throw new ConflictException(
-              'Ya existe una regularización inicial para la prima de este semestre.',
-            );
-          }
         }
-
       }
 
       const validationMappings = await tx.payrollAccountingMapping.findMany({
@@ -2970,31 +3069,74 @@ export class PayrollService {
         (dto.regularizeMissingProvision ||
           missingAmount.lessThanOrEqualTo(roundingTolerance)) &&
         !existingRoundingRegularization &&
-        !validationExpenseMapping
+        !validationExpenseMapping &&
+        existing?.status !== PayrollPaymentStatus.PAID
       ) {
         throw new BadRequestException(
           'Falta configuración contable para regularizar la prima. (Gasto SERVICE_BONUS: false)',
         );
       }
 
-      const payment = await tx.payrollBenefitPayment.create({
-        data: {
-          businessId,
-          employeeId: contract.employeeId,
-          contractId,
-          type: dto.type,
-          amount: dto.amount,
-          status: dto.status ?? PayrollPaymentStatus.PAID,
-          paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
-          periodId: dto.periodId,
-          payrollRunId: dto.payrollRunId,
-          settlementId: dto.settlementId,
-          notes: this.normalizeNullableText(dto.notes),
-          year: dto.year,
-          semester: dto.semester,
-          paymentMethod: dto.paymentMethod,
-        },
-      });
+      let payment;
+      if (existing?.status === PayrollPaymentStatus.PAID) {
+        payment = existing;
+      } else {
+        const existingPending =
+          isServiceBonusPayment && requestedStatus === PayrollPaymentStatus.PAID
+            ? await tx.payrollBenefitPayment.findFirst({
+                where: {
+                  businessId,
+                  contractId,
+                  type: dto.type,
+                  year: dto.year,
+                  semester: dto.semester,
+                  status: PayrollPaymentStatus.PENDING,
+                },
+              })
+            : null;
+
+        payment = existingPending
+          ? await tx.payrollBenefitPayment.update({
+              where: { id: existingPending.id },
+              data: {
+                amount: dto.amount,
+                status: PayrollPaymentStatus.PAID,
+                paidAt: dto.paidAt ? this.parseDate(dto.paidAt, 'paidAt') : new Date(),
+                periodId: dto.periodId ?? existingPending.periodId,
+                payrollRunId: dto.payrollRunId ?? existingPending.payrollRunId,
+                settlementId: dto.settlementId ?? existingPending.settlementId,
+                notes: this.normalizeNullableText(dto.notes) ?? existingPending.notes,
+                paymentMethod: dto.paymentMethod ?? existingPending.paymentMethod,
+              },
+            })
+          : await tx.payrollBenefitPayment.create({
+              data: {
+                businessId,
+                employeeId: contract.employeeId,
+                contractId,
+                type: dto.type,
+                amount: dto.amount,
+                status: requestedStatus,
+                paidAt:
+                  requestedStatus === PayrollPaymentStatus.PAID
+                    ? dto.paidAt
+                      ? this.parseDate(dto.paidAt, 'paidAt')
+                      : new Date()
+                    : null,
+                periodId: dto.periodId,
+                payrollRunId: dto.payrollRunId,
+                settlementId: dto.settlementId,
+                notes: this.normalizeNullableText(dto.notes),
+                year: dto.year,
+                semester: dto.semester,
+                paymentMethod: dto.paymentMethod,
+              },
+            });
+      }
+
+      if (requestedStatus !== PayrollPaymentStatus.PAID) {
+        return payment;
+      }
 
       const date = payment.paidAt ?? new Date();
 
@@ -3052,6 +3194,7 @@ export class PayrollService {
         isServiceBonusPayment &&
         missingAmount.greaterThan(roundingTolerance) &&
         dto.regularizeMissingProvision &&
+        !existingRegularization &&
         regularizationOriginId &&
         validationExpenseMapping &&
         validationLiabilityMapping
@@ -3123,7 +3266,34 @@ export class PayrollService {
         originId: payment.id,
       });
 
-      await tx.accountingMovement.createMany({ data: movements });
+      // Query existing movements for this payment and regularization/rounding
+      const originIds = [payment.id];
+      if (roundingOriginId) originIds.push(roundingOriginId);
+      if (regularizationOriginId) originIds.push(regularizationOriginId);
+
+      const dbMovements = await tx.accountingMovement.findMany({
+        where: {
+          businessId,
+          originId: { in: originIds },
+        },
+      });
+
+      const missingMovements = movements.filter((expected) => {
+        const found = dbMovements.find((ext) => {
+          const matchOrigin = ext.originType === expected.originType && ext.originId === expected.originId;
+          const matchNature = ext.nature === expected.nature;
+          const matchAmount = new Prisma.Decimal(ext.amount).equals(new Prisma.Decimal(expected.amount as any));
+          const matchAccount = 
+            (expected.pucSubcuentaId && ext.pucSubcuentaId === expected.pucSubcuentaId) ||
+            (expected.pucCuentaCode && ext.pucCuentaCode === expected.pucCuentaCode);
+          return matchOrigin && matchNature && matchAmount && matchAccount;
+        });
+        return !found;
+      });
+
+      if (missingMovements.length > 0) {
+        await tx.accountingMovement.createMany({ data: missingMovements });
+      }
 
       return payment;
     });
@@ -3263,7 +3433,11 @@ export class PayrollService {
     contract: Awaited<ReturnType<PayrollService['getContractForSettlement']>>,
     endDate: Date,
     tx: PayrollTx,
-    options: { calculationYear?: number; salaryConceptsAmount?: number } = {},
+    options: {
+      calculationYear?: number;
+      salaryConceptsAmount?: number;
+      severanceInterestDayBasis?: 360 | 365;
+    } = {},
   ) {
     const contractStartDate = this.startOfUtcDay(contract.startDate);
     const requestedEndDate = this.startOfUtcDay(endDate);
@@ -3346,7 +3520,12 @@ export class PayrollService {
     const salaryPending = this.decimal(0);
 
     const severanceCaused = benefitSettlementBase.mul(benefitDays).div(360);
-    const severanceInterestCaused = severanceCaused.mul(0.12).mul(benefitDays).div(360);
+    const severanceInterestRate = params.severanceInterestRate;
+    const severanceInterestDayBasis = options.severanceInterestDayBasis ?? 365;
+    const severanceInterestCaused = severanceCaused
+      .mul(severanceInterestRate)
+      .mul(benefitDays)
+      .div(severanceInterestDayBasis);
     const serviceBonusSemesterOneCaused = benefitSettlementBase
       .mul(daysWorkedSemester1)
       .div(360);
@@ -3518,6 +3697,7 @@ export class PayrollService {
       },
       withholdingTax: '0',
       dayCountBasis: '30/360',
+      severanceInterestRate: severanceInterestRate.toString(),
       vacationDaysRaw: vacationDaysRaw.toString(),
       vacationDaysFormula: 'causedDays * 15 / 360',
       vacationDaysRounding: 'CEIL_1_DECIMAL',
@@ -3528,7 +3708,7 @@ export class PayrollService {
         benefitsTotal: 'severance + severanceInterest + serviceBonusSemester1 + serviceBonusSemester2 + vacation',
         settlementTotalPayable: 'benefitsTotal',
         severance: 'benefitSettlementBase * causedDays / 360',
-        severanceInterest: 'severance * 0.12 * causedDays / 360',
+        severanceInterest: `severance * severanceInterestRate * causedDays / ${severanceInterestDayBasis}`,
         serviceBonusSemester1: 'benefitSettlementBase * semester1Days / 360',
         serviceBonusSemester2: 'benefitSettlementBase * semester2Days / 360',
         vacationDays: 'causedDays * 15 / 360',
@@ -3565,11 +3745,13 @@ export class PayrollService {
         referenceBenefitDays,
         {
           basis: '30/360',
-          formula: 'severance * 0.12 * causedDays / 360',
+          interestDayBasis: severanceInterestDayBasis,
+          formula: `severance * severanceInterestRate * causedDays / ${severanceInterestDayBasis}`,
+          rate: severanceInterestRate.toString(),
           causedAmount: severanceInterestCaused.toString(),
           paidAmount: severanceInterestPaid.toString(),
         },
-        new Prisma.Decimal(0.12),
+        severanceInterestRate,
       ),
       this.settlementLine(
         'SERVICE_BONUS_SEMESTER_ONE',
@@ -3689,7 +3871,11 @@ export class PayrollService {
     type: PayrollSettlementType,
     endDate: Date,
     tx: PayrollTx,
-    options: { calculationYear?: number; salaryConceptsAmount?: number } = {},
+    options: {
+      calculationYear?: number;
+      salaryConceptsAmount?: number;
+      severanceInterestDayBasis?: 360 | 365;
+    } = {},
   ) {
     const contract = await this.getContractForSettlement(businessId, contractId, tx);
     const calculated = await this.calculateAnnualSettlement(
@@ -3697,7 +3883,12 @@ export class PayrollService {
       contract,
       endDate,
       tx,
-      options,
+      {
+        ...options,
+        severanceInterestDayBasis:
+          options.severanceInterestDayBasis ??
+          (type === PayrollSettlementType.REAL_TERMINATION ? 360 : 365),
+      },
     );
 
     const settlement = await tx.payrollContractSettlement.create({
@@ -3752,6 +3943,7 @@ export class PayrollService {
         {
           calculationYear: dto.calculationYear,
           salaryConceptsAmount: dto.salaryConceptsAmount,
+          severanceInterestDayBasis: 365,
         },
       );
       return this.withSettlementComputedFields({
@@ -3851,6 +4043,7 @@ export class PayrollService {
         {
           calculationYear: dto.calculationYear,
           salaryConceptsAmount: dto.salaryConceptsAmount,
+          severanceInterestDayBasis: 360,
         },
       );
 
@@ -3921,6 +4114,8 @@ export class PayrollService {
     businessId: string,
     settlement: {
       id: string;
+      endDate?: Date;
+      usedParameters?: unknown;
       employee: { firstName: string; lastName: string };
       lines: { code: string; name: string; amount: Prisma.Decimal }[];
     },
@@ -3945,6 +4140,12 @@ export class PayrollService {
     const movements: Prisma.AccountingMovementCreateManyInput[] = [];
     const missingMappings = new Set<string>();
     const employeeName = `${settlement.employee.firstName} ${settlement.employee.lastName}`;
+    const settlementParams = (settlement.usedParameters ?? {}) as Record<string, unknown>;
+    const settlementAccountingDate = this.startOfUtcDay(
+      settlementParams.settlementDate
+        ? new Date(String(settlementParams.settlementDate))
+        : settlement.endDate ?? new Date(0),
+    );
     for (const line of settlement.lines) {
       if (this.decimal(line.amount).equals(0)) continue;
       const lineMappings = mappings.filter(
@@ -3972,7 +4173,7 @@ export class PayrollService {
             mapping.side === PayrollAccountingSide.DEBIT
               ? MovementNature.DEBIT
               : MovementNature.CREDIT,
-          date: new Date(),
+          date: settlementAccountingDate,
           detail: `Liquidacion contrato ${employeeName} - ${line.name}`,
           originType: AccountingMovementOriginType.PAYROLL_SETTLEMENT,
           originId: settlement.id,

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
@@ -459,7 +459,7 @@ function AdminProductCard({
               {badges.map((badge) => (
                 <div
                   key={`${badge.text}-${badge.color}`}
-                  className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                   style={{ background: badge.color }}
                 >
                   {badge.text}
@@ -647,7 +647,7 @@ function PrivateProductDetailOverlay({
 
             <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
               <div className="space-y-2 pb-3">
-                <div className="text-[18px] font-extrabold leading-tight text-slate-900">
+                <div className="text-[18px] font-semibold leading-tight text-slate-900">
                   {item.name}
                 </div>
                 <div className="text-xs font-semibold text-slate-600">
@@ -659,7 +659,7 @@ function PrivateProductDetailOverlay({
                     {badges.map((badge) => (
                       <div
                         key={`${badge.text}-${badge.color}`}
-                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                         style={{ background: badge.color }}
                       >
                         {badge.text}
@@ -671,11 +671,11 @@ function PrivateProductDetailOverlay({
 
               <div className="flex w-full flex-wrap items-center justify-between gap-6">
               <div className="min-w-0 flex-1 space-y-1">
-                <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                   PRECIO
                 </div>
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <div className="text-3xl font-black tracking-tight text-slate-900">
+                  <div className="text-3xl font-semibold tracking-tight text-slate-900">
                     ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                   </div>
                 </div>
@@ -733,7 +733,7 @@ function PrivateProductDetailOverlay({
                     {badges.map((badge) => (
                       <div
                         key={`${badge.text}-${badge.color}`}
-                        className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                        className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                         style={{ background: badge.color }}
                       >
                         {badge.text}
@@ -746,10 +746,10 @@ function PrivateProductDetailOverlay({
 
                 <div className="flex flex-wrap items-end justify-between gap-8">
                   <div className="min-w-0 flex-1 space-y-2">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       PRECIO
                     </div>
-                    <div className="text-4xl font-black tracking-tight text-slate-900">
+                    <div className="text-4xl font-semibold tracking-tight text-slate-900">
                       ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                     </div>
                   </div>
@@ -759,7 +759,7 @@ function PrivateProductDetailOverlay({
 
                 {item.description && (
                   <div className="space-y-3">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       Descripción
                     </div>
                     <p className="text-[16px] leading-relaxed text-slate-600 whitespace-pre-wrap">

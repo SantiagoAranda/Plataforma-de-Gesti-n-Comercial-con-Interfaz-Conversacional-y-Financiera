@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useRef, useState } from "react";
 import {
@@ -140,7 +140,7 @@ function AgendaEventRow({ event }: { event: AgendaEvent }) {
           </p>
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider shrink-0 ml-2",
+              "rounded-full px-2 py-0.5 text-[9px] font-medium uppercase tracking-wider shrink-0 ml-2",
               statusBadgeStyle(event.status),
             )}
           >
@@ -452,7 +452,7 @@ export default function HomeAgenda({
                   {opt.key === "EVENTOS" && pendingEventsCount > 0 && (
                     <span
                       className={cn(
-                        "w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-bold ml-1.5 shrink-0 leading-none",
+                        "w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-medium ml-1.5 shrink-0 leading-none",
                         active ? "bg-emerald-600 text-white" : "bg-slate-500 text-white"
                       )}
                     >

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,17 +18,21 @@ import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDeta
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
+import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
+import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
 
 import {
   createIngredient,
   getInventorySummary,
   getRecipesBulk,
+  getSimpleItemsInventorySummary,
   type InventorySummaryIngredient,
   type RecipeLine,
+  type SimpleItemInventorySummary,
 } from "@/src/services/inventory";
 import type { Item } from "@/src/types/item";
 
-type UITab = "recipes" | "ingredients";
+type UITab = "recipes" | "ingredients" | "products";
 
 function recipeStatus(item: Item, lines: RecipeLine[]) {
   const mandatory = lines.filter((line) => !line.isOptional);
@@ -52,18 +56,25 @@ function InventarioPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get("tab");
-  const tab = tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId") ? "ingredients" : "recipes";
+  const tab =
+    tabParam === "products" || tabParam === "productos" || searchParams?.has("productId")
+      ? "products"
+      : tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId")
+        ? "ingredients"
+        : "recipes";
   const expandedItemId = searchParams?.get("itemId");
   const selectedIngredientIdParam = searchParams?.get("ingredientId") || null;
+  const selectedProductIdParam = searchParams?.get("productId") || null;
 
   const setTab = (newTab: UITab) => {
-    const alias = newTab === "ingredients" ? "insumos" : "recipes";
+    const alias = newTab === "ingredients" ? "insumos" : newTab === "products" ? "productos" : "recipes";
     router.push(`/inventario?tab=${alias}`, { scroll: false });
   };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
+  const [simpleProducts, setSimpleProducts] = useState<SimpleItemInventorySummary[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [recipesByItemId, setRecipesByItemId] = useState<Record<string, RecipeLine[]>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -71,6 +82,7 @@ function InventarioPageContent() {
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
   const [creatingIngredient, setCreatingIngredient] = useState(false);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   // Sync selectedIngredientId with searchParams if present
   useEffect(() => {
@@ -80,6 +92,10 @@ function InventarioPageContent() {
       setSelectedIngredientId(null);
     }
   }, [selectedIngredientIdParam]);
+
+  useEffect(() => {
+    setSelectedProductId(selectedProductIdParam);
+  }, [selectedProductIdParam]);
 
   const handleSelectIngredient = (id: string) => {
     setSelectedIngredientId(id);
@@ -99,21 +115,39 @@ function InventarioPageContent() {
     router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
   };
 
+  const handleSelectProduct = (id: string) => {
+    setSelectedProductId(id);
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", "productos");
+    currentParams.set("productId", id);
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
+
+  const handleCloseProductSheet = () => {
+    setSelectedProductId(null);
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", "productos");
+    currentParams.delete("productId");
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [summaryData, itemsData] = await Promise.all([
+      const [summaryData, itemsData, simpleProductsData] = await Promise.all([
         getInventorySummary({ status: "ACTIVE" }),
         api<Item[]>("/items?status=ACTIVE").catch(() => []),
+        getSimpleItemsInventorySummary().catch(() => []),
       ]);
 
       setSummary(summaryData ?? []);
+      setSimpleProducts(simpleProductsData ?? []);
       setItems((itemsData ?? []).filter((item) => item.status === "ACTIVE"));
 
       const inventoryProducts = (itemsData ?? []).filter(
-        (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && (item.inventoryMode === "SIMPLE" || item.inventoryMode === "RECIPE_BASED"),
+        (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
       );
 
       setRecipesByItemId(
@@ -149,7 +183,7 @@ function InventarioPageContent() {
   }, [summary]);
 
   const recipeItems = useMemo(
-    () => items.filter((item) => item.type === "PRODUCT" && (item.inventoryMode === "SIMPLE" || item.inventoryMode === "RECIPE_BASED")),
+    () => items.filter((item) => item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED"),
     [items],
   );
 
@@ -164,6 +198,12 @@ function InventarioPageContent() {
     if (!query) return recipeItems;
     return recipeItems.filter((item) => item.name.toLowerCase().includes(query));
   }, [recipeItems, searchQuery]);
+
+  const visibleProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return simpleProducts;
+    return simpleProducts.filter((item) => item.name.toLowerCase().includes(query));
+  }, [simpleProducts, searchQuery]);
 
   const recipeCost = useCallback(
     (itemId: string) => {
@@ -201,7 +241,7 @@ function InventarioPageContent() {
             <div className="relative">
               <Bell className="h-5 w-5" />
               {alertGroups.count > 0 ? (
-                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-black leading-none text-white">
+                <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-none text-white">
                   {alertGroups.count > 99 ? "99+" : String(alertGroups.count)}
                 </span>
               ) : null}
@@ -216,35 +256,35 @@ function InventarioPageContent() {
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.12)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
             <div className="relative flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/60">INVENTARIO TOTAL</p>
-                <p className="mt-1 truncate text-2xl font-black text-white">${formatMoney(inventoryTotalValue)} COP</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/60">INVENTARIO TOTAL</p>
+                <p className="mt-1 truncate text-2xl font-semibold text-white">${formatMoney(inventoryTotalValue)} COP</p>
               </div>
               <div className="space-y-1 border-l border-white/10 pl-4">
-                <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
                   <span>Recetas</span>
-                  <span className="font-black text-white">{formatMoney(recipeItems.length)}</span>
+                  <span className="font-semibold text-white">{formatMoney(recipeItems.length)}</span>
                 </div>
-                <div className="flex items-baseline justify-between gap-6 text-xs font-bold text-white/70">
+                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
                   <span>Alertas</span>
-                  <span className="font-black text-rose-300">{formatMoney(alertGroups.count)}</span>
+                  <span className="font-semibold text-rose-300">{formatMoney(alertGroups.count)}</span>
                 </div>
               </div>
             </div>
           </section>
 
           <section className="rounded-2xl bg-neutral-100/80 p-1.5 shadow-sm ring-1 ring-black/5">
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["recipes", "ingredients"] as const).map((nextTab) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["recipes", "ingredients", "products"] as const).map((nextTab) => (
                 <button
                   key={nextTab}
                   type="button"
                   onClick={() => setTab(nextTab)}
                   className={cn(
-                    "h-9 rounded-2xl text-xs font-black transition active:scale-[0.99]",
+                    "h-9 rounded-2xl text-xs font-semibold transition active:scale-[0.99]",
                     tab === nextTab ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5" : "bg-transparent text-neutral-500",
                   )}
                 >
-                  {nextTab === "recipes" ? "Recetas" : "Insumos"}
+                  {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : "Productos"}
                 </button>
               ))}
             </div>
@@ -282,7 +322,7 @@ function InventarioPageContent() {
                       className={cn("w-full rounded-2xl p-3 text-left shadow-sm ring-1 transition active:scale-[0.99]", warning ? "bg-rose-50/70 ring-rose-100" : "bg-white ring-black/5")}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-black text-neutral-700 ring-1 ring-black/5">
+                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-semibold text-neutral-700 ring-1 ring-black/5">
                           {(item.name ?? "I").trim().slice(0, 1).toUpperCase()}
                           {warning ? (
                             <span className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-rose-600 text-white shadow-sm">
@@ -293,12 +333,12 @@ function InventarioPageContent() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-black text-neutral-900">{item.name}</p>
+                              <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
                               <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
                                 {Number.isFinite(averageCost) ? `Costo $${formatMoney(averageCost)} / ${unitLabel}` : "Costo —"}
                               </p>
                             </div>
-                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", badge.tone)}>
+                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", badge.tone)}>
                               {badge.label}
                             </span>
                           </div>
@@ -308,6 +348,10 @@ function InventarioPageContent() {
                   );
                 })
               )}
+            </section>
+          ) : tab === "products" ? (
+            <section className="space-y-2">
+              <SimpleProductList products={visibleProducts} onSelect={handleSelectProduct} />
             </section>
           ) : (
             <section className="space-y-2">
@@ -335,7 +379,7 @@ function InventarioPageContent() {
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={tab === "ingredients" ? "Buscar insumo..." : "Buscar receta..."}
+        placeholder={tab === "ingredients" ? "Buscar insumo..." : tab === "products" ? "Buscar producto..." : "Buscar receta..."}
         onSubmit={() => {}}
         onCreateIngredient={toggleIngredientSheetFromBar}
         createIngredientActive={ingredientSheetOpen}
@@ -367,12 +411,12 @@ function InventarioPageContent() {
                   className="flex w-full items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-neutral-900">{item.name}</p>
+                    <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
                     <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
                       {out ? "Acción recomendada: cargar stock" : "Acción recomendada: revisar mínimo"} · Stock {formatMoney(parseNumber(item.currentStock))} {unitLabel}
                     </p>
                   </div>
-                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", out ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")}>
+                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", out ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")}>
                     {out ? "SIN STOCK" : "BAJO"}
                   </span>
                 </button>
@@ -421,6 +465,12 @@ function InventarioPageContent() {
         ingredientId={selectedIngredientId}
         open={!!selectedIngredientId}
         onClose={handleCloseIngredientSheet}
+        onChanged={load}
+      />
+      <SimpleProductDetailSheet
+        product={simpleProducts.find((item) => item.id === selectedProductId) ?? null}
+        open={!!selectedProductId}
+        onClose={handleCloseProductSheet}
         onChanged={load}
       />
     </div>

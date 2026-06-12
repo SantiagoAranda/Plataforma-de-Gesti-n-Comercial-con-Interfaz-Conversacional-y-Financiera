@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
@@ -13,7 +13,7 @@ import {
 } from "@/src/services/inventory";
 import { getErrorMessage } from "@/src/lib/errors";
 import { cn } from "@/src/lib/utils";
-import { formatIngredientUnit, formatUnit } from "@/src/components/inventory/unitLabels";
+import { formatIngredientUnit, formatUnit, getPurchaseToStockFactor } from "@/src/components/inventory/unitLabels";
 
 export type MovementAction =
   | "INITIAL"
@@ -129,7 +129,15 @@ export function MovementForm({
     [purchaseUnitCost],
   );
 
-  const purchaseFactor = useMemo(() => toDisplayNumber(ingredient.purchaseToConsumptionFactor), [ingredient.purchaseToConsumptionFactor]);
+  const purchaseFactor = useMemo(
+    () =>
+      getPurchaseToStockFactor(
+        ingredient.purchaseUnit,
+        ingredient.consumptionUnit,
+        ingredient.purchaseToConsumptionFactor,
+      ),
+    [ingredient.purchaseUnit, ingredient.consumptionUnit, ingredient.purchaseToConsumptionFactor],
+  );
   const canShowPurchaseFormula = useMemo(() => Number.isFinite(purchaseFactor) && purchaseFactor > 0, [purchaseFactor]);
 
   const estimatedConsumptionQty = useMemo(() => {
@@ -146,7 +154,7 @@ export function MovementForm({
   }, [canShowPurchaseFormula, parsedPurchaseUnitCost, purchaseFactor]);
 
   const compactConversionText = useMemo(() => {
-    const factorStr = `1 ${purchaseUnitLabel} = ${ingredient.purchaseToConsumptionFactor} ${consumptionUnitLabel}`;
+    const factorStr = `1 ${purchaseUnitLabel} = ${purchaseFactor.toLocaleString("es-AR", { maximumFractionDigits: 6 })} ${consumptionUnitLabel}`;
     const conversionBase = `Conversión: ${factorStr}`;
     
     const hasQty = Number.isFinite(parsedPurchaseQuantity) && parsedPurchaseQuantity > 0;
@@ -158,7 +166,7 @@ export function MovementForm({
 
     const parts = [conversionBase];
     if (canShowPurchaseFormula && estimatedConsumptionQty !== null) {
-      parts.push(`Ingresan: ${estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })}`);
+      parts.push(`Ingresan: ${estimatedConsumptionQty.toLocaleString("es-AR", { maximumFractionDigits: 6 })} ${consumptionUnitLabel}`);
     }
     if (canShowPurchaseFormula && estimatedUnitCostPerConsumption !== null) {
       parts.push(`Costo unit.: $${estimatedUnitCostPerConsumption.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`);
@@ -167,7 +175,7 @@ export function MovementForm({
     return parts.join(" · ");
   }, [
     purchaseUnitLabel,
-    ingredient.purchaseToConsumptionFactor,
+    purchaseFactor,
     consumptionUnitLabel,
     parsedPurchaseQuantity,
     parsedPurchaseUnitCost,
@@ -236,8 +244,14 @@ export function MovementForm({
       } else if (action === "PURCHASE") {
         await registerPurchase({
           ingredientId: ingredient.id,
-          purchaseQuantity: normalizedPurchaseQuantity,
-          purchaseUnitCost: normalizedPurchaseUnitCost,
+          quantity:
+            estimatedConsumptionQty === null
+              ? normalizedPurchaseQuantity
+              : String(estimatedConsumptionQty),
+          unitCost:
+            estimatedUnitCostPerConsumption === null
+              ? normalizedPurchaseUnitCost
+              : String(estimatedUnitCostPerConsumption),
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
@@ -299,14 +313,14 @@ export function MovementForm({
       {!compact && (
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
               Movimiento manual
             </p>
-            <p className="mt-1 text-sm font-bold text-neutral-900">
+            <p className="mt-1 text-sm font-medium text-neutral-900">
               {ingredient.name}
             </p>
           </div>
-          <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-neutral-500">
+          <span className="rounded-full border border-neutral-100 bg-neutral-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
             {consumptionUnitLabel}
           </span>
         </div>
@@ -372,9 +386,9 @@ export function MovementForm({
             ) : (
               <div className="col-span-2 rounded-2xl border border-neutral-100 bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-500">
                 <p>
-                  El sistema convierte esta compra a {consumptionUnitLabel} usando el factor configurado:{" "}
+                  El sistema convierte esta compra a {consumptionUnitLabel} usando el factor de compra a stock:{" "}
                   <span className="font-semibold text-slate-700">
-                    1 {purchaseUnitLabel} = {ingredient.purchaseToConsumptionFactor} {consumptionUnitLabel}
+                    1 {purchaseUnitLabel} = {purchaseFactor.toLocaleString("es-AR", { maximumFractionDigits: 6 })} {consumptionUnitLabel}
                   </span>
                   .
                 </p>

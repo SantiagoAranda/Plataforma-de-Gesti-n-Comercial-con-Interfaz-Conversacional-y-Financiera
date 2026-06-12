@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -207,7 +207,7 @@ export function ItemImageViewer({
                 />
 
                 {/* PAGINATION PILL - ATTACHED TO IMAGE */}
-                <div className="absolute bottom-3 right-3 backdrop-blur-md bg-black/40 text-white rounded-full px-3 py-1 text-[11px] font-bold border border-white/10 pointer-events-none">
+                <div className="absolute bottom-3 right-3 backdrop-blur-md bg-black/40 text-white rounded-full px-3 py-1 text-[11px] font-medium border border-white/10 pointer-events-none">
                   {currentIndex + 1} / {images.length}
                 </div>
               </div>
@@ -234,7 +234,7 @@ export function ItemImageViewer({
 
             {/* INFO AREA: NAME & DESCRIPTION */}
             <div className="w-full flex flex-col gap-3 px-2 shrink-0">
-              <h3 className="text-xl font-bold text-white tracking-tight leading-tight">
+              <h3 className="text-xl font-medium text-white tracking-tight leading-tight">
                 {name}
               </h3>
 

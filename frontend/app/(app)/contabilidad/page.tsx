@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import AppHeader from "@/src/components/layout/AppHeader";
@@ -119,6 +119,95 @@ function movementTimestamp(movement: AccountingMovement) {
   return new Date(movement.createdAt ?? movement.date).getTime();
 }
 
+function normalizeSearchText(value?: string | null) {
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function originSearchText(originType?: string | null) {
+  if (!originType) return "";
+  if (originType === "MANUAL") return "manual";
+  if (originType === "ORDER") return "automatica venta orden";
+  if (originType.startsWith("PAYROLL_")) return "nomina payroll";
+  return originType.replace(/_/g, " ").toLowerCase();
+}
+
+function normalizeAmountInput(value: string) {
+  return value
+    .replace(/\$/g, "")
+    .replace(/\s/g, "")
+    .replace(/\./g, "")
+    .replace(/,/g, ".");
+}
+
+function parseCurrencyToNumber(value: unknown) {
+  if (typeof value === "number") return Math.abs(value);
+
+  const clean = normalizeAmountInput(String(value ?? ""));
+  const number = Number(clean);
+
+  return Number.isNaN(number) ? 0 : Math.abs(number);
+}
+
+function getMovementAmount(movement: AccountingMovement) {
+  const extraFields = movement as AccountingMovement & {
+    value?: unknown;
+    total?: unknown;
+    debit?: unknown;
+    credit?: unknown;
+    rawAmount?: unknown;
+    formattedAmount?: unknown;
+    balance?: unknown;
+  };
+
+  const candidates = [
+    movement.amount,
+    extraFields.value,
+    extraFields.total,
+    extraFields.debit,
+    extraFields.credit,
+    extraFields.rawAmount,
+    extraFields.formattedAmount,
+    extraFields.balance,
+  ];
+
+  for (const candidate of candidates) {
+    const parsed = parseCurrencyToNumber(candidate);
+    if (parsed > 0) return parsed;
+  }
+
+  return 0;
+}
+
+function parseAmountQuery(query: string) {
+  const clean = normalizeAmountInput(query);
+
+  if (!clean) return null;
+
+  if (clean.includes("-")) {
+    const [minRaw, maxRaw] = clean.split("-");
+    const min = Number(minRaw);
+    const max = Number(maxRaw);
+
+    if (!Number.isNaN(min) && !Number.isNaN(max)) {
+      return min <= max
+        ? { type: "range" as const, min, max }
+        : { type: "range" as const, min: max, max: min };
+    }
+  }
+
+  const amount = Number(clean);
+
+  if (!Number.isNaN(amount)) {
+    return { type: "exact" as const, amount };
+  }
+
+  return null;
+}
+
 export default function ContabilidadPage() {
   const [movements, setMovements] = useState<AccountingMovement[]>([]);
   const [selectedMovement, setSelectedMovement] =
@@ -129,7 +218,11 @@ export default function ContabilidadPage() {
 
   const [form, setForm] = useState<AccountingFormState>(emptyForm);
   const [formErrors, setFormErrors] = useState<AccountingFormErrors>({});
-  const [searchFilters, setSearchFilters] = useState<SearchFilters>({ mode: 'text', query: '' });
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    mode: "PUC",
+    nature: "ALL",
+    query: "",
+  });
   const [composerOpen, setComposerOpen] = useState(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -144,16 +237,12 @@ export default function ContabilidadPage() {
     });
   }, []);
 
-  const refresh = useCallback(async (filtersObj?: SearchFilters) => {
+  const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await listMovements({ 
-        search: filtersObj?.mode === 'text' ? (filtersObj.query || undefined) : undefined,
-        priceMin: filtersObj?.mode === 'price' ? filtersObj.priceMin : undefined,
-        priceMax: filtersObj?.mode === 'price' ? filtersObj.priceMax : undefined,
-      });
+      const data = await listMovements();
       setMovements(data ?? []);
     } catch (err) {
       console.error(err);
@@ -164,8 +253,8 @@ export default function ContabilidadPage() {
   }, []);
 
   useEffect(() => {
-    refresh(searchFilters);
-  }, [searchFilters, refresh]);
+    refresh();
+  }, [refresh]);
 
   const resetForm = useCallback(() => {
     setForm({
@@ -270,7 +359,7 @@ export default function ContabilidadPage() {
       try {
         await deleteMovement(id);
         setSelectedMovement(null);
-        await refresh(searchFilters);
+        await refresh();
       } catch (err: any) {
         console.error(err);
         setError(
@@ -285,7 +374,7 @@ export default function ContabilidadPage() {
 
   const handleComposerSubmit = useCallback(async () => {
     if (!composerOpen) {
-      await refresh(searchFilters);
+      await refresh();
       return;
     }
 
@@ -336,7 +425,7 @@ export default function ContabilidadPage() {
 
       setComposerOpen(false);
       resetForm();
-      await refresh(searchFilters);
+      await refresh();
     } catch (err: any) {
       console.error("Error guardando movimiento:", err);
       console.error("status:", err?.status);
@@ -352,7 +441,82 @@ export default function ContabilidadPage() {
   }, [composerOpen, form, refresh, resetForm, validateForm]);
 
 
-  const displayMovements = movements;
+  const displayMovements = useMemo(() => {
+    const query = normalizeSearchText(searchFilters.query?.trim());
+    const amountQuery =
+      searchFilters.mode === "AMOUNT" ? parseAmountQuery(searchFilters.query) : null;
+
+    return movements.filter((movement) => {
+      if (searchFilters.nature !== "ALL" && movement.nature !== searchFilters.nature) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      if (searchFilters.mode === "AMOUNT") {
+        const amount = getMovementAmount(movement);
+        const normalizedAmountQuery = normalizeAmountInput(searchFilters.query);
+
+        if (!amountQuery) {
+          return String(amount).includes(normalizedAmountQuery);
+        }
+
+        if (amountQuery.type === "exact") {
+          const amountAsText = String(amount);
+          const queryAsText = String(amountQuery.amount);
+
+          return amount === amountQuery.amount || amountAsText.includes(queryAsText);
+        }
+
+        return amount >= amountQuery.min && amount <= amountQuery.max;
+      }
+
+      if (searchFilters.mode === "PUC") {
+        const extraFields = movement as AccountingMovement & {
+          accountCode?: string | null;
+          accountName?: string | null;
+          account?: { code?: string | null; name?: string | null } | null;
+        };
+        const pucText = normalizeSearchText(
+          [
+            movement.pucCode,
+            movement.pucName,
+            extraFields.accountCode,
+            extraFields.accountName,
+            extraFields.account?.code,
+            extraFields.account?.name,
+          ].join(" "),
+        );
+        return pucText.includes(query);
+      }
+
+      const extraFields = movement as AccountingMovement & {
+        accountCode?: string | null;
+        accountName?: string | null;
+        category?: string | null;
+        type?: string | null;
+        description?: string | null;
+      };
+      const text = normalizeSearchText(
+        [
+          extraFields.description,
+          movement.detail,
+          movement.pucName,
+          movement.pucCode,
+          extraFields.accountName,
+          extraFields.accountCode,
+          extraFields.category,
+          extraFields.type,
+          movement.nature,
+          movement.originType,
+          originSearchText(movement.originType),
+        ].join(" "),
+      );
+      return text.includes(query);
+    });
+  }, [movements, searchFilters]);
 
   const isEmpty = useMemo(
     () => !loading && displayMovements.length === 0,
@@ -434,7 +598,7 @@ export default function ContabilidadPage() {
               <div>Diferencia</div>
             </div>
 
-            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-bold">
+            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-medium">
               <div className="text-neutral-900">
                 {formatCurrency(balanceSummary.totalDebit)}
               </div>

@@ -28,6 +28,11 @@ enum BusinessCategory {
   SERVICES
 }
 
+enum LegalPersonType {
+  LEGAL_ENTITY
+  NATURAL_PERSON
+}
+
 enum ItemType {
   PRODUCT
   SERVICE
@@ -234,12 +239,16 @@ model Item {
 
   inventoryMode InventoryMode @default(NONE)
 
-  images          ItemImage[]
-  scheduleWindows ServiceScheduleWindow[]
-  scheduleBlocks  ServiceScheduleBlock[]
-  reservations    Reservation[]
-  orderItems      OrderItem[]
-  recipes         Recipe[]
+  // Stock threshold used for low-stock alerts on SIMPLE products.
+  minStock Decimal @default(0) @db.Decimal(20, 6)
+
+  images             ItemImage[]
+  scheduleWindows    ServiceScheduleWindow[]
+  scheduleBlocks     ServiceScheduleBlock[]
+  reservations       Reservation[]
+  orderItems         OrderItem[]
+  recipes            Recipe[]
+  inventoryMovements InventoryMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -352,7 +361,7 @@ model Recipe {
   @@index([businessId, ingredientId])
 }
 
-// Ingredient-based Kardex entry. Purchases, sales, returns, and adjustments are recorded here.
+// Kardex entry. SIMPLE product stock uses itemId; recipe-based stock uses ingredientId.
 model InventoryMovement {
   id String @id @default(uuid())
 
@@ -360,26 +369,30 @@ model InventoryMovement {
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  // Ingredient affected by this Kardex entry. Inventory remains ingredient-based only.
-  ingredientId String
-  ingredient   Ingredient @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Restrict)
+  // Ingredient affected by this Kardex entry for RECIPE_BASED inventory.
+  ingredientId String?
+  ingredient   Ingredient? @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  // Item affected by this Kardex entry for SIMPLE inventory.
+  itemId String?
+  item   Item?   @relation(fields: [itemId, businessId], references: [id, businessId], onDelete: Restrict)
 
   // Business reason for the stock movement and its input/output direction.
   type InventoryMovementType
 
-  // Positive movement quantity in Ingredient.consumptionUnit. Direction comes from type.
+  // Positive movement quantity in the target stock unit. Direction comes from type.
   quantity Decimal @db.Decimal(20, 6)
 
-  // Cost per Ingredient.consumptionUnit used for this movement.
+  // Cost per target stock unit used for this movement.
   unitCost Decimal @db.Decimal(20, 6)
 
   // quantity * unitCost, preserved with six decimals for inventory valuation.
   totalValue Decimal @db.Decimal(20, 6)
 
-  // Ingredient stock balance after this movement is applied.
+  // Target stock balance after this movement is applied.
   stockAfter Decimal @db.Decimal(20, 6)
 
-  // Ingredient weighted average cost after this movement is applied.
+  // Target weighted average cost after this movement is applied.
   averageCostAfter Decimal @db.Decimal(20, 6)
 
   // High-level source category for traceability without adding Purchase models in Phase 1.
@@ -406,8 +419,10 @@ model InventoryMovement {
   createdAt DateTime @default(now())
 
   @@unique([businessId, orderItemId, ingredientId, type])
+  @@unique([businessId, orderItemId, itemId, type])
   @@index([businessId, occurredAt])
   @@index([businessId, ingredientId, occurredAt])
+  @@index([businessId, itemId, occurredAt])
   @@index([businessId, type])
   @@index([businessId, referenceType, referenceId])
   @@index([businessId, orderId])
@@ -478,11 +493,11 @@ model OrderItem {
   quantity Int @default(1)
 
   // Snapshots para histórico/PDF (evita que cambien si se edita el catálogo)
-  itemNameSnapshot        String
-  itemTypeSnapshot        ItemType
-  durationMinutesSnapshot Int?
+  itemNameSnapshot              String
+  itemTypeSnapshot              ItemType
+  durationMinutesSnapshot       Int?
   // Inventory behavior captured for this sale line when inventory is posted.
-  inventoryModeSnapshot   InventoryMode?
+  inventoryModeSnapshot         InventoryMode?
   excludedOptionalIngredientIds Json?
 
   unitPrice Decimal @db.Decimal(10, 2)
@@ -837,10 +852,13 @@ model PayrollBusinessParameter {
   weeklyHours  Decimal? @db.Decimal(10, 2)
   monthlyHours Decimal? @db.Decimal(10, 2)
 
-  applyLaw1819                Boolean @default(true)
-  exemptEmployerHealthLaw1819 Boolean @default(true)
-  applySolidarityFund         Boolean @default(true)
-  applyIncomeTax              Boolean @default(false)
+  applyLaw1819                Boolean         @default(true)
+  exemptEmployerHealthLaw1819 Boolean         @default(true)
+  isIncomeTaxFiler            Boolean         @default(false)
+  legalPersonType             LegalPersonType @default(LEGAL_ENTITY)
+  employeeCountForExemption   Int?
+  applySolidarityFund         Boolean         @default(true)
+  applyIncomeTax              Boolean         @default(false)
 
   customTransportAllowance Decimal? @db.Decimal(20, 6)
   customSmmlv              Decimal? @db.Decimal(20, 6)
@@ -1335,6 +1353,7 @@ model PayrollBenefitPayment {
   payrollRun PayrollRun?                @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
   settlement PayrollContractSettlement? @relation(fields: [settlementId], references: [id], onDelete: SetNull)
 
+  @@unique([contractId, type, year, semester])
   @@index([businessId, contractId])
   @@index([businessId, employeeId])
   @@index([contractId, type])

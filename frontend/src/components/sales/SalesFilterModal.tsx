@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -43,7 +43,7 @@ export default function SalesFilterModal({ open, onClose, status, onChange }: Pr
         }`}
       >
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-neutral-900">Estado de la Venta</h2>
+          <h2 className="text-lg font-medium text-neutral-900">Estado de la Venta</h2>
           <button
             onClick={onClose}
             className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition"
@@ -65,7 +65,7 @@ export default function SalesFilterModal({ open, onClose, status, onChange }: Pr
               <span
                 className={`text-[15px] ${
                   status === opt.value
-                    ? "font-bold text-emerald-600"
+                    ? "font-medium text-emerald-600"
                     : "font-medium text-neutral-700"
                 }`}
               >
