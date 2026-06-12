@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { type InputHTMLAttributes, type ReactNode, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import toast from "react-hot-toast";
@@ -1035,8 +1035,9 @@ function ContractFormSection({
 
       <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
         <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-        <div className="grid grid-cols-1 gap-2">
-          <SegmentedOption value="MONTHLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Mensual</SegmentedOption>
+        <div className="grid grid-cols-2 gap-2">
+          <SegmentedOption value="MONTHLY"  current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Mensual</SegmentedOption>
+          <SegmentedOption value="BIWEEKLY" current={value.paymentCycle} onChange={(paymentCycle) => update({ paymentCycle })}>Quincenal</SegmentedOption>
         </div>
       </div>
     </div>
@@ -2112,8 +2113,9 @@ function EmployeePayrollEditorSheet({
 
               <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
                 <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-                <div className="grid grid-cols-1 gap-2">
-                  <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle}>Mensual</SegmentedOption>
+                <div className="grid grid-cols-2 gap-2">
+                  <SegmentedOption value="MONTHLY"  current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Mensual</SegmentedOption>
+                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Quincenal</SegmentedOption>
                 </div>
               </div>
             </div>
@@ -2181,6 +2183,7 @@ function PayrollSummaryPanel({
   visualPaid,
   onToggleVisualPaid,
   onOpenEditor,
+  prorrateoFactor = 1,
 }: {
   run: PayrollRun;
   expanded: boolean;
@@ -2190,7 +2193,14 @@ function PayrollSummaryPanel({
   visualPaid?: boolean;
   onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
   onOpenEditor?: (run: PayrollRun) => void;
+  prorrateoFactor?: number;
 }) {
+  // Valores escalados al período activo (quincenal o mensual)
+  const f = prorrateoFactor;
+  const netPayDisplay        = toNumber(run.netPay)          * f;
+  const salaryDisplay        = toNumber(run.salaryEarned)    * f;
+  const realCostDisplay      = toNumber(run.realEmployerCost) * f;
+  const devengadoLabel = f < 1 ? "Devengado quincenal" : "Devengado mensual";
   const extras = [
     { label: "Horas extras", value: run.overtimeAmount },
     { label: "Comisiones", value: run.commissions },
@@ -2241,14 +2251,16 @@ function PayrollSummaryPanel({
             <p className="mt-0.5 text-[11px] text-slate-400">{run.employee.documentNumber ?? "Sin documento"}</p>
           </div>
           <div className="text-right">
-            <p className="text-[16px] font-medium tabular-nums text-[#0fb18f]">{money(run.netPay)}</p>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Transferencia neta</p>
+            <p className="text-[16px] font-medium tabular-nums text-[#0fb18f]">{money(netPayDisplay)}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              {f < 1 ? "Neto quincenal" : "Transferencia neta"}
+            </p>
           </div>
         </div>
 
         <div className="mt-4 space-y-2">
-          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">Devengado mensual</p>
-          <MoneyLine label="Sueldo básico" value={run.salaryEarned} color="text-slate-800" valueColor="text-slate-900" medium />
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-slate-400">{devengadoLabel}</p>
+          <MoneyLine label="Sueldo básico" value={salaryDisplay} color="text-slate-800" valueColor="text-slate-900" medium />
           
           {extras.length > 0 && (
             <div className="my-2 ml-4 space-y-1.5 rounded-2xl bg-[#c3975c]/10 px-3 py-2">
@@ -2267,21 +2279,21 @@ function PayrollSummaryPanel({
           
           <MoneyLine
             label={viewModel.allowanceLabel}
-            value={viewModel.allowanceValue}
+            value={toNumber(viewModel.allowanceValue) * f}
             color="text-[#43856f]"
             valueColor="text-[#43856f]"
             sign="+"
           />
           <MoneyLine
             label="Deducción salud"
-            value={viewModel.employeeHealth}
+            value={viewModel.employeeHealth * f}
             color="text-[#e5a5ba]"
             valueColor="text-[#d985a1]"
             sign="-"
           />
           <MoneyLine
             label="Deducción pensión"
-            value={viewModel.employeePension}
+            value={viewModel.employeePension * f}
             color="text-[#e5a5ba]"
             valueColor="text-[#d985a1]"
             sign="-"
@@ -2291,8 +2303,10 @@ function PayrollSummaryPanel({
 
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Costo real empresa</p>
-            <p className="text-[15px] font-medium tabular-nums text-slate-800">{money(run.realEmployerCost)}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              {f < 1 ? "Costo real empresa (quincenal)" : "Costo real empresa"}
+            </p>
+            <p className="text-[15px] font-medium tabular-nums text-slate-800">{money(realCostDisplay)}</p>
           </div>
           <div className="flex items-center gap-2">
             {primarySalaryPayment && (
@@ -2905,6 +2919,7 @@ function EmployeeCarousel({
   contractLiquidated,
   settlementPosting,
   onOpenEditor,
+  prorrateoFactor = 1,
 }: {
   run: PayrollRun;
   settlement?: Settlement;
@@ -2920,6 +2935,7 @@ function EmployeeCarousel({
   contractLiquidated?: boolean;
   settlementPosting?: boolean;
   onOpenEditor?: (run: PayrollRun) => void;
+  prorrateoFactor?: number;
 }) {
   return (
     <div
@@ -2936,6 +2952,7 @@ function EmployeeCarousel({
           visualPaid={visualPaid}
           onToggleVisualPaid={onToggleVisualPaid}
           onOpenEditor={onOpenEditor}
+          prorrateoFactor={prorrateoFactor}
         />
         <SettlementPanel
           settlement={settlement}
@@ -4729,11 +4746,18 @@ export default function PayrollPage() {
     });
   }, [employeeRows, search]);
 
+  // ── Totales ajustados por ciclo de pago individual de cada contrato ────────
+  // MONTHLY  → factor 1.0 (100% del valor mensual del run)
+  // BIWEEKLY → factor 0.5 (50% = 15 días de un mes de 30 días)
   const totals = useMemo(
-    () => ({
-      cost: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.realEmployerCost), 0),
-      net: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.netPay), 0),
-    }),
+    () => {
+      const runFactor = (run: PayrollRun | null | undefined) =>
+        run?.contract?.paymentCycle === "BIWEEKLY" ? 0.5 : 1;
+      return {
+        cost: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.realEmployerCost) * runFactor(row.run), 0),
+        net:  filteredRows.reduce((acc, row) => acc + toNumber(row.run?.netPay)            * runFactor(row.run), 0),
+      };
+    },
     [filteredRows],
   );
 
@@ -5125,7 +5149,11 @@ export default function PayrollPage() {
                   </div>
                 </section>
               ) : (
-                <SummaryCard period={selectedPeriod} totalCost={totals.cost} totalNet={totals.net} />
+                <SummaryCard
+                  period={selectedPeriod}
+                  totalCost={totals.cost}
+                  totalNet={totals.net}
+                />
               )}
 
               <div className="mb-3 mt-5">
@@ -5151,6 +5179,7 @@ export default function PayrollPage() {
                 </div>
               </div>
             </div>
+
 
             {isPayrollLoading && (
               <div className="py-16 text-center text-xs font-medium uppercase tracking-[0.18em] text-slate-400 shrink-0">
@@ -5196,10 +5225,13 @@ export default function PayrollPage() {
                   }
 
                   const run = row.run;
+                  // Factor individual según el ciclo de pago del contrato
+                  const runFactor = run.contract?.paymentCycle === "BIWEEKLY" ? 0.5 : 1;
                   return (
                     <EmployeeCarousel
                       key={row.key}
                       run={run}
+                      prorrateoFactor={runFactor}
                       settlement={settlements[run.employeeId] ?? settlementPreviewByContract[run.contractId]}
                       expanded={expandedRunId === run.id}
                       selected={selectedRun?.id === run.id}
