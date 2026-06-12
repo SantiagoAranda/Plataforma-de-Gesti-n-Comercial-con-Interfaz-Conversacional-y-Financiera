@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -312,6 +312,24 @@ export default function MiNegocioPage() {
   }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
+    if (type === "SERVICE") {
+      const hasOverlap = week.some((day) => {
+        if (!day.active || day.ranges.length !== 2) return false;
+        const m1s = timeToMinutes(day.ranges[0].start);
+        const m1e = timeToMinutes(day.ranges[0].end);
+        const m2s = timeToMinutes(day.ranges[1].start);
+        const m2e = timeToMinutes(day.ranges[1].end);
+        
+        const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+        const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+        return first.e >= second.s;
+      });
+
+      if (hasOverlap) {
+        return;
+      }
+    }
+
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || parseFloat(price) <= 0)
@@ -543,6 +561,17 @@ export default function MiNegocioPage() {
     };
   }, [selectedItem]);
 
+  const hasScheduleOverlap = type === "SERVICE" && week.some((day) => {
+    if (!day.active || day.ranges.length !== 2) return false;
+    const m1s = timeToMinutes(day.ranges[0].start);
+    const m1e = timeToMinutes(day.ranges[0].end);
+    const m2s = timeToMinutes(day.ranges[1].start);
+    const m2e = timeToMinutes(day.ranges[1].end);
+    const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+    const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+    return first.e >= second.s;
+  });
+
   return (
     <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
       {selectedItem ? (
@@ -662,6 +691,7 @@ export default function MiNegocioPage() {
         onSubmit={handleSend}
         isSubmitting={isSubmitting}
         type={type}
+        submitDisabled={hasScheduleOverlap}
       >
         <ItemFormContent
           type={type}

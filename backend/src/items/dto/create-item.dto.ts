@@ -25,9 +25,11 @@ export class ScheduleInput {
   weekday!: Weekday;
 
   @IsNumber()
+  @Type(() => Number)
   startMinute!: number;
 
   @IsNumber()
+  @Type(() => Number)
   endMinute!: number;
 }
 

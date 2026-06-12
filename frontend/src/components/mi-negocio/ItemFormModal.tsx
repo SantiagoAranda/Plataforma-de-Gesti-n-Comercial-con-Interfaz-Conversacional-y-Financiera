@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -208,6 +208,24 @@ export default function ItemFormModal({
   };
 
   const handleSend = async () => {
+    if (type === "SERVICE") {
+      const hasOverlap = week.some((day) => {
+        if (!day.active || day.ranges.length !== 2) return false;
+        const m1s = timeToMinutes(day.ranges[0].start);
+        const m1e = timeToMinutes(day.ranges[0].end);
+        const m2s = timeToMinutes(day.ranges[1].start);
+        const m2e = timeToMinutes(day.ranges[1].end);
+        
+        const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+        const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+        return first.e >= second.s;
+      });
+
+      if (hasOverlap) {
+        return;
+      }
+    }
+
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || parseFloat(price) <= 0)
@@ -252,14 +270,14 @@ export default function ItemFormModal({
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : [],
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -344,6 +362,17 @@ export default function ItemFormModal({
     }
   };
 
+  const hasScheduleOverlap = type === "SERVICE" && week.some((day) => {
+    if (!day.active || day.ranges.length !== 2) return false;
+    const m1s = timeToMinutes(day.ranges[0].start);
+    const m1e = timeToMinutes(day.ranges[0].end);
+    const m2s = timeToMinutes(day.ranges[1].start);
+    const m2e = timeToMinutes(day.ranges[1].end);
+    const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
+    const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
+    return first.e >= second.s;
+  });
+
   return (
     <ItemPanelLayout
       open={open}
@@ -361,9 +390,9 @@ export default function ItemFormModal({
         <div className="flex justify-end">
           <button
             onClick={handleSend}
-            disabled={isSubmitting}
+            disabled={isSubmitting || hasScheduleOverlap}
             className={`w-full py-4 rounded-xl bg-green-600 text-white font-medium shadow-lg flex items-center justify-center active:scale-95 transition ${
-              isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+              isSubmitting || hasScheduleOverlap ? "opacity-50 cursor-not-allowed" : ""
             }`}
           >
             {isSubmitting
