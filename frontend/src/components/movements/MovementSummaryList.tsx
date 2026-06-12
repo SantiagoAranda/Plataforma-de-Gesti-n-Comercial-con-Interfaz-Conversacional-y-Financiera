@@ -93,6 +93,14 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const pctReservaLegal = calcularPorcentajeValor(reservaLegal);
   const pctUtilidadDelEjercicio = Math.min(Math.max(pctUtilidadLiquida - pctReservaLegal, 0), 100);
 
+  // ── Porcentajes reales con signo (para texto), sin clamping a cero ────────
+  // Calculados directamente desde los valores financieros para mostrar pérdidas
+  const rawPctUtilidadBruta             = ventasBrutas > 0 ? Math.round((utilidadBruta             / ventasBrutas) * 100) : 0;
+  const rawPctUtilidadOperacional       = ventasBrutas > 0 ? Math.round((utilidadOperacional       / ventasBrutas) * 100) : 0;
+  const rawPctUtilidadAntesDeImpuestos  = ventasBrutas > 0 ? Math.round((utilidadAntesDeImpuestos  / ventasBrutas) * 100) : 0;
+  const rawPctUtilidadLiquida           = ventasBrutas > 0 ? Math.round((utilidadLiquida           / ventasBrutas) * 100) : 0;
+  const rawPctUtilidadDelEjercicio      = ventasBrutas > 0 ? Math.round((utilidadDelEjercicio      / ventasBrutas) * 100) : 0;
+
   // ─── Sub-componente de fila reutilizable ─────────────────────────────────
   function ProfitRow({
     label,
@@ -200,10 +208,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(Math.max(pctUtilidadBruta, 0), 100)}%` }}
+                style={{ width: `${Math.max(rawPctUtilidadBruta, 0)}%` }}
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadBruta}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadBruta}%</span>
           </div>
         </div>
       </div>
@@ -219,7 +227,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
         {/* 2. CUERPO CON LOS ÍTEMS NORMALES */}
         <div className="space-y-4">
           <ProfitRow label="Total Gastos Operacionales" value={totalGastosOperacionales} pct={pctTotalGastosOperacionales} isDeduction={true} />
-          <ProfitRow label="Utilidad Operacional"       value={utilidadOperacional}       pct={pctUtilidadOperacional}       isDeduction={false} />
+          <ProfitRow label="Utilidad Operacional"       value={utilidadOperacional}       pct={rawPctUtilidadOperacional}       isDeduction={false} />
           <ProfitRow label="Ingresos No Operacionales"  value={ingresosNoOperacionales}   pct={pctIngresosNoOperacionales}   isDeduction={false} />
           <ProfitRow label="Gastos No Operacionales"    value={gastosNoOperacionales}     pct={pctGastosNoOperacionales}     isDeduction={true}  />
         </div>
@@ -242,10 +250,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(Math.max(pctUtilidadAntesDeImpuestos, 0), 100)}%` }} 
+                style={{ width: `${Math.max(rawPctUtilidadAntesDeImpuestos, 0)}%` }} 
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadAntesDeImpuestos}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadAntesDeImpuestos}%</span>
           </div>
         </div>
       </div>
@@ -261,7 +269,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
         {/* 2. ÍTEMS NORMALES Y DE FLUJO INTERMEDIO */}
         <div className="space-y-4">
           <ProfitRow label="Provisiones Impuesto de Renta" value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
-          <ProfitRow label="Utilidad Líquida"              value={utilidadLiquida}       pct={pctUtilidadLiquida}        isDeduction={false} />
+          <ProfitRow label="Utilidad Líquida"              value={utilidadLiquida}       pct={rawPctUtilidadLiquida}        isDeduction={false} />
           <ProfitRow label="Reserva Legal"                 value={reservaLegal}            pct={pctReservaLegal}           isDeduction={true} />
         </div>
 
@@ -289,10 +297,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.min(Math.max(pctUtilidadDelEjercicio, 0), 100)}%` }} 
+                style={{ width: `${Math.max(rawPctUtilidadDelEjercicio, 0)}%` }} 
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadDelEjercicio}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadDelEjercicio}%</span>
           </div>
         </div>
       </div>

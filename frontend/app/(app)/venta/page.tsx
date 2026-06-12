@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
@@ -21,6 +21,79 @@ import { getErrorMessage } from "@/src/lib/errors";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+
+// ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
+function MonthPickerPopover({
+  selectedYear,
+  selectedMonth,
+  onSelect,
+}: {
+  selectedYear: number;
+  selectedMonth: number;
+  onSelect: (year: number, month: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [navYear, setNavYear] = useState(selectedYear);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => { setNavYear(selectedYear); setOpen((o) => !o); }}
+        className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
+      >
+        <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
+        {MONTHS[selectedMonth - 1]} {selectedYear}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
+          {/* Navegador de año */}
+          <div className="mb-3 flex items-center justify-between">
+            <button onClick={() => setNavYear((y) => y - 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronLeft className="h-4 w-4 text-slate-500" />
+            </button>
+            <span className="text-sm font-semibold text-slate-800">{navYear}</span>
+            <button onClick={() => setNavYear((y) => y + 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronRight className="h-4 w-4 text-slate-500" />
+            </button>
+          </div>
+          {/* Grilla de meses 3x4 */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {MONTHS.map((m, i) => {
+              const isSelected = navYear === selectedYear && i + 1 === selectedMonth;
+              return (
+                <button
+                  key={m}
+                  onClick={() => { onSelect(navYear, i + 1); setOpen(false); }}
+                  className={`rounded-xl py-1.5 text-xs font-medium transition ${
+                    isSelected
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function mapOrderToSale(order: ApiOrder): Sale {
   console.log(`[mapOrderToSale] order id:${order.id} origin:${order.origin}`);
@@ -78,8 +151,16 @@ function getCalendarBusinessDayKey(date: Date) {
 
 export default function VentaPage() {
   const [q, setQ] = useState("");
-  const today = useMemo(() => new Date(), []);
-  const [selectedDate, setSelectedDate] = useState<Date>(today);
+
+  // ── Lazy initializers para consistencia con el Dashboard ──────────────────
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [filterYear, setFilterYear]     = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth]   = useState<number>(() => new Date().getMonth() + 1);
+  const [viewMode, setViewMode]         = useState<"MONTH" | "DAILY">("DAILY");
+
+  // today como referencia estable (sin useMemo para evitar desajustes)
+  const todayRef = useRef(new Date());
+  const today    = todayRef.current;
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,7 +241,20 @@ export default function VentaPage() {
     loadOrders();
   }, [loadOrders]);
 
-  const salesForSelectedDate = useMemo(() => {
+  // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
+  const salesForPeriod = useMemo(() => {
+    if (viewMode === "MONTH") {
+      // Filtro client-side por año/mes de createdAt
+      return sales.filter((sale) => {
+        try {
+          const d = new Date(sale.createdAt);
+          return d.getFullYear() === filterYear && d.getMonth() + 1 === filterMonth;
+        } catch {
+          return false;
+        }
+      });
+    }
+    // Modo DAILY: filtro por día de negocio (comportamiento original)
     const selectedKey = getCalendarBusinessDayKey(selectedDate);
     return sales.filter((sale) => {
       try {
@@ -169,7 +263,10 @@ export default function VentaPage() {
         return false;
       }
     });
-  }, [sales, selectedDate]);
+  }, [sales, viewMode, filterYear, filterMonth, selectedDate]);
+
+  // Alias para compatibilidad con el DayPickerCalendar (marcado de fechas)
+  const salesForSelectedDate = salesForPeriod;
 
   const filtered = useMemo(() => {
     let result = salesForSelectedDate;
@@ -218,7 +315,26 @@ export default function VentaPage() {
     return keys;
   }, [sales]);
 
-  const hasDateFilter = !isSameCalendarDay(selectedDate, today);
+  // ── hasDateFilter: visible en modo DAILY con día != hoy, o en modo MONTH ───────
+  const hasDateFilter = viewMode === "MONTH" || !isSameCalendarDay(selectedDate, today);
+
+  // ── Handler del selector de mes → activa modo MONTH ────────────────────
+  const handleMonthSelect = (year: number, month: number) => {
+    setFilterYear(year);
+    setFilterMonth(month);
+    setViewMode("MONTH");
+    // Actualiza selectedDate para sincronizar el calendario visual
+    setSelectedDate(new Date(year, month - 1, 1));
+  };
+
+  // ── Handler de las flechas del DayPicker → activa modo DAILY ───────────
+  const handleDaySelect = (date: Date) => {
+    setSelectedDate(date);
+    setViewMode("DAILY");
+    // Sincroniza el estado del popover con el mes del día elegido
+    setFilterYear(date.getFullYear());
+    setFilterMonth(date.getMonth() + 1);
+  };
 
   useEffect(() => {
     if (!loading && sales.length > 0 && !initialScrollDone.current) {
@@ -560,9 +676,24 @@ export default function VentaPage() {
           <AppHeader
             title="Ventas"
             showBack
-            rightIcon={<Filter size={20} />}
-            onRightClick={() => setFilterOpen(true)}
-            rightAriaLabel="Filtrar estado"
+            rightContent={
+              <div className="flex items-center gap-2">
+                {/* Filtro de estados */}
+                <button
+                  onClick={() => setFilterOpen(true)}
+                  aria-label="Filtrar estado"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition"
+                >
+                  <Filter size={18} />
+                </button>
+                {/* Selector de mes */}
+                <MonthPickerPopover
+                  selectedYear={filterYear}
+                  selectedMonth={filterMonth}
+                  onSelect={handleMonthSelect}
+                />
+              </div>
+            }
           />
         )}
       </div>
@@ -612,7 +743,7 @@ export default function VentaPage() {
               <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
                 <DayPickerCalendar
                   selectedDate={selectedDate}
-                  onSelectDate={setSelectedDate}
+                  onSelectDate={handleDaySelect}
                   markedDateKeys={saleDateKeys}
                   id="sales-calendar"
                 />
@@ -620,7 +751,13 @@ export default function VentaPage() {
                   <div className="mt-3 flex justify-end">
                     <button
                       type="button"
-                      onClick={() => setSelectedDate(new Date())}
+                      onClick={() => {
+                        const now = new Date();
+                        setSelectedDate(now);
+                        setViewMode("DAILY");
+                        setFilterYear(now.getFullYear());
+                        setFilterMonth(now.getMonth() + 1);
+                      }}
                       className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
                     >
                       Limpiar
