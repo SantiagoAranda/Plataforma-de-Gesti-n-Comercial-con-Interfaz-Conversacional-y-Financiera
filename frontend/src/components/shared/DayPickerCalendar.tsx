@@ -88,9 +88,34 @@ export function formatDayPillLabel(date: Date) {
   return parts.replace(/\./g, "").replace(/\s+de\s+/g, " ");
 }
 
-export function isSameCalendarDay(a: Date, b: Date) {
-  return sameDay(a, b);
+export function isSameCalendarDay(a: Date | string, b: Date | string) {
+  const parseDate = (val: Date | string): Date => {
+    if (val instanceof Date) return val;
+    if (typeof val === "string") {
+      const cleanStr = val.split("T")[0];
+      const parts = cleanStr.split("-");
+      if (parts.length === 3) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          return new Date(y, m, d);
+        }
+      }
+    }
+    return new Date(val);
+  };
+
+  const dateA = parseDate(a);
+  const dateB = parseDate(b);
+
+  return (
+    dateA.getDate() === dateB.getDate() &&
+    dateA.getMonth() === dateB.getMonth() &&
+    dateA.getFullYear() === dateB.getFullYear()
+  );
 }
+
 
 type Props = {
   selectedDate: Date;

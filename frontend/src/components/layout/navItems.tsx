@@ -11,7 +11,7 @@ export const BOTTOM_NAV_ITEMS: Array<{
   { key: "home", label: "Home", href: "/home", Icon: Home },
   {
     key: "movimientos",
-    label: "Movimientos",
+    label: "Dashboard",
     href: "/movimientos",
     Icon: LineChart,
   },

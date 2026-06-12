@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { Filter } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
@@ -10,52 +10,171 @@ import { MovementProfitHero } from "@/src/components/movements/MovementProfitHer
 import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
 import { getAccountingSummary, type AccountingSummary } from "@/src/services/accounting";
 import { cn } from "@/src/lib/utils";
-import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
+import DayPickerCalendar from "@/src/components/shared/DayPickerCalendar";
 
-type MovementFilterMode = "custom-day" | "7days" | "month";
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+type ViewMode = "MONTH" | "DAILY";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+] as const;
+
+function formatLocalISO(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
+}
+
+function isTodayLocal(d: Date): boolean {
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}
+
+// ─── Componente: MonthPickerPopover (clonado de Nómina / HeaderCalendar) ─────
+
+function MonthPickerPopover({
+  selectedYear,
+  selectedMonth,
+  onSelect,
+}: {
+  selectedYear: number;
+  selectedMonth: number; // 1-indexed
+  onSelect: (year: number, month: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [viewYear, setViewYear] = useState(selectedYear);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50 active:scale-95"
+      >
+        <CalendarDays className="h-4 w-4 text-slate-400" />
+        <span>{MONTH_NAMES[selectedMonth - 1].substring(0, 3)} {selectedYear}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
+          {/* Navegador de año */}
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setViewYear((y) => y - 1)}
+              className="p-1 text-neutral-500 hover:text-neutral-900 transition"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <span className="font-semibold text-neutral-800">{viewYear}</span>
+            <button
+              type="button"
+              onClick={() => setViewYear((y) => y + 1)}
+              className="p-1 text-neutral-500 hover:text-neutral-900 transition"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Grid de meses */}
+          <div className="grid grid-cols-3 gap-1">
+            {MONTH_NAMES.map((name, i) => {
+              const month = i + 1;
+              const isSelected = selectedYear === viewYear && selectedMonth === month;
+              return (
+                <button
+                  key={month}
+                  type="button"
+                  onClick={() => {
+                    onSelect(viewYear, month);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "rounded-xl py-2 text-[13px] font-medium transition-colors",
+                    isSelected
+                      ? "bg-emerald-500 text-white"
+                      : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
+                  )}
+                >
+                  {name.substring(0, 3)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosPage() {
-  const [filterMode, setFilterMode] = useState<MovementFilterMode>("custom-day");
+  // Modo de vista: MONTH (mes completo) | DAILY (día individual)
+  // Arranca en MONTH para que el primer fetch cargue el mes actual completo
+  const [viewMode, setViewMode] = useState<ViewMode>("MONTH");
+
+  // Estado del filtro mensual — inicializado con el mes en curso de forma lazy
+  // (lazy initializer: se ejecuta sincrónicamente en el primer render, no después)
+  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1); // 1-indexed
+
+  // Estado del filtro diario — también lazy para consistencia
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+
+  // Datos
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showDropdown, setShowDropdown] = useState(false);
 
+  // ── Rango de fechas para la API ────────────────────────────────────────────
+  // dateRange se recalcula solo cuando cambian los deps → sin renders infinitos
   const dateRange = useMemo(() => {
-    const now = new Date();
     let start: Date;
     let end: Date;
 
-    if (filterMode === "custom-day") {
-      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
-      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
-    } else if (filterMode === "7days") {
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      start = new Date(todayStart);
-      start.setDate(todayStart.getDate() - 7);
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-    } else { // 'month'
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    if (viewMode === "MONTH") {
+      // Primer y último día del mes seleccionado, en hora local
+      start = new Date(filterYear, filterMonth - 1, 1, 0, 0, 0, 0);
+      end   = new Date(filterYear, filterMonth,     0, 23, 59, 59, 999);
+    } else {
+      // Día individual completo, en hora local
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),  0,  0,  0,   0);
+      end   = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
     }
-
-    const formatLocalISO = (d: Date) => {
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const hh = String(d.getHours()).padStart(2, '0');
-      const min = String(d.getMinutes()).padStart(2, '0');
-      const ss = String(d.getSeconds()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}`;
-    };
 
     return {
       from: formatLocalISO(start),
-      to: formatLocalISO(end),
+      to:   formatLocalISO(end),
     };
-  }, [filterMode, selectedDate]);
+  }, [viewMode, filterYear, filterMonth, selectedDate]);
 
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -65,14 +184,13 @@ export default function MovimientosPage() {
           from: dateRange.from,
           to: dateRange.to,
         });
-        console.log("🔍 AUDITORÍA DE PAYLOAD - MOVIMIENTOS REALES:", data);
         setSummary(data);
       } catch (e: unknown) {
-        console.error(e);
         setSummary(null);
-        const message = e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
-          ? (e as { message: string }).message
-          : "No se pudieron cargar los movimientos";
+        const message =
+          e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
+            ? (e as { message: string }).message
+            : "No se pudieron cargar los movimientos";
         setError(message);
       } finally {
         setLoading(false);
@@ -80,6 +198,7 @@ export default function MovimientosPage() {
     })();
   }, [dateRange]);
 
+  // ── hasData ───────────────────────────────────────────────────────────────
   const hasData = useMemo(() => {
     if (!summary) return false;
     const op = summary.operacionComercial;
@@ -99,64 +218,57 @@ export default function MovimientosPage() {
     );
   }, [summary]);
 
+  // ── Badge LIMPIAR: visible cuando el filtro no es "hoy en modo diario" ────
+  const showClearBadge = useMemo(() => {
+    if (viewMode === "MONTH") return true; // siempre visible en modo mes
+    return !isTodayLocal(selectedDate);   // en modo diario, solo si no es hoy
+  }, [viewMode, selectedDate]);
+
+  // ── Handler del selector de mes (clonado de Nómina) ──────────────────────
+  const handleMonthSelect = (year: number, month: number) => {
+    setFilterYear(year);
+    setFilterMonth(month);
+    setViewMode("MONTH");
+  };
+
+  // ── Handler al usar las flechas del DayPickerCalendar → modo DAILY ────────
+  const handleDaySelect = (date: Date) => {
+    setSelectedDate(date);
+    setViewMode("DAILY");
+  };
+
+  // ── Reset: vuelve a hoy en modo diario ────────────────────────────────────
+  const handleClear = () => {
+    const today = new Date();
+    setSelectedDate(today);
+    setViewMode("DAILY");
+  };
+
+  // ── Label descriptivo del filtro activo ──────────────────────────────────
+  const filterLabel = useMemo(() => {
+    if (viewMode === "MONTH") {
+      return `${MONTH_NAMES[filterMonth - 1]} ${filterYear}`;
+    }
+    return null;
+  }, [viewMode, filterMonth, filterYear]);
+
   return (
     <div className="min-h-dvh bg-zinc-50">
       <AppHeader
-        title="Movimientos"
+        title="Dashboard"
         subtitle="Resumen del negocio"
         showBack={false}
         showLogout={false}
-        rightIcon={<Filter className="h-5 w-5 text-slate-600 hover:text-slate-900 transition-colors" />}
-        onRightClick={() => setShowDropdown((d) => !d)}
+        rightContent={
+          <MonthPickerPopover
+            selectedYear={filterYear}
+            selectedMonth={filterMonth}
+            onSelect={handleMonthSelect}
+          />
+        }
       />
 
       <main className="mx-auto w-full max-w-4xl space-y-5 px-3 pb-28 pt-3 sm:px-4">
-        {/* Menú Desplegable Flotante (Dropdown) */}
-        <div className="relative">
-          {showDropdown && (
-            <>
-              <button
-                aria-label="Cerrar filtros"
-                className="fixed inset-0 z-40"
-                onClick={() => setShowDropdown(false)}
-                type="button"
-              />
-              <div className="absolute right-0 z-50 mt-2 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-48 text-left">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFilterMode("month");
-                    setShowDropdown(false);
-                  }}
-                  className={cn(
-                    "w-full text-left px-4 py-2 text-sm transition-colors hover:bg-slate-50",
-                    filterMode === "month"
-                      ? "text-slate-900 font-semibold bg-slate-50"
-                      : "text-slate-600 hover:text-slate-800"
-                  )}
-                >
-                  Este mes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFilterMode("7days");
-                    setShowDropdown(false);
-                  }}
-                  className={cn(
-                    "w-full text-left px-4 py-2 text-sm transition-colors hover:bg-slate-50",
-                    filterMode === "7days"
-                      ? "text-slate-900 font-semibold bg-slate-50"
-                      : "text-slate-600 hover:text-slate-800"
-                  )}
-                >
-                  Últimos 7 días
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
         {loading && (
           <div className="rounded-2xl bg-white p-4 text-sm text-neutral-500 shadow-sm ring-1 ring-black/5">
             Cargando dashboard...
@@ -173,42 +285,32 @@ export default function MovimientosPage() {
           <>
             {summary && <MovementProfitHero metrics={summary} />}
 
-            {/* Calendario de filtrado diario de Movimientos */}
-            {filterMode === "custom-day" ? (
-              <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all duration-300">
-                <DayPickerCalendar
-                  selectedDate={selectedDate}
-                  onSelectDate={setSelectedDate}
-                  markedDateKeys={new Set<string>()}
-                  id="movements-calendar"
-                />
-                {!isSameCalendarDay(selectedDate, new Date()) && (
-                  <div className="mt-3 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDate(new Date())}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 transition-all"
-                    >
-                      Hoy
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              /* Renderiza un banner o badge plano ultra-limpio indicando el filtro activo */
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600 flex justify-between items-center mb-6">
-                <span>
-                  Mostrando movimientos de: <strong>{filterMode === "month" ? "Este mes" : "Últimos 7 días"}</strong>
-                </span>
-                <button 
-                  onClick={() => setFilterMode("custom-day")}
-                  className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-medium transition-colors"
-                >
-                  Volver al día individual
-                </button>
-              </div>
-            )}
+            {/* ── Barra de filtro de fecha unificada ── */}
+            <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all duration-300">
 
+              {/* Selector de día — limpio y simétrico con solo flechas + fecha */}
+              <DayPickerCalendar
+                selectedDate={selectedDate}
+                onSelectDate={handleDaySelect}
+                markedDateKeys={new Set<string>()}
+                id="movements-calendar"
+              />
+
+              {/* Badge LIMPIAR — clonado de Ventas */}
+              {showClearBadge && (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleClear}
+                    className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 transition-all"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Contenido ── */}
             {hasData && summary ? (
               <section className="space-y-5">
                 <MovementSummaryList metrics={summary} />
