@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { X, Plus, Trash2, ChevronDown, Send } from "lucide-react";
+import toast from "react-hot-toast";
 import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
 import type { Sale } from "@/src/types/sales";
 import { listReservationAvailability } from "@/src/services/sales";
@@ -21,8 +22,15 @@ type BusinessItem = {
   name: string;
   price: number;
   type: "PRODUCT" | "SERVICE";
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+  currentStock?: number | string | null;
   durationMinutes?: number;
 };
+
+function isAvailableForSale(item: BusinessItem) {
+  if (item.inventoryMode !== "SIMPLE") return true;
+  return Number(item.currentStock ?? 0) > 0;
+}
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -78,7 +86,7 @@ export default function SaleEditModal({
   const fetchItems = async () => {
     try {
       const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -195,12 +203,28 @@ export default function SaleEditModal({
   const handleAddItem = () => {
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
+    const qty = newItem.qty === "" ? 1 : newItem.qty;
+    const existingQty = items
+      .filter((it) => it.itemId === bi.id)
+      .reduce((acc, it) => acc + it.qty, 0);
+    if (bi.inventoryMode === "SIMPLE") {
+      const available = Number(bi.currentStock ?? 0);
+      const required = existingQty + qty;
+      if (available <= 0) {
+        toast.error(`${bi.name} no tiene stock disponible.`);
+        return;
+      }
+      if (required > available) {
+        toast.error(`Stock insuficiente para ${bi.name}. Disponible: ${available}, requerido: ${required}.`);
+        return;
+      }
+    }
 
     setItems((prev) => [
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty === "" ? 1 : newItem.qty,
+        qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -423,7 +447,10 @@ export default function SaleEditModal({
                       <ItemSelector
                         value={newItem.itemId}
                         onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                        options={businessItems.filter(bi => bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE"))}
+                        options={businessItems.filter(bi =>
+                          bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE") &&
+                          isAvailableForSale(bi)
+                        )}
                       />
                     </div>
                   </div>

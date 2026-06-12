@@ -9,6 +9,11 @@ export class InventoryKardexGlobalQueryDto {
   ingredientId?: string;
 
   @IsOptional()
+  @IsString()
+  @IsUUID()
+  itemId?: string;
+
+  @IsOptional()
   @IsEnum(InventoryMovementType)
   type?: InventoryMovementType;
 

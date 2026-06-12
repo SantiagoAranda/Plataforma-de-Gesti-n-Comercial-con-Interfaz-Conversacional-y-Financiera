@@ -49,7 +49,14 @@ describe('PublicService', () => {
     } as any;
 
     return {
-      service: new PublicService(prisma, { getPublicUrl: (key: string) => key } as any),
+      service: new PublicService(
+        prisma,
+        { getPublicUrl: (key: string) => key } as any,
+        {
+          getSimpleItemStockState: jest.fn(),
+          getItemSellability: (jest.fn() as any).mockResolvedValue({ sellable: true, status: 'SELLABLE' }),
+        } as any,
+      ),
       prisma,
     };
   }

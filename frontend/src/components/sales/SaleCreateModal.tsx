@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Plus, Trash2, Send } from "lucide-react";
+import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
@@ -19,8 +20,15 @@ type BusinessItem = {
   name: string;
   price: number;
   type: "PRODUCT" | "SERVICE";
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+  currentStock?: number | string | null;
   durationMinutes?: number;
 };
+
+function isAvailableForSale(item: BusinessItem) {
+  if (item.inventoryMode !== "SIMPLE") return true;
+  return Number(item.currentStock ?? 0) > 0;
+}
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -84,7 +92,7 @@ export default function SaleCreateModal({
   const fetchItems = async () => {
     try {
       const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -132,6 +140,22 @@ export default function SaleCreateModal({
   const handleAddItem = () => {
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
+    const qty = newItem.qty === "" ? 1 : newItem.qty;
+    const existingQty = items
+      .filter((it) => it.itemId === bi.id)
+      .reduce((acc, it) => acc + it.qty, 0);
+    if (bi.inventoryMode === "SIMPLE") {
+      const available = Number(bi.currentStock ?? 0);
+      const required = existingQty + qty;
+      if (available <= 0) {
+        toast.error(`${bi.name} no tiene stock disponible.`);
+        return;
+      }
+      if (required > available) {
+        toast.error(`Stock insuficiente para ${bi.name}. Disponible: ${available}, requerido: ${required}.`);
+        return;
+      }
+    }
 
     if (items.length === 0) {
       setType(bi.type === "SERVICE" ? "SERVICIO" : "PRODUCTO");
@@ -141,7 +165,7 @@ export default function SaleCreateModal({
       ...prev,
       {
         itemId: bi.id,
-        qty: newItem.qty === "" ? 1 : newItem.qty,
+        qty,
         name: bi.name,
         price: bi.price,
         durationMin: bi.durationMinutes,
@@ -330,7 +354,8 @@ export default function SaleCreateModal({
                              value={newItem.itemId}
                              onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
                              options={businessItems.filter(bi => 
-                               items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                               (items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")) &&
+                               isAvailableForSale(bi)
                              )}
                              placeholder="Elegí un item..."
                            />

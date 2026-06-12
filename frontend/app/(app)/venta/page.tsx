@@ -17,6 +17,7 @@ import { SelectionActionBar } from "@/src/components/shared/selection/SelectionA
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
+import { getErrorMessage } from "@/src/lib/errors";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
@@ -296,19 +297,20 @@ export default function VentaPage() {
           }, 2100);
         } catch (err) {
           console.error(err);
-          setError("No se pudo finalizar la venta");
+          const message = getErrorMessage(err, "No se pudo finalizar la venta");
+          setError(message);
           await loadOrders();
 
           toast.dismiss(loadingId);
 
-          toast.error("Error al confirmar venta", {
+          toast.error(message, {
             id: errorId,
-            duration: 3000,
+            duration: 5000,
           });
 
           setTimeout(() => {
             toast.dismiss(errorId);
-          }, 3100);
+          }, 5100);
         } finally {
           setConfirmingSaleId(null);
         }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
@@ -21,6 +22,8 @@ type BusinessItem = {
   name: string;
   price: number;
   type: "PRODUCT" | "SERVICE";
+  inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
+  currentStock?: number | string | null;
   durationMinutes?: number | null;
 };
 
@@ -119,7 +122,7 @@ export default function SalesChatComposer({
   const fetchItems = async () => {
     try {
       const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
@@ -195,6 +198,21 @@ export default function SalesChatComposer({
 
 
     const addedQty = newItem.qty === "" ? 1 : newItem.qty;
+    const existingQty = items
+      .filter((it) => it.itemId === bi.id)
+      .reduce((acc, it) => acc + it.qty, 0);
+    if (bi.inventoryMode === "SIMPLE") {
+      const available = Number(bi.currentStock ?? 0);
+      const required = existingQty + addedQty;
+      if (available <= 0) {
+        toast.error(`${bi.name} no tiene stock disponible.`);
+        return;
+      }
+      if (required > available) {
+        toast.error(`Stock insuficiente para ${bi.name}. Disponible: ${available}, requerido: ${required}.`);
+        return;
+      }
+    }
 
     setItems((prev) => {
       const existingIdx = prev.findIndex((it) => it.itemId === bi.id);

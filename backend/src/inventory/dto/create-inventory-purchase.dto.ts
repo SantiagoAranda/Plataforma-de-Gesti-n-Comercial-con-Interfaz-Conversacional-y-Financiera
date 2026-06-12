@@ -9,9 +9,15 @@ import {
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateInventoryPurchaseDto {
+  @IsOptional()
   @IsString()
   @IsUUID()
-  ingredientId!: string;
+  ingredientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsUUID()
+  itemId?: string;
 
   // Legacy mode: quantity + unitCost represent values in consumption units.
   @IsOptional()
