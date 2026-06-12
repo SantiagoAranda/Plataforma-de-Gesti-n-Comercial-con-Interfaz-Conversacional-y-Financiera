@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -201,7 +201,7 @@ export function IngredientDetailSheet({
                   );
                 }}
                 className={cn(
-                  "flex-1 rounded-lg py-2 text-xs font-bold transition-colors",
+                  "flex-1 rounded-lg py-2 text-xs font-medium transition-colors",
                   activeTab === tab.id
                     ? "bg-white text-slate-900 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"

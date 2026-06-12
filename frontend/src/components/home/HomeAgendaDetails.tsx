@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { X } from "lucide-react";
 
@@ -77,7 +77,7 @@ export function HomeAgendaDetailsContent({
 
               <span
                 className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide shrink-0",
+                  "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide shrink-0",
                   statusBadgeStyle(ev.status),
                 )}
               >

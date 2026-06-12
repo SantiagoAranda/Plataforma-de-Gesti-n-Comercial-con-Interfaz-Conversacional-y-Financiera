@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -184,13 +184,13 @@ function RecetasPageContent() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-bold text-neutral-900">{p.itemName}</p>
+                          <p className="truncate text-sm font-medium text-neutral-900">{p.itemName}</p>
                           <div className="mt-1 flex flex-wrap gap-1">
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800">
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-800">
                               {p.inventoryMode === "SIMPLE" ? "Stock simple" : "Receta"}
                             </span>
                             <span
-                              className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${status.tone}`}
+                              className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${status.tone}`}
                             >
                               {status.label}
                             </span>
@@ -198,25 +198,25 @@ function RecetasPageContent() {
                         </div>
 
                         <div className="shrink-0 text-right">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                          <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
                             Precio
                           </p>
-                          <p className="mt-1 text-sm font-black text-neutral-900">${formatMoney(p.price ?? 0)}</p>
+                          <p className="mt-1 text-sm font-semibold text-neutral-900">${formatMoney(p.price ?? 0)}</p>
                         </div>
                       </div>
 
                       <div className="mt-3 grid grid-cols-2 gap-2 border-t border-neutral-100 pt-3 text-[10px]">
                         <div>
-                          <p className="font-bold uppercase tracking-widest text-neutral-400">Ingredientes</p>
-                          <p className="mt-1 font-black text-neutral-800">{p.ingredients?.length ?? 0}</p>
+                          <p className="font-medium uppercase tracking-widest text-neutral-400">Ingredientes</p>
+                          <p className="mt-1 font-semibold text-neutral-800">{p.ingredients?.length ?? 0}</p>
                         </div>
                         <div className="text-right">
-                          <p className="font-bold uppercase tracking-widest text-neutral-400">Costo est.</p>
-                          <p className="mt-1 font-black text-neutral-800">${formatMoney(cost)}</p>
+                          <p className="font-medium uppercase tracking-widest text-neutral-400">Costo est.</p>
+                          <p className="mt-1 font-semibold text-neutral-800">${formatMoney(cost)}</p>
                         </div>
                         <div>
-                          <p className="font-bold uppercase tracking-widest text-neutral-400">Margen est.</p>
-                          <p className={`mt-1 font-black ${margin === null ? "text-neutral-800" : margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                          <p className="font-medium uppercase tracking-widest text-neutral-400">Margen est.</p>
+                          <p className={`mt-1 font-semibold ${margin === null ? "text-neutral-800" : margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
                             {margin === null ? "—" : `${margin >= 0 ? "+" : "-"}$${formatMoney(Math.abs(margin))}`}
                           </p>
                         </div>
@@ -224,7 +224,7 @@ function RecetasPageContent() {
 
                       {(p.ingredients?.length ?? 0) > 0 && (
                         <div className="mt-3 rounded-2xl bg-neutral-50 p-3">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
                             Requeridos
                           </p>
                           <div className="mt-2 space-y-1">
@@ -249,8 +249,8 @@ function RecetasPageContent() {
                           onClick={() => setItemId(p.itemId)}
                           className={
                             isSelected
-                              ? "h-9 rounded-2xl bg-neutral-900 px-4 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
-                              : "h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                              ? "h-9 rounded-2xl bg-neutral-900 px-4 text-xs font-semibold text-white shadow-sm transition active:scale-[0.99]"
+                              : "h-9 rounded-2xl bg-white px-4 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                           }
                         >
                           Editar receta
@@ -258,14 +258,14 @@ function RecetasPageContent() {
                         <button
                           type="button"
                           onClick={() => router.push("/inventario/kardex")}
-                          className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                          className="h-9 rounded-2xl bg-white px-4 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                         >
                           Ver kardex
                         </button>
                         <button
                           type="button"
                           onClick={() => router.push("/inventario")}
-                          className="h-9 rounded-2xl bg-white px-4 text-xs font-black text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
+                          className="h-9 rounded-2xl bg-white px-4 text-xs font-semibold text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99]"
                         >
                           Cargar insumo
                         </button>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
@@ -362,7 +362,7 @@ export default function ItemFormModal({
           <button
             onClick={handleSend}
             disabled={isSubmitting}
-            className={`w-full py-4 rounded-xl bg-green-600 text-white font-bold shadow-lg flex items-center justify-center active:scale-95 transition ${
+            className={`w-full py-4 rounded-xl bg-green-600 text-white font-medium shadow-lg flex items-center justify-center active:scale-95 transition ${
               isSubmitting ? "opacity-50 cursor-not-allowed" : ""
             }`}
           >
@@ -416,11 +416,11 @@ export default function ItemFormModal({
       {/* DESCRIPCION (Sólo visible en el Modal por ahora, se moverá al ChatComposer) */}
       <div className="space-y-2 pb-4">
         <div className="flex justify-between items-center">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
             Descripción
           </label>
           <span
-            className={`text-[9px] font-bold ${description.length >= 300 ? "text-red-500" : "text-neutral-400"}`}
+            className={`text-[9px] font-medium ${description.length >= 300 ? "text-red-500" : "text-neutral-400"}`}
           >
             {description.length}/300
           </span>

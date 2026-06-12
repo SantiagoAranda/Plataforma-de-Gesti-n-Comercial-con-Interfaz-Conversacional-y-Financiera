@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
@@ -133,7 +133,7 @@ function CartCard({
               <div className="truncate text-[16px] font-semibold">
                 {item.name}
               </div>
-              <div className="text-[16px] font-extrabold text-emerald-600">
+              <div className="text-[16px] font-semibold text-emerald-600">
                 ${item.price.toFixed(2)}
               </div>
             </div>
@@ -187,7 +187,7 @@ function CheckoutSummary({
 
           <div className="flex items-end justify-between">
             <div className="font-semibold">Total</div>
-            <div className="font-extrabold">
+            <div className="font-semibold">
               ${total.toFixed(2)}
             </div>
           </div>

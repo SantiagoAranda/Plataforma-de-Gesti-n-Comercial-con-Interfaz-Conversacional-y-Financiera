@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Filter } from "lucide-react";
@@ -187,7 +187,7 @@ export default function MovimientosPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedDate(new Date())}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 transition-all"
+                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100 transition-all"
                     >
                       Hoy
                     </button>

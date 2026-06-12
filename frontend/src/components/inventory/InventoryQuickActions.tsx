@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { BookOpen, PackageSearch, PencilLine, Plus } from "lucide-react";
 
@@ -74,7 +74,7 @@ export function InventoryQuickActions({
             )}
           >
             <span className="min-w-0">
-              <span className="block text-xs font-black text-neutral-900">{action.label}</span>
+              <span className="block text-xs font-semibold text-neutral-900">{action.label}</span>
               <span className="mt-0.5 block text-[11px] font-medium text-neutral-400">{action.hint}</span>
             </span>
             <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full", action.tone)}>

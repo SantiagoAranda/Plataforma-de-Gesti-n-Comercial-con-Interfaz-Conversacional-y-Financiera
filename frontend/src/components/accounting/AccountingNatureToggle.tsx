@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { Nature } from "@/src/types/accounting-form";
 import { cn } from "@/src/lib/utils";
@@ -18,7 +18,7 @@ export function AccountingNatureToggle({
 }: Props) {
   return (
     <div className="flex h-full flex-col">
-      <div className="text-[10px] font-bold text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
+      <div className="text-[10px] font-medium text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1">
         NATURALEZA <span className="text-red-500">*</span>
       </div>
 

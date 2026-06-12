@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -181,8 +181,8 @@ function KardexPageContent() {
 
           {selectedIngredient && !loading && (
             <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Ingrediente</p>
-              <p className="mt-1 text-sm font-black text-neutral-900">{selectedIngredient.name}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Ingrediente</p>
+              <p className="mt-1 text-sm font-semibold text-neutral-900">{selectedIngredient.name}</p>
               <p className="mt-1 text-xs font-medium text-neutral-500">
                 Unidad: {formatUnit(selectedIngredient.consumptionUnit)}
               </p>
@@ -201,18 +201,18 @@ function KardexPageContent() {
             <button
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="h-9 rounded-full bg-white px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+              className="h-9 rounded-full bg-white px-4 text-[10px] font-semibold uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
               disabled={loadingKardex || page <= 1}
             >
               Anterior
             </button>
-            <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
               Página {page} de {totalPages}
             </span>
             <button
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="h-9 rounded-full bg-white px-4 text-[10px] font-black uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
+              className="h-9 rounded-full bg-white px-4 text-[10px] font-semibold uppercase tracking-widest text-neutral-700 shadow-sm ring-1 ring-black/5 transition active:scale-[0.99] disabled:opacity-40"
               disabled={loadingKardex || page >= totalPages}
             >
               Siguiente
@@ -244,7 +244,7 @@ function KardexPageContent() {
         ) : (
           <div className="space-y-4">
             <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Buscar ingrediente</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Buscar ingrediente</p>
               <input
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
@@ -273,7 +273,7 @@ function KardexPageContent() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Desde</label>
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Desde</label>
                 <input
                   type="date"
                   value={draftFrom}
@@ -282,7 +282,7 @@ function KardexPageContent() {
                 />
               </div>
               <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Hasta</label>
+                <label className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Hasta</label>
                 <input
                   type="date"
                   value={draftTo}
@@ -293,7 +293,7 @@ function KardexPageContent() {
             </div>
 
             <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Tipo de movimiento</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Tipo de movimiento</p>
               <select
                 value={draftMovementType}
                 onChange={(e) => setDraftMovementType(e.target.value as any)}
@@ -322,7 +322,7 @@ function KardexPageContent() {
                 );
                 setFiltersOpen(false);
               }}
-              className="h-12 w-full rounded-2xl bg-neutral-900 text-[11px] font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
+              className="h-12 w-full rounded-2xl bg-neutral-900 text-[11px] font-semibold uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
             >
               Aplicar filtros
             </button>
@@ -343,7 +343,7 @@ function KardexPageContent() {
         ) : (
           <div className="space-y-4">
             <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
                 Ingrediente
               </p>
               <select

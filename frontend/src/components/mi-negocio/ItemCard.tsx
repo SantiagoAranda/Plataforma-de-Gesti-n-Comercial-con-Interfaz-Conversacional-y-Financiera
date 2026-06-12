@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { memo, useState } from "react";
 import { api } from "@/src/lib/api";
@@ -92,7 +92,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
             <p className="text-sm font-semibold text-neutral-900 flex-1 line-clamp-1">
               {item.name}
             </p>
-            <p className="text-emerald-600 font-bold text-sm whitespace-nowrap">
+            <p className="text-emerald-600 font-medium text-sm whitespace-nowrap">
               ${formatMoney(item.price)}
             </p>
           </div>
@@ -124,7 +124,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
           {/* FOOTER: PILL LEFT, DATE RIGHT */}
           <div className="mt-auto pt-2 flex items-center justify-between gap-4">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
+              <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${inventory.tone}`}>
                 {inventory.label}
               </span>
             </div>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Trash2 } from "lucide-react";
@@ -384,7 +384,7 @@ export default function SalesChatComposer({
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("CASH")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${paymentMethod === "CASH"
+                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "CASH"
                               ? "bg-emerald-600 text-white rounded-xl"
                               : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
                             }`}
@@ -394,7 +394,7 @@ export default function SalesChatComposer({
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-bold transition ${paymentMethod === "BANK_TRANSFER"
+                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "BANK_TRANSFER"
                               ? "bg-emerald-600 text-white rounded-xl"
                               : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
                             }`}
@@ -529,9 +529,9 @@ export default function SalesChatComposer({
 
                           {type === "PRODUCTO" && (
                             <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-transparent mr-1">
-                              <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">-</button>
+                              <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">-</button>
                               <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
-                              <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-bold text-[13px]">+</button>
+                              <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">+</button>
                             </div>
                           )}
 

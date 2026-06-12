@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -93,10 +93,10 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
               <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
                       Ingrediente
                     </p>
-                    <h2 className="mt-1 truncate text-lg font-bold text-neutral-900">{ingredient.name}</h2>
+                    <h2 className="mt-1 truncate text-lg font-medium text-neutral-900">{ingredient.name}</h2>
                     <p className="mt-1 text-xs font-medium text-neutral-400">
                       Consumo: {unitLabel} &middot; Compra: {purchaseUnitLabel}
                     </p>
@@ -114,15 +114,15 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
 
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock</p>
-                    <p className="mt-1 text-sm font-black text-neutral-900">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Stock</p>
+                    <p className="mt-1 text-sm font-semibold text-neutral-900">
                       {formatMoney(parseNumber(ingredient.currentStock))} {unitLabel}
                     </p>
                     <p className="mt-1 text-[11px] font-medium text-neutral-400">Solo v&iacute;a movimientos</p>
                   </div>
                   <div className="rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Costo prom.</p>
-                    <p className="mt-1 text-sm font-black text-neutral-900">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Costo prom.</p>
+                    <p className="mt-1 text-sm font-semibold text-neutral-900">
                       ${formatMoney(parseNumber(ingredient.averageCost))}
                     </p>
                     <p className="mt-1 text-[11px] font-medium text-neutral-400">Se recalcula autom&aacute;ticamente</p>
@@ -130,8 +130,8 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                 </div>
 
                 <div className="mt-3 rounded-2xl border border-neutral-100 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Stock mínimo</p>
-                  <p className="mt-1 text-sm font-black text-neutral-900">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Stock mínimo</p>
+                  <p className="mt-1 text-sm font-semibold text-neutral-900">
                     {formatMoney(parseNumber(ingredient.minStock ?? 0))} {unitLabel}
                   </p>
                   <p className="mt-1 text-[11px] font-medium text-neutral-400">
@@ -146,7 +146,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                     className="flex min-h-[70px] flex-col items-start justify-center rounded-2xl bg-white px-4 shadow-sm ring-1 ring-black/5 active:scale-[0.99]"
                   >
                     <PencilLine className="h-5 w-5 text-neutral-700" />
-                    <p className="mt-2 text-xs font-black text-neutral-900">Editar</p>
+                    <p className="mt-2 text-xs font-semibold text-neutral-900">Editar</p>
                   </button>
                   <button
                     type="button"
@@ -154,7 +154,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                     className="flex min-h-[70px] flex-col items-start justify-center rounded-2xl bg-white px-4 shadow-sm ring-1 ring-black/5 active:scale-[0.99]"
                   >
                     <BookOpen className="h-5 w-5 text-neutral-700" />
-                    <p className="mt-2 text-xs font-black text-neutral-900">Kardex</p>
+                    <p className="mt-2 text-xs font-semibold text-neutral-900">Kardex</p>
                   </button>
                   <button
                     type="button"
@@ -163,7 +163,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
                     className="flex min-h-[70px] flex-col items-start justify-center rounded-2xl bg-white px-4 shadow-sm ring-1 ring-black/5 active:scale-[0.99] disabled:opacity-50"
                   >
                     <Power className="h-5 w-5 text-rose-600" />
-                    <p className="mt-2 text-xs font-black text-neutral-900">Desactivar</p>
+                    <p className="mt-2 text-xs font-semibold text-neutral-900">Desactivar</p>
                   </button>
                 </div>
               </div>

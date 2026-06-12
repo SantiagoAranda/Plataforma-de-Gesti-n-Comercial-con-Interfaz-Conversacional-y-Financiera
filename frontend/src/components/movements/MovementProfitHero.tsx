@@ -1,4 +1,4 @@
-import { TrendingDown, TrendingUp } from "lucide-react";
+﻿import { TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { AccountingSummary } from "@/src/services/accounting";
 
@@ -91,7 +91,7 @@ export function MovementProfitHero({
           <div className="text-slate-500 text-xs font-medium tracking-wider uppercase">
             GANANCIA NETA
           </div>
-          <div className="text-slate-900 text-3xl font-bold mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
+          <div className="text-slate-900 text-3xl font-medium mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
             {formattedAmount}
           </div>
         </div>
@@ -114,10 +114,10 @@ export function MovementProfitHero({
       {/* Distribution Flow Section */}
       <div className="mt-5 pt-4 border-t border-slate-100">
         <div className="flex items-center justify-between">
-          <span className="text-slate-500 text-[10px] font-bold tracking-wider">
+          <span className="text-slate-500 text-[10px] font-medium tracking-wider">
             DISTRIBUCIÓN DE FLUJO
           </span>
-          <span className="text-emerald-600 font-bold text-xs">
+          <span className="text-emerald-600 font-medium text-xs">
             EFICIENCIA: {ventasBrutas > 0 ? `${eficienciaReal}%` : "--%"}
           </span>
         </div>

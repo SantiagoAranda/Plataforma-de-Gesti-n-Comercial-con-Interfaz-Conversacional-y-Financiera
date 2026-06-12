@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { cn } from "@/src/lib/utils";
@@ -246,14 +246,14 @@ export function IngredientForm({
             <button
               type="button"
               onClick={onCancel}
-              className="h-12 rounded-2xl bg-neutral-100 text-sm font-black text-neutral-600 transition active:scale-[0.99]"
+              className="h-12 rounded-2xl bg-neutral-100 text-sm font-semibold text-neutral-600 transition active:scale-[0.99]"
             >
               {cancelLabel}
             </button>
             <button
               type="submit"
               disabled={!canSubmit || !!submitting}
-              className="h-12 rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+              className="h-12 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
             >
               {submitting ? "Guardando..." : mode === "create" ? "Crear" : "Guardar"}
             </button>
@@ -262,7 +262,7 @@ export function IngredientForm({
           <button
             type="submit"
             disabled={!canSubmit || !!submitting}
-            className="h-12 w-full rounded-2xl bg-emerald-500 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+            className="h-12 w-full rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
           >
             {submitting ? "Guardando..." : mode === "create" ? "Crear ingrediente" : "Guardar cambios"}
           </button>

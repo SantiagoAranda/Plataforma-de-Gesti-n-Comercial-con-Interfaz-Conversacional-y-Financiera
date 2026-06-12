@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import type { CompositionFormula } from "@/src/types/movements-ui";
@@ -36,7 +36,7 @@ export function MovementFormulaAccordion({ formulas }: { formulas: CompositionFo
                   <div className="text-xs text-neutral-500 truncate">{f.expression}</div>
                 </div>
                 <div className="text-right shrink-0 ml-3">
-                  <div className="text-sm font-bold text-neutral-900">{formatARS(f.resultValue)}</div>
+                  <div className="text-sm font-medium text-neutral-900">{formatARS(f.resultValue)}</div>
                   <div className="text-[11px] text-neutral-500">{formatPct(f.resultPercentage)}</div>
                 </div>
               </button>
@@ -49,7 +49,7 @@ export function MovementFormulaAccordion({ formulas }: { formulas: CompositionFo
                         {it.operator && (
                           <span
                             className={cn(
-                              "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
+                              "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
                               it.operator === "+"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
                                 : "bg-rose-50 text-rose-700 border border-rose-100",

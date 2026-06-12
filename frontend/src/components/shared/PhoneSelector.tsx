@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check } from "lucide-react";
@@ -46,8 +46,8 @@ export default function PhoneSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  let buttonClasses = "flex h-11 items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[13px] font-bold text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
-  let inputClasses = "flex-1 h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-bold text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
+  let buttonClasses = "flex h-11 items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[13px] font-medium text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+  let inputClasses = "flex-1 h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-medium text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
 
   if (dark) {
     buttonClasses = "flex h-10 items-center gap-1.5 transition focus:outline-none bg-transparent border-0 text-white pl-1 pr-2 text-sm font-normal";
@@ -85,7 +85,7 @@ export default function PhoneSelector({
                     onCountryCodeChange(c.code);
                     setOpen(false);
                   }}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] font-bold transition hover:bg-neutral-50 ${
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] font-medium transition hover:bg-neutral-50 ${
                     countryCode === c.code ? "bg-emerald-50/50 text-emerald-700" : "text-neutral-700"
                   }`}
                 >

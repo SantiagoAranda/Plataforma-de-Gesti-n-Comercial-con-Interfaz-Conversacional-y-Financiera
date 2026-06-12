@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -222,7 +222,7 @@ export function RecipeEditor({
 
   const selectorCard = (
     <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-      <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Producto</p>
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Producto</p>
 
       <div className="mt-3 space-y-2">
         {!hideSearchInput && (
@@ -255,14 +255,14 @@ export function RecipeEditor({
       {selectedItem && (
         <div className="mt-3 rounded-2xl bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-600">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-bold text-neutral-800">{selectedItem.name}</span>
-            <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-500 ring-1 ring-black/5">
+            <span className="font-medium text-neutral-800">{selectedItem.name}</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-500 ring-1 ring-black/5">
               {selectedItem.type}
             </span>
           </div>
           <p className="mt-1 text-neutral-500">
             Modo inventario:{" "}
-            <span className="font-bold">{selectedItem.inventoryMode ?? "desconocido"}</span>
+            <span className="font-medium">{selectedItem.inventoryMode ?? "desconocido"}</span>
           </p>
         </div>
       )}
@@ -273,8 +273,8 @@ export function RecipeEditor({
     <div className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-black/5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Receta</p>
-                    <p className="mt-1 text-sm font-bold text-neutral-900">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Receta</p>
+                    <p className="mt-1 text-sm font-medium text-neutral-900">
             Líneas: {isSimple ? (lines.length ? 1 : 0) : lines.length}
           </p>
         </div>
@@ -309,7 +309,7 @@ export function RecipeEditor({
 
                                         {isSimple && (
             <div className="rounded-2xl bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-600">
-              En modo <span className="font-bold">SIMPLE</span>, este producto se vincula a un único insumo.
+              En modo <span className="font-medium">SIMPLE</span>, este producto se vincula a un único insumo.
               La cantidad consumida por venta se define automáticamente en 1.
             </div>
           )}
@@ -319,7 +319,7 @@ export function RecipeEditor({
             <div key={`${line.ingredientId}:${idx}`} className="rounded-2xl border border-neutral-100 bg-white p-3">
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Ingrediente</p>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Ingrediente</p>
                   <select
                     value={line.ingredientId}
 	                    onChange={(e) =>
@@ -352,7 +352,7 @@ export function RecipeEditor({
                 </div>
 
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">Cantidad</p>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Cantidad</p>
                   <input
                     value={
                       selectedItem?.inventoryMode === "SIMPLE"
@@ -384,7 +384,7 @@ export function RecipeEditor({
                         )
                       }
                       className={cn(
-                        "h-9 rounded-full px-4 text-[10px] font-black uppercase tracking-widest transition",
+                        "h-9 rounded-full px-4 text-[10px] font-semibold uppercase tracking-widest transition",
                         line.isOptional ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800",
                       )}
                     >
@@ -401,7 +401,7 @@ export function RecipeEditor({
                     </button>
                   </>
                 ) : (
-                  <div className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Única línea</div>
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Única línea</div>
                 )}
               </div>
             </div>
@@ -420,7 +420,7 @@ export function RecipeEditor({
         type="button"
         onClick={() => void save()}
         disabled={!selectedItemId || submitting}
-        className="mt-5 h-12 w-full rounded-2xl bg-neutral-900 text-sm font-black text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+        className="mt-5 h-12 w-full rounded-2xl bg-neutral-900 text-sm font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
       >
         {submitting ? "Guardando..." : "Guardar receta"}
       </button>

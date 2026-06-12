@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -133,7 +133,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                   {badges.map((badge) => (
                     <div
                       key={`${badge.text}-${badge.color}`}
-                      className="rounded-xl px-3 py-1 text-[8px] font-extrabold uppercase text-white"
+                      className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
                       style={{ background: badge.color }}
                     >
                       {badge.text}
@@ -145,7 +145,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
           ) : (
             <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 aspect-square w-full flex flex-col items-center justify-center text-neutral-400 gap-2">
               <Tag size={32} strokeWidth={1.5} />
-              <p className="text-[10px] font-bold uppercase tracking-widest">Sin imágenes</p>
+              <p className="text-[10px] font-medium uppercase tracking-widest">Sin imágenes</p>
             </div>
           )}
 
@@ -153,17 +153,17 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="space-y-1">
                 Nombre
-              <h3 className="text-base font-bold text-neutral-900 leading-tight">{item.name}</h3>
+              <h3 className="text-base font-medium text-neutral-900 leading-tight">{item.name}</h3>
             </div>
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-neutral-50">
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Precio</span>
-                <span className="text-lg font-black text-emerald-600">${formatMoney(item.price)}</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Precio</span>
+                <span className="text-lg font-semibold text-emerald-600">${formatMoney(item.price)}</span>
               </div>
               <div className="space-y-1">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Inventario</span>
-                <span className={`inline-flex rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wider ${inventory.tone}`}>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Inventario</span>
+                <span className={`inline-flex rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-wider ${inventory.tone}`}>
                   {inventory.label}
                 </span>
               </div>
@@ -182,7 +182,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                   onClose();
                   router.push(inventory.href!);
                 }}
-                className="h-11 w-full rounded-2xl bg-neutral-900 text-xs font-black uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
+                className="h-11 w-full rounded-2xl bg-neutral-900 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99]"
               >
                 {inventory.cta}
               </button>
@@ -192,7 +192,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
               <div className="pt-3 border-t border-neutral-50 space-y-4">
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-neutral-400" />
-                  <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
                   <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes} min</span>
                 </div>
 
@@ -200,7 +200,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                   <div className="flex items-start gap-2 pt-3 border-t border-neutral-50">
                     <Calendar size={14} className="text-neutral-400 mt-0.5" />
                     <div className="space-y-1">
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Días disponibles:</span>
+                      <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Días disponibles:</span>
                       <span className="text-sm font-semibold text-neutral-700">{activeDays}</span>
                     </div>
                   </div>
@@ -210,13 +210,13 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                   <div className="space-y-3 pt-3 border-t border-neutral-50">
                     <div className="flex items-center gap-2">
                       <Info size={14} className="text-neutral-400" />
-                      <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Horarios disponibles:</span>
+                      <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Horarios disponibles:</span>
                     </div>
                     
                     <div className="flex flex-col gap-2 pl-6">
                       {groupedSchedule.map((group) => (
                         <div key={group.day} className="flex flex-col bg-neutral-50/50 p-2 rounded-xl border border-neutral-100">
-                          <span className="text-[11px] font-bold text-neutral-700">{group.label}</span>
+                          <span className="text-[11px] font-medium text-neutral-700">{group.label}</span>
                           <div className="flex flex-wrap gap-x-2">
                             {group.ranges.map((range, idx) => (
                               <span key={idx} className="text-xs text-neutral-500 font-medium">{range}</span>
@@ -240,7 +240,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
           {/* DESCRIPTION */}
           {item.description && (
             <div className="space-y-2 px-1">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Descripción completa</span>
+              <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Descripción completa</span>
               <p className="text-sm text-neutral-600 leading-relaxed bg-white p-4 rounded-2xl border border-neutral-100 shadow-sm whitespace-pre-wrap">
                 {item.description}
               </p>
@@ -250,7 +250,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
           {/* META INFO */}
           <div className="flex items-center gap-4 px-1 pt-2">
              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">Creado el</span>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest mb-1">Creado el</span>
                 <div className="flex items-center gap-1.5 text-neutral-500">
                   <Calendar size={12} />
                   <span className="text-xs font-medium">{formatFullDate(item.createdAt || new Date().toISOString())}</span>

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { PackageSearch, TriangleAlert } from "lucide-react";
 
@@ -26,7 +26,7 @@ export function IngredientList({
         <div className="grid h-16 w-16 place-items-center rounded-full bg-neutral-50 text-neutral-300">
           <PackageSearch className="h-7 w-7" />
         </div>
-        <h3 className="mt-4 text-sm font-bold text-neutral-900">Sin ingredientes</h3>
+        <h3 className="mt-4 text-sm font-medium text-neutral-900">Sin ingredientes</h3>
         <p className="mt-1 max-w-xs text-xs font-medium leading-relaxed text-neutral-400">
           Crea tu primer ingrediente para ver stock, costo promedio y valor.
         </p>
@@ -78,7 +78,7 @@ export function IngredientList({
             >
             <div className="flex gap-3">
               <div className="relative grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white/70 ring-1 ring-black/5">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-sm font-black text-neutral-700">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-neutral-100 text-sm font-semibold text-neutral-700">
                   {avatar}
                 </div>
                 {warning ? (
@@ -90,9 +90,9 @@ export function IngredientList({
 
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="min-w-0 line-clamp-2 text-sm font-black text-neutral-950">{it.name}</h3>
+                  <h3 className="min-w-0 line-clamp-2 text-sm font-semibold text-neutral-950">{it.name}</h3>
                   <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${statusBadge.tone}`}
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${statusBadge.tone}`}
                   >
                     {statusBadge.label}
                   </span>
@@ -101,17 +101,17 @@ export function IngredientList({
                 <div className="mt-1 space-y-0.5 text-xs text-neutral-600">
                   <p>
                     Valor:{" "}
-                    <span className="font-black text-neutral-900">${formatMoney(stockValue)}</span>
+                    <span className="font-semibold text-neutral-900">${formatMoney(stockValue)}</span>
                   </p>
                   <p>
                     Costo prom.:{" "}
-                    <span className="font-black text-neutral-900">
+                    <span className="font-semibold text-neutral-900">
                       ${formatMoney(averageCost)} / {unitLabel}
                     </span>
                   </p>
                   <p>
                     Stock:{" "}
-                    <span className="font-black text-neutral-900">
+                    <span className="font-semibold text-neutral-900">
                       {formatMoney(currentStock)} {unitLabel}
                     </span>
                   </p>
@@ -129,7 +129,7 @@ export function IngredientList({
               <button
                 type="button"
                 onClick={() => onReactivate(it.id)}
-                className="mt-3 h-10 w-full rounded-2xl bg-neutral-900 text-xs font-black text-white shadow-sm transition active:scale-[0.99]"
+                className="mt-3 h-10 w-full rounded-2xl bg-neutral-900 text-xs font-semibold text-white shadow-sm transition active:scale-[0.99]"
               >
                 Reactivar
               </button>
