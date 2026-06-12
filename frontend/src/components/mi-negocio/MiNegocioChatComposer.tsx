@@ -15,6 +15,7 @@ interface MiNegocioChatComposerProps {
   isSubmitting?: boolean;
   children: React.ReactNode;
   type: ItemType;
+  submitDisabled?: boolean;
 }
 
 export function MiNegocioChatComposer({
@@ -28,6 +29,7 @@ export function MiNegocioChatComposer({
   isSubmitting = false,
   children,
   type,
+  submitDisabled = false,
 }: MiNegocioChatComposerProps) {
   const isOpen = mode !== "closed";
   const label = mode === "edit" ? "Editar" : "Crear";
@@ -93,6 +95,7 @@ export function MiNegocioChatComposer({
             onSubmit={onSubmit}
             placeholder={isOpen ? placeholders[type] : "Buscar producto o servicio..."}
             isSubmitting={isSubmitting}
+            submitDisabled={submitDisabled}
             leftIconVariant={isOpen ? "x" : "plus"}
             rightIconVariant={isOpen ? "send" : "search"}
             inputKind={isOpen ? "textarea" : "input"}

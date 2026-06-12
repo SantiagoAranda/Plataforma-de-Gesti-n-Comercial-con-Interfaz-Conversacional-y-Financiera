@@ -1,23 +1,92 @@
-﻿"use client";
+"use client";
 
 import { X, Clock } from "lucide-react";
 import { useState } from "react";
-import { 
-  ItemType, 
-  ItemImage, 
-  PendingImage, 
-  WeeklySchedule, 
+import {
+  ItemType,
+  ItemImage,
+  PendingImage,
+  WeeklySchedule,
   FormErrors,
   ItemInventoryMode,
 } from "@/src/types/item";
-import { 
-  formatPriceInput, 
-  parsePriceInput, 
+import {
+  formatPriceInput,
+  parsePriceInput,
   rangesOverlap,
 } from "@/src/lib/itemHelpers";
-import { 
-  MAX_ITEM_IMAGES, 
+import {
+  MAX_ITEM_IMAGES,
 } from "@/src/lib/itemImages";
+
+// ────────────────────────────────────────────────────────────────────────
+// Selector de hora en formato 12h AM/PM (Colombia).
+// Recibe y emite strings en formato 24h ("14:30") para compatibilidad
+// con el estado interno del formulario y la API.
+// ────────────────────────────────────────────────────────────────────────
+function TimeSelectAMPM({
+  value,
+  onChange,
+  className,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+}) {
+  const parts = value.split(":");
+  const h24 = parseInt(parts[0] ?? "8", 10);
+  const min = parseInt(parts[1] ?? "0", 10);
+  const isPM = h24 >= 12;
+  const h12 = h24 % 12 || 12;
+
+  function emit(nh12: number, nm: number, nIsPM: boolean) {
+    let h = nh12 === 12 ? 0 : nh12;
+    if (nIsPM) h += 12;
+    onChange(`${String(h).padStart(2, "0")}:${String(nm).padStart(2, "0")}`);
+  }
+
+  return (
+    <div className={`flex items-center ${className ?? ""}`}>
+      {/* Contenedor interno integrado */}
+      <div className="flex items-center bg-gray-50 border border-gray-300 rounded-md px-1.5 py-1 focus-within:border-green-500">
+        <select
+          value={h12}
+          onChange={(e) => emit(Number(e.target.value), min, isPM)}
+          className="w-7 text-center bg-transparent border-none outline-none p-0 text-sm appearance-none font-semibold cursor-pointer text-neutral-800"
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+            <option key={h} value={h}>{String(h).padStart(2, "0")}</option>
+          ))}
+        </select>
+
+        <span className="text-gray-400 px-0.5 text-sm select-none font-semibold">:</span>
+
+        <select
+          value={min}
+          onChange={(e) => emit(h12, Number(e.target.value), isPM)}
+          className="w-7 text-center bg-transparent border-none outline-none p-0 text-sm appearance-none font-semibold cursor-pointer text-neutral-800"
+        >
+          {[0, 15, 30, 45].map((m) => (
+            <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Botón Selector AM/PM */}
+      <button
+        type="button"
+        onClick={() => emit(h12, min, !isPM)}
+        className={`ml-1.5 px-1 py-1 text-xs font-bold rounded border transition-all w-12 text-center cursor-pointer select-none active:scale-95
+          ${isPM
+            ? "bg-green-50 border-green-300 text-green-700 font-bold"
+            : "bg-gray-100 border-gray-300 text-gray-500 font-bold"
+          }`}
+      >
+        {isPM ? "PM" : "AM"}
+      </button>
+    </div>
+  );
+}
 
 interface ItemFormContentProps {
   type: ItemType;
@@ -103,6 +172,26 @@ export function ItemFormContent({
   const setCurrentBadgeText = isBadge1 ? setBadgeText1 : setBadgeText2;
   const setCurrentBadgeColor = isBadge1 ? setBadgeColor1 : setBadgeColor2;
   const currentPlaceholder = isBadge1 ? "Ej: POP" : "Ej: Nuevo";
+
+  const activeDay = week[currentDayIndex];
+  let hasOverlapError = false;
+  if (activeDay && activeDay.ranges.length === 2) {
+    const t1s = activeDay.ranges[0].start.split(":");
+    const t1e = activeDay.ranges[0].end.split(":");
+    const t2s = activeDay.ranges[1].start.split(":");
+    const t2e = activeDay.ranges[1].end.split(":");
+    
+    const m1s = parseInt(t1s[0], 10) * 60 + parseInt(t1s[1] || "0", 10);
+    const m1e = parseInt(t1e[0], 10) * 60 + parseInt(t1e[1] || "0", 10);
+    const m2s = parseInt(t2s[0], 10) * 60 + parseInt(t2s[1] || "0", 10);
+    const m2e = parseInt(t2e[0], 10) * 60 + parseInt(t2e[1] || "0", 10);
+
+    if (m1s <= m2s) {
+      if (m1e >= m2s) hasOverlapError = true;
+    } else {
+      if (m2e >= m1s) hasOverlapError = true;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -208,7 +297,7 @@ export function ItemFormContent({
                   } else {
                     let rounded = Math.round(n);
                     if (rounded <= 0) rounded = 1;
-                    
+
                     if (n !== rounded) {
                       setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
                     } else {
@@ -218,9 +307,8 @@ export function ItemFormContent({
                     setDurationInput(String(rounded));
                   }
                 }}
-                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${
-                  formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-green-500"
-                }`}
+                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-green-500"
+                  }`}
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-medium uppercase">horas</span>
             </div>
@@ -252,11 +340,10 @@ export function ItemFormContent({
                 setInventoryMode("NONE");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                inventoryMode === "NONE"
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "NONE"
                   ? "border-green-500 bg-green-50/50"
                   : "border-neutral-100 bg-white shadow-sm"
-              }`}
+                }`}
             >
               No controla stock
             </button>
@@ -266,11 +353,10 @@ export function ItemFormContent({
                 setInventoryMode("SIMPLE");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                inventoryMode === "SIMPLE"
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "SIMPLE"
                   ? "border-green-500 bg-green-50/50"
                   : "border-neutral-100 bg-white shadow-sm"
-              }`}
+                }`}
             >
               Producto simple
             </button>
@@ -280,11 +366,10 @@ export function ItemFormContent({
                 setInventoryMode("RECIPE_BASED");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                inventoryMode === "RECIPE_BASED"
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "RECIPE_BASED"
                   ? "border-green-500 bg-green-50/50"
                   : "border-neutral-100 bg-white shadow-sm"
-              }`}
+                }`}
             >
               Producto compuesto / receta
             </button>
@@ -334,8 +419,9 @@ export function ItemFormContent({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center justify-between px-2">
-                <button 
+              {/* 1. Bloque de Navegación de Días */}
+              <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg p-2 font-semibold text-gray-700">
+                <button
                   type="button"
                   onClick={() => {
                     const activeIndices = week.map((d, i) => d.active ? i : -1).filter(i => i !== -1);
@@ -344,9 +430,16 @@ export function ItemFormContent({
                     setCurrentDayIndex(activeIndices[(pos - 1 + activeIndices.length) % activeIndices.length]);
                   }} 
                   disabled={week.filter(d => d.active).length <= 1} 
-                  className="w-8 h-8 flex items-center justify-center text-neutral-400 disabled:opacity-20 transition"
-                >‹</button>
-                <p className="text-xs font-medium text-neutral-700 uppercase tracking-widest">{week[currentDayIndex].day}</p>
+                  className="p-2 hover:bg-gray-100 rounded-full text-2xl font-bold text-gray-800 transition-colors flex items-center justify-center w-9 h-9 active:scale-90 disabled:opacity-20 disabled:cursor-not-allowed select-none"
+                  aria-label="Día anterior"
+                >
+                  &#8249;
+                </button>
+                
+                <span className="w-full text-center tracking-wide uppercase text-sm select-none">
+                  {week[currentDayIndex].day}
+                </span>
+
                 <button 
                   type="button"
                   onClick={() => {
@@ -356,48 +449,101 @@ export function ItemFormContent({
                     setCurrentDayIndex(activeIndices[(pos + 1) % activeIndices.length]);
                   }} 
                   disabled={week.filter(d => d.active).length <= 1} 
-                  className="w-8 h-8 flex items-center justify-center text-neutral-400 disabled:opacity-20 transition"
-                >›</button>
+                  className="p-2 hover:bg-gray-100 rounded-full text-2xl font-bold text-gray-800 transition-colors flex items-center justify-center w-9 h-9 active:scale-90 disabled:opacity-20 disabled:cursor-not-allowed select-none"
+                  aria-label="Día siguiente"
+                >
+                  &#8250;
+                </button>
               </div>
 
-              <div className={`rounded-3xl border p-4 space-y-3 transition ${formErrors.schedule ? "border-red-200 bg-red-50/30" : "border-neutral-100 bg-white shadow-sm"}`}>
+              {/* 2. Fila de Horarios Completa (Estructura Indestructible con micro-gaps) */}
+              <div className={`rounded-3xl border p-4 space-y-3 transition ${formErrors.schedule || hasOverlapError ? "border-red-200 bg-red-50/30" : "border-neutral-100 bg-white shadow-sm"}`}>
                 {week[currentDayIndex].ranges.map((range, ri) => (
-                  <div key={ri} className="flex items-center gap-2">
-                    <input type="time" value={range.start} onChange={(e) => {
-                      const copy = [...week]; const newStart = e.target.value;
-                      if (!copy[currentDayIndex].ranges.some((r, i) => i !== ri && rangesOverlap(newStart, range.end, r.start, r.end))) {
-                        copy[currentDayIndex].ranges[ri].start = newStart; setWeek(copy);
-                      }
-                    }} className="bg-neutral-50 border border-neutral-100 rounded-xl px-3 py-2 text-xs font-semibold h-10 flex-1 outline-none focus:border-green-500" />
-                    <span className="text-neutral-300">—</span>
-                    <input type="time" value={range.end} onChange={(e) => {
-                      const copy = [...week]; const newEnd = e.target.value;
-                      if (!copy[currentDayIndex].ranges.some((r, i) => i !== ri && rangesOverlap(range.start, newEnd, r.start, r.end))) {
-                        copy[currentDayIndex].ranges[ri].end = newEnd; setWeek(copy);
-                      }
-                    }} className="bg-neutral-50 border border-neutral-100 rounded-xl px-3 py-2 text-xs font-semibold h-10 flex-1 outline-none focus:border-green-500" />
+                  <div key={ri} className="flex items-center justify-between gap-1.5 py-2">
+                    <div className="flex items-center">
+                      {/* Inicio de franja — selector AM/PM */}
+                      <TimeSelectAMPM
+                        value={range.start}
+                        onChange={(newStart) => {
+                          const copy = week.map((d, idx) => {
+                            if (idx !== currentDayIndex) return d;
+                            return {
+                              ...d,
+                              ranges: d.ranges.map((r, rIdx) => 
+                                rIdx === ri ? { ...r, start: newStart } : r
+                              )
+                            };
+                          });
+                          setWeek(copy);
+                        }}
+                      />
+
+                      {/* Separador Central (—) */}
+                      <span className="text-gray-400 px-0.5 select-none font-semibold">—</span>
+
+                      {/* Fin de franja — selector AM/PM */}
+                      <TimeSelectAMPM
+                        value={range.end}
+                        onChange={(newEnd) => {
+                          const copy = week.map((d, idx) => {
+                            if (idx !== currentDayIndex) return d;
+                            return {
+                              ...d,
+                              ranges: d.ranges.map((r, rIdx) => 
+                                rIdx === ri ? { ...r, end: newEnd } : r
+                              )
+                            };
+                          });
+                          setWeek(copy);
+                        }}
+                      />
+                    </div>
+
+                    {/* Botón Eliminar (X) */}
                     <button 
                       type="button"
                       onClick={() => {
-                        const copy = [...week]; copy[currentDayIndex].ranges.splice(ri, 1); setWeek(copy);
+                        const copy = week.map((d, idx) => {
+                          if (idx !== currentDayIndex) return d;
+                          return {
+                            ...d,
+                            ranges: d.ranges.filter((_, rIdx) => rIdx !== ri)
+                          };
+                        });
+                        setWeek(copy);
                       }} 
-                      className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-red-500 transition"
-                    >✕</button>
+                      className="text-gray-400 hover:text-red-500 p-2 text-sm transition-colors active:scale-90"
+                      aria-label="Eliminar franja"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
                 {week[currentDayIndex].ranges.length < 2 && (
                   <button 
                     type="button"
                     onClick={() => {
-                      const c = [...week]; const r = c[currentDayIndex].ranges;
-                      if (r.length === 0) r.push({ start: "08:00", end: "12:00" });
-                      else if (r.length === 1) r.push({ start: "14:00", end: "18:00" });
-                      setWeek(c);
+                      const copy = week.map((d, idx) => {
+                        if (idx !== currentDayIndex) return d;
+                        const r = [...d.ranges];
+                        if (r.length === 0) r.push({ start: "08:00", end: "12:00" });
+                        else if (r.length === 1) r.push({ start: "14:00", end: "18:00" });
+                        return { ...d, ranges: r };
+                      });
+                      setWeek(copy);
                     }} 
                     className="w-full py-2 text-[10px] font-medium text-green-600 uppercase tracking-widest hover:bg-green-50 rounded-xl transition"
-                  >+ Agregar horario</button>
+                  >
+                    + Agregar horario
+                  </button>
                 )}
               </div>
+
+              {hasOverlapError && (
+                <p className="text-[11px] font-bold text-red-500 mt-2 bg-red-50 border border-red-200/50 rounded-xl p-2.5 text-center">
+                  El segundo turno no puede comenzar antes de que termine el primer turno
+                </p>
+              )}
             </div>
           )}
           {formErrors.schedule && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.schedule}</p>}

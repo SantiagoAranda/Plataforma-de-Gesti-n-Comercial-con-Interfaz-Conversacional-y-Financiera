@@ -201,7 +201,9 @@ export class SalesService {
       5: 'FRI',
       6: 'SAT',
     };
-    const weekday = weekdayMap[date.getDay()];
+    // Use getUTCDay() — dates are stored/compared as UTC midnight.
+    // getDay() would shift the weekday by the server's local TZ offset.
+    const weekday = weekdayMap[date.getUTCDay()];
 
     const [windows, blocks, reservations] = await Promise.all([
       this.prisma.serviceScheduleWindow.findMany({
@@ -232,9 +234,18 @@ export class SalesService {
     ]);
 
     const slots: string[] = [];
+    // Fixed 60-minute step: we evaluate every full hour within the window.
+    // Using durationMinutes as the step would skip slots (e.g. with a 2-hour
+    // service and a 14:00–17:00 block, cursor would jump 840→960→1080 and
+    // only 14:00 would be emitted instead of also evaluating 15:00).
+    const step = 60;
 
     for (const window of windows) {
+      // Align cursor to the next exact hour boundary so slots are always HH:00.
       let cursor = window.startMinute;
+      if (cursor % 60 !== 0) {
+        cursor = cursor + (60 - (cursor % 60));
+      }
 
       while (cursor + durationMinutes <= window.endMinute) {
         const start = cursor;
@@ -255,7 +266,7 @@ export class SalesService {
           slots.push(this.formatTime(start));
         }
 
-        cursor += durationMinutes;
+        cursor += step;
       }
     }
 
