@@ -43,6 +43,7 @@ export type Item = {
   description?: string;
   durationMinutes?: number;
   inventoryMode?: ItemInventoryMode | null;
+  minStock?: number | string;
   sellability?: ItemSellability;
   currentStock?: number | string;
   averageCost?: number | string;

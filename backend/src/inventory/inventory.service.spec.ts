@@ -1126,7 +1126,7 @@ describe('InventoryService', () => {
     expect(result.sellable).toBe(false);
     expect(result.status).toBe('INSUFFICIENT_RECIPE_STOCK');
     expect(result.message).toBe(
-      'Stock insuficiente para Pan de hamburguesa. Disponible: 0, requerido: 1.',
+      'Hamburguesa no tiene stock disponible.',
     );
   });
 
@@ -1146,6 +1146,145 @@ describe('InventoryService', () => {
 
     expect(result.sellable).toBe(true);
     expect(result.status).toBe('SELLABLE');
+  });
+
+  it('RECIPE_BASED con cantidad 3 multiplica consumo de ingredientes', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Hamburguesa',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'RECIPE_BASED',
+      recipes: [
+        {
+          ingredientId: 'ingredient-pan',
+          quantityRequired: new Prisma.Decimal(250),
+          isOptional: false,
+          ingredient: {
+            id: 'ingredient-pan',
+            name: 'Pan de hamburguesa',
+            currentStock: new Prisma.Decimal(100),
+            consumptionUnit: 'G',
+            customUnitLabel: null,
+          },
+        },
+      ],
+    });
+
+    const result = await service.getItemSellability(businessId, 'item-1', 3, tx as any);
+    expect(result.sellable).toBe(false);
+    expect(result.missingItems?.[0].required.toString()).toBe('750');
+  });
+
+  it('RECIPE_BASED con stock para 1 unidad pero no para 3 bloquea la confirmación', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Hamburguesa',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'RECIPE_BASED',
+      recipes: [
+        {
+          ingredientId: 'ingredient-pan',
+          quantityRequired: new Prisma.Decimal(250),
+          isOptional: false,
+          ingredient: {
+            id: 'ingredient-pan',
+            name: 'Pan de hamburguesa',
+            currentStock: new Prisma.Decimal(250),
+            consumptionUnit: 'G',
+            customUnitLabel: null,
+          },
+        },
+      ],
+    });
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-pan',
+        quantityRequired: new Prisma.Decimal(250),
+        isOptional: false,
+        ingredient: {
+          id: 'ingredient-pan',
+          name: 'Pan de hamburguesa',
+          currentStock: new Prisma.Decimal(250),
+        },
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      {
+        id: 'ingredient-pan',
+        name: 'Pan de hamburguesa',
+        currentStock: new Prisma.Decimal(250),
+      },
+    ]);
+
+    await expect(
+      service.applyInventoryConsumptionForOrder(tx as any, businessId, {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 3,
+            itemNameSnapshot: 'Hamburguesa',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+            excludedOptionalIngredientIds: null,
+          },
+        ],
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('SIMPLE con stock 2, minStock 3, venta de 1: permitida con estado LOW_STOCK', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Llaveros',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      minStock: new Prisma.Decimal(3),
+      recipes: [],
+    });
+    tx.inventoryMovement.count.mockResolvedValue(1);
+    tx.inventoryMovement.findFirst.mockResolvedValue({
+      stockAfter: new Prisma.Decimal(2),
+      averageCostAfter: new Prisma.Decimal(10),
+    });
+
+    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    expect(result.sellable).toBe(true);
+    expect(result.status).toBe('LOW_STOCK');
+    expect(result.message).toBe('Llaveros tiene stock bajo.');
+  });
+
+  it('SIMPLE con stock 2, venta de 5: bloqueada con mensaje de stock insuficiente', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Llaveros',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      recipes: [],
+    });
+    tx.inventoryMovement.count.mockResolvedValue(1);
+    tx.inventoryMovement.findFirst.mockResolvedValue({
+      stockAfter: new Prisma.Decimal(2),
+      averageCostAfter: new Prisma.Decimal(10),
+    });
+
+    const result = await service.getItemSellability(businessId, 'item-1', 5, tx as any);
+    expect(result.sellable).toBe(false);
+    expect(result.status).toBe('NO_STOCK');
+    expect(result.message).toBe('Stock insuficiente para Llaveros. Disponible: 2, requerido: 5.');
   });
 
   it('lists SALE movements in Kardex', async () => {

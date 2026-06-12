@@ -24,3 +24,28 @@ export function formatUnit(unit?: IngredientUnit | string | null) {
 export function formatIngredientUnit(ingredient: Pick<Ingredient, "consumptionUnit" | "customUnitLabel">) {
   return ingredient.customUnitLabel?.trim() || formatUnit(ingredient.consumptionUnit);
 }
+
+export function getPurchaseToStockFactor(
+  purchaseUnit?: IngredientUnit | string | null,
+  stockUnit?: IngredientUnit | string | null,
+  customFactor?: string | number | null,
+) {
+  const parsedCustom =
+    customFactor === null || customFactor === undefined || customFactor === ""
+      ? 1
+      : Number(customFactor);
+  if (!purchaseUnit || !stockUnit) return parsedCustom;
+  if (purchaseUnit === stockUnit) return parsedCustom;
+
+  const standardFactors: Record<string, number> = {
+    "KG:G": 1000,
+    "G:KG": 0.001,
+    "L:ML": 1000,
+    "ML:L": 0.001,
+  };
+
+  const standard = standardFactors[`${purchaseUnit}:${stockUnit}`];
+  if (standard) return standard;
+
+  return parsedCustom;
+}

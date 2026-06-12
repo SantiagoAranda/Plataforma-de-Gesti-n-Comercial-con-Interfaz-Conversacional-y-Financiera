@@ -25,6 +25,29 @@ export class InventoryController {
     return this.inventoryService.registerPurchase(req.user.businessId, dto);
   }
 
+  @Post('items/:itemId/movements')
+  registerItemMovement(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Body() dto: (CreateInventoryInitialDto | CreateInventoryPurchaseDto) & {
+      type: 'INVENTORY_INITIAL' | 'PURCHASE';
+    },
+  ) {
+    if (dto.type === 'INVENTORY_INITIAL') {
+      return this.inventoryService.registerInitial(req.user.businessId, {
+        ...dto,
+        itemId,
+        ingredientId: undefined,
+      } as CreateInventoryInitialDto);
+    }
+
+    return this.inventoryService.registerPurchase(req.user.businessId, {
+      ...dto,
+      itemId,
+      ingredientId: undefined,
+    } as CreateInventoryPurchaseDto);
+  }
+
   @Post('purchase-return')
   registerPurchaseReturn(
     @Req() req: any,

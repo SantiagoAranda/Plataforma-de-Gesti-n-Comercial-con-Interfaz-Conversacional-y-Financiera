@@ -433,6 +433,7 @@ export class InventoryService {
     return Promise.all(
       items.map(async (item) => {
         const state = await this.getSimpleItemStockState(businessId, item.id);
+        const sellability = await this.getItemSellability(businessId, item.id);
         const movementCount = await this.prisma.inventoryMovement.count({
           where: { businessId, itemId: item.id },
         });
@@ -442,11 +443,33 @@ export class InventoryService {
           averageCost: state.averageCost,
           stockValue: state.stockValue,
           outOfStock: state.outOfStock,
+          sellability,
           hasMovements: movementCount > 0,
           canCreateInitialInventory: movementCount === 0,
         };
       }),
     );
+  }
+
+  private getPurchaseToStockFactor(ingredient: {
+    purchaseUnit: string;
+    consumptionUnit: string;
+    purchaseToConsumptionFactor: Prisma.Decimal | number | string;
+  }) {
+    if (ingredient.purchaseUnit === ingredient.consumptionUnit) {
+      return this.decimal(ingredient.purchaseToConsumptionFactor ?? 1);
+    }
+
+    const standardFactors: Record<string, string> = {
+      'KG:G': '1000',
+      'G:KG': '0.001',
+      'L:ML': '1000',
+      'ML:L': '0.001',
+    };
+    const standard = standardFactors[`${ingredient.purchaseUnit}:${ingredient.consumptionUnit}`];
+    if (standard) return this.decimal(standard);
+
+    return this.decimal(ingredient.purchaseToConsumptionFactor);
   }
 
   async getItemSellability(
@@ -488,7 +511,11 @@ export class InventoryService {
 
     if (item.inventoryMode === 'SIMPLE') {
       const movementCount = await tx.inventoryMovement.count({
-        where: { businessId, itemId: item.id },
+        where: {
+          businessId,
+          itemId: item.id,
+          type: { in: ['INVENTORY_INITIAL', 'PURCHASE'] },
+        },
       });
       const state = await this.getItemStockState(tx, businessId, item.id);
 
@@ -522,10 +549,13 @@ export class InventoryService {
         };
       }
 
+      const minStockValue = this.decimal(item.minStock ?? 0);
+      const isLowStock = minStockValue.gt(0) && state.currentStock.lte(minStockValue);
+
       return {
         sellable: true,
-        status: state.currentStock.lte(2) ? 'LOW_STOCK' : 'SELLABLE',
-        message: state.currentStock.lte(2) ? `${item.name} tiene stock bajo.` : undefined,
+        status: isLowStock ? 'LOW_STOCK' : 'SELLABLE',
+        message: isLowStock ? `${item.name} tiene stock bajo.` : undefined,
         currentStock: state.currentStock,
         averageCost: state.averageCost,
       };
@@ -540,28 +570,47 @@ export class InventoryService {
       };
     }
 
-    const missingItems = mandatoryLines
-      .map((line) => {
-        const required = this.decimal(line.quantityRequired).mul(requiredQuantity);
-        const available = this.decimal(line.ingredient.currentStock);
-        return {
+    let virtualStock: Prisma.Decimal | null = null;
+    const missingItems: any[] = [];
+
+    for (const line of mandatoryLines) {
+      const available = this.decimal(line.ingredient.currentStock);
+      const reqPerUnit = this.decimal(line.quantityRequired);
+      
+      const maxUnits = reqPerUnit.gt(0) ? available.div(reqPerUnit) : this.decimal(Infinity);
+      if (virtualStock === null || maxUnits.lt(virtualStock)) {
+        virtualStock = maxUnits;
+      }
+
+      const requiredForQuantity = reqPerUnit.mul(requiredQuantity);
+      if (available.lt(requiredForQuantity)) {
+        missingItems.push({
           id: line.ingredientId,
           name: line.ingredient.name,
-          required,
+          required: requiredForQuantity,
           available,
           unit: line.ingredient.customUnitLabel ?? line.ingredient.consumptionUnit,
-        };
-      })
-      .filter((line) => line.available.lt(line.required));
+        });
+      }
+    }
 
     if (missingItems.length) {
-      const first = missingItems[0];
-      return {
-        sellable: false,
-        status: 'INSUFFICIENT_RECIPE_STOCK',
-        message: `Stock insuficiente para ${first.name}. Disponible: ${first.available.toString()}, requerido: ${first.required.toString()}.`,
-        missingItems,
-      };
+      const availableUnits = virtualStock ? Math.floor(virtualStock.toNumber()) : 0;
+      if (availableUnits <= 0) {
+        return {
+          sellable: false,
+          status: 'INSUFFICIENT_RECIPE_STOCK',
+          message: `${item.name} no tiene stock disponible.`,
+          missingItems,
+        };
+      } else {
+        return {
+          sellable: false,
+          status: 'INSUFFICIENT_RECIPE_STOCK',
+          message: `Stock insuficiente para ${item.name}. Disponible: ${availableUnits}, requerido: ${requiredQuantity.toString()}.`,
+          missingItems,
+        };
+      }
     }
 
     return { sellable: true, status: 'SELLABLE' };
@@ -1491,9 +1540,27 @@ export class InventoryService {
         throw new BadRequestException('quantity and unitCost are required together');
       }
 
+      let quantity;
+      let unitCost;
+
+      try {
+        quantity = this.decimal(dto.quantity);
+        unitCost = this.decimal(dto.unitCost);
+      } catch (e) {
+        throw new BadRequestException('Cantidad o costo unitario inválidos');
+      }
+
+      if (quantity.lte(0) || Number.isNaN(quantity.toNumber())) {
+        throw new BadRequestException('La cantidad debe ser mayor a cero');
+      }
+
+      if (unitCost.lte(0) || Number.isNaN(unitCost.toNumber())) {
+        throw new BadRequestException('El costo unitario debe ser mayor a cero');
+      }
+
       return {
-        quantity: this.decimal(dto.quantity),
-        unitCost: this.decimal(dto.unitCost),
+        quantity: quantity.toDecimalPlaces(6),
+        unitCost: unitCost.toDecimalPlaces(6),
       };
     }
 
@@ -1516,15 +1583,30 @@ export class InventoryService {
         dto.ingredientId,
       );
 
-      const factor = this.decimal(ingredient.purchaseToConsumptionFactor);
+      const factor = this.getPurchaseToStockFactor(ingredient);
       if (factor.lte(0)) {
         throw new BadRequestException(
           'El factor de conversión del ingrediente debe ser mayor a cero',
         );
       }
 
-      const purchaseQuantity = this.decimal(dto.purchaseQuantity);
-      const purchaseUnitCost = this.decimal(dto.purchaseUnitCost);
+      let purchaseQuantity;
+      let purchaseUnitCost;
+
+      try {
+        purchaseQuantity = this.decimal(dto.purchaseQuantity);
+        purchaseUnitCost = this.decimal(dto.purchaseUnitCost);
+      } catch (e) {
+        throw new BadRequestException('Cantidad o costo de compra inválidos');
+      }
+
+      if (purchaseQuantity.lte(0) || Number.isNaN(purchaseQuantity.toNumber())) {
+        throw new BadRequestException('La cantidad de compra debe ser mayor a cero');
+      }
+
+      if (purchaseUnitCost.lte(0) || Number.isNaN(purchaseUnitCost.toNumber())) {
+        throw new BadRequestException('El costo de compra debe ser mayor a cero');
+      }
 
       const consumptionQuantity = purchaseQuantity.mul(factor).toDecimalPlaces(6);
       const unitCostPerConsumption = purchaseUnitCost.div(factor).toDecimalPlaces(6);

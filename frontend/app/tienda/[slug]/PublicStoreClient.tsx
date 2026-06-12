@@ -40,6 +40,34 @@ const formatCop = (value: number) => {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+async function readApiError(res: Response) {
+  const fallback = "No se pudo confirmar el pedido.";
+  let raw = "";
+
+  try {
+    raw = await res.text();
+  } catch {
+    return fallback;
+  }
+
+  if (!raw.trim()) return fallback;
+
+  try {
+    const payload = JSON.parse(raw);
+    const message =
+      payload?.message ??
+      payload?.error ??
+      payload?.details?.message ??
+      payload?.details?.error;
+    if (Array.isArray(message)) return message.join(" | ");
+    if (typeof message === "string" && message.trim()) return message;
+  } catch {
+    return raw;
+  }
+
+  return fallback;
+}
+
 type ItemType = "PRODUCT" | "SERVICE";
 
 type PublicRecipeLine = {
@@ -502,7 +530,11 @@ export default function PublicStoreClient() {
         }),
       });
 
-      if (!res.ok) throw new Error("Error sending order");
+      if (!res.ok) {
+        const message = await readApiError(res);
+        notify({ type: "error", message });
+        return;
+      }
 
       notify({ type: "success", message: "Compra enviada" });
 

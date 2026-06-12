@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   Trash2,
@@ -45,8 +45,9 @@ import {
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
 
-export default function MiNegocioPage() {
+function MiNegocioPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<Item[]>([]);
   const [recipeLineCounts, setRecipeLineCounts] = useState<
     Record<string, number>
@@ -243,6 +244,16 @@ export default function MiNegocioPage() {
     const firstActive = nextWeek.findIndex((d) => d.active);
     setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
   };
+
+  useEffect(() => {
+    const itemId = searchParams.get("itemId") ?? searchParams.get("editItem");
+    if (!itemId || !items.length) return;
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (item) {
+      handleStartEdit(item);
+      router.replace("/mi-negocio", { scroll: false });
+    }
+  }, [items, router, searchParams]);
 
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -765,5 +776,24 @@ export default function MiNegocioPage() {
       )}
 
     </div>
+  );
+}
+
+export default function MiNegocioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col min-h-screen bg-white">
+          <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
+          <main className="flex-1 flex items-center justify-center">
+            <div className="text-neutral-400 font-medium text-[10px] uppercase tracking-widest animate-pulse">
+              Cargando mi negocio...
+            </div>
+          </main>
+        </div>
+      }
+    >
+      <MiNegocioPageContent />
+    </Suspense>
   );
 }

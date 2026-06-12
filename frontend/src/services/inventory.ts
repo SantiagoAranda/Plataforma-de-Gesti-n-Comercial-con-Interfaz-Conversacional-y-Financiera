@@ -27,6 +27,24 @@ export type InventorySummaryIngredient = Ingredient & {
   lowStock?: boolean;
 };
 
+export type SimpleItemInventorySummary = {
+  id: string;
+  name: string;
+  price?: number | string;
+  minStock?: string | number;
+  currentStock: string | number;
+  averageCost: string | number;
+  stockValue: string | number;
+  outOfStock?: boolean;
+  hasMovements?: boolean;
+  canCreateInitialInventory?: boolean;
+  sellability?: {
+    sellable: boolean;
+    status: string;
+    message?: string;
+  };
+};
+
 export type InventoryMovementType =
   | "INVENTORY_INITIAL"
   | "PURCHASE"
@@ -275,16 +293,7 @@ export function getInventoryKardex(query: InventoryKardexGlobalQuery = {}) {
 }
 
 export function getSimpleItemsInventorySummary() {
-  return api<Array<{
-    id: string;
-    name: string;
-    currentStock: string | number;
-    averageCost: string | number;
-    stockValue: string | number;
-    outOfStock?: boolean;
-    hasMovements?: boolean;
-    canCreateInitialInventory?: boolean;
-  }>>(`/inventory/items/summary`);
+  return api<SimpleItemInventorySummary[]>(`/inventory/items/summary`);
 }
 
 export function listItemKardex(itemId: string, query: InventoryKardexQuery = {}) {
@@ -293,6 +302,29 @@ export function listItemKardex(itemId: string, query: InventoryKardexQuery = {})
   if (query.to) qs.set("to", query.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<InventoryMovement[]>(`/inventory/items/${itemId}/kardex${suffix}`);
+}
+
+export function registerSimpleItemMovement(
+  itemId: string,
+  dto: {
+    type: "INVENTORY_INITIAL" | "PURCHASE";
+    quantity: string;
+    unitCost: string;
+    referenceId?: string;
+    detail?: string;
+  },
+) {
+  return api<InventoryMovement>(`/inventory/items/${itemId}/movements`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function updateSimpleItemMinStock(itemId: string, minStock: string) {
+  return api<SimpleItemInventorySummary>(`/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ minStock }),
+  });
 }
 
 export function getRecipe(itemId: string) {

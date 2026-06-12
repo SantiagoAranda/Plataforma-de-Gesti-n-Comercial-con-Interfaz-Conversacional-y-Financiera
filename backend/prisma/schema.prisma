@@ -239,6 +239,9 @@ model Item {
 
   inventoryMode InventoryMode @default(NONE)
 
+  // Stock threshold used for low-stock alerts on SIMPLE products.
+  minStock Decimal @default(0) @db.Decimal(20, 6)
+
   images             ItemImage[]
   scheduleWindows    ServiceScheduleWindow[]
   scheduleBlocks     ServiceScheduleBlock[]

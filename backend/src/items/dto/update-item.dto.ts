@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   Min,
   ValidateNested,
 } from "class-validator";
@@ -45,6 +46,14 @@ export class UpdateItemDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === "" ? undefined : String(value).replace(",", ".").trim()
+  )
+  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  minStock?: string;
 
   @IsOptional()
   @IsString()

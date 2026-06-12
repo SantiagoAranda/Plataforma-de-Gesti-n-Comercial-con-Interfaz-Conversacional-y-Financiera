@@ -18,17 +18,21 @@ import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDeta
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
+import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
+import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
 
 import {
   createIngredient,
   getInventorySummary,
   getRecipesBulk,
+  getSimpleItemsInventorySummary,
   type InventorySummaryIngredient,
   type RecipeLine,
+  type SimpleItemInventorySummary,
 } from "@/src/services/inventory";
 import type { Item } from "@/src/types/item";
 
-type UITab = "recipes" | "ingredients";
+type UITab = "recipes" | "ingredients" | "products";
 
 function recipeStatus(item: Item, lines: RecipeLine[]) {
   const mandatory = lines.filter((line) => !line.isOptional);
@@ -52,18 +56,25 @@ function InventarioPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get("tab");
-  const tab = tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId") ? "ingredients" : "recipes";
+  const tab =
+    tabParam === "products" || tabParam === "productos" || searchParams?.has("productId")
+      ? "products"
+      : tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId")
+        ? "ingredients"
+        : "recipes";
   const expandedItemId = searchParams?.get("itemId");
   const selectedIngredientIdParam = searchParams?.get("ingredientId") || null;
+  const selectedProductIdParam = searchParams?.get("productId") || null;
 
   const setTab = (newTab: UITab) => {
-    const alias = newTab === "ingredients" ? "insumos" : "recipes";
+    const alias = newTab === "ingredients" ? "insumos" : newTab === "products" ? "productos" : "recipes";
     router.push(`/inventario?tab=${alias}`, { scroll: false });
   };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
+  const [simpleProducts, setSimpleProducts] = useState<SimpleItemInventorySummary[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [recipesByItemId, setRecipesByItemId] = useState<Record<string, RecipeLine[]>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -71,6 +82,7 @@ function InventarioPageContent() {
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
   const [creatingIngredient, setCreatingIngredient] = useState(false);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   // Sync selectedIngredientId with searchParams if present
   useEffect(() => {
@@ -80,6 +92,10 @@ function InventarioPageContent() {
       setSelectedIngredientId(null);
     }
   }, [selectedIngredientIdParam]);
+
+  useEffect(() => {
+    setSelectedProductId(selectedProductIdParam);
+  }, [selectedProductIdParam]);
 
   const handleSelectIngredient = (id: string) => {
     setSelectedIngredientId(id);
@@ -99,21 +115,39 @@ function InventarioPageContent() {
     router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
   };
 
+  const handleSelectProduct = (id: string) => {
+    setSelectedProductId(id);
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", "productos");
+    currentParams.set("productId", id);
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
+
+  const handleCloseProductSheet = () => {
+    setSelectedProductId(null);
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", "productos");
+    currentParams.delete("productId");
+    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+  };
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [summaryData, itemsData] = await Promise.all([
+      const [summaryData, itemsData, simpleProductsData] = await Promise.all([
         getInventorySummary({ status: "ACTIVE" }),
         api<Item[]>("/items?status=ACTIVE").catch(() => []),
+        getSimpleItemsInventorySummary().catch(() => []),
       ]);
 
       setSummary(summaryData ?? []);
+      setSimpleProducts(simpleProductsData ?? []);
       setItems((itemsData ?? []).filter((item) => item.status === "ACTIVE"));
 
       const inventoryProducts = (itemsData ?? []).filter(
-        (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && (item.inventoryMode === "SIMPLE" || item.inventoryMode === "RECIPE_BASED"),
+        (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
       );
 
       setRecipesByItemId(
@@ -149,7 +183,7 @@ function InventarioPageContent() {
   }, [summary]);
 
   const recipeItems = useMemo(
-    () => items.filter((item) => item.type === "PRODUCT" && (item.inventoryMode === "SIMPLE" || item.inventoryMode === "RECIPE_BASED")),
+    () => items.filter((item) => item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED"),
     [items],
   );
 
@@ -164,6 +198,12 @@ function InventarioPageContent() {
     if (!query) return recipeItems;
     return recipeItems.filter((item) => item.name.toLowerCase().includes(query));
   }, [recipeItems, searchQuery]);
+
+  const visibleProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return simpleProducts;
+    return simpleProducts.filter((item) => item.name.toLowerCase().includes(query));
+  }, [simpleProducts, searchQuery]);
 
   const recipeCost = useCallback(
     (itemId: string) => {
@@ -233,8 +273,8 @@ function InventarioPageContent() {
           </section>
 
           <section className="rounded-2xl bg-neutral-100/80 p-1.5 shadow-sm ring-1 ring-black/5">
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["recipes", "ingredients"] as const).map((nextTab) => (
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["recipes", "ingredients", "products"] as const).map((nextTab) => (
                 <button
                   key={nextTab}
                   type="button"
@@ -244,7 +284,7 @@ function InventarioPageContent() {
                     tab === nextTab ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5" : "bg-transparent text-neutral-500",
                   )}
                 >
-                  {nextTab === "recipes" ? "Recetas" : "Insumos"}
+                  {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : "Productos"}
                 </button>
               ))}
             </div>
@@ -309,6 +349,10 @@ function InventarioPageContent() {
                 })
               )}
             </section>
+          ) : tab === "products" ? (
+            <section className="space-y-2">
+              <SimpleProductList products={visibleProducts} onSelect={handleSelectProduct} />
+            </section>
           ) : (
             <section className="space-y-2">
               {visibleRecipes.length === 0 ? (
@@ -335,7 +379,7 @@ function InventarioPageContent() {
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={tab === "ingredients" ? "Buscar insumo..." : "Buscar receta..."}
+        placeholder={tab === "ingredients" ? "Buscar insumo..." : tab === "products" ? "Buscar producto..." : "Buscar receta..."}
         onSubmit={() => {}}
         onCreateIngredient={toggleIngredientSheetFromBar}
         createIngredientActive={ingredientSheetOpen}
@@ -421,6 +465,12 @@ function InventarioPageContent() {
         ingredientId={selectedIngredientId}
         open={!!selectedIngredientId}
         onClose={handleCloseIngredientSheet}
+        onChanged={load}
+      />
+      <SimpleProductDetailSheet
+        product={simpleProducts.find((item) => item.id === selectedProductId) ?? null}
+        open={!!selectedProductId}
+        onClose={handleCloseProductSheet}
         onChanged={load}
       />
     </div>

@@ -5,7 +5,7 @@ import { cn } from "@/src/lib/utils";
 import type { Ingredient, IngredientStatus, IngredientUnit } from "@/src/services/inventory";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
-import { formatIngredientUnit, formatUnit, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
+import { formatIngredientUnit, formatUnit, getPurchaseToStockFactor, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
 
 type SubmitValues = {
   name: string;
@@ -30,6 +30,12 @@ type Props = {
   onValidationChange?: (isValid: boolean) => void;
   formRef?: RefObject<HTMLFormElement | null>;
 };
+
+function defaultPurchaseToStockFactor(purchaseUnit: IngredientUnit, consumptionUnit: IngredientUnit) {
+  const factor = getPurchaseToStockFactor(purchaseUnit, consumptionUnit, "");
+  if (Number.isFinite(factor) && factor > 0) return String(factor);
+  return "";
+}
 
 export function IngredientForm({
   initial,
@@ -63,6 +69,16 @@ export function IngredientForm({
     initial?.minStock?.toString?.() ?? defaults?.minStock?.toString?.() ?? "0",
   );
   const [status, setStatus] = useState<IngredientStatus>(initial?.status ?? "ACTIVE");
+  const suggestedFactor = useMemo(
+    () => defaultPurchaseToStockFactor(purchaseUnit, consumptionUnit),
+    [purchaseUnit, consumptionUnit],
+  );
+
+  useEffect(() => {
+    if (mode === "create" && suggestedFactor && (!factor || factor === "1")) {
+      setFactor(suggestedFactor);
+    }
+  }, [mode, suggestedFactor, factor]);
 
   const canSubmit = useMemo(() => {
     if (!name.trim()) return false;
@@ -187,7 +203,7 @@ export function IngredientForm({
 
       <div className="space-y-2">
         <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-          Factor compra &rarr; consumo
+          Factor compra &rarr; stock
         </label>
         <input
           value={factor}
@@ -197,8 +213,17 @@ export function IngredientForm({
           className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm font-medium outline-none shadow-sm focus:border-emerald-500"
         />
         <p className="text-[11px] font-medium text-neutral-400">
-          Ejemplo: 1 {formatUnit(purchaseUnit)} = {factor || "1000"} {customUnitLabel.trim() || formatUnit(consumptionUnit)}
+          Ejemplo: 1 {formatUnit(purchaseUnit)} = {factor || suggestedFactor || "1000"} {customUnitLabel.trim() || formatUnit(consumptionUnit)}
         </p>
+        {suggestedFactor && factor.replace(",", ".").trim() !== suggestedFactor ? (
+          <button
+            type="button"
+            onClick={() => setFactor(suggestedFactor)}
+            className="text-[11px] font-semibold text-emerald-700"
+          >
+            Usar conversión sugerida: 1 {formatUnit(purchaseUnit)} = {suggestedFactor} {formatUnit(consumptionUnit)}
+          </button>
+        ) : null}
       </div>
 
       <div className="space-y-2">

@@ -116,6 +116,10 @@ export class ItemsService {
             name: dto.name,
             price: dto.price,
             description: dto.description?.trim() || null,
+            minStock:
+              dto.minStock === undefined
+                ? undefined
+                : new Prisma.Decimal(dto.minStock),
             badgeText: firstBadge?.text ?? legacyBadgeText,
             badgeColor: firstBadge?.color ?? legacyBadgeColor,
             badges: finalBadges.length ? finalBadges : null,
@@ -400,6 +404,10 @@ export class ItemsService {
             dto.description === undefined
               ? undefined
               : dto.description?.trim() || null,
+          minStock:
+            dto.minStock === undefined
+              ? undefined
+              : new Prisma.Decimal(dto.minStock),
           badgeText:
             hasBadgesField || hasBadgeTextField ? nextBadgeText : undefined,
           badgeColor:
