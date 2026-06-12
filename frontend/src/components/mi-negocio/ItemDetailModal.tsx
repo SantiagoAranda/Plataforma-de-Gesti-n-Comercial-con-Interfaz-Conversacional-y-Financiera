@@ -28,6 +28,11 @@ interface Item {
   images?: { id: string; url: string; order: number }[];
   status?: string;
   inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | null;
+  sellability?: {
+    sellable: boolean;
+    status: string;
+    message?: string;
+  };
 }
 
 interface ItemDetailModalProps {
@@ -40,6 +45,20 @@ interface ItemDetailModalProps {
 }
 
 function inventoryMeta(item: Item, recipeLineCount = 0) {
+  if (item.sellability?.status) {
+    const map: Record<string, { label: string; tone: string; cta: null | string; href: null | string }> = {
+      SELLABLE: { label: "Listo para vender", tone: "bg-emerald-50 text-emerald-800", cta: null, href: null },
+      LOW_STOCK: { label: "Stock bajo", tone: "bg-amber-50 text-amber-800", cta: "Cargar stock", href: "/inventario?tab=products" },
+      NO_STOCK: { label: "Sin stock", tone: "bg-rose-50 text-rose-700", cta: "Cargar stock", href: "/inventario?tab=products" },
+      MISSING_INITIAL_STOCK: { label: "Sin inventario inicial", tone: "bg-rose-50 text-rose-700", cta: "Cargar stock", href: "/inventario?tab=products" },
+      MISSING_RECIPE: { label: "Receta incompleta", tone: "bg-amber-50 text-amber-800", cta: "Configurar receta", href: `/inventario?tab=recipes&itemId=${encodeURIComponent(item.id)}` },
+      EMPTY_RECIPE: { label: "Receta sin ingredientes", tone: "bg-amber-50 text-amber-800", cta: "Configurar receta", href: `/inventario?tab=recipes&itemId=${encodeURIComponent(item.id)}` },
+      INSUFFICIENT_RECIPE_STOCK: { label: "Stock insuficiente para receta", tone: "bg-rose-50 text-rose-700", cta: "Revisar insumos", href: "/inventario?tab=insumos" },
+      INACTIVE: { label: "Inactivo", tone: "bg-neutral-100 text-neutral-600", cta: null, href: null },
+    };
+    return map[item.sellability.status] ?? { label: "Revisar inventario", tone: "bg-amber-50 text-amber-800", cta: null, href: null };
+  }
+
   if (item.type !== "PRODUCT" || item.inventoryMode === "NONE" || !item.inventoryMode) {
     return { label: "Sin inventario", tone: "bg-neutral-100 text-neutral-600", cta: null as null | string, href: null as null | string };
   }
@@ -149,6 +168,12 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                 </span>
               </div>
             </div>
+
+            {displayItem.sellability?.message && !displayItem.sellability.sellable ? (
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+                Este producto no aparece en ventas ni tienda pública porque {displayItem.sellability.message.charAt(0).toLowerCase() + displayItem.sellability.message.slice(1)}
+              </div>
+            ) : null}
 
             {inventory.cta && inventory.href ? (
               <button

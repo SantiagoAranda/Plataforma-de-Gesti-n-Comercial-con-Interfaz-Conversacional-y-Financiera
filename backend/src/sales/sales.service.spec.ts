@@ -367,6 +367,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
         ],
       }),
       expect.any(Date),
+      { sourceType: 'ORDER' },
     );
     expect(accountingService.postOrderMovements).not.toHaveBeenCalled();
   });

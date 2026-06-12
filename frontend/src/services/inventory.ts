@@ -39,7 +39,8 @@ export type InventoryMovementType =
 export type InventoryMovement = {
   id: string;
   businessId: string;
-  ingredientId: string;
+  ingredientId: string | null;
+  itemId: string | null;
   type: InventoryMovementType;
   quantity: number | string;
   unitCost: number | string;
@@ -57,11 +58,15 @@ export type InventoryMovement = {
 };
 
 export type InventoryKardexGlobalMovement = InventoryMovement & {
-  ingredient: {
+  ingredient?: {
     id: string;
     name: string;
     consumptionUnit: string;
-  };
+  } | null;
+  item?: {
+    id: string;
+    name: string;
+  } | null;
 };
 
 export type PaginatedResultMeta = {
@@ -100,6 +105,7 @@ export type InventoryKardexQuery = {
 
 export type InventoryKardexGlobalQuery = {
   ingredientId?: string;
+  itemId?: string;
   type?: InventoryMovementType;
   dateFrom?: string;
   dateTo?: string;
@@ -108,14 +114,16 @@ export type InventoryKardexGlobalQuery = {
 };
 
 export type CreateInventoryInitialDto = {
-  ingredientId: string;
+  ingredientId?: string;
+  itemId?: string;
   quantity: string;
   unitCost: string;
   detail?: string;
 };
 
 export type CreateInventoryPurchaseBaseDto = {
-  ingredientId: string;
+  ingredientId?: string;
+  itemId?: string;
   referenceId?: string;
   detail?: string;
 };
@@ -141,7 +149,8 @@ export type CreateInventoryPurchaseDto =
   | CreateInventoryPurchaseByUnitDto;
 
 export type CreateInventoryPurchaseReturnDto = {
-  ingredientId: string;
+  ingredientId?: string;
+  itemId?: string;
   quantity: string;
   unitCost: string;
   referenceId?: string;
@@ -149,7 +158,8 @@ export type CreateInventoryPurchaseReturnDto = {
 };
 
 export type CreateInventoryAdjustmentDto = {
-  ingredientId: string;
+  ingredientId?: string;
+  itemId?: string;
   quantity: string;
   unitCost?: string;
   detail: string;
@@ -254,6 +264,7 @@ export function listKardex(ingredientId: string, query: InventoryKardexQuery = {
 export function getInventoryKardex(query: InventoryKardexGlobalQuery = {}) {
   const qs = new URLSearchParams();
   if (query.ingredientId) qs.set("ingredientId", query.ingredientId);
+  if (query.itemId) qs.set("itemId", query.itemId);
   if (query.type) qs.set("type", query.type);
   if (query.dateFrom) qs.set("dateFrom", query.dateFrom);
   if (query.dateTo) qs.set("dateTo", query.dateTo);
@@ -261,6 +272,27 @@ export function getInventoryKardex(query: InventoryKardexGlobalQuery = {}) {
   if (query.limit) qs.set("limit", String(query.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<InventoryKardexGlobalResult>(`/inventory/kardex${suffix}`);
+}
+
+export function getSimpleItemsInventorySummary() {
+  return api<Array<{
+    id: string;
+    name: string;
+    currentStock: string | number;
+    averageCost: string | number;
+    stockValue: string | number;
+    outOfStock?: boolean;
+    hasMovements?: boolean;
+    canCreateInitialInventory?: boolean;
+  }>>(`/inventory/items/summary`);
+}
+
+export function listItemKardex(itemId: string, query: InventoryKardexQuery = {}) {
+  const qs = new URLSearchParams();
+  if (query.from) qs.set("from", query.from);
+  if (query.to) qs.set("to", query.to);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<InventoryMovement[]>(`/inventory/items/${itemId}/kardex${suffix}`);
 }
 
 export function getRecipe(itemId: string) {

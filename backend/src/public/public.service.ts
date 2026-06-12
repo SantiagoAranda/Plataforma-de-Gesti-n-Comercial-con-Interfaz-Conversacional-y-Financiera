@@ -4,12 +4,14 @@ import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 @Injectable()
 export class PublicService {
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
+    private inventoryService: InventoryService,
   ) {}
 
   private normalizeExcludedOptionalIngredientIds(value: unknown) {
@@ -304,6 +306,7 @@ export class PublicService {
               select: {
                 id: true,
                 name: true,
+                currentStock: true,
               },
             },
           },
@@ -311,6 +314,22 @@ export class PublicService {
         },
       },
     });
+
+    const visibleItems: any[] = [];
+    for (const item of data) {
+      const sellability = await this.inventoryService.getItemSellability(
+        business.id,
+        item.id,
+      );
+      if (sellability.sellable) {
+        visibleItems.push({
+          ...item,
+          sellability,
+          currentStock: sellability.currentStock,
+          averageCost: sellability.averageCost,
+        });
+      }
+    }
 
     const {
       id: _businessId,
@@ -320,7 +339,7 @@ export class PublicService {
 
     return {
       business: publicBusiness,
-      data: data.map((item) => ({
+      data: visibleItems.map((item) => ({
         ...item,
         price: Number(item.price),
         recipes: item.recipes.map((recipe) => ({
@@ -583,7 +602,7 @@ export class PublicService {
         recipes: {
           include: {
             ingredient: {
-              select: { id: true, name: true },
+              select: { id: true, name: true, currentStock: true },
             },
           },
         },
@@ -641,6 +660,17 @@ export class PublicService {
 
       return { input, item, excludedIds };
     });
+
+    for (const { input, item } of normalizedInputs) {
+      const sellability = await this.inventoryService.getItemSellability(
+        business.id,
+        item.id,
+        input.quantity,
+      );
+      if (!sellability.sellable) {
+        throw new BadRequestException(sellability.message ?? 'Producto no vendible');
+      }
+    }
 
     const visibleNote = [
       dto.note?.trim() || null,

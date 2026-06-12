@@ -71,6 +71,11 @@ export class InventoryController {
     return this.inventoryService.getSummary(req.user.businessId, query);
   }
 
+  @Get('items/summary')
+  getSimpleItemsSummary(@Req() req: any) {
+    return this.inventoryService.getSimpleItemsSummary(req.user.businessId);
+  }
+
   @Get('kardex')
   listGlobalKardex(@Req() req: any, @Query() query: InventoryKardexGlobalQueryDto) {
     return this.inventoryService.listGlobalKardex(req.user.businessId, query);
@@ -85,6 +90,19 @@ export class InventoryController {
     return this.inventoryService.listKardex(
       req.user.businessId,
       ingredientId,
+      query,
+    );
+  }
+
+  @Get('items/:itemId/kardex')
+  listItemKardex(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Query() query: InventoryKardexQueryDto,
+  ) {
+    return this.inventoryService.listItemKardex(
+      req.user.businessId,
+      itemId,
       query,
     );
   }

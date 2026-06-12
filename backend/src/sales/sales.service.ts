@@ -626,6 +626,7 @@ export class SalesService {
             businessId,
             finalizedOrder as any,
             postingDate,
+            { sourceType },
           );
 
       const movements = order.accountingPostedAt
@@ -947,7 +948,7 @@ export class SalesService {
           durationMinutesSnapshot: item.durationMinutes,
           unitPrice,
           lineTotal,
-        },
+        } as any,
       });
 
       const totals = await tx.orderItem.aggregate({

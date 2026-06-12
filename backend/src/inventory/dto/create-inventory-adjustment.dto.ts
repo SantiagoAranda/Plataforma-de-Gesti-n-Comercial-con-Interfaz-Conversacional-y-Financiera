@@ -3,9 +3,15 @@ import { IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validat
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateInventoryAdjustmentDto {
+  @IsOptional()
   @IsString()
   @IsUUID()
-  ingredientId!: string;
+  ingredientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsUUID()
+  itemId?: string;
 
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
