@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Briefcase, Building2, Scale } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { AccountingSummary } from "@/src/services/accounting";
 
@@ -93,147 +93,210 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const pctReservaLegal = calcularPorcentajeValor(reservaLegal);
   const pctUtilidadDelEjercicio = Math.min(Math.max(pctUtilidadLiquida - pctReservaLegal, 0), 100);
 
-  // 4. Define the sequential rows
-  const rows = [
-    {
-      label: "Ventas Brutas",
-      value: ventasBrutas,
-      isDeduction: false,
-      pct: 100,
-    },
-    {
-      label: "Devoluciones",
-      value: devoluciones,
-      isDeduction: true,
-      pct: pctDevoluciones,
-    },
-    {
-      label: "Ventas Netas",
-      value: ventasNetas,
-      isDeduction: false,
-      pct: pctVentasNetas,
-    },
-    {
-      label: "Costos",
-      value: costos,
-      isDeduction: true,
-      pct: pctCostos,
-    },
-    {
-      label: "Utilidad Bruta",
-      value: utilidadBruta,
-      isDeduction: false,
-      pct: pctUtilidadBruta,
-    },
-    {
-      label: "Total Gastos Operacionales",
-      value: totalGastosOperacionales,
-      isDeduction: true,
-      pct: pctTotalGastosOperacionales,
-    },
-    {
-      label: "Utilidad Operacional",
-      value: utilidadOperacional,
-      isDeduction: false,
-      pct: pctUtilidadOperacional,
-    },
-    {
-      label: "Ingresos No Operacionales",
-      value: ingresosNoOperacionales,
-      isDeduction: false,
-      pct: pctIngresosNoOperacionales,
-    },
-    {
-      label: "Gastos No Operacionales",
-      value: gastosNoOperacionales,
-      isDeduction: true,
-      pct: pctGastosNoOperacionales,
-    },
-    {
-      label: "Utilidad antes de Impuestos",
-      value: utilidadAntesDeImpuestos,
-      isDeduction: false,
-      pct: pctUtilidadAntesDeImpuestos,
-    },
-    {
-      label: "Provisiones Impuesto de Renta",
-      value: provisionesImpuesto,
-      isDeduction: true,
-      pct: pctProvisionesImpuesto,
-    },
-    {
-      label: "Utilidad Líquida",
-      value: utilidadLiquida,
-      isDeduction: false,
-      pct: pctUtilidadLiquida,
-    },
-    {
-      label: "Reserva Legal",
-      value: reservaLegal,
-      isDeduction: true,
-      pct: pctReservaLegal,
-    },
-    {
-      label: "Utilidad del Ejercicio",
-      value: utilidadDelEjercicio,
-      isDeduction: false,
-      pct: pctUtilidadDelEjercicio,
-    },
-  ];
-
-  return (
-    <div className="w-full space-y-4">
-      {/* Main single P&L container block */}
-      <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <h3 className="text-slate-500 text-xs tracking-wider font-semibold uppercase mb-6">
-          ESTADO DE RESULTADOS (P&L)
-        </h3>
-
-        <div className="space-y-5">
-          {rows.map((row, idx) => (
-            <div key={idx} className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                {/* Left side: Mini-Icon + Concept label */}
-                <div className="flex items-center gap-3">
-                  {row.isDeduction ? (
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
-                      <ArrowDownRight className="h-4 w-4" />
-                    </div>
-                  ) : (
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500">
-                      <ArrowUpRight className="h-4 w-4" />
-                    </div>
-                  )}
-                  <span className="text-slate-700 text-sm font-medium">
-                    {row.label}
-                  </span>
-                </div>
-
-                {/* Right side: Formatted Amount */}
-                <span className="text-slate-900 text-sm font-semibold">
-                  {formatARS(row.value)}
-                </span>
+  // ─── Sub-componente de fila reutilizable ─────────────────────────────────
+  function ProfitRow({
+    label,
+    value,
+    pct,
+    isDeduction,
+    isResult = false,
+  }: {
+    label: string;
+    value: number;
+    pct: number;
+    isDeduction: boolean;
+    isResult?: boolean;
+  }) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {isDeduction ? (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
+                <ArrowDownRight className="h-4 w-4" />
               </div>
-
-              {/* Progress bar and inline percentage */}
-              <div className="flex items-center gap-3 w-full mt-1.5">
-                <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all duration-300",
-                      row.isDeduction ? "bg-rose-500" : "bg-emerald-500"
-                    )}
-                    style={{ width: `${Math.min(Math.max(row.pct, 0), 100)}%` }}
-                  />
-                </div>
-                <span className="text-slate-400 text-xs font-medium text-right shrink-0 min-w-[40px]">
-                  {row.pct}%
-                </span>
+            ) : (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500">
+                <ArrowUpRight className="h-4 w-4" />
               </div>
-            </div>
-          ))}
+            )}
+            <span className={cn(
+              "text-sm",
+              isResult ? "font-semibold text-neutral-900" : "font-medium text-slate-700"
+            )}>
+              {label}
+            </span>
+          </div>
+          <span className={cn(
+            "text-sm tabular-nums",
+            isResult ? "font-semibold text-neutral-900" : "font-semibold text-slate-900"
+          )}>
+            {formatARS(value)}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 w-full mt-1.5">
+          <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                isDeduction ? "bg-rose-500" : "bg-emerald-500"
+              )}
+              style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
+            />
+          </div>
+          <span className="text-slate-400 text-xs font-medium text-right shrink-0 min-w-[40px]">
+            {pct}%
+          </span>
         </div>
       </div>
+    );
+  }
+
+  const Divider = () => (
+    <div className="border-t border-neutral-100/80 my-3.5 mx-1" />
+  );
+
+  return (
+    <div className="w-full space-y-6">
+
+      {/* ── 1. Tarjeta: OPERACIÓN COMERCIAL ─────────────────────────────── */}
+      <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-sm mb-6">
+        {/* 1. TÍTULO CON ÍCONO Y FUENTE MÁS GRANDE */}
+        <div className="flex items-center gap-2 text-neutral-900 font-bold text-base tracking-wide uppercase mb-5">
+          <Briefcase className="w-5 h-5 text-neutral-500" />
+          <span>Operación Comercial</span>
+        </div>
+
+        {/* 2. CUERPO CON LOS ÍTEMS NORMALES */}
+        <div className="space-y-4">
+          <ProfitRow label="Ventas Brutas" value={ventasBrutas} pct={100} isDeduction={false} />
+          <ProfitRow label="Devoluciones" value={devoluciones} pct={pctDevoluciones} isDeduction={true} />
+          <ProfitRow label="Ventas Netas" value={ventasNetas} pct={pctVentasNetas} isDeduction={false} />
+          <ProfitRow label="Costos" value={costos} pct={pctCostos} isDeduction={true} />
+        </div>
+
+        {/* 3. LÍNEA DE SEPARACIÓN VISIBLE ANTES DE LA UTILIDAD BRUTA */}
+        <div className="border-t border-neutral-200 my-4 mx-1" />
+
+        {/* 4. ÍTEM DE UTILIDAD BRUTA CON ÍCONO '=' AZUL */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* ÍCONO IGUAL (=) AZUL */}
+              <div className="bg-blue-50 text-blue-600 rounded-xl w-8 h-8 flex items-center justify-center font-bold text-lg">
+                =
+              </div>
+              {/* El texto de la palabra se mantiene en negro como los demás */}
+              <span className="text-sm font-semibold text-neutral-900">Utilidad Bruta</span>
+            </div>
+            {/* El monto de dinero se mantiene en negro/gris original */}
+            <span className="text-sm font-bold text-neutral-900">
+              {formatARS(utilidadBruta)}
+            </span>
+          </div>
+
+          {/* BARRA DE PROGRESO AZUL */}
+          <div className="flex items-center gap-2 mt-1">
+            <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-blue-600 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(Math.max(pctUtilidadBruta, 0), 100)}%` }}
+              />
+            </div>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadBruta}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Tarjeta: GASTOS ADMINISTRATIVOS ──────────────────────────── */}
+      <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-sm mb-6">
+        {/* 1. TÍTULO CON ÍCONO Y FUENTE MÁS GRANDE */}
+        <div className="flex items-center gap-2 text-neutral-900 font-bold text-base tracking-wide uppercase mb-5">
+          <Building2 className="w-5 h-5 text-neutral-500" />
+          <span>Gastos Administrativos</span>
+        </div>
+
+        {/* 2. CUERPO CON LOS ÍTEMS NORMALES */}
+        <div className="space-y-4">
+          <ProfitRow label="Total Gastos Operacionales" value={totalGastosOperacionales} pct={pctTotalGastosOperacionales} isDeduction={true} />
+          <ProfitRow label="Utilidad Operacional"       value={utilidadOperacional}       pct={pctUtilidadOperacional}       isDeduction={false} />
+          <ProfitRow label="Ingresos No Operacionales"  value={ingresosNoOperacionales}   pct={pctIngresosNoOperacionales}   isDeduction={false} />
+          <ProfitRow label="Gastos No Operacionales"    value={gastosNoOperacionales}     pct={pctGastosNoOperacionales}     isDeduction={true}  />
+        </div>
+
+        {/* 3. LÍNEA DE SEPARACIÓN ANTES DE UTILIDAD ANTES DE IMPUESTOS */}
+        <div className="border-t border-neutral-200 my-4 mx-1" />
+
+        {/* 4. RESULTADO: UTILIDAD ANTES DE IMPUESTOS */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-50 text-blue-600 rounded-xl w-8 h-8 flex items-center justify-center font-bold text-lg">=</div>
+              <span className="text-sm font-semibold text-neutral-900">Utilidad antes de Impuestos</span>
+            </div>
+            <span className="text-sm font-bold text-neutral-900">
+              {formatARS(utilidadAntesDeImpuestos)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-blue-600 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(Math.max(pctUtilidadAntesDeImpuestos, 0), 100)}%` }} 
+              />
+            </div>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadAntesDeImpuestos}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Tarjeta: IMPUESTOS Y RESERVAS ────────────────────────────── */}
+      <div className="bg-white border border-neutral-100 rounded-3xl p-5 shadow-sm mb-6">
+        {/* 1. TÍTULO CON ÍCONO Y FUENTE MÁS GRANDE */}
+        <div className="flex items-center gap-2 text-neutral-900 font-bold text-base tracking-wide uppercase mb-5">
+          <Scale className="w-5 h-5 text-neutral-500" />
+          <span>Impuestos y Reservas</span>
+        </div>
+
+        {/* 2. ÍTEMS NORMALES Y DE FLUJO INTERMEDIO */}
+        <div className="space-y-4">
+          <ProfitRow label="Provisiones Impuesto de Renta" value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
+          <ProfitRow label="Utilidad Líquida"              value={utilidadLiquida}       pct={pctUtilidadLiquida}        isDeduction={false} />
+          <ProfitRow label="Reserva Legal"                 value={reservaLegal}            pct={pctReservaLegal}           isDeduction={true} />
+        </div>
+
+        {/* 3. LÍNEA DE SEPARACIÓN ANTES DE LA UTILIDAD DEL EJERCICIO */}
+        <div className="border-t border-neutral-200 my-4 mx-1" />
+
+        {/* 4. CIERRE FINAL DE LA PÁGINA: UTILIDAD DEL EJERCICIO */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* ÍCONO IGUAL (=) AZUL */}
+              <div className="bg-blue-50 text-blue-600 rounded-xl w-8 h-8 flex items-center justify-center font-bold text-lg">
+                =
+              </div>
+              <span className="text-sm font-semibold text-neutral-900">Utilidad del Ejercicio</span>
+            </div>
+            {/* El monto se mantiene con su estilo y color de texto original */}
+            <span className="text-sm font-bold text-neutral-900">
+              {formatARS(utilidadDelEjercicio)}
+            </span>
+          </div>
+
+          {/* BARRA DE PROGRESO AZUL */}
+          <div className="flex items-center gap-2 mt-1">
+            <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-blue-600 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min(Math.max(pctUtilidadDelEjercicio, 0), 100)}%` }} 
+              />
+            </div>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{pctUtilidadDelEjercicio}%</span>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
