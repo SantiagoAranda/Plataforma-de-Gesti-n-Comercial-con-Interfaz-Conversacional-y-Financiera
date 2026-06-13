@@ -69,15 +69,15 @@ export default function EditarIngredientePage({ params }: { params: Promise<{ id
                   try {
                     setSubmitting(true);
                     toast.loading("Guardando...", { id: loadingId });
-                    const updated = await updateIngredient(ingredientId, {
+                    
+                    const payload: any = {
                       name: values.name,
                       consumptionUnit: values.consumptionUnit,
                       purchaseUnit: values.purchaseUnit,
-                      purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
-                      customUnitLabel: values.customUnitLabel,
                       minStock: values.minStock,
                       status: values.status,
-                    });
+                    };
+                    const updated = await updateIngredient(ingredientId, payload);
                     toast.dismiss(loadingId);
                     toast.success("Ingrediente actualizado");
                     router.replace(`/inventario/ingredientes/${updated.id}`);
@@ -97,4 +97,3 @@ export default function EditarIngredientePage({ params }: { params: Promise<{ id
     </div>
   );
 }
-

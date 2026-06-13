@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,9 +14,10 @@ import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
+import { IngredientList } from "@/src/components/inventory/IngredientList";
 import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDetailSheet";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
-import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
+import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
 import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
 import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
@@ -272,16 +273,16 @@ function InventarioPageContent() {
             </div>
           </section>
 
-          <section className="rounded-2xl bg-neutral-100/80 p-1.5 shadow-sm ring-1 ring-black/5">
-            <div className="grid grid-cols-3 gap-1.5">
+          <section className="rounded-full bg-slate-100 p-1 shadow-sm ring-1 ring-black/5">
+            <div className="grid grid-cols-3 gap-1">
               {(["recipes", "ingredients", "products"] as const).map((nextTab) => (
                 <button
                   key={nextTab}
                   type="button"
                   onClick={() => setTab(nextTab)}
                   className={cn(
-                    "h-9 rounded-2xl text-xs font-semibold transition active:scale-[0.99]",
-                    tab === nextTab ? "bg-white text-neutral-900 shadow-sm ring-1 ring-black/5" : "bg-transparent text-neutral-500",
+                    "h-9 rounded-full text-xs font-bold transition-all active:scale-[0.98]",
+                    tab === nextTab ? "bg-slate-900 text-white shadow-md" : "bg-transparent text-slate-500 hover:text-slate-800",
                   )}
                 >
                   {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : "Productos"}
@@ -296,58 +297,7 @@ function InventarioPageContent() {
             <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm">{error}</div>
           ) : tab === "ingredients" ? (
             <section className="space-y-2">
-              {visibleIngredients.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
-                  No hay insumos para mostrar.
-                </div>
-              ) : (
-                visibleIngredients.map((item) => {
-                  const currentStock = parseNumber(item.currentStock);
-                  const outOfStock = !!item.outOfStock;
-                  const lowStock = !!item.lowStock;
-                  const unitLabel = formatIngredientUnit(item);
-                  const averageCost = parseNumber(item.averageCost);
-                  const warning = outOfStock || lowStock;
-                  const badge = outOfStock
-                    ? { label: "SIN STOCK", tone: "bg-rose-600 text-white" }
-                    : lowStock
-                      ? { label: "BAJO", tone: "bg-rose-50 text-rose-700 ring-1 ring-rose-100" }
-                      : { label: `${formatMoney(currentStock)} ${unitLabel}`.trim(), tone: "bg-neutral-100 text-neutral-700" };
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSelectIngredient(item.id)}
-                      className={cn("w-full rounded-2xl p-3 text-left shadow-sm ring-1 transition active:scale-[0.99]", warning ? "bg-rose-50/70 ring-rose-100" : "bg-white ring-black/5")}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="relative grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-neutral-100 text-sm font-semibold text-neutral-700 ring-1 ring-black/5">
-                          {(item.name ?? "I").trim().slice(0, 1).toUpperCase()}
-                          {warning ? (
-                            <span className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-full bg-rose-600 text-white shadow-sm">
-                              <TriangleAlert className="h-4 w-4" />
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
-                              <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
-                                {Number.isFinite(averageCost) ? `Costo $${formatMoney(averageCost)} / ${unitLabel}` : "Costo —"}
-                              </p>
-                            </div>
-                            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", badge.tone)}>
-                              {badge.label}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
+              <IngredientList ingredients={visibleIngredients} onSelect={handleSelectIngredient} />
             </section>
           ) : tab === "products" ? (
             <section className="space-y-2">
@@ -399,7 +349,7 @@ function InventarioPageContent() {
           <div className="space-y-2">
             {[...alertGroups.outOfStock, ...alertGroups.lowStock].map((item) => {
               const out = alertGroups.outOfStock.some((alert) => alert.id === item.id);
-              const unitLabel = formatIngredientUnit(item);
+              const unitLabel = getStockUnitSymbol(item);
               return (
                 <button
                   key={item.id}
@@ -428,6 +378,7 @@ function InventarioPageContent() {
 
       <ItemPanelLayout open={ingredientSheetOpen} title="Nuevo ingrediente" subtitle="Crear insumo" onClose={() => setIngredientSheetOpen(false)}>
         <IngredientForm
+          key={ingredientSheetOpen ? "create-ingredient-open" : "create-ingredient-closed"}
           mode="create"
           defaults={{ name: "" }}
           submitting={creatingIngredient}
@@ -437,14 +388,14 @@ function InventarioPageContent() {
             try {
               setCreatingIngredient(true);
               toast.loading("Creando ingrediente...", { id: loadingId });
-              await createIngredient({
+              
+              const payload: any = {
                 name: values.name,
                 consumptionUnit: values.consumptionUnit,
                 purchaseUnit: values.purchaseUnit,
-                purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
-                customUnitLabel: values.customUnitLabel,
                 minStock: values.minStock,
-              });
+              };
+              await createIngredient(payload);
               toast.dismiss(loadingId);
               toast.success("Ingrediente creado");
               setIngredientSheetOpen(false);

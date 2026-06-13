@@ -30,14 +30,14 @@ export default function NuevoIngredientePage() {
                 try {
                   setSubmitting(true);
                   toast.loading("Creando ingrediente...", { id: loadingId });
-                  const created = await createIngredient({
+                  
+                  const payload: any = {
                     name: values.name,
                     consumptionUnit: values.consumptionUnit,
                     purchaseUnit: values.purchaseUnit,
-                    purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
-                    customUnitLabel: values.customUnitLabel,
                     minStock: values.minStock,
-                  });
+                  };
+                  const created = await createIngredient(payload);
                   toast.dismiss(loadingId);
                   toast.success("Ingrediente creado");
                   router.replace(`/inventario/ingredientes/${created.id}`);
@@ -56,4 +56,3 @@ export default function NuevoIngredientePage() {
     </div>
   );
 }
-

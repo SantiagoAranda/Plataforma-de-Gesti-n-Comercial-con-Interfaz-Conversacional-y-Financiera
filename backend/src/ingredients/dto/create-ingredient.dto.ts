@@ -19,21 +19,36 @@ export class CreateIngredientDto {
 
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsNotEmpty()
   customUnitLabel?: string;
 
+  @IsOptional()
   @IsString()
-  @Transform(({ value }) => normalizeDecimalString(value))
+  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
   @Matches(/^\d+(\.\d+)?$/, {
     message: 'purchaseToConsumptionFactor must be a valid decimal number',
   })
-  purchaseToConsumptionFactor!: string;
+  purchaseToConsumptionFactor?: string;
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => normalizeDecimalString(value))
+  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
   @Matches(/^\d+(\.\d+)?$/, {
     message: 'minStock must be a valid decimal number',
   })
   minStock?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => value === '' ? undefined : value)
+  recipeUnitLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'recipeUnitFactor must be a valid decimal number',
+  })
+  recipeUnitFactor?: string;
 }

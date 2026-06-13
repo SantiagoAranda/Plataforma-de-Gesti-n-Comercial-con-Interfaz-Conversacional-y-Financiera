@@ -1,4 +1,4 @@
-import { PrismaClient, PayrollWithholdingStatus } from "@prisma/client";
+import { PrismaClient, PayrollWithholdingStatus, UnitKind } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
 import * as bcrypt from "bcrypt";
@@ -93,6 +93,100 @@ async function seedPuc(base: string) {
     console.log(
         `PUC seed OK: clases=${clases.length}, grupos=${grupos.length}, cuentas=${cuentas.length}, subcuentas=${subcuentas.length}`,
     );
+}
+
+async function seedInventoryUnits() {
+    const units = [
+        // Base units
+        { code: "UNIT", name: "Unidad", symbol: "u", kind: UnitKind.COUNT },
+        { code: "G", name: "Gramo", symbol: "g", kind: UnitKind.WEIGHT },
+        { code: "KG", name: "Kilogramo", symbol: "kg", kind: UnitKind.WEIGHT },
+        { code: "LB", name: "Libra", symbol: "lb", kind: UnitKind.WEIGHT },
+        { code: "ML", name: "Mililitro", symbol: "ml", kind: UnitKind.VOLUME },
+        { code: "L", name: "Litro", symbol: "l", kind: UnitKind.VOLUME },
+        { code: "PACKAGE", name: "Paquete", symbol: "paquete", kind: UnitKind.COUNT },
+        { code: "DOZEN", name: "Docena", symbol: "docena", kind: UnitKind.COUNT },
+        { code: "BOX", name: "Caja", symbol: "caja", kind: UnitKind.COUNT },
+    ];
+
+    for (const unit of units) {
+        await prisma.unit.upsert({
+            where: { code: unit.code },
+            update: {
+                name: unit.name,
+                symbol: unit.symbol,
+                kind: unit.kind,
+                isSystem: true,
+                isActive: true,
+            },
+            create: {
+                ...unit,
+                isSystem: true,
+                isActive: true,
+            },
+        });
+    }
+
+    const byCode = Object.fromEntries(
+        (await prisma.unit.findMany({ where: { code: { in: units.map((unit) => unit.code) } } }))
+            .map((unit) => [unit.code, unit]),
+    );
+
+    const conversions = [
+        ["UNIT", "UNIT", "1"],
+        ["PACKAGE", "PACKAGE", "1"],
+        ["DOZEN", "DOZEN", "1"],
+        ["BOX", "BOX", "1"],
+        ["G", "G", "1"],
+        ["KG", "KG", "1"],
+        ["LB", "LB", "1"],
+        ["ML", "ML", "1"],
+        ["L", "L", "1"],
+        ["KG", "G", "1000"],
+        ["G", "KG", "0.001"],
+        ["LB", "G", "500"],
+        ["L", "ML", "1000"],
+        ["ML", "L", "0.001"],
+        ["PACKAGE", "UNIT", "6"],
+        ["DOZEN", "UNIT", "12"],
+        ["BOX", "UNIT", "24"],
+    ] as const;
+
+    for (const [fromCode, toCode, factor] of conversions) {
+        const fromUnit = byCode[fromCode];
+        const toUnit = byCode[toCode];
+        if (!fromUnit || !toUnit) continue;
+        await prisma.unitConversion.upsert({
+            where: {
+                fromUnitId_toUnitId: {
+                    fromUnitId: fromUnit.id,
+                    toUnitId: toUnit.id,
+                },
+            },
+            update: { factor },
+            create: {
+                fromUnitId: fromUnit.id,
+                toUnitId: toUnit.id,
+                factor,
+            },
+        });
+    }
+
+    await prisma.$executeRaw`
+        UPDATE "Ingredient" i
+        SET
+            "stockUnitId" = su."id",
+            "defaultPurchaseUnitId" = pu."id"
+        FROM "Unit" su, "Unit" pu
+        WHERE su."code" = i."consumptionUnit"::text
+          AND pu."code" = i."purchaseUnit"::text
+          AND (
+            i."stockUnitId" IS NULL
+            OR i."defaultPurchaseUnitId" IS NULL
+          )
+    `;
+
+    console.log("Inventory units seed OK");
 }
 
 async function seedAdmin() {
@@ -426,6 +520,11 @@ async function seedInventoryDemoData() {
 
     const ingredients = [];
     for (const input of ingredientInputs) {
+        const [stockUnit, defaultPurchaseUnit] = await Promise.all([
+            prisma.unit.findUnique({ where: { code: input.consumptionUnit } }),
+            prisma.unit.findUnique({ where: { code: input.purchaseUnit } }),
+        ]);
+
         const ingredient = await prisma.ingredient.upsert({
             where: {
                 businessId_name: {
@@ -439,6 +538,8 @@ async function seedInventoryDemoData() {
                 purchaseUnit: input.purchaseUnit,
                 purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
                 minStock: input.minStock,
+                stockUnitId: stockUnit?.id,
+                defaultPurchaseUnitId: defaultPurchaseUnit?.id,
             },
             create: {
                 businessId: business.id,
@@ -447,6 +548,8 @@ async function seedInventoryDemoData() {
                 purchaseUnit: input.purchaseUnit,
                 purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
                 minStock: input.minStock,
+                stockUnitId: stockUnit?.id,
+                defaultPurchaseUnitId: defaultPurchaseUnit?.id,
             },
         });
 
@@ -586,6 +689,7 @@ async function main() {
 
     await seedPuc(base);
     await seedAdmin();
+    await seedInventoryUnits();
 
     await seedPayrollGlobalParameters(base);
     await seedArlRiskClasses(base);

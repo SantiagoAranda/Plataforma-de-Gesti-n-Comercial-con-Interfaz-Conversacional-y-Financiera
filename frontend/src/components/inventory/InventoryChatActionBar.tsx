@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -120,7 +120,7 @@ export function InventoryChatActionBar({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-40 pointer-events-none lg:left-[408px] lg:right-0"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] backdrop-blur lg:left-[408px] lg:right-0"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {menuOpen && (
@@ -131,10 +131,10 @@ export function InventoryChatActionBar({
         />
       )}
 
-      <div className="pointer-events-auto mx-auto w-full max-w-md px-3 pb-3 pt-2">
+      <div className="mx-auto w-full max-w-md">
         <div className="relative">
           {menuOpen && hasMenu && !onlyCreateIngredient && (
-            <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3 shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-bottom-4 duration-200">
+            <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3 shadow-2xl ring-1 ring-black/5 animate-in slide-in-from-bottom-4 duration-200">
               <div className="space-y-2">
                 {availableMenu.map((item) => {
                   const Icon = item.icon;
@@ -163,8 +163,14 @@ export function InventoryChatActionBar({
             </div>
           )}
 
-          <div className="rounded-[28px] bg-white/95 p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50 backdrop-blur">
-            <div className="flex items-end gap-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            <form
+              className="flex min-w-0 items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmit();
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -175,7 +181,7 @@ export function InventoryChatActionBar({
                   if (!hasMenu) return;
                   setMenuOpen((v) => !v);
                 }}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95 border border-neutral-200/60"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 active:scale-95"
                 aria-label={
                   onlyCreateIngredient && onCreateIngredient
                     ? "Nuevo ingrediente"
@@ -189,35 +195,26 @@ export function InventoryChatActionBar({
                 ) : menuOpen && hasMenu ? (
                   <X className="h-5 w-5" />
                 ) : (
-                  <SlidersHorizontal className="h-5 w-5" />
+                  <Plus className="h-5 w-5" />
                 )}
               </button>
 
-              <div className="min-h-11 flex-1 rounded-[22px] bg-neutral-50 px-4 py-2.5 ring-1 ring-neutral-200/60 flex items-center">
-                <input
-                  ref={inputRef}
-                  value={effectiveValue}
-                  onChange={(e) => handleChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }}
-                  placeholder={placeholder ?? "Buscar ingrediente o producto..."}
-                  className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-neutral-400"
-                />
-              </div>
+              <input
+                ref={inputRef}
+                value={effectiveValue}
+                onChange={(e) => handleChange(e.target.value)}
+                placeholder={placeholder ?? "Buscar ingrediente o producto..."}
+                className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              />
 
               <button
-                type="button"
-                onClick={handleSubmit}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-xl transition hover:bg-emerald-600 active:scale-90"
+                type="submit"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white transition hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400/35 active:scale-95"
                 aria-label="Buscar"
               >
                 <RightIcon className="h-4 w-4" />
               </button>
-            </div>
+            </form>
           </div>
 
           {helperText ? (

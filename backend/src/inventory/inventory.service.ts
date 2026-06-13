@@ -8,10 +8,12 @@ import {
   AccountingMovementOriginType,
   Ingredient,
   InventoryMovementType,
+  InventoryPurchaseMode,
   InventoryReferenceType,
   Item,
   MovementNature,
   Prisma,
+  UnitKind,
 } from '@prisma/client';
 import { AccountingService } from '../accounting/accounting.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -64,6 +66,11 @@ type ApplyInventoryMovementInput = {
   unitCost?: number | string | Prisma.Decimal;
   referenceType: InventoryReferenceType;
   referenceId?: string | null;
+  purchaseMode?: InventoryPurchaseMode | null;
+  purchasePresentationId?: string | null;
+  purchaseQuantity?: number | string | Prisma.Decimal | null;
+  purchaseUnitLabel?: string | null;
+  conversionDetail?: string | null;
   orderId?: string | null;
   orderItemId?: string | null;
   detail?: string | null;
@@ -126,7 +133,7 @@ export class InventoryService {
 
   async registerPurchase(businessId: string, dto: CreateInventoryPurchaseDto) {
     return this.runInventoryTransaction(async (tx) => {
-      const { quantity, unitCost } = await this.resolvePurchaseInput(
+      const purchase = await this.resolvePurchaseInput(
         tx,
         businessId,
         dto,
@@ -136,10 +143,15 @@ export class InventoryService {
         ingredientId: dto.ingredientId,
         itemId: dto.itemId,
         type: 'PURCHASE',
-        quantity,
-        unitCost,
+        quantity: purchase.quantity,
+        unitCost: purchase.unitCost,
         referenceType: 'PURCHASE_MANUAL',
         referenceId: dto.referenceId ?? null,
+        purchaseMode: purchase.purchaseMode,
+        purchasePresentationId: purchase.purchasePresentationId,
+        purchaseQuantity: purchase.purchaseQuantity,
+        purchaseUnitLabel: purchase.purchaseUnitLabel,
+        conversionDetail: purchase.conversionDetail,
         detail: dto.detail ?? null,
       });
 
@@ -385,7 +397,11 @@ export class InventoryService {
         businessId,
         ...(query.status ? { status: query.status } : {}),
       },
-      include: { _count: { select: { inventoryMovements: true } } },
+      include: {
+        _count: { select: { inventoryMovements: true } },
+        stockUnit: true,
+        defaultPurchaseUnit: true,
+      },
       orderBy: { name: 'asc' },
     });
 
@@ -406,6 +422,34 @@ export class InventoryService {
         hasMovements: movementCount > 0,
         canCreateInitialInventory: movementCount === 0,
       };
+    });
+  }
+
+  async listUnits() {
+    const activePurchaseUnitCodes = [
+      'UNIT',
+      'PACKAGE',
+      'DOZEN',
+      'BOX',
+      'G',
+      'KG',
+      'LB',
+      'ML',
+      'L',
+    ];
+
+    return this.prisma.unit.findMany({
+      where: { isActive: true, code: { in: activePurchaseUnitCodes } },
+      orderBy: [{ kind: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  async listUnitConversions() {
+    return this.prisma.unitConversion.findMany({
+      include: {
+        fromUnit: true,
+        toUnit: true,
+      },
     });
   }
 
@@ -449,27 +493,6 @@ export class InventoryService {
         };
       }),
     );
-  }
-
-  private getPurchaseToStockFactor(ingredient: {
-    purchaseUnit: string;
-    consumptionUnit: string;
-    purchaseToConsumptionFactor: Prisma.Decimal | number | string;
-  }) {
-    if (ingredient.purchaseUnit === ingredient.consumptionUnit) {
-      return this.decimal(ingredient.purchaseToConsumptionFactor ?? 1);
-    }
-
-    const standardFactors: Record<string, string> = {
-      'KG:G': '1000',
-      'G:KG': '0.001',
-      'L:ML': '1000',
-      'ML:L': '0.001',
-    };
-    const standard = standardFactors[`${ingredient.purchaseUnit}:${ingredient.consumptionUnit}`];
-    if (standard) return this.decimal(standard);
-
-    return this.decimal(ingredient.purchaseToConsumptionFactor);
   }
 
   async getItemSellability(
@@ -1179,6 +1202,11 @@ export class InventoryService {
         averageCostAfter,
         referenceType: input.referenceType,
         referenceId: input.referenceId ?? null,
+        purchaseMode: input.purchaseMode ?? null,
+        purchasePresentationId: input.purchasePresentationId ?? null,
+        purchaseQuantity: input.purchaseQuantity ?? null,
+        purchaseUnitLabel: input.purchaseUnitLabel ?? null,
+        conversionDetail: input.conversionDetail ?? null,
         orderId: input.orderId ?? null,
         orderItemId: input.orderItemId ?? null,
         detail: input.detail?.trim() || null,
@@ -1518,10 +1546,20 @@ export class InventoryService {
     tx: Prisma.TransactionClient,
     businessId: string,
     dto: CreateInventoryPurchaseDto,
-  ): Promise<{ quantity: Prisma.Decimal; unitCost: Prisma.Decimal }> {
+  ): Promise<{
+    quantity: Prisma.Decimal;
+    unitCost: Prisma.Decimal;
+    purchaseMode: InventoryPurchaseMode | null;
+    purchasePresentationId?: string | null;
+    purchaseQuantity?: Prisma.Decimal | null;
+    purchaseUnitLabel?: string | null;
+    conversionDetail?: string | null;
+  }> {
     const legacyTouched = dto.quantity !== undefined || dto.unitCost !== undefined;
     const purchaseTouched =
-      dto.purchaseQuantity !== undefined || dto.purchaseUnitCost !== undefined;
+      dto.purchaseQuantity !== undefined ||
+      dto.purchaseUnitCost !== undefined ||
+      dto.purchaseUnitId !== undefined;
 
     if (legacyTouched && purchaseTouched) {
       throw new BadRequestException(
@@ -1536,6 +1574,12 @@ export class InventoryService {
     }
 
     if (legacyTouched) {
+      if (dto.ingredientId) {
+        throw new BadRequestException(
+          'Ingredient purchases must use the new unit model. Migrate the ingredient before purchasing.',
+        );
+      }
+
       if (dto.quantity === undefined || dto.unitCost === undefined) {
         throw new BadRequestException('quantity and unitCost are required together');
       }
@@ -1561,6 +1605,7 @@ export class InventoryService {
       return {
         quantity: quantity.toDecimalPlaces(6),
         unitCost: unitCost.toDecimalPlaces(6),
+        purchaseMode: null,
       };
     }
 
@@ -1583,43 +1628,131 @@ export class InventoryService {
         dto.ingredientId,
       );
 
-      const factor = this.getPurchaseToStockFactor(ingredient);
-      if (factor.lte(0)) {
-        throw new BadRequestException(
-          'El factor de conversión del ingrediente debe ser mayor a cero',
-        );
+      if (ingredient.stockUnitId) {
+        let purchaseQuantity;
+        let purchaseUnitCost;
+
+        try {
+          purchaseQuantity = this.decimal(dto.purchaseQuantity);
+          purchaseUnitCost = this.decimal(dto.purchaseUnitCost);
+        } catch (e) {
+          throw new BadRequestException('Cantidad o costo de compra invalidos');
+        }
+
+        if (purchaseQuantity.lte(0) || Number.isNaN(purchaseQuantity.toNumber())) {
+          throw new BadRequestException('La cantidad de compra debe ser mayor a cero');
+        }
+
+        if (purchaseUnitCost.lte(0) || Number.isNaN(purchaseUnitCost.toNumber())) {
+          throw new BadRequestException('El costo de compra debe ser mayor a cero');
+        }
+
+        return this.resolveStandardPurchaseInput(tx, ingredient, {
+          purchaseUnitId: dto.purchaseUnitId ?? ingredient.defaultPurchaseUnitId,
+          purchaseQuantity,
+          purchaseUnitCost,
+        });
       }
 
-      let purchaseQuantity;
-      let purchaseUnitCost;
-
-      try {
-        purchaseQuantity = this.decimal(dto.purchaseQuantity);
-        purchaseUnitCost = this.decimal(dto.purchaseUnitCost);
-      } catch (e) {
-        throw new BadRequestException('Cantidad o costo de compra inválidos');
+      if (dto.purchaseUnitId) {
+        throw new BadRequestException('Unit purchase fields require ingredient stockUnitId');
       }
 
-      if (purchaseQuantity.lte(0) || Number.isNaN(purchaseQuantity.toNumber())) {
-        throw new BadRequestException('La cantidad de compra debe ser mayor a cero');
-      }
-
-      if (purchaseUnitCost.lte(0) || Number.isNaN(purchaseUnitCost.toNumber())) {
-        throw new BadRequestException('El costo de compra debe ser mayor a cero');
-      }
-
-      const consumptionQuantity = purchaseQuantity.mul(factor).toDecimalPlaces(6);
-      const unitCostPerConsumption = purchaseUnitCost.div(factor).toDecimalPlaces(6);
-
-      return {
-        quantity: consumptionQuantity,
-        unitCost: unitCostPerConsumption,
-      };
+      throw new BadRequestException(
+        'Ingredient must be migrated to the new unit model before purchasing',
+      );
     }
 
     throw new BadRequestException(
       'Provide quantity/unitCost or purchaseQuantity/purchaseUnitCost',
     );
+  }
+
+  private async resolveUnitConversionFactor(
+    tx: Prisma.TransactionClient,
+    fromUnitId: string,
+    toUnitId: string,
+  ) {
+    const conversion = await tx.unitConversion.findUnique({
+      where: { fromUnitId_toUnitId: { fromUnitId, toUnitId } },
+      include: { fromUnit: true, toUnit: true },
+    });
+
+    if (!conversion) {
+      throw new BadRequestException(
+        'La unidad de compra no es compatible con la unidad base del insumo.',
+      );
+    }
+
+    // Block legacy COMMERCIAL kind only – COUNT units (PACKAGE, DOZEN, BOX) are allowed.
+    if (
+      conversion.fromUnit.kind === UnitKind.COMMERCIAL ||
+      conversion.toUnit.kind === UnitKind.COMMERCIAL
+    ) {
+      throw new BadRequestException(
+        'La unidad de compra no es compatible con la unidad base del insumo.',
+      );
+    }
+
+    if (
+      conversion.fromUnit.kind === UnitKind.COUNT &&
+      conversion.fromUnit.code !== conversion.toUnit.code &&
+      !(
+        conversion.toUnit.code === 'UNIT' &&
+        ['PACKAGE', 'DOZEN', 'BOX'].includes(conversion.fromUnit.code)
+      )
+    ) {
+      throw new BadRequestException(
+        'La unidad de compra no es compatible con la unidad base del insumo.',
+      );
+    }
+
+    return conversion;
+  }
+
+  private async resolveStandardPurchaseInput(
+    tx: Prisma.TransactionClient,
+    ingredient: Ingredient,
+    input: {
+      purchaseUnitId?: string | null;
+      purchaseQuantity: Prisma.Decimal;
+      purchaseUnitCost: Prisma.Decimal;
+    },
+  ) {
+    if (!ingredient.stockUnitId) {
+      throw new BadRequestException('Ingredient stockUnitId is required for standard purchase');
+    }
+    if (!input.purchaseUnitId) {
+      throw new BadRequestException('purchaseUnitId is required for standard purchase');
+    }
+
+    const purchaseUnit = await tx.unit.findUnique({ where: { id: input.purchaseUnitId } });
+    if (!purchaseUnit) throw new BadRequestException('purchaseUnitId is invalid');
+    // Block legacy COMMERCIAL kind – COUNT kind (PACKAGE, DOZEN, BOX) are allowed.
+    if (purchaseUnit.kind === UnitKind.COMMERCIAL) {
+      throw new BadRequestException(
+        'La unidad de compra no es compatible con la unidad base del insumo.',
+      );
+    }
+
+    const conversion = await this.resolveUnitConversionFactor(
+      tx,
+      input.purchaseUnitId,
+      ingredient.stockUnitId,
+    );
+    const factor = this.decimal(conversion.factor);
+    const quantity = input.purchaseQuantity.mul(factor).toDecimalPlaces(6);
+    const totalValue = input.purchaseQuantity.mul(input.purchaseUnitCost).toDecimalPlaces(6);
+    const unitCost = totalValue.div(quantity).toDecimalPlaces(6);
+
+    return {
+      quantity,
+      unitCost,
+      purchaseMode: InventoryPurchaseMode.STANDARD,
+      purchaseQuantity: input.purchaseQuantity,
+      purchaseUnitLabel: conversion.fromUnit.symbol,
+      conversionDetail: `1 ${conversion.fromUnit.symbol} = ${factor.toString()} ${conversion.toUnit.symbol}`,
+    };
   }
 
   private parseDate(value: string, boundary: 'from' | 'to') {

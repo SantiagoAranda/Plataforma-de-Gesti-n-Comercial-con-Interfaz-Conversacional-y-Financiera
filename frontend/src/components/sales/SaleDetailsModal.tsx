@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Loader2, X } from "lucide-react";
@@ -49,8 +49,12 @@ function formatQuantity(value?: number) {
     : numeric.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
-function ingredientUnitLabel(line: NonNullable<Sale["items"][number]["recipe"]>[number]) {
-  return line.ingredient.customUnitLabel ?? line.ingredient.consumptionUnit ?? "";
+function formatIngredientLineDisplay(line: NonNullable<Sale["items"][number]["recipe"]>[number]) {
+  const ing = line.ingredient;
+  const baseUnit = ing.consumptionUnit ?? "";
+  const qty = line.quantityRequired;
+  
+  return `${formatQuantity(qty)} ${baseUnit}`;
 }
 
 function ItemThumbnail() {
@@ -293,7 +297,7 @@ export default function SaleDetailsModal({
                                   className="rounded-full bg-neutral-100 px-2 py-1 text-[10px] font-medium text-neutral-600"
                                 >
                                   {line.ingredient.name}
-                                  {formatQuantity(line.quantityRequired) ? ` · ${formatQuantity(line.quantityRequired)} ${ingredientUnitLabel(line)}` : ""}
+                                  {line.quantityRequired > 0 ? ` · ${formatIngredientLineDisplay(line)}` : ""}
                                 </span>
                               ))}
                             </div>
@@ -327,7 +331,7 @@ export default function SaleDetailsModal({
                                         {line.ingredient.name}
                                       </span>
                                       <span className="block text-[10px] font-medium uppercase tracking-wider text-neutral-400">
-                                        {formatQuantity(line.quantityRequired)} {ingredientUnitLabel(line)}
+                                        {formatIngredientLineDisplay(line)}
                                       </span>
                                     </span>
                                     <input

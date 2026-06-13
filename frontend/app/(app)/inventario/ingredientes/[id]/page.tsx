@@ -11,7 +11,8 @@ import { deactivateIngredient, getIngredient, type Ingredient } from "@/src/serv
 import { MovementForm } from "@/src/components/inventory/MovementForm";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
-import { formatIngredientUnit, formatUnit } from "@/src/components/inventory/unitLabels";
+import { formatUnit } from "@/src/components/inventory/unitLabels";
+import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 
 export default function IngredienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function IngredienteDetailPage({ params }: { params: Promise<{ id
     }
   };
 
-  const unitLabel = ingredient ? formatIngredientUnit(ingredient) : "";
+  const unitLabel = ingredient ? getStockUnitSymbol(ingredient) : "";
   const purchaseUnitLabel = ingredient ? formatUnit(ingredient.purchaseUnit) : "";
 
   return (

@@ -41,7 +41,6 @@ export interface ApiOrder {
         id: string;
         name: string;
         consumptionUnit?: string | null;
-        customUnitLabel?: string | null;
       };
     }>;
     durationMin?: number | null;

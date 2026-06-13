@@ -23,6 +23,7 @@ import {
 import type { Item } from "@/src/types/item";
 import type { ComposedProduct } from "@/src/components/inventory/types";
 import { RecipeEditor } from "@/src/components/inventory/RecipeEditor";
+import { formatRecipeConsumption, getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 
 function RecetasPageContent() {
   const router = useRouter();
@@ -65,7 +66,7 @@ function RecetasPageContent() {
               name: summaryIng?.name ?? "Desconocido",
               quantityRequired: line.quantityRequired,
               consumptionUnit: summaryIng?.consumptionUnit,
-              customUnitLabel: summaryIng?.customUnitLabel,
+              stockUnit: summaryIng?.stockUnit,
               isOptional: !!line.isOptional,
               currentStock: summaryIng?.currentStock,
               averageCost: summaryIng?.averageCost,
@@ -231,14 +232,22 @@ function RecetasPageContent() {
                             {(p.ingredients ?? [])
                               .filter((l: any) => !l.isOptional)
                               .slice(0, 4)
-                              .map((ing: any) => (
-                                <div key={ing.ingredientId} className="flex items-center justify-between gap-2 text-[11px]">
-                                  <span className="truncate font-medium text-neutral-700">{ing.name}</span>
-                                  <span className="shrink-0 font-semibold text-neutral-500">
-                                    {ing.quantityRequired} {ing.customUnitLabel || ing.consumptionUnit}
-                                  </span>
-                                </div>
-                              ))}
+                              .map((ing: any) => {
+                                const consumption = formatRecipeConsumption({
+                                  ingredient: ing,
+                                  quantityRequired: ing.quantityRequired,
+                                });
+                                const baseUnit = getStockUnitSymbol(ing);
+                                return (
+                                  <div key={ing.ingredientId} className="flex items-center justify-between gap-2 text-[11px]">
+                                    <span className="truncate font-medium text-neutral-700">{ing.name}</span>
+                                    <span className="shrink-0 font-semibold text-neutral-500">
+                                      {consumption.displayQuantity} {consumption.displayUnit}
+                                      {consumption.displayUnit !== baseUnit ? ` (${consumption.baseQuantity} ${baseUnit})` : ""}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                           </div>
                         </div>
                       )}

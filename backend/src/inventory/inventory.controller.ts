@@ -94,6 +94,16 @@ export class InventoryController {
     return this.inventoryService.getSummary(req.user.businessId, query);
   }
 
+  @Get('units')
+  listUnits() {
+    return this.inventoryService.listUnits();
+  }
+
+  @Get('unit-conversions')
+  listUnitConversions() {
+    return this.inventoryService.listUnitConversions();
+  }
+
   @Get('items/summary')
   getSimpleItemsSummary(@Req() req: any) {
     return this.inventoryService.getSimpleItemsSummary(req.user.businessId);

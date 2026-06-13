@@ -33,7 +33,6 @@ export interface SaleItem {
       id: string;
       name: string;
       consumptionUnit?: string | null;
-      customUnitLabel?: string | null;
     };
   }>;
 }

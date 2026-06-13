@@ -1,7 +1,35 @@
 import { api } from "@/src/lib/api";
 
 export type IngredientStatus = "ACTIVE" | "INACTIVE";
-export type IngredientUnit = "UNIT" | "G" | "KG" | "ML" | "L";
+export type IngredientUnit = "UNIT" | "PACKAGE" | "DOZEN" | "BOX" | "G" | "KG" | "LB" | "ML" | "L";
+export type UnitKind = "WEIGHT" | "VOLUME" | "COUNT" | "COMMERCIAL";
+export type InventoryPurchaseMode = "STANDARD" | "PRESENTATION" | "LEGACY";
+
+export type Unit = {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  kind: UnitKind;
+  isSystem: boolean;
+  isActive: boolean;
+};
+
+export type IngredientPurchasePresentation = {
+  id: string;
+  businessId: string;
+  ingredientId: string;
+  name: string;
+  purchaseUnitId: string;
+  purchaseUnit?: Unit;
+  innerQuantity: string;
+  innerUnitLabel?: string | null;
+  contentQuantity: string;
+  contentUnitId: string;
+  contentUnit?: Unit;
+  isDefault: boolean;
+  isActive: boolean;
+};
 
 export type Ingredient = {
   id: string;
@@ -9,9 +37,16 @@ export type Ingredient = {
   name: string;
   consumptionUnit: IngredientUnit;
   purchaseUnit: IngredientUnit;
+  stockUnitId?: string | null;
+  stockUnit?: Unit | null;
+  defaultPurchaseUnitId?: string | null;
+  defaultPurchaseUnit?: Unit | null;
   customUnitLabel?: string | null;
   purchaseToConsumptionFactor: string;
+  purchasePresentations?: IngredientPurchasePresentation[];
   minStock: string;
+  recipeUnitLabel?: string | null;
+  recipeUnitFactor?: string | null;
   status: IngredientStatus;
   currentStock: string;
   averageCost: string;
@@ -69,6 +104,11 @@ export type InventoryMovement = {
   occurredAt: string;
   referenceType: string;
   referenceId: string | null;
+  purchaseMode?: InventoryPurchaseMode | null;
+  purchasePresentationId?: string | null;
+  purchaseQuantity?: number | string | null;
+  purchaseUnitLabel?: string | null;
+  conversionDetail?: string | null;
   orderId: string | null;
   orderItemId: string | null;
   createdAt: string;
@@ -103,9 +143,11 @@ export type CreateIngredientDto = {
   name: string;
   consumptionUnit: IngredientUnit;
   purchaseUnit: IngredientUnit;
-  purchaseToConsumptionFactor: string;
+  purchaseToConsumptionFactor?: string;
   customUnitLabel?: string;
   minStock?: string;
+  recipeUnitLabel?: string;
+  recipeUnitFactor?: string;
 };
 
 export type UpdateIngredientDto = Partial<CreateIngredientDto> & {
@@ -158,6 +200,7 @@ export type CreateInventoryPurchaseByUnitDto = CreateInventoryPurchaseBaseDto & 
   // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
   purchaseQuantity: string;
   purchaseUnitCost: string;
+  purchaseUnitId?: string;
   quantity?: never;
   unitCost?: never;
 };
@@ -207,6 +250,10 @@ export function getIngredient(id: string) {
   return api<Ingredient>(`/ingredients/${id}`);
 }
 
+export function listUnits() {
+  return api<Unit[]>(`/inventory/units`);
+}
+
 export function createIngredient(dto: CreateIngredientDto) {
   return api<Ingredient>(`/ingredients`, {
     method: "POST",
@@ -218,6 +265,55 @@ export function updateIngredient(id: string, dto: UpdateIngredientDto) {
   return api<Ingredient>(`/ingredients/${id}`, {
     method: "PATCH",
     body: JSON.stringify(dto),
+  });
+}
+
+export function listPurchasePresentations(ingredientId: string) {
+  return api<IngredientPurchasePresentation[]>(`/ingredients/${ingredientId}/purchase-presentations`);
+}
+
+export function createPurchasePresentation(
+  ingredientId: string,
+  dto: {
+    name: string;
+    purchaseUnitId: string;
+    innerQuantity: string;
+    innerUnitLabel?: string;
+    contentQuantity: string;
+    contentUnitId: string;
+    isDefault?: boolean;
+    isActive?: boolean;
+  },
+) {
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function updatePurchasePresentation(
+  ingredientId: string,
+  presentationId: string,
+  dto: {
+    name: string;
+    purchaseUnitId: string;
+    innerQuantity: string;
+    innerUnitLabel?: string;
+    contentQuantity: string;
+    contentUnitId: string;
+    isDefault?: boolean;
+    isActive?: boolean;
+  },
+) {
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations/${presentationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function deactivatePurchasePresentation(ingredientId: string, presentationId: string) {
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations/${presentationId}`, {
+    method: "DELETE",
   });
 }
 

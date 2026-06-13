@@ -25,6 +25,16 @@ describe('InventoryService', () => {
         count: mockFn(),
         create: mockFn(),
       },
+      unit: {
+        findMany: mockFn(),
+        findUnique: mockFn(),
+      },
+      unitConversion: {
+        findUnique: mockFn(),
+      },
+      ingredientPurchasePresentation: {
+        findFirst: mockFn(),
+      },
       accountingMovement: {
         findFirst: mockFn(),
         create: mockFn(),
@@ -165,7 +175,7 @@ describe('InventoryService', () => {
     expect(movement.averageCostAfter.toString()).toBe('3');
   });
 
-  it('converts purchaseQuantity into consumption units using purchaseToConsumptionFactor (decimal strings)', async () => {
+  it('rejects new ingredient purchases that would use legacy purchaseToConsumptionFactor', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -175,23 +185,15 @@ describe('InventoryService', () => {
       averageCost: new Prisma.Decimal(0),
       purchaseToConsumptionFactor: new Prisma.Decimal(6),
     });
-    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
-      Promise.resolve({ id: 'movement-1', ...data }),
-    );
-    tx.ingredient.update.mockResolvedValue({});
-
-    const movement = await service.registerPurchase(businessId, {
-      ingredientId,
-      purchaseQuantity: '2',
-      purchaseUnitCost: '12000',
-      detail: 'buy packs',
-    } as any);
-
-    expect(movement.quantity.toString()).toBe('12');
-    expect(movement.unitCost.toString()).toBe('2000');
-    expect(movement.totalValue.toString()).toBe('24000');
-    expect(movement.stockAfter.toString()).toBe('12');
-    expect(movement.averageCostAfter.toString()).toBe('2000');
+    await expect(
+      service.registerPurchase(businessId, {
+        ingredientId,
+        purchaseQuantity: '2',
+        purchaseUnitCost: '12000',
+        detail: 'buy packs',
+      } as any),
+    ).rejects.toThrow('Ingredient must be migrated to the new unit model before purchasing');
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
 
   it('posts accounting movement for PURCHASE in the same inventory transaction', async () => {
@@ -202,7 +204,19 @@ describe('InventoryService', () => {
       name: 'Flour',
       currentStock: new Prisma.Decimal(0),
       averageCost: new Prisma.Decimal(0),
-      purchaseToConsumptionFactor: new Prisma.Decimal(1000),
+      stockUnitId: 'unit-g',
+      defaultPurchaseUnitId: 'unit-kg',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-kg',
+      code: 'KG',
+      symbol: 'kg',
+      kind: 'WEIGHT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(1000),
+      fromUnit: { id: 'unit-kg', code: 'KG', symbol: 'kg', kind: 'WEIGHT' },
+      toUnit: { id: 'unit-g', code: 'G', symbol: 'g', kind: 'WEIGHT' },
     });
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
       Promise.resolve({
@@ -295,7 +309,7 @@ describe('InventoryService', () => {
     expect(tx.accountingMovement.create).not.toHaveBeenCalled();
   });
 
-  it('throws BadRequestException when purchaseToConsumptionFactor is zero in purchase-unit mode', async () => {
+  it('does not create new LEGACY purchase movements for unmigrated ingredients', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -313,16 +327,269 @@ describe('InventoryService', () => {
         purchaseUnitCost: '12000',
       } as any),
     ).rejects.toThrow(BadRequestException);
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('standard KG to G purchase enters 1000 g and ignores recipe quantities', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Medallon carne',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-g',
+      defaultPurchaseUnitId: 'unit-kg',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-kg',
+      code: 'KG',
+      symbol: 'kg',
+      kind: 'WEIGHT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(1000),
+      fromUnit: { id: 'unit-kg', code: 'KG', symbol: 'kg', kind: 'WEIGHT' },
+      toUnit: { id: 'unit-g', code: 'G', symbol: 'g', kind: 'WEIGHT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-kg-g', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '1000',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('1000');
+    expect(movement.unitCost.toString()).toBe('1');
+    expect(movement.purchaseMode).toBe('STANDARD');
+    expect(movement.conversionDetail).toBe('1 kg = 1000 g');
+    expect(tx.recipe.findMany).not.toHaveBeenCalled();
+  });
+
+  it('standard UNIT purchase enters 1 unit', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Pan',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-unit',
+      defaultPurchaseUnitId: 'unit-unit',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-unit',
+      code: 'UNIT',
+      symbol: 'u',
+      kind: 'COUNT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(1),
+      fromUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
+      toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-unit', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '500',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('1');
+    expect(movement.unitCost.toString()).toBe('500');
+    expect(movement.purchaseMode).toBe('STANDARD');
+  });
+
+  it('standard PACKAGE to UNIT purchase enters 6 units', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Coca Cola lata',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-unit',
+      defaultPurchaseUnitId: 'unit-package',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-package',
+      code: 'PACKAGE',
+      symbol: 'paquete',
+      kind: 'COUNT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(6),
+      fromUnit: { id: 'unit-package', code: 'PACKAGE', symbol: 'paquete', kind: 'COUNT' },
+      toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-package', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '6000',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('6');
+    expect(movement.unitCost.toString()).toBe('1000');
+    expect(movement.purchaseMode).toBe('STANDARD');
+    expect(movement.purchasePresentationId).toBeNull();
+    expect(movement.conversionDetail).toBe('1 paquete = 6 u');
+  });
+
+  it('standard BOX to UNIT purchase enters 24 units', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Coca Cola lata',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-unit',
+      defaultPurchaseUnitId: 'unit-box',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-box',
+      code: 'BOX',
+      symbol: 'caja',
+      kind: 'COUNT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(24),
+      fromUnit: { id: 'unit-box', code: 'BOX', symbol: 'caja', kind: 'COUNT' },
+      toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-box', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '24000',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('24');
+    expect(movement.unitCost.toString()).toBe('1000');
+    expect(movement.totalValue.toString()).toBe('24000');
+    expect(movement.purchaseMode).toBe('STANDARD');
+  });
+
+  it('standard LB to G purchase enters 500 g', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Papas',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-g',
+      defaultPurchaseUnitId: 'unit-lb',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-lb',
+      code: 'LB',
+      symbol: 'lb',
+      kind: 'WEIGHT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(500),
+      fromUnit: { id: 'unit-lb', code: 'LB', symbol: 'lb', kind: 'WEIGHT' },
+      toUnit: { id: 'unit-g', code: 'G', symbol: 'g', kind: 'WEIGHT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-lb', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '1200',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('500');
+    expect(movement.unitCost.toString()).toBe('2.4');
+    expect(movement.conversionDetail).toBe('1 lb = 500 g');
+  });
+
+  it('weighted average uses base quantity for standard converted purchases', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Papas',
+      currentStock: new Prisma.Decimal(1000),
+      averageCost: new Prisma.Decimal(10),
+      stockUnitId: 'unit-g',
+      defaultPurchaseUnitId: 'unit-kg',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-kg',
+      code: 'KG',
+      symbol: 'kg',
+      kind: 'WEIGHT',
+    });
+    tx.unitConversion.findUnique.mockResolvedValue({
+      factor: new Prisma.Decimal(1000),
+      fromUnit: { id: 'unit-kg', code: 'KG', symbol: 'kg', kind: 'WEIGHT' },
+      toUnit: { id: 'unit-g', code: 'G', symbol: 'g', kind: 'WEIGHT' },
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-weighted', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+
+    const movement = await service.registerPurchase(businessId, {
+      ingredientId,
+      purchaseQuantity: '1',
+      purchaseUnitCost: '12000',
+    } as any);
+
+    expect(movement.quantity.toString()).toBe('1000');
+    expect(movement.unitCost.toString()).toBe('12');
+    expect(movement.averageCostAfter.toString()).toBe('11');
+  });
+
+  it('rejects commercial units in standard UnitConversion purchases', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Medallon carne',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+      stockUnitId: 'unit-g',
+      defaultPurchaseUnitId: 'unit-box',
+    });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-box',
+      code: 'BOX',
+      symbol: 'caja',
+      kind: 'COMMERCIAL',
+    });
 
     await expect(
       service.registerPurchase(businessId, {
         ingredientId,
-        purchaseQuantity: '2',
-        purchaseUnitCost: '12000',
+        purchaseQuantity: '1',
+        purchaseUnitCost: '1000',
       } as any),
-    ).rejects.toThrow('factor de conversión del ingrediente debe ser mayor a cero');
-    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
-    expect(tx.ingredient.update).not.toHaveBeenCalled();
+    ).rejects.toThrow('La unidad de compra no es compatible con la unidad base del insumo.');
+    expect(tx.unitConversion.findUnique).not.toHaveBeenCalled();
   });
 
   it('creates INVENTORY_INITIAL movement and updates stock and average cost', async () => {

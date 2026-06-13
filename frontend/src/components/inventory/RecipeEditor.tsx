@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -15,7 +15,7 @@ import {
   type RecipeLine,
 } from "@/src/services/inventory";
 import { cn } from "@/src/lib/utils";
-import { formatIngredientUnit } from "@/src/components/inventory/unitLabels";
+import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 
 type Props = {
   selectedItemId: string | null;
@@ -141,7 +141,7 @@ export function RecipeEditor({
     ingredients.find((i) => i.id === ingredientId)?.name ?? "Ingrediente";
   const ingredientUnit = (ingredientId: string) => {
     const ingredient = ingredients.find((i) => i.id === ingredientId);
-    return ingredient ? formatIngredientUnit(ingredient) : "";
+    return ingredient ? getStockUnitSymbol(ingredient) : "";
   };
 
   const validateBeforeSave = () => {
@@ -274,26 +274,26 @@ export function RecipeEditor({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">Receta</p>
-                    <p className="mt-1 text-sm font-medium text-neutral-900">
+          <p className="mt-1 text-sm font-medium text-neutral-900">
             Líneas: {isSimple ? (lines.length ? 1 : 0) : lines.length}
           </p>
         </div>
 
         {!isSimple && (
-        <button
-          type="button"
-          onClick={() =>
-            setLines((prev) => [
-              ...prev,
-              { ingredientId: ingredients[0]?.id ?? "", quantityRequired: 1, isOptional: false },
-            ])
-          }
-          className="grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-emerald-700 active:scale-95"
-          aria-label="Agregar línea"
-          disabled={!ingredients.length}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+          <button
+            type="button"
+            onClick={() =>
+              setLines((prev) => [
+                ...prev,
+                { ingredientId: ingredients[0]?.id ?? "", quantityRequired: 1, isOptional: false },
+              ])
+            }
+            className="grid h-10 w-10 place-items-center rounded-full bg-emerald-50 text-emerald-700 active:scale-95"
+            aria-label="Agregar línea"
+            disabled={!ingredients.length}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
         )}
       </div>
 
@@ -307,34 +307,33 @@ export function RecipeEditor({
             </div>
           )}
 
-                                        {isSimple && (
+          {isSimple && (
             <div className="rounded-2xl bg-neutral-50 px-4 py-3 text-[11px] font-medium text-neutral-600">
               En modo <span className="font-medium">SIMPLE</span>, este producto se vincula a un único insumo.
               La cantidad consumida por venta se define automáticamente en 1.
             </div>
           )}
 
-          {(isSimple ? lines.slice(0, 1) : lines).map(
-            (line, idx) => (
+          {(isSimple ? lines.slice(0, 1) : lines).map((line, idx) => (
             <div key={`${line.ingredientId}:${idx}`} className="rounded-2xl border border-neutral-100 bg-white p-3">
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
                   <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Ingrediente</p>
                   <select
                     value={line.ingredientId}
-	                    onChange={(e) =>
-	                      setLines((prev) => {
-	                        if (isSimple) {
-	                          const next = normalizeSimpleLines(prev);
-	                          next[0] = { ...next[0], ingredientId: e.target.value };
-	                          return next;
-	                        }
+                    onChange={(e) =>
+                      setLines((prev) => {
+                        if (isSimple) {
+                          const next = normalizeSimpleLines(prev);
+                          next[0] = { ...next[0], ingredientId: e.target.value };
+                          return next;
+                        }
 
-	                        return prev.map((l, i) =>
-	                          i === idx ? { ...l, ingredientId: e.target.value } : l,
-	                        );
-	                      })
-	                    }
+                        return prev.map((l, i) =>
+                          i === idx ? { ...l, ingredientId: e.target.value } : l,
+                        );
+                      })
+                    }
                     className="mt-2 w-full rounded-xl border border-neutral-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500"
                   >
                     <option value="">Seleccionar...</option>
@@ -345,35 +344,53 @@ export function RecipeEditor({
                     ))}
                   </select>
                   {line.ingredientId && (
-                    <p className="mt-1 text-[11px] font-medium text-neutral-400">
-                      {ingredientName(line.ingredientId)} · {ingredientUnit(line.ingredientId)}
-                    </p>
+                    <div className="mt-1 flex flex-col gap-0.5 text-[11px] font-medium text-neutral-400">
+                      <p>
+                        {ingredientName(line.ingredientId)} · {ingredientUnit(line.ingredientId)}
+                      </p>
+                    </div>
                   )}
                 </div>
 
                 <div>
                   <p className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Cantidad</p>
-                  <input
-                    value={
-                      selectedItem?.inventoryMode === "SIMPLE"
-                        ? "1"
-                        : String(line.quantityRequired ?? "")
-                    }
-                    onChange={(e) => {
-                      if (selectedItem?.inventoryMode === "SIMPLE") return;
-                      const num = parseNumber(e.target.value);
-                      setLines((prev) =>
-                        prev.map((l, i) => (i === idx ? { ...l, quantityRequired: num } : l)),
-                      );
-                    }}
-                    inputMode="decimal"
-                    disabled={selectedItem?.inventoryMode === "SIMPLE"}
-                    className="mt-2 w-full rounded-xl border border-neutral-100 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-emerald-500 disabled:opacity-60"
-                  />
+                  <div className="relative flex items-center">
+                    <input
+                      value={
+                        selectedItem?.inventoryMode === "SIMPLE"
+                          ? "1"
+                          : Number.isNaN(line.quantityRequired)
+                          ? ""
+                          : String(line.quantityRequired ?? "")
+                      }
+                      onChange={(e) => {
+                        if (selectedItem?.inventoryMode === "SIMPLE") return;
+                        const raw = e.target.value;
+                        if (!raw.trim()) {
+                          setLines((prev) =>
+                            prev.map((l, i) => (i === idx ? { ...l, quantityRequired: NaN } : l)),
+                          );
+                          return;
+                        }
+                        const num = parseNumber(raw);
+                        setLines((prev) =>
+                          prev.map((l, i) => (i === idx ? { ...l, quantityRequired: num } : l)),
+                        );
+                      }}
+                      inputMode="decimal"
+                      disabled={selectedItem?.inventoryMode === "SIMPLE"}
+                      className="mt-2 w-full rounded-xl border border-neutral-100 bg-white pl-3 pr-10 py-2 text-sm font-semibold outline-none focus:border-emerald-500 disabled:opacity-60"
+                    />
+                    {line.ingredientId && (
+                      <span className="absolute right-3 top-7 text-xs font-semibold text-slate-400">
+                        {ingredientUnit(line.ingredientId)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-                                          <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="mt-3 flex items-center justify-between gap-2">
                 {!isSimple ? (
                   <>
                     <button
@@ -405,8 +422,7 @@ export function RecipeEditor({
                 )}
               </div>
             </div>
-          ),
-          )}
+          ))}
 
           {!lines.length && (
             <div className="rounded-2xl border border-dashed border-neutral-200 bg-white px-6 py-10 text-center text-neutral-400">
@@ -437,4 +453,3 @@ export function RecipeEditor({
 
   return <div className="flex flex-col-reverse gap-4">{recipeCard}{selectorCard}</div>;
 }
-

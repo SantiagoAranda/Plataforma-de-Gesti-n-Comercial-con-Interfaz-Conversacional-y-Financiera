@@ -56,10 +56,27 @@ enum IngredientStatus {
 
 enum IngredientUnit {
   UNIT
+  PACKAGE
+  DOZEN
+  BOX
   G
   KG
+  LB
   ML
   L
+}
+
+enum UnitKind {
+  WEIGHT
+  VOLUME
+  COUNT
+  COMMERCIAL
+}
+
+enum InventoryPurchaseMode {
+  STANDARD
+  PRESENTATION
+  LEGACY
 }
 
 enum InventoryMovementType {
@@ -190,6 +207,7 @@ model Business {
 
   // Physical stock inputs owned by this business.
   ingredients        Ingredient[]
+  ingredientPurchasePresentations IngredientPurchasePresentation[]
   // Tenant-scoped item-to-ingredient consumption rules.
   recipes            Recipe[]
   // Tenant-scoped Kardex entries for ingredient stock.
@@ -280,6 +298,50 @@ model ItemImage {
   @@index([itemId])
 }
 
+model Unit {
+  id String @id @default(uuid())
+
+  code     String   @unique
+  name     String
+  symbol   String
+  kind     UnitKind
+  isSystem Boolean  @default(true)
+  isActive Boolean  @default(true)
+
+  conversionsFrom UnitConversion[] @relation("UnitConversionFrom")
+  conversionsTo   UnitConversion[] @relation("UnitConversionTo")
+
+  stockIngredients           Ingredient[] @relation("IngredientStockUnit")
+  defaultPurchaseIngredients Ingredient[] @relation("IngredientDefaultPurchaseUnit")
+  purchasePresentations      IngredientPurchasePresentation[] @relation("PurchasePresentationUnit")
+  contentPresentations       IngredientPurchasePresentation[] @relation("PurchasePresentationContentUnit")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+  @@index([isActive])
+}
+
+model UnitConversion {
+  id String @id @default(uuid())
+
+  fromUnitId String
+  fromUnit   Unit   @relation("UnitConversionFrom", fields: [fromUnitId], references: [id], onDelete: Restrict)
+
+  toUnitId String
+  toUnit   Unit   @relation("UnitConversionTo", fields: [toUnitId], references: [id], onDelete: Restrict)
+
+  factor Decimal @db.Decimal(20, 6)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromUnitId, toUnitId])
+  @@index([fromUnitId])
+  @@index([toUnitId])
+}
+
 // Physical stock unit tracked by inventory. All stock balances live here.
 model Ingredient {
   id String @id @default(uuid())
@@ -299,6 +361,14 @@ model Ingredient {
 
   // Unit used when manually registering purchases or initial stock inputs.
   purchaseUnit IngredientUnit
+
+  // New unit model. When stockUnitId is present purchases use Unit/UnitConversion/Presentation.
+  stockUnitId String?
+  stockUnit   Unit?   @relation("IngredientStockUnit", fields: [stockUnitId], references: [id], onDelete: Restrict)
+
+  // Default direct purchase unit for the new unit model. Must be non-commercial.
+  defaultPurchaseUnitId String?
+  defaultPurchaseUnit   Unit?   @relation("IngredientDefaultPurchaseUnit", fields: [defaultPurchaseUnitId], references: [id], onDelete: Restrict)
 
   // Optional user-facing unit label for business-specific wording.
   customUnitLabel String?
@@ -321,6 +391,11 @@ model Ingredient {
   // Kardex movements affecting this ingredient.
   inventoryMovements InventoryMovement[]
 
+  purchasePresentations IngredientPurchasePresentation[]
+
+  recipeUnitLabel  String?
+  recipeUnitFactor Decimal? @db.Decimal(20, 6)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -328,6 +403,43 @@ model Ingredient {
   @@unique([id, businessId])
   @@index([businessId])
   @@index([businessId, status])
+  @@index([stockUnitId])
+  @@index([defaultPurchaseUnitId])
+}
+
+model IngredientPurchasePresentation {
+  id String @id @default(uuid())
+
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  name String
+
+  purchaseUnitId String
+  purchaseUnit   Unit   @relation("PurchasePresentationUnit", fields: [purchaseUnitId], references: [id], onDelete: Restrict)
+
+  innerQuantity  Decimal @db.Decimal(18, 6)
+  innerUnitLabel String?
+
+  contentQuantity Decimal @db.Decimal(18, 6)
+  contentUnitId   String
+  contentUnit     Unit   @relation("PurchasePresentationContentUnit", fields: [contentUnitId], references: [id], onDelete: Restrict)
+
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  inventoryMovements InventoryMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+  @@index([businessId, ingredientId])
+  @@index([purchaseUnitId])
+  @@index([contentUnitId])
 }
 
 // Item-to-ingredient consumption rule used by SIMPLE and RECIPE_BASED inventory.
@@ -401,6 +513,15 @@ model InventoryMovement {
   // Optional external/manual/source id for traceability.
   referenceId String?
 
+  purchaseMode InventoryPurchaseMode?
+
+  purchasePresentationId String?
+  purchasePresentation   IngredientPurchasePresentation? @relation(fields: [purchasePresentationId], references: [id], onDelete: SetNull)
+
+  purchaseQuantity Decimal? @db.Decimal(20, 6)
+  purchaseUnitLabel String?
+  conversionDetail  String?
+
   // Sale order that generated this movement, nullable for purchases and manual adjustments.
   orderId String?
   order   Order?  @relation(fields: [orderId, businessId], references: [id, businessId], onDelete: Restrict)
@@ -425,6 +546,8 @@ model InventoryMovement {
   @@index([businessId, itemId, occurredAt])
   @@index([businessId, type])
   @@index([businessId, referenceType, referenceId])
+  @@index([purchasePresentationId])
+  @@index([purchaseMode])
   @@index([businessId, orderId])
   @@index([businessId, orderItemId])
 }

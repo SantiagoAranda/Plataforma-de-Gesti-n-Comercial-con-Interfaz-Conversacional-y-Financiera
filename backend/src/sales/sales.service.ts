@@ -72,7 +72,6 @@ export class SalesService {
                 id: true,
                 name: true,
                 consumptionUnit: true,
-                customUnitLabel: true,
               },
             },
           },
@@ -112,7 +111,6 @@ export class SalesService {
         id: recipe.ingredient.id,
         name: recipe.ingredient.name,
         consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
-        customUnitLabel: recipe.ingredient.customUnitLabel ?? null,
       },
     }));
   }
