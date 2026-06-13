@@ -391,8 +391,8 @@ function InventarioPageContent() {
               
               const payload: any = {
                 name: values.name,
-                consumptionUnit: values.consumptionUnit,
-                purchaseUnit: values.purchaseUnit,
+                stockUnitId: values.stockUnitId,
+                defaultPurchaseUnitId: values.defaultPurchaseUnitId,
                 minStock: values.minStock,
               };
               await createIngredient(payload);

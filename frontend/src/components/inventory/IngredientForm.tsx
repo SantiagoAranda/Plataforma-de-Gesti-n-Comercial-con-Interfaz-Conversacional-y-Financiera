@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { cn } from "@/src/lib/utils";
-import type { Ingredient, IngredientStatus, IngredientUnit } from "@/src/services/inventory";
+import { listUnits, type Ingredient, type IngredientStatus, type IngredientUnit, type Unit } from "@/src/services/inventory";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
 import { formatUnit, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
 
 type SubmitValues = {
   name: string;
+  stockUnitId: string;
+  defaultPurchaseUnitId: string;
   consumptionUnit: IngredientUnit;
   purchaseUnit: IngredientUnit;
   purchaseToConsumptionFactor?: string;
@@ -75,15 +77,30 @@ export function IngredientForm({
 }: Props) {
   const [name, setName] = useState(initial?.name ?? defaults?.name ?? "");
   const [consumptionUnit, setConsumptionUnit] = useState<IngredientUnit>(
-    initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "UNIT",
+    (initial?.stockUnit?.code as IngredientUnit | undefined) ?? initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "UNIT",
   );
   const [purchaseUnit, setPurchaseUnit] = useState<IngredientUnit>(
-    initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "UNIT",
+    (initial?.defaultPurchaseUnit?.code as IngredientUnit | undefined) ?? initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "UNIT",
   );
+  const [units, setUnits] = useState<Unit[]>([]);
   const [minStock, setMinStock] = useState(
     initial?.minStock?.toString?.() ?? defaults?.minStock?.toString?.() ?? "0",
   );
   const [status, setStatus] = useState<IngredientStatus>(initial?.status ?? "ACTIVE");
+
+  useEffect(() => {
+    let mounted = true;
+    listUnits()
+      .then((loadedUnits) => {
+        if (mounted) setUnits(loadedUnits);
+      })
+      .catch((error) => {
+        console.error("[ingredient units]", error);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const conversionFactor = useMemo(
     () => getConversionFactor(purchaseUnit, consumptionUnit),
@@ -95,6 +112,22 @@ export function IngredientForm({
     return INGREDIENT_UNIT_OPTIONS.filter((unit) => allowed.includes(unit.value));
   }, [consumptionUnit]);
 
+  const selectedStockUnit = useMemo(
+    () =>
+      units.find((unit) => unit.code === consumptionUnit) ??
+      (initial?.stockUnit?.code === consumptionUnit ? initial.stockUnit : null),
+    [consumptionUnit, initial?.stockUnit, units],
+  );
+
+  const selectedDefaultPurchaseUnit = useMemo(
+    () =>
+      units.find((unit) => unit.code === purchaseUnit) ??
+      (initial?.defaultPurchaseUnit?.code === purchaseUnit
+        ? initial.defaultPurchaseUnit
+        : null),
+    [initial?.defaultPurchaseUnit, purchaseUnit, units],
+  );
+
   useEffect(() => {
     if (!purchaseUnitOptions.some((unit) => unit.value === purchaseUnit)) {
       setPurchaseUnit(purchaseUnitOptions[0]?.value ?? consumptionUnit);
@@ -104,11 +137,12 @@ export function IngredientForm({
   const canSubmit = useMemo(() => {
     if (!name.trim()) return false;
     if (!consumptionUnit || !purchaseUnit) return false;
+    if (!selectedStockUnit?.id || !selectedDefaultPurchaseUnit?.id) return false;
     if (conversionFactor === null) return false;
     const normalizedMinStock = minStock.replace(",", ".").trim();
     if (!/^\d+(\.\d+)?$/.test(normalizedMinStock)) return false;
     return true;
-  }, [name, consumptionUnit, purchaseUnit, conversionFactor, minStock]);
+  }, [name, consumptionUnit, purchaseUnit, selectedStockUnit, selectedDefaultPurchaseUnit, conversionFactor, minStock]);
 
   useEffect(() => {
     onValidationChange?.(canSubmit);
@@ -127,6 +161,8 @@ export function IngredientForm({
 
         const payload: SubmitValues = {
           name: name.trim(),
+          stockUnitId: selectedStockUnit!.id,
+          defaultPurchaseUnitId: selectedDefaultPurchaseUnit!.id,
           consumptionUnit,
           purchaseUnit,
           minStock: minStock.replace(",", ".").trim() || "0",

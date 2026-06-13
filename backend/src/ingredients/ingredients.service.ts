@@ -30,76 +30,90 @@ export class IngredientsService {
     throw error;
   }
 
-  private async getUnitByCode(code: IngredientUnit, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
+  private async getUnitByCode(code: string, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
     return tx.unit.findUnique({ where: { code: String(code).toUpperCase() } });
   }
 
-  private async getIngredientUnits(dto: Pick<CreateIngredientDto, 'consumptionUnit' | 'purchaseUnit'>) {
-    const [stockUnit, defaultPurchaseUnit] = await Promise.all([
-      this.getUnitByCode(dto.consumptionUnit),
-      this.getUnitByCode(dto.purchaseUnit),
-    ]);
+  private async getUnitById(id: string, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
+    return tx.unit.findUnique({ where: { id } });
+  }
+
+  private async resolveIngredientUnits(
+    input: {
+      stockUnitId?: string;
+      defaultPurchaseUnitId?: string;
+      consumptionUnit?: IngredientUnit | string;
+      purchaseUnit?: IngredientUnit | string;
+    },
+    existing?: {
+      stockUnitId?: string | null;
+      defaultPurchaseUnitId?: string | null;
+      consumptionUnit?: IngredientUnit | string | null;
+      purchaseUnit?: IngredientUnit | string | null;
+    },
+  ) {
+    const stockUnit =
+      input.stockUnitId !== undefined
+        ? await this.getUnitById(input.stockUnitId)
+        : input.consumptionUnit !== undefined
+          ? await this.getUnitByCode(input.consumptionUnit)
+          : existing?.stockUnitId
+            ? await this.getUnitById(existing.stockUnitId)
+            : existing?.consumptionUnit
+              ? await this.getUnitByCode(existing.consumptionUnit)
+              : null;
+
+    const defaultPurchaseUnit =
+      input.defaultPurchaseUnitId !== undefined
+        ? await this.getUnitById(input.defaultPurchaseUnitId)
+        : input.purchaseUnit !== undefined
+          ? await this.getUnitByCode(input.purchaseUnit)
+          : existing?.defaultPurchaseUnitId
+            ? await this.getUnitById(existing.defaultPurchaseUnitId)
+            : existing?.purchaseUnit
+              ? await this.getUnitByCode(existing.purchaseUnit)
+              : null;
 
     if (!stockUnit || !defaultPurchaseUnit) {
-      return { stockUnitId: undefined, defaultPurchaseUnitId: undefined };
+      throw new BadRequestException('La unidad del insumo no existe.');
     }
 
-    if (defaultPurchaseUnit.kind === UnitKind.COMMERCIAL) {
-      throw new BadRequestException('defaultPurchaseUnitId cannot be commercial');
+    const conversion = await this.prisma.unitConversion.findUnique({
+      where: {
+        fromUnitId_toUnitId: {
+          fromUnitId: defaultPurchaseUnit.id,
+          toUnitId: stockUnit.id,
+        },
+      },
+    });
+
+    if (!conversion) {
+      throw new BadRequestException(
+        'La unidad normal de compra no es compatible con la unidad base del insumo.',
+      );
     }
 
     return {
+      stockUnit,
+      defaultPurchaseUnit,
       stockUnitId: stockUnit.id,
       defaultPurchaseUnitId: defaultPurchaseUnit.id,
+      purchaseToConsumptionFactor: new Prisma.Decimal(conversion.factor),
     };
   }
 
-  private getStandardPurchaseToConsumptionFactor(
-    purchaseUnit: IngredientUnit,
-    consumptionUnit: IngredientUnit,
-  ) {
-    if (purchaseUnit === consumptionUnit) {
-      return new Prisma.Decimal(1);
+  private toLegacyIngredientUnit(unitCode: string, fallbackStockCode: string) {
+    const normalized = unitCode.toUpperCase();
+    if (['G', 'KG', 'ML', 'L', 'UNIT'].includes(normalized)) {
+      return normalized as IngredientUnit;
     }
-
-    const standardFactors: Partial<Record<`${IngredientUnit}:${IngredientUnit}`, string>> = {
-      [`${IngredientUnit.KG}:${IngredientUnit.G}`]: '1000',
-      [`${IngredientUnit.G}:${IngredientUnit.KG}`]: '0.001',
-      [`${IngredientUnit.LB}:${IngredientUnit.G}`]: '500',
-      [`${IngredientUnit.L}:${IngredientUnit.ML}`]: '1000',
-      [`${IngredientUnit.ML}:${IngredientUnit.L}`]: '0.001',
-      [`${IngredientUnit.PACKAGE}:${IngredientUnit.UNIT}`]: '6',
-      [`${IngredientUnit.DOZEN}:${IngredientUnit.UNIT}`]: '12',
-      [`${IngredientUnit.BOX}:${IngredientUnit.UNIT}`]: '24',
-    };
-
-    const standard = standardFactors[`${purchaseUnit}:${consumptionUnit}`];
-    return standard ? new Prisma.Decimal(standard) : null;
-  }
-
-  private resolvePurchaseToConsumptionFactor(dto: CreateIngredientDto) {
-    const standardFactor = this.getStandardPurchaseToConsumptionFactor(
-      dto.purchaseUnit,
-      dto.consumptionUnit,
-    );
-
-    if (standardFactor) {
-      return standardFactor;
+    if (['PACKAGE', 'DOZEN', 'BOX'].includes(normalized)) {
+      return IngredientUnit.UNIT;
     }
-
-    if (dto.purchaseToConsumptionFactor !== undefined) {
-      const explicitFactor = new Prisma.Decimal(dto.purchaseToConsumptionFactor);
-      if (explicitFactor.lte(0)) {
-        throw new BadRequestException(
-          'purchaseToConsumptionFactor must be greater than zero',
-        );
-      }
-      return explicitFactor;
+    if (normalized === 'LB') {
+      return IngredientUnit.KG;
     }
-
-    throw new BadRequestException(
-      'purchaseToConsumptionFactor is required for this unit conversion',
-    );
+    return this.toLegacyIngredientUnit(fallbackStockCode, 'UNIT');
   }
 
   private resolveRecipeUnitFields(
@@ -134,9 +148,7 @@ export class IngredientsService {
   }
 
   async create(businessId: string, dto: CreateIngredientDto) {
-    const purchaseToConsumptionFactor =
-      this.resolvePurchaseToConsumptionFactor(dto);
-    const unitIds = await this.getIngredientUnits(dto);
+    const units = await this.resolveIngredientUnits(dto);
 
     const minStock = new Prisma.Decimal(dto.minStock ?? 0);
     if (minStock.lt(0)) {
@@ -150,12 +162,18 @@ export class IngredientsService {
         data: {
           businessId,
           name: this.normalizeText(dto.name),
-          consumptionUnit: dto.consumptionUnit,
-          purchaseUnit: dto.purchaseUnit,
-          stockUnitId: unitIds.stockUnitId,
-          defaultPurchaseUnitId: unitIds.defaultPurchaseUnitId,
-          purchaseToConsumptionFactor,
-          customUnitLabel: dto.customUnitLabel?.trim() || null,
+          consumptionUnit: this.toLegacyIngredientUnit(
+            units.stockUnit.code,
+            units.stockUnit.code,
+          ),
+          purchaseUnit: this.toLegacyIngredientUnit(
+            units.defaultPurchaseUnit.code,
+            units.stockUnit.code,
+          ),
+          stockUnitId: units.stockUnitId,
+          defaultPurchaseUnitId: units.defaultPurchaseUnitId,
+          purchaseToConsumptionFactor: units.purchaseToConsumptionFactor,
+          customUnitLabel: undefined,
           minStock,
           recipeUnitLabel: recipeFields.recipeUnitLabel,
           recipeUnitFactor: recipeFields.recipeUnitFactor,
@@ -215,27 +233,17 @@ export class IngredientsService {
       throw new BadRequestException('minStock must be greater than or equal to zero');
     }
 
-    const finalPurchaseUnit = dto.purchaseUnit !== undefined ? dto.purchaseUnit : existing.purchaseUnit;
-    const finalConsumptionUnit = dto.consumptionUnit !== undefined ? dto.consumptionUnit : existing.consumptionUnit;
-    const unitIds: {
-      stockUnitId?: string;
-      defaultPurchaseUnitId?: string;
-    } =
-      dto.purchaseUnit !== undefined || dto.consumptionUnit !== undefined
-        ? await this.getIngredientUnits({
-            purchaseUnit: finalPurchaseUnit as IngredientUnit,
-            consumptionUnit: finalConsumptionUnit as IngredientUnit,
-          })
-        : {};
-
-    const standardFactor = this.getStandardPurchaseToConsumptionFactor(
-      finalPurchaseUnit as IngredientUnit,
-      finalConsumptionUnit as IngredientUnit,
-    );
-
+    const unitsTouched =
+      dto.stockUnitId !== undefined ||
+      dto.defaultPurchaseUnitId !== undefined ||
+      dto.purchaseUnit !== undefined ||
+      dto.consumptionUnit !== undefined;
+    const units = unitsTouched
+      ? await this.resolveIngredientUnits(dto, existing)
+      : undefined;
     let finalFactor: Prisma.Decimal | undefined = undefined;
-    if (standardFactor) {
-      finalFactor = standardFactor;
+    if (units) {
+      finalFactor = units.purchaseToConsumptionFactor;
     } else if (dto.purchaseToConsumptionFactor !== undefined) {
       const explicitFactor = new Prisma.Decimal(dto.purchaseToConsumptionFactor);
       if (explicitFactor.lte(0)) {
@@ -256,14 +264,18 @@ export class IngredientsService {
         data: {
           name: dto.name === undefined ? undefined : this.normalizeText(dto.name),
           status: dto.status,
-          consumptionUnit: dto.consumptionUnit,
-          purchaseUnit: dto.purchaseUnit,
-          stockUnitId: unitIds.stockUnitId,
-          defaultPurchaseUnitId: unitIds.defaultPurchaseUnitId,
-          customUnitLabel:
-            dto.customUnitLabel === undefined
-              ? undefined
-              : dto.customUnitLabel.trim() || null,
+          consumptionUnit: units
+            ? this.toLegacyIngredientUnit(units.stockUnit.code, units.stockUnit.code)
+            : undefined,
+          purchaseUnit: units
+            ? this.toLegacyIngredientUnit(
+                units.defaultPurchaseUnit.code,
+                units.stockUnit.code,
+              )
+            : undefined,
+          stockUnitId: units?.stockUnitId,
+          defaultPurchaseUnitId: units?.defaultPurchaseUnitId,
+          customUnitLabel: undefined,
           purchaseToConsumptionFactor: finalFactor,
           minStock:
             dto.minStock === undefined ? undefined : new Prisma.Decimal(dto.minStock),

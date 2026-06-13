@@ -141,8 +141,10 @@ export type InventoryKardexGlobalResult = {
 
 export type CreateIngredientDto = {
   name: string;
-  consumptionUnit: IngredientUnit;
-  purchaseUnit: IngredientUnit;
+  stockUnitId?: string;
+  defaultPurchaseUnitId?: string;
+  consumptionUnit?: IngredientUnit;
+  purchaseUnit?: IngredientUnit;
   purchaseToConsumptionFactor?: string;
   customUnitLabel?: string;
   minStock?: string;

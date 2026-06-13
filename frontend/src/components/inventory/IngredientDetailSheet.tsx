@@ -337,8 +337,8 @@ export function IngredientDetailSheet({ ingredientId, open, onClose, onChanged }
     try {
       const payload: any = {
         name: values.name,
-        consumptionUnit: values.consumptionUnit,
-        purchaseUnit: values.purchaseUnit,
+        stockUnitId: values.stockUnitId,
+        defaultPurchaseUnitId: values.defaultPurchaseUnitId,
         minStock: values.minStock,
         status: values.status,
       };

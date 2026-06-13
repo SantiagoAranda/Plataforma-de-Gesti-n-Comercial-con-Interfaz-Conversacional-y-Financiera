@@ -26,6 +26,16 @@ export class UpdateIngredientDto {
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  stockUnitId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  defaultPurchaseUnitId?: string;
+
+  @IsOptional()
+  @IsString()
   @Transform(({ value }) => value === '' ? undefined : value)
   customUnitLabel?: string;
 

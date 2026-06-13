@@ -10,12 +10,24 @@ export class CreateIngredientDto {
   name!: string;
 
   @Transform(({ value }) => normalizeIngredientUnit(value))
+  @IsOptional()
   @IsEnum(IngredientUnit)
-  consumptionUnit!: IngredientUnit;
+  consumptionUnit?: IngredientUnit;
 
   @Transform(({ value }) => normalizeIngredientUnit(value))
+  @IsOptional()
   @IsEnum(IngredientUnit)
-  purchaseUnit!: IngredientUnit;
+  purchaseUnit?: IngredientUnit;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  stockUnitId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  defaultPurchaseUnitId?: string;
 
   @IsOptional()
   @IsString()
