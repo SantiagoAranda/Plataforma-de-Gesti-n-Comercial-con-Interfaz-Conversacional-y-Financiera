@@ -42,7 +42,7 @@ function isTodayLocal(d: Date): boolean {
   );
 }
 
-// ─── Componente: MonthPickerPopover (clonado de Nómina / HeaderCalendar) ─────
+// ─── Componente: MonthPickerPopover (clonado de Nómina / HeaderCalendar) ──── ─
 
 function MonthPickerPopover({
   selectedYear,
@@ -160,16 +160,16 @@ export default function MovimientosPage() {
     if (viewMode === "MONTH") {
       // Primer y último día del mes seleccionado, en hora local
       start = new Date(filterYear, filterMonth - 1, 1, 0, 0, 0, 0);
-      end   = new Date(filterYear, filterMonth,     0, 23, 59, 59, 999);
+      end = new Date(filterYear, filterMonth, 0, 23, 59, 59, 999);
     } else {
       // Día individual completo, en hora local
-      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(),  0,  0,  0,   0);
-      end   = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
+      start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
+      end = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
     }
 
     return {
       from: formatLocalISO(start),
-      to:   formatLocalISO(end),
+      to: formatLocalISO(end),
     };
   }, [viewMode, filterYear, filterMonth, selectedDate]);
 
