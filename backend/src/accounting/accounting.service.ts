@@ -17,6 +17,8 @@ import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dt
 const ORDER_ACCOUNTING_DEFAULTS = {
   debitCashPucCode: '1105',
   debitBankTransferPucCode: '1110',
+  inventoryPucCode: '1435',
+  costOfSalesPucCode: '6135',
   creditIncomePucCodeByType: {
     PRODUCT: '4135',
     SERVICE: '4235',
@@ -266,6 +268,30 @@ export class AccountingService {
     return { debitReference, creditReference, itemType };
   }
 
+  private async resolveOrderInventoryCost(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    orderId: string,
+  ) {
+    const saleMovements = await tx.inventoryMovement.findMany({
+      where: {
+        businessId,
+        orderId,
+        type: 'SALE',
+      },
+      select: {
+        totalValue: true,
+      },
+    });
+
+    return saleMovements
+      .reduce(
+        (total, movement) => total.add(new Prisma.Decimal(movement.totalValue)),
+        new Prisma.Decimal(0),
+      )
+      .toDecimalPlaces(2);
+  }
+
   private parseDateBoundary(value: string, boundary: 'start' | 'end') {
     const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
 
@@ -332,8 +358,8 @@ export class AccountingService {
     const detailSuffix = customerName ? ` - ${customerName}` : '';
     const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();
 
-    const movements = await Promise.all([
-      tx.accountingMovement.create({
+    const movements = [
+      await tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(debitReference),
@@ -346,7 +372,7 @@ export class AccountingService {
         },
         include: this.movementInclude(),
       }),
-      tx.accountingMovement.create({
+      await tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(creditReference),
@@ -359,7 +385,53 @@ export class AccountingService {
         },
         include: this.movementInclude(),
       }),
-    ]);
+    ];
+
+    const inventoryCost = await this.resolveOrderInventoryCost(
+      tx,
+      businessId,
+      order.id,
+    );
+
+    if (inventoryCost.gt(0)) {
+      const [costReference, inventoryReference] = await Promise.all([
+        this.loadPucReferenceOrThrow({
+          pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.costOfSalesPucCode,
+        }),
+        this.loadPucReferenceOrThrow({
+          pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
+        }),
+      ]);
+
+      movements.push(
+        await tx.accountingMovement.create({
+          data: {
+            businessId,
+            ...this.movementPucData(costReference),
+            amount: inventoryCost,
+            nature: MovementNature.DEBIT,
+            date,
+            detail: `Costo de venta ${itemType.toLowerCase()}${detailSuffix}`,
+            originType: AccountingMovementOriginType.ORDER,
+            originId: order.id,
+          },
+          include: this.movementInclude(),
+        }),
+        await tx.accountingMovement.create({
+          data: {
+            businessId,
+            ...this.movementPucData(inventoryReference),
+            amount: inventoryCost,
+            nature: MovementNature.CREDIT,
+            date,
+            detail: `Salida de inventario por venta ${itemType.toLowerCase()}${detailSuffix}`,
+            originType: AccountingMovementOriginType.ORDER,
+            originId: order.id,
+          },
+          include: this.movementInclude(),
+        }),
+      );
+    }
 
     return movements.map((movement) => this.serializeMovement(movement));
   }

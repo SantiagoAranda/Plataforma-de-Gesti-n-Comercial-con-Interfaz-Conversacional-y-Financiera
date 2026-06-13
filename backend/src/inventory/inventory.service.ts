@@ -1466,22 +1466,11 @@ export class InventoryService {
     return `${labels[type] ?? 'Movimiento de inventario'}: ${ingredientName}`;
   }
 
-  private accountingNatureForInventoryMovement(type: InventoryMovementType) {
-    if (type === 'PURCHASE' || type === 'ADJUSTMENT_POSITIVE') {
-      return MovementNature.DEBIT;
-    }
-
-    if (type === 'PURCHASE_RETURN' || type === 'ADJUSTMENT_NEGATIVE') {
-      return MovementNature.CREDIT;
-    }
-
-    return null;
-  }
-
-  private async resolveInventoryAccountingPucCuenta(
+  private async resolveAccountingPucCuenta(
     tx: Prisma.TransactionClient,
+    codes: string[],
   ) {
-    for (const code of ['1435', '1105']) {
+    for (const code of codes) {
       const cuenta = await tx.pucCuenta.findUnique({ where: { code } });
       if (cuenta) return cuenta.code;
     }
@@ -1502,10 +1491,10 @@ export class InventoryService {
       return null;
     }
 
-    const nature = this.accountingNatureForInventoryMovement(movement.type);
-    if (!nature) {
+    if (movement.type !== 'PURCHASE' && movement.type !== 'PURCHASE_RETURN') {
       // Initial inventory is intentionally not posted automatically: the
       // patrimonial origin is not explicit in the current accounting model.
+      // Manual adjustments also require an explicit counterparty account.
       return null;
     }
 
@@ -1522,24 +1511,54 @@ export class InventoryService {
       return null;
     }
 
-    const pucCuentaCode = await this.resolveInventoryAccountingPucCuenta(tx);
+    const inventoryPucCuentaCode = await this.resolveAccountingPucCuenta(tx, [
+      '1435',
+    ]);
+    const paymentPucCuentaCode = await this.resolveAccountingPucCuenta(tx, [
+      '1110',
+      '1105',
+    ]);
+    const ingredientName =
+      movement.ingredient?.name ?? movement.item?.name ?? 'Inventario';
+    const inventoryNature =
+      movement.type === 'PURCHASE' ? MovementNature.DEBIT : MovementNature.CREDIT;
+    const counterpartyNature =
+      movement.type === 'PURCHASE' ? MovementNature.CREDIT : MovementNature.DEBIT;
+    const counterpartyDetail =
+      movement.type === 'PURCHASE'
+        ? `Contrapartida compra inventario: ${ingredientName}`
+        : `Contrapartida devolución de compra inventario: ${ingredientName}`;
+    const amount = this.decimal(movement.totalValue);
 
-    return tx.accountingMovement.create({
+    const inventoryMovement = await tx.accountingMovement.create({
       data: {
         businessId,
-        pucCuentaCode,
+        pucCuentaCode: inventoryPucCuentaCode,
         pucSubcuentaId: null,
-        amount: this.decimal(movement.totalValue),
-        nature,
+        amount,
+        nature: inventoryNature,
         date: movement.occurredAt,
-        detail: this.accountingDetail(
-          movement.type,
-          movement.ingredient?.name ?? movement.item?.name ?? 'Inventario',
-        ),
+        detail: this.accountingDetail(movement.type, ingredientName),
         originType: AccountingMovementOriginType.MANUAL,
         originId: movement.id,
       },
     });
+
+    await tx.accountingMovement.create({
+      data: {
+        businessId,
+        pucCuentaCode: paymentPucCuentaCode,
+        pucSubcuentaId: null,
+        amount,
+        nature: counterpartyNature,
+        date: movement.occurredAt,
+        detail: counterpartyDetail,
+        originType: AccountingMovementOriginType.MANUAL,
+        originId: movement.id,
+      },
+    });
+
+    return inventoryMovement;
   }
 
   private async resolvePurchaseInput(

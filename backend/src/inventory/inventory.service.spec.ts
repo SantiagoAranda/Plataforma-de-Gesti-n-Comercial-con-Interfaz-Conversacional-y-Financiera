@@ -228,7 +228,9 @@ describe('InventoryService', () => {
     );
     tx.ingredient.update.mockResolvedValue({});
     tx.accountingMovement.findFirst.mockResolvedValue(null);
-    tx.pucCuenta.findUnique.mockResolvedValueOnce({ code: '1435' });
+    tx.pucCuenta.findUnique.mockImplementation(({ where }: { where: any }) =>
+      Promise.resolve({ code: where.code }),
+    );
     tx.accountingMovement.create.mockResolvedValue({ id: 'accounting-1' });
 
     await service.registerPurchase(businessId, {
@@ -237,13 +239,24 @@ describe('InventoryService', () => {
       purchaseUnitCost: '12000',
     } as any);
 
-    expect(tx.accountingMovement.create).toHaveBeenCalledWith({
+    expect(tx.accountingMovement.create).toHaveBeenNthCalledWith(1, {
       data: expect.objectContaining({
         businessId,
         pucCuentaCode: '1435',
         amount: new Prisma.Decimal(24000),
         nature: 'DEBIT',
         detail: 'Compra de inventario: Flour',
+        originType: 'MANUAL',
+        originId: 'purchase-movement-1',
+      }),
+    });
+    expect(tx.accountingMovement.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({
+        businessId,
+        pucCuentaCode: '1110',
+        amount: new Prisma.Decimal(24000),
+        nature: 'CREDIT',
+        detail: 'Contrapartida compra inventario: Flour',
         originType: 'MANUAL',
         originId: 'purchase-movement-1',
       }),
