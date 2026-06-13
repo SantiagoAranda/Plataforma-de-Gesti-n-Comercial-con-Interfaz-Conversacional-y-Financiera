@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
@@ -1438,12 +1438,6 @@ function ReelLikeProductView({
       {/* DESCRIPTION (padding only here; no heavy card) */}
       <div className="mx-auto min-h-0 w-full max-w-md overflow-y-auto px-4 pb-6 pt-4 custom-scrollbar">
         <div className="space-y-2 text-slate-900">
-          {businessName && (
-            <div className="text-xs font-semibold text-slate-600">
-              {businessName}
-            </div>
-          )}
-
           {item.description && (
             <p className="text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap">
               {item.description}
