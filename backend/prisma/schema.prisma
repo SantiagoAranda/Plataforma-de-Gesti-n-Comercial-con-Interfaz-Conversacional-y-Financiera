@@ -49,6 +49,24 @@ enum InventoryMode {
   RECIPE_BASED
 }
 
+enum ItemOptionQuantityMode {
+  FIXED_PER_OPTION
+  SHARED_TOTAL
+  NO_QUANTITY
+}
+
+enum ItemOptionTargetType {
+  NONE
+  INGREDIENT
+  ITEM
+}
+
+enum OrderItemOptionAction {
+  SELECT
+  ADD
+  REMOVE
+}
+
 enum IngredientStatus {
   ACTIVE
   INACTIVE
@@ -206,12 +224,14 @@ model Business {
   payrollAccountingMappings PayrollAccountingMapping[]
 
   // Physical stock inputs owned by this business.
-  ingredients        Ingredient[]
+  ingredients                     Ingredient[]
   ingredientPurchasePresentations IngredientPurchasePresentation[]
   // Tenant-scoped item-to-ingredient consumption rules.
-  recipes            Recipe[]
+  recipes                         Recipe[]
+  itemOptionGroups                ItemOptionGroup[]
+  itemOptions                     ItemOption[]
   // Tenant-scoped Kardex entries for ingredient stock.
-  inventoryMovements InventoryMovement[]
+  inventoryMovements              InventoryMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -267,9 +287,12 @@ model Item {
   orderItems         OrderItem[]
   recipes            Recipe[]
   inventoryMovements InventoryMovement[]
+  optionGroups       ItemOptionGroup[]       @relation("ItemOptionGroups")
+  targetedByOptions  ItemOption[]            @relation("ItemOptionTarget")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  orderItemOptions OrderItemOption[]
 
   @@unique([id, businessId])
   @@index([businessId])
@@ -311,10 +334,12 @@ model Unit {
   conversionsFrom UnitConversion[] @relation("UnitConversionFrom")
   conversionsTo   UnitConversion[] @relation("UnitConversionTo")
 
-  stockIngredients           Ingredient[] @relation("IngredientStockUnit")
-  defaultPurchaseIngredients Ingredient[] @relation("IngredientDefaultPurchaseUnit")
+  stockIngredients           Ingredient[]                     @relation("IngredientStockUnit")
+  defaultPurchaseIngredients Ingredient[]                     @relation("IngredientDefaultPurchaseUnit")
   purchasePresentations      IngredientPurchasePresentation[] @relation("PurchasePresentationUnit")
   contentPresentations       IngredientPurchasePresentation[] @relation("PurchasePresentationContentUnit")
+  itemOptionGroupTotals      ItemOptionGroup[]                @relation("ItemOptionGroupTotalUnit")
+  itemOptionUnits            ItemOption[]                     @relation("ItemOptionUnit")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -392,6 +417,8 @@ model Ingredient {
   inventoryMovements InventoryMovement[]
 
   purchasePresentations IngredientPurchasePresentation[]
+  itemOptions           ItemOption[]
+  orderItemOptions      OrderItemOption[]
 
   recipeUnitLabel  String?
   recipeUnitFactor Decimal? @db.Decimal(20, 6)
@@ -426,7 +453,7 @@ model IngredientPurchasePresentation {
 
   contentQuantity Decimal @db.Decimal(18, 6)
   contentUnitId   String
-  contentUnit     Unit   @relation("PurchasePresentationContentUnit", fields: [contentUnitId], references: [id], onDelete: Restrict)
+  contentUnit     Unit    @relation("PurchasePresentationContentUnit", fields: [contentUnitId], references: [id], onDelete: Restrict)
 
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
@@ -471,6 +498,85 @@ model Recipe {
   @@index([businessId])
   @@index([businessId, itemId])
   @@index([businessId, ingredientId])
+}
+
+model ItemOptionGroup {
+  id String @id @default(uuid())
+
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  itemId String
+  item   Item   @relation("ItemOptionGroups", fields: [itemId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  title       String
+  description String?
+
+  required      Boolean @default(false)
+  minSelections Int     @default(0)
+  maxSelections Int?
+
+  quantityMode        ItemOptionQuantityMode @default(NO_QUANTITY)
+  totalQuantityLimit  Decimal?               @db.Decimal(20, 6)
+  totalQuantityUnitId String?
+  totalQuantityUnit   Unit?                  @relation("ItemOptionGroupTotalUnit", fields: [totalQuantityUnitId], references: [id], onDelete: Restrict)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  options          ItemOption[]
+  orderItemOptions OrderItemOption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId, itemId, isActive, sortOrder])
+  @@index([businessId])
+  @@index([businessId, itemId])
+  @@index([totalQuantityUnitId])
+}
+
+model ItemOption {
+  id String @id @default(uuid())
+
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  groupId String
+  group   ItemOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  targetType   ItemOptionTargetType @default(NONE)
+  ingredientId String?
+  ingredient   Ingredient?          @relation(fields: [ingredientId, businessId], references: [id, businessId], onDelete: Restrict)
+  itemId       String?
+  item         Item?                @relation("ItemOptionTarget", fields: [itemId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  quantity Decimal? @db.Decimal(20, 6)
+  unitId   String?
+  unit     Unit?    @relation("ItemOptionUnit", fields: [unitId], references: [id], onDelete: Restrict)
+
+  priceDelta        Decimal @default(0) @db.Decimal(10, 2)
+  selectedByDefault Boolean @default(false)
+  removable         Boolean @default(true)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  orderItemOptions OrderItemOption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId, isActive, sortOrder])
+  @@index([groupId])
+  @@index([businessId])
+  @@index([businessId, groupId])
+  @@index([ingredientId])
+  @@index([itemId])
+  @@index([unitId])
 }
 
 // Kardex entry. SIMPLE product stock uses itemId; recipe-based stock uses ingredientId.
@@ -518,7 +624,7 @@ model InventoryMovement {
   purchasePresentationId String?
   purchasePresentation   IngredientPurchasePresentation? @relation(fields: [purchasePresentationId], references: [id], onDelete: SetNull)
 
-  purchaseQuantity Decimal? @db.Decimal(20, 6)
+  purchaseQuantity  Decimal? @db.Decimal(20, 6)
   purchaseUnitLabel String?
   conversionDetail  String?
 
@@ -623,11 +729,16 @@ model OrderItem {
   inventoryModeSnapshot         InventoryMode?
   excludedOptionalIngredientIds Json?
 
-  unitPrice Decimal @db.Decimal(10, 2)
-  lineTotal Decimal @db.Decimal(14, 2)
+  unitPrice              Decimal  @db.Decimal(10, 2)
+  lineTotal              Decimal  @db.Decimal(14, 2)
+  baseUnitPriceSnapshot  Decimal? @db.Decimal(10, 2)
+  optionsTotalSnapshot   Decimal? @db.Decimal(10, 2)
+  finalUnitPriceSnapshot Decimal? @db.Decimal(10, 2)
+  lineTotalSnapshot      Decimal? @db.Decimal(14, 2)
 
   // Ingredient-based Kardex movements generated by this sale line.
   inventoryMovements InventoryMovement[]
+  options            OrderItemOption[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -637,6 +748,43 @@ model OrderItem {
   @@index([orderId, itemId])
   @@index([itemId])
   @@index([businessId, itemId])
+}
+
+model OrderItemOption {
+  id String @id @default(uuid())
+
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  groupId String?
+  group   ItemOptionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  optionId String?
+  option   ItemOption? @relation(fields: [optionId], references: [id], onDelete: SetNull)
+
+  groupTitleSnapshot        String
+  optionNameSnapshot        String
+  targetTypeSnapshot        ItemOptionTargetType
+  ingredientId              String?
+  ingredient                Ingredient?            @relation(fields: [ingredientId], references: [id], onDelete: SetNull)
+  itemId                    String?
+  item                      Item?                  @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  quantityModeSnapshot      ItemOptionQuantityMode
+  quantityPerUnitSnapshot   Decimal?               @db.Decimal(20, 6)
+  totalQuantitySnapshot     Decimal?               @db.Decimal(20, 6)
+  unitIdSnapshot            String?
+  unitLabelSnapshot         String?
+  priceDeltaSnapshot        Decimal                @db.Decimal(10, 2)
+  selectedByDefaultSnapshot Boolean
+  action                    OrderItemOptionAction
+
+  createdAt DateTime @default(now())
+
+  @@index([orderItemId])
+  @@index([groupId])
+  @@index([optionId])
+  @@index([ingredientId])
+  @@index([itemId])
 }
 
 //

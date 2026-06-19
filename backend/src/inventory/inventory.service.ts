@@ -11,6 +11,8 @@ import {
   InventoryPurchaseMode,
   InventoryReferenceType,
   Item,
+  ItemOptionQuantityMode,
+  ItemOptionTargetType,
   MovementNature,
   Prisma,
   UnitKind,
@@ -40,6 +42,15 @@ type OrderItemForInventory = {
   itemTypeSnapshot: string;
   inventoryModeSnapshot?: string | null;
   excludedOptionalIngredientIds?: unknown;
+  options?: Array<{
+    targetTypeSnapshot: ItemOptionTargetType | string;
+    ingredientId?: string | null;
+    itemId?: string | null;
+    quantityModeSnapshot: ItemOptionQuantityMode | string;
+    totalQuantitySnapshot?: Prisma.Decimal | number | string | null;
+    unitIdSnapshot?: string | null;
+    optionNameSnapshot?: string | null;
+  }>;
   item?: {
     inventoryMode?: string | null;
   } | null;
@@ -791,10 +802,12 @@ export class InventoryService {
         sourceType: diagnosticContext.sourceType ?? 'ORDER',
       },
     );
-    await this.validateStockAvailability(businessId, consumptions, tx);
+    const consolidatedConsumptions =
+      this.consolidateOrderConsumptions(consumptions);
+    await this.validateStockAvailability(businessId, consolidatedConsumptions, tx);
 
     const movements = [];
-    for (const consumption of consumptions) {
+    for (const consumption of consolidatedConsumptions) {
       const movement = await this.applyInventoryMovement(tx, businessId, {
         ingredientId: consumption.ingredientId,
         itemId: consumption.itemId,
@@ -814,6 +827,28 @@ export class InventoryService {
     });
 
     return movements;
+  }
+
+  private consolidateOrderConsumptions(
+    consumptions: OrderIngredientConsumption[],
+  ) {
+    const byTarget = new Map<string, OrderIngredientConsumption>();
+
+    for (const consumption of consumptions) {
+      const target = consumption.ingredientId
+        ? `ingredient:${consumption.ingredientId}`
+        : `item:${consumption.itemId}`;
+      const key = `${consumption.orderItemId}:${target}`;
+      const current = byTarget.get(key);
+      byTarget.set(key, {
+        ...consumption,
+        quantity: (current?.quantity ?? this.decimal(0)).add(
+          this.decimal(consumption.quantity),
+        ),
+      });
+    }
+
+    return Array.from(byTarget.values());
   }
 
   async reverseInventoryConsumptionForOrder(
@@ -1027,6 +1062,12 @@ export class InventoryService {
           ...baseLog,
           reason: 'inventoryMode NONE',
         });
+        await this.appendOptionConsumptions(
+          tx,
+          businessId,
+          orderItem,
+          consumptions,
+        );
         continue;
       }
 
@@ -1060,6 +1101,12 @@ export class InventoryService {
           itemId: orderItem.itemId,
           quantity: this.decimal(orderItem.quantity),
         });
+        await this.appendOptionConsumptions(
+          tx,
+          businessId,
+          orderItem,
+          consumptions,
+        );
         continue;
       }
 
@@ -1122,9 +1169,137 @@ export class InventoryService {
           quantity: this.decimal(line.quantityRequired).mul(orderItem.quantity),
         });
       }
+
+      await this.appendOptionConsumptions(
+        tx,
+        businessId,
+        orderItem,
+        consumptions,
+      );
     }
 
     return consumptions;
+  }
+
+  private async appendOptionConsumptions(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    orderItem: OrderItemForInventory,
+    consumptions: OrderIngredientConsumption[],
+  ) {
+    for (const option of orderItem.options ?? []) {
+      const targetType = option.targetTypeSnapshot;
+      if (targetType === ItemOptionTargetType.NONE || targetType === 'NONE') {
+        continue;
+      }
+
+      const totalQuantity = option.totalQuantitySnapshot;
+      if (totalQuantity == null) {
+        throw new BadRequestException(
+          `Option ${option.optionNameSnapshot ?? ''} is missing quantity snapshot`,
+        );
+      }
+      const quantity = this.decimal(totalQuantity);
+      if (quantity.lte(0)) {
+        continue;
+      }
+
+      if (
+        targetType === ItemOptionTargetType.INGREDIENT ||
+        targetType === 'INGREDIENT'
+      ) {
+        if (!option.ingredientId) {
+          throw new BadRequestException('Option ingredient snapshot is missing');
+        }
+        const convertedQuantity = await this.convertOptionQuantityToIngredientStock(
+          tx,
+          businessId,
+          option.ingredientId,
+          quantity,
+          option.unitIdSnapshot ?? null,
+        );
+        consumptions.push({
+          orderItemId: orderItem.id,
+          soldItemId: orderItem.itemId,
+          itemName: orderItem.itemNameSnapshot,
+          ingredientId: option.ingredientId,
+          quantity: convertedQuantity,
+        });
+        continue;
+      }
+
+      if (targetType === ItemOptionTargetType.ITEM || targetType === 'ITEM') {
+        if (!option.itemId) {
+          throw new BadRequestException('Option item snapshot is missing');
+        }
+        const expanded = await this.expandItemRecipe(
+          businessId,
+          option.itemId,
+          quantity,
+          tx,
+        );
+        for (const requirement of expanded) {
+          consumptions.push({
+            orderItemId: orderItem.id,
+            soldItemId: orderItem.itemId,
+            itemName: option.optionNameSnapshot ?? orderItem.itemNameSnapshot,
+            ingredientId: requirement.ingredientId,
+            itemId: requirement.itemId,
+            quantity: requirement.quantity,
+          });
+        }
+      }
+    }
+  }
+
+  private async convertOptionQuantityToIngredientStock(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    ingredientId: string,
+    quantity: Prisma.Decimal,
+    unitId: string | null,
+  ) {
+    if (!unitId) return quantity;
+
+    const ingredient = await tx.ingredient.findFirst({
+      where: { id: ingredientId, businessId },
+      select: { stockUnitId: true },
+    });
+    if (!ingredient) {
+      throw new BadRequestException('Option ingredient snapshot is invalid');
+    }
+    if (!ingredient.stockUnitId) {
+      throw new BadRequestException(
+        'Option ingredient requires Unit catalog stock unit',
+      );
+    }
+    if (ingredient.stockUnitId === unitId) return quantity;
+
+    const direct = await tx.unitConversion.findUnique({
+      where: {
+        fromUnitId_toUnitId: {
+          fromUnitId: unitId,
+          toUnitId: ingredient.stockUnitId,
+        },
+      },
+    });
+    if (direct) {
+      return quantity.mul(direct.factor);
+    }
+
+    const reverse = await tx.unitConversion.findUnique({
+      where: {
+        fromUnitId_toUnitId: {
+          fromUnitId: ingredient.stockUnitId,
+          toUnitId: unitId,
+        },
+      },
+    });
+    if (reverse) {
+      return quantity.div(reverse.factor);
+    }
+
+    throw new BadRequestException('Option ingredient unit is incompatible');
   }
 
   async applyInventoryMovement(

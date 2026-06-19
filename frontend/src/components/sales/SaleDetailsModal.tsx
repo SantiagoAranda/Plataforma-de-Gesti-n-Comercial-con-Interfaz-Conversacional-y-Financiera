@@ -285,6 +285,22 @@ export default function SaleDetailsModal({
                       </div>
                     </div>
 
+                    {it.options?.length ? (
+                      <div className="pt-3 border-t border-neutral-50 space-y-1.5">
+                        <div className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400">Opciones</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {it.options.map((option, index) => (
+                            <span
+                              key={`${option.groupTitle}-${option.optionName}-${index}`}
+                              className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-medium text-orange-700"
+                            >
+                              {option.optionName}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {recipe.length > 0 && (
                       <div className="pt-3 border-t border-neutral-50 space-y-3">
                         {requiredLines.length > 0 && (

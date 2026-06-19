@@ -40,6 +40,14 @@ export interface UnifiedSaleDto {
     itemId: string;
     itemInventoryMode?: string | null;
     excludedOptionalIngredientIds?: string[];
+    options?: Array<{
+      groupTitle: string;
+      optionName: string;
+      priceDelta: number;
+      quantityPerUnit?: number | null;
+      totalQuantity?: number | null;
+      unitLabel?: string | null;
+    }>;
     recipe?: Array<{
       ingredientId: string;
       isOptional: boolean;
@@ -81,6 +89,9 @@ export class SalesService {
         },
       },
     },
+    options: {
+      orderBy: { createdAt: 'asc' as const },
+    },
   } satisfies Prisma.OrderItemInclude;
 
   private parseExcludedOptionalIngredientIdsForResponse(value: unknown): string[] {
@@ -112,6 +123,23 @@ export class SalesService {
         name: recipe.ingredient.name,
         consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
       },
+    }));
+  }
+
+  private mapOptionsForSales(orderItem: any) {
+    return (orderItem?.options ?? []).map((option: any) => ({
+      groupTitle: option.groupTitleSnapshot,
+      optionName: option.optionNameSnapshot,
+      priceDelta: Number(option.priceDeltaSnapshot ?? 0),
+      quantityPerUnit:
+        option.quantityPerUnitSnapshot == null
+          ? null
+          : Number(option.quantityPerUnitSnapshot),
+      totalQuantity:
+        option.totalQuantitySnapshot == null
+          ? null
+          : Number(option.totalQuantitySnapshot),
+      unitLabel: option.unitLabelSnapshot ?? null,
     }));
   }
 
@@ -401,6 +429,10 @@ export class SalesService {
         quantity: input.quantity,
         unitPrice: item.price,
         lineTotal,
+        baseUnitPriceSnapshot: item.price,
+        optionsTotalSnapshot: new Prisma.Decimal(0),
+        finalUnitPriceSnapshot: item.price,
+        lineTotalSnapshot: lineTotal,
         itemNameSnapshot: item.name,
         itemTypeSnapshot: item.type,
         inventoryModeSnapshot: item.inventoryMode,
@@ -499,6 +531,7 @@ export class SalesService {
         excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
           it.excludedOptionalIngredientIds,
         ),
+        options: this.mapOptionsForSales(it),
         recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
@@ -563,7 +596,7 @@ export class SalesService {
       const order = await tx.order.findFirst({
         where: { id, businessId },
         include: {
-          items: { include: { item: true } },
+          items: { include: { item: true, options: true } },
         },
       });
 
@@ -602,7 +635,7 @@ export class SalesService {
         if (claim.count === 0) {
           const currentOrder = await tx.order.findFirst({
             where: { id, businessId },
-            include: { items: { include: { item: true } } },
+            include: { items: { include: { item: true, options: true } } },
           });
           if (!currentOrder) throw new NotFoundException('Order not found');
           return {
@@ -648,7 +681,7 @@ export class SalesService {
 
       const updatedOrder = await tx.order.findUniqueOrThrow({
         where: { id },
-        include: { items: { include: { item: true } } },
+        include: { items: { include: { item: true, options: true } } },
       });
 
       return {
@@ -957,6 +990,10 @@ export class SalesService {
           durationMinutesSnapshot: item.durationMinutes,
           unitPrice,
           lineTotal,
+          baseUnitPriceSnapshot: unitPrice,
+          optionsTotalSnapshot: new Prisma.Decimal(0),
+          finalUnitPriceSnapshot: unitPrice,
+          lineTotalSnapshot: lineTotal,
         } as any,
       });
 
@@ -998,7 +1035,11 @@ export class SalesService {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.orderItem.update({
         where: { id: oi.id },
-        data: { quantity: dto.quantity, lineTotal: nextLineTotal },
+        data: {
+          quantity: dto.quantity,
+          lineTotal: nextLineTotal,
+          lineTotalSnapshot: nextLineTotal,
+        },
       });
 
       const totals = await tx.orderItem.aggregate({
@@ -1266,6 +1307,10 @@ export class SalesService {
             quantity: input.quantity,
             unitPrice: item.price,
             lineTotal,
+            baseUnitPriceSnapshot: item.price,
+            optionsTotalSnapshot: new Prisma.Decimal(0),
+            finalUnitPriceSnapshot: item.price,
+            lineTotalSnapshot: lineTotal,
             itemNameSnapshot: item.name,
             itemTypeSnapshot: item.type,
             inventoryModeSnapshot: item.inventoryMode,

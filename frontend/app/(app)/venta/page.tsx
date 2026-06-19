@@ -111,6 +111,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
       durationMin: it.durationMin,
       itemInventoryMode: it.itemInventoryMode,
       excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
+      options: it.options ?? [],
       recipe: it.recipe ?? [],
     };
   });

@@ -140,17 +140,24 @@ export default function SaleCard({
             {sale.items.map((it, idx) => (
               <div
                 key={`${sale.id}-${idx}`}
-                className="flex items-center gap-2 text-xs"
+                className="text-xs"
               >
-                <span className="flex-1 text-slate-600 font-medium truncate">
-                  {it.name}
-                </span>
-                <span className="bg-white border border-slate-200 text-slate-700 font-medium px-2 py-0.5 rounded-lg min-w-[28px] text-center shadow-sm text-[10px]">
-                  {it.qty}
-                </span>
-                <span className="font-semibold text-slate-700 tabular-nums min-w-[60px] text-right">
-                  ${formatDisplayMoney((it.unitPrice ?? it.price ?? 0) * it.qty)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-slate-600 font-medium truncate">
+                    {it.name}
+                  </span>
+                  <span className="bg-white border border-slate-200 text-slate-700 font-medium px-2 py-0.5 rounded-lg min-w-[28px] text-center shadow-sm text-[10px]">
+                    {it.qty}
+                  </span>
+                  <span className="font-semibold text-slate-700 tabular-nums min-w-[60px] text-right">
+                    ${formatDisplayMoney((it.unitPrice ?? it.price ?? 0) * it.qty)}
+                  </span>
+                </div>
+                {it.options?.length ? (
+                  <div className="mt-1 truncate pl-1 text-[11px] font-medium text-slate-500">
+                    {it.options.map((option) => option.optionName).join(", ")}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

@@ -33,6 +33,14 @@ export interface ApiOrder {
     itemId: string;
     itemInventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
     excludedOptionalIngredientIds?: string[];
+    options?: Array<{
+      groupTitle: string;
+      optionName: string;
+      priceDelta: number;
+      quantityPerUnit?: number | null;
+      totalQuantity?: number | null;
+      unitLabel?: string | null;
+    }>;
     recipe?: Array<{
       ingredientId: string;
       isOptional: boolean;

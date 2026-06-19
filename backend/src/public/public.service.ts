@@ -5,6 +5,7 @@ import { Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { ItemOptionsService } from '../item-options/item-options.service';
 
 @Injectable()
 export class PublicService {
@@ -12,6 +13,7 @@ export class PublicService {
     private prisma: PrismaService,
     private storageService: StorageService,
     private inventoryService: InventoryService,
+    private itemOptionsService: ItemOptionsService,
   ) {}
 
   private normalizeExcludedOptionalIngredientIds(value: unknown) {
@@ -29,6 +31,41 @@ export class PublicService {
     if (new Set(ids).size !== ids.length) {
       throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
     }
+  }
+
+  private mapPublicOptionGroups(groups: any[]) {
+    return groups.map((group) => ({
+      id: group.id,
+      title: group.title,
+      description: group.description,
+      required: group.required,
+      minSelections: group.minSelections,
+      maxSelections: group.maxSelections,
+      quantityMode: group.quantityMode,
+      totalQuantityLimit:
+        group.totalQuantityLimit == null ? null : Number(group.totalQuantityLimit),
+      totalQuantityUnitId: group.totalQuantityUnitId,
+      totalQuantityUnit: group.totalQuantityUnit,
+      sortOrder: group.sortOrder,
+      options: (group.options ?? []).map((option: any) => ({
+        id: option.id,
+        groupId: option.groupId,
+        name: option.name,
+        description: option.description,
+        targetType: option.targetType,
+        ingredientId: option.ingredientId,
+        itemId: option.itemId,
+        quantity: option.quantity == null ? null : Number(option.quantity),
+        unitId: option.unitId,
+        priceDelta: Number(option.priceDelta ?? 0),
+        selectedByDefault: option.selectedByDefault,
+        removable: option.removable,
+        sortOrder: option.sortOrder,
+        ingredient: option.ingredient,
+        item: option.item,
+        unit: option.unit,
+      })),
+    }));
   }
 
   private withPublicLogoUrl<
@@ -304,6 +341,26 @@ export class PublicService {
           },
           orderBy: { createdAt: 'asc' },
         },
+        optionGroups: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            totalQuantityUnit: true,
+            options: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              include: {
+                ingredient: {
+                  select: { id: true, name: true },
+                },
+                item: {
+                  select: { id: true, name: true, type: true, inventoryMode: true },
+                },
+                unit: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -340,6 +397,7 @@ export class PublicService {
           isOptional: recipe.isOptional,
           ingredient: recipe.ingredient,
         })),
+        optionGroups: this.mapPublicOptionGroups((item as any).optionGroups ?? []),
       })),
     };
   }
@@ -598,6 +656,10 @@ export class PublicService {
             },
           },
         },
+        optionGroups: {
+          where: { isActive: true },
+          select: { id: true },
+        },
       },
     });
 
@@ -605,12 +667,22 @@ export class PublicService {
       throw new BadRequestException('Invalid items');
 
     const visibleCustomizationNotes: string[] = [];
-    const normalizedInputs = dto.items.map((input) => {
+    const normalizedInputs = await Promise.all(dto.items.map(async (input) => {
       const item = dbItems.find((i) => i.id === input.itemId)!;
-      const excludedIds = this.normalizeExcludedOptionalIngredientIds(
-        input.excludedOptionalIngredientIds,
-      );
+      const hasOptionGroups = item.optionGroups.length > 0;
+      const excludedIds = hasOptionGroups
+        ? []
+        : this.normalizeExcludedOptionalIngredientIds(
+            input.excludedOptionalIngredientIds,
+          );
       this.assertNoDuplicateIds(excludedIds);
+
+      const resolvedOptions = await this.itemOptionsService.resolveSelectionsForOrderLine(
+        business.id,
+        item.id,
+        input.quantity,
+        input.optionSelections ?? [],
+      );
 
       if (excludedIds.length > 0) {
         if (item.type === 'SERVICE' || item.recipes.length === 0) {
@@ -650,8 +722,8 @@ export class PublicService {
         }
       }
 
-      return { input, item, excludedIds };
-    });
+      return { input, item, excludedIds, resolvedOptions };
+    }));
 
     for (const { input, item } of normalizedInputs) {
       const sellability = await this.inventoryService.getItemSellability(
@@ -682,9 +754,11 @@ export class PublicService {
         sentAt: new Date(),
 
         items: {
-          create: normalizedInputs.map(({ input, item, excludedIds }) => {
+          create: normalizedInputs.map(({ input, item, excludedIds, resolvedOptions }) => {
             const quantity = input.quantity;
-            const unitPrice = item.price;
+            const baseUnitPrice = item.price;
+            const optionsTotal = resolvedOptions.optionsTotal;
+            const unitPrice = baseUnitPrice.add(optionsTotal);
             const lineTotal = unitPrice.mul(quantity);
 
             return {
@@ -698,6 +772,13 @@ export class PublicService {
               inventoryModeSnapshot: item.inventoryMode,
               durationMinutesSnapshot: item.durationMinutes,
               excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
+              baseUnitPriceSnapshot: baseUnitPrice,
+              optionsTotalSnapshot: optionsTotal,
+              finalUnitPriceSnapshot: unitPrice,
+              lineTotalSnapshot: lineTotal,
+              options: resolvedOptions.snapshots.length
+                ? { create: resolvedOptions.snapshots }
+                : undefined,
             };
           }),
         },

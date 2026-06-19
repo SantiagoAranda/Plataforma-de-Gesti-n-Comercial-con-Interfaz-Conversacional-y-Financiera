@@ -8,9 +8,11 @@ import { validatePhoneNumber } from "@/src/constants/countryCodes";
 
 interface CartItem {
   id: string;
+  cartKey?: string;
   name: string;
   price: number;
   quantity: number;
+  selectedOptionNames?: string[];
   excludedOptionalIngredientNames?: string[];
 }
 
@@ -112,6 +114,11 @@ export default function CartSummary({
                 <span className="block text-sm font-medium text-emerald-600 mt-0.5">
                   ${formatPrice(item.price)}
                 </span>
+                {item.selectedOptionNames?.length ? (
+                  <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
+                    Opciones: {item.selectedOptionNames.join(", ")}
+                  </span>
+                ) : null}
                 {item.excludedOptionalIngredientNames?.length ? (
                   <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
                     Sin: {item.excludedOptionalIngredientNames.join(", ")}
@@ -123,7 +130,7 @@ export default function CartSummary({
               <div className="flex items-center gap-2 bg-neutral-100 rounded-full px-2.5 py-1 shrink-0">
                 <button
                   type="button"
-                  onClick={() => onDecreaseQty(item.id)}
+                  onClick={() => onDecreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Minus size={12} />
@@ -133,7 +140,7 @@ export default function CartSummary({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onIncreaseQty(item.id)}
+                  onClick={() => onIncreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Plus size={12} />

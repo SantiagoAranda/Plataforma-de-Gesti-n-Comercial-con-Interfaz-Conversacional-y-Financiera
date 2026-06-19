@@ -13,6 +13,7 @@ describe('PublicService', () => {
     price: new Prisma.Decimal(10000),
     durationMinutes: null,
     inventoryMode: 'RECIPE_BASED',
+    optionGroups: [],
     recipes: [
       {
         ingredientId: 'ingredient-required',
@@ -55,6 +56,12 @@ describe('PublicService', () => {
         {
           getSimpleItemStockState: jest.fn(),
           getItemSellability: (jest.fn() as any).mockResolvedValue({ sellable: true, status: 'SELLABLE' }),
+        } as any,
+        {
+          resolveSelectionsForOrderLine: (jest.fn() as any).mockResolvedValue({
+            optionsTotal: new Prisma.Decimal(0),
+            snapshots: [],
+          }),
         } as any,
       ),
       prisma,
