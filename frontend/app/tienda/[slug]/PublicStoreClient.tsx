@@ -813,7 +813,11 @@ export default function PublicStoreClient() {
                 item={item}
                 preview={preview}
                 onOpen={() =>
-                  item.type === "SERVICE" ? setSelectedService(item) : setSelectedProduct(item)
+                  item.type === "SERVICE"
+                    ? setSelectedService(item)
+                    : (item.optionGroups?.length ?? 0) > 0
+                      ? openCustomizationOrAdd(item)
+                      : setSelectedProduct(item)
                 }
                 onPlus={() =>
                   item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)

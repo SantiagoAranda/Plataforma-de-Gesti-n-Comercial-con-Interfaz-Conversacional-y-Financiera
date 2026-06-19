@@ -104,7 +104,7 @@ export default function CartSummary({
         <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
           {items.map((item) => (
             <div
-              key={item.id}
+              key={item.cartKey ?? item.id}
               className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 rounded-xl border border-neutral-100"
             >
               <div className="min-w-0 flex-1">
