@@ -719,4 +719,51 @@ export class PublicService {
       orderId: order.publicToken,
     };
   }
+
+  /* =====================================================
+     FIND RESERVATION BY ID (página pública de consulta)
+  ===================================================== */
+
+
+  async findReservationById(id: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        customerName: true,
+        customerWhatsapp: true,
+        date: true,
+        startMinute: true,
+        endMinute: true,
+        note: true,
+        item: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMinutes: true,
+          },
+        },
+        business: {
+          select: {
+            id: true,
+            name: true,
+            phoneWhatsapp: true,
+          },
+        },
+      },
+    });
+
+    if (!reservation) return null;
+
+    return {
+      ...reservation,
+      date: reservation.date.toISOString(),
+      item: {
+        ...reservation.item,
+        price: Number(reservation.item.price),
+      },
+    };
+  }
 }
