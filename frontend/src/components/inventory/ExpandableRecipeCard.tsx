@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, ChevronUp, Plus, Trash2, BookOpen } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2, BookOpen, AlertTriangle } from "lucide-react";
+import { ProductCustomizationManager } from "@/src/components/inventory/ProductCustomizationManager";
 import { cn } from "@/src/lib/utils";
 import { formatMoney } from "@/src/lib/formatters";
 import { replaceRecipe, type RecipeLine, type InventorySummaryIngredient } from "@/src/services/inventory";
@@ -443,6 +444,42 @@ export function ExpandableRecipeCard({
         </div>
       </div>
 
+      {/* SELLABILITY WARNING BOX */}
+      {item.sellability && !item.sellability.sellable ? (
+        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/50 p-3 text-xs font-semibold text-amber-900 shadow-2xs space-y-1.5">
+          <div className="flex items-center gap-1.5 font-bold text-amber-950">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+            <span>No visible en la tienda pública</span>
+          </div>
+          <div className="text-[11px] text-amber-800 leading-relaxed">
+            {item.sellability.status === "MISSING_RECIPE" && (
+              "Este producto no aparece en la tienda porque no tiene receta base configurada."
+            )}
+            {item.sellability.status === "MISSING_INITIAL_STOCK" && (
+              "Este producto no aparece en la tienda porque no tiene inventario inicial configurado."
+            )}
+            {item.sellability.status === "INACTIVE" && (
+              "Este producto no aparece en la tienda porque está marcado como inactivo."
+            )}
+            {item.sellability.status === "NO_STOCK" && (
+              "Este producto no aparece en la tienda porque no tiene stock disponible."
+            )}
+            {item.sellability.status === "INSUFFICIENT_RECIPE_STOCK" && (
+              "Este producto no aparece en la tienda porque falta stock en los siguientes insumos obligatorios:"
+            )}
+          </div>
+          {item.sellability.status === "INSUFFICIENT_RECIPE_STOCK" && item.sellability.missingItems && (
+            <ul className="pl-4 list-disc text-[11px] text-amber-850 space-y-1 mt-1">
+              {item.sellability.missingItems.map((missing: any) => (
+                <li key={missing.id}>
+                  <strong>{missing.name}</strong>: Disponible: {formatMoney(Number(missing.available))} · Requerido: {formatMoney(Number(missing.required))} {missing.unit}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+
       {/* EXPANDED CONTENT */}
       {isExpanded && (
         <div className="mt-4 border-t border-slate-100/80 pt-3.5 space-y-4">
@@ -683,6 +720,9 @@ export function ExpandableRecipeCard({
                 {submitting ? "Guardando..." : "Guardar receta"}
               </button>
             </div>
+          )}
+          {item.type === "PRODUCT" && (
+            <ProductCustomizationManager item={item} allIngredients={allIngredients} />
           )}
         </div>
       )}

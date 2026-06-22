@@ -98,6 +98,7 @@ type PublicOption = {
   selectedByDefault: boolean;
   removable: boolean;
   sortOrder: number;
+  hasStock?: boolean;
 };
 
 type PublicOptionGroup = {
@@ -1048,6 +1049,7 @@ function ProductOptionsCustomizer({
   }, [item.optionGroups, selectedSet]);
 
   const toggleOption = (group: PublicOptionGroup, option: PublicOption) => {
+    if (option.hasStock === false) return; // Prevent selection of out-of-stock options
     const next = new Set(selectedSet);
     const checked = next.has(option.id);
     if (checked) {
@@ -1094,33 +1096,43 @@ function ProductOptionsCustomizer({
             <div className="grid grid-cols-2 gap-3">
               {group.options.map((option) => {
                 const checked = selectedSet.has(option.id);
+                const isOutOfStock = option.hasStock === false;
                 return (
                   <button
                     key={option.id}
                     type="button"
+                    disabled={isOutOfStock}
                     onClick={() => toggleOption(group, option)}
                     className={[
-                      "flex min-h-[54px] items-center gap-2 rounded-xl border px-3 py-2 text-left transition active:scale-[0.99]",
-                      checked
-                        ? "border-orange-400 bg-orange-50 text-orange-900"
-                        : "border-neutral-200 bg-white text-neutral-700",
+                      "flex min-h-[54px] items-center gap-2 rounded-xl border px-3 py-2 text-left transition",
+                      isOutOfStock
+                        ? "border-neutral-100 bg-neutral-50/70 text-neutral-400 cursor-not-allowed opacity-60"
+                        : checked
+                          ? "border-orange-400 bg-orange-50 text-orange-900 active:scale-[0.99]"
+                          : "border-neutral-200 bg-white text-neutral-700 active:scale-[0.99]",
                     ].join(" ")}
                   >
-                    <span
-                      className={[
-                        "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[12px] font-bold",
-                        checked
-                          ? "border-orange-500 bg-orange-500 text-white"
-                          : "border-neutral-200 bg-white text-transparent",
-                      ].join(" ")}
-                    >
-                      ✓
-                    </span>
+                    {!isOutOfStock && (
+                      <span
+                        className={[
+                          "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[12px] font-bold",
+                          checked
+                            ? "border-orange-500 bg-orange-500 text-white"
+                            : "border-neutral-200 bg-white text-transparent",
+                        ].join(" ")}
+                      >
+                        ✓
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold leading-tight">
+                      <span className={["block text-sm font-semibold leading-tight", isOutOfStock ? "text-neutral-400 line-through" : "text-neutral-900"].join(" ")}>
                         {option.name}
                       </span>
-                      {option.priceDelta > 0 ? (
+                      {isOutOfStock ? (
+                        <span className="mt-0.5 block text-[10px] font-bold text-rose-500 uppercase tracking-wider">
+                          Sin stock
+                        </span>
+                      ) : option.priceDelta > 0 ? (
                         <span className="mt-0.5 block text-[11px] font-semibold text-orange-600">
                           +{formatCop(option.priceDelta)}
                         </span>

@@ -33,39 +33,81 @@ export class PublicService {
     }
   }
 
-  private mapPublicOptionGroups(groups: any[]) {
-    return groups.map((group) => ({
-      id: group.id,
-      title: group.title,
-      description: group.description,
-      required: group.required,
-      minSelections: group.minSelections,
-      maxSelections: group.maxSelections,
-      quantityMode: group.quantityMode,
-      totalQuantityLimit:
-        group.totalQuantityLimit == null ? null : Number(group.totalQuantityLimit),
-      totalQuantityUnitId: group.totalQuantityUnitId,
-      totalQuantityUnit: group.totalQuantityUnit,
-      sortOrder: group.sortOrder,
-      options: (group.options ?? []).map((option: any) => ({
-        id: option.id,
-        groupId: option.groupId,
-        name: option.name,
-        description: option.description,
-        targetType: option.targetType,
-        ingredientId: option.ingredientId,
-        itemId: option.itemId,
-        quantity: option.quantity == null ? null : Number(option.quantity),
-        unitId: option.unitId,
-        priceDelta: Number(option.priceDelta ?? 0),
-        selectedByDefault: option.selectedByDefault,
-        removable: option.removable,
-        sortOrder: option.sortOrder,
-        ingredient: option.ingredient,
-        item: option.item,
-        unit: option.unit,
-      })),
-    }));
+  private async mapPublicOptionGroups(businessId: string, groups: any[]) {
+    return Promise.all(
+      groups.map(async (group) => {
+        const mappedOptions = await Promise.all(
+          (group.options ?? []).map(async (option: any) => {
+            let hasStock = true;
+
+            // 1. Determine requiredQty based on rules
+            let requiredQty = 1;
+            if (group.quantityMode === 'SHARED_TOTAL') {
+              requiredQty = group.totalQuantityLimit == null ? 1 : Number(group.totalQuantityLimit);
+            } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+              requiredQty = option.quantity == null ? 1 : Number(option.quantity);
+            }
+
+            // 2. Validate availability
+            if (option.targetType === 'INGREDIENT') {
+              const currentStock = option.ingredient?.currentStock == null ? 0 : Number(option.ingredient.currentStock);
+              hasStock = currentStock >= requiredQty;
+            } else if (option.targetType === 'ITEM') {
+              try {
+                const sellability = await this.inventoryService.getItemSellability(
+                  businessId,
+                  option.itemId,
+                  requiredQty,
+                );
+                hasStock = sellability.sellable;
+              } catch (e) {
+                console.error(`[PublicService] Error checking sellability for target item ${option.itemId}`, e);
+                hasStock = false;
+              }
+            } else {
+              // NONE
+              hasStock = true;
+            }
+
+            return {
+              id: option.id,
+              groupId: option.groupId,
+              name: option.name,
+              description: option.description,
+              targetType: option.targetType,
+              ingredientId: option.ingredientId,
+              itemId: option.itemId,
+              quantity: option.quantity == null ? null : Number(option.quantity),
+              unitId: option.unitId,
+              priceDelta: Number(option.priceDelta ?? 0),
+              selectedByDefault: option.selectedByDefault,
+              removable: option.removable,
+              sortOrder: option.sortOrder,
+              ingredient: option.ingredient,
+              item: option.item,
+              unit: option.unit,
+              hasStock,
+            };
+          }),
+        );
+
+        return {
+          id: group.id,
+          title: group.title,
+          description: group.description,
+          required: group.required,
+          minSelections: group.minSelections,
+          maxSelections: group.maxSelections,
+          quantityMode: group.quantityMode,
+          totalQuantityLimit:
+            group.totalQuantityLimit == null ? null : Number(group.totalQuantityLimit),
+          totalQuantityUnitId: group.totalQuantityUnitId,
+          totalQuantityUnit: group.totalQuantityUnit,
+          sortOrder: group.sortOrder,
+          options: mappedOptions,
+        };
+      }),
+    );
   }
 
   private withPublicLogoUrl<
@@ -351,7 +393,7 @@ export class PublicService {
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               include: {
                 ingredient: {
-                  select: { id: true, name: true },
+                  select: { id: true, name: true, currentStock: true },
                 },
                 item: {
                   select: { id: true, name: true, type: true, inventoryMode: true },
@@ -388,7 +430,7 @@ export class PublicService {
 
     return {
       business: publicBusiness,
-      data: visibleItems.map((item) => ({
+      data: await Promise.all(visibleItems.map(async (item) => ({
         ...item,
         price: Number(item.price),
         recipes: item.recipes.map((recipe) => ({
@@ -397,8 +439,8 @@ export class PublicService {
           isOptional: recipe.isOptional,
           ingredient: recipe.ingredient,
         })),
-        optionGroups: this.mapPublicOptionGroups((item as any).optionGroups ?? []),
-      })),
+        optionGroups: await this.mapPublicOptionGroups(business.id, (item as any).optionGroups ?? []),
+      }))),
     };
   }
 
