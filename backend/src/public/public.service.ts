@@ -1,11 +1,67 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
-import { Weekday } from '@prisma/client';
+import { Prisma, Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ItemOptionsService } from '../item-options/item-options.service';
+
+type PublicRecipeLine = {
+  ingredientId: string;
+  quantityRequired: Prisma.Decimal;
+  isOptional: boolean;
+  ingredient: {
+    id: string;
+    name: string;
+    currentStock: Prisma.Decimal;
+  };
+};
+
+type PublicOptionForGroup = {
+  id: string;
+  groupId: string;
+  name: string;
+  description: string | null;
+  targetType: string;
+  ingredientId: string | null;
+  itemId: string | null;
+  quantity: Prisma.Decimal | null;
+  unitId: string | null;
+  priceDelta: Prisma.Decimal | null;
+  selectedByDefault: boolean;
+  removable: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  ingredient?: {
+    id: string;
+    name: string;
+    currentStock: Prisma.Decimal;
+  } | null;
+  item?: {
+    id: string;
+    name: string;
+    type: string;
+    inventoryMode: string;
+  } | null;
+  unit?: unknown | null;
+};
+
+type PublicOptionGroupForCatalog = {
+  id: string;
+  title: string;
+  description: string | null;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  quantityMode: string;
+  totalQuantityLimit: Prisma.Decimal | null;
+  totalQuantityUnitId: string | null;
+  totalQuantityUnit?: unknown | null;
+  sortOrder: number;
+  isActive: boolean;
+  options: PublicOptionForGroup[];
+};
 
 @Injectable()
 export class PublicService {
@@ -40,85 +96,81 @@ export class PublicService {
   }
 
   private async mapPublicOptionGroups(
-    groups: any[],
+    groups: PublicOptionGroupForCatalog[],
     optionSellabilityById: Map<string, { sellable: boolean }>,
   ) {
     return Promise.all(
-      groups.filter((group) => group.isActive !== false).map(async (group) => {
-        const mappedOptions = await Promise.all(
-          (group.options ?? [])
-            .filter((option: any) => option.isActive !== false)
-            .map(async (option: any) => {
-            let hasStock = true;
+      groups
+        .filter((group) => group.isActive !== false)
+        .map(async (group) => {
+          const mappedOptions = await Promise.all(
+            group.options
+              .filter((option) => option.isActive !== false)
+              .map(async (option) => {
+                let requiredQty = 1;
+                if (group.quantityMode === 'SHARED_TOTAL') {
+                  requiredQty =
+                    group.totalQuantityLimit == null
+                      ? 1
+                      : Number(group.totalQuantityLimit);
+                } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+                  requiredQty =
+                    option.quantity == null ? 1 : Number(option.quantity);
+                }
 
-            // 1. Determine requiredQty based on rules
-            let requiredQty = 1;
-            if (group.quantityMode === 'SHARED_TOTAL') {
-              requiredQty =
-                group.totalQuantityLimit == null
-                  ? 1
-                  : Number(group.totalQuantityLimit);
-            } else if (group.quantityMode === 'FIXED_PER_OPTION') {
-              requiredQty =
-                option.quantity == null ? 1 : Number(option.quantity);
-            }
+                let hasStock = true;
+                if (option.targetType === 'INGREDIENT') {
+                  const currentStock =
+                    option.ingredient?.currentStock == null
+                      ? 0
+                      : Number(option.ingredient.currentStock);
+                  hasStock = currentStock >= requiredQty;
+                } else if (option.targetType === 'ITEM') {
+                  hasStock =
+                    optionSellabilityById.get(option.id)?.sellable ?? false;
+                }
 
-            // 2. Validate availability
-            if (option.targetType === 'INGREDIENT') {
-              const currentStock =
-                option.ingredient?.currentStock == null
-                  ? 0
-                  : Number(option.ingredient.currentStock);
-              hasStock = currentStock >= requiredQty;
-            } else if (option.targetType === 'ITEM') {
-              hasStock =
-                optionSellabilityById.get(option.id)?.sellable ?? false;
-            } else {
-              // NONE
-              hasStock = true;
-            }
+                return {
+                  id: option.id,
+                  groupId: option.groupId,
+                  name: option.name,
+                  description: option.description,
+                  targetType: option.targetType,
+                  ingredientId: option.ingredientId,
+                  itemId: option.itemId,
+                  quantity:
+                    option.quantity == null ? null : Number(option.quantity),
+                  unitId: option.unitId,
+                  priceDelta: Number(option.priceDelta ?? 0),
+                  selectedByDefault: option.selectedByDefault,
+                  removable: option.removable,
+                  sortOrder: option.sortOrder,
+                  ingredient: option.ingredient,
+                  item: option.item,
+                  unit: option.unit,
+                  hasStock,
+                };
+              }),
+          );
 
-            return {
-              id: option.id,
-              groupId: option.groupId,
-              name: option.name,
-              description: option.description,
-              targetType: option.targetType,
-              ingredientId: option.ingredientId,
-              itemId: option.itemId,
-              quantity:
-                option.quantity == null ? null : Number(option.quantity),
-              unitId: option.unitId,
-              priceDelta: Number(option.priceDelta ?? 0),
-              selectedByDefault: option.selectedByDefault,
-              removable: option.removable,
-              sortOrder: option.sortOrder,
-              ingredient: option.ingredient,
-              item: option.item,
-              unit: option.unit,
-              hasStock,
-            };
-            }),
-        );
-
-        return {
-          id: group.id,
-          title: group.title,
-          description: group.description,
-          required: group.required,
-          minSelections: group.minSelections,
-          maxSelections: group.maxSelections,
-          quantityMode: group.quantityMode,
-          totalQuantityLimit:
-            group.totalQuantityLimit == null
-              ? null
-              : Number(group.totalQuantityLimit),
-          totalQuantityUnitId: group.totalQuantityUnitId,
-          totalQuantityUnit: group.totalQuantityUnit,
-          sortOrder: group.sortOrder,
-          options: mappedOptions,
-        };
-      }),
+          return {
+            id: group.id,
+            title: group.title,
+            description: group.description,
+            required: group.required,
+            minSelections: group.minSelections,
+            maxSelections: group.maxSelections,
+            quantityMode: group.quantityMode,
+            totalQuantityLimit:
+              group.totalQuantityLimit == null
+                ? null
+                : Number(group.totalQuantityLimit),
+            totalQuantityUnitId: group.totalQuantityUnitId,
+            totalQuantityUnit: group.totalQuantityUnit,
+            sortOrder: group.sortOrder,
+            options: mappedOptions,
+          };
+        }),
     );
   }
 
@@ -432,25 +484,26 @@ export class PublicService {
       item.optionGroups
         .filter((group) => group.isActive !== false)
         .flatMap((group) =>
-        group.options
-          .filter(
-            (option) =>
-              option.isActive !== false &&
-              option.targetType === 'ITEM' &&
-              option.itemId,
-          )
-          .map((option) => {
-            let quantity = 1;
-            if (group.quantityMode === 'SHARED_TOTAL') {
-              quantity =
-                group.totalQuantityLimit == null
-                  ? 1
-                  : Number(group.totalQuantityLimit);
-            } else if (group.quantityMode === 'FIXED_PER_OPTION') {
-              quantity = option.quantity == null ? 1 : Number(option.quantity);
-            }
-            return { optionId: option.id, itemId: option.itemId!, quantity };
-          }),
+          group.options
+            .filter(
+              (option) =>
+                option.isActive !== false &&
+                option.targetType === 'ITEM' &&
+                option.itemId,
+            )
+            .map((option) => {
+              let quantity = 1;
+              if (group.quantityMode === 'SHARED_TOTAL') {
+                quantity =
+                  group.totalQuantityLimit == null
+                    ? 1
+                    : Number(group.totalQuantityLimit);
+              } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+                quantity =
+                  option.quantity == null ? 1 : Number(option.quantity);
+              }
+              return { optionId: option.id, itemId: option.itemId!, quantity };
+            }),
         ),
     );
     const sellabilities = await this.inventoryService.getItemsSellabilityBulk(
@@ -496,14 +549,14 @@ export class PublicService {
         visibleItems.map(async (item) => ({
           ...item,
           price: Number(item.price),
-          recipes: item.recipes.map((recipe) => ({
+          recipes: item.recipes.map((recipe: PublicRecipeLine) => ({
             ingredientId: recipe.ingredientId,
             quantityRequired: Number(recipe.quantityRequired),
             isOptional: recipe.isOptional,
             ingredient: recipe.ingredient,
           })),
           optionGroups: await this.mapPublicOptionGroups(
-            (item as any).optionGroups ?? [],
+            item.optionGroups as PublicOptionGroupForCatalog[],
             optionSellabilityById,
           ),
         })),
@@ -882,6 +935,45 @@ export class PublicService {
         .filter(Boolean)
         .join('\n') || null;
 
+    const orderItemCreates: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] =
+      normalizedInputs.map(
+        ({ input, item, excludedIds, resolvedOptions }) => {
+          const quantity = input.quantity;
+          const baseUnitPrice = item.price;
+          const optionsTotal = resolvedOptions.optionsTotal;
+          const unitPrice = baseUnitPrice.add(optionsTotal);
+          const lineTotal = unitPrice.mul(quantity);
+
+          return {
+            businessId: business.id,
+            itemId: item.id,
+            quantity,
+            unitPrice,
+            lineTotal,
+            itemNameSnapshot: item.name,
+            itemTypeSnapshot: item.type,
+            inventoryModeSnapshot: item.inventoryMode,
+            durationMinutesSnapshot: item.durationMinutes,
+            excludedOptionalIngredientIds:
+              excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+            baseUnitPriceSnapshot: baseUnitPrice,
+            optionsTotalSnapshot: optionsTotal,
+            finalUnitPriceSnapshot: unitPrice,
+            lineTotalSnapshot: lineTotal,
+            options: resolvedOptions.snapshots.length
+              ? {
+                  create: resolvedOptions.snapshots,
+                }
+              : undefined,
+          };
+        },
+      );
+
+    const total = orderItemCreates.reduce(
+      (acc, item) => acc + Number(item.lineTotal),
+      0,
+    );
+
     const order = await this.prisma.order.create({
       data: {
         businessId: business.id,
@@ -891,51 +983,18 @@ export class PublicService {
         customerWhatsapp: dto.customerWhatsapp,
         note: visibleNote,
         sentAt: new Date(),
-
+        total,
         items: {
-          create: normalizedInputs.map(
-            ({ input, item, excludedIds, resolvedOptions }) => {
-              const quantity = input.quantity;
-              const baseUnitPrice = item.price;
-              const optionsTotal = resolvedOptions.optionsTotal;
-              const unitPrice = baseUnitPrice.add(optionsTotal);
-              const lineTotal = unitPrice.mul(quantity);
-
-              return {
-                businessId: business.id,
-                itemId: item.id,
-                quantity,
-                unitPrice,
-                lineTotal,
-                itemNameSnapshot: item.name,
-                itemTypeSnapshot: item.type,
-                inventoryModeSnapshot: item.inventoryMode,
-                durationMinutesSnapshot: item.durationMinutes,
-                excludedOptionalIngredientIds:
-                  excludedIds.length > 0 ? excludedIds : null,
-                baseUnitPriceSnapshot: baseUnitPrice,
-                optionsTotalSnapshot: optionsTotal,
-                finalUnitPriceSnapshot: unitPrice,
-                lineTotalSnapshot: lineTotal,
-                options: resolvedOptions.snapshots.length
-                  ? { create: resolvedOptions.snapshots }
-                  : undefined,
-              };
-            },
-          ),
+          create: orderItemCreates,
         },
       },
-      include: { items: true },
+      select: {
+        publicToken: true,
+        origin: true,
+      },
     });
 
     console.log(`[PublicService] Created order origin: ${order.origin}`);
-
-    const total = order.items.reduce((acc, i) => acc + Number(i.lineTotal), 0);
-
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { total },
-    });
 
     return {
       message: 'Order created',

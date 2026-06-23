@@ -216,6 +216,7 @@ describe('PublicService', () => {
     expect(prisma.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          total: 35000,
           items: {
             create: [
               expect.objectContaining({
@@ -241,6 +242,7 @@ describe('PublicService', () => {
         }),
       }),
     );
+    expect(prisma.order.update).not.toHaveBeenCalled();
   });
 
   it('accepts repeated item ids with identical options without consolidating lines', async () => {
