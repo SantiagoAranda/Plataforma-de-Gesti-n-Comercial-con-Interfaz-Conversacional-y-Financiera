@@ -358,8 +358,9 @@ export class AccountingService {
     const detailSuffix = customerName ? ` - ${customerName}` : '';
     const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();
 
-    const movements = [
-      await tx.accountingMovement.create({
+    // Ejecutar ambos asientos base en paralelo para reducir el tiempo dentro de la transacción
+    const movements = await Promise.all([
+      tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(debitReference),
@@ -372,7 +373,7 @@ export class AccountingService {
         },
         include: this.movementInclude(),
       }),
-      await tx.accountingMovement.create({
+      tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(creditReference),
@@ -385,7 +386,7 @@ export class AccountingService {
         },
         include: this.movementInclude(),
       }),
-    ];
+    ]);
 
     const inventoryCost = await this.resolveOrderInventoryCost(
       tx,
@@ -403,8 +404,9 @@ export class AccountingService {
         }),
       ]);
 
-      movements.push(
-        await tx.accountingMovement.create({
+      // Ejecutar ambos asientos de costo/inventario en paralelo
+      const costMovements = await Promise.all([
+        tx.accountingMovement.create({
           data: {
             businessId,
             ...this.movementPucData(costReference),
@@ -417,7 +419,7 @@ export class AccountingService {
           },
           include: this.movementInclude(),
         }),
-        await tx.accountingMovement.create({
+        tx.accountingMovement.create({
           data: {
             businessId,
             ...this.movementPucData(inventoryReference),
@@ -430,7 +432,9 @@ export class AccountingService {
           },
           include: this.movementInclude(),
         }),
-      );
+      ]);
+
+      movements.push(...costMovements);
     }
 
     return movements.map((movement) => this.serializeMovement(movement));

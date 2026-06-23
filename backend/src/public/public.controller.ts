@@ -23,6 +23,13 @@ export class PublicController {
     return reservation;
   }
 
+  @Post('reservations/:id/cancel')
+  async cancelReservation(@Param('id') id: string) {
+    const reservation = await this.publicService.cancelReservation(id);
+    if (!reservation) throw new NotFoundException('Reserva no encontrada');
+    return reservation;
+  }
+
   @Get(':slug/items')
   listPublicItems(
     @Param('slug') slug: string,

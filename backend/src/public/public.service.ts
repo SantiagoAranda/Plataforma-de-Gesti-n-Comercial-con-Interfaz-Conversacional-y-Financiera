@@ -766,4 +766,17 @@ export class PublicService {
       },
     };
   }
+
+  async cancelReservation(id: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+    });
+
+    if (!reservation) return null;
+
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+    });
+  }
 }

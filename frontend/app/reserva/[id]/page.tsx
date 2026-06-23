@@ -5,9 +5,10 @@ import {
   Clock,
   User,
   Phone,
-  Scissors,
+  Sparkles,
   MessageCircle,
 } from "lucide-react";
+import CancelReservationButton from "./CancelReservationButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,8 @@ export default async function ReservationDetailPage({
   const timeRange = `${minutesToTime(reservation.startMinute)} – ${minutesToTime(reservation.endMinute)}`;
   const whatsappNumber = reservation.business.phoneWhatsapp.replace(/\D/g, "");
   const whatsappHref = `https://wa.me/${whatsappNumber}`;
+  const rawPhone = reservation.customerWhatsapp ? `+${reservation.customerWhatsapp}` : "";
+  const cleanPhone = rawPhone.startsWith("++") ? rawPhone.replace("++", "+") : rawPhone;
 
   return (
     <div className="min-h-screen bg-slate-50 font-[Poppins,sans-serif]">
@@ -262,7 +265,7 @@ export default async function ReservationDetailPage({
                   {reservation.customerWhatsapp && (
                     <span className="mt-0.5 flex items-center gap-1 text-sm font-normal text-slate-500">
                       <Phone className="h-3 w-3 flex-shrink-0" />
-                      +{reservation.customerWhatsapp}
+                      {cleanPhone}
                     </span>
                   )}
                 </div>
@@ -271,7 +274,7 @@ export default async function ReservationDetailPage({
 
             {/* Fila 3 – Servicio y precio */}
             <InfoRow
-              icon={<Scissors className="h-4 w-4" />}
+              icon={<Sparkles className="h-4 w-4" />}
               label="Servicio"
               value={
                 <div className="flex items-baseline justify-between gap-2">
@@ -326,6 +329,11 @@ export default async function ReservationDetailPage({
         <p className="mt-4 text-center text-[11px] text-slate-400">
           Reserva #{id.slice(0, 8).toUpperCase()}
         </p>
+
+        {/* Cancelación — solo visible cuando la reserva está CONFIRMED */}
+        {reservation.status === "CONFIRMED" && (
+          <CancelReservationButton reservationId={reservation.id} />
+        )}
       </main>
 
       {/* ── Footer ─────────────────────────────────────────────── */}

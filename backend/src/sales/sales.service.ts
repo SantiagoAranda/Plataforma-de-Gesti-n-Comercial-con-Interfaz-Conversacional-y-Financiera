@@ -660,6 +660,7 @@ export class SalesService {
         movements,
       };
     }, {
+      timeout: 20000, // P2028 fix: accounting + inventory posting needs extra time
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
@@ -711,6 +712,8 @@ export class SalesService {
         movements,
         isReservation: true,
       };
+    }, {
+      timeout: 20000, // P2028 fix: accounting posting for reservation confirmation needs extra time
     });
   }
 
