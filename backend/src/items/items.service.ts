@@ -278,6 +278,37 @@ export class ItemsService {
         scheduleWindows: {
           orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }],
         },
+        recipes: {
+          include: {
+            ingredient: {
+              select: { id: true, name: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        optionGroups: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            totalQuantityUnit: true,
+            options: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              include: {
+                ingredient: { select: { id: true, name: true } },
+                item: {
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    inventoryMode: true,
+                  },
+                },
+                unit: true,
+              },
+            },
+          },
+        },
       },
     });
 

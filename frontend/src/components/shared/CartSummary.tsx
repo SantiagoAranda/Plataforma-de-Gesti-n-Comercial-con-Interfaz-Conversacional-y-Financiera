@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { ShoppingBag, Minus, Plus, X } from "lucide-react";
+import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
 import PhoneSelector from "./PhoneSelector";
 import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
@@ -20,6 +20,8 @@ type Props = {
   items: CartItem[];
   onIncreaseQty: (id: string) => void;
   onDecreaseQty: (id: string) => void;
+  onEdit?: (id: string) => void;
+  onRemove?: (id: string) => void;
   customerName: string;
   onCustomerNameChange: (val: string) => void;
   countryCode: string;
@@ -34,6 +36,8 @@ export default function CartSummary({
   items,
   onIncreaseQty,
   onDecreaseQty,
+  onEdit,
+  onRemove,
   customerName,
   onCustomerNameChange,
   countryCode,
@@ -145,6 +149,18 @@ export default function CartSummary({
                 >
                   <Plus size={12} />
                 </button>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                {onEdit && (
+                  <button type="button" onClick={() => onEdit(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-emerald-600" aria-label="Editar producto">
+                    <Pencil size={14} />
+                  </button>
+                )}
+                {onRemove && (
+                  <button type="button" onClick={() => onRemove(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-rose-600" aria-label="Eliminar producto">
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

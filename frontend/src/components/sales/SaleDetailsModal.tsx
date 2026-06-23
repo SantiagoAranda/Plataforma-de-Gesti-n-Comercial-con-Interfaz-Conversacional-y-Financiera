@@ -118,6 +118,12 @@ export default function SaleDetailsModal({
     sale?.sourceType === "ORDER" &&
     !sale?.inventoryPostedAt &&
     Boolean(onSaveOptionalIngredients);
+  const canEditSale =
+    Boolean(onEdit) &&
+    canConfirm &&
+    sale?.sourceType === "ORDER" &&
+    !sale?.inventoryPostedAt &&
+    !sale?.accountingPostedAt;
   const hasUnsavedOptionalChanges = useMemo(
     () =>
       items.some((item, index) => {
@@ -418,6 +424,15 @@ export default function SaleDetailsModal({
             </div>
 
             <div className="flex items-center gap-2">
+              {canEditSale && (
+                <button
+                  onClick={() => onEdit?.(sale)}
+                  disabled={confirming}
+                  className="h-10 rounded-full border border-emerald-200 px-4 text-[11px] font-medium uppercase tracking-widest text-emerald-700"
+                >
+                  Editar
+                </button>
+              )}
               {onCancel && (
                 <button
                   onClick={handleCancelAction}

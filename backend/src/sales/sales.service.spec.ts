@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { SalesService } from './sales.service';
 
@@ -32,7 +33,7 @@ describe('SalesService.remove', () => {
 
     const accountingService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService), prisma, inventoryService };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma, inventoryService };
   }
 
   it('archives non-completed orders', async () => {
@@ -88,6 +89,200 @@ describe('SalesService.remove', () => {
   });
 });
 
+describe('SalesService personalized order lines', () => {
+  const businessId = 'business-1';
+  const item = {
+    id: 'item-1',
+    businessId,
+    name: 'Arepa',
+    status: 'ACTIVE',
+    type: 'PRODUCT',
+    inventoryMode: 'RECIPE_BASED',
+    price: new Prisma.Decimal(10000),
+    durationMinutes: null,
+    recipes: [],
+    optionGroups: [{ id: 'group-1' }],
+  };
+
+  function createService(orderOverrides: Record<string, any> = {}) {
+    const tx: any = {
+      order: {
+        update: jest.fn(),
+        findUniqueOrThrow: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          items: [],
+        }),
+      },
+      orderItem: {
+        deleteMany: jest.fn(),
+        create: (jest.fn() as any).mockResolvedValue({}),
+      },
+    };
+    const prisma: any = {
+      item: {
+        findMany: (jest.fn() as any).mockResolvedValue([item]),
+      },
+      order: {
+        create: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          origin: 'MANUAL',
+          items: [],
+        }),
+        findFirst: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          businessId,
+          status: 'SENT',
+          inventoryPostedAt: null,
+          accountingPostedAt: null,
+          items: [],
+          ...orderOverrides,
+        }),
+      },
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    };
+    const itemOptionsService = {
+      resolveSelectionsForOrderLine: jest
+        .fn()
+        .mockImplementation((_businessId, _itemId, quantity: number, selections: any[]) =>
+          Promise.resolve({
+            optionsTotal: new Prisma.Decimal(
+              selections[0]?.optionId === 'cheese' ? 2000 : 1000,
+            ),
+            snapshots: [
+              {
+                groupTitleSnapshot: 'Extras',
+                optionNameSnapshot:
+                  selections[0]?.optionId === 'cheese' ? 'Queso' : 'Aguacate',
+                priceDeltaSnapshot: new Prisma.Decimal(
+                  selections[0]?.optionId === 'cheese' ? 2000 : 1000,
+                ),
+                totalQuantitySnapshot: new Prisma.Decimal(quantity),
+              },
+            ],
+          }),
+        ),
+    } as any;
+    const inventoryService = {
+      expandOrderItemsToIngredients: (jest.fn() as any).mockResolvedValue([]),
+      validateStockAvailability: (jest.fn() as any).mockResolvedValue({
+        ok: true,
+        requirements: [],
+      }),
+    } as any;
+    return {
+      service: new SalesService(
+        prisma,
+        {} as any,
+        inventoryService,
+        itemOptionsService,
+      ),
+      prisma,
+      tx,
+      itemOptionsService,
+    };
+  }
+
+  it('creates repeated personalized manual lines with backend snapshots', async () => {
+    const { service, prisma, itemOptionsService } = createService();
+
+    await service.create(businessId, {
+      type: 'PRODUCTO',
+      status: 'PENDIENTE',
+      origin: 'MANUAL',
+      items: [
+        {
+          itemId: item.id,
+          quantity: 1,
+          optionSelections: [
+            { groupId: 'group-1', optionId: 'cheese', action: 'ADD' },
+          ],
+        },
+        {
+          itemId: item.id,
+          quantity: 2,
+          optionSelections: [
+            { groupId: 'group-1', optionId: 'avocado', action: 'ADD' },
+          ],
+        },
+      ],
+    });
+
+    expect(itemOptionsService.resolveSelectionsForOrderLine).toHaveBeenCalledTimes(2);
+    expect(prisma.order.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          total: 34000,
+          items: {
+            create: [
+              expect.objectContaining({
+                itemId: item.id,
+                unitPrice: new Prisma.Decimal(12000),
+                lineTotalSnapshot: new Prisma.Decimal(12000),
+                options: { create: [expect.objectContaining({ optionNameSnapshot: 'Queso' })] },
+              }),
+              expect.objectContaining({
+                itemId: item.id,
+                quantity: 2,
+                unitPrice: new Prisma.Decimal(11000),
+                lineTotalSnapshot: new Prisma.Decimal(22000),
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('replaces personalized lines when editing a pending public order', async () => {
+    const { service, tx } = createService({ origin: 'PUBLIC_STORE' });
+
+    await service.update(
+      businessId,
+      'order-1',
+      {
+        items: [
+          {
+            itemId: item.id,
+            quantity: 2,
+            optionSelections: [
+              { groupId: 'group-1', optionId: 'cheese', action: 'ADD' },
+            ],
+          },
+        ],
+      },
+      'ORDER',
+    );
+
+    expect(tx.orderItem.deleteMany).toHaveBeenCalledWith({
+      where: { orderId: 'order-1' },
+    });
+    expect(tx.orderItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orderId: 'order-1',
+        unitPrice: new Prisma.Decimal(12000),
+        lineTotal: new Prisma.Decimal(24000),
+        options: { create: [expect.objectContaining({ optionNameSnapshot: 'Queso' })] },
+      }),
+    });
+    expect(tx.order.update).toHaveBeenCalledWith({
+      where: { id: 'order-1' },
+      data: { total: 24000 },
+    });
+  });
+
+  it.each([
+    ['inventoryPostedAt', new Date()],
+    ['accountingPostedAt', new Date()],
+  ])('blocks editing when %s is set', async (field, value) => {
+    const { service, tx } = createService({ [field]: value });
+
+    await expect(
+      service.update(businessId, 'order-1', { items: [{ itemId: item.id, quantity: 1 }] }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(tx.orderItem.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('SalesService.reverseConfirmedOrder', () => {
   const businessId = 'business-1';
   const orderId = 'order-1';
@@ -127,7 +322,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
     } as any;
 
     const accountingService = {} as any;
-    const service = new SalesService(prisma, accountingService, inventoryService);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
 
     const result = await service.reverseConfirmedOrder(businessId, orderId, {
       reason: 'Cliente canceló',
@@ -235,7 +430,7 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const accountingService = {} as any;
     const inventoryService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService), prisma };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma };
   }
 
   it('persists optional ingredient exclusions before inventory is posted', async () => {
@@ -352,7 +547,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     const accountingService = {
       postOrderMovements: jest.fn(),
     } as any;
-    const service = new SalesService(prisma, accountingService, inventoryService);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
 
     await service.confirmOrder(businessId, orderId, 'ORDER');
 

@@ -9,12 +9,22 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { OrderOptionSelectionInputDto } from './order-line-input.dto';
 
-export class UpdateOrderItemDto {
-  @IsOptional()
+export class OrderOptionSelectionInputDto {
   @IsString()
-  itemId?: string;
+  groupId: string;
+
+  @IsString()
+  optionId: string;
+
+  @IsString()
+  @IsIn(['SELECT', 'ADD', 'REMOVE'])
+  action: 'SELECT' | 'ADD' | 'REMOVE';
+}
+
+export class SalesOrderLineInputDto {
+  @IsString()
+  itemId: string;
 
   @IsInt()
   @Min(1)

@@ -8,6 +8,8 @@ import { formatLocalDateKey, formatLocalDateTimeValue, parseLocalDateTimeParts }
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
+import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
+import type { PublicItemOptionGroup } from "@/src/types/item";
 
 type EditableItem = {
   itemId?: string;
@@ -15,6 +17,9 @@ type EditableItem = {
   name: string;
   price: number;
   durationMin?: number | null;
+  optionSelections?: OptionSelection[];
+  optionNames?: string[];
+  excludedOptionalIngredientIds?: string[];
 };
 
 type BusinessItem = {
@@ -25,6 +30,7 @@ type BusinessItem = {
   inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
   currentStock?: number | string | null;
   durationMinutes?: number;
+  optionGroups?: PublicItemOptionGroup[];
 };
 
 function isAvailableForSale(item: BusinessItem) {
@@ -82,6 +88,12 @@ export default function SaleEditModal({
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [reservationPickerOpen, setReservationPickerOpen] = useState(false);
+  const [customizing, setCustomizing] = useState<{
+    item: BusinessItem;
+    quantity: number;
+    editIndex?: number;
+    initialSelections?: OptionSelection[];
+  } | null>(null);
 
   const fetchItems = async () => {
     try {
@@ -130,6 +142,17 @@ export default function SaleEditModal({
         name: it.name,
         price: it.unitPrice, // Store unit price here as it's an "editable item"
         durationMin: it.durationMin,
+        optionSelections: (it.options ?? [])
+          .filter((option) => option.groupId && option.optionId && option.action)
+          .map((option) => ({
+            groupId: option.groupId!,
+            optionId: option.optionId!,
+            action: option.action!,
+          })),
+        optionNames: (it.options ?? []).map(
+          (option) => `${option.groupTitle}: ${option.optionName}`,
+        ),
+        excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
       }))
     );
 
@@ -147,6 +170,7 @@ export default function SaleEditModal({
     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
   }, [items]);
   const isReservation = sale?.sourceType === "RESERVATION";
+  const isPosted = Boolean(sale?.inventoryPostedAt || sale?.accountingPostedAt);
 
   const loadReservationDates = async (monthDate: Date) => {
     if (!isReservation) return;
@@ -204,6 +228,10 @@ export default function SaleEditModal({
     const bi = businessItems.find(i => i.id === newItem.itemId);
     if (!bi) return;
     const qty = newItem.qty === "" ? 1 : newItem.qty;
+    if ((bi.optionGroups?.length ?? 0) > 0) {
+      setCustomizing({ item: bi, quantity: qty });
+      return;
+    }
     const existingQty = items
       .filter((it) => it.itemId === bi.id)
       .reduce((acc, it) => acc + it.qty, 0);
@@ -250,7 +278,9 @@ export default function SaleEditModal({
         qty: normalizeQty(type, it.qty),
         name: it.name.trim(),
         price: (Number(it.price) || 0) * normalizeQty(type, it.qty),
-        durationMin: it.durationMin,
+      durationMin: it.durationMin,
+        optionSelections: it.optionSelections,
+        excludedOptionalIngredientIds: it.excludedOptionalIngredientIds,
       }))
       .filter((it) => it.name.length > 0);
 
@@ -406,7 +436,12 @@ export default function SaleEditModal({
                     </div>
                   </div>
 
-                  {type === "PRODUCTO" && !isReservation && (
+                  {it.optionNames?.length ? (
+                    <div className="mt-1 text-[11px] text-neutral-500">
+                      {it.optionNames.map((name) => <div key={name}>{name}</div>)}
+                    </div>
+                  ) : null}
+                  {type === "PRODUCTO" && !isReservation && !isPosted && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
                       <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
                       <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
@@ -414,13 +449,31 @@ export default function SaleEditModal({
                     </div>
                   )}
 
-                  {!isReservation && (
+                  {!isReservation && !isPosted && (
+                    <>
+                    {(businessItems.find((item) => item.id === it.itemId)?.optionGroups?.length ?? 0) > 0 && (
+                      <button
+                        onClick={() => {
+                          const businessItem = businessItems.find((item) => item.id === it.itemId);
+                          if (businessItem) setCustomizing({
+                            item: businessItem,
+                            quantity: it.qty,
+                            editIndex: idx,
+                            initialSelections: it.optionSelections,
+                          });
+                        }}
+                        className="text-xs font-medium text-emerald-600"
+                      >
+                        Editar
+                      </button>
+                    )}
                     <button
                       onClick={() => removeItem(idx)}
                       className="p-2 text-neutral-300 hover:text-rose-500 transition"
                     >
                       <Trash2 size={16} />
                     </button>
+                    </>
                   )}
                 </div>
               ))}
@@ -438,7 +491,7 @@ export default function SaleEditModal({
 
         <div className="absolute inset-x-0 bottom-0 z-30 px-3 pb-4 pt-2">
           <div className="relative">
-            {expanded && !isReservation && (
+            {expanded && !isReservation && !isPosted && (
               <div className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-neutral-200 rounded-[24px] shadow-2xl p-4 animate-in slide-in-from-bottom-4 duration-200 overflow-hidden ring-1 ring-black/5">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
@@ -497,7 +550,7 @@ export default function SaleEditModal({
 
             <div className="rounded-[28px] bg-white p-2 shadow-2xl ring-1 ring-black/10 border-t border-neutral-100/50">
               <div className="flex items-end gap-2">
-                {!isReservation && (
+                {!isReservation && !isPosted && (
                   <button
                     onClick={() => setExpanded(!expanded)}
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-neutral-700 transition hover:bg-neutral-200 active:scale-95"
@@ -545,6 +598,41 @@ export default function SaleEditModal({
             setScheduledDate(dateKey);
             setScheduledTime(data.time);
             setReservationPickerOpen(false);
+          }}
+        />
+      )}
+      {customizing && (
+        <ProductOptionSelector
+          item={customizing.item}
+          quantity={customizing.quantity}
+          initialSelections={customizing.initialSelections}
+          onClose={() => setCustomizing(null)}
+          onConfirm={({ optionSelections, optionNames, unitPrice }) => {
+            if (customizing.editIndex != null) {
+              setItems((current) =>
+                current.map((line, index) =>
+                  index === customizing.editIndex
+                    ? { ...line, optionSelections, optionNames, price: unitPrice }
+                    : line,
+                ),
+              );
+            } else {
+              setItems((current) => [
+                ...current,
+                {
+                  itemId: customizing.item.id,
+                  qty: customizing.quantity,
+                  name: customizing.item.name,
+                  price: unitPrice,
+                  durationMin: customizing.item.durationMinutes,
+                  optionSelections,
+                  optionNames,
+                },
+              ]);
+              setExpanded(false);
+              setNewItem({ itemId: "", qty: 1 });
+            }
+            setCustomizing(null);
           }}
         />
       )}

@@ -1296,6 +1296,141 @@ describe('InventoryService', () => {
     expect(tx.recipe.findMany).not.toHaveBeenCalled();
   });
 
+  it('expands an INGREDIENT option snapshot into ingredient consumption', async () => {
+    const { service, tx } = createService();
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'INGREDIENT',
+              ingredientId,
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(2),
+              unitIdSnapshot: null,
+              optionNameSnapshot: 'Queso',
+              groupTitleSnapshot: 'Extras',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        ingredientId,
+        quantity: new Prisma.Decimal(2),
+      }),
+    ]);
+  });
+
+  it('expands an ITEM SIMPLE option snapshot into item consumption', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'simple-option-item',
+      businessId,
+      name: 'Drink',
+      type: 'PRODUCT',
+      status: 'ACTIVE',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(1),
+      recipes: [],
+    });
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'ITEM',
+              itemId: 'simple-option-item',
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(1),
+              optionNameSnapshot: 'Drink',
+              groupTitleSnapshot: 'Bebida',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        itemId: 'simple-option-item',
+        quantity: new Prisma.Decimal(1),
+      }),
+    ]);
+  });
+
+  it('expands an ITEM RECIPE_BASED option snapshot into ingredient consumption', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'recipe-option-item',
+      businessId,
+      name: 'Fries',
+      type: 'PRODUCT',
+      status: 'ACTIVE',
+      inventoryMode: 'RECIPE_BASED',
+      recipes: [
+        {
+          ingredientId: 'potato',
+          quantityRequired: new Prisma.Decimal(3),
+          isOptional: false,
+        },
+      ],
+    });
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'ITEM',
+              itemId: 'recipe-option-item',
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(2),
+              optionNameSnapshot: 'Papas',
+              groupTitleSnapshot: 'Acompañante',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        ingredientId: 'potato',
+        quantity: new Prisma.Decimal(6),
+      }),
+    ]);
+  });
+
   it('consumes multiple ingredients for RECIPE_BASED item sales', async () => {
     const { service, tx } = createService();
     tx.recipe.findMany.mockResolvedValue([

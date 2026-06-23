@@ -264,6 +264,7 @@ export default function PublicStoreClient() {
   const [customizingProduct, setCustomizingProduct] = useState<Item | null>(null);
   const [draftExcludedOptionalIds, setDraftExcludedOptionalIds] = useState<string[]>([]);
   const [draftSelectedOptionIds, setDraftSelectedOptionIds] = useState<string[]>([]);
+  const [editingCartKey, setEditingCartKey] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
@@ -568,8 +569,36 @@ export default function PublicStoreClient() {
             new Set(draftSelectedOptionIds),
           )
         : [];
-    addToCart(customizingProduct.id, draftExcludedOptionalIds, optionSelections);
+    if (editingCartKey) {
+      const previous = cart.find((line) => cartLineKey(line) === editingCartKey);
+      setCart((current) => {
+        const withoutEdited = current.filter(
+          (line) => cartLineKey(line) !== editingCartKey,
+        );
+        const replacement: CartLine = {
+          itemId: customizingProduct.id,
+          quantity: previous?.quantity ?? 1,
+          excludedOptionalIngredientIds: Array.from(
+            new Set(draftExcludedOptionalIds),
+          ),
+          optionSelections: canonicalizeOptionSelections(optionSelections),
+        };
+        const replacementKey = cartLineKey(replacement);
+        const duplicate = withoutEdited.find(
+          (line) => cartLineKey(line) === replacementKey,
+        );
+        if (!duplicate) return [...withoutEdited, replacement];
+        return withoutEdited.map((line) =>
+          line === duplicate
+            ? { ...line, quantity: line.quantity + replacement.quantity }
+            : line,
+        );
+      });
+    } else {
+      addToCart(customizingProduct.id, draftExcludedOptionalIds, optionSelections);
+    }
     setCustomizingProduct(null);
+    setEditingCartKey(null);
     setDraftExcludedOptionalIds([]);
     setDraftSelectedOptionIds([]);
   };
@@ -843,6 +872,19 @@ export default function PublicStoreClient() {
               items={cartItems}
               onIncreaseQty={increaseQty}
               onDecreaseQty={decreaseQty}
+              onRemove={removeItem}
+              onEdit={(key) => {
+                const line = cart.find((entry) => cartLineKey(entry) === key);
+                const item = line && items.find((entry) => entry.id === line.itemId);
+                if (!line || !item) return;
+                setEditingCartKey(key);
+                setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
+                setDraftSelectedOptionIds(
+                  Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
+                );
+                setCustomizingProduct(item);
+                setShowCartModal(false);
+              }}
               customerName={customerName}
               onCustomerNameChange={setCustomerName}
               countryCode={countryCode}
@@ -862,6 +904,7 @@ export default function PublicStoreClient() {
             className="absolute inset-0 bg-black/40"
             onClick={() => {
               setCustomizingProduct(null);
+              setEditingCartKey(null);
               setDraftExcludedOptionalIds([]);
             }}
           />
@@ -871,6 +914,7 @@ export default function PublicStoreClient() {
               type="button"
               onClick={() => {
                 setCustomizingProduct(null);
+                setEditingCartKey(null);
                 setDraftExcludedOptionalIds([]);
               }}
               className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"

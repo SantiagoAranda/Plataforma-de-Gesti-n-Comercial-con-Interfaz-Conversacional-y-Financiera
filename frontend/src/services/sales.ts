@@ -20,6 +20,7 @@ export interface ApiOrder {
   total: number;
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
   inventoryPostedAt?: string | null;
+  accountingPostedAt?: string | null;
   origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
@@ -35,6 +36,9 @@ export interface ApiOrder {
     itemInventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
     excludedOptionalIngredientIds?: string[];
     options?: Array<{
+      groupId?: string | null;
+      optionId?: string | null;
+      action?: "SELECT" | "ADD" | "REMOVE";
       groupTitle: string;
       optionName: string;
       priceDelta: number;
@@ -67,6 +71,17 @@ export function listSales() {
   return api<ApiOrder[]>("/sales");
 }
 
+export type SaleLineInput = {
+  itemId: string;
+  quantity: number;
+  optionSelections?: Array<{
+    groupId: string;
+    optionId: string;
+    action: "SELECT" | "ADD" | "REMOVE";
+  }>;
+  excludedOptionalIngredientIds?: string[];
+};
+
 export function createSale(data: {
   customerName?: string;
   customerWhatsapp?: string;
@@ -77,7 +92,7 @@ export function createSale(data: {
   status?: "PENDIENTE" | "CERRADO";
   scheduledAt?: string;
   durationMinutes?: number;
-  items: Array<{ itemId: string; quantity: number }>;
+  items: SaleLineInput[];
 }) {
   return api<ApiOrder>("/sales", {
     method: "POST",
@@ -108,7 +123,7 @@ export function updateSale(
     note?: string;
     paymentMethod?: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
-    items?: Array<{ itemId: string; quantity: number }>;
+    items?: SaleLineInput[];
   },
   sourceType: string = "ORDER",
 ) {
