@@ -24,6 +24,7 @@ export interface ApiOrder {
   createdAt: string;
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
+  hasInvalidOptionSnapshot?: boolean;
   items: Array<{
     orderItemId?: string;
     name: string;

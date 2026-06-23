@@ -335,7 +335,7 @@ export class ItemOptionsService {
     dto: CreateItemOptionDto,
   ) {
     const group = await this.assertGroup(businessId, itemId, groupId);
-    await this.validateOptionDto(businessId, group, dto);
+    const normalized = await this.validateOptionDto(businessId, group, dto);
 
     const option = await this.prisma.itemOption.create({
       data: {
@@ -343,14 +343,11 @@ export class ItemOptionsService {
         groupId,
         name: dto.name.trim(),
         description: dto.description?.trim() || null,
-        targetType: dto.targetType,
-        ingredientId: dto.ingredientId ?? null,
-        itemId: dto.itemId ?? null,
-        quantity:
-          dto.quantity == null
-            ? null
-            : this.positiveDecimal(dto.quantity, 'quantity'),
-        unitId: dto.unitId ?? null,
+        targetType: normalized.targetType,
+        ingredientId: normalized.ingredientId,
+        itemId: normalized.itemId,
+        quantity: normalized.quantity,
+        unitId: normalized.unitId,
         priceDelta:
           dto.priceDelta == null
             ? new Prisma.Decimal(0)
@@ -390,7 +387,7 @@ export class ItemOptionsService {
       quantity: dto.quantity === undefined ? existing.quantity : dto.quantity,
       unitId: dto.unitId === undefined ? existing.unitId : dto.unitId,
     };
-    await this.validateOptionDto(businessId, group, merged);
+    const normalized = await this.validateOptionDto(businessId, group, merged, optionId);
 
     const option = await this.prisma.itemOption.update({
       where: { id: optionId },
@@ -398,16 +395,11 @@ export class ItemOptionsService {
         name: dto.name?.trim(),
         description:
           dto.description === undefined ? undefined : dto.description?.trim() || null,
-        targetType: dto.targetType,
-        ingredientId: dto.ingredientId,
-        itemId: dto.itemId,
-        quantity:
-          dto.quantity === undefined
-            ? undefined
-            : dto.quantity == null
-              ? null
-              : this.positiveDecimal(dto.quantity, 'quantity'),
-        unitId: dto.unitId,
+        targetType: normalized.targetType,
+        ingredientId: normalized.ingredientId,
+        itemId: normalized.itemId,
+        quantity: normalized.quantity,
+        unitId: normalized.unitId,
         priceDelta:
           dto.priceDelta === undefined
             ? undefined
@@ -538,9 +530,21 @@ export class ItemOptionsService {
       quantity?: string | number | Prisma.Decimal | null;
       unitId?: string | null;
       isActive?: boolean;
+      name?: string;
     },
-  ) {
+    optionId?: string,
+  ): Promise<{
+    targetType: ItemOptionTargetType;
+    ingredientId: string | null;
+    itemId: string | null;
+    quantity: Prisma.Decimal | null;
+    unitId: string | null;
+  }> {
     const targetType = input.targetType ?? ItemOptionTargetType.NONE;
+    let ingredientId: string | null = null;
+    let itemId: string | null = null;
+    let quantity: Prisma.Decimal | null = null;
+    let unitId: string | null = null;
 
     if (targetType === ItemOptionTargetType.NONE) {
       if (input.ingredientId || input.itemId) {
@@ -552,7 +556,9 @@ export class ItemOptionsService {
       if (!input.ingredientId || input.itemId) {
         throw new BadRequestException('INGREDIENT options require ingredientId only');
       }
-      await this.assertIngredient(businessId, input.ingredientId);
+      const ingredient = await this.assertIngredient(businessId, input.ingredientId);
+      ingredientId = ingredient.id;
+      unitId = ingredient.stockUnitId;
     }
 
     if (targetType === ItemOptionTargetType.ITEM) {
@@ -568,6 +574,8 @@ export class ItemOptionsService {
           'ITEM options must target PRODUCT items with inventory in this MVP',
         );
       }
+      itemId = targetItem.id;
+      unitId = input.unitId ?? null;
     }
 
     if (group.quantityMode === ItemOptionQuantityMode.NO_QUANTITY) {
@@ -583,27 +591,100 @@ export class ItemOptionsService {
       if (targetType !== ItemOptionTargetType.INGREDIENT) {
         throw new BadRequestException('SHARED_TOTAL options must target INGREDIENT');
       }
-      if (input.quantity != null || input.unitId) {
-        throw new BadRequestException('SHARED_TOTAL options cannot define quantity or unitId');
-      }
       await this.assertIngredientCompatibleWithUnit(
         businessId,
-        input.ingredientId!,
+        ingredientId!,
         group.totalQuantityUnitId,
       );
+      // SHARED_TOTAL options always have null quantity
+      quantity = null;
     }
 
     if (group.quantityMode === ItemOptionQuantityMode.FIXED_PER_OPTION) {
       if (targetType !== ItemOptionTargetType.NONE) {
-        if (input.quantity == null || !input.unitId) {
+        if (input.quantity == null) {
           throw new BadRequestException(
-            'FIXED_PER_OPTION inventory options require quantity and unitId',
+            'FIXED_PER_OPTION inventory options require quantity',
           );
         }
-        this.positiveDecimal(input.quantity, 'quantity');
-        await this.assertUnit(input.unitId);
+        quantity = this.positiveDecimal(input.quantity, 'quantity');
+        
+        if (targetType === ItemOptionTargetType.ITEM) {
+          if (!unitId) {
+            throw new BadRequestException(
+              'FIXED_PER_OPTION ITEM options require unitId',
+            );
+          }
+          await this.assertUnit(unitId);
+        }
       }
     }
+
+    const isActive = input.isActive ?? true;
+    if (isActive) {
+      if (targetType === ItemOptionTargetType.INGREDIENT && ingredientId) {
+        const duplicate = await this.prisma.itemOption.findFirst({
+          where: {
+            groupId: group.id,
+            targetType: ItemOptionTargetType.INGREDIENT,
+            ingredientId: ingredientId,
+            isActive: true,
+            ...(optionId ? { id: { not: optionId } } : {}),
+          },
+        });
+        if (duplicate) {
+          throw new BadRequestException(
+            'Este insumo ya existe como opción activa dentro de este grupo.',
+          );
+        }
+      }
+
+      if (targetType === ItemOptionTargetType.ITEM && itemId) {
+        const duplicate = await this.prisma.itemOption.findFirst({
+          where: {
+            groupId: group.id,
+            targetType: ItemOptionTargetType.ITEM,
+            itemId: itemId,
+            isActive: true,
+            ...(optionId ? { id: { not: optionId } } : {}),
+          },
+        });
+        if (duplicate) {
+          throw new BadRequestException(
+            'Este producto ya existe como opción activa dentro de este grupo.',
+          );
+        }
+      }
+
+      if (targetType === ItemOptionTargetType.NONE && input.name) {
+        const options = await this.prisma.itemOption.findMany({
+          where: {
+            groupId: group.id,
+            targetType: ItemOptionTargetType.NONE,
+            isActive: true,
+            ...(optionId ? { id: { not: optionId } } : {}),
+          },
+        });
+        const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+        const normalizedInput = normalizeName(input.name);
+        const hasDuplicate = options.some(
+          (o) => normalizeName(o.name) === normalizedInput,
+        );
+        if (hasDuplicate) {
+          throw new BadRequestException(
+            'Ya existe una opción con ese nombre dentro de este grupo.',
+          );
+        }
+      }
+    }
+
+    return {
+      targetType,
+      ingredientId,
+      itemId,
+      quantity,
+      unitId,
+    };
   }
 
   private async validateActiveDefaults(groupId: string) {

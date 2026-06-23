@@ -56,6 +56,7 @@ export interface Sale {
   type: SaleType;
   status: SaleStatus;
   inventoryPostedAt?: string | null;
+  hasInvalidOptionSnapshot?: boolean;
 
   items: SaleItem[];
 

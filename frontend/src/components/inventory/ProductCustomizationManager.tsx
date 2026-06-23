@@ -30,6 +30,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
   const [items, setItems] = useState<ItemOptionTarget[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
 
   // Group Form
   const [groupForm, setGroupForm] = useState({
@@ -204,7 +205,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
     setOptionForms((prev) => ({ ...prev, [groupId]: next }));
   };
 
-  const createOption = async (group: any) => {
+  const saveOption = async (group: any) => {
     const form = optionFormFor(group);
     if (!form.name.trim()) {
       toast.error("El nombre de la opción es obligatorio.");
@@ -216,9 +217,59 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       return;
     }
 
+    if (form.targetType === "INGREDIENT" && form.ingredientId) {
+      const dup = group.options.some((o: any) =>
+        o.isActive &&
+        o.targetType === "INGREDIENT" &&
+        o.ingredientId === form.ingredientId &&
+        o.id !== editingOptionId
+      );
+      if (dup) {
+        toast.error("Este insumo ya está agregado en este grupo.");
+        return;
+      }
+    }
+
     if (form.targetType === "ITEM" && !form.itemId) {
       toast.error("Debes seleccionar un producto de venta.");
       return;
+    }
+
+    if (form.targetType === "ITEM" && form.itemId) {
+      const dup = group.options.some((o: any) =>
+        o.isActive &&
+        o.targetType === "ITEM" &&
+        o.itemId === form.itemId &&
+        o.id !== editingOptionId
+      );
+      if (dup) {
+        toast.error("Este producto ya está agregado en este grupo.");
+        return;
+      }
+    }
+
+    if (form.targetType === "NONE" && form.name) {
+      const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+      const normalizedInput = normalizeName(form.name);
+      const dup = group.options.some((o: any) =>
+        o.isActive &&
+        o.targetType === "NONE" &&
+        normalizeName(o.name) === normalizedInput &&
+        o.id !== editingOptionId
+      );
+      if (dup) {
+        toast.error("Ya existe una opción con ese nombre en este grupo.");
+        return;
+      }
+    }
+
+    // Determine unitId automatically for INGREDIENT targetType
+    let resolvedUnitId = form.unitId;
+    if (form.targetType === "INGREDIENT" && form.ingredientId) {
+      const ing = allIngredients.find((i) => i.id === form.ingredientId);
+      if (ing && ing.stockUnitId) {
+        resolvedUnitId = ing.stockUnitId;
+      }
     }
 
     const payload = {
@@ -230,22 +281,29 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
         group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE"
           ? Number(form.quantity || 1)
           : null,
-      unitId:
-        group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE"
-          ? form.unitId
-          : null,
+      unitId: form.targetType === "NONE" ? null : resolvedUnitId,
       priceDelta: Number(form.priceDelta || 0),
       selectedByDefault: form.selectedByDefault,
       removable: form.removable,
     };
 
     try {
-      await api(`/items/${item.id}/option-groups/${group.id}/options`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      toast.success("Opción creada correctamente");
+      if (editingOptionId) {
+        await api(`/items/${item.id}/option-groups/${group.id}/options/${editingOptionId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        toast.success("Opción actualizada correctamente");
+      } else {
+        await api(`/items/${item.id}/option-groups/${group.id}/options`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        toast.success("Opción creada correctamente");
+      }
+
       // Reset form
+      setEditingOptionId(null);
       setOptionForm(group.id, {
         name: "",
         priceDelta: "0",
@@ -263,11 +321,99 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       await load();
     } catch (error: any) {
       console.error(error);
-      toast.error(error?.message || "Error al crear la opción");
+      toast.error(error?.message || "Error al guardar la opción");
     }
   };
 
+  const editOption = (group: any, option: any) => {
+    setEditingOptionId(option.id);
+    setOptionForm(group.id, {
+      name: option.name,
+      priceDelta: String(option.priceDelta),
+      targetType: option.targetType,
+      ingredientId: option.ingredientId ?? "",
+      itemId: option.itemId ?? "",
+      quantity: option.quantity == null ? "" : String(option.quantity),
+      unitId: option.unitId ?? "",
+      selectedByDefault: option.selectedByDefault,
+      removable: option.removable,
+    });
+
+    if (option.targetType === "INGREDIENT" && option.ingredientId) {
+      const ing = allIngredients.find((i) => i.id === option.ingredientId);
+      if (ing) {
+        setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
+      }
+    }
+    if (option.targetType === "ITEM" && option.itemId) {
+      const it = items.find((i) => i.id === option.itemId);
+      if (it) {
+        setItemSearch((prev) => ({ ...prev, [group.id]: it.name }));
+      }
+    }
+  };
+
+  const cancelEditOption = (group: any) => {
+    setEditingOptionId(null);
+    setOptionForm(group.id, {
+      name: "",
+      priceDelta: "0",
+      targetType: group.quantityMode === "SHARED_TOTAL" ? "INGREDIENT" : "NONE",
+      ingredientId: "",
+      itemId: "",
+      quantity: "",
+      unitId: "",
+      selectedByDefault: false,
+      removable: true,
+    });
+    setIngredientSearch((prev) => ({ ...prev, [group.id]: "" }));
+    setItemSearch((prev) => ({ ...prev, [group.id]: "" }));
+  };
+
   const toggleOptionActive = async (group: any, option: any) => {
+    if (!option.isActive) {
+      if (option.targetType === "INGREDIENT" && option.ingredientId) {
+        const dup = group.options.some((o: any) =>
+          o.isActive &&
+          o.targetType === "INGREDIENT" &&
+          o.ingredientId === option.ingredientId &&
+          o.id !== option.id
+        );
+        if (dup) {
+          toast.error("Este insumo ya está agregado en este grupo.");
+          return;
+        }
+      }
+
+      if (option.targetType === "ITEM" && option.itemId) {
+        const dup = group.options.some((o: any) =>
+          o.isActive &&
+          o.targetType === "ITEM" &&
+          o.itemId === option.itemId &&
+          o.id !== option.id
+        );
+        if (dup) {
+          toast.error("Este producto ya está agregado en este grupo.");
+          return;
+        }
+      }
+
+      if (option.targetType === "NONE" && option.name) {
+        const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+        const normalizedInput = normalizeName(option.name);
+        const dup = group.options.some((o: any) =>
+          o.isActive &&
+          o.targetType === "NONE" &&
+          normalizeName(o.name) === normalizedInput &&
+          o.id !== option.id
+        );
+        if (dup) {
+          toast.error("Ya existe una opción con ese nombre en este grupo.");
+          return;
+        }
+      }
+    }
+
     try {
       await api(`/items/${item.id}/option-groups/${group.id}/options/${option.id}`, {
         method: "PATCH",
@@ -275,9 +421,9 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       });
       toast.success(option.isActive ? "Opción desactivada" : "Opción activada");
       await load();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("No se pudo cambiar el estado de la opción");
+      toast.error(error?.message || "No se pudo cambiar el estado de la opción");
     }
   };
 
@@ -306,7 +452,30 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
     }
   };
 
-  // Helper translations for humanized UI
+  // Helpers
+  const areUnitsCompatible = (unitIdA: string, unitIdB: string) => {
+    if (unitIdA === unitIdB) return true;
+    const unitA = units.find((u) => u.id === unitIdA);
+    const unitB = units.find((u) => u.id === unitIdB);
+    if (!unitA || !unitB) return false;
+    return unitA.kind === unitB.kind;
+  };
+
+  const isOptionUnitIncompatible = (option: any, group: any) => {
+    if (option.targetType !== "INGREDIENT") return false;
+    const ing = allIngredients.find((i) => i.id === option.ingredientId);
+    if (!ing) return false;
+
+    if (group.quantityMode === "SHARED_TOTAL") {
+      if (!group.totalQuantityUnitId || !ing.stockUnitId) return true;
+      return !areUnitsCompatible(ing.stockUnitId, group.totalQuantityUnitId);
+    }
+    if (group.quantityMode === "FIXED_PER_OPTION") {
+      return option.unitId !== ing.stockUnitId;
+    }
+    return false;
+  };
+
   const translateQuantityMode = (mode: QuantityMode) => {
     switch (mode) {
       case "NO_QUANTITY":
@@ -356,7 +525,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
             <button
               type="button"
               onClick={resetGroupForm}
-              className="text-[10px] font-bold text-slate-400 hover:text-slate-650"
+              className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
             >
               Cancelar Edición
             </button>
@@ -492,6 +661,50 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
             it.name.toLowerCase().includes((itemSearch[group.id] || "").toLowerCase())
           );
 
+          // Front-end preventive check for SHARED_TOTAL unit compatibility
+          const selectedIngredient = form.targetType === "INGREDIENT" && form.ingredientId
+            ? allIngredients.find((i) => i.id === form.ingredientId)
+            : null;
+          const hasIncompatibleUnit = !!(
+            group.quantityMode === "SHARED_TOTAL" &&
+            selectedIngredient?.stockUnitId &&
+            group.totalQuantityUnitId &&
+            !areUnitsCompatible(selectedIngredient.stockUnitId, group.totalQuantityUnitId)
+          );
+
+          const duplicateError = (() => {
+            if (form.targetType === "INGREDIENT" && form.ingredientId) {
+              const dup = group.options.some((o: any) =>
+                o.isActive &&
+                o.targetType === "INGREDIENT" &&
+                o.ingredientId === form.ingredientId &&
+                o.id !== editingOptionId
+              );
+              if (dup) return "Este insumo ya está agregado en este grupo.";
+            }
+            if (form.targetType === "ITEM" && form.itemId) {
+              const dup = group.options.some((o: any) =>
+                o.isActive &&
+                o.targetType === "ITEM" &&
+                o.itemId === form.itemId &&
+                o.id !== editingOptionId
+              );
+              if (dup) return "Este producto ya está agregado en este grupo.";
+            }
+            if (form.targetType === "NONE" && form.name) {
+              const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+              const normalizedInput = normalizeName(form.name);
+              const dup = group.options.some((o: any) =>
+                o.isActive &&
+                o.targetType === "NONE" &&
+                normalizeName(o.name) === normalizedInput &&
+                o.id !== editingOptionId
+              );
+              if (dup) return "Ya existe una opción con ese nombre en este grupo.";
+            }
+            return null;
+          })();
+
           return (
             <div
               key={group.id}
@@ -562,7 +775,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                         if (ing) {
                           const stockNum = Number(ing.currentStock || 0);
                           stockText = `Stock: ${formatMoney(stockNum)}`;
-                          
+
                           // Determine required stock limit
                           let limit = 1;
                           if (group.quantityMode === "SHARED_TOTAL") {
@@ -574,20 +787,37 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                         }
                       }
 
+                      const duplicateNames = group.options.filter(
+                        (o: any) => o.name.trim().toLowerCase() === option.name.trim().toLowerCase()
+                      );
+                      const hasDuplicates = duplicateNames.length > 1;
+
                       return (
                         <div
                           key={option.id}
                           className={cn(
                             "flex items-center justify-between gap-2.5 rounded-xl border border-slate-100 bg-white p-2.5 text-xs shadow-2xs transition",
-                            !option.isActive && "opacity-60 bg-slate-50/30 border-dashed",
+                            !option.isActive && "opacity-60 bg-slate-50/30 border-dashed border-slate-200",
                             lowStock && option.isActive && "border-amber-200 bg-amber-50/20"
                           )}
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-800 truncate">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={cn("font-bold text-slate-800 truncate", !option.isActive && "line-through text-slate-400")}>
                                 {option.name}
                               </span>
+                              {hasDuplicates && (
+                                <span
+                                  className={cn(
+                                    "rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide border",
+                                    option.isActive
+                                      ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+                                      : "bg-slate-100 border-slate-200 text-slate-500"
+                                  )}
+                                >
+                                  {option.isActive ? "Activa" : "Inactiva"}
+                                </span>
+                              )}
                               {option.selectedByDefault && (
                                 <span className="rounded bg-slate-900 px-1 text-[8px] font-bold text-white uppercase tracking-wider">
                                   Def
@@ -606,6 +836,12 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                                   {stockText} {lowStock ? " (Sin stock suficiente)" : ""}
                                 </div>
                               )}
+                              {isOptionUnitIncompatible(option, group) && (
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold text-rose-600 uppercase tracking-wide">
+                                  <AlertTriangle className="h-3 w-3 shrink-0 text-rose-500" />
+                                  <span>Unidad incompatible</span>
+                                </div>
+                              )}
                             </div>
                             {option.priceDelta > 0 && (
                               <span className="mt-1 block text-[10px] font-extrabold text-orange-600">
@@ -615,6 +851,15 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
+                            {/* Edit Option */}
+                            <button
+                              type="button"
+                              onClick={() => editOption(group, option)}
+                              className="grid h-6 w-6 place-items-center rounded-lg bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100 transition active:scale-90"
+                              title="Editar opción"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
                             {/* Toggle Active Status */}
                             <button
                               type="button"
@@ -648,30 +893,19 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
 
               {/* CREATE OPTION PANEL FOR THIS GROUP */}
               <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3 mt-2.5">
-                <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                  Agregar opción
-                </span>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nombre</span>
-                    <input
-                      value={form.name}
-                      onChange={(e) => setOptionForm(group.id, { ...form, name: e.target.value })}
-                      placeholder="Queso Cheddar, Con hielo"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Precio extra</span>
-                    <input
-                      value={form.priceDelta}
-                      onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
-                      inputMode="decimal"
-                      placeholder="0"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                    />
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block">
+                    {editingOptionId ? "Editar opción" : "Agregar opción"}
+                  </span>
+                  {editingOptionId && (
+                    <button
+                      type="button"
+                      onClick={() => cancelEditOption(group)}
+                      className="text-[9px] font-bold text-slate-400 hover:text-slate-655"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -701,7 +935,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                     {form.targetType === "INGREDIENT" ? (
                       <div className="relative">
                         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                          Insumo (Buscar)
+                          Insumo (Buscar primero)
                         </span>
                         <div className="relative">
                           <input
@@ -729,7 +963,12 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                                   key={ing.id}
                                   type="button"
                                   onClick={() => {
-                                    setOptionForm(group.id, { ...form, ingredientId: ing.id });
+                                    setOptionForm(group.id, {
+                                      ...form,
+                                      ingredientId: ing.id,
+                                      name: ing.name,
+                                      unitId: ing.stockUnitId || "",
+                                    });
                                     setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
                                     setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
                                   }}
@@ -753,7 +992,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                     ) : form.targetType === "ITEM" ? (
                       <div className="relative">
                         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                          Producto (Buscar)
+                          Producto (Buscar primero)
                         </span>
                         <div className="relative">
                           <input
@@ -781,12 +1020,16 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                                   key={it.id}
                                   type="button"
                                   onClick={() => {
-                                    setOptionForm(group.id, { ...form, itemId: it.id });
+                                    setOptionForm(group.id, {
+                                      ...form,
+                                      itemId: it.id,
+                                      name: it.name,
+                                    });
                                     setItemSearch((prev) => ({ ...prev, [group.id]: it.name }));
                                     setItemDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
                                   }}
                                   className={cn(
-                                    "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50",
+                                    "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-750 hover:bg-slate-50",
                                     form.itemId === it.id && "bg-slate-100 text-slate-900"
                                   )}
                                 >
@@ -803,10 +1046,35 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nombre visible al cliente</span>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setOptionForm(group.id, { ...form, name: e.target.value })}
+                      placeholder="Queso Cheddar, Con hielo"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Precio adicional para el cliente</span>
+                    <input
+                      value={form.priceDelta}
+                      onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
+                      inputMode="decimal"
+                      placeholder="0 si no suma al precio"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                    />
+                    <span className="block text-[8.5px] leading-tight text-slate-450 mt-0.5">
+                      Este valor se suma al precio base del producto cuando el cliente elige esta opción. No cambia el costo ni el precio del insumo.
+                    </span>
+                  </div>
+                </div>
+
                 {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && (
                   <div className="grid grid-cols-2 gap-2 bg-slate-50/30 p-2 rounded-xl border border-slate-100">
                     <div className="space-y-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cantidad</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cantidad que consume</span>
                       <input
                         value={form.quantity}
                         onChange={(e) => setOptionForm(group.id, { ...form, quantity: e.target.value })}
@@ -815,51 +1083,106 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                         className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Unidad</span>
-                      <select
-                        value={form.unitId}
-                        onChange={(e) => setOptionForm(group.id, { ...form, unitId: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                      >
-                        <option value="">Seleccionar unidad...</option>
-                        {units.map((unit) => (
-                          <option key={unit.id} value={unit.id}>
-                            {unit.symbol || unit.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    {form.targetType === "INGREDIENT" ? (
+                      <div className="space-y-1 flex flex-col justify-end pb-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Unidad base (Insumo)</span>
+                        <span className="text-xs font-bold text-slate-600 bg-slate-100/70 border border-slate-200/50 rounded-xl px-3 py-2 select-none">
+                          {(() => {
+                            const ing = allIngredients.find((i) => i.id === form.ingredientId);
+                            const unit = ing ? units.find((u) => u.id === ing.stockUnitId) : null;
+                            return unit ? `${unit.symbol || unit.name} (${unit.name})` : "—";
+                          })()}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Unidad</span>
+                        <select
+                          value={form.unitId}
+                          onChange={(e) => setOptionForm(group.id, { ...form, unitId: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                        >
+                          <option value="">Seleccionar unidad...</option>
+                          {units.map((unit) => (
+                            <option key={unit.id} value={unit.id}>
+                              {unit.symbol || unit.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Informative text for SHARED_TOTAL ingredient base stock unit */}
+                {group.quantityMode === "SHARED_TOTAL" && form.targetType === "INGREDIENT" && form.ingredientId && (
+                  <div className="bg-slate-50/30 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-450">Unidad base del insumo</span>
+                    <span className="font-bold text-slate-700">
+                      {(() => {
+                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
+                        const unit = ing ? units.find((u) => u.id === ing.stockUnitId) : null;
+                        return unit ? `${unit.symbol || unit.name} (${unit.name})` : "—";
+                      })()}
+                    </span>
+                  </div>
+                )}
+
+                {/* SHARED_TOTAL unit compatibility error */}
+                {hasIncompatibleUnit && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-xs font-bold text-rose-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>Este insumo usa una unidad incompatible con la unidad del grupo.</span>
+                  </div>
+                )}
+
+                {/* Duplicate option integrity error */}
+                {duplicateError && (
+                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-xs font-bold text-rose-700">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>{duplicateError}</span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between gap-3 pt-2">
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={form.selectedByDefault}
-                        onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                      />
-                      Preselección
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={form.removable}
-                        onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                      />
-                      Removible
-                    </label>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={form.selectedByDefault}
+                          onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                        />
+                        Preselección
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={form.removable}
+                          onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                        />
+                        Removible
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-semibold">
+                      <HelpCircle className="h-3 w-3 shrink-0 text-slate-350" />
+                      <span>Los cambios aplican solo a pedidos nuevos.</span>
+                    </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => createOption(group)}
-                    className="rounded-xl bg-orange-500 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-orange-600 active:scale-[0.98]"
+                    disabled={hasIncompatibleUnit || !!duplicateError}
+                    onClick={() => saveOption(group)}
+                    className={cn(
+                      "rounded-xl px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm transition active:scale-[0.98]",
+                      (hasIncompatibleUnit || duplicateError)
+                        ? "bg-slate-300 cursor-not-allowed opacity-50"
+                        : "bg-orange-500 hover:bg-orange-600"
+                    )}
                   >
-                    Crear opción
+                    {editingOptionId ? "Guardar opción" : "Crear opción"}
                   </button>
                 </div>
               </div>

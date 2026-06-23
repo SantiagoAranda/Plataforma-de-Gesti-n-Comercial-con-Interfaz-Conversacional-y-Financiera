@@ -50,6 +50,7 @@ type OrderItemForInventory = {
     totalQuantitySnapshot?: Prisma.Decimal | number | string | null;
     unitIdSnapshot?: string | null;
     optionNameSnapshot?: string | null;
+    groupTitleSnapshot?: string | null;
   }>;
   item?: {
     inventoryMode?: string | null;
@@ -59,6 +60,7 @@ type OrderItemForInventory = {
 type OrderForInventory = {
   id: string;
   origin?: string | null;
+  status?: string | null;
   inventoryPostedAt?: Date | null;
   items: OrderItemForInventory[];
 };
@@ -800,6 +802,7 @@ export class InventoryService {
       {
         orderId: order.id,
         sourceType: diagnosticContext.sourceType ?? 'ORDER',
+        orderOrigin: order.origin,
       },
     );
     const consolidatedConsumptions =
@@ -1033,7 +1036,7 @@ export class InventoryService {
     tx: Prisma.TransactionClient | PrismaService,
     businessId: string,
     orderItems: OrderItemForInventory[],
-    diagnosticContext: { orderId?: string; sourceType?: string } = {},
+    diagnosticContext: { orderId?: string; sourceType?: string; orderOrigin?: string | null } = {},
   ): Promise<OrderIngredientConsumption[]> {
     const consumptions: OrderIngredientConsumption[] = [];
 
@@ -1067,6 +1070,7 @@ export class InventoryService {
           businessId,
           orderItem,
           consumptions,
+          diagnosticContext.orderOrigin,
         );
         continue;
       }
@@ -1106,6 +1110,7 @@ export class InventoryService {
           businessId,
           orderItem,
           consumptions,
+          diagnosticContext.orderOrigin,
         );
         continue;
       }
@@ -1175,6 +1180,7 @@ export class InventoryService {
         businessId,
         orderItem,
         consumptions,
+        diagnosticContext.orderOrigin,
       );
     }
 
@@ -1186,6 +1192,7 @@ export class InventoryService {
     businessId: string,
     orderItem: OrderItemForInventory,
     consumptions: OrderIngredientConsumption[],
+    orderOrigin?: string | null,
   ) {
     for (const option of orderItem.options ?? []) {
       const targetType = option.targetTypeSnapshot;
@@ -1217,6 +1224,12 @@ export class InventoryService {
           option.ingredientId,
           quantity,
           option.unitIdSnapshot ?? null,
+          {
+            itemName: orderItem.itemNameSnapshot,
+            groupTitle: option.groupTitleSnapshot || '',
+            optionName: option.optionNameSnapshot || '',
+            orderOrigin,
+          },
         );
         consumptions.push({
           orderItemId: orderItem.id,
@@ -1258,12 +1271,18 @@ export class InventoryService {
     ingredientId: string,
     quantity: Prisma.Decimal,
     unitId: string | null,
+    optionContext?: {
+      itemName: string;
+      groupTitle: string;
+      optionName: string;
+      orderOrigin?: string | null;
+    },
   ) {
     if (!unitId) return quantity;
 
     const ingredient = await tx.ingredient.findFirst({
       where: { id: ingredientId, businessId },
-      select: { stockUnitId: true },
+      select: { stockUnitId: true, name: true },
     });
     if (!ingredient) {
       throw new BadRequestException('Option ingredient snapshot is invalid');
@@ -1297,6 +1316,28 @@ export class InventoryService {
     });
     if (reverse) {
       return quantity.div(reverse.factor);
+    }
+
+    if (optionContext?.orderOrigin === 'PUBLIC_STORE') {
+      let savedUnitSymbol = 'desconocida';
+      let savedUnitName = '';
+      if (unitId) {
+        const savedUnit = await tx.unit.findUnique({ where: { id: unitId } });
+        if (savedUnit) {
+          savedUnitSymbol = savedUnit.symbol || savedUnit.name;
+          savedUnitName = savedUnit.name;
+        }
+      }
+      const expectedUnit = await tx.unit.findUnique({ where: { id: ingredient.stockUnitId } });
+      const expectedUnitSymbol = expectedUnit?.symbol || expectedUnit?.name || 'desconocida';
+      const expectedUnitName = expectedUnit?.name || '';
+
+      const expectedStr = expectedUnitName ? `${expectedUnitSymbol} (${expectedUnitName})` : expectedUnitSymbol;
+      const savedStr = savedUnitName ? `${savedUnitSymbol} (${savedUnitName})` : savedUnitSymbol;
+
+      throw new BadRequestException(
+        `Esta orden fue creada con una configuración de opciones anterior o inválida. Eliminá el pedido y generalo nuevamente desde la tienda pública. Detalles: Producto "${optionContext.itemName}", Grupo "${optionContext.groupTitle}", Opción "${optionContext.optionName}", Ingrediente "${ingredient.name}", Unidad esperada: ${expectedStr}, Unidad guardada: ${savedStr}`,
+      );
     }
 
     throw new BadRequestException('Option ingredient unit is incompatible');

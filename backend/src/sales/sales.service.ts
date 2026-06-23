@@ -31,6 +31,7 @@ export interface UnifiedSaleDto {
   scheduledAt?: string;
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
+  hasInvalidOptionSnapshot?: boolean;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -90,6 +91,14 @@ export class SalesService {
       },
     },
     options: {
+      include: {
+        ingredient: {
+          select: {
+            id: true,
+            stockUnitId: true,
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' as const },
     },
   } satisfies Prisma.OrderItemInclude;
@@ -504,6 +513,8 @@ export class SalesService {
       }),
     ]);
 
+    const conversions = await this.prisma.unitConversion.findMany();
+
     console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
     if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
     if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
@@ -520,6 +531,7 @@ export class SalesService {
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
+      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -564,6 +576,40 @@ export class SalesService {
     return [...mappedOrders, ...mappedReservations].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
+  }
+
+  private checkInvalidOptionSnapshot(order: any, conversions: any[]): boolean {
+    if (order.origin !== 'PUBLIC_STORE') return false;
+    const isPending = order.status === 'DRAFT' || order.status === 'SENT';
+    if (!isPending) return false;
+
+    for (const item of order.items ?? []) {
+      for (const option of item.options ?? []) {
+        if (option.targetTypeSnapshot === 'INGREDIENT' && option.ingredientId) {
+          const ingredient = option.ingredient;
+          if (!ingredient || !ingredient.stockUnitId) {
+            return true;
+          }
+          const unitId = option.unitIdSnapshot;
+          if (!unitId) {
+            return true;
+          }
+          if (unitId === ingredient.stockUnitId) {
+            continue;
+          }
+          const direct = conversions.some(
+            (c) => c.fromUnitId === unitId && c.toUnitId === ingredient.stockUnitId,
+          );
+          const reverse = conversions.some(
+            (c) => c.fromUnitId === ingredient.stockUnitId && c.toUnitId === unitId,
+          );
+          if (!direct && !reverse) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   private toScheduledAt(date: Date, startMinute: number) {
@@ -1099,7 +1145,12 @@ export class SalesService {
 
     if (!order) throw new NotFoundException('Order not found');
 
-    return order;
+    const conversions = await this.prisma.unitConversion.findMany();
+
+    return {
+      ...order,
+      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
+    };
   }
 
   async cancel(

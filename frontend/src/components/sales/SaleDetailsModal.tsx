@@ -192,6 +192,18 @@ export default function SaleDetailsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/30">
+          {sale.hasInvalidOptionSnapshot && canConfirm && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-sm flex items-start gap-3 animate-in fade-in duration-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold text-amber-900">Personalización Desactualizada</h4>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  Este pedido usa una configuración anterior o inválida de opciones. Se recomienda eliminar la orden y generarla nuevamente desde la tienda pública para evitar conflictos de stock.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
