@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 export type InventoryChatMenuAction =
   | "CREATE_INGREDIENT"
@@ -36,6 +37,13 @@ export type InventoryChatActionBarProps = {
   onRegisterPurchase?: () => void;
   onRegisterPurchaseReturn?: () => void;
   createIngredientActive?: boolean;
+
+  // New props for custom form control
+  isCreatingIngredient?: boolean;
+  isFormValid?: boolean;
+  isSubmittingIngredient?: boolean;
+  onCancelCreate?: () => void;
+  onSaveCreate?: () => void;
 };
 
 const MENU: Array<{
@@ -73,6 +81,11 @@ export function InventoryChatActionBar({
   onRegisterPurchase,
   onRegisterPurchaseReturn,
   createIngredientActive = false,
+  isCreatingIngredient = false,
+  isFormValid = false,
+  isSubmittingIngredient = false,
+  onCancelCreate,
+  onSaveCreate,
 }: InventoryChatActionBarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [internalValue, setInternalValue] = useState("");
@@ -117,6 +130,10 @@ export function InventoryChatActionBar({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  if (isCreatingIngredient) {
+    return null;
+  }
 
   return (
     <div

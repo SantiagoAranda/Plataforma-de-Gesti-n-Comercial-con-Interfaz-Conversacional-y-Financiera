@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
 import { Bell, BookOpen, Package, TriangleAlert } from "lucide-react";
@@ -21,6 +21,7 @@ import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
 import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
 import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 import {
   createIngredient,
@@ -54,23 +55,35 @@ function recipeStatus(item: Item, lines: RecipeLine[]) {
 }
 
 function InventarioPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams?.get("tab");
-  const tab =
-    tabParam === "products" || tabParam === "productos" || searchParams?.has("productId")
-      ? "products"
-      : tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId")
-        ? "ingredients"
-        : "recipes";
+  const [activeTab, setActiveTab] = useState<UITab>("recipes");
+  
+  // Sync tab state from search params once on mount / update
+  useEffect(() => {
+    const tabParam = searchParams?.get("tab");
+    const matchedTab =
+      tabParam === "products" || tabParam === "productos" || searchParams?.has("productId")
+        ? "products"
+        : tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId")
+          ? "ingredients"
+          : "recipes";
+    setActiveTab(matchedTab);
+  }, [searchParams]);
+
   const expandedItemId = searchParams?.get("itemId");
   const selectedIngredientIdParam = searchParams?.get("ingredientId") || null;
   const selectedProductIdParam = searchParams?.get("productId") || null;
 
-  const setTab = (newTab: UITab) => {
+  const setTab = useCallback((newTab: UITab) => {
+    setActiveTab(newTab);
     const alias = newTab === "ingredients" ? "insumos" : newTab === "products" ? "productos" : "recipes";
-    router.push(`/inventario?tab=${alias}`, { scroll: false });
-  };
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set("tab", alias);
+    window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
+  }, []);
+
+  const [isFormValid, setIsFormValid] = useState(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,20 +113,20 @@ function InventarioPageContent() {
 
   const handleSelectIngredient = (id: string) => {
     setSelectedIngredientId(id);
-    const alias = tab === "ingredients" ? "insumos" : "recipes";
+    const alias = activeTab === "ingredients" ? "insumos" : "recipes";
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set("tab", alias);
     currentParams.set("ingredientId", id);
-    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
   };
 
   const handleCloseIngredientSheet = () => {
     setSelectedIngredientId(null);
-    const alias = tab === "ingredients" ? "insumos" : "recipes";
+    const alias = activeTab === "ingredients" ? "insumos" : "recipes";
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set("tab", alias);
     currentParams.delete("ingredientId");
-    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
   };
 
   const handleSelectProduct = (id: string) => {
@@ -121,7 +134,7 @@ function InventarioPageContent() {
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set("tab", "productos");
     currentParams.set("productId", id);
-    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
   };
 
   const handleCloseProductSheet = () => {
@@ -129,7 +142,7 @@ function InventarioPageContent() {
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set("tab", "productos");
     currentParams.delete("productId");
-    router.push(`/inventario?${currentParams.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
   };
 
   const load = useCallback(async () => {
@@ -226,8 +239,13 @@ function InventarioPageContent() {
   );
 
   const toggleIngredientSheetFromBar = useCallback(() => {
-    setIngredientSheetOpen((open) => !open);
-  }, []);
+    if (!ingredientSheetOpen) {
+      setTab("ingredients");
+      setIngredientSheetOpen(true);
+    } else {
+      setIngredientSheetOpen(false);
+    }
+  }, [ingredientSheetOpen, setTab]);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
@@ -282,7 +300,7 @@ function InventarioPageContent() {
                   onClick={() => setTab(nextTab)}
                   className={cn(
                     "h-9 rounded-full text-xs font-bold transition-all active:scale-[0.98]",
-                    tab === nextTab ? "bg-slate-900 text-white shadow-md" : "bg-transparent text-slate-500 hover:text-slate-800",
+                    activeTab === nextTab ? "bg-slate-900 text-white shadow-md" : "bg-transparent text-slate-500 hover:text-slate-800",
                   )}
                 >
                   {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : "Productos"}
@@ -295,11 +313,11 @@ function InventarioPageContent() {
             <div className="rounded-2xl bg-white p-4 text-center text-sm font-medium text-neutral-400 shadow-sm ring-1 ring-black/5">Cargando...</div>
           ) : error ? (
             <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700 shadow-sm">{error}</div>
-          ) : tab === "ingredients" ? (
+          ) : activeTab === "ingredients" ? (
             <section className="space-y-2">
               <IngredientList ingredients={visibleIngredients} onSelect={handleSelectIngredient} />
             </section>
-          ) : tab === "products" ? (
+          ) : activeTab === "products" ? (
             <section className="space-y-2">
               <SimpleProductList products={visibleProducts} onSelect={handleSelectProduct} />
             </section>
@@ -329,10 +347,21 @@ function InventarioPageContent() {
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={tab === "ingredients" ? "Buscar insumo..." : tab === "products" ? "Buscar producto..." : "Buscar receta..."}
+        placeholder={activeTab === "ingredients" ? "Buscar insumo..." : activeTab === "products" ? "Buscar producto..." : "Buscar receta..."}
         onSubmit={() => {}}
         onCreateIngredient={toggleIngredientSheetFromBar}
         createIngredientActive={ingredientSheetOpen}
+        isCreatingIngredient={ingredientSheetOpen}
+        isFormValid={isFormValid}
+        isSubmittingIngredient={creatingIngredient}
+        onCancelCreate={() => {
+          setIngredientSheetOpen(false);
+          setSearchQuery("");
+          setIsFormValid(false);
+        }}
+        onSaveCreate={() => {
+          formRef.current?.requestSubmit();
+        }}
       />
 
       <ItemPanelLayout
@@ -376,41 +405,108 @@ function InventarioPageContent() {
         )}
       </ItemPanelLayout>
 
-      <ItemPanelLayout open={ingredientSheetOpen} title="Nuevo ingrediente" subtitle="Crear insumo" onClose={() => setIngredientSheetOpen(false)}>
-        <IngredientForm
-          key={ingredientSheetOpen ? "create-ingredient-open" : "create-ingredient-closed"}
-          mode="create"
-          defaults={{ name: "" }}
-          submitting={creatingIngredient}
-          onCancel={() => setIngredientSheetOpen(false)}
-          onSubmit={async (values) => {
-            const loadingId = "inventory-ingredient-create-loading";
-            try {
-              setCreatingIngredient(true);
-              toast.loading("Creando ingrediente...", { id: loadingId });
-              
-              const payload: any = {
-                name: values.name,
-                stockUnitId: values.stockUnitId,
-                defaultPurchaseUnitId: values.defaultPurchaseUnitId,
-                minStock: values.minStock,
-              };
-              await createIngredient(payload);
-              toast.dismiss(loadingId);
-              toast.success("Ingrediente creado");
+      {ingredientSheetOpen && (
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+            onClick={() => {
               setIngredientSheetOpen(false);
-              setSearchQuery("");
-              await load();
-            } catch (err) {
-              console.error(err);
-              toast.dismiss(loadingId);
-              toast.error(getErrorMessage(err, "No se pudo crear el ingrediente"));
-            } finally {
-              setCreatingIngredient(false);
-            }
-          }}
-        />
-      </ItemPanelLayout>
+              setIsFormValid(false);
+            }}
+            aria-hidden
+          />
+
+          {/* Unified Bottom Sheet Panel containing Title, Form, & Composer */}
+          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md px-2 pointer-events-none">
+            <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl border-x border-t border-slate-200/60 pointer-events-auto animate-in slide-in-from-bottom-6 fade-in duration-200">
+              
+              {/* Sticky/Fixed Title Header */}
+              <div className="shrink-0 bg-white px-5 pt-5 pb-3">
+                <h2 className="text-base font-semibold text-slate-900">
+                  Nuevo ingrediente
+                </h2>
+              </div>
+
+              {/* Scrollable Form Body */}
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                <IngredientForm
+                  key={ingredientSheetOpen ? "create-ingredient-open" : "create-ingredient-closed"}
+                  mode="create"
+                  defaults={{ name: "" }}
+                  submitting={creatingIngredient}
+                  hideTitle={true}
+                  hideSubmitButton={true}
+                  onCancel={() => {
+                    setIngredientSheetOpen(false);
+                    setIsFormValid(false);
+                  }}
+                  onSubmit={async (values) => {
+                    const loadingId = "inventory-ingredient-create-loading";
+                    try {
+                      setCreatingIngredient(true);
+                      toast.loading("Creando ingrediente...", { id: loadingId });
+                      
+                      const payload: any = {
+                        name: values.name,
+                        stockUnitId: values.stockUnitId,
+                        defaultPurchaseUnitId: values.defaultPurchaseUnitId,
+                        consumptionUnit: values.consumptionUnit,
+                        purchaseUnit: values.purchaseUnit,
+                        minStock: values.minStock,
+                        purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                      };
+                      await createIngredient(payload);
+                      toast.dismiss(loadingId);
+                      toast.success("Ingrediente creado");
+                      setIngredientSheetOpen(false);
+                      setSearchQuery("");
+                      setIsFormValid(false);
+                      await load();
+                    } catch (err) {
+                      console.error(err);
+                      toast.dismiss(loadingId);
+                      toast.error(getErrorMessage(err, "No se pudo crear el ingrediente"));
+                    } finally {
+                      setCreatingIngredient(false);
+                    }
+                  }}
+                  onValidationChange={setIsFormValid}
+                  formRef={formRef}
+                />
+              </div>
+
+              {/* Composer Footer (Flush with bottom sheet) */}
+              <div
+                className="shrink-0 border-t border-slate-100 bg-white px-3 py-2"
+                style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom))" }}
+              >
+                <WhatsappComposer
+                  leftAction={() => {
+                    setIngredientSheetOpen(false);
+                    setSearchQuery("");
+                    setIsFormValid(false);
+                  }}
+                  leftIconVariant="x"
+                  rightAction={() => {
+                    formRef.current?.requestSubmit();
+                  }}
+                  submitDisabled={!isFormValid}
+                  isSubmitting={creatingIngredient}
+                  rightIconVariant="send"
+                  className="border-none shadow-none bg-transparent rounded-none p-0"
+                  centerContent={
+                    <div className="flex h-full w-full items-center justify-center pt-0.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Nuevo insumo</span>
+                    </div>
+                  }
+                />
+              </div>
+
+            </div>
+          </div>
+        </>
+      )}
 
       <IngredientDetailSheet
         ingredientId={selectedIngredientId}
