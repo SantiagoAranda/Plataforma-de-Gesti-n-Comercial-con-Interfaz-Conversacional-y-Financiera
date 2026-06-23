@@ -280,6 +280,12 @@ model Item {
   // Stock threshold used for low-stock alerts on SIMPLE products.
   minStock Decimal @default(0) @db.Decimal(20, 6)
 
+  // Materialized operational balance for SIMPLE inventory products.
+  currentStock Decimal @default(0) @db.Decimal(20, 6)
+
+  // Materialized weighted average cost for SIMPLE inventory products.
+  averageCost Decimal @default(0) @db.Decimal(20, 6)
+
   images             ItemImage[]
   scheduleWindows    ServiceScheduleWindow[]
   scheduleBlocks     ServiceScheduleBlock[]
@@ -299,6 +305,8 @@ model Item {
   @@index([status])
   @@index([type])
   @@index([inventoryMode])
+  @@index([businessId, status, type])
+  @@index([businessId, inventoryMode])
 }
 
 model ItemImage {

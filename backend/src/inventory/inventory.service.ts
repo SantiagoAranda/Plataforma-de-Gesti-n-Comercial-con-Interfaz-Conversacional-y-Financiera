@@ -129,12 +129,6 @@ export type ItemSellabilityRequest = {
   quantity?: number | string | Prisma.Decimal;
 };
 
-type SimpleItemStockState = {
-  hasInitialStock: boolean;
-  currentStock: Prisma.Decimal;
-  averageCost: Prisma.Decimal;
-};
-
 @Injectable()
 export class InventoryService {
   constructor(
@@ -572,55 +566,39 @@ export class InventoryService {
     const requiredQuantity = this.decimal(quantity);
 
     if (item.inventoryMode === 'SIMPLE') {
-      const movementCount = await tx.inventoryMovement.count({
-        where: {
-          businessId,
-          itemId: item.id,
-          type: { in: ['INVENTORY_INITIAL', 'PURCHASE'] },
-        },
-      });
-      const state = await this.getItemStockState(tx, businessId, item.id);
+      const currentStock = this.decimal(item.currentStock);
+      const averageCost = this.decimal(item.averageCost);
 
-      if (movementCount === 0) {
-        return {
-          sellable: false,
-          status: 'MISSING_INITIAL_STOCK',
-          message: `${item.name} no tiene inventario inicial.`,
-          currentStock: state.currentStock,
-          averageCost: state.averageCost,
-        };
-      }
-
-      if (state.currentStock.lte(0)) {
+      if (currentStock.lte(0)) {
         return {
           sellable: false,
           status: 'NO_STOCK',
           message: `${item.name} no tiene stock disponible.`,
-          currentStock: state.currentStock,
-          averageCost: state.averageCost,
+          currentStock,
+          averageCost,
         };
       }
 
-      if (state.currentStock.lt(requiredQuantity)) {
+      if (currentStock.lt(requiredQuantity)) {
         return {
           sellable: false,
           status: 'NO_STOCK',
-          message: `Stock insuficiente para ${item.name}. Disponible: ${state.currentStock.toString()}, requerido: ${requiredQuantity.toString()}.`,
-          currentStock: state.currentStock,
-          averageCost: state.averageCost,
+          message: `Stock insuficiente para ${item.name}. Disponible: ${currentStock.toString()}, requerido: ${requiredQuantity.toString()}.`,
+          currentStock,
+          averageCost,
         };
       }
 
       const minStockValue = this.decimal(item.minStock ?? 0);
       const isLowStock =
-        minStockValue.gt(0) && state.currentStock.lte(minStockValue);
+        minStockValue.gt(0) && currentStock.lte(minStockValue);
 
       return {
         sellable: true,
         status: isLowStock ? 'LOW_STOCK' : 'SELLABLE',
         message: isLowStock ? `${item.name} tiene stock bajo.` : undefined,
-        currentStock: state.currentStock,
-        averageCost: state.averageCost,
+        currentStock,
+        averageCost,
       };
     }
 
@@ -722,44 +700,7 @@ export class InventoryService {
       throw new NotFoundException('One or more items were not found');
     }
 
-    const simpleItemIds = items
-      .filter((item) => item.inventoryMode === 'SIMPLE')
-      .map((item) => item.id);
-    const [latestMovements, initialMovements] = simpleItemIds.length
-      ? await Promise.all([
-          tx.inventoryMovement.findMany({
-            where: { businessId, itemId: { in: simpleItemIds } },
-            orderBy: [
-              { itemId: 'asc' },
-              { occurredAt: 'desc' },
-              { createdAt: 'desc' },
-            ],
-            distinct: ['itemId'],
-            select: {
-              itemId: true,
-              stockAfter: true,
-              averageCostAfter: true,
-            },
-          }),
-          tx.inventoryMovement.findMany({
-            where: {
-              businessId,
-              itemId: { in: simpleItemIds },
-              type: { in: ['INVENTORY_INITIAL', 'PURCHASE'] },
-            },
-            distinct: ['itemId'],
-            select: { itemId: true },
-          }),
-        ])
-      : [[], []];
-
     const itemById = new Map(items.map((item) => [item.id, item]));
-    const latestMovementByItemId = new Map(
-      latestMovements.map((movement) => [movement.itemId!, movement]),
-    );
-    const itemIdsWithInitialStock = new Set(
-      initialMovements.map((movement) => movement.itemId!),
-    );
 
     return normalizedRequests.map((request) => {
       const item = itemById.get(request.itemId)!;
@@ -778,54 +719,36 @@ export class InventoryService {
       }
 
       if (item.inventoryMode === 'SIMPLE') {
-        const latestMovement = latestMovementByItemId.get(item.id);
-        const state: SimpleItemStockState = {
-          hasInitialStock: itemIdsWithInitialStock.has(item.id),
-          currentStock: latestMovement
-            ? this.decimal(latestMovement.stockAfter)
-            : this.decimal(0),
-          averageCost: latestMovement
-            ? this.decimal(latestMovement.averageCostAfter)
-            : this.decimal(0),
-        };
-
-        if (!state.hasInitialStock) {
-          return {
-            sellable: false,
-            status: 'MISSING_INITIAL_STOCK',
-            message: `${item.name} no tiene inventario inicial.`,
-            currentStock: state.currentStock,
-            averageCost: state.averageCost,
-          };
-        }
-        if (state.currentStock.lte(0)) {
+        const currentStock = this.decimal(item.currentStock);
+        const averageCost = this.decimal(item.averageCost);
+        if (currentStock.lte(0)) {
           return {
             sellable: false,
             status: 'NO_STOCK',
             message: `${item.name} no tiene stock disponible.`,
-            currentStock: state.currentStock,
-            averageCost: state.averageCost,
+            currentStock,
+            averageCost,
           };
         }
-        if (state.currentStock.lt(requiredQuantity)) {
+        if (currentStock.lt(requiredQuantity)) {
           return {
             sellable: false,
             status: 'NO_STOCK',
-            message: `Stock insuficiente para ${item.name}. Disponible: ${state.currentStock.toString()}, requerido: ${requiredQuantity.toString()}.`,
-            currentStock: state.currentStock,
-            averageCost: state.averageCost,
+            message: `Stock insuficiente para ${item.name}. Disponible: ${currentStock.toString()}, requerido: ${requiredQuantity.toString()}.`,
+            currentStock,
+            averageCost,
           };
         }
 
         const minStockValue = this.decimal(item.minStock ?? 0);
         const isLowStock =
-          minStockValue.gt(0) && state.currentStock.lte(minStockValue);
+          minStockValue.gt(0) && currentStock.lte(minStockValue);
         return {
           sellable: true,
           status: isLowStock ? 'LOW_STOCK' : 'SELLABLE',
           message: isLowStock ? `${item.name} tiene stock bajo.` : undefined,
-          currentStock: state.currentStock,
-          averageCost: state.averageCost,
+          currentStock,
+          averageCost,
         };
       }
 
@@ -1714,6 +1637,14 @@ export class InventoryService {
           averageCost: averageCostAfter,
         },
       });
+    } else {
+      await tx.item.update({
+        where: { id: target.item.id },
+        data: {
+          currentStock: stockAfter,
+          averageCost: averageCostAfter,
+        },
+      });
     }
 
     return movement;
@@ -1770,23 +1701,11 @@ export class InventoryService {
     itemId: string,
   ) {
     const item = await this.loadSimpleItemOrThrow(tx, businessId, itemId);
-    const latestMovement = await tx.inventoryMovement.findFirst({
-      where: { businessId, itemId },
-      orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
-      select: {
-        stockAfter: true,
-        averageCostAfter: true,
-      },
-    });
 
     return {
       item,
-      currentStock: latestMovement
-        ? this.decimal(latestMovement.stockAfter)
-        : this.decimal(0),
-      averageCost: latestMovement
-        ? this.decimal(latestMovement.averageCostAfter)
-        : this.decimal(0),
+      currentStock: this.decimal(item.currentStock),
+      averageCost: this.decimal(item.averageCost),
     };
   }
 

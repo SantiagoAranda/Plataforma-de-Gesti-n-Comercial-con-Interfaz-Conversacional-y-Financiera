@@ -22,6 +22,7 @@ describe('InventoryService', () => {
       item: {
         findFirst: mockFn(),
         findMany: mockFn(),
+        update: mockFn(),
       },
       inventoryMovement: {
         findMany: mockFn(),
@@ -292,10 +293,8 @@ describe('InventoryService', () => {
       status: 'INACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(5),
-      averageCostAfter: new Prisma.Decimal(2),
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
     });
 
     await expect(
@@ -322,10 +321,8 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(3),
-      averageCostAfter: new Prisma.Decimal(2),
+      currentStock: new Prisma.Decimal(3),
+      averageCost: new Prisma.Decimal(2),
     });
     tx.inventoryMovement.create.mockImplementation(
       ({ data }: { data: any }) =>
@@ -348,6 +345,84 @@ describe('InventoryService', () => {
     expect(movement.ingredientId).toBeNull();
     expect(movement.stockAfter.toString()).toBe('5');
     expect(movement.averageCostAfter.toString()).toBe('3.2');
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(5),
+        averageCost: new Prisma.Decimal('3.2'),
+      },
+    });
+  });
+
+  it('creates initial inventory for a SIMPLE item and materializes its balance', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue(null);
+    tx.inventoryMovement.create.mockImplementation(
+      ({ data }: { data: any }) =>
+        Promise.resolve({ id: 'movement-1', ...data }),
+    );
+
+    const movement = await service.registerInitial(businessId, {
+      itemId: 'item-1',
+      quantity: '10',
+      unitCost: '2.5',
+    });
+
+    expect(movement.stockAfter).toEqual(new Prisma.Decimal(10));
+    expect(movement.averageCostAfter).toEqual(new Prisma.Decimal('2.5'));
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal('2.5'),
+      },
+    });
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          itemId: 'item-1',
+          ingredientId: null,
+          type: 'INVENTORY_INITIAL',
+          stockAfter: new Prisma.Decimal(10),
+          averageCostAfter: new Prisma.Decimal('2.5'),
+        }),
+      }),
+    );
+  });
+
+  it('reads SIMPLE stock directly from Item without consulting Kardex', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+
+    const state = await service.getSimpleItemStockState(
+      businessId,
+      'item-1',
+      tx as any,
+    );
+
+    expect(state.currentStock).toEqual(new Prisma.Decimal(0));
+    expect(state.averageCost).toEqual(new Prisma.Decimal(0));
+    expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
   });
 
   it('rejects a non-finite cost for a cost-bearing movement', async () => {
@@ -1163,11 +1238,9 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
       recipes: [],
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(10),
-      averageCostAfter: new Prisma.Decimal(3),
     });
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
       Promise.resolve({ id: 'sale-movement-1', ...data }),
@@ -1213,6 +1286,13 @@ describe('InventoryService', () => {
       }),
     );
     expect(tx.ingredient.update).not.toHaveBeenCalled();
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(9),
+        averageCost: new Prisma.Decimal(3),
+      },
+    });
     expect(tx.recipe.findMany).not.toHaveBeenCalled();
   });
 
@@ -1506,11 +1586,9 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(3),
       recipes: [],
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(3),
     });
 
     await expect(
@@ -1545,9 +1623,10 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
       recipes: [],
     });
-    tx.inventoryMovement.findFirst.mockResolvedValue(null);
 
     await expect(
       service.applyInventoryConsumptionForOrder(tx as any, businessId, {
@@ -1670,12 +1749,9 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
       recipes: [],
-    });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(5),
-      averageCostAfter: new Prisma.Decimal(2),
     });
 
     const result = await service.getItemSellability(
@@ -1698,10 +1774,10 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
       recipes: [],
     });
-    tx.inventoryMovement.count.mockResolvedValue(0);
-    tx.inventoryMovement.findFirst.mockResolvedValue(null);
 
     const result = await service.getItemSellability(
       businessId,
@@ -1711,7 +1787,9 @@ describe('InventoryService', () => {
     );
 
     expect(result.sellable).toBe(false);
-    expect(result.status).toBe('MISSING_INITIAL_STOCK');
+    expect(result.status).toBe('NO_STOCK');
+    expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.count).not.toHaveBeenCalled();
   });
 
   it('marks RECIPE_BASED item without recipe as not sellable', async () => {
@@ -1904,12 +1982,9 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
       minStock: new Prisma.Decimal(3),
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(10),
       recipes: [],
-    });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(10),
     });
 
     const result = await service.getItemSellability(
@@ -1932,12 +2007,9 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(10),
       recipes: [],
-    });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(10),
     });
 
     const result = await service.getItemSellability(
@@ -1964,6 +2036,8 @@ describe('InventoryService', () => {
         type: 'PRODUCT',
         inventoryMode: 'SIMPLE',
         minStock: new Prisma.Decimal(0),
+        currentStock: new Prisma.Decimal(3),
+        averageCost: new Prisma.Decimal(10),
         recipes: [],
       },
       {
@@ -1989,16 +2063,6 @@ describe('InventoryService', () => {
         ],
       },
     ]);
-    tx.inventoryMovement.findMany
-      .mockResolvedValueOnce([
-        {
-          itemId: 'simple-1',
-          stockAfter: new Prisma.Decimal(3),
-          averageCostAfter: new Prisma.Decimal(10),
-        },
-      ])
-      .mockResolvedValueOnce([{ itemId: 'simple-1' }]);
-
     const result = await service.getItemsSellabilityBulk(
       businessId,
       ['simple-1', { itemId: 'recipe-1', quantity: 3 }],
@@ -2018,7 +2082,7 @@ describe('InventoryService', () => {
       }),
     );
     expect(tx.item.findMany).toHaveBeenCalledTimes(1);
-    expect(tx.inventoryMovement.findMany).toHaveBeenCalledTimes(2);
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
     expect(tx.item.findFirst).not.toHaveBeenCalled();
     expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
     expect(tx.inventoryMovement.count).not.toHaveBeenCalled();

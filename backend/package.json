@@ -18,7 +18,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migrate:images:r2": "ts-node scripts/migrate-item-images-to-r2.ts"
+    "migrate:images:r2": "ts-node scripts/migrate-item-images-to-r2.ts",
+    "prisma:backfill:item-stock": "ts-node prisma/scripts/backfill-item-stock.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
