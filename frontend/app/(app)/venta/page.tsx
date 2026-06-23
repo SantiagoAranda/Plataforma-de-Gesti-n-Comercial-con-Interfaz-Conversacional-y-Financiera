@@ -363,13 +363,20 @@ export default function VentaPage() {
       return;
     }
 
-    const msg = formatSaleMessage({
+    const baseMsg = formatSaleMessage({
       businessName,
       customerName: sale.customerName || "Cliente",
       type: sale.type,
       scheduledAt: sale.scheduledAt,
       items: sale.items,
     });
+
+    const reservaLink =
+      sale.type === "SERVICIO" && sale.id
+        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${window.location.origin}/reserva/${sale.id}`
+        : "";
+
+    const msg = baseMsg + reservaLink;
 
     const url = buildWhatsAppUrl(sale.customerWhatsapp, msg);
 
