@@ -19,51 +19,60 @@ export class PublicService {
   private normalizeExcludedOptionalIngredientIds(value: unknown) {
     if (value === null || value === undefined) return [];
     if (!Array.isArray(value)) {
-      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must be an array',
+      );
     }
     if (!value.every((id) => typeof id === 'string')) {
-      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must contain only strings',
+      );
     }
     return value;
   }
 
   private assertNoDuplicateIds(ids: string[]) {
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds contains duplicates',
+      );
     }
   }
 
-  private async mapPublicOptionGroups(businessId: string, groups: any[]) {
+  private async mapPublicOptionGroups(
+    groups: any[],
+    optionSellabilityById: Map<string, { sellable: boolean }>,
+  ) {
     return Promise.all(
-      groups.map(async (group) => {
+      groups.filter((group) => group.isActive !== false).map(async (group) => {
         const mappedOptions = await Promise.all(
-          (group.options ?? []).map(async (option: any) => {
+          (group.options ?? [])
+            .filter((option: any) => option.isActive !== false)
+            .map(async (option: any) => {
             let hasStock = true;
 
             // 1. Determine requiredQty based on rules
             let requiredQty = 1;
             if (group.quantityMode === 'SHARED_TOTAL') {
-              requiredQty = group.totalQuantityLimit == null ? 1 : Number(group.totalQuantityLimit);
+              requiredQty =
+                group.totalQuantityLimit == null
+                  ? 1
+                  : Number(group.totalQuantityLimit);
             } else if (group.quantityMode === 'FIXED_PER_OPTION') {
-              requiredQty = option.quantity == null ? 1 : Number(option.quantity);
+              requiredQty =
+                option.quantity == null ? 1 : Number(option.quantity);
             }
 
             // 2. Validate availability
             if (option.targetType === 'INGREDIENT') {
-              const currentStock = option.ingredient?.currentStock == null ? 0 : Number(option.ingredient.currentStock);
+              const currentStock =
+                option.ingredient?.currentStock == null
+                  ? 0
+                  : Number(option.ingredient.currentStock);
               hasStock = currentStock >= requiredQty;
             } else if (option.targetType === 'ITEM') {
-              try {
-                const sellability = await this.inventoryService.getItemSellability(
-                  businessId,
-                  option.itemId,
-                  requiredQty,
-                );
-                hasStock = sellability.sellable;
-              } catch (e) {
-                console.error(`[PublicService] Error checking sellability for target item ${option.itemId}`, e);
-                hasStock = false;
-              }
+              hasStock =
+                optionSellabilityById.get(option.id)?.sellable ?? false;
             } else {
               // NONE
               hasStock = true;
@@ -77,7 +86,8 @@ export class PublicService {
               targetType: option.targetType,
               ingredientId: option.ingredientId,
               itemId: option.itemId,
-              quantity: option.quantity == null ? null : Number(option.quantity),
+              quantity:
+                option.quantity == null ? null : Number(option.quantity),
               unitId: option.unitId,
               priceDelta: Number(option.priceDelta ?? 0),
               selectedByDefault: option.selectedByDefault,
@@ -88,7 +98,7 @@ export class PublicService {
               unit: option.unit,
               hasStock,
             };
-          }),
+            }),
         );
 
         return {
@@ -100,7 +110,9 @@ export class PublicService {
           maxSelections: group.maxSelections,
           quantityMode: group.quantityMode,
           totalQuantityLimit:
-            group.totalQuantityLimit == null ? null : Number(group.totalQuantityLimit),
+            group.totalQuantityLimit == null
+              ? null
+              : Number(group.totalQuantityLimit),
           totalQuantityUnitId: group.totalQuantityUnitId,
           totalQuantityUnit: group.totalQuantityUnit,
           sortOrder: group.sortOrder,
@@ -267,7 +279,8 @@ export class PublicService {
     ].join('-');
     const isToday = dateKey === todayKey;
     // Use < (not <=) so a slot starting exactly at the current minute is still offered.
-    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+    const currentMinutes =
+      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
       // Align cursor to the next full-hour boundary (slots are always HH:00).
@@ -286,12 +299,16 @@ export class PublicService {
         }
 
         const overlap = reservations.some(
-          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
+          (res) =>
+            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
         const blocked = blocks.some((block) => {
-          if (block.startMinute === null && block.endMinute === null) return true;
-          return start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0);
+          if (block.startMinute === null && block.endMinute === null)
+            return true;
+          return (
+            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
+          );
         });
 
         if (!overlap && !blocked) slots.push(this.formatTime(start));
@@ -302,7 +319,6 @@ export class PublicService {
 
     return slots;
   }
-
 
   /* =====================================================
      ITEMS
@@ -396,7 +412,12 @@ export class PublicService {
                   select: { id: true, name: true, currentStock: true },
                 },
                 item: {
-                  select: { id: true, name: true, type: true, inventoryMode: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    inventoryMode: true,
+                  },
                 },
                 unit: true,
               },
@@ -406,12 +427,53 @@ export class PublicService {
       },
     });
 
+    const itemRequests = data.map((item) => item.id);
+    const targetOptionRequests = data.flatMap((item) =>
+      item.optionGroups
+        .filter((group) => group.isActive !== false)
+        .flatMap((group) =>
+        group.options
+          .filter(
+            (option) =>
+              option.isActive !== false &&
+              option.targetType === 'ITEM' &&
+              option.itemId,
+          )
+          .map((option) => {
+            let quantity = 1;
+            if (group.quantityMode === 'SHARED_TOTAL') {
+              quantity =
+                group.totalQuantityLimit == null
+                  ? 1
+                  : Number(group.totalQuantityLimit);
+            } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+              quantity = option.quantity == null ? 1 : Number(option.quantity);
+            }
+            return { optionId: option.id, itemId: option.itemId!, quantity };
+          }),
+        ),
+    );
+    const sellabilities = await this.inventoryService.getItemsSellabilityBulk(
+      business.id,
+      [
+        ...itemRequests,
+        ...targetOptionRequests.map(({ itemId, quantity }) => ({
+          itemId,
+          quantity,
+        })),
+      ],
+    );
+    const itemSellabilities = sellabilities.slice(0, itemRequests.length);
+    const optionSellabilityById = new Map(
+      targetOptionRequests.map((request, index) => [
+        request.optionId,
+        sellabilities[itemRequests.length + index],
+      ]),
+    );
+
     const visibleItems: any[] = [];
-    for (const item of data) {
-      const sellability = await this.inventoryService.getItemSellability(
-        business.id,
-        item.id,
-      );
+    for (const [index, item] of data.entries()) {
+      const sellability = itemSellabilities[index];
       if (sellability.sellable) {
         visibleItems.push({
           ...item,
@@ -430,17 +492,22 @@ export class PublicService {
 
     return {
       business: publicBusiness,
-      data: await Promise.all(visibleItems.map(async (item) => ({
-        ...item,
-        price: Number(item.price),
-        recipes: item.recipes.map((recipe) => ({
-          ingredientId: recipe.ingredientId,
-          quantityRequired: Number(recipe.quantityRequired),
-          isOptional: recipe.isOptional,
-          ingredient: recipe.ingredient,
+      data: await Promise.all(
+        visibleItems.map(async (item) => ({
+          ...item,
+          price: Number(item.price),
+          recipes: item.recipes.map((recipe) => ({
+            ingredientId: recipe.ingredientId,
+            quantityRequired: Number(recipe.quantityRequired),
+            isOptional: recipe.isOptional,
+            ingredient: recipe.ingredient,
+          })),
+          optionGroups: await this.mapPublicOptionGroups(
+            (item as any).optionGroups ?? [],
+            optionSellabilityById,
+          ),
         })),
-        optionGroups: await this.mapPublicOptionGroups(business.id, (item as any).optionGroups ?? []),
-      }))),
+      ),
     };
   }
 
@@ -683,10 +750,22 @@ export class PublicService {
 
     if (!dto.items || dto.items.length === 0)
       throw new BadRequestException('Order must contain items');
+    if (
+      dto.items.some(
+        (item) => !Number.isInteger(item.quantity) || item.quantity <= 0,
+      )
+    ) {
+      throw new BadRequestException(
+        'Item quantity must be a positive integer',
+      );
+    }
 
+    const uniqueItemIds = Array.from(
+      new Set(dto.items.map((item) => item.itemId)),
+    );
     const dbItems = await this.prisma.item.findMany({
       where: {
-        id: { in: dto.items.map((i) => i.itemId) },
+        id: { in: uniqueItemIds },
         businessId: business.id,
         status: 'ACTIVE',
       },
@@ -705,85 +784,103 @@ export class PublicService {
       },
     });
 
-    if (dbItems.length !== dto.items.length)
+    if (
+      dbItems.length !== uniqueItemIds.length ||
+      dbItems.some((item) => item.status !== 'ACTIVE')
+    )
       throw new BadRequestException('Invalid items');
+    const dbItemById = new Map(dbItems.map((item) => [item.id, item]));
 
     const visibleCustomizationNotes: string[] = [];
-    const normalizedInputs = await Promise.all(dto.items.map(async (input) => {
-      const item = dbItems.find((i) => i.id === input.itemId)!;
-      const hasOptionGroups = item.optionGroups.length > 0;
-      const excludedIds = hasOptionGroups
-        ? []
-        : this.normalizeExcludedOptionalIngredientIds(
-            input.excludedOptionalIngredientIds,
+    const normalizedInputs = await Promise.all(
+      dto.items.map(async (input) => {
+        const item = dbItemById.get(input.itemId)!;
+        const hasOptionGroups = item.optionGroups.length > 0;
+        const excludedIds = hasOptionGroups
+          ? []
+          : this.normalizeExcludedOptionalIngredientIds(
+              input.excludedOptionalIngredientIds,
+            );
+        this.assertNoDuplicateIds(excludedIds);
+
+        const resolvedOptions =
+          await this.itemOptionsService.resolveSelectionsForOrderLine(
+            business.id,
+            item.id,
+            input.quantity,
+            input.optionSelections ?? [],
           );
-      this.assertNoDuplicateIds(excludedIds);
 
-      const resolvedOptions = await this.itemOptionsService.resolveSelectionsForOrderLine(
-        business.id,
-        item.id,
-        input.quantity,
-        input.optionSelections ?? [],
-      );
-
-      if (excludedIds.length > 0) {
-        if (item.type === 'SERVICE' || item.recipes.length === 0) {
-          throw new BadRequestException('Item does not allow optional ingredient exclusions');
-        }
-
-        const recipeIngredientIds = new Set(
-          item.recipes.map((recipe) => recipe.ingredientId),
-        );
-        const mandatoryIngredientIds = new Set(
-          item.recipes
-            .filter((recipe) => !recipe.isOptional)
-            .map((recipe) => recipe.ingredientId),
-        );
-
-        for (const ingredientId of excludedIds) {
-          if (!recipeIngredientIds.has(ingredientId)) {
+        if (excludedIds.length > 0) {
+          if (item.type === 'SERVICE' || item.recipes.length === 0) {
             throw new BadRequestException(
-              'excludedOptionalIngredientIds contains an ingredient outside the recipe',
+              'Item does not allow optional ingredient exclusions',
             );
           }
-          if (mandatoryIngredientIds.has(ingredientId)) {
-            throw new BadRequestException('Mandatory ingredients cannot be excluded');
+
+          const recipeIngredientIds = new Set(
+            item.recipes.map((recipe) => recipe.ingredientId),
+          );
+          const mandatoryIngredientIds = new Set(
+            item.recipes
+              .filter((recipe) => !recipe.isOptional)
+              .map((recipe) => recipe.ingredientId),
+          );
+
+          for (const ingredientId of excludedIds) {
+            if (!recipeIngredientIds.has(ingredientId)) {
+              throw new BadRequestException(
+                'excludedOptionalIngredientIds contains an ingredient outside the recipe',
+              );
+            }
+            if (mandatoryIngredientIds.has(ingredientId)) {
+              throw new BadRequestException(
+                'Mandatory ingredients cannot be excluded',
+              );
+            }
+          }
+
+          const excludedNames = excludedIds
+            .map(
+              (ingredientId) =>
+                item.recipes.find(
+                  (recipe) => recipe.ingredientId === ingredientId,
+                )?.ingredient.name,
+            )
+            .filter(Boolean);
+
+          if (excludedNames.length > 0) {
+            visibleCustomizationNotes.push(
+              `${item.name}: sin ${excludedNames.join(', ')}`,
+            );
           }
         }
 
-        const excludedNames = excludedIds
-          .map(
-            (ingredientId) =>
-              item.recipes.find((recipe) => recipe.ingredientId === ingredientId)
-                ?.ingredient.name,
-          )
-          .filter(Boolean);
+        return { input, item, excludedIds, resolvedOptions };
+      }),
+    );
 
-        if (excludedNames.length > 0) {
-          visibleCustomizationNotes.push(`${item.name}: sin ${excludedNames.join(', ')}`);
-        }
-      }
-
-      return { input, item, excludedIds, resolvedOptions };
-    }));
-
-    for (const { input, item } of normalizedInputs) {
-      const sellability = await this.inventoryService.getItemSellability(
+    const lineSellabilities =
+      await this.inventoryService.getItemsSellabilityBulk(
         business.id,
-        item.id,
-        input.quantity,
+        normalizedInputs.map(({ input, item }) => ({
+          itemId: item.id,
+          quantity: input.quantity,
+        })),
       );
+    for (const [index] of normalizedInputs.entries()) {
+      const sellability = lineSellabilities[index];
       if (!sellability.sellable) {
-        throw new BadRequestException(sellability.message ?? 'Producto no vendible');
+        throw new BadRequestException(
+          sellability.message ?? 'Producto no vendible',
+        );
       }
     }
 
-    const visibleNote = [
-      dto.note?.trim() || null,
-      ...visibleCustomizationNotes,
-    ]
-      .filter(Boolean)
-      .join('\n') || null;
+    const visibleNote =
+      [dto.note?.trim() || null, ...visibleCustomizationNotes]
+        .filter(Boolean)
+        .join('\n') || null;
 
     const order = await this.prisma.order.create({
       data: {
@@ -796,33 +893,36 @@ export class PublicService {
         sentAt: new Date(),
 
         items: {
-          create: normalizedInputs.map(({ input, item, excludedIds, resolvedOptions }) => {
-            const quantity = input.quantity;
-            const baseUnitPrice = item.price;
-            const optionsTotal = resolvedOptions.optionsTotal;
-            const unitPrice = baseUnitPrice.add(optionsTotal);
-            const lineTotal = unitPrice.mul(quantity);
+          create: normalizedInputs.map(
+            ({ input, item, excludedIds, resolvedOptions }) => {
+              const quantity = input.quantity;
+              const baseUnitPrice = item.price;
+              const optionsTotal = resolvedOptions.optionsTotal;
+              const unitPrice = baseUnitPrice.add(optionsTotal);
+              const lineTotal = unitPrice.mul(quantity);
 
-            return {
-              businessId: business.id,
-              itemId: item.id,
-              quantity,
-              unitPrice,
-              lineTotal,
-              itemNameSnapshot: item.name,
-              itemTypeSnapshot: item.type,
-              inventoryModeSnapshot: item.inventoryMode,
-              durationMinutesSnapshot: item.durationMinutes,
-              excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
-              baseUnitPriceSnapshot: baseUnitPrice,
-              optionsTotalSnapshot: optionsTotal,
-              finalUnitPriceSnapshot: unitPrice,
-              lineTotalSnapshot: lineTotal,
-              options: resolvedOptions.snapshots.length
-                ? { create: resolvedOptions.snapshots }
-                : undefined,
-            };
-          }),
+              return {
+                businessId: business.id,
+                itemId: item.id,
+                quantity,
+                unitPrice,
+                lineTotal,
+                itemNameSnapshot: item.name,
+                itemTypeSnapshot: item.type,
+                inventoryModeSnapshot: item.inventoryMode,
+                durationMinutesSnapshot: item.durationMinutes,
+                excludedOptionalIngredientIds:
+                  excludedIds.length > 0 ? excludedIds : null,
+                baseUnitPriceSnapshot: baseUnitPrice,
+                optionsTotalSnapshot: optionsTotal,
+                finalUnitPriceSnapshot: unitPrice,
+                lineTotalSnapshot: lineTotal,
+                options: resolvedOptions.snapshots.length
+                  ? { create: resolvedOptions.snapshots }
+                  : undefined,
+              };
+            },
+          ),
         },
       },
       include: { items: true },
