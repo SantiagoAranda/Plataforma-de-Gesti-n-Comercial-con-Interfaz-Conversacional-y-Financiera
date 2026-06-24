@@ -7,6 +7,7 @@ import { ProductCustomizationManager } from "@/src/components/inventory/ProductC
 import { cn } from "@/src/lib/utils";
 import { formatMoney } from "@/src/lib/formatters";
 import { replaceRecipe, type RecipeLine, type InventorySummaryIngredient } from "@/src/services/inventory";
+import { ConsumptionHistoryTab } from "./ConsumptionHistoryTab";
 import {
   formatRecipeConsumption,
   getStockUnitSymbol,
@@ -61,6 +62,7 @@ export function ExpandableRecipeCard({
   initiallyExpanded = false,
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
+  const [activeSubTab, setActiveSubTab] = useState<"config" | "history">("config");
   const [draftLines, setDraftLines] = useState<DraftRecipeLine[]>([]);
   const [showAddSelector, setShowAddSelector] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -483,246 +485,280 @@ export function ExpandableRecipeCard({
       {/* EXPANDED CONTENT */}
       {isExpanded && (
         <div className="mt-4 border-t border-slate-100/80 pt-3.5 space-y-4">
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Ingredientes
-              </p>
-              {!isSimple && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowAddSelector(!showAddSelector);
-                  }}
-                  className="grid h-6 w-6 place-items-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 active:scale-95"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
+          {/* Sub-tabs header */}
+          <div className="flex border-b border-slate-100 pb-2 mb-2 gap-1 select-none">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab("config")}
+              className={cn(
+                "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
+                activeSubTab === "config"
+                  ? "border-slate-800 text-slate-800"
+                  : "border-transparent text-slate-450 hover:text-slate-600"
               )}
-            </div>
+            >
+              Configuración
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab("history")}
+              className={cn(
+                "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
+                activeSubTab === "history"
+                  ? "border-slate-800 text-slate-800"
+                  : "border-transparent text-slate-450 hover:text-slate-600"
+              )}
+            >
+              Historial de Consumo
+            </button>
+          </div>
 
-            {/* ADD INGREDIENT SELECTOR INLINE */}
-            {!isSimple && showAddSelector && (
-              <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-3 flex flex-col gap-2">
+          {activeSubTab === "history" ? (
+            <ConsumptionHistoryTab itemId={item.id} type="recipe" />
+          ) : (
+            <>
+              <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-600">
-                    Seleccionar insumo para agregar
-                  </span>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Ingredientes
+                  </p>
+                  {!isSimple && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAddSelector(!showAddSelector);
+                      }}
+                      className="grid h-6 w-6 place-items-center rounded-full bg-slate-900 text-white shadow-sm transition hover:bg-slate-800 active:scale-95"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* ADD INGREDIENT SELECTOR INLINE */}
+                {!isSimple && showAddSelector && (
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-600">
+                        Seleccionar insumo para agregar
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddSelector(false)}
+                        className="text-[10px] font-bold text-rose-600 hover:text-rose-700"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    {availableIngredients.length === 0 ? (
+                      <p className="text-xs font-semibold text-slate-500 py-1">
+                        No hay insumos disponibles para agregar.
+                      </p>
+                    ) : (
+                      <select
+                        value=""
+                        onChange={(e) => handleAddIngredient(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400"
+                      >
+                        <option value="">Seleccionar insumo...</option>
+                        {availableIngredients.map((ing) => {
+                          const avgCost = toNumber(ing.averageCost, 0);
+                          const unit = getStockUnitSymbol(ing);
+                          const currentStock = toNumber(ing.currentStock, 0);
+                          return (
+                            <option key={ing.id} value={ing.id}>
+                              {ing.name} (${formatMoney(avgCost)}/{unit}) - Stock: {formatMoney(currentStock)}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {draftLines.map((line, idx) => {
+                    const ing = getIngredientDetails(line.ingredientId);
+                    const costVal = toNumber(ing?.averageCost, 0);
+                    const unitLabel = getIngredientUnit(line.ingredientId);
+                    
+                    const quantityRequiredBase = isSimple ? 1 : line.quantityRequired;
+                    const displayQuantity = isSimple ? 1 : getDisplayQuantity(line);
+                    
+                    const quantityPerUnit = displayQuantity;
+                    const consumptionInfo = ing
+                      ? formatRecipeConsumption({ ingredient: ing, quantityRequired: quantityRequiredBase })
+                      : null;
+
+                    return (
+                      <div
+                        key={`${line.ingredientId}-${idx}`}
+                        className="rounded-2xl border border-slate-100 bg-white p-3 shadow-2xs space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          {isSimple ? (
+                            <div className="flex-1">
+                              <select
+                                value={line.ingredientId}
+                                onChange={(e) =>
+                                  setDraftLines([
+                                    {
+                                      ingredientId: e.target.value,
+                                      quantityRequired: 1,
+                                      quantityInput: "1",
+                                      baseQuantityRequired: 1,
+                                      stepQuantity: 1,
+                                      isOptional: false,
+                                    },
+                                  ])
+                                }
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-1.5 text-xs font-bold text-slate-750 outline-none focus:border-slate-400"
+                              >
+                                <option value="">Seleccionar insumo...</option>
+                                {allIngredients
+                                  .filter((i) => i.status !== "INACTIVE")
+                                  .map((activeIng) => (
+                                    <option key={activeIng.id} value={activeIng.id}>
+                                      {activeIng.name}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <h4 className="truncate text-xs font-bold text-slate-800">
+                              {getIngredientName(line.ingredientId)}
+                            </h4>
+                          )}
+
+                          {!isSimple && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLine(idx)}
+                              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600 transition hover:bg-rose-100 active:scale-95"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-bold text-slate-400">
+                            {line.ingredientId ? `Costo prom.: $${formatMoney(costVal)} / ${unitLabel}` : "—"}
+                          </p>
+                          {!isSimple && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDraftLines((prev) =>
+                                  prev.map((l, i) => (i === idx ? { ...l, isOptional: !l.isOptional } : l))
+                                )
+                              }
+                              className={cn(
+                                "rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider transition active:scale-95 border",
+                                line.isOptional
+                                  ? "bg-amber-50 text-amber-700 border-amber-100"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                              )}
+                            >
+                              {line.isOptional ? "Opcional" : "Obligatorio"}
+                            </button>
+                          )}
+                        </div>
+
+                        {isMeasuredIngredient(ing) && Number.isFinite(quantityPerUnit) && quantityPerUnit > 0 && (
+                          <div className="rounded-xl bg-slate-50/50 p-2.5 text-[10px] font-semibold leading-relaxed text-slate-500 border border-slate-50">
+                            {consumptionInfo?.lines.map((lineText) => (
+                              <p key={lineText} className="text-slate-600">
+                                • {lineText}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 rounded-full bg-slate-100 p-0.5 border border-slate-150">
+                            {!isSimple && (
+                              <button
+                                type="button"
+                                disabled={getLineQuantity(line) <= getMinimumQuantity(line)}
+                                onClick={() => handleDecrement(idx, line)}
+                                className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-40"
+                              >
+                                -
+                              </button>
+                            )}
+
+                            <input
+                              type="number"
+                              step="any"
+                              inputMode="decimal"
+                              disabled={isSimple}
+                              value={isSimple ? 1 : line.quantityInput}
+                              onBlur={(e) => {
+                                if (isSimple) return;
+                                const val = toNumber(e.target.value, NaN);
+                                const minVal = getMinimumQuantity(line);
+                                updateQuantity(idx, !Number.isFinite(val) || val <= 0 ? minVal : val);
+                              }}
+                              onChange={(e) => {
+                                if (isSimple) return;
+                                updateQuantityInput(idx, e.target.value);
+                              }}
+                              className="w-12 bg-transparent text-center text-xs font-bold text-slate-750 outline-none disabled:opacity-100"
+                            />
+
+                            {!isSimple && (
+                              <button
+                                type="button"
+                                onClick={() => handleIncrement(idx, line)}
+                                className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                              >
+                                +
+                              </button>
+                            )}
+                          </div>
+
+                          <span className="text-[11px] font-bold text-slate-400 select-none">
+                            {unitLabel}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {draftLines.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-8 text-center text-xs text-slate-400">
+                    La receta no tiene ingredientes. Agrega uno para comenzar.
+                  </div>
+                )}
+              </div>
+
+              {isDirty && (
+                <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => setShowAddSelector(false)}
-                    className="text-[10px] font-bold text-rose-600 hover:text-rose-700"
+                    onClick={handleCancel}
+                    disabled={submitting}
+                    className="rounded-xl px-4 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-100 active:scale-[0.98]"
                   >
                     Cancelar
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={submitting}
+                    className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {submitting ? "Guardando..." : "Guardar receta"}
+                  </button>
                 </div>
-                {availableIngredients.length === 0 ? (
-                  <p className="text-xs font-semibold text-slate-500 py-1">
-                    No hay insumos disponibles para agregar.
-                  </p>
-                ) : (
-                  <select
-                    value=""
-                    onChange={(e) => handleAddIngredient(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400"
-                  >
-                    <option value="">Seleccionar insumo...</option>
-                    {availableIngredients.map((ing) => {
-                      const avgCost = toNumber(ing.averageCost, 0);
-                      const unit = getStockUnitSymbol(ing);
-                      const currentStock = toNumber(ing.currentStock, 0);
-                      return (
-                        <option key={ing.id} value={ing.id}>
-                          {ing.name} (${formatMoney(avgCost)}/{unit}) - Stock: {formatMoney(currentStock)}
-                        </option>
-                      );
-                    })}
-                  </select>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              {draftLines.map((line, idx) => {
-                const ing = getIngredientDetails(line.ingredientId);
-                const costVal = toNumber(ing?.averageCost, 0);
-                const unitLabel = getIngredientUnit(line.ingredientId);
-                
-                const quantityRequiredBase = isSimple ? 1 : line.quantityRequired;
-                const displayQuantity = isSimple ? 1 : getDisplayQuantity(line);
-                
-                const quantityPerUnit = displayQuantity;
-                const consumptionInfo = ing
-                  ? formatRecipeConsumption({ ingredient: ing, quantityRequired: quantityRequiredBase })
-                  : null;
-
-                return (
-                  <div
-                    key={`${line.ingredientId}-${idx}`}
-                    className="rounded-2xl border border-slate-100 bg-white p-3 shadow-2xs space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      {isSimple ? (
-                        <div className="flex-1">
-                          <select
-                            value={line.ingredientId}
-                            onChange={(e) =>
-                              setDraftLines([
-                                {
-                                  ingredientId: e.target.value,
-                                  quantityRequired: 1,
-                                  quantityInput: "1",
-                                  baseQuantityRequired: 1,
-                                  stepQuantity: 1,
-                                  isOptional: false,
-                                },
-                              ])
-                            }
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-1.5 text-xs font-bold text-slate-750 outline-none focus:border-slate-400"
-                          >
-                            <option value="">Seleccionar insumo...</option>
-                            {allIngredients
-                              .filter((i) => i.status !== "INACTIVE")
-                              .map((activeIng) => (
-                                <option key={activeIng.id} value={activeIng.id}>
-                                  {activeIng.name}
-                                </option>
-                              ))}
-                          </select>
-                        </div>
-                      ) : (
-                        <h4 className="truncate text-xs font-bold text-slate-800">
-                          {getIngredientName(line.ingredientId)}
-                        </h4>
-                      )}
-
-                      {!isSimple && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLine(idx)}
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-rose-50 text-rose-600 transition hover:bg-rose-100 active:scale-95"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[10px] font-bold text-slate-400">
-                        {line.ingredientId ? `Costo prom.: $${formatMoney(costVal)} / ${unitLabel}` : "—"}
-                      </p>
-                      {!isSimple && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraftLines((prev) =>
-                              prev.map((l, i) => (i === idx ? { ...l, isOptional: !l.isOptional } : l))
-                            )
-                          }
-                          className={cn(
-                            "rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider transition active:scale-95 border",
-                            line.isOptional
-                              ? "bg-amber-50 text-amber-700 border-amber-100"
-                              : "bg-emerald-50 text-emerald-700 border-emerald-100"
-                          )}
-                        >
-                          {line.isOptional ? "Opcional" : "Obligatorio"}
-                        </button>
-                      )}
-                    </div>
-
-                    {isMeasuredIngredient(ing) && Number.isFinite(quantityPerUnit) && quantityPerUnit > 0 && (
-                      <div className="rounded-xl bg-slate-50/50 p-2.5 text-[10px] font-semibold leading-relaxed text-slate-500 border border-slate-50">
-                        {consumptionInfo?.lines.map((lineText) => (
-                          <p key={lineText} className="text-slate-600">
-                            • {lineText}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1.5 rounded-full bg-slate-100 p-0.5 border border-slate-150">
-                        {!isSimple && (
-                          <button
-                            type="button"
-                            disabled={getLineQuantity(line) <= getMinimumQuantity(line)}
-                            onClick={() => handleDecrement(idx, line)}
-                            className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-40"
-                          >
-                            -
-                          </button>
-                        )}
-
-                        <input
-                          type="number"
-                          step="any"
-                          inputMode="decimal"
-                          disabled={isSimple}
-                          value={isSimple ? 1 : line.quantityInput}
-                          onBlur={(e) => {
-                            if (isSimple) return;
-                            const val = toNumber(e.target.value, NaN);
-                            const minVal = getMinimumQuantity(line);
-                            updateQuantity(idx, !Number.isFinite(val) || val <= 0 ? minVal : val);
-                          }}
-                          onChange={(e) => {
-                            if (isSimple) return;
-                            updateQuantityInput(idx, e.target.value);
-                          }}
-                          className="w-12 bg-transparent text-center text-xs font-bold text-slate-750 outline-none disabled:opacity-100"
-                        />
-
-                        {!isSimple && (
-                          <button
-                            type="button"
-                            onClick={() => handleIncrement(idx, line)}
-                            className="grid h-6 w-6 place-items-center rounded-full bg-white text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-50"
-                          >
-                            +
-                          </button>
-                        )}
-                      </div>
-
-                      <span className="text-[11px] font-bold text-slate-400 select-none">
-                        {unitLabel}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {draftLines.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-8 text-center text-xs text-slate-400">
-                La receta no tiene ingredientes. Agrega uno para comenzar.
-              </div>
-            )}
-          </div>
-
-          {isDirty && (
-            <div className="flex items-center justify-end gap-2.5 pt-2.5 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={submitting}
-                className="rounded-xl px-4 py-2 text-xs font-bold text-slate-500 transition hover:bg-slate-100 active:scale-[0.98]"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={submitting}
-                className="rounded-xl bg-slate-900 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98] disabled:opacity-50"
-              >
-                {submitting ? "Guardando..." : "Guardar receta"}
-              </button>
-            </div>
-          )}
-          {item.type === "PRODUCT" && (
-            <ProductCustomizationManager item={item} allIngredients={allIngredients} />
+              )}
+              {item.type === "PRODUCT" && (
+                <ProductCustomizationManager item={item} allIngredients={allIngredients} />
+              )}
+            </>
           )}
         </div>
       )}

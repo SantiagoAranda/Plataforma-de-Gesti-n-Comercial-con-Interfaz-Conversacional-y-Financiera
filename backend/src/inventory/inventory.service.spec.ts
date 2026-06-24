@@ -50,6 +50,15 @@ describe('InventoryService', () => {
       recipe: {
         findMany: mockFn(),
       },
+      serviceIngredient: {
+        findMany: (jest.fn() as any).mockResolvedValue([]),
+        create: mockFn(),
+        deleteMany: mockFn(),
+      },
+      reservation: {
+        findFirst: mockFn(),
+        update: mockFn(),
+      },
       order: {
         update: mockFn(),
       },
@@ -2617,5 +2626,182 @@ describe('InventoryService', () => {
         take: 20,
       }),
     );
+  });
+
+  describe('Service Consumption CRUD & History', () => {
+    it('listServiceConsumption returns active services with mapped service ingredients', async () => {
+      const { service, tx } = createService();
+      tx.item.findMany.mockResolvedValue([
+        {
+          id: 'service-1',
+          name: 'Spa Treatment',
+          price: new Prisma.Decimal(120),
+          durationMinutes: 60,
+          status: 'ACTIVE',
+          serviceIngredients: [
+            {
+              id: 'si-1',
+              ingredientId: 'ing-1',
+              quantityRequired: new Prisma.Decimal(10),
+              ingredient: {
+                name: 'Oil',
+                currentStock: new Prisma.Decimal(500),
+                consumptionUnit: 'ml',
+                customUnitLabel: 'ml',
+              },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listServiceConsumption(businessId);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        id: 'service-1',
+        name: 'Spa Treatment',
+        price: 120,
+        durationMinutes: 60,
+        status: 'ACTIVE',
+        ingredients: [
+          {
+            id: 'si-1',
+            ingredientId: 'ing-1',
+            name: 'Oil',
+            quantityRequired: 10,
+            currentStock: 500,
+            consumptionUnit: 'ml',
+            customUnitLabel: 'ml',
+          },
+        ],
+      });
+    });
+
+    it('replaceServiceConsumption replaces existing rules with validation', async () => {
+      const { service, tx } = createService();
+      tx.item.findFirst.mockResolvedValue({ id: 'service-1', type: 'SERVICE' });
+      tx.ingredient.findMany.mockResolvedValue([
+        { id: 'ing-1', businessId, status: 'ACTIVE' },
+      ]);
+      tx.serviceIngredient.deleteMany.mockResolvedValue({ count: 1 });
+      tx.serviceIngredient.create.mockResolvedValue({
+        id: 'new-si-1',
+        ingredientId: 'ing-1',
+        quantityRequired: new Prisma.Decimal(5),
+        ingredient: {
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(500),
+          consumptionUnit: 'ml',
+          customUnitLabel: 'ml',
+        },
+      });
+
+      const result = await service.replaceServiceConsumption(businessId, 'service-1', {
+        ingredients: [{ ingredientId: 'ing-1', quantityRequired: '5' }],
+      });
+
+      expect(result).toHaveLength(1);
+      expect(tx.serviceIngredient.deleteMany).toHaveBeenCalledWith({
+        where: { businessId, serviceItemId: 'service-1' },
+      });
+      expect(tx.serviceIngredient.create).toHaveBeenCalledWith({
+        data: {
+          businessId,
+          serviceItemId: 'service-1',
+          ingredientId: 'ing-1',
+          quantityRequired: new Prisma.Decimal(5),
+        },
+        include: {
+          ingredient: {
+            select: {
+              id: true,
+              name: true,
+              currentStock: true,
+              consumptionUnit: true,
+              customUnitLabel: true,
+            },
+          },
+        },
+      });
+    });
+
+    it('applyInventoryConsumptionForReservation validates stock and posts reservation movements', async () => {
+      const { service, tx } = createService();
+      tx.serviceIngredient.findMany.mockResolvedValue([
+        {
+          ingredientId: 'ing-1',
+          quantityRequired: new Prisma.Decimal(10),
+        },
+      ]);
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: 'ing-1',
+        name: 'Oil',
+        currentStock: new Prisma.Decimal(100),
+        averageCost: new Prisma.Decimal(1.5),
+      });
+      tx.ingredient.findMany.mockResolvedValue([
+        {
+          id: 'ing-1',
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(100),
+          averageCost: new Prisma.Decimal(1.5),
+        },
+      ]);
+      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({ id: 'm-1', ...data }),
+      );
+
+      const movements = await service.applyInventoryConsumptionForReservation(
+        tx as any,
+        businessId,
+        {
+          id: 'res-1',
+          itemId: 'service-1',
+          customerName: 'Alice',
+          item: { name: 'Spa' },
+          inventoryPostedAt: null,
+        },
+      );
+
+      expect(movements).toHaveLength(1);
+      expect(tx.reservation.update).toHaveBeenCalledWith({
+        where: { id: 'res-1' },
+        data: { inventoryPostedAt: expect.any(Date) },
+      });
+    });
+
+    it('reverseInventoryConsumptionForReservation generates returns and restores stock', async () => {
+      const { service, tx } = createService();
+      tx.inventoryMovement.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'm-sale-1',
+            ingredientId: 'ing-1',
+            quantity: new Prisma.Decimal(10),
+            unitCost: new Prisma.Decimal(1.5),
+            totalValue: new Prisma.Decimal(15),
+          },
+        ]) // SALE movements
+        .mockResolvedValueOnce([]); // no existing SALE_RETURN
+      tx.ingredient.findMany.mockResolvedValue([
+        {
+          id: 'ing-1',
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(90),
+          averageCost: new Prisma.Decimal(1.5),
+        },
+      ]);
+
+      const returnedMovements = await service.reverseInventoryConsumptionForReservation(
+        tx as any,
+        businessId,
+        'res-1',
+      );
+
+      expect(returnedMovements).toHaveLength(1);
+      expect(tx.ingredient.update).toHaveBeenCalledWith({
+        where: { id: 'ing-1' },
+        data: { currentStock: new Prisma.Decimal(100) },
+      });
+    });
   });
 });

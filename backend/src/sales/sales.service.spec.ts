@@ -3,6 +3,127 @@ import { Prisma } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { SalesService } from './sales.service';
 
+describe('SalesService.findAll', () => {
+  const businessId = 'business-1';
+
+  function createService(orders: any[], reservations: any[]) {
+    const prisma = {
+      order: {
+        findMany: (jest.fn() as any).mockResolvedValue(orders),
+      },
+      reservation: {
+        findMany: (jest.fn() as any).mockResolvedValue(reservations),
+      },
+      unitConversion: {
+        findMany: (jest.fn() as any).mockResolvedValue([]),
+      },
+    } as any;
+
+    return new SalesService(prisma, {} as any, {} as any, {} as any);
+  }
+
+  it('maps mixed manual orders without assuming the first line is the only type', async () => {
+    const createdAt = new Date('2026-06-24T12:00:00.000Z');
+    const service = createService(
+      [
+        {
+          id: 'order-1',
+          customerName: null,
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(150),
+          status: 'SENT',
+          inventoryPostedAt: null,
+          accountingPostedAt: null,
+          createdAt,
+          origin: 'MANUAL',
+          items: [
+            {
+              id: 'line-product',
+              itemId: 'product-1',
+              itemNameSnapshot: 'Producto',
+              itemTypeSnapshot: 'PRODUCT',
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(100),
+              lineTotal: new Prisma.Decimal(100),
+              inventoryModeSnapshot: 'NONE',
+              durationMinutesSnapshot: null,
+              excludedOptionalIngredientIds: null,
+              item: null,
+              options: [],
+            },
+            {
+              id: 'line-service',
+              itemId: 'service-1',
+              itemNameSnapshot: 'Servicio',
+              itemTypeSnapshot: 'SERVICE',
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(50),
+              lineTotal: new Prisma.Decimal(50),
+              inventoryModeSnapshot: 'NONE',
+              durationMinutesSnapshot: 60,
+              excludedOptionalIngredientIds: null,
+              item: null,
+              options: [],
+            },
+          ],
+        },
+      ],
+      [],
+    );
+
+    await expect(service.findAll(businessId)).resolves.toEqual([
+      expect.objectContaining({
+        id: 'order-1',
+        items: [
+          expect.objectContaining({ name: 'Producto' }),
+          expect.objectContaining({ name: 'Servicio', durationMin: 60 }),
+        ],
+      }),
+    ]);
+  });
+
+  it('maps an incomplete reservation safely when its item relation is missing', async () => {
+    const createdAt = new Date('2026-06-24T12:00:00.000Z');
+    const service = createService(
+      [],
+      [
+        {
+          id: 'reservation-1',
+          itemId: 'missing-service',
+          item: null,
+          customerName: null,
+          customerWhatsapp: null,
+          paymentMethod: null,
+          status: 'PENDING',
+          inventoryPostedAt: null,
+          createdAt,
+          updatedAt: createdAt,
+          origin: 'MANUAL',
+          date: createdAt,
+          startMinute: 600,
+        },
+      ],
+    );
+
+    await expect(service.findAll(businessId)).resolves.toEqual([
+      expect.objectContaining({
+        id: 'reservation-1',
+        total: 0,
+        inventoryPostedAt: null,
+        accountingPostedAt: null,
+        items: [
+          expect.objectContaining({
+            name: 'Servicio no disponible',
+            price: 0,
+            durationMin: null,
+          }),
+        ],
+      }),
+    ]);
+  });
+});
+
 describe('SalesService.remove', () => {
   const businessId = 'business-1';
   const mockFn = () => jest.fn() as any;

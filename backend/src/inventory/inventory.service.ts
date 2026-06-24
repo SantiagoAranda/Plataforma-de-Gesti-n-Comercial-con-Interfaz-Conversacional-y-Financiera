@@ -86,6 +86,7 @@ type ApplyInventoryMovementInput = {
   conversionDetail?: string | null;
   orderId?: string | null;
   orderItemId?: string | null;
+  reservationId?: string | null;
   detail?: string | null;
   occurredAt?: Date;
 };
@@ -559,7 +560,44 @@ export class InventoryService {
       };
     }
 
-    if (item.type === 'SERVICE' || item.inventoryMode === 'NONE') {
+    if (item.type === 'SERVICE') {
+      const serviceIngredients = await tx.serviceIngredient.findMany({
+        where: { businessId, serviceItemId: itemId, isActive: true },
+        include: {
+          ingredient: {
+            select: {
+              id: true,
+              name: true,
+              currentStock: true,
+              consumptionUnit: true,
+              customUnitLabel: true,
+            },
+          },
+        },
+      });
+
+      if (serviceIngredients.length === 0) {
+        return { sellable: true, status: 'SELLABLE' };
+      }
+
+      const requiredQuantity = this.decimal(quantity);
+      for (const si of serviceIngredients) {
+        const stock = this.decimal(si.ingredient.currentStock);
+        const reqQty = this.decimal(si.quantityRequired).mul(requiredQuantity);
+        if (stock.lt(reqQty)) {
+          const unitStr = si.ingredient.customUnitLabel || si.ingredient.consumptionUnit;
+          return {
+            sellable: false,
+            status: 'NO_STOCK',
+            message: `Insumo ${si.ingredient.name} insuficiente para el servicio ${item.name}. Disponible: ${stock.toString()} ${unitStr}, Requerido: ${reqQty.toString()} ${unitStr}.`,
+          };
+        }
+      }
+
+      return { sellable: true, status: 'SELLABLE' };
+    }
+
+    if (item.inventoryMode === 'NONE') {
       return { sellable: true, status: 'SELLABLE' };
     }
 
@@ -1216,6 +1254,18 @@ export class InventoryService {
 
     for (const orderItem of orderItems) {
       if (orderItem.itemTypeSnapshot === 'SERVICE') {
+        const serviceIngredients = await tx.serviceIngredient.findMany({
+          where: { businessId, serviceItemId: orderItem.itemId, isActive: true },
+        });
+        for (const si of serviceIngredients) {
+          consumptions.push({
+            orderItemId: orderItem.id,
+            soldItemId: orderItem.itemId,
+            itemName: orderItem.itemNameSnapshot,
+            ingredientId: si.ingredientId,
+            quantity: this.decimal(si.quantityRequired).mul(orderItem.quantity),
+          });
+        }
         continue;
       }
 
@@ -1620,6 +1670,7 @@ export class InventoryService {
         conversionDetail: input.conversionDetail ?? null,
         orderId: input.orderId ?? null,
         orderItemId: input.orderItemId ?? null,
+        reservationId: input.reservationId ?? null,
         detail: input.detail?.trim() || null,
         occurredAt: input.occurredAt ?? new Date(),
       },
@@ -2292,5 +2343,497 @@ export class InventoryService {
     }
 
     return parsed;
+  }
+
+  async listServiceConsumption(businessId: string) {
+    const services = await this.prisma.item.findMany({
+      where: { businessId, type: 'SERVICE', status: 'ACTIVE' },
+      include: {
+        serviceIngredients: {
+          where: { isActive: true },
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                currentStock: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return services.map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: Number(s.price),
+      durationMinutes: s.durationMinutes,
+      status: s.status,
+      ingredients: s.serviceIngredients.map((si) => ({
+        id: si.id,
+        ingredientId: si.ingredientId,
+        name: si.ingredient.name,
+        quantityRequired: Number(si.quantityRequired),
+        currentStock: Number(si.ingredient.currentStock),
+        consumptionUnit: si.ingredient.consumptionUnit,
+        customUnitLabel: si.ingredient.customUnitLabel,
+      })),
+    }));
+  }
+
+  async getServiceConsumption(businessId: string, serviceItemId: string) {
+    const service = await this.prisma.item.findFirst({
+      where: { id: serviceItemId, businessId, type: 'SERVICE' },
+      include: {
+        serviceIngredients: {
+          where: { isActive: true },
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                currentStock: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!service) {
+      throw new NotFoundException('Service not found');
+    }
+
+    return {
+      id: service.id,
+      name: service.name,
+      price: Number(service.price),
+      durationMinutes: service.durationMinutes,
+      status: service.status,
+      ingredients: service.serviceIngredients.map((si) => ({
+        id: si.id,
+        ingredientId: si.ingredientId,
+        name: si.ingredient.name,
+        quantityRequired: Number(si.quantityRequired),
+        currentStock: Number(si.ingredient.currentStock),
+        consumptionUnit: si.ingredient.consumptionUnit,
+        customUnitLabel: si.ingredient.customUnitLabel,
+      })),
+    };
+  }
+
+  async replaceServiceConsumption(
+    businessId: string,
+    serviceItemId: string,
+    dto: { ingredients: Array<{ ingredientId: string; quantityRequired: string }> },
+  ) {
+    const service = await this.prisma.item.findFirst({
+      where: { id: serviceItemId, businessId, type: 'SERVICE' },
+    });
+    if (!service) {
+      throw new NotFoundException('Service not found');
+    }
+
+    // Validate ingredients belong to the same business and quantity > 0
+    const ingredientIds = dto.ingredients.map((i) => i.ingredientId);
+    if (new Set(ingredientIds).size !== ingredientIds.length) {
+      throw new BadRequestException('Duplicate ingredients are not allowed');
+    }
+
+    const dbIngredients = await this.prisma.ingredient.findMany({
+      where: { id: { in: ingredientIds }, businessId, status: 'ACTIVE' },
+    });
+
+    if (dbIngredients.length !== ingredientIds.length) {
+      throw new BadRequestException('One or more ingredients are invalid or inactive');
+    }
+
+    for (const ing of dto.ingredients) {
+      const qty = this.decimal(ing.quantityRequired);
+      if (qty.lte(0)) {
+        throw new BadRequestException('quantityRequired must be greater than zero');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Deactivate/delete previous service ingredients
+      await tx.serviceIngredient.deleteMany({
+        where: { businessId, serviceItemId },
+      });
+
+      // Create new service ingredients
+      const created = [];
+      for (const ing of dto.ingredients) {
+        const qty = this.decimal(ing.quantityRequired);
+        const item = await tx.serviceIngredient.create({
+          data: {
+            businessId,
+            serviceItemId,
+            ingredientId: ing.ingredientId,
+            quantityRequired: qty,
+          },
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                currentStock: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+        });
+        created.push(item);
+      }
+
+      return created.map((si) => ({
+        id: si.id,
+        ingredientId: si.ingredientId,
+        name: si.ingredient.name,
+        quantityRequired: Number(si.quantityRequired),
+        currentStock: Number(si.ingredient.currentStock),
+        consumptionUnit: si.ingredient.consumptionUnit,
+        customUnitLabel: si.ingredient.customUnitLabel,
+      }));
+    });
+  }
+
+  async applyInventoryConsumptionForReservation(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    reservation: { id: string; itemId: string; customerName: string | null; item: { name: string }; inventoryPostedAt?: Date | null },
+    occurredAt: Date = new Date(),
+  ) {
+    if (reservation.inventoryPostedAt) {
+      return [];
+    }
+
+    const serviceIngredients = await tx.serviceIngredient.findMany({
+      where: { businessId, serviceItemId: reservation.itemId, isActive: true },
+    });
+
+    if (serviceIngredients.length === 0) {
+      // Mark as posted anyway to prevent repeating this check
+      await tx.reservation.update({
+        where: { id: reservation.id },
+        data: { inventoryPostedAt: occurredAt },
+      });
+      return [];
+    }
+
+    const consumptions: OrderIngredientConsumption[] = serviceIngredients.map((si) => ({
+      ingredientId: si.ingredientId,
+      quantity: this.decimal(si.quantityRequired),
+      orderItemId: `virtual-res-oi-${reservation.id}`, // Placeholder
+      soldItemId: reservation.itemId,
+      itemName: reservation.item.name,
+    }));
+
+    await this.validateStockAvailability(businessId, consumptions, tx);
+
+    const movements = [];
+    for (const consumption of consumptions) {
+      const movement = await this.applyInventoryMovement(tx, businessId, {
+        ingredientId: consumption.ingredientId,
+        type: 'SALE',
+        quantity: consumption.quantity,
+        referenceType: 'RESERVATION',
+        reservationId: reservation.id,
+        detail: `Service consumption: ${reservation.item.name}`,
+        occurredAt,
+      });
+      movements.push(movement);
+    }
+
+    await tx.reservation.update({
+      where: { id: reservation.id },
+      data: { inventoryPostedAt: occurredAt },
+    });
+
+    return movements;
+  }
+
+  async reverseInventoryConsumptionForReservation(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    reservationId: string,
+  ) {
+    const saleMovements = await tx.inventoryMovement.findMany({
+      where: {
+        businessId,
+        reservationId,
+        type: 'SALE',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!saleMovements.length) {
+      return [];
+    }
+
+    const existingReturn = await tx.inventoryMovement.findMany({
+      where: {
+        businessId,
+        reservationId,
+        type: 'SALE_RETURN',
+      },
+      take: 1,
+      select: { id: true },
+    });
+
+    if (existingReturn.length) {
+      throw new ConflictException('Reservation inventory already reversed');
+    }
+
+    const ingredientIds = Array.from(
+      new Set(
+        saleMovements
+          .map((m) => m.ingredientId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    const ingredients = await tx.ingredient.findMany({
+      where: {
+        businessId,
+        id: { in: ingredientIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        currentStock: true,
+        averageCost: true,
+      },
+    });
+
+    const ingredientState = new Map(
+      ingredients.map((ing) => [
+        ing.id,
+        {
+          name: ing.name,
+          currentStock: this.decimal(ing.currentStock),
+          averageCost: this.decimal(ing.averageCost),
+        },
+      ]),
+    );
+
+    const created = [];
+    for (const movement of saleMovements) {
+      const state = ingredientState.get(movement.ingredientId!);
+      if (!state) {
+        throw new NotFoundException(
+          `Inventory target not found for return movement (${movement.id})`,
+        );
+      }
+
+      const quantity = this.decimal(movement.quantity);
+      const stockAfter = state.currentStock.add(quantity);
+
+      const createdMovement = await tx.inventoryMovement.create({
+        data: {
+          businessId,
+          ingredientId: movement.ingredientId,
+          type: 'SALE_RETURN',
+          quantity,
+          unitCost: movement.unitCost,
+          totalValue: movement.totalValue,
+          stockAfter,
+          averageCostAfter: state.averageCost,
+          referenceType: 'RESERVATION',
+          reservationId,
+          detail: 'Sale return generated from reservation cancellation',
+        },
+      });
+
+      await tx.ingredient.update({
+        where: { id: movement.ingredientId! },
+        data: {
+          currentStock: stockAfter,
+        },
+      });
+
+      state.currentStock = stockAfter;
+      created.push(createdMovement);
+    }
+
+    return created;
+  }
+
+  async getRecipeConsumptionHistory(
+    businessId: string,
+    itemId: string,
+    query: { from?: string; to?: string },
+  ) {
+    const where: Prisma.InventoryMovementWhereInput = {
+      businessId,
+      type: { in: ['SALE', 'SALE_RETURN'] },
+      orderItem: { itemId },
+    };
+
+    const occurredAtFilter: any = {};
+    if (query.from) {
+      occurredAtFilter.gte = this.parseDate(query.from, 'from');
+    }
+    if (query.to) {
+      occurredAtFilter.lte = this.parseDate(query.to, 'to');
+    }
+    if (query.from || query.to) {
+      where.occurredAt = occurredAtFilter;
+    }
+
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where,
+      include: {
+        ingredient: {
+          select: {
+            id: true,
+            name: true,
+            consumptionUnit: true,
+            customUnitLabel: true,
+          },
+        },
+        orderItem: {
+          select: {
+            id: true,
+            quantity: true,
+            order: {
+              select: {
+                id: true,
+                documentNumber: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+    });
+
+    return movements.map((m) => ({
+      id: m.id,
+      type: m.type,
+      quantity: Number(m.quantity),
+      unitCost: Number(m.unitCost),
+      totalValue: Number(m.totalValue),
+      occurredAt: m.occurredAt,
+      ingredient: m.ingredient
+        ? {
+            id: m.ingredient.id,
+            name: m.ingredient.name,
+            consumptionUnit: m.ingredient.consumptionUnit,
+            customUnitLabel: m.ingredient.customUnitLabel,
+          }
+        : null,
+      order: m.orderItem?.order
+        ? {
+            id: m.orderItem.order.id,
+            documentNumber: m.orderItem.order.documentNumber,
+            quantitySold: m.orderItem.quantity,
+            createdAt: m.orderItem.order.createdAt,
+          }
+        : null,
+    }));
+  }
+
+  async getServiceConsumptionHistory(
+    businessId: string,
+    serviceItemId: string,
+    query: { from?: string; to?: string },
+  ) {
+    const where: Prisma.InventoryMovementWhereInput = {
+      businessId,
+      type: { in: ['SALE', 'SALE_RETURN'] },
+      OR: [
+        { orderItem: { itemId: serviceItemId } },
+        { reservation: { itemId: serviceItemId } },
+      ],
+    };
+
+    const occurredAtFilter: any = {};
+    if (query.from) {
+      occurredAtFilter.gte = this.parseDate(query.from, 'from');
+    }
+    if (query.to) {
+      occurredAtFilter.lte = this.parseDate(query.to, 'to');
+    }
+    if (query.from || query.to) {
+      where.occurredAt = occurredAtFilter;
+    }
+
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where,
+      include: {
+        ingredient: {
+          select: {
+            id: true,
+            name: true,
+            consumptionUnit: true,
+            customUnitLabel: true,
+          },
+        },
+        orderItem: {
+          select: {
+            id: true,
+            quantity: true,
+            order: {
+              select: {
+                id: true,
+                documentNumber: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+        reservation: {
+          select: {
+            id: true,
+            customerName: true,
+            date: true,
+            startMinute: true,
+          },
+        },
+      },
+      orderBy: { occurredAt: 'desc' },
+    });
+
+    return movements.map((m) => ({
+      id: m.id,
+      type: m.type,
+      quantity: Number(m.quantity),
+      unitCost: Number(m.unitCost),
+      totalValue: Number(m.totalValue),
+      occurredAt: m.occurredAt,
+      ingredient: m.ingredient
+        ? {
+            id: m.ingredient.id,
+            name: m.ingredient.name,
+            consumptionUnit: m.ingredient.consumptionUnit,
+            customUnitLabel: m.ingredient.customUnitLabel,
+          }
+        : null,
+      order: m.orderItem?.order
+        ? {
+            id: m.orderItem.order.id,
+            documentNumber: m.orderItem.order.documentNumber,
+            quantitySold: m.orderItem.quantity,
+            createdAt: m.orderItem.order.createdAt,
+          }
+        : null,
+      reservation: m.reservation
+        ? {
+            id: m.reservation.id,
+            customerName: m.reservation.customerName,
+            date: m.reservation.date,
+            startMinute: m.reservation.startMinute,
+          }
+        : null,
+    }));
   }
 }

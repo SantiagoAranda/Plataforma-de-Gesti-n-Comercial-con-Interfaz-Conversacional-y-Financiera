@@ -19,6 +19,7 @@ import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDeta
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
+import { ExpandableServiceConsumptionCard } from "@/src/components/inventory/ExpandableServiceConsumptionCard";
 import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
 import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
@@ -28,13 +29,15 @@ import {
   getInventorySummary,
   getRecipesBulk,
   getSimpleItemsInventorySummary,
+  listServiceConsumption,
   type InventorySummaryIngredient,
   type RecipeLine,
   type SimpleItemInventorySummary,
+  type ServiceConsumptionItem,
 } from "@/src/services/inventory";
 import type { Item } from "@/src/types/item";
 
-type UITab = "recipes" | "ingredients" | "products";
+type UITab = "recipes" | "ingredients" | "products" | "services";
 
 function recipeStatus(item: Item, lines: RecipeLine[]) {
   const mandatory = lines.filter((line) => !line.isOptional);
@@ -66,7 +69,9 @@ function InventarioPageContent() {
         ? "products"
         : tabParam === "insumos" || tabParam === "ingredients" || searchParams?.has("ingredientId")
           ? "ingredients"
-          : "recipes";
+          : tabParam === "servicios" || tabParam === "services"
+            ? "services"
+            : "recipes";
     setActiveTab(matchedTab);
   }, [searchParams]);
 
@@ -76,7 +81,14 @@ function InventarioPageContent() {
 
   const setTab = useCallback((newTab: UITab) => {
     setActiveTab(newTab);
-    const alias = newTab === "ingredients" ? "insumos" : newTab === "products" ? "productos" : "recipes";
+    const alias =
+      newTab === "ingredients"
+        ? "insumos"
+        : newTab === "products"
+          ? "productos"
+          : newTab === "services"
+            ? "servicios"
+            : "recipes";
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set("tab", alias);
     window.history.replaceState(null, "", window.location.pathname + "?" + currentParams.toString());
@@ -89,6 +101,7 @@ function InventarioPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
   const [simpleProducts, setSimpleProducts] = useState<SimpleItemInventorySummary[]>([]);
+  const [services, setServices] = useState<ServiceConsumptionItem[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [recipesByItemId, setRecipesByItemId] = useState<Record<string, RecipeLine[]>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -150,15 +163,17 @@ function InventarioPageContent() {
       setLoading(true);
       setError(null);
 
-      const [summaryData, itemsData, simpleProductsData] = await Promise.all([
+      const [summaryData, itemsData, simpleProductsData, servicesData] = await Promise.all([
         getInventorySummary({ status: "ACTIVE" }),
         api<Item[]>("/items?status=ACTIVE").catch(() => []),
         getSimpleItemsInventorySummary().catch(() => []),
+        listServiceConsumption().catch(() => []),
       ]);
 
       setSummary(summaryData ?? []);
       setSimpleProducts(simpleProductsData ?? []);
       setItems((itemsData ?? []).filter((item) => item.status === "ACTIVE"));
+      setServices(servicesData ?? []);
 
       const inventoryProducts = (itemsData ?? []).filter(
         (item) => item.status === "ACTIVE" && item.type === "PRODUCT" && item.inventoryMode === "RECIPE_BASED",
@@ -218,6 +233,12 @@ function InventarioPageContent() {
     if (!query) return simpleProducts;
     return simpleProducts.filter((item) => item.name.toLowerCase().includes(query));
   }, [simpleProducts, searchQuery]);
+
+  const visibleServices = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return services;
+    return services.filter((item) => item.name.toLowerCase().includes(query));
+  }, [services, searchQuery]);
 
   const recipeCost = useCallback(
     (itemId: string) => {
@@ -292,18 +313,18 @@ function InventarioPageContent() {
           </section>
 
           <section className="rounded-full bg-slate-100 p-1 shadow-sm ring-1 ring-black/5">
-            <div className="grid grid-cols-3 gap-1">
-              {(["recipes", "ingredients", "products"] as const).map((nextTab) => (
+            <div className="grid grid-cols-4 gap-1">
+              {(["recipes", "ingredients", "products", "services"] as const).map((nextTab) => (
                 <button
                   key={nextTab}
                   type="button"
                   onClick={() => setTab(nextTab)}
                   className={cn(
-                    "h-9 rounded-full text-xs font-bold transition-all active:scale-[0.98]",
+                    "h-9 rounded-full text-[10px] sm:text-xs font-bold transition-all active:scale-[0.98]",
                     activeTab === nextTab ? "bg-slate-900 text-white shadow-md" : "bg-transparent text-slate-500 hover:text-slate-800",
                   )}
                 >
-                  {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : "Productos"}
+                  {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : nextTab === "products" ? "Productos" : "Servicios"}
                 </button>
               ))}
             </div>
@@ -320,6 +341,24 @@ function InventarioPageContent() {
           ) : activeTab === "products" ? (
             <section className="space-y-2">
               <SimpleProductList products={visibleProducts} onSelect={handleSelectProduct} />
+            </section>
+          ) : activeTab === "services" ? (
+            <section className="space-y-2">
+              {visibleServices.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
+                  No hay servicios para mostrar.
+                </div>
+              ) : (
+                visibleServices.map((service) => (
+                  <ExpandableServiceConsumptionCard
+                    key={service.id}
+                    service={service}
+                    allIngredients={summary}
+                    onSaveSuccess={load}
+                    initiallyExpanded={expandedItemId === service.id}
+                  />
+                ))
+              )}
             </section>
           ) : (
             <section className="space-y-2">
@@ -347,7 +386,15 @@ function InventarioPageContent() {
       <InventoryChatActionBar
         value={searchQuery}
         onChange={setSearchQuery}
-        placeholder={activeTab === "ingredients" ? "Buscar insumo..." : activeTab === "products" ? "Buscar producto..." : "Buscar receta..."}
+        placeholder={
+          activeTab === "ingredients"
+            ? "Buscar insumo..."
+            : activeTab === "products"
+              ? "Buscar producto..."
+              : activeTab === "services"
+                ? "Buscar servicio..."
+                : "Buscar receta..."
+        }
         onSubmit={() => {}}
         onCreateIngredient={toggleIngredientSheetFromBar}
         createIngredientActive={ingredientSheetOpen}

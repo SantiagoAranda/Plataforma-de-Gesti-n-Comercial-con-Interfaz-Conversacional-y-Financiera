@@ -442,4 +442,82 @@ export function replaceRecipe(itemId: string, dto: ReplaceRecipeDto) {
     body: JSON.stringify(dto),
   });
 }
+export type ServiceIngredientLine = {
+  id: string;
+  ingredientId: string;
+  name: string;
+  quantityRequired: number;
+  currentStock: number;
+  consumptionUnit: string;
+  customUnitLabel: string | null;
+};
 
+export type ServiceConsumptionItem = {
+  id: string;
+  name: string;
+  price: number;
+  durationMinutes: number | null;
+  status: string;
+  ingredients: ServiceIngredientLine[];
+};
+
+export type ReplaceServiceConsumptionDto = {
+  ingredients: {
+    ingredientId: string;
+    quantityRequired: string | number;
+  }[];
+};
+
+export type ConsumptionHistoryLine = {
+  id: string;
+  type: string;
+  quantity: number;
+  unitCost: number;
+  totalValue: number;
+  occurredAt: string;
+  ingredient: {
+    id: string;
+    name: string;
+    consumptionUnit: string;
+    customUnitLabel: string | null;
+  } | null;
+  order?: {
+    id: string;
+    documentNumber: string;
+    quantitySold: number;
+    createdAt: string;
+  } | null;
+  reservation?: {
+    id: string;
+    customerName: string;
+    date: string;
+    startMinute: number;
+  } | null;
+};
+
+export function listServiceConsumption() {
+  return api<ServiceConsumptionItem[]>(`/inventory/services/consumption`);
+}
+
+export function replaceServiceConsumption(serviceItemId: string, dto: ReplaceServiceConsumptionDto) {
+  return api<ServiceIngredientLine[]>(`/inventory/services/${serviceItemId}/consumption`, {
+    method: "PUT",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function getRecipeConsumptionHistory(itemId: string, query: { from?: string; to?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (query.from) qs.set("from", query.from);
+  if (query.to) qs.set("to", query.to);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<ConsumptionHistoryLine[]>(`/inventory/recipes/${itemId}/consumption-history${suffix}`);
+}
+
+export function getServiceConsumptionHistory(serviceItemId: string, query: { from?: string; to?: string } = {}) {
+  const qs = new URLSearchParams();
+  if (query.from) qs.set("from", query.from);
+  if (query.to) qs.set("to", query.to);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<ConsumptionHistoryLine[]>(`/inventory/services/${serviceItemId}/consumption-history${suffix}`);
+}

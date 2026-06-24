@@ -145,7 +145,9 @@ export class PublicService {
                   selectedByDefault: option.selectedByDefault,
                   removable: option.removable,
                   sortOrder: option.sortOrder,
-                  ingredient: option.ingredient,
+                  ingredient: option.ingredient
+                    ? { id: option.ingredient.id, name: option.ingredient.name }
+                    : null,
                   item: option.item,
                   unit: option.unit,
                   hasStock,
@@ -528,12 +530,7 @@ export class PublicService {
     for (const [index, item] of data.entries()) {
       const sellability = itemSellabilities[index];
       if (sellability.sellable) {
-        visibleItems.push({
-          ...item,
-          sellability,
-          currentStock: sellability.currentStock,
-          averageCost: sellability.averageCost,
-        });
+        visibleItems.push(item);
       }
     }
 
@@ -546,20 +543,28 @@ export class PublicService {
     return {
       business: publicBusiness,
       data: await Promise.all(
-        visibleItems.map(async (item) => ({
-          ...item,
-          price: Number(item.price),
-          recipes: item.recipes.map((recipe: PublicRecipeLine) => ({
-            ingredientId: recipe.ingredientId,
-            quantityRequired: Number(recipe.quantityRequired),
-            isOptional: recipe.isOptional,
-            ingredient: recipe.ingredient,
-          })),
-          optionGroups: await this.mapPublicOptionGroups(
-            item.optionGroups as PublicOptionGroupForCatalog[],
-            optionSellabilityById,
-          ),
-        })),
+        visibleItems.map(async (item) => {
+          const { currentStock, averageCost, ...cleanItem } = item;
+          return {
+            ...cleanItem,
+            price: Number(item.price),
+            sellability: { sellable: true },
+            recipes: item.recipes
+              .filter((recipe: PublicRecipeLine) => recipe.isOptional)
+              .map((recipe: PublicRecipeLine) => ({
+                ingredientId: recipe.ingredientId,
+                isOptional: recipe.isOptional,
+                ingredient: {
+                  id: recipe.ingredient.id,
+                  name: recipe.ingredient.name,
+                },
+              })),
+            optionGroups: await this.mapPublicOptionGroups(
+              item.optionGroups as PublicOptionGroupForCatalog[],
+              optionSellabilityById,
+            ),
+          };
+        }),
       ),
     };
   }

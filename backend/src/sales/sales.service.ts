@@ -130,16 +130,18 @@ export class SalesService {
   }
 
   private mapRecipeForSales(item: any) {
-    return (item?.recipes ?? []).map((recipe: any) => ({
-      ingredientId: recipe.ingredientId,
-      isOptional: Boolean(recipe.isOptional),
-      quantityRequired: Number(recipe.quantityRequired),
-      ingredient: {
-        id: recipe.ingredient.id,
-        name: recipe.ingredient.name,
-        consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
-      },
-    }));
+    return (item?.recipes ?? [])
+      .filter((recipe: any) => recipe?.ingredient)
+      .map((recipe: any) => ({
+        ingredientId: recipe.ingredientId,
+        isOptional: Boolean(recipe.isOptional),
+        quantityRequired: Number(recipe.quantityRequired ?? 0),
+        ingredient: {
+          id: recipe.ingredient.id,
+          name: recipe.ingredient.name ?? 'Insumo no disponible',
+          consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
+        },
+      }));
   }
 
   private mapOptionsForSales(orderItem: any) {
@@ -182,6 +184,7 @@ export class SalesService {
   private async resolveOrderLines(
     businessId: string,
     inputs: SalesOrderLineInputDto[],
+    options?: { isManual?: boolean },
   ) {
     if (!inputs.length) {
       throw new BadRequestException('Order must contain at least one item');
@@ -213,7 +216,9 @@ export class SalesService {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    this.ensureSingleItemType(dbItems);
+    if (!options?.isManual) {
+      this.ensureSingleItemType(dbItems);
+    }
     const itemById = new Map(dbItems.map((item) => [item.id, item]));
     const resolved = await Promise.all(
       inputs.map(async (input) => {
@@ -511,10 +516,11 @@ export class SalesService {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    const itemType = this.ensureSingleItemType(itemsFromDb);
+    const isManual = (dto.origin ?? 'MANUAL') !== 'PUBLIC_STORE';
+    const itemType = isManual ? null : this.ensureSingleItemType(itemsFromDb);
 
     // BIFURCACIÓN SEGÚN TIPO
-    if (itemType === 'SERVICE') {
+    if (!isManual && itemType === 'SERVICE') {
       if (dto.items.length !== 1) {
         throw new BadRequestException('Services with appointment must be registered separately');
       }
@@ -585,6 +591,7 @@ export class SalesService {
     const { lines: orderItemsData, total } = await this.resolveOrderLines(
       businessId,
       dto.items,
+      { isManual },
     );
 
     const order = await this.prisma.order.create({
@@ -688,29 +695,36 @@ export class SalesService {
       })),
     }));
 
-    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => ({
-      id: r.id,
-      sourceType: 'RESERVATION',
-      customerName: r.customerName,
-      customerWhatsapp: r.customerWhatsapp,
-      paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
-      total: Number(r.item.price),
-      status: this.mapReservationStatus(r.status),
-      createdAt: r.createdAt,
-      origin: r.origin as 'MANUAL' | 'PUBLIC_STORE',
-      scheduledAt: this.toScheduledAt(r.date, r.startMinute),
-      type: 'SERVICIO',
-      items: [
-        {
-          name: r.item.name,
-          qty: 1,
-          unitPrice: Number(r.item.price),
-          price: Number(r.item.price),
-          itemId: r.itemId,
-          durationMin: r.item.durationMinutes ?? null,
-        },
-      ],
-    }));
+    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => {
+      const item = (r as any).item;
+      const price = Number(item?.price ?? 0);
+
+      return {
+        id: r.id,
+        sourceType: 'RESERVATION',
+        customerName: r.customerName ?? null,
+        customerWhatsapp: r.customerWhatsapp ?? null,
+        paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
+        total: Number.isFinite(price) ? price : 0,
+        status: this.mapReservationStatus(r.status),
+        inventoryPostedAt: r.inventoryPostedAt ?? null,
+        accountingPostedAt: r.status === 'CONFIRMED' ? (r.updatedAt ?? null) : null,
+        createdAt: r.createdAt,
+        origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
+        scheduledAt: this.toScheduledAt(r.date, r.startMinute),
+        type: 'SERVICIO',
+        items: [
+          {
+            name: item?.name ?? 'Servicio no disponible',
+            qty: 1,
+            unitPrice: Number.isFinite(price) ? price : 0,
+            price: Number.isFinite(price) ? price : 0,
+            itemId: r.itemId,
+            durationMin: item?.durationMinutes ?? null,
+          },
+        ],
+      };
+    });
 
     return [...mappedOrders, ...mappedReservations].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -923,11 +937,20 @@ export class SalesService {
           )
         : existingMovements;
 
+      const inventoryMovements = res.inventoryPostedAt
+        ? []
+        : await this.inventoryService.applyInventoryConsumptionForReservation(
+            tx,
+            businessId,
+            updated,
+          );
+
       return {
         order: virtualOrder, // Frontend expects something that looks like an order/sale
         accountingCreated: shouldPostAccounting,
-        alreadyPosted: !shouldPostAccounting,
+        alreadyPosted: !shouldPostAccounting && res.inventoryPostedAt != null,
         movements,
+        inventoryMovements,
         isReservation: true,
       };
     }, {
@@ -1010,8 +1033,12 @@ export class SalesService {
   }
 
   private mapReservationToVirtualOrder(res: any) {
+    if (!res?.item) {
+      throw new BadRequestException('Reservation service is not available');
+    }
+
     // Falls back to current item price if no snapshot (as per user request)
-    const price = res.item.price;
+    const price = res.item.price ?? 0;
 
     return {
       id: res.id,
@@ -1133,12 +1160,12 @@ export class SalesService {
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
-    const resolved = await this.resolveOrderLines(businessId, [dto]);
+    const resolved = await this.resolveOrderLines(businessId, [dto], { isManual: order.origin === 'MANUAL' });
     const item = await this.prisma.item.findFirstOrThrow({
       where: { id: dto.itemId, businessId },
     });
 
-    if (order.items.length > 0) {
+    if (order.origin !== 'MANUAL' && order.items.length > 0) {
       const existingType = this.ensureSingleItemType(order.items);
       if (item.type !== existingType) {
         throw new BadRequestException(
@@ -1185,14 +1212,18 @@ export class SalesService {
 
     if (!oi) throw new NotFoundException('OrderItem not found');
 
-    const resolved = await this.resolveOrderLines(businessId, [
-      {
-        itemId: dto.itemId ?? oi.itemId,
-        quantity: dto.quantity,
-        optionSelections: dto.optionSelections,
-        excludedOptionalIngredientIds: dto.excludedOptionalIngredientIds,
-      },
-    ]);
+    const resolved = await this.resolveOrderLines(
+      businessId,
+      [
+        {
+          itemId: dto.itemId ?? oi.itemId,
+          quantity: dto.quantity,
+          optionSelections: dto.optionSelections,
+          excludedOptionalIngredientIds: dto.excludedOptionalIngredientIds,
+        },
+      ],
+      { isManual: order.origin === 'MANUAL' },
+    );
 
     return this.prisma.$transaction(async (tx) => {
       await tx.orderItem.delete({ where: { id: oi.id } });
@@ -1272,10 +1303,22 @@ export class SalesService {
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
     if (sourceType === 'RESERVATION') {
-      return this.prisma.reservation.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
-        include: { item: true },
+      return this.prisma.$transaction(async (tx) => {
+        const res = await tx.reservation.findFirst({
+          where: { id, businessId },
+          include: { item: true },
+        });
+        if (!res) throw new NotFoundException('Reservation not found');
+
+        if (res.inventoryPostedAt) {
+          await this.inventoryService.reverseInventoryConsumptionForReservation(tx, businessId, res.id);
+        }
+
+        return tx.reservation.update({
+          where: { id },
+          data: { status: 'CANCELLED' },
+          include: { item: true },
+        });
       });
     }
 
