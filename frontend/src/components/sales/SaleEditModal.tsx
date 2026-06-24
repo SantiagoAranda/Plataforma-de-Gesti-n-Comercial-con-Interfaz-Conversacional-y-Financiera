@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Plus, Trash2, ChevronDown, Send } from "lucide-react";
 import toast from "react-hot-toast";
 import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
@@ -12,6 +12,8 @@ import ProductOptionSelector, { type OptionSelection } from "@/src/components/sh
 import type { PublicItemOptionGroup } from "@/src/types/item";
 
 type EditableItem = {
+  key: string;
+  orderItemId?: string;
   itemId?: string;
   qty: number;
   name: string;
@@ -91,7 +93,7 @@ export default function SaleEditModal({
   const [customizing, setCustomizing] = useState<{
     item: BusinessItem;
     quantity: number;
-    editIndex?: number;
+    editKey?: string;
     initialSelections?: OptionSelection[];
   } | null>(null);
 
@@ -134,9 +136,10 @@ export default function SaleEditModal({
     setAvailabilityError(null);
     setAvailableDates([]);
     setAvailableSlots([]);
-
     setItems(
-      sale.items.map((it) => ({
+      sale.items.map((it, idx) => ({
+        key: it.orderItemId || `existing-${idx}-${Math.random()}`,
+        orderItemId: it.orderItemId,
         itemId: it.itemId || (it as any).id,
         qty: sale.type === "SERVICIO" ? 1 : it.qty,
         name: it.name,
@@ -155,7 +158,6 @@ export default function SaleEditModal({
         excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
       }))
     );
-
     const parts = parseLocalDateTimeParts(sale.scheduledAt);
     if (sale.type === "SERVICIO" && parts) {
       setScheduledDate(parts.date);
@@ -214,14 +216,14 @@ export default function SaleEditModal({
 
   if (!open || !sale) return null;
 
-  const updateItemQty = (idx: number, qty: number) => {
+  const updateItemQty = (key: string, qty: number) => {
     setItems((prev) =>
-      prev.map((it, i) => (i === idx ? { ...it, qty: normalizeQty(type, qty) } : it))
+      prev.map((it) => (it.key === key ? { ...it, qty: normalizeQty(type, qty) } : it))
     );
   };
 
-  const removeItem = (idx: number) => {
-    setItems((prev) => prev.filter((_, i) => i !== idx));
+  const removeItem = (key: string) => {
+    setItems((prev) => prev.filter((it) => it.key !== key));
   };
 
   const handleAddItem = () => {
@@ -251,6 +253,7 @@ export default function SaleEditModal({
     setItems((prev) => [
       ...prev,
       {
+        key: `new-${Date.now()}-${Math.random()}`,
         itemId: bi.id,
         qty,
         name: bi.name,
@@ -263,8 +266,7 @@ export default function SaleEditModal({
   };
 
   const handleSave = () => {
-    const cleanedName = customerName.trim();
-    if (!cleanedName) return;
+    const cleanedName = customerName.trim() || "Consumidor final";
 
     let scheduledAt: string | undefined = undefined;
     if (type === "SERVICIO") {
@@ -426,8 +428,8 @@ export default function SaleEditModal({
             <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items cargados</span>
 
             <div className="space-y-2">
-              {items.map((it, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+              {items.map((it) => (
+                <div key={it.key} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
                   <ItemThumbnail />
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
@@ -443,9 +445,9 @@ export default function SaleEditModal({
                   ) : null}
                   {type === "PRODUCTO" && !isReservation && !isPosted && (
                     <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
-                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
+                      <button onClick={() => updateItemQty(it.key, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
                       <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
-                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
+                      <button onClick={() => updateItemQty(it.key, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
                     </div>
                   )}
 
@@ -458,7 +460,7 @@ export default function SaleEditModal({
                           if (businessItem) setCustomizing({
                             item: businessItem,
                             quantity: it.qty,
-                            editIndex: idx,
+                            editKey: it.key,
                             initialSelections: it.optionSelections,
                           });
                         }}
@@ -468,7 +470,7 @@ export default function SaleEditModal({
                       </button>
                     )}
                     <button
-                      onClick={() => removeItem(idx)}
+                      onClick={() => removeItem(it.key)}
                       className="p-2 text-neutral-300 hover:text-rose-500 transition"
                     >
                       <Trash2 size={16} />
@@ -608,10 +610,10 @@ export default function SaleEditModal({
           initialSelections={customizing.initialSelections}
           onClose={() => setCustomizing(null)}
           onConfirm={({ optionSelections, optionNames, unitPrice }) => {
-            if (customizing.editIndex != null) {
+            if (customizing.editKey != null) {
               setItems((current) =>
-                current.map((line, index) =>
-                  index === customizing.editIndex
+                current.map((line) =>
+                  line.key === customizing.editKey
                     ? { ...line, optionSelections, optionNames, price: unitPrice }
                     : line,
                 ),
@@ -620,6 +622,7 @@ export default function SaleEditModal({
               setItems((current) => [
                 ...current,
                 {
+                  key: `new-${Date.now()}-${Math.random()}`,
                   itemId: customizing.item.id,
                   qty: customizing.quantity,
                   name: customizing.item.name,

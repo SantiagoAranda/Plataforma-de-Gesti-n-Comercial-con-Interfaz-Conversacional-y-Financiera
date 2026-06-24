@@ -590,7 +590,9 @@ export class SalesService {
     const order = await this.prisma.order.create({
       data: {
         businessId,
-        customerName: dto.customerName?.trim() || null,
+        customerName: dto.origin === 'PUBLIC_STORE'
+          ? (dto.customerName?.trim() || null)
+          : (dto.customerName?.trim() || 'Consumidor final'),
         customerWhatsapp: dto.customerWhatsapp?.trim() || null,
         note: dto.note,
         paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
@@ -1422,11 +1424,12 @@ export class SalesService {
       : null;
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update general info if provided
       await tx.order.update({
         where: { id: orderId },
         data: {
-          customerName: dto.customerName,
+          customerName: order.origin === 'PUBLIC_STORE'
+            ? (dto.customerName !== undefined ? (dto.customerName?.trim() || null) : undefined)
+            : (dto.customerName !== undefined ? (dto.customerName?.trim() || 'Consumidor final') : undefined),
           customerWhatsapp: dto.customerWhatsapp,
           note: dto.note,
           paymentMethod: dto.paymentMethod as any,

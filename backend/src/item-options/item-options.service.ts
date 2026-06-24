@@ -742,22 +742,18 @@ export class ItemOptionsService {
     totalQuantity: Prisma.Decimal | null;
     unitId: string | null;
     unitLabel: string | null;
-  }): Prisma.OrderItemOptionCreateWithoutOrderItemInput {
+  }): any {
     const { group, option, action, quantityPerUnit, totalQuantity, unitId, unitLabel } =
       input;
 
     return {
-      group: { connect: { id: group.id } },
-      option: { connect: { id: option.id } },
+      groupId: group.id,
+      optionId: option.id,
       groupTitleSnapshot: group.title,
       optionNameSnapshot: option.name,
       targetTypeSnapshot: option.targetType,
-      ingredient:
-        option.ingredientId != null
-          ? { connect: { id: option.ingredientId } }
-          : undefined,
-      item:
-        option.itemId != null ? { connect: { id: option.itemId } } : undefined,
+      ingredientId: option.ingredientId ?? null,
+      itemId: option.itemId ?? null,
       quantityModeSnapshot: group.quantityMode,
       quantityPerUnitSnapshot: quantityPerUnit,
       totalQuantitySnapshot: totalQuantity,
