@@ -18,10 +18,13 @@ const ORDER_ACCOUNTING_DEFAULTS = {
   debitCashPucCode: '1105',
   debitBankTransferPucCode: '1110',
   inventoryPucCode: '1435',
-  costOfSalesPucCode: '6135',
+  costPucCodeByType: {
+    PRODUCT: '6135',
+    SERVICE: '6135',
+  },
   creditIncomePucCodeByType: {
     PRODUCT: '4135',
-    SERVICE: '4235',
+    SERVICE: '4135',
   },
 } as const;
 
@@ -67,6 +70,16 @@ type ResolvedPucReference = {
   code: string;
   name: string;
   cuentaCode?: string;
+};
+
+type AccountingItemType = 'PRODUCT' | 'SERVICE';
+
+type PostingLine = {
+  id: string;
+  itemId: string | null;
+  name: string;
+  type: AccountingItemType;
+  amount: Prisma.Decimal;
 };
 
 @Injectable()
@@ -245,9 +258,75 @@ export class AccountingService {
     return rawValue === 'BANK_TRANSFER' ? 'BANK_TRANSFER' : 'CASH';
   }
 
-  private async resolveAutomaticPostingReferences(order: OrderForPosting) {
-    const itemType =
-      order.items[0]?.itemTypeSnapshot ?? order.items[0]?.item?.type ?? 'PRODUCT';
+  private resolveAccountingItemType(item: any): AccountingItemType {
+    return (item?.itemTypeSnapshot ?? item?.item?.type) === 'SERVICE'
+      ? 'SERVICE'
+      : 'PRODUCT';
+  }
+
+  private buildPostingLines(
+    order: OrderForPosting | Record<string, any>,
+  ): PostingLine[] {
+    const orderTotal = new Prisma.Decimal((order as any).total ?? 0);
+    const lines = ((order as any).items ?? []).map((item: any, index: number) => {
+      const quantity = new Prisma.Decimal(item.quantity ?? 1);
+      const rawAmount =
+        item.lineTotalSnapshot ??
+        item.lineTotal ??
+        item.price ??
+        new Prisma.Decimal(item.unitPrice ?? 0).mul(quantity);
+
+      return {
+        id: item.id ?? `accounting-line-${index}`,
+        itemId: item.itemId ?? item.item?.id ?? null,
+        name:
+          item.itemNameSnapshot ??
+          item.item?.name ??
+          (this.resolveAccountingItemType(item) === 'SERVICE'
+            ? 'Servicio'
+            : 'Producto'),
+        type: this.resolveAccountingItemType(item),
+        amount: new Prisma.Decimal(rawAmount ?? 0).toDecimalPlaces(2),
+      };
+    });
+
+    const lineTotal = lines.reduce(
+      (total: Prisma.Decimal, line: PostingLine) => total.add(line.amount),
+      new Prisma.Decimal(0),
+    );
+    const difference = orderTotal.sub(lineTotal).toDecimalPlaces(2);
+
+    if (lines.length > 0 && !difference.isZero()) {
+      lines[lines.length - 1].amount = lines[lines.length - 1].amount.add(difference);
+    }
+
+    return lines;
+  }
+
+  private async resolveIncomeReference(itemType: AccountingItemType) {
+    const preferredCode =
+      ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType[itemType];
+
+    try {
+      return await this.loadPucReferenceOrThrow({
+        pucCuentaCode: preferredCode,
+      });
+    } catch (error) {
+      if (
+        itemType !== 'SERVICE' ||
+        preferredCode === ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT
+      ) {
+        throw error;
+      }
+
+      return this.loadPucReferenceOrThrow({
+        pucCuentaCode:
+          ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT,
+      });
+    }
+  }
+
+  private async resolveAutomaticDebitReference(order: OrderForPosting) {
     const paymentMethod = this.resolveOrderPaymentMethod(order);
 
     const debitPucCode =
@@ -255,20 +334,10 @@ export class AccountingService {
         ? ORDER_ACCOUNTING_DEFAULTS.debitBankTransferPucCode
         : ORDER_ACCOUNTING_DEFAULTS.debitCashPucCode;
 
-    const creditPucCode =
-      ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType[
-        itemType === 'SERVICE' ? 'SERVICE' : 'PRODUCT'
-      ];
-
-    const [debitReference, creditReference] = await Promise.all([
-      this.loadPucReferenceOrThrow({ pucCuentaCode: debitPucCode }),
-      this.loadPucReferenceOrThrow({ pucCuentaCode: creditPucCode }),
-    ]);
-
-    return { debitReference, creditReference, itemType };
+    return this.loadPucReferenceOrThrow({ pucCuentaCode: debitPucCode });
   }
 
-  private async resolveOrderInventoryCost(
+  private async resolveOrderInventoryCosts(
     tx: Prisma.TransactionClient,
     businessId: string,
     orderId: string,
@@ -276,20 +345,17 @@ export class AccountingService {
     const saleMovements = await tx.inventoryMovement.findMany({
       where: {
         businessId,
-        orderId,
         type: 'SALE',
+        OR: [{ orderId }, { reservationId: orderId }],
       },
       select: {
         totalValue: true,
+        orderItemId: true,
+        reservationId: true,
       },
     });
 
-    return saleMovements
-      .reduce(
-        (total, movement) => total.add(new Prisma.Decimal(movement.totalValue)),
-        new Prisma.Decimal(0),
-      )
-      .toDecimalPlaces(2);
+    return saleMovements;
   }
 
   private parseDateBoundary(value: string, boundary: 'start' | 'end') {
@@ -346,93 +412,159 @@ export class AccountingService {
       throw new BadRequestException('Order must contain at least one item');
     }
 
-    const { debitReference, creditReference, itemType } =
-      await this.resolveAutomaticPostingReferences(order);
-
-    const amount = Number(order.total);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    const amount = new Prisma.Decimal(order.total);
+    if (!amount.isPositive()) {
       throw new BadRequestException('Order total must be greater than zero');
     }
 
-    const customerName = order.customerName?.trim();
-    const detailSuffix = customerName ? ` - ${customerName}` : '';
-    const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();
+    const lines = this.buildPostingLines(order).filter((line) =>
+      line.amount.isPositive(),
+    );
+    if (!lines.length) {
+      throw new BadRequestException('Order must contain billable items');
+    }
 
-    // Ejecutar ambos asientos base en paralelo para reducir el tiempo dentro de la transacción
-    const movements = await Promise.all([
-      tx.accountingMovement.create({
+    const debitReference = await this.resolveAutomaticDebitReference(order);
+    const incomeReferences = new Map<AccountingItemType, ResolvedPucReference>();
+    for (const itemType of new Set(lines.map((line) => line.type))) {
+      incomeReferences.set(
+        itemType,
+        await this.resolveIncomeReference(itemType),
+      );
+    }
+
+    const date = order.accountingPostedAt ?? order.updatedAt ?? new Date();
+    const debitDetail =
+      lines.length === 1
+        ? `Contrapartida ${lines[0].type === 'SERVICE' ? 'servicio' : 'producto'} - ${lines[0].name}`
+        : 'Contrapartida venta mixta';
+
+    const movements = [
+      await tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(debitReference),
           amount,
           nature: MovementNature.DEBIT,
           date,
-          detail: `Contrapartida venta ${itemType.toLowerCase()}${detailSuffix}`,
+          detail: debitDetail,
           originType: AccountingMovementOriginType.ORDER,
           originId: order.id,
         },
         include: this.movementInclude(),
       }),
-      tx.accountingMovement.create({
-        data: {
-          businessId,
-          ...this.movementPucData(creditReference),
-          amount,
-          nature: MovementNature.CREDIT,
-          date,
-          detail: `Ingreso por venta ${itemType.toLowerCase()}${detailSuffix}`,
-          originType: AccountingMovementOriginType.ORDER,
-          originId: order.id,
-        },
-        include: this.movementInclude(),
-      }),
-    ]);
+    ];
 
-    const inventoryCost = await this.resolveOrderInventoryCost(
+    movements.push(
+      ...(await Promise.all(
+        lines.map((line) =>
+          tx.accountingMovement.create({
+            data: {
+              businessId,
+              ...this.movementPucData(incomeReferences.get(line.type)!),
+              amount: line.amount,
+              nature: MovementNature.CREDIT,
+              date,
+              detail:
+                line.type === 'SERVICE'
+                  ? `Ingreso por servicio - ${line.name}`
+                  : `Ingreso por venta de producto - ${line.name}`,
+              originType: AccountingMovementOriginType.ORDER,
+              originId: order.id,
+            },
+            include: this.movementInclude(),
+          }),
+        ),
+      )),
+    );
+
+    const inventoryMovements = await this.resolveOrderInventoryCosts(
       tx,
       businessId,
       order.id,
     );
 
-    if (inventoryCost.gt(0)) {
-      const [costReference, inventoryReference] = await Promise.all([
-        this.loadPucReferenceOrThrow({
-          pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.costOfSalesPucCode,
-        }),
-        this.loadPucReferenceOrThrow({
-          pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
-        }),
-      ]);
+    if (inventoryMovements.length > 0) {
+      const inventoryReference = await this.loadPucReferenceOrThrow({
+        pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
+      });
+      const costReferences = new Map<AccountingItemType, ResolvedPucReference>();
+      for (const itemType of new Set(lines.map((line) => line.type))) {
+        costReferences.set(
+          itemType,
+          await this.loadPucReferenceOrThrow({
+            pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.costPucCodeByType[itemType],
+          }),
+        );
+      }
 
-      // Ejecutar ambos asientos de costo/inventario en paralelo
-      const costMovements = await Promise.all([
-        tx.accountingMovement.create({
-          data: {
-            businessId,
-            ...this.movementPucData(costReference),
-            amount: inventoryCost,
-            nature: MovementNature.DEBIT,
-            date,
-            detail: `Costo de venta ${itemType.toLowerCase()}${detailSuffix}`,
-            originType: AccountingMovementOriginType.ORDER,
-            originId: order.id,
-          },
-          include: this.movementInclude(),
-        }),
-        tx.accountingMovement.create({
-          data: {
-            businessId,
-            ...this.movementPucData(inventoryReference),
-            amount: inventoryCost,
-            nature: MovementNature.CREDIT,
-            date,
-            detail: `Salida de inventario por venta ${itemType.toLowerCase()}${detailSuffix}`,
-            originType: AccountingMovementOriginType.ORDER,
-            originId: order.id,
-          },
-          include: this.movementInclude(),
-        }),
-      ]);
+      const costByLineId = new Map<string, Prisma.Decimal>();
+      const unassignedCost = inventoryMovements.reduce(
+        (total, movement) => {
+          const value = new Prisma.Decimal(movement.totalValue);
+          if (movement.orderItemId) {
+            const current =
+              costByLineId.get(movement.orderItemId) ?? new Prisma.Decimal(0);
+            costByLineId.set(movement.orderItemId, current.add(value));
+            return total;
+          }
+          return total.add(value);
+        },
+        new Prisma.Decimal(0),
+      );
+
+      if (unassignedCost.gt(0)) {
+        const reservationLine =
+          lines.find((line) => line.type === 'SERVICE') ?? lines[0];
+        const current =
+          costByLineId.get(reservationLine.id) ?? new Prisma.Decimal(0);
+        costByLineId.set(reservationLine.id, current.add(unassignedCost));
+      }
+
+      const costMovements = (
+        await Promise.all(
+          lines.map(async (line) => {
+            const lineCost = (
+              costByLineId.get(line.id) ?? new Prisma.Decimal(0)
+            ).toDecimalPlaces(2);
+            if (!lineCost.gt(0)) return [];
+
+            const isService = line.type === 'SERVICE';
+            return Promise.all([
+              tx.accountingMovement.create({
+                data: {
+                  businessId,
+                  ...this.movementPucData(costReferences.get(line.type)!),
+                  amount: lineCost,
+                  nature: MovementNature.DEBIT,
+                  date,
+                  detail: isService
+                    ? `Consumo de insumos por servicio - ${line.name}`
+                    : `Costo de venta de producto - ${line.name}`,
+                  originType: AccountingMovementOriginType.ORDER,
+                  originId: order.id,
+                },
+                include: this.movementInclude(),
+              }),
+              tx.accountingMovement.create({
+                data: {
+                  businessId,
+                  ...this.movementPucData(inventoryReference),
+                  amount: lineCost,
+                  nature: MovementNature.CREDIT,
+                  date,
+                  detail: isService
+                    ? `Salida de inventario por servicio - ${line.name}`
+                    : `Salida de inventario por venta de producto - ${line.name}`,
+                  originType: AccountingMovementOriginType.ORDER,
+                  originId: order.id,
+                },
+                include: this.movementInclude(),
+              }),
+            ]);
+          }),
+        )
+      ).flat();
 
       movements.push(...costMovements);
     }

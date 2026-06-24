@@ -928,6 +928,14 @@ export class SalesService {
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
 
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
+      const inventoryMovements = res.inventoryPostedAt
+        ? []
+        : await this.inventoryService.applyInventoryConsumptionForReservation(
+            tx,
+            businessId,
+            updated,
+          );
+
       const shouldPostAccounting = existingMovements.length === 0;
       const movements = shouldPostAccounting
         ? await this.accountingService.postOrderMovements(
@@ -936,14 +944,6 @@ export class SalesService {
             virtualOrder as any,
           )
         : existingMovements;
-
-      const inventoryMovements = res.inventoryPostedAt
-        ? []
-        : await this.inventoryService.applyInventoryConsumptionForReservation(
-            tx,
-            businessId,
-            updated,
-          );
 
       return {
         order: virtualOrder, // Frontend expects something that looks like an order/sale

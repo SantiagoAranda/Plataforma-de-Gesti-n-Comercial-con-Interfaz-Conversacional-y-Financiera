@@ -688,3 +688,89 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     expect(accountingService.postOrderMovements).not.toHaveBeenCalled();
   });
 });
+
+describe('SalesService.confirmReservation accounting order', () => {
+  it('posts reservation inventory before accounting so service cost is available', async () => {
+    const businessId = 'business-1';
+    const reservationId = 'reservation-1';
+    const executionOrder: string[] = [];
+    const reservation = {
+      id: reservationId,
+      businessId,
+      itemId: 'service-1',
+      status: 'PENDING',
+      origin: 'MANUAL',
+      customerName: 'Victoria',
+      customerWhatsapp: null,
+      paymentMethod: 'CASH',
+      date: new Date('2026-06-24T00:00:00.000Z'),
+      startMinute: 600,
+      endMinute: 660,
+      createdAt: new Date('2026-06-24T09:00:00.000Z'),
+      updatedAt: new Date('2026-06-24T09:00:00.000Z'),
+      inventoryPostedAt: null,
+      item: {
+        id: 'service-1',
+        name: 'Corte de barba',
+        type: 'SERVICE',
+        price: new Prisma.Decimal(10000),
+        durationMinutes: 60,
+      },
+    };
+    const updatedReservation = {
+      ...reservation,
+      status: 'CONFIRMED',
+      updatedAt: new Date('2026-06-24T10:00:00.000Z'),
+    };
+
+    const tx = {
+      reservation: {
+        findFirst: (jest.fn() as any).mockResolvedValue(reservation),
+        update: (jest.fn() as any).mockResolvedValue(updatedReservation),
+      },
+      accountingMovement: {
+        findMany: (jest.fn() as any).mockResolvedValue([]),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    } as any;
+    const inventoryService = {
+      applyInventoryConsumptionForReservation: jest
+        .fn()
+        .mockImplementation(async () => {
+          executionOrder.push('inventory');
+          return [{ totalValue: new Prisma.Decimal(900) }];
+        }),
+    } as any;
+    const accountingService = {
+      postOrderMovements: jest.fn().mockImplementation(async () => {
+        executionOrder.push('accounting');
+        return [];
+      }),
+    } as any;
+    const service = new SalesService(
+      prisma,
+      accountingService,
+      inventoryService,
+      {} as any,
+    );
+
+    await service.confirmOrder(businessId, reservationId, 'RESERVATION');
+
+    expect(executionOrder).toEqual(['inventory', 'accounting']);
+    expect(accountingService.postOrderMovements).toHaveBeenCalledWith(
+      tx,
+      businessId,
+      expect.objectContaining({
+        id: reservationId,
+        items: [
+          expect.objectContaining({
+            itemTypeSnapshot: 'SERVICE',
+            itemNameSnapshot: 'Corte de barba',
+          }),
+        ],
+      }),
+    );
+  });
+});
