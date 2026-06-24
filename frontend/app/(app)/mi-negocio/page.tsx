@@ -341,6 +341,7 @@ function MiNegocioPageContent() {
   }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
+    if (isSubmitting) return;
     if (type === "SERVICE") {
       const hasOverlap = week.some((day) => {
         if (!day.active || day.ranges.length !== 2) return false;
@@ -448,37 +449,71 @@ function MiNegocioPageContent() {
 
       let savedItem: Item;
       if (editingItem) {
+        // ── EDIT PATH ────────────────────────────────────────────────
         savedItem = await api<Item>(`/items/${editingItem.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
+
+        // Remove deleted images first; each failure is surfaced immediately.
         for (const id of removedImageIds) {
           await api(`/items/${editingItem.id}/images/${id}`, {
             method: "DELETE",
           });
         }
+
+        // Upload new images — abort on first failure (item already existed, no orphan risk).
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${editingItem.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${editingItem.id}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (uploadErr) {
+            console.error("[handleSend] Image upload failed on edit:", uploadErr);
+            setToast({ message: "Error al subir una imagen. El resto de los cambios se guardaron.", type: "error" });
+            setIsSubmitting(false);
+            return;
+          }
         }
+
         savedItem = await api<Item>(`/items/${editingItem.id}`);
       } else {
+        // ── CREATE PATH ──────────────────────────────────────────────
+        // Step 1: create the item record.
         const created = await api<Item>(`/items`, {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
+
+        // Step 2: upload images. On failure → rollback (delete the orphan record).
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${created.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${created.id}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (uploadErr) {
+            console.error("[handleSend] Image upload failed on create — rolling back item:", uploadErr);
+            // Rollback: mark the just-created item as INACTIVE so it doesn't appear as orphan.
+            try {
+              await api(`/items/${created.id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "INACTIVE" }),
+              });
+            } catch (rollbackErr) {
+              console.error("[handleSend] Rollback failed:", rollbackErr);
+            }
+            setToast({ message: "Error al subir la imagen. No se guardó el ítem.", type: "error" });
+            setIsSubmitting(false);
+            return;
+          }
         }
+
         savedItem = await api<Item>(`/items/${created.id}`);
       }
 
