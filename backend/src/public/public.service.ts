@@ -316,9 +316,13 @@ export class PublicService {
       }
     }
 
+    // Duration of the service in minutes. Drives both the slot length and the
+    // step between consecutive slot offers so the grid never has overlapping
+    // or unreachable windows.
+    //   • 60-min service  → step = 60  → 08:00, 09:00, 10:00 …
+    //   • 120-min service → step = 120 → 08:00, 10:00, 12:00 …
     const duration = item.durationMinutes ?? 60;
-    // Fixed 60-minute step — NEVER use durationMinutes as step or slots will be skipped.
-    const step = 60;
+    const step = duration; // step is coupled to service duration
     const slots: string[] = [];
 
     // Compute "today" and current time in the business timezone (America/Bogota).
@@ -337,7 +341,9 @@ export class PublicService {
       nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
-      // Align cursor to the next full-hour boundary (slots are always HH:00).
+      // Snap the cursor to the next full-hour boundary so slots always start
+      // on clean HH:00 marks (e.g. a window that opens at 08:30 offers 09:00
+      // as its first slot, not a fractional time).
       let cursor = window.startMinute;
       if (cursor % 60 !== 0) {
         cursor = cursor + (60 - (cursor % 60));
@@ -345,27 +351,34 @@ export class PublicService {
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
-        const end = cursor + duration;
+        const end   = cursor + duration; // guaranteed not to exceed window end
 
+        // Skip past slots that have already elapsed today.
         if (isToday && start < currentMinutes) {
           cursor += step;
           continue;
         }
 
-        const overlap = reservations.some(
+        // Reject any slot that overlaps an existing reservation.
+        const hasOverlapWithReservation = reservations.some(
           (res) =>
             Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
-        const blocked = blocks.some((block) => {
-          if (block.startMinute === null && block.endMinute === null)
+        // Reject any slot that falls inside a manual block.
+        const isBlocked = blocks.some((block) => {
+          // A block with no time bounds covers the entire day.
+          if (block.startMinute === null && block.endMinute === null) {
             return true;
+          }
           return (
             start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
           );
         });
 
-        if (!overlap && !blocked) slots.push(this.formatTime(start));
+        if (!hasOverlapWithReservation && !isBlocked) {
+          slots.push(this.formatTime(start));
+        }
 
         cursor += step;
       }

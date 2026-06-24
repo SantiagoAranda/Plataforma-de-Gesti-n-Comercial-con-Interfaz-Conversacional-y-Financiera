@@ -371,15 +371,14 @@ function MiNegocioPageContent() {
         return first.e >= second.s;
       });
 
-      if (hasOverlap) {
-        return;
-      }
+      if (hasOverlap) return;
     }
 
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0)
+    if (!price || parseFloat(price) <= 0) {
       errors.price = "El precio debe ser mayor a 0";
+    }
 
     let finalDuration = duration;
     if (type === "SERVICE") {
@@ -420,18 +419,19 @@ function MiNegocioPageContent() {
 
     submitInFlightRef.current = true;
     setIsSubmitting(true);
+
     try {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-            day.active
-              ? day.ranges.map((r) => ({
-                weekday: WEEKDAY_ENUM[dayIndex],
-                startMinute: timeToMinutes(r.start),
-                endMinute: timeToMinutes(r.end),
-              }))
-              : [],
-          )
+              day.active
+                ? day.ranges.map((r) => ({
+                    weekday: WEEKDAY_ENUM[dayIndex],
+                    startMinute: timeToMinutes(r.start),
+                    endMinute: timeToMinutes(r.end),
+                  }))
+                : [],
+            )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -474,11 +474,13 @@ function MiNegocioPageContent() {
           method: "PATCH",
           body: JSON.stringify(body),
         });
+
         for (const id of removedImageIds) {
           await api(`/items/${targetItemId}/images/${id}`, {
             method: "DELETE",
           });
         }
+
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
@@ -492,6 +494,7 @@ function MiNegocioPageContent() {
             failedImages.push(img);
           }
         }
+
         try {
           savedItem = await api<Item>(`/items/${targetItemId}`);
         } catch (error) {
@@ -502,11 +505,10 @@ function MiNegocioPageContent() {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
+
         savedItem = created;
         targetItemId = created.id;
 
-        // The item exists before image upload starts. Keep its identity in the
-        // form so a failed upload can only retry against this same item.
         setCreatedItemId(created.id);
         setEditingItem(created);
         setComposerMode("edit");
@@ -525,6 +527,7 @@ function MiNegocioPageContent() {
             failedImages.push(img);
           }
         }
+
         if (failedImages.length === 0) {
           try {
             savedItem = await api<Item>(`/items/${created.id}`);
@@ -539,10 +542,12 @@ function MiNegocioPageContent() {
 
       setItems((prev) => {
         const exists = prev.find((i) => i.id === savedItem.id);
-        if (exists)
+        if (exists) {
           return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
+        }
         return [savedItem, ...prev];
       });
+
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
       shouldStickToBottomRef.current = true;
