@@ -147,6 +147,15 @@ function MiNegocioPageContent() {
     fetchItems(true);
   }, [fetchItems]);
 
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   const filteredItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -260,6 +269,13 @@ function MiNegocioPageContent() {
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const selectedFiles = Array.from(files);
+
+    const fileWithLargeSize = selectedFiles.find((file) => file.size > 2 * 1024 * 1024);
+    if (fileWithLargeSize) {
+      setImageError("El peso máximo de la imagen es de 2 MB");
+      return;
+    }
+
     const totalImages = existingImages.length + newImages.length;
     const availableSlots = MAX_ITEM_IMAGES - totalImages;
 
@@ -268,9 +284,10 @@ function MiNegocioPageContent() {
       return;
     }
 
+    setImageError(null);
+
     const nextPendingImages: PendingImage[] = [];
     selectedFiles.slice(0, availableSlots).forEach((file) => {
-      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
       nextPendingImages.push({
         id: generateCreationId(),
         file,
@@ -507,7 +524,6 @@ function MiNegocioPageContent() {
       console.error(err);
       setToast({ message: "Error al eliminar", type: "error" });
     }
-    setTimeout(() => setToast(null), 2500);
   };
 
   const handleScroll = useCallback(() => {
