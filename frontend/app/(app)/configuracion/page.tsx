@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { Plus, Save, Trash2, Landmark } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
+import Link from "next/link";
 import { api } from "@/src/lib/api";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 
@@ -188,7 +189,28 @@ export default function ConfiguracionPage() {
       />
 
       <main className="flex-1 overflow-y-auto px-4 py-5 pb-10">
-        <div className="mx-auto w-full max-w-xl">
+        <div className="mx-auto w-full max-w-xl space-y-4">
+          
+          <Link
+            href="/configuracion/rut-impuestos"
+            className="flex items-center justify-between rounded-3xl border border-black/5 bg-white p-5 shadow-sm hover:bg-neutral-50/50 transition duration-200"
+          >
+            <div className="flex items-center gap-4">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+                <Landmark className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-neutral-900">
+                  RUT e Impuestos
+                </p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Perfil fiscal, responsabilidades DIAN y tarifas ICA municipales.
+                </p>
+              </div>
+            </div>
+            <div className="text-neutral-400 font-semibold text-sm">→</div>
+          </Link>
+
           <div className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>

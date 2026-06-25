@@ -38,6 +38,15 @@ describe('AccountingService automatic order postings', () => {
       inventoryMovement: {
         findMany: jest.fn(),
       },
+      orderFiscalContext: {
+        findUnique: jest.fn(() => Promise.resolve(null)),
+      },
+      saleTaxLine: {
+        findMany: jest.fn(() => Promise.resolve([])),
+      },
+      salesTaxRule: {
+        findFirst: jest.fn(() => Promise.resolve(null)),
+      },
       accountingMovement: {
         create: jest.fn(({ data }: any) =>
           Promise.resolve({

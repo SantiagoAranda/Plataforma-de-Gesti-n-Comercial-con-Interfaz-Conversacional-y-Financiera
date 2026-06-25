@@ -187,11 +187,7 @@ export type LiquidatePayrollPeriodResult = {
   skippedEmployees: Array<{ employeeId: string; reason: string }>;
 };
 
-export type CiiuActivity = {
-  id: string;
-  code: string;
-  description: string;
-};
+
 
 export type OvertimeType =
   | "HORA_EXTRA_DIURNA"

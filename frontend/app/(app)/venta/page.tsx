@@ -19,6 +19,8 @@ import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrder
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
+import TaxPreviewModal from "@/src/components/sales/TaxPreviewModal";
+import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
@@ -179,6 +181,11 @@ export default function VentaPage() {
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [taxPreviewSale, setTaxPreviewSale] = useState<Sale | null>(null);
+  const [taxPreviewMode, setTaxPreviewMode] = useState<"REVIEW" | "CONFIRM">("CONFIRM");
+  const [buyerFiscalContexts, setBuyerFiscalContexts] = useState<
+    Record<string, BuyerFiscalContext>
+  >({});
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -391,65 +398,94 @@ export default function VentaPage() {
     window.open(url, "_blank");
   };
 
-  const handleConfirmSale = useCallback(async (sale: Sale) => {
-    showConfirmation(
-      "¿Deseás confirmar esta venta?",
-      "Confirmar",
-      async () => {
-        const loadingId = "sale-confirm-loading";
-        const successId = "sale-confirm-success";
-        const errorId = "sale-confirm-error";
+  const handleConfirmSale = useCallback((sale: Sale) => {
+    setTaxPreviewMode("CONFIRM");
+    setTaxPreviewSale(sale);
+  }, []);
 
-        try {
-          setConfirmingSaleId(sale.id);
-          setError(null);
+  const handleOpenTaxPreview = useCallback((sale: Sale) => {
+    setTaxPreviewMode("REVIEW");
+    setTaxPreviewSale(sale);
+  }, []);
 
-          toast.dismiss(loadingId);
-          toast.dismiss(successId);
-          toast.dismiss(errorId);
+  const saleFiscalKey = useCallback(
+    (sale: Sale) => `${sale.sourceType}:${sale.id}`,
+    [],
+  );
 
-          toast.loading("Confirmando venta...", { id: loadingId });
+  const handleApplyFiscalContext = useCallback(async (
+    buyerFiscalContext: BuyerFiscalContext,
+  ) => {
+    if (!taxPreviewSale) return;
+    setBuyerFiscalContexts((current) => ({
+      ...current,
+      [saleFiscalKey(taxPreviewSale)]: buyerFiscalContext,
+    }));
+    setTaxPreviewSale(null);
+    toast.success("Datos fiscales guardados para esta venta");
+  }, [saleFiscalKey, taxPreviewSale]);
 
-          await confirmSale(sale.id, sale.sourceType);
+  const handleExecuteConfirmSale = useCallback(async (
+    buyerFiscalContext: BuyerFiscalContext,
+  ) => {
+    if (!taxPreviewSale) return;
+    const loadingId = "sale-confirm-loading";
+    const successId = "sale-confirm-success";
+    const errorId = "sale-confirm-error";
 
-          invalidateCache("home:sales");
-          await loadOrders();
+    try {
+      setConfirmingSaleId(taxPreviewSale.id);
+      setError(null);
 
-          setDetailsSale(null);
+      toast.dismiss(loadingId);
+      toast.dismiss(successId);
+      toast.dismiss(errorId);
 
-          toast.dismiss(loadingId);
+      toast.loading("Confirmando venta e impuestos...", { id: loadingId });
 
-          toast.success("Venta confirmada", {
-            id: successId,
-            duration: 2000,
-          });
+      await confirmSale(taxPreviewSale.id, taxPreviewSale.sourceType, buyerFiscalContext);
 
-          setTimeout(() => {
-            toast.dismiss(successId);
-          }, 2100);
-        } catch (err) {
-          console.error(err);
-          const message = getErrorMessage(err, "No se pudo finalizar la venta");
-          setError(message);
-          await loadOrders();
+      invalidateCache("home:sales");
+      await loadOrders();
 
-          toast.dismiss(loadingId);
+      setTaxPreviewSale(null);
+      setDetailsSale(null);
+      setBuyerFiscalContexts((current) => {
+        const next = { ...current };
+        delete next[saleFiscalKey(taxPreviewSale)];
+        return next;
+      });
 
-          toast.error(message, {
-            id: errorId,
-            duration: 5000,
-          });
+      toast.dismiss(loadingId);
 
-          setTimeout(() => {
-            toast.dismiss(errorId);
-          }, 5100);
-        } finally {
-          setConfirmingSaleId(null);
-        }
-      },
-      "emerald"
-    );
-  }, [loadOrders]);
+      toast.success("Venta confirmada con impuestos", {
+        id: successId,
+        duration: 2000,
+      });
+
+      setTimeout(() => {
+        toast.dismiss(successId);
+      }, 2100);
+    } catch (err) {
+      console.error(err);
+      const message = getErrorMessage(err, "No se pudo finalizar la venta");
+      setError(message);
+      await loadOrders();
+
+      toast.dismiss(loadingId);
+
+      toast.error(message, {
+        id: errorId,
+        duration: 5000,
+      });
+
+      setTimeout(() => {
+        toast.dismiss(errorId);
+      }, 5100);
+    } finally {
+      setConfirmingSaleId(null);
+    }
+  }, [taxPreviewSale, loadOrders, saleFiscalKey]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -818,6 +854,7 @@ export default function VentaPage() {
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
         onConfirm={handleConfirmSale}
+        onTaxPreview={handleOpenTaxPreview}
         onSaveOptionalIngredients={handleSaveOptionalIngredients}
         onCancel={handleDeleteSale}
         onEdit={(sale) => {
@@ -831,6 +868,28 @@ export default function VentaPage() {
         open={!!receiptSale}
         sale={receiptSale}
         onClose={() => setReceiptSale(null)}
+      />
+
+      <TaxPreviewModal
+        open={!!taxPreviewSale}
+        sale={taxPreviewSale}
+        onClose={() => setTaxPreviewSale(null)}
+        onConfirm={
+          taxPreviewMode === "REVIEW"
+            ? handleApplyFiscalContext
+            : handleExecuteConfirmSale
+        }
+        initialContext={
+          taxPreviewSale
+            ? buyerFiscalContexts[saleFiscalKey(taxPreviewSale)] ?? null
+            : null
+        }
+        actionLabel={
+          taxPreviewMode === "REVIEW"
+            ? "Guardar datos fiscales"
+            : "Confirmar y contabilizar"
+        }
+        confirming={confirmingSaleId === taxPreviewSale?.id}
       />
 
       <SalesFilterModal

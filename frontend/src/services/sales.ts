@@ -100,9 +100,10 @@ export function createSale(data: {
   });
 }
 
-export function confirmSale(id: string, sourceType: string = "ORDER") {
+export function confirmSale(id: string, sourceType: string = "ORDER", buyerFiscalContext?: any) {
   return api<ConfirmOrderResponse>(`/sales/${id}/confirm?sourceType=${sourceType}`, {
     method: "PATCH",
+    body: buyerFiscalContext ? JSON.stringify(buyerFiscalContext) : undefined,
   });
 }
 export function cancelSale(id: string, sourceType: string = "ORDER") {

@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -8,6 +9,7 @@ import {
   IsString,
   Matches,
   Min,
+  Max,
   ValidateNested,
 } from "class-validator";
 import { Transform, Type } from "class-transformer";
@@ -42,6 +44,16 @@ export class UpdateItemDto {
   @Min(0)
   @Transform(({ value }) => Number(value))
   price?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  appliesImpoconsumo?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  impoconsumoRate?: number | null;
 
   @IsOptional()
   @IsString()

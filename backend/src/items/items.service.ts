@@ -115,6 +115,12 @@ export class ItemsService {
             ),
             name: dto.name,
             price: dto.price,
+            appliesImpoconsumo:
+              dto.type === 'PRODUCT' ? (dto.appliesImpoconsumo ?? false) : false,
+            impoconsumoRate:
+              dto.type === 'PRODUCT' && dto.appliesImpoconsumo
+                ? dto.impoconsumoRate
+                : null,
             description: dto.description?.trim() || null,
             minStock:
               dto.minStock === undefined
@@ -234,6 +240,8 @@ export class ItemsService {
           id: true,
           name: true,
           price: true,
+          appliesImpoconsumo: true,
+          impoconsumoRate: true,
           type: true,
           status: true,
           inventoryMode: true,
@@ -432,6 +440,18 @@ export class ItemsService {
               : nextInventoryMode,
           name: dto.name,
           price: dto.price,
+          appliesImpoconsumo:
+            nextType === 'PRODUCT'
+              ? dto.appliesImpoconsumo
+              : false,
+          impoconsumoRate:
+            nextType !== 'PRODUCT'
+              ? null
+              : dto.appliesImpoconsumo === false
+                ? null
+                : dto.impoconsumoRate === undefined
+                  ? undefined
+                  : dto.impoconsumoRate,
           description:
             dto.description === undefined
               ? undefined

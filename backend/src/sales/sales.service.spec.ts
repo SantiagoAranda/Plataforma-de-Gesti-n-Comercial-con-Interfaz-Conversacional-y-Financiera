@@ -19,7 +19,7 @@ describe('SalesService.findAll', () => {
       },
     } as any;
 
-    return new SalesService(prisma, {} as any, {} as any, {} as any);
+    return new SalesService(prisma, {} as any, {} as any, {} as any, {} as any);
   }
 
   it('maps mixed manual orders without assuming the first line is the only type', async () => {
@@ -154,7 +154,7 @@ describe('SalesService.remove', () => {
 
     const accountingService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma, inventoryService };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma, inventoryService };
   }
 
   it('archives non-completed orders', async () => {
@@ -296,6 +296,7 @@ describe('SalesService personalized order lines', () => {
         {} as any,
         inventoryService,
         itemOptionsService,
+        {} as any,
       ),
       prisma,
       tx,
@@ -443,7 +444,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
     } as any;
 
     const accountingService = {} as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
 
     const result = await service.reverseConfirmedOrder(businessId, orderId, {
       reason: 'Cliente canceló',
@@ -551,7 +552,7 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const accountingService = {} as any;
     const inventoryService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma };
   }
 
   it('persists optional ingredient exclusions before inventory is posted', async () => {
@@ -668,7 +669,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     const accountingService = {
       postOrderMovements: jest.fn(),
     } as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
 
     await service.confirmOrder(businessId, orderId, 'ORDER');
 
@@ -753,6 +754,7 @@ describe('SalesService.confirmReservation accounting order', () => {
       prisma,
       accountingService,
       inventoryService,
+      {} as any,
       {} as any,
     );
 

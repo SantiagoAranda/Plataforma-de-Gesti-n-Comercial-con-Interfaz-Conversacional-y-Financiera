@@ -8,6 +8,7 @@ import {
   AccountingMovementOriginType,
   MovementNature,
   Prisma,
+  TaxDirection,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
@@ -412,8 +413,19 @@ export class AccountingService {
       throw new BadRequestException('Order must contain at least one item');
     }
 
-    const amount = new Prisma.Decimal(order.total);
-    if (!amount.isPositive()) {
+    // 1. Cargar contexto fiscal e impuestos
+    const fiscalContext = await tx.orderFiscalContext.findUnique({
+      where: { orderId: order.id },
+    });
+
+    const taxLines = await tx.saleTaxLine.findMany({
+      where: { orderId: order.id, applied: true },
+    });
+
+    // 2. Determinar montos
+    // El débito de Caja/Banco es netReceived si existe contexto fiscal, sino el total de la orden
+    const debitAmount = fiscalContext ? fiscalContext.netReceived : new Prisma.Decimal(order.total);
+    if (!debitAmount.isPositive() && !fiscalContext) {
       throw new BadRequestException('Order total must be greater than zero');
     }
 
@@ -439,22 +451,53 @@ export class AccountingService {
         ? `Contrapartida ${lines[0].type === 'SERVICE' ? 'servicio' : 'producto'} - ${lines[0].name}`
         : 'Contrapartida venta mixta';
 
-    const movements = [
-      await tx.accountingMovement.create({
+    const movements: any[] = [];
+
+    // --- DEBITS ---
+    // A. Caja/Banco (Neto recibido)
+    if (debitAmount.gt(0)) {
+      const bankMov = await tx.accountingMovement.create({
         data: {
           businessId,
           ...this.movementPucData(debitReference),
-          amount,
+          amount: debitAmount,
           nature: MovementNature.DEBIT,
           date,
           detail: debitDetail,
           originType: AccountingMovementOriginType.ORDER,
           originId: order.id,
+          metadata: { kind: 'SALE_TAX', taxType: 'NET_RECEIVED' },
         },
         include: this.movementInclude(),
-      }),
-    ];
+      });
+      movements.push(bankMov);
+    }
 
+    // B. Anticipos de Retenciones (RETEFUENTE, RETEIVA, RETEICA) que son débitos
+    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.WITHHOLD)) {
+      const code = tLine.accountCode;
+      const ref = await this.loadPucReferenceOrThrow(
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }
+      );
+      const withholdingMov = await tx.accountingMovement.create({
+        data: {
+          businessId,
+          ...this.movementPucData(ref),
+          amount: tLine.taxAmount,
+          nature: MovementNature.DEBIT,
+          date,
+          detail: `Anticipo de ${tLine.taxType} retenido por cliente`,
+          originType: AccountingMovementOriginType.ORDER,
+          originId: order.id,
+          metadata: { kind: 'SALE_TAX', taxType: tLine.taxType },
+        },
+        include: this.movementInclude(),
+      });
+      movements.push(withholdingMov);
+    }
+
+    // --- CREDITS ---
+    // A. Ingresos por Ventas (Productos / Servicios)
     movements.push(
       ...(await Promise.all(
         lines.map((line) =>
@@ -477,6 +520,96 @@ export class AccountingService {
         ),
       )),
     );
+
+    // B. Impuestos cobrados (IVA, IMPOCONSUMO) que son créditos (pasivos por pagar)
+    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.CHARGE)) {
+      const code = tLine.accountCode;
+      const ref = await this.loadPucReferenceOrThrow(
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }
+      );
+      const taxChargedMov = await tx.accountingMovement.create({
+        data: {
+          businessId,
+          ...this.movementPucData(ref),
+          amount: tLine.taxAmount,
+          nature: MovementNature.CREDIT,
+          date,
+          detail: `${tLine.taxType} generado en venta`,
+          originType: AccountingMovementOriginType.ORDER,
+          originId: order.id,
+          metadata: { kind: 'SALE_TAX', taxType: tLine.taxType },
+        },
+        include: this.movementInclude(),
+      });
+      movements.push(taxChargedMov);
+    }
+
+    // --- AUTORRETENCIONES (Cuentas Espejo, solo si postToAccounting = true) ---
+    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.SELF)) {
+      let rule = null;
+      if (fiscalContext?.saleConcept) {
+        rule = await tx.salesTaxRule.findFirst({
+          where: {
+            businessId,
+            taxType: tLine.taxType,
+            direction: TaxDirection.SELF,
+            active: true,
+            saleConcept: fiscalContext.saleConcept,
+          },
+        });
+      }
+      if (!rule) {
+        rule = await tx.salesTaxRule.findFirst({
+          where: {
+            businessId,
+            taxType: tLine.taxType,
+            direction: TaxDirection.SELF,
+            active: true,
+            saleConcept: null,
+          },
+        });
+      }
+
+      if (rule && rule.postToAccounting) {
+        const refCredito = await this.loadPucReferenceOrThrow(
+          tLine.accountCode.length === 4 ? { pucCuentaCode: tLine.accountCode } : { pucSubcuentaId: tLine.accountCode }
+        );
+        const debitCode = '135515';
+        const refDebito = await this.loadPucReferenceOrThrow({ pucCuentaCode: debitCode });
+
+        const autoDeb = await tx.accountingMovement.create({
+          data: {
+            businessId,
+            ...this.movementPucData(refDebito),
+            amount: tLine.taxAmount,
+            nature: MovementNature.DEBIT,
+            date,
+            detail: `Autorretención especial de renta - Débito (Anticipo)`,
+            originType: AccountingMovementOriginType.ORDER,
+            originId: order.id,
+            metadata: { kind: 'SALE_TAX', taxType: tLine.taxType },
+          },
+          include: this.movementInclude(),
+        });
+
+        const autoCred = await tx.accountingMovement.create({
+          data: {
+            businessId,
+            ...this.movementPucData(refCredito),
+            amount: tLine.taxAmount,
+            nature: MovementNature.CREDIT,
+            date,
+            detail: `Autorretención especial de renta - Crédito (Pasivo)`,
+            originType: AccountingMovementOriginType.ORDER,
+            originId: order.id,
+            metadata: { kind: 'SALE_TAX', taxType: tLine.taxType },
+          },
+          include: this.movementInclude(),
+        });
+
+        movements.push(autoDeb, autoCred);
+      }
+    }
 
     const inventoryMovements = await this.resolveOrderInventoryCosts(
       tx,
@@ -567,6 +700,24 @@ export class AccountingService {
       ).flat();
 
       movements.push(...costMovements);
+    }
+
+    // --- VALIDACIÓN DE BALANCE (DÉBITOS = CRÉDITOS) ---
+    let sumDebits = new Prisma.Decimal(0);
+    let sumCredits = new Prisma.Decimal(0);
+    for (const mov of movements) {
+      const amt = new Prisma.Decimal(mov.amount);
+      if (mov.nature === MovementNature.DEBIT) {
+        sumDebits = sumDebits.add(amt);
+      } else if (mov.nature === MovementNature.CREDIT) {
+        sumCredits = sumCredits.add(amt);
+      }
+    }
+    const difference = sumDebits.sub(sumCredits).abs();
+    if (difference.gt(new Prisma.Decimal(1.0))) {
+      throw new BadRequestException(
+        `Desbalance contable detectado en la venta: Débitos ($${sumDebits.toFixed(2)}) y Créditos ($${sumCredits.toFixed(2)}) no coinciden. Diferencia: $${difference.toFixed(2)}`
+      );
     }
 
     return movements.map((movement) => this.serializeMovement(movement));

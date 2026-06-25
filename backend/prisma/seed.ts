@@ -684,6 +684,53 @@ async function seedInventoryDemoData() {
     console.log("Inventory demo seed OK");
 }
 
+async function seedTaxResponsibilities() {
+    const responsibilities = [
+        { code: "05", name: "Impuesto sobre la renta y complementarios régimen ordinario", description: "Impuesto sobre la renta" },
+        { code: "07", name: "Retención en la fuente a título de renta", description: "Agente retenedor" },
+        { code: "10", name: "Obligado a llevar contabilidad", description: "Obligado a llevar contabilidad" },
+        { code: "13", name: "Gran contribuyente", description: "Gran contribuyente" },
+        { code: "15", name: "Autorretenedor", description: "Autorretenedor" },
+        { code: "47", name: "Régimen Simple de Tributación - RST", description: "Régimen Simple" },
+        { code: "48", name: "Impuesto sobre las ventas - IVA", description: "Responsable de IVA" },
+        { code: "49", name: "No responsable de IVA", description: "No responsable de IVA" },
+        { code: "52", name: "Facturador electrónico", description: "Facturador electrónico" }
+    ];
+
+    for (const r of responsibilities) {
+        await prisma.taxResponsibility.upsert({
+            where: { code: r.code },
+            update: { name: r.name, description: r.description },
+            create: { code: r.code, name: r.name, description: r.description }
+        });
+    }
+    console.log(`Tax responsibilities seed OK: count=${responsibilities.length}`);
+}
+
+async function seedTaxGlobalParameters() {
+    await prisma.taxGlobalParameter.upsert({
+        where: { year: 2026 },
+        update: {
+            uvt: "52374.00",
+            defaultVatRate: "0.1900",
+            defaultImpoconsumoRate: "0.0800",
+            validFrom: new Date("2026-01-01T00:00:00Z"),
+            validTo: new Date("2026-12-31T23:59:59Z"),
+            active: true
+        },
+        create: {
+            year: 2026,
+            uvt: "52374.00",
+            defaultVatRate: "0.1900",
+            defaultImpoconsumoRate: "0.0800",
+            validFrom: new Date("2026-01-01T00:00:00Z"),
+            validTo: new Date("2026-12-31T23:59:59Z"),
+            active: true
+        }
+    });
+    console.log("Tax global parameters seed OK for 2026");
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
@@ -698,6 +745,9 @@ async function main() {
     await seedSolidarityBrackets(base);
     await seedPayrollAccountingMappings(base);
     await seedInventoryDemoData();
+
+    await seedTaxResponsibilities();
+    await seedTaxGlobalParameters();
 }
 
 main()

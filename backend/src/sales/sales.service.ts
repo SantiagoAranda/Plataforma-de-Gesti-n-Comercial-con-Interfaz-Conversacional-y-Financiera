@@ -16,6 +16,7 @@ import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
+import { TaxService } from '../tax/tax.service';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -76,6 +77,7 @@ export class SalesService {
     private accountingService: AccountingService,
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
+    private taxService: TaxService,
   ) { }
 
   private readonly orderItemRecipeInclude = {
@@ -266,7 +268,7 @@ export class SalesService {
           inventoryModeSnapshot: item.inventoryMode,
           durationMinutesSnapshot: item.durationMinutes,
           excludedOptionalIngredientIds:
-            excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+            excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
           baseUnitPriceSnapshot: baseUnitPrice,
           optionsTotalSnapshot: optionsTotal,
           finalUnitPriceSnapshot: unitPrice,
@@ -784,10 +786,16 @@ export class SalesService {
   async confirmOrder(
     businessId: string,
     id: string,
+    buyerFiscalContext?: any,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
+    if (typeof buyerFiscalContext === 'string') {
+      sourceType = buyerFiscalContext as UnifiedSourceType;
+      buyerFiscalContext = undefined;
+    }
+
     if (sourceType === 'RESERVATION') {
-      return this.confirmReservation(businessId, id);
+      return this.confirmReservation(businessId, id, buyerFiscalContext);
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -853,6 +861,31 @@ export class SalesService {
         });
       }
 
+      if (buyerFiscalContext) {
+        const cartItems = order.items.map((it) => ({
+          itemId: it.itemId,
+          quantity: Number(it.quantity),
+        }));
+
+        const preview = await this.taxService.calculateTaxPreview(businessId, {
+          buyerType: buyerFiscalContext.buyerType,
+          buyerName: buyerFiscalContext.buyerName,
+          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+          buyerEmail: buyerFiscalContext.buyerEmail,
+          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+          saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+          cartItems,
+        });
+
+        await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+      }
+
       const finalizedOrder = {
         ...order,
         status: 'COMPLETED' as const,
@@ -897,7 +930,7 @@ export class SalesService {
     });
   }
 
-  private async confirmReservation(businessId: string, id: string) {
+  private async confirmReservation(businessId: string, id: string, buyerFiscalContext?: any) {
     return this.prisma.$transaction(async (tx) => {
       const res = await tx.reservation.findFirst({
         where: { id, businessId },
@@ -926,6 +959,34 @@ export class SalesService {
             });
 
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
+
+      if (buyerFiscalContext) {
+        const cartItems = [
+          {
+            itemId: res.itemId,
+            quantity: 1,
+          },
+        ];
+
+        const preview = await this.taxService.calculateTaxPreview(businessId, {
+          buyerType: buyerFiscalContext.buyerType,
+          buyerName: buyerFiscalContext.buyerName,
+          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+          buyerEmail: buyerFiscalContext.buyerEmail,
+          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+          saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+          cartItems,
+        });
+
+        // Omitir congelamiento fiscal en reservas por ahora
+        // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+      }
 
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
       const inventoryMovements = res.inventoryPostedAt
@@ -1142,7 +1203,8 @@ export class SalesService {
     const updated = await this.prisma.orderItem.update({
       where: { id: orderItem.id },
       data: {
-        excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
+        excludedOptionalIngredientIds:
+          excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
       },
       include: this.orderItemRecipeInclude,
     });

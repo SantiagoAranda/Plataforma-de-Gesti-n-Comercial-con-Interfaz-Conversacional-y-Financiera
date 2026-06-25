@@ -20,6 +20,8 @@ import { RecipesModule } from './recipes/recipes.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { ItemOptionsModule } from './item-options/item-options.module';
+import { SettingsModule } from './settings/settings.module';
+import { TaxModule } from './tax/tax.module';
 
 @Module({
   imports: [
@@ -42,6 +44,8 @@ import { ItemOptionsModule } from './item-options/item-options.module';
     InventoryModule,
     PayrollModule,
     ItemOptionsModule,
+    SettingsModule,
+    TaxModule,
   ],
   controllers: [AppController],
   providers: [AppService],

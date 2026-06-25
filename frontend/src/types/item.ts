@@ -83,6 +83,8 @@ export type Item = {
   type: ItemType;
   name: string;
   price: number;
+  appliesImpoconsumo?: boolean;
+  impoconsumoRate?: number | string | null;
   badges?: Array<{ text: string; color: string }> | null;
   badgeText?: string | null;
   badgeColor?: string | null;
@@ -119,6 +121,7 @@ export type FormErrors = {
   duration?: string;
   schedule?: string;
   inventory?: string;
+  impoconsumoRate?: string;
 };
 
 export type ItemImage = {
