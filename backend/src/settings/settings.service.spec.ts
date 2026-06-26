@@ -24,13 +24,13 @@ describe('SettingsService ICA rates', () => {
       ciiuCode: '4711',
       activityName: null as any,
       icaRatePerThousand: 9.66,
-      reteIcaRatePerThousand: 4,
+      reteIcaRatePerThousand: 9.66,
       minBaseUvt: 0,
     });
 
     const data = municipalityIcaRate.create.mock.calls[0][0].data;
     expect(new Prisma.Decimal(data.icaRate).toFixed(6)).toBe('0.009660');
-    expect(new Prisma.Decimal(data.reteIcaRate).toFixed(6)).toBe('0.004000');
+    expect(new Prisma.Decimal(data.reteIcaRate).toFixed(6)).toBe('0.009660');
   });
 
   it('converts per-thousand inputs to decimal rates exactly once on update', async () => {
@@ -39,11 +39,11 @@ describe('SettingsService ICA rates', () => {
 
     await service.updateIcaRate('business-1', 'rate-1', {
       icaRatePerThousand: 9.66,
-      reteIcaRatePerThousand: 4,
+      reteIcaRatePerThousand: 9.66,
     });
 
     const data = municipalityIcaRate.update.mock.calls[0][0].data;
     expect(new Prisma.Decimal(data.icaRate).toFixed(6)).toBe('0.009660');
-    expect(new Prisma.Decimal(data.reteIcaRate).toFixed(6)).toBe('0.004000');
+    expect(new Prisma.Decimal(data.reteIcaRate).toFixed(6)).toBe('0.009660');
   });
 });

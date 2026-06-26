@@ -1,7 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TaxPreviewDto, TaxPreviewCartItemDto } from './dto/tax-preview.dto';
-import { PersonType, DocumentType, SaleConcept, TaxType, TaxDirection, Prisma } from '@prisma/client';
+import { TaxPreviewDto } from './dto/tax-preview.dto';
+import {
+  PersonType,
+  SaleConcept,
+  TaxDirection,
+  TaxType,
+  Prisma,
+} from '@prisma/client';
 
 @Injectable()
 export class TaxService {
@@ -22,33 +28,49 @@ export class TaxService {
     });
 
     if (!sellerProfile) {
-      this.logger.warn(`No tax profile configured for business ${businessId}. Returning zero tax.`);
+      this.logger.warn(
+        `No tax profile configured for business ${businessId}. Returning zero tax.`,
+      );
       return await this.emptyTaxPreview(businessId, dto);
     }
 
-    // 1. Obtener la UVT vigente
     const globalParams = await this.prisma.taxGlobalParameter.findFirst({
       where: { active: true },
       orderBy: { year: 'desc' },
     });
-    const uvtValue = globalParams ? globalParams.uvt : new Prisma.Decimal(52374.0);
-    const defaultVat = globalParams ? globalParams.defaultVatRate : new Prisma.Decimal(0.19);
-    const defaultImpoconsumo = globalParams ? globalParams.defaultImpoconsumoRate : new Prisma.Decimal(0.08);
+    const uvtValue = globalParams?.uvt ?? new Prisma.Decimal(52374);
+    const defaultVat = globalParams?.defaultVatRate ?? new Prisma.Decimal(0.19);
+    const defaultImpoconsumo =
+      globalParams?.defaultImpoconsumoRate ?? new Prisma.Decimal(0.08);
 
-    // 2. Cargar ítems y calcular subtotal e impuestos a nivel de ítem (IVA e Impoconsumo)
     let subtotalTotal = new Prisma.Decimal(0);
+    let vatBase = new Prisma.Decimal(0);
+    let impoconsumoBase = new Prisma.Decimal(0);
     let vatTotal = new Prisma.Decimal(0);
     let impoconsumoTotal = new Prisma.Decimal(0);
     const taxLines: any[] = [];
+
     const itemIds = dto.cartItems.map((i) => i.itemId);
     const dbItems = await this.prisma.item.findMany({
       where: { id: { in: itemIds }, businessId },
     });
     const itemsMap = new Map(dbItems.map((i) => [i.id, i]));
 
-    const sellerIsIvaResponsable = sellerProfile.responsibilities.some(
-      (r) => r.responsibility.code === '48',
+    const sellerResponsibilityCodes = sellerProfile.responsibilities.map(
+      (r) => r.responsibility.code,
     );
+    const sellerIsIvaResponsable = sellerResponsibilityCodes.includes('48');
+    const sellerIsNoResponsableIva = sellerResponsibilityCodes.includes('49');
+    const sellerIsRegimenSimple = sellerResponsibilityCodes.includes('47');
+    const sellerIsAutorretenedor = sellerResponsibilityCodes.includes('15');
+    const sellerIsGranContribuyente = sellerResponsibilityCodes.includes('13');
+    const sellerIsPersonaNaturalNoResponsable =
+      sellerProfile.personType === PersonType.NATURAL && sellerIsNoResponsableIva;
+    const withholdingSubjectIsDeclarante =
+      dto.withholdingSubjectIsDeclarante ?? true;
+    const buyerIsPersonaNatural = dto.buyerType === PersonType.NATURAL;
+    const buyerIsRetenedorOrGran =
+      dto.buyerIsRetenedor || dto.buyerIsGranContribuyente;
 
     for (const cartItem of dto.cartItems) {
       const item = itemsMap.get(cartItem.itemId);
@@ -59,62 +81,50 @@ export class TaxService {
       const itemSubtotal = itemPrice.mul(qty);
       subtotalTotal = subtotalTotal.add(itemSubtotal);
 
-      // Calcular IVA
-      let itemVat = new Prisma.Decimal(0);
-      if (sellerIsIvaResponsable) {
-        // En MVP, aplicamos IVA por defecto si el vendedor es responsable, a menos que el concepto esté excluido.
-        // Conceptos GOODS y SERVICES aplican IVA.
-        if (dto.saleConcept === SaleConcept.GOODS || dto.saleConcept === SaleConcept.SERVICES) {
-          itemVat = itemSubtotal.mul(defaultVat);
-          vatTotal = vatTotal.add(itemVat);
-        }
+      if (sellerIsPersonaNaturalNoResponsable) {
+        continue;
       }
 
-      // Calcular Impoconsumo
-      let itemImpoconsumo = new Prisma.Decimal(0);
       if (item.appliesImpoconsumo) {
-        const rate = item.impoconsumoRate ?? defaultImpoconsumo ?? new Prisma.Decimal(0.08);
-        itemImpoconsumo = itemSubtotal.mul(rate);
-        impoconsumoTotal = impoconsumoTotal.add(itemImpoconsumo);
+        const rate =
+          item.impoconsumoRate ?? defaultImpoconsumo ?? new Prisma.Decimal(0.08);
+        impoconsumoBase = impoconsumoBase.add(itemSubtotal);
+        impoconsumoTotal = impoconsumoTotal.add(itemSubtotal.mul(rate));
+        continue;
+      }
+
+      if (sellerIsIvaResponsable) {
+        vatBase = vatBase.add(itemSubtotal);
+        vatTotal = vatTotal.add(itemSubtotal.mul(defaultVat));
       }
     }
 
-    const impoconsumoBase = dto.cartItems.reduce((acc, cartItem) => {
-      const item = itemsMap.get(cartItem.itemId);
-      if (item && item.appliesImpoconsumo) {
-        const qty = new Prisma.Decimal(cartItem.quantity);
-        const itemPrice = new Prisma.Decimal(item.price);
-        return acc.add(itemPrice.mul(qty));
-      }
-      return acc;
-    }, new Prisma.Decimal(0));
-
-    // Agregar línea de IVA si aplica
     if (vatTotal.gt(0)) {
       taxLines.push({
         taxType: TaxType.IVA,
         direction: TaxDirection.CHARGE,
-        baseAmount: subtotalTotal,
+        baseAmount: vatBase,
         rate: defaultVat,
         taxAmount: vatTotal,
         accountCode: '2408',
         applied: true,
-        reason: 'El vendedor es Responsable de IVA (48) y el concepto de venta aplica.',
+        reason: 'El vendedor es Responsable de IVA (48) y el item no aplica Impoconsumo.',
       });
-    } else if (sellerIsIvaResponsable) {
+    } else if (sellerIsIvaResponsable || sellerIsPersonaNaturalNoResponsable) {
       taxLines.push({
         taxType: TaxType.IVA,
         direction: TaxDirection.CHARGE,
-        baseAmount: subtotalTotal,
+        baseAmount: vatBase,
         rate: defaultVat,
         taxAmount: new Prisma.Decimal(0),
         accountCode: '2408',
         applied: false,
-        reason: 'El concepto de venta no aplica IVA para este tipo de actividad en MVP.',
+        reason: sellerIsPersonaNaturalNoResponsable
+          ? 'Persona Natural No Responsable: no genera IVA.'
+          : 'No hay base gravada con IVA.',
       });
     }
 
-    // Agregar línea de Impoconsumo si aplica
     if (impoconsumoTotal.gt(0)) {
       taxLines.push({
         taxType: TaxType.IMPOCONSUMO,
@@ -122,85 +132,103 @@ export class TaxService {
         baseAmount: impoconsumoBase,
         rate: defaultImpoconsumo ?? new Prisma.Decimal(0.08),
         taxAmount: impoconsumoTotal,
-        accountCode: '2420',
+        accountCode: '519595',
         applied: true,
-        reason: 'Aplica Impoconsumo sobre ítems configurados individualmente.',
+        reason: 'Aplica Impoconsumo sobre items configurados individualmente.',
       });
     }
 
-    // Cargar reglas tributarias personalizadas del negocio
     const rules = await this.prisma.salesTaxRule.findMany({
       where: { businessId, active: true },
     });
 
     const findRule = (taxType: TaxType, direction: TaxDirection) => {
       const specificRule = rules.find(
-        (r) => r.taxType === taxType && r.direction === direction && r.saleConcept === dto.saleConcept
+        (r) =>
+          r.taxType === taxType &&
+          r.direction === direction &&
+          r.saleConcept === dto.saleConcept,
       );
       if (specificRule) return specificRule;
       return rules.find(
-        (r) => r.taxType === taxType && r.direction === direction && !r.saleConcept
+        (r) => r.taxType === taxType && r.direction === direction && !r.saleConcept,
       );
     };
 
     const reteFuenteRule = findRule(TaxType.RETEFUENTE, TaxDirection.WITHHOLD);
     const reteIvaRule = findRule(TaxType.RETEIVA, TaxDirection.WITHHOLD);
-    const autoRetencionRule = findRule(TaxType.AUTORRETENCION, TaxDirection.SELF);
+    const autoRetencionRule = findRule(
+      TaxType.AUTORRETENCION,
+      TaxDirection.SELF,
+    );
 
-    // 3. RETENCIONES (WITHHOLD) - Se restan del Neto Recibido
+    const getReteFuenteDefaults = () => {
+      switch (dto.saleConcept) {
+        case SaleConcept.SERVICES:
+          return {
+            minBaseUvt: new Prisma.Decimal(15),
+            rate: new Prisma.Decimal(withholdingSubjectIsDeclarante ? 0.04 : 0.06),
+          };
+        case SaleConcept.HONORARIOS:
+          return {
+            minBaseUvt: new Prisma.Decimal(0),
+            rate: new Prisma.Decimal(withholdingSubjectIsDeclarante ? 0.11 : 0.1),
+          };
+        case SaleConcept.ARRENDAMIENTOS:
+          return {
+            minBaseUvt: new Prisma.Decimal(27),
+            rate: new Prisma.Decimal(0.035),
+          };
+        case SaleConcept.GOODS:
+        default:
+          return {
+            minBaseUvt: new Prisma.Decimal(10),
+            rate: new Prisma.Decimal(
+              withholdingSubjectIsDeclarante ? 0.025 : 0.035,
+            ),
+          };
+      }
+    };
+
+    const reteFuenteDefaults = getReteFuenteDefaults();
+    const reteFuenteMinBaseUvt =
+      reteFuenteRule?.minBaseUvt ?? reteFuenteDefaults.minBaseUvt;
+    const reteFuenteRate = reteFuenteRule?.rate ?? reteFuenteDefaults.rate;
+
     let reteFuenteTotal = new Prisma.Decimal(0);
     let reteIvaTotal = new Prisma.Decimal(0);
     let reteIcaTotal = new Prisma.Decimal(0);
 
-    const buyerIsRetenedorOrGran = dto.buyerIsRetenedor || dto.buyerIsGranContribuyente;
-    const sellerIsRegimenSimple = sellerProfile.responsibilities.some((r) => r.responsibility.code === '47');
-
-    // A. RETEFUENTE
-    if (buyerIsRetenedorOrGran && !sellerIsRegimenSimple) {
-      // Determinar base mínima y tasa por defecto de retención
-      let minBaseUvt = new Prisma.Decimal(27); // compras por defecto
-      let rate = new Prisma.Decimal(0.025); // 2.5% compras
-
-      if (dto.saleConcept === SaleConcept.SERVICES) {
-        minBaseUvt = new Prisma.Decimal(4);
-        rate = new Prisma.Decimal(0.04); // 4% servicios declarantes
-      } else if (dto.saleConcept === SaleConcept.HONORARIOS) {
-        minBaseUvt = new Prisma.Decimal(0);
-        rate = new Prisma.Decimal(0.10); // 10% honorarios
-      } else if (dto.saleConcept === SaleConcept.ARRENDAMIENTOS) {
-        minBaseUvt = new Prisma.Decimal(27);
-        rate = new Prisma.Decimal(0.04); // 4% arrendamientos
-      }
-
-      // Si hay regla en base de datos, sobrescribimos
-      if (reteFuenteRule) {
-        minBaseUvt = reteFuenteRule.minBaseUvt;
-        rate = reteFuenteRule.rate;
-      }
-
-      const minBaseCop = minBaseUvt.mul(uvtValue);
+    if (
+      buyerIsRetenedorOrGran &&
+      !buyerIsPersonaNatural &&
+      !dto.buyerIsRegimenSimple &&
+      !sellerIsRegimenSimple &&
+      !sellerIsAutorretenedor
+    ) {
+      const minBaseCop = reteFuenteMinBaseUvt.mul(uvtValue);
       if (subtotalTotal.gte(minBaseCop)) {
-        reteFuenteTotal = subtotalTotal.mul(rate);
+        reteFuenteTotal = subtotalTotal.mul(reteFuenteRate);
         taxLines.push({
           taxType: TaxType.RETEFUENTE,
           direction: TaxDirection.WITHHOLD,
           baseAmount: subtotalTotal,
-          rate,
+          rate: reteFuenteRate,
           taxAmount: reteFuenteTotal,
           accountCode: reteFuenteRule?.pucAccountCode ?? '135515',
           applied: true,
-          reason: `Comprador es agente retenedor y la base supera ${minBaseUvt} UVT ($${minBaseCop.toFixed(0)} COP).`,
+          reason: `Comprador es agente retenedor y la base supera ${reteFuenteMinBaseUvt} UVT.`,
         });
       } else {
         taxLines.push({
           taxType: TaxType.RETEFUENTE,
           direction: TaxDirection.WITHHOLD,
           baseAmount: subtotalTotal,
-          rate,
+          rate: reteFuenteRate,
           taxAmount: new Prisma.Decimal(0),
           accountCode: reteFuenteRule?.pucAccountCode ?? '135515',
           applied: false,
-          reason: `Venta no alcanza la base mínima de retención de ${minBaseUvt} UVT ($${minBaseCop.toFixed(0)} COP).`,
+          reason: `Venta no alcanza la base minima de retencion de ${reteFuenteMinBaseUvt} UVT.`,
         });
       }
     } else {
@@ -208,71 +236,60 @@ export class TaxService {
         taxType: TaxType.RETEFUENTE,
         direction: TaxDirection.WITHHOLD,
         baseAmount: subtotalTotal,
-        rate: reteFuenteRule?.rate ?? new Prisma.Decimal(0),
+        rate: reteFuenteRate,
         taxAmount: new Prisma.Decimal(0),
         accountCode: reteFuenteRule?.pucAccountCode ?? '135515',
         applied: false,
-        reason: sellerIsRegimenSimple
-          ? 'El vendedor pertenece al Régimen Simple (47) y está exento de retenciones.'
-          : 'El comprador no es agente retenedor ni gran contribuyente.',
+        reason: sellerIsAutorretenedor
+          ? 'El vendedor es autorretenedor; no se practica ReteFuente.'
+          : sellerIsRegimenSimple
+            ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteFuente.'
+            : dto.buyerIsRegimenSimple
+              ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteFuente.'
+              : buyerIsPersonaNatural
+                ? 'El comprador es Persona Natural; no practica ReteFuente.'
+                : 'El comprador no es agente retenedor ni gran contribuyente.',
       });
     }
 
-    // B. RETEIVA
-    if (dto.buyerIsRetenedor && sellerIsIvaResponsable && vatTotal.gt(0)) {
-      let minBaseUvt = new Prisma.Decimal(27);
-      let rate = new Prisma.Decimal(0.15); // 15% de la tarifa del IVA
-
-      if (dto.saleConcept === SaleConcept.SERVICES) {
-        minBaseUvt = new Prisma.Decimal(4);
-      }
-
-      if (reteIvaRule) {
-        minBaseUvt = reteIvaRule.minBaseUvt;
-        rate = reteIvaRule.rate;
-      }
-
-      const minBaseCop = minBaseUvt.mul(uvtValue);
-      if (subtotalTotal.gte(minBaseCop)) {
-        // En Colombia reteiva es rate (15%) sobre el valor del IVA
-        reteIvaTotal = vatTotal.mul(rate);
-        taxLines.push({
-          taxType: TaxType.RETEIVA,
-          direction: TaxDirection.WITHHOLD,
-          baseAmount: vatTotal,
-          rate,
-          taxAmount: reteIvaTotal,
-          accountCode: reteIvaRule?.pucAccountCode ?? '135517',
-          applied: true,
-          reason: `Comprador es agente retenedor de IVA y superó base de ${minBaseUvt} UVT.`,
-        });
-      } else {
-        taxLines.push({
-          taxType: TaxType.RETEIVA,
-          direction: TaxDirection.WITHHOLD,
-          baseAmount: vatTotal,
-          rate,
-          taxAmount: new Prisma.Decimal(0),
-          accountCode: reteIvaRule?.pucAccountCode ?? '135517',
-          applied: false,
-          reason: `El subtotal no supera la base mínima de ${minBaseUvt} UVT.`,
-        });
-      }
+    const reteIvaRate = reteIvaRule?.rate ?? new Prisma.Decimal(0.15);
+    if (
+      dto.buyerIsGranContribuyente &&
+      vatTotal.gt(0) &&
+      !sellerIsRegimenSimple &&
+      !sellerIsGranContribuyente
+    ) {
+      reteIvaTotal = vatTotal.mul(reteIvaRate);
+      taxLines.push({
+        taxType: TaxType.RETEIVA,
+        direction: TaxDirection.WITHHOLD,
+        baseAmount: vatTotal,
+        rate: reteIvaRate,
+        taxAmount: reteIvaTotal,
+        accountCode: reteIvaRule?.pucAccountCode ?? '135517',
+        applied: true,
+        reason: 'Comprador Gran Contribuyente retiene el 15% del IVA generado.',
+      });
     } else {
       taxLines.push({
         taxType: TaxType.RETEIVA,
         direction: TaxDirection.WITHHOLD,
         baseAmount: vatTotal,
-        rate: reteIvaRule?.rate ?? new Prisma.Decimal(0),
+        rate: reteIvaRate,
         taxAmount: new Prisma.Decimal(0),
         accountCode: reteIvaRule?.pucAccountCode ?? '135517',
         applied: false,
-        reason: 'No se cumplen las condiciones para retención de IVA.',
+        reason: 'No se cumplen las condiciones para retencion de IVA.',
       });
     }
 
-    // C. RETEICA
-    if (dto.buyerIsRetenedor && !sellerIsRegimenSimple && dto.fiscalMunicipalityCode) {
+    if (
+      buyerIsRetenedorOrGran &&
+      !buyerIsPersonaNatural &&
+      !sellerIsRegimenSimple &&
+      !sellerIsGranContribuyente &&
+      dto.fiscalMunicipalityCode
+    ) {
       const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
       let icaRateObj = null;
       if (sellerCiiuCode) {
@@ -295,43 +312,33 @@ export class TaxService {
         });
       }
 
-      if (icaRateObj) {
-        const minBaseCop = icaRateObj.minBaseUvt.mul(uvtValue);
-        if (subtotalTotal.gte(minBaseCop)) {
-          reteIcaTotal = subtotalTotal.mul(icaRateObj.reteIcaRate);
-          taxLines.push({
-            taxType: TaxType.RETEICA,
-            direction: TaxDirection.WITHHOLD,
-            baseAmount: subtotalTotal,
-            rate: icaRateObj.reteIcaRate,
-            taxAmount: reteIcaTotal,
-            accountCode: '135518',
-            applied: true,
-            reason: `Comprador retiene ICA para el municipio ${dto.fiscalMunicipalityCode} y la base supera ${icaRateObj.minBaseUvt} UVT.`,
-          });
-        } else {
-          taxLines.push({
-            taxType: TaxType.RETEICA,
-            direction: TaxDirection.WITHHOLD,
-            baseAmount: subtotalTotal,
-            rate: icaRateObj.reteIcaRate,
-            taxAmount: new Prisma.Decimal(0),
-            accountCode: '135518',
-            applied: false,
-            reason: `Venta no alcanza la base mínima de ICA de ${icaRateObj.minBaseUvt} UVT para este municipio.`,
-          });
-        }
-      } else {
-        const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
+      const reteIcaRate = icaRateObj?.reteIcaRate ?? new Prisma.Decimal(0.00966);
+      const reteIcaMinBaseUvt = icaRateObj?.minBaseUvt ?? new Prisma.Decimal(0);
+      const minBaseCop = reteIcaMinBaseUvt.mul(uvtValue);
+      if (subtotalTotal.gte(minBaseCop)) {
+        reteIcaTotal = subtotalTotal.mul(reteIcaRate);
         taxLines.push({
           taxType: TaxType.RETEICA,
           direction: TaxDirection.WITHHOLD,
           baseAmount: subtotalTotal,
-          rate: new Prisma.Decimal(0),
+          rate: reteIcaRate,
+          taxAmount: reteIcaTotal,
+          accountCode: '135518',
+          applied: true,
+          reason: icaRateObj
+            ? `Comprador retiene ICA para el municipio ${dto.fiscalMunicipalityCode} y la base supera ${reteIcaMinBaseUvt} UVT.`
+            : `Fallback funcional Simulador_Ventas: ReteICA 9.66 por mil para el municipio ${dto.fiscalMunicipalityCode}.`,
+        });
+      } else {
+        taxLines.push({
+          taxType: TaxType.RETEICA,
+          direction: TaxDirection.WITHHOLD,
+          baseAmount: subtotalTotal,
+          rate: reteIcaRate,
           taxAmount: new Prisma.Decimal(0),
           accountCode: '135518',
           applied: false,
-          reason: `No hay tarifa ICA configurada para el municipio ${dto.fiscalMunicipalityCode}${sellerCiiuCode ? ` y actividad CIIU ${sellerCiiuCode}` : ''}.`,
+          reason: `Venta no alcanza la base minima de ICA de ${reteIcaMinBaseUvt} UVT para este municipio.`,
         });
       }
     } else {
@@ -343,44 +350,42 @@ export class TaxService {
         taxAmount: new Prisma.Decimal(0),
         accountCode: '135518',
         applied: false,
-        reason: sellerIsRegimenSimple
-          ? 'El vendedor pertenece al Régimen Simple (47) y está exento de ReteICA.'
-          : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
+        reason: sellerIsGranContribuyente
+          ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
+          : sellerIsRegimenSimple
+            ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
+            : buyerIsPersonaNatural
+              ? 'El comprador es Persona Natural; no practica ReteICA.'
+              : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
       });
     }
 
-    // 4. AUTORRETENCIONES (SELF) - No se restan del Neto Recibido
     let autoRetencionTotal = new Prisma.Decimal(0);
-    const sellerIsAutorretenedor = sellerProfile.responsibilities.some((r) => r.responsibility.code === '15');
-
-    if (sellerIsAutorretenedor || autoRetencionRule) {
-      let rate = autoRetencionRule?.rate ?? new Prisma.Decimal(0.004); // Default 0.4% autorretención especial
-      let minBaseUvt = autoRetencionRule?.minBaseUvt ?? new Prisma.Decimal(0);
-
+    if (sellerIsAutorretenedor) {
+      const minBaseUvt = autoRetencionRule?.minBaseUvt ?? new Prisma.Decimal(0);
       const minBaseCop = minBaseUvt.mul(uvtValue);
       if (subtotalTotal.gte(minBaseCop)) {
-        autoRetencionTotal = subtotalTotal.mul(rate);
+        autoRetencionTotal = subtotalTotal.mul(reteFuenteRate);
         taxLines.push({
           taxType: TaxType.AUTORRETENCION,
           direction: TaxDirection.SELF,
           baseAmount: subtotalTotal,
-          rate,
+          rate: reteFuenteRate,
           taxAmount: autoRetencionTotal,
           accountCode: autoRetencionRule?.pucAccountCode ?? '236575',
           applied: true,
-          reason: 'El vendedor es autorretenedor y la venta superó la base mínima.',
+          reason:
+            'El vendedor es autorretenedor; autorretencion calculada con la tarifa de ReteFuente del concepto.',
         });
       }
     }
 
-    // 5. CALCULAR NETO A RECIBIR (Sin restar autorretenciones)
-    // netReceived = subtotal + IVA + impoconsumo - retefuente - reteiva - reteica
     let netReceived = subtotalTotal
       .add(vatTotal)
       .add(impoconsumoTotal)
       .sub(reteFuenteTotal)
-      .sub(reteIvaTotal)
-      .sub(reteIcaTotal);
+      .sub(reteIcaTotal)
+      .sub(reteIvaTotal);
 
     if (netReceived.lt(0)) {
       netReceived = new Prisma.Decimal(0);
@@ -401,7 +406,12 @@ export class TaxService {
     };
   }
 
-  async freezeTaxCalculation(tx: Prisma.TransactionClient, orderId: string, preview: any, buyerData: any) {
+  async freezeTaxCalculation(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    preview: any,
+    buyerData: any,
+  ) {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
@@ -424,17 +434,22 @@ export class TaxService {
     if (!order) throw new NotFoundException('Orden no encontrada');
 
     const sellerProfile = order.business.taxProfile;
-    const sellerFiscalSnapshot = sellerProfile ? {
-      tradeName: sellerProfile.tradeName,
-      nit: sellerProfile.nit,
-      dv: sellerProfile.dv,
-      address: sellerProfile.address,
-      municipalityCode: sellerProfile.municipalityCode,
-      responsibilities: sellerProfile.responsibilities.map((r) => r.responsibility.code),
-    } : {};
+    const sellerFiscalSnapshot = sellerProfile
+      ? {
+          tradeName: sellerProfile.tradeName,
+          nit: sellerProfile.nit,
+          dv: sellerProfile.dv,
+          address: sellerProfile.address,
+          municipalityCode: sellerProfile.municipalityCode,
+          responsibilities: sellerProfile.responsibilities.map(
+            (r) => r.responsibility.code,
+          ),
+        }
+      : {};
 
-    // 1. Guardar OrderFiscalContext
-    const chargedTaxTotal = new Prisma.Decimal(preview.vatTotal).add(new Prisma.Decimal(preview.impoconsumoTotal));
+    const chargedTaxTotal = new Prisma.Decimal(preview.vatTotal).add(
+      new Prisma.Decimal(preview.impoconsumoTotal),
+    );
     const withheldTaxTotal = new Prisma.Decimal(preview.reteFuenteTotal)
       .add(new Prisma.Decimal(preview.reteIvaTotal))
       .add(new Prisma.Decimal(preview.reteIcaTotal));
@@ -480,7 +495,6 @@ export class TaxService {
       },
     });
 
-    // 2. Guardar SaleTaxLines (borrar anteriores si existen)
     await tx.saleTaxLine.deleteMany({
       where: { orderId },
     });
@@ -501,7 +515,6 @@ export class TaxService {
       });
     }
 
-    // 3. Guardar TaxCalculationSnapshot
     await tx.taxCalculationSnapshot.upsert({
       where: { orderId },
       update: {
@@ -547,13 +560,14 @@ export class TaxService {
   private async emptyTaxPreview(businessId: string, dto: TaxPreviewDto) {
     let subtotalTotal = new Prisma.Decimal(0);
     const profileMissing = true;
-    
+
     try {
       const itemIds = dto?.cartItems?.map((i) => i.itemId) || [];
       if (itemIds.length > 0) {
-        const dbItems = (await this.prisma.item.findMany({
-          where: { id: { in: itemIds }, businessId },
-        })) || [];
+        const dbItems =
+          (await this.prisma.item.findMany({
+            where: { id: { in: itemIds }, businessId },
+          })) || [];
         const itemsMap = new Map(dbItems.map((i) => [i.id, i]));
         for (const cartItem of dto.cartItems) {
           const item = itemsMap.get(cartItem.itemId);
@@ -578,7 +592,7 @@ export class TaxService {
       autoRetencionTotal: new Prisma.Decimal(0),
       netReceived: subtotalTotal,
       taxLines: [],
-      uvtValue: new Prisma.Decimal(52374.0),
+      uvtValue: new Prisma.Decimal(52374),
       profileMissing,
     };
   }

@@ -167,7 +167,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     const dto: TaxPreviewDto = {
       buyerIsIvaResponsable: true,
       buyerIsRetenedor: true,
-      buyerIsGranContribuyente: false,
+      buyerIsGranContribuyente: true,
       buyerIsAutorretenedor: false,
       buyerIsRegimenSimple: false,
       saleConcept: SaleConcept.GOODS,
@@ -186,7 +186,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     expect(result.reteIvaTotal.toNumber()).toBe(28500); // 190000 (VAT) * 0.15
   });
 
-  it('5. venta con impoconsumo - should calculate Impoconsumo base strictly from items with appliesImpoconsumo = true', async () => {
+  it('5. venta con impoconsumo - should calculate Impoconsumo without IVA on the same item', async () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '48' } }],
@@ -225,6 +225,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     expect(result.subtotal.toNumber()).toBe(100000);
     expect(impoLine?.baseAmount.toNumber()).toBe(30000); // Only item-1
     expect(impoLine?.taxAmount.toNumber()).toBe(2400); // 30000 * 0.08
+    expect(result.vatTotal.toNumber()).toBe(13300); // Only item-2: 70000 * 0.19
   });
 
   it('6. venta con ReteICA - should lookup rate with seller main CIIU', async () => {
@@ -280,7 +281,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     expect(icaLine?.taxAmount.toNumber()).toBe(4830); // 500000 * 0.00966
   });
 
-  it('7. venta sin tarifa ICA - should not block and add a non-applied ReteICA line with warning reason', async () => {
+  it('7. venta sin tarifa ICA - should use simulator fallback 9.66 per thousand', async () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       mainCiiuCode: '5611',
@@ -295,7 +296,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       { id: 'item-1', price: new Prisma.Decimal(500000), appliesImpoconsumo: false },
     ]);
     prismaMock.salesTaxRule.findMany.mockResolvedValue([]);
-    prismaMock.municipalityIcaRate.findFirst.mockResolvedValue(null); // No rate found!
+    prismaMock.municipalityIcaRate.findFirst.mockResolvedValue(null);
 
     const dto: TaxPreviewDto = {
       buyerIsIvaResponsable: false,
@@ -312,11 +313,13 @@ describe('Manual Verification of Colombian Tax Module', () => {
     console.log('--- TEST 7: Venta sin tarifa ICA ---');
     const icaLine = result.taxLines.find(l => l.taxType === TaxType.RETEICA);
     console.log('reteIca applied:', icaLine?.applied);
+    console.log('reteIca rate:', icaLine?.rate.toString());
     console.log('reteIca reason:', icaLine?.reason);
 
-    expect(icaLine?.applied).toBe(false);
-    expect(icaLine?.taxAmount.toNumber()).toBe(0);
-    expect(icaLine?.reason).toContain('No hay tarifa ICA configurada para el municipio 11001 y actividad CIIU 5611');
+    expect(icaLine?.applied).toBe(true);
+    expect(icaLine?.rate.toString()).toBe('0.00966');
+    expect(icaLine?.taxAmount.toNumber()).toBe(4830);
+    expect(icaLine?.reason).toContain('Fallback funcional Simulador_Ventas');
   });
 
   it('8. snapshot histórico - freezeTaxCalculation should persist all tax lines (applied=true and applied=false)', async () => {
@@ -406,7 +409,15 @@ describe('Manual Verification of Colombian Tax Module', () => {
         ),
       },
       pucSubcuenta: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve({
+            code: where.code,
+            name: 'Test Subaccount',
+            active: true,
+            cuentaCode: String(where.code).slice(0, 4),
+            cuenta: { code: String(where.code).slice(0, 4), name: 'Test Account', grupo: null },
+          })
+        ),
       },
     } as any;
 
@@ -428,7 +439,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       accountingMovement: {
         create: jest.fn(({ data }: any) =>
           Promise.resolve({
-            id: `movement-${data.pucCuentaCode}-${data.nature}`,
+            id: `movement-${data.pucCuentaCode ?? data.pucSubcuentaId}-${data.nature}`,
             ...data,
           })
         ),
@@ -456,7 +467,13 @@ describe('Manual Verification of Colombian Tax Module', () => {
     console.log('--- TEST 9: Contabilidad Cuadrada ---');
     const createdMovements = txMock.accountingMovement.create.mock.calls.map(([call]: any) => call.data);
     console.log('Number of created movements:', createdMovements.length);
-    console.log('Movements details:', createdMovements.map((m: any) => `${m.pucCuentaCode} ${m.nature} ${m.amount.toString()}`));
+    console.log('Movements details:', createdMovements.map((m: any) => `${m.pucSubcuentaId ?? m.pucCuentaCode} ${m.nature} ${m.amount.toString()}`));
+    expect(createdMovements.map((m: any) => m.pucSubcuentaId ?? m.pucCuentaCode)).toEqual([
+      '110505',
+      '413595',
+      '6135',
+      '1435',
+    ]);
     
     // Check that all movements have originType: 'ORDER' and originId: 'order-123'
     for (const movement of createdMovements) {

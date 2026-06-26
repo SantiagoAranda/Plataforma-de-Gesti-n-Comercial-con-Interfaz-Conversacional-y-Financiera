@@ -16,16 +16,18 @@ import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dt
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
 
 const ORDER_ACCOUNTING_DEFAULTS = {
-  debitCashPucCode: '1105',
-  debitBankTransferPucCode: '1110',
+  // Use active subaccounts from prisma/seed-data/puc_subcuenta.csv.
+  // The current seed does not include 413505 or 240805.
+  debitCashPucCode: '110505',
+  debitBankTransferPucCode: '111005',
   inventoryPucCode: '1435',
   costPucCodeByType: {
     PRODUCT: '6135',
     SERVICE: '6135',
   },
   creditIncomePucCodeByType: {
-    PRODUCT: '4135',
-    SERVICE: '4135',
+    PRODUCT: '413595',
+    SERVICE: '413595',
   },
 } as const;
 
@@ -182,6 +184,12 @@ export class AccountingService {
     };
   }
 
+  private async loadDefaultPucReferenceOrThrow(code: string) {
+    return this.loadPucReferenceOrThrow(
+      code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
+    );
+  }
+
   private serializeMovement(movement: MovementWithPucRelations) {
     const selectedPuc = movement.pucSubcuenta ?? movement.pucCuenta;
     const selectedCuenta = movement.pucSubcuenta?.cuenta ?? movement.pucCuenta;
@@ -309,9 +317,7 @@ export class AccountingService {
       ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType[itemType];
 
     try {
-      return await this.loadPucReferenceOrThrow({
-        pucCuentaCode: preferredCode,
-      });
+      return await this.loadDefaultPucReferenceOrThrow(preferredCode);
     } catch (error) {
       if (
         itemType !== 'SERVICE' ||
@@ -320,10 +326,9 @@ export class AccountingService {
         throw error;
       }
 
-      return this.loadPucReferenceOrThrow({
-        pucCuentaCode:
-          ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT,
-      });
+      return this.loadDefaultPucReferenceOrThrow(
+        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT,
+      );
     }
   }
 
@@ -335,7 +340,7 @@ export class AccountingService {
         ? ORDER_ACCOUNTING_DEFAULTS.debitBankTransferPucCode
         : ORDER_ACCOUNTING_DEFAULTS.debitCashPucCode;
 
-    return this.loadPucReferenceOrThrow({ pucCuentaCode: debitPucCode });
+    return this.loadDefaultPucReferenceOrThrow(debitPucCode);
   }
 
   private async resolveOrderInventoryCosts(
@@ -575,7 +580,7 @@ export class AccountingService {
           tLine.accountCode.length === 4 ? { pucCuentaCode: tLine.accountCode } : { pucSubcuentaId: tLine.accountCode }
         );
         const debitCode = '135515';
-        const refDebito = await this.loadPucReferenceOrThrow({ pucCuentaCode: debitCode });
+        const refDebito = await this.loadDefaultPucReferenceOrThrow(debitCode);
 
         const autoDeb = await tx.accountingMovement.create({
           data: {

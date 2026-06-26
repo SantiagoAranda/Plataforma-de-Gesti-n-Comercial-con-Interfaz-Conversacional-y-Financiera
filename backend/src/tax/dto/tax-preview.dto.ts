@@ -48,6 +48,10 @@ export class TaxPreviewDto {
   buyerIsRegimenSimple!: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  withholdingSubjectIsDeclarante?: boolean;
+
+  @IsOptional()
   @IsString()
   fiscalMunicipalityCode?: string;
 
