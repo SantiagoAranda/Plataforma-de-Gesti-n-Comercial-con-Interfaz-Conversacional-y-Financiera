@@ -53,7 +53,6 @@ interface FieldErrors {
   email?: string;
   password?: string;
   confirmPassword?: string;
-  taxId?: string;
   whatsapp?: string;
 }
 
@@ -65,7 +64,6 @@ export default function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [taxId, setTaxId] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [ownerName, setOwnerName] = useState("");
 
@@ -109,12 +107,6 @@ export default function RegisterForm() {
       errors.confirmPassword = "Las contraseñas no coinciden";
     }
 
-    if (!taxId.trim()) {
-      errors.taxId = "El documento fiscal es obligatorio";
-    } else if (!/^\d+$/.test(taxId)) {
-      errors.taxId = "Solo se permiten números";
-    }
-
     if (!whatsapp.trim()) {
       errors.whatsapp = "El WhatsApp es obligatorio";
     }
@@ -150,7 +142,6 @@ export default function RegisterForm() {
         },
         body: JSON.stringify({
           name: businessName,
-          fiscalId: taxId,
           phoneWhatsapp: whatsapp,
           email,
           password,
@@ -302,25 +293,6 @@ export default function RegisterForm() {
         </div>
         {fieldErrors.confirmPassword && (
           <p className="text-xs text-red-500 mt-1">{fieldErrors.confirmPassword}</p>
-        )}
-      </div>
-
-      {/* Documento fiscal */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          Documento fiscal
-        </label>
-        <input
-          inputMode="numeric"
-          value={taxId}
-          onChange={(e) => {
-            setTaxId(e.target.value.replace(/\D/g, ""));
-            clearFieldError("taxId");
-          }}
-          className={`${inputBase} ${fieldErrors.taxId ? inputErr : inputOk}`}
-        />
-        {fieldErrors.taxId && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.taxId}</p>
         )}
       </div>
 

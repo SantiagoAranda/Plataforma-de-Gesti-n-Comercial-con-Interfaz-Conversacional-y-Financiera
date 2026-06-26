@@ -189,7 +189,7 @@ export class BusinessesService {
 
   async createBusiness(data: {
     name: string;
-    fiscalId: string;
+    fiscalId?: string;
     phoneWhatsapp: string;
   }): Promise<Business> {
     // ✅ Diagnóstico: Log de nombre antes de guardar
@@ -210,7 +210,9 @@ export class BusinessesService {
       return await this.prisma.$transaction(async (tx) => {
         const business = await tx.business.create({
           data: {
-            ...data,
+            name: data.name,
+            fiscalId: data.fiscalId?.trim() ?? '',
+            phoneWhatsapp: data.phoneWhatsapp,
             slug,
             status: 'ACTIVE',
           },

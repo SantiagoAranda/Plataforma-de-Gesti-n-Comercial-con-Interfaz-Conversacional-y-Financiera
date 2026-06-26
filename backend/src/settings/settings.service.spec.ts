@@ -8,7 +8,10 @@ describe('SettingsService ICA rates', () => {
     findFirst: jest.fn(),
     update: jest.fn(),
   };
-  const prisma = { municipalityIcaRate };
+  const taxResponsibility = {
+    findMany: jest.fn(),
+  };
+  const prisma = { municipalityIcaRate, taxResponsibility };
   const service = new SettingsService(prisma as any);
 
   beforeEach(() => {
@@ -45,5 +48,21 @@ describe('SettingsService ICA rates', () => {
     const data = municipalityIcaRate.update.mock.calls[0][0].data;
     expect(new Prisma.Decimal(data.icaRate).toFixed(6)).toBe('0.009660');
     expect(new Prisma.Decimal(data.reteIcaRate).toFixed(6)).toBe('0.009660');
+  });
+
+  it('exposes Gran Contribuyente and Autorretenedor in the RUT catalog', async () => {
+    taxResponsibility.findMany.mockResolvedValue([]);
+
+    await service.listTaxResponsibilities();
+
+    expect(taxResponsibility.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          code: {
+            in: expect.arrayContaining(['13', '15']),
+          },
+        },
+      }),
+    );
   });
 });

@@ -99,6 +99,29 @@ describe('BusinessesService payroll accounting defaults', () => {
     );
   });
 
+  it('allows creating a business before the fiscal document is loaded in RUT', async () => {
+    const { prisma, tx } = createPrismaMock();
+    const service = new BusinessesService(
+      prisma as any,
+      {
+        getPublicUrl: jest.fn(),
+      } as any,
+    );
+
+    await service.createBusiness({
+      name: 'TecnoGames',
+      phoneWhatsapp: '3000000000',
+    });
+
+    expect(tx.business.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          fiscalId: '',
+        }),
+      }),
+    );
+  });
+
   it('fails business creation when a payroll mapping account does not exist', async () => {
     const { prisma, tx } = createPrismaMock();
     tx.pucSubcuenta.findFirst.mockResolvedValueOnce(null);

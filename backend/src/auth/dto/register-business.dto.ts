@@ -1,11 +1,12 @@
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class RegisterBusinessDto {
   @IsString()
   name: string;
 
+  @IsOptional()
   @IsString()
-  fiscalId: string;
+  fiscalId?: string;
 
   @IsString()
   phoneWhatsapp: string;

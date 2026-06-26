@@ -94,6 +94,11 @@ export class SettingsService {
         });
       }
 
+      await tx.business.update({
+        where: { id: businessId },
+        data: { fiscalId: dto.nit.trim() },
+      });
+
       return tx.businessTaxProfile.findUnique({
         where: { id: profile.id },
         include: {
@@ -108,7 +113,7 @@ export class SettingsService {
   }
 
   async listTaxResponsibilities() {
-    const allowedCodes = ['05', '07', '10', '47', '48', '49', '52'];
+    const allowedCodes = ['05', '07', '10', '13', '15', '47', '48', '49', '52'];
     return this.prisma.taxResponsibility.findMany({
       where: {
         code: { in: allowedCodes },

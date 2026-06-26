@@ -8,29 +8,7 @@ import {
   type TaxPreviewResponse,
 } from "@/src/lib/tax/api";
 import type { Sale } from "@/src/types/sales";
-
-const COLOMBIAN_MUNICIPALITIES = [
-  { code: "11001", name: "Bogotá D.C. (Cundinamarca)" },
-  { code: "05001", name: "Medellín (Antioquia)" },
-  { code: "76001", name: "Cali (Valle del Cauca)" },
-  { code: "08001", name: "Barranquilla (Atlántico)" },
-  { code: "13001", name: "Cartagena (Bolívar)" },
-  { code: "68001", name: "Bucaramanga (Santander)" },
-  { code: "54001", name: "Cúcuta (Norte de Santander)" },
-  { code: "66001", name: "Pereira (Risaralda)" },
-  { code: "17001", name: "Manizales (Caldas)" },
-  { code: "73001", name: "Ibagué (Tolima)" },
-  { code: "47001", name: "Santa Marta (Magdalena)" },
-  { code: "52001", name: "Pasto (Nariño)" },
-  { code: "41001", name: "Neiva (Huila)" },
-  { code: "50001", name: "Villavicencio (Meta)" },
-  { code: "05266", name: "Envigado (Antioquia)" },
-  { code: "05631", name: "Sabaneta (Antioquia)" },
-  { code: "05360", name: "Itagüí (Antioquia)" },
-  { code: "05088", name: "Bello (Antioquia)" },
-  { code: "08758", name: "Soledad (Atlántico)" },
-  { code: "68276", name: "Floridablanca (Santander)" },
-];
+import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 
 function formatMoney(amount: number) {
   return amount.toLocaleString("es-CO", {

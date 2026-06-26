@@ -6,6 +6,8 @@ import AppHeader from "@/src/components/layout/AppHeader";
 import Link from "next/link";
 import { api } from "@/src/lib/api";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
+import { getTaxProfile, TaxProfile } from "@/src/lib/settings/api";
+import { getBusinessProfile, BusinessLogoProfile } from "@/src/lib/businessLogo";
 
 type FooterPhone = {
   id: string;
@@ -26,6 +28,8 @@ type StoreFooterSettings = {
   phones?: Array<Omit<FooterPhone, "id">> | null;
   socials?: Array<Omit<FooterSocial, "id">> | null;
 };
+
+type FieldSource = "manual" | "rut" | "business";
 
 const SOCIAL_TYPES = [
   { value: "facebook", label: "Facebook" },
@@ -77,6 +81,10 @@ function withSocialIds(socials: StoreFooterSettings["socials"]): FooterSocial[] 
     : [];
 }
 
+function sourceNotice(value: string) {
+  return value ? null : "Este dato todavia no esta cargado en el RUT.";
+}
+
 export default function ConfiguracionPage() {
   const { notify } = useNotification();
   const [loading, setLoading] = useState(true);
@@ -85,6 +93,11 @@ export default function ConfiguracionPage() {
   const [email, setEmail] = useState("");
   const [phones, setPhones] = useState<FooterPhone[]>([]);
   const [socials, setSocials] = useState<FooterSocial[]>([]);
+  const [taxProfile, setTaxProfile] = useState<TaxProfile | null>(null);
+  const [businessProfile, setBusinessProfile] = useState<BusinessLogoProfile | null>(null);
+  const [descriptionSource, setDescriptionSource] = useState<FieldSource>("manual");
+  const [emailSource, setEmailSource] = useState<FieldSource>("manual");
+  const [phoneSource, setPhoneSource] = useState<FieldSource>("manual");
   const loadErrorShownRef = useRef(false);
   const notifyRef = useRef(notify);
 
@@ -95,9 +108,15 @@ export default function ConfiguracionPage() {
   useEffect(() => {
     let alive = true;
 
-    api<StoreFooterSettings | null>("/businesses/store-footer-settings")
-      .then((data) => {
+    Promise.all([
+      api<StoreFooterSettings | null>("/businesses/store-footer-settings"),
+      getTaxProfile().catch(() => null),
+      getBusinessProfile().catch(() => null),
+    ])
+      .then(([data, profile, business]) => {
         if (!alive) return;
+        setTaxProfile(profile);
+        setBusinessProfile(business);
         setDescription(data?.description ?? "");
         setEmail(data?.email ?? "");
         setPhones(withPhoneIds(data?.phones ?? []));
@@ -131,6 +150,34 @@ export default function ConfiguracionPage() {
       ...prev,
       { id: createLocalId(), type: "instagram", label: "Instagram", value: "" },
     ]);
+  };
+
+  const ensurePrimaryPhone = (value: string) => {
+    setPhones((prev) => {
+      const next = prev.length
+        ? [...prev]
+        : [{ id: createLocalId(), label: "Principal", value: "" }];
+      next[0] = { ...next[0], label: next[0].label || "Principal", value };
+      return next;
+    });
+  };
+
+  const handleDescriptionSource = (source: FieldSource) => {
+    setDescriptionSource(source);
+    if (source === "rut") setDescription(taxProfile?.tradeName ?? "");
+    if (source === "business") setDescription(businessProfile?.name ?? "");
+  };
+
+  const handleEmailSource = (source: FieldSource) => {
+    setEmailSource(source);
+    if (source === "rut") setEmail(taxProfile?.email ?? "");
+    if (source === "business") setEmail("");
+  };
+
+  const handlePhoneSource = (source: FieldSource) => {
+    setPhoneSource(source);
+    if (source === "rut") ensurePrimaryPhone(taxProfile?.phone ?? "");
+    if (source === "business") ensurePrimaryPhone(businessProfile?.phoneWhatsapp ?? "");
   };
 
   const save = async () => {
@@ -234,27 +281,60 @@ export default function ConfiguracionPage() {
 
             <div className="mt-5 space-y-5">
               <label className="block">
-                <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  Descripcion
-                </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Nombre / descripcion visible
+                  </span>
+                  <select
+                    value={descriptionSource}
+                    onChange={(event) => handleDescriptionSource(event.target.value as FieldSource)}
+                    className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-emerald-500"
+                  >
+                    <option value="manual">Escribir manualmente</option>
+                    <option value="business">Usar nombre del negocio</option>
+                    <option value="rut">Usar razon social RUT</option>
+                  </select>
+                </div>
                 <textarea
                   value={description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  onChange={(event) => {
+                    setDescription(event.target.value);
+                    setDescriptionSource("manual");
+                  }}
                   rows={3}
                   className="mt-2 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none transition focus:border-emerald-500"
                 />
+                {descriptionSource === "rut" && sourceNotice(taxProfile?.tradeName ?? "") && (
+                  <p className="mt-1 text-xs text-amber-600">{sourceNotice(taxProfile?.tradeName ?? "")}</p>
+                )}
               </label>
 
               <label className="block">
-                <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  Email
-                </span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Email
+                  </span>
+                  <select
+                    value={emailSource}
+                    onChange={(event) => handleEmailSource(event.target.value as FieldSource)}
+                    className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-emerald-500"
+                  >
+                    <option value="manual">Escribir manualmente</option>
+                    <option value="rut">Usar correo del RUT</option>
+                  </select>
+                </div>
                 <input
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setEmailSource("manual");
+                  }}
                   className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 px-4 text-sm outline-none transition focus:border-emerald-500"
                 />
+                {emailSource === "rut" && sourceNotice(taxProfile?.email ?? "") && (
+                  <p className="mt-1 text-xs text-amber-600">{sourceNotice(taxProfile?.email ?? "")}</p>
+                )}
               </label>
 
               <section>
@@ -262,15 +342,29 @@ export default function ConfiguracionPage() {
                   <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
                     Telefonos
                   </span>
-                  <button
-                    type="button"
-                    onClick={addPhone}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-medium text-neutral-700 transition hover:bg-neutral-200"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Agregar telefono
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={phoneSource}
+                      onChange={(event) => handlePhoneSource(event.target.value as FieldSource)}
+                      className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs outline-none focus:border-emerald-500"
+                    >
+                      <option value="manual">Manual</option>
+                      <option value="business">WhatsApp negocio</option>
+                      <option value="rut">Telefono RUT</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={addPhone}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-neutral-100 px-3 text-xs font-medium text-neutral-700 transition hover:bg-neutral-200"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Agregar telefono
+                    </button>
+                  </div>
                 </div>
+                {phoneSource === "rut" && sourceNotice(taxProfile?.phone ?? "") && (
+                  <p className="mt-2 text-xs text-amber-600">{sourceNotice(taxProfile?.phone ?? "")}</p>
+                )}
 
                 <div className="mt-3 space-y-2">
                   {phones.map((phone, index) => (
@@ -291,15 +385,16 @@ export default function ConfiguracionPage() {
                       />
                       <input
                         value={phone.value}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          setPhoneSource("manual");
                           setPhones((prev) =>
                             prev.map((item, itemIndex) =>
                               itemIndex === index
                                 ? { ...item, value: event.target.value }
                                 : item,
                             ),
-                          )
-                        }
+                          );
+                        }}
                         placeholder="+54 ..."
                         className="h-10 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-emerald-500"
                       />
