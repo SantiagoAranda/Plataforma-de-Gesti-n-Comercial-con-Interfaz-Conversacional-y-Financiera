@@ -36,7 +36,12 @@ export type PucSearchResult =
   | { kind: "SUBCUENTA"; code: string; name: string; parentCode?: string }
   | { kind: "CUENTA"; code: string; name: string };
 
-export async function searchPuc(query: string): Promise<PucSearchResult[]> {
+export async function searchPuc(
+  query: string,
+  type?: "EXPENSE" | "COST",
+): Promise<PucSearchResult[]> {
   if (!query.trim()) return [];
-  return api<PucSearchResult[]>(`/accounting/puc/search?q=${encodeURIComponent(query)}`);
+  const qs = new URLSearchParams({ q: query });
+  if (type) qs.set("type", type);
+  return api<PucSearchResult[]>(`/accounting/puc/search?${qs.toString()}`);
 }

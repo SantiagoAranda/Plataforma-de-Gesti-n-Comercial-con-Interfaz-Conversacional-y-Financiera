@@ -2,9 +2,11 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { Readable } from 'stream';
 
 type UploadObjectParams = {
   objectKey: string;
@@ -65,6 +67,43 @@ export class StorageService {
         Key: objectKey,
       }),
     );
+  }
+
+  async getObjectBuffer(objectKey: string) {
+    const client = this.getClient();
+    const bucket = this.getBucket();
+
+    const response = await client.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+      }),
+    );
+
+    const body = response.Body;
+    if (!body) return Buffer.alloc(0);
+
+    if (body instanceof Readable) {
+      const chunks: Buffer[] = [];
+      for await (const chunk of body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      return Buffer.concat(chunks);
+    }
+
+    if (body instanceof Uint8Array) return Buffer.from(body);
+
+    const webStream = body as ReadableStream<Uint8Array>;
+    const reader = webStream.getReader();
+    const chunks: Buffer[] = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+    }
+
+    return Buffer.concat(chunks);
   }
 
   getPublicUrl(objectKey: string) {

@@ -118,12 +118,44 @@ enum InventoryReferenceType {
 enum AccountingMovementOriginType {
   MANUAL
   ORDER
+  EXPENSE_RECEIPT
   PAYROLL_RUN
   PAYROLL_SETTLEMENT
   PAYROLL_PAYMENT
   PAYROLL_BENEFIT_PAYMENT
   PAYROLL_INITIAL_BALANCE
   PAYROLL_COMPLEMENTARY_RUN
+}
+
+enum ReceiptSource {
+  OCR
+  MANUAL
+  EDITED
+}
+
+enum ReceiptStatus {
+  PROCESSING
+  READY_FOR_REVIEW
+  DRAFT
+  POSTED
+  FAILED
+  REJECTED
+}
+
+enum ExpenseAccountingType {
+  EXPENSE
+  COST
+}
+
+enum ExpenseCategory {
+  SERVICES
+  RENT
+  MARKETING
+  PROFESSIONAL_FEES
+  FOOD
+  TRANSPORT
+  MAINTENANCE
+  OTHER
 }
 
 enum PaymentMethod {
@@ -207,6 +239,7 @@ model Business {
   schedules           ServiceScheduleWindow[]
   blocks              ServiceScheduleBlock[]
   accountingMovements AccountingMovement[]
+  expenseReceipts     ExpenseReceipt[]
   storeFooterSettings StoreFooterSettings?
 
   payrollBusinessParameters PayrollBusinessParameter[]
@@ -969,6 +1002,7 @@ model PucCuenta {
 
   subcuentas          PucSubcuenta[]
   accountingMovements AccountingMovement[]
+  expenseReceipts     ExpenseReceipt[]
 
   @@index([grupoCode])
 }
@@ -983,6 +1017,7 @@ model PucSubcuenta {
   active Boolean @default(true)
 
   accountingMovements AccountingMovement[]
+  expenseReceipts     ExpenseReceipt[]
 
   @@index([cuentaCode])
 }
@@ -1015,6 +1050,55 @@ model AccountingMovement {
   @@index([businessId, date])
   @@index([pucCuentaCode])
   @@index([pucSubcuentaId])
+}
+
+model ExpenseReceipt {
+  id         String @id @default(uuid())
+  businessId String
+
+  status ReceiptStatus @default(PROCESSING)
+  source ReceiptSource @default(OCR)
+
+  bankName           String?
+  reference          String?
+  destinationName    String?
+  destinationBank    String?
+  destinationAccount String?
+
+  amount      Decimal? @db.Decimal(14, 2)
+  paidAt      DateTime?
+  description String?
+
+  rawText       String?
+  parsedPayload Json?
+  confidence    Decimal? @db.Decimal(5, 4)
+
+  processedImageHash String?
+
+  temporaryObjectKey String?
+  temporaryExpiresAt DateTime?
+  processingError    String?
+  duplicateWarning   String?
+
+  accountingType ExpenseAccountingType?
+  category       ExpenseCategory?
+
+  pucCuentaCode  String? @db.VarChar(4)
+  pucSubcuentaId String? @db.VarChar(6)
+
+  accountingMovementIds Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  pucCuenta    PucCuenta?    @relation(fields: [pucCuentaCode], references: [code])
+  pucSubcuenta PucSubcuenta? @relation(fields: [pucSubcuentaId], references: [code])
+
+  @@index([businessId, status, createdAt])
+  @@index([businessId, paidAt])
+  @@index([businessId, reference])
+  @@index([businessId, reference, amount, paidAt])
 }
 
 // ===============================

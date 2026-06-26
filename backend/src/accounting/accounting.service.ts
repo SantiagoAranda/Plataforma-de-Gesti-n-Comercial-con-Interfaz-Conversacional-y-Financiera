@@ -754,7 +754,7 @@ export class AccountingService {
     return { ok: true, id };
   }
 
-  async searchPuc(q: string) {
+  async searchPuc(q: string, type?: 'EXPENSE' | 'COST') {
     const query = (q ?? '').trim();
     if (!query) return [];
 
@@ -791,7 +791,10 @@ export class AccountingService {
           }),
         ]);
 
-    const filteredCuentas = isNumericQuery
+    const allowedPrefix = type === 'EXPENSE' ? '5' : type === 'COST' ? '6' : null;
+    const matchesType = (code: string) => !allowedPrefix || code.startsWith(allowedPrefix);
+
+    const filteredCuentas = (isNumericQuery
       ? cuentas
       : cuentas
           .filter((cuenta) => {
@@ -801,9 +804,11 @@ export class AccountingService {
               cuenta.code.startsWith(query)
             );
           })
-          .slice(0, 20);
+    )
+      .filter((cuenta) => matchesType(cuenta.code))
+      .slice(0, 20);
 
-    const filteredSubcuentas = isNumericQuery
+    const filteredSubcuentas = (isNumericQuery
       ? subcuentas
       : subcuentas
           .filter((subcuenta) => {
@@ -813,7 +818,9 @@ export class AccountingService {
               subcuenta.code.startsWith(query)
             );
           })
-          .slice(0, 20);
+    )
+      .filter((subcuenta) => matchesType(subcuenta.cuentaCode ?? subcuenta.code))
+      .slice(0, 20);
 
     return [
       ...filteredCuentas.map((c) => ({

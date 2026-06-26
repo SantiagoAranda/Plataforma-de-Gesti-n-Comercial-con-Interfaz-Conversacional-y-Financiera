@@ -81,8 +81,8 @@ export class AccountingController {
   }
 
   @Get('puc/search')
-  searchPuc(@Query('q') q: string) {
-    return this.accountingService.searchPuc(q ?? '');
+  searchPuc(@Query('q') q: string, @Query('type') type?: 'EXPENSE' | 'COST') {
+    return this.accountingService.searchPuc(q ?? '', type);
   }
 
   @Get('puc/:code')

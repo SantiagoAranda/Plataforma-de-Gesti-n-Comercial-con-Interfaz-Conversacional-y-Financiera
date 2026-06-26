@@ -20,6 +20,7 @@ import { RecipesModule } from './recipes/recipes.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { ItemOptionsModule } from './item-options/item-options.module';
+import { ExpenseReceiptsModule } from './expense-receipts/expense-receipts.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ItemOptionsModule } from './item-options/item-options.module';
     InventoryModule,
     PayrollModule,
     ItemOptionsModule,
+    ExpenseReceiptsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

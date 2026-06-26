@@ -1,6 +1,15 @@
 import { api } from "@/src/lib/api";
 
-export type AccountingMovementOriginType = "MANUAL" | "ORDER";
+export type AccountingMovementOriginType =
+  | "MANUAL"
+  | "ORDER"
+  | "EXPENSE_RECEIPT"
+  | "PAYROLL_RUN"
+  | "PAYROLL_SETTLEMENT"
+  | "PAYROLL_PAYMENT"
+  | "PAYROLL_BENEFIT_PAYMENT"
+  | "PAYROLL_INITIAL_BALANCE"
+  | "PAYROLL_COMPLEMENTARY_RUN";
 
 export type AccountingMovement = {
   id: string;
@@ -118,6 +127,6 @@ export type CreateAccountingMovementDto = {
   nature: MovementNature;
   date: string;
   detail?: string | null;
-  originType: "MANUAL" | "ORDER";
+  originType: AccountingMovementOriginType;
   originId?: string;
 };

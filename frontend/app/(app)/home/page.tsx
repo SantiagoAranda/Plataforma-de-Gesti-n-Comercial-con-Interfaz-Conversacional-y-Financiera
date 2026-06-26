@@ -21,6 +21,7 @@ import { useHomeModuleSummaries } from "../../../src/lib/home/useHomeModuleSumma
 import { readBusinessProfile } from "../../../src/lib/businessProfile";
 import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
+import ScanExpenseFloatingButton from "../../../src/components/expense-receipts/ScanExpenseFloatingButton";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" />,
@@ -163,6 +164,7 @@ export default function HomePage() {
       </main>
 
       <BottomNav active="home" />
+      <ScanExpenseFloatingButton />
     </div>
   );
 }
