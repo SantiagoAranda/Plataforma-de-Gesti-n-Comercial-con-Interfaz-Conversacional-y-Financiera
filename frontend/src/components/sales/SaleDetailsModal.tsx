@@ -6,6 +6,7 @@ import { AlertTriangle, Calculator, Loader2, X } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
+import SaleFiscalSummary from "./SaleFiscalSummary";
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -416,6 +417,13 @@ export default function SaleDetailsModal({
               <span>{optionalError}</span>
             </div>
           )}
+
+          <section className="space-y-2">
+            <span className="px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+              Resumen fiscal
+            </span>
+            <SaleFiscalSummary summary={sale.fiscalSummary} detailed />
+          </section>
         </div>
 
         <div className="p-4 sm:p-5 bg-white border-t border-neutral-100/50">

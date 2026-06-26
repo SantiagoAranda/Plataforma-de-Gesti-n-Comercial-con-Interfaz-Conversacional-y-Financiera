@@ -8,6 +8,19 @@ export type SaleType = "PRODUCTO" | "SERVICIO";
 export type SourceType = "ORDER" | "RESERVATION";
 export type PaymentMethod = "CASH" | "BANK_TRANSFER";
 
+export type SaleFiscalSummary = {
+  subtotal: number;
+  iva: number;
+  impoconsumo: number;
+  reteFuente: number;
+  reteIva: number;
+  reteIca: number;
+  totalCollected: number;
+  totalCharged: number;
+  totalWithheld: number;
+  netReceived: number;
+};
+
 export interface SaleItem {
   orderItemId?: string;
   itemId?: string;
@@ -66,6 +79,7 @@ export interface Sale {
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: SaleFiscalSummary | null;
 
   items: SaleItem[];
 

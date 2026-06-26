@@ -1,4 +1,5 @@
 import { api } from "@/src/lib/api";
+import type { SaleFiscalSummary } from "@/src/types/sales";
 
 export type ApiOrderItem = {
   quantity: number;
@@ -26,6 +27,7 @@ export interface ApiOrder {
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: SaleFiscalSummary | null;
   items: Array<{
     orderItemId?: string;
     name: string;

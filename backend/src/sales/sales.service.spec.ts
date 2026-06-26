@@ -122,6 +122,76 @@ describe('SalesService.findAll', () => {
       }),
     ]);
   });
+
+  it('maps the persisted fiscal context and tax lines without recalculating them', async () => {
+    const createdAt = new Date('2026-06-24T12:00:00.000Z');
+    const service = createService(
+      [
+        {
+          id: 'order-fiscal',
+          customerName: 'Comprador',
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(100000),
+          status: 'COMPLETED',
+          inventoryPostedAt: createdAt,
+          accountingPostedAt: createdAt,
+          createdAt,
+          origin: 'MANUAL',
+          fiscalContext: {
+            subtotal: new Prisma.Decimal(100000),
+            chargedTaxTotal: new Prisma.Decimal(19000),
+            withheldTaxTotal: new Prisma.Decimal(400),
+            netReceived: new Prisma.Decimal(118600),
+          },
+          taxLines: [
+            {
+              taxType: 'IVA',
+              applied: true,
+              taxAmount: new Prisma.Decimal(19000),
+            },
+            {
+              taxType: 'RETEICA',
+              applied: true,
+              taxAmount: new Prisma.Decimal(400),
+            },
+          ],
+          items: [
+            {
+              id: 'line-product',
+              itemId: 'product-1',
+              itemNameSnapshot: 'Producto IVA',
+              itemTypeSnapshot: 'PRODUCT',
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(100000),
+              lineTotal: new Prisma.Decimal(100000),
+              inventoryModeSnapshot: 'NONE',
+              durationMinutesSnapshot: null,
+              excludedOptionalIngredientIds: null,
+              item: null,
+              options: [],
+            },
+          ],
+        },
+      ],
+      [],
+    );
+
+    const [sale] = await service.findAll(businessId);
+
+    expect(sale.fiscalSummary).toEqual({
+      subtotal: 100000,
+      iva: 19000,
+      impoconsumo: 0,
+      reteFuente: 0,
+      reteIva: 0,
+      reteIca: 400,
+      totalCollected: 119000,
+      totalCharged: 19000,
+      totalWithheld: 400,
+      netReceived: 118600,
+    });
+  });
 });
 
 describe('SalesService.remove', () => {

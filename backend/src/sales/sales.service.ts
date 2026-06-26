@@ -36,6 +36,18 @@ export interface UnifiedSaleDto {
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: {
+    subtotal: number;
+    iva: number;
+    impoconsumo: number;
+    reteFuente: number;
+    reteIva: number;
+    reteIca: number;
+    totalCollected: number;
+    totalCharged: number;
+    totalWithheld: number;
+    netReceived: number;
+  } | null;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -640,6 +652,8 @@ export class SalesService {
           items: {
             include: this.orderItemRecipeInclude,
           },
+          fiscalContext: true,
+          taxLines: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -666,7 +680,45 @@ export class SalesService {
     if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
     if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
 
-    const mappedOrders: UnifiedSaleDto[] = orders.map((o) => ({
+    const mappedOrders: UnifiedSaleDto[] = orders.map((o) => {
+      const fiscalSummary = o.fiscalContext
+        ? {
+            subtotal: Number(o.fiscalContext.subtotal),
+            iva: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'IVA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            impoconsumo: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteFuente: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEFUENTE' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteIva: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEIVA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteIca: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEICA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            totalCollected:
+              Number(o.fiscalContext.subtotal) +
+              Number(o.fiscalContext.chargedTaxTotal),
+            totalCharged: Number(o.fiscalContext.chargedTaxTotal),
+            totalWithheld: Number(o.fiscalContext.withheldTaxTotal),
+            netReceived: Number(o.fiscalContext.netReceived),
+          }
+        : null;
+
+      return {
       id: o.id,
       sourceType: 'ORDER',
       customerName: o.customerName,
@@ -680,6 +732,7 @@ export class SalesService {
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
+      fiscalSummary,
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -695,7 +748,8 @@ export class SalesService {
         recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
-    }));
+    };
+    });
 
     const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => {
       const item = (r as any).item;

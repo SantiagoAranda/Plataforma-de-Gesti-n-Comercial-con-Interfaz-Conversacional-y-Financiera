@@ -142,6 +142,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
+    fiscalSummary: order.fiscalSummary ?? null,
     total,
     items,
   };
