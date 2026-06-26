@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   ExpenseAccountingType,
   Prisma,
@@ -6,9 +6,12 @@ import {
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
 import { ReceiptOcrService } from './receipt-ocr.service';
 import { ReceiptParserService } from './receipt-parser.service';
+import {
+  RECEIPT_TEMP_STORAGE,
+  ReceiptTempStorageService,
+} from './receipt-temp-storage.service';
 
 @Injectable()
 export class ReceiptProcessingService implements OnModuleInit {
@@ -19,9 +22,10 @@ export class ReceiptProcessingService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
     private readonly ocr: ReceiptOcrService,
     private readonly parser: ReceiptParserService,
+    @Inject(RECEIPT_TEMP_STORAGE)
+    private readonly tempStorage: ReceiptTempStorageService,
   ) {}
 
   onModuleInit() {
@@ -69,8 +73,14 @@ export class ReceiptProcessingService implements OnModuleInit {
       take: 50,
     });
 
+    await this.tempStorage.cleanupExpiredTempObjects(
+      30,
+      stale
+        .map((receipt) => receipt.temporaryObjectKey)
+        .filter((key): key is string => Boolean(key)),
+    );
+
     for (const receipt of stale) {
-      await this.safeDelete(receipt.temporaryObjectKey);
       await this.prisma.expenseReceipt.update({
         where: { id: receipt.id },
         data: {
@@ -105,7 +115,9 @@ export class ReceiptProcessingService implements OnModuleInit {
     this.activeBusinesses.add(receipt.businessId);
 
     try {
-      const buffer = await this.storage.getObjectBuffer(receipt.temporaryObjectKey);
+      const buffer = await this.tempStorage.getTempReceiptBuffer(
+        receipt.temporaryObjectKey,
+      );
       const rawText = (await this.ocr.extractText({
         buffer,
         mimeType: 'image/jpeg',
@@ -207,7 +219,7 @@ export class ReceiptProcessingService implements OnModuleInit {
   private async safeDelete(objectKey?: string | null) {
     if (!objectKey) return;
     try {
-      await this.storage.deleteObject(objectKey);
+      await this.tempStorage.deleteTempReceipt(objectKey);
     } catch (error) {
       this.logger.warn(
         `Could not delete temporary receipt object ${objectKey}: ${

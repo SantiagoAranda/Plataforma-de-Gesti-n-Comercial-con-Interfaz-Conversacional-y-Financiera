@@ -122,6 +122,11 @@ export class StorageService {
     return `${baseUrl}/${encodedKey}`;
   }
 
+  assertConfigured() {
+    this.getClient();
+    this.getBucket();
+  }
+
   private getClient() {
     if (!this.client) {
       throw new InternalServerErrorException(

@@ -1,4 +1,5 @@
 import {
+  Inject,
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -12,11 +13,13 @@ import {
   ReceiptStatus,
   MovementNature,
 } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { StorageService } from '../storage/storage.service';
 import { ReceiptProcessingService } from './receipt-processing.service';
 import { UpdateExpenseReceiptDto } from './dto/update-expense-receipt.dto';
+import {
+  RECEIPT_TEMP_STORAGE,
+  ReceiptTempStorageService,
+} from './receipt-temp-storage.service';
 
 const ACCEPTED_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -30,9 +33,10 @@ const ACCEPTED_IMAGE_TYPES = new Set([
 export class ExpenseReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
     private readonly processing: ReceiptProcessingService,
     private readonly configService: ConfigService,
+    @Inject(RECEIPT_TEMP_STORAGE)
+    private readonly tempStorage: ReceiptTempStorageService,
   ) {}
 
   async scan(
@@ -56,19 +60,19 @@ export class ExpenseReceiptsService {
       select: { id: true, status: true },
     });
 
-    const extension = this.extensionForMime(file.mimetype);
-    const objectKey = `tmp/expense-receipts/${businessId}/${receipt.id}-${randomUUID()}.${extension}`;
-    const temporaryExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-    await this.storage.uploadObject({
-      objectKey,
-      body: file.buffer,
-      contentType: file.mimetype,
+    const temporary = await this.tempStorage.putTempReceipt({
+      businessId,
+      receiptId: receipt.id,
+      buffer: file.buffer,
+      mimeType: file.mimetype,
     });
 
     await this.prisma.expenseReceipt.update({
       where: { id: receipt.id },
-      data: { temporaryObjectKey: objectKey, temporaryExpiresAt },
+      data: {
+        temporaryObjectKey: temporary.key,
+        temporaryExpiresAt: temporary.expiresAt,
+      },
     });
 
     this.processing.processSoon(receipt.id);
@@ -248,7 +252,9 @@ export class ExpenseReceiptsService {
   async reject(businessId: string, id: string) {
     const receipt = await this.loadReceipt(businessId, id);
     if (receipt.temporaryObjectKey) {
-      await this.storage.deleteObject(receipt.temporaryObjectKey).catch(() => undefined);
+      await this.tempStorage
+        .deleteTempReceipt(receipt.temporaryObjectKey)
+        .catch(() => undefined);
     }
 
     const rejected = await this.prisma.expenseReceipt.update({
@@ -375,14 +381,6 @@ export class ExpenseReceiptsService {
     return reference.kind === 'CUENTA'
       ? { pucCuentaCode: reference.code, pucSubcuentaId: null }
       : { pucCuentaCode: null, pucSubcuentaId: reference.code };
-  }
-
-  private extensionForMime(mimeType: string) {
-    if (mimeType === 'image/png') return 'png';
-    if (mimeType === 'image/webp') return 'webp';
-    if (mimeType === 'image/heic') return 'heic';
-    if (mimeType === 'image/heif') return 'heif';
-    return 'jpg';
   }
 
   private serialize(receipt: any, includeSensitive: boolean) {

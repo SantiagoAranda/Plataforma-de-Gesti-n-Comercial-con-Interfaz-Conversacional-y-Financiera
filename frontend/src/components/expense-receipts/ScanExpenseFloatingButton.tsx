@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Camera,
   Check,
@@ -54,9 +54,9 @@ type FormState = {
   pucLabel: string;
 };
 
-const emptyForm: FormState = {
+const EMPTY_FORM: FormState = {
   amount: "",
-  paidAt: new Date().toISOString().slice(0, 10),
+  paidAt: "",
   destinationName: "",
   destinationBank: "",
   destinationAccount: "",
@@ -71,10 +71,12 @@ const emptyForm: FormState = {
 };
 
 export default function ScanExpenseFloatingButton() {
+  const [mounted, setMounted] = useState(false);
+  const [isBusinessUser, setIsBusinessUser] = useState(false);
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState<"help" | "processing" | "review" | "done">("help");
   const [receipt, setReceipt] = useState<ExpenseReceipt | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -84,13 +86,14 @@ export default function ScanExpenseFloatingButton() {
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
-  const isBusinessUser = useMemo(() => {
-    if (typeof window === "undefined") return false;
+  useEffect(() => {
+    setMounted(true);
+
     try {
       const user = JSON.parse(localStorage.getItem("user") || "null");
-      return user?.role === "BUSINESS" || Boolean(user?.businessId);
+      setIsBusinessUser(user?.role === "BUSINESS" || Boolean(user?.businessId));
     } catch {
-      return false;
+      setIsBusinessUser(false);
     }
   }, []);
 
@@ -144,7 +147,7 @@ export default function ScanExpenseFloatingButton() {
     return () => window.clearTimeout(timeout);
   }, [pucQuery, form.accountingType]);
 
-  if (!isBusinessUser) return null;
+  if (!mounted || !isBusinessUser) return null;
 
   function openSheet() {
     setVisible(true);
@@ -177,7 +180,7 @@ export default function ScanExpenseFloatingButton() {
       setError(errorMessage(err));
       setStep("review");
       setReceipt(null);
-      setForm(emptyForm);
+      setForm(createEmptyForm());
     } finally {
       setUploading(false);
     }
@@ -185,7 +188,7 @@ export default function ScanExpenseFloatingButton() {
 
   function startManual() {
     setReceipt(null);
-    setForm(emptyForm);
+    setForm(createEmptyForm());
     setError("");
     setStep("review");
   }
@@ -525,9 +528,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function formFromReceipt(receipt: ExpenseReceipt): FormState {
   return {
-    ...emptyForm,
+    ...createEmptyForm(),
     amount: receipt.amount ? String(receipt.amount) : "",
-    paidAt: receipt.paidAt ? receipt.paidAt.slice(0, 10) : emptyForm.paidAt,
+    paidAt: receipt.paidAt ? receipt.paidAt.slice(0, 10) : getTodayInputDate(),
     destinationName: receipt.destinationName ?? "",
     destinationBank: receipt.destinationBank ?? "",
     destinationAccount: receipt.destinationAccount ?? "",
@@ -540,6 +543,17 @@ function formFromReceipt(receipt: ExpenseReceipt): FormState {
     pucCode: receipt.pucSubcuentaId ?? receipt.pucCuentaCode ?? "",
     pucLabel: receipt.pucSubcuentaId ?? receipt.pucCuentaCode ?? "",
   };
+}
+
+function createEmptyForm(): FormState {
+  return {
+    ...EMPTY_FORM,
+    paidAt: getTodayInputDate(),
+  };
+}
+
+function getTodayInputDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function payloadFromForm(form: FormState): ExpenseReceiptPayload {
