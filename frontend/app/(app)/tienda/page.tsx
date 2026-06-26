@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
@@ -510,6 +510,12 @@ function AdminProductCard({
         <div className="truncate text-[14px] font-medium leading-[1.2] text-slate-800">
           {item.name}
         </div>
+        {item.type === "SERVICE" && item.durationMinutes && (
+          <div className="mt-[2px] text-[11px] font-medium text-slate-500 flex items-center gap-1">
+            <span>🕒</span>
+            <span>{item.durationMinutes / 60} h</span>
+          </div>
+        )}
         {item.description?.trim() ? (
           <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
             {item.description.trim()}
@@ -679,6 +685,11 @@ function PrivateProductDetailOverlay({
                     ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                   </div>
                 </div>
+                {item.type === "SERVICE" && item.durationMinutes && (
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-650 mt-1">
+                    <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                  </div>
+                )}
               </div>
               </div>
             </div>
@@ -752,6 +763,11 @@ function PrivateProductDetailOverlay({
                     <div className="text-4xl font-semibold tracking-tight text-slate-900">
                       ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                     </div>
+                    {item.type === "SERVICE" && item.durationMinutes && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                        <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
