@@ -844,7 +844,7 @@ export default function PublicStoreClient() {
                 preview={preview}
                 onOpen={() =>
                   item.type === "SERVICE"
-                    ? setSelectedService(item)
+                    ? setSelectedProduct(item)
                     : (item.optionGroups?.length ?? 0) > 0
                       ? openCustomizationOrAdd(item)
                       : setSelectedProduct(item)
@@ -1043,12 +1043,18 @@ export default function PublicStoreClient() {
           if (preview) {
             notify({
               type: "info",
-              message: "Modo administrador: las compras estan deshabilitadas",
+              message: "Modo administrador: las compras/reservas están deshabilitadas",
             });
             return;
           }
-          openCustomizationOrAdd(selectedProduct);
-          closeProductDetail();
+          if (selectedProduct.type === "SERVICE") {
+            const itemToReserve = selectedProduct;
+            closeProductDetail();
+            setSelectedService(itemToReserve);
+          } else {
+            openCustomizationOrAdd(selectedProduct);
+            closeProductDetail();
+          }
         }}
       />
 
@@ -1486,9 +1492,18 @@ function ProductDetailOverlay({
                     onClick={onPrimaryAction}
                     className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <ShoppingBag className="h-4 w-4" />
-                    Comprar
-                    <ArrowRight className="h-4 w-4" />
+                    {item.type === "SERVICE" ? (
+                      <>
+                        Reservar
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingBag className="h-4 w-4" />
+                        Comprar
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -1799,9 +1814,18 @@ function ReelLikeProductView({
             onClick={onPrimaryAction}
             className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <ShoppingBag className="h-4 w-4" />
-            Comprar
-            <ArrowRight className="h-4 w-4" />
+            {item.type === "SERVICE" ? (
+              <>
+                Reservar
+                <ArrowRight className="h-4 w-4" />
+              </>
+            ) : (
+              <>
+                <ShoppingBag className="h-4 w-4" />
+                Comprar
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
           </button>
         </div>
       </div>
