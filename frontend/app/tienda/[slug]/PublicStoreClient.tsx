@@ -805,14 +805,14 @@ export default function PublicStoreClient() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {["", "PRODUCT", "SERVICE"].map((type) => (
               <button
                 key={type}
                 onClick={() => setCategory(type)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
-                  ? "bg-[#11d473] text-white ring-emerald-200"
-                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                   }`}
               >
                 {type === ""
