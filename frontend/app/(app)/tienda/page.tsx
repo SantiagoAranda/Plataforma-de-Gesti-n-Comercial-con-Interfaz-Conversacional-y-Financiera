@@ -20,6 +20,7 @@ import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getItemBadges } from "@/src/lib/itemBadges";
+import { cn } from "@/src/lib/utils";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -57,6 +58,13 @@ export default function MiTiendaPage() {
   const [businessName, setBusinessName] = useState("Mi Tienda");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
   const [category, setCategory] = useState<"" | "PRODUCT" | "SERVICE">("");
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+  const scrollFilters = (direction: "left" | "right") => {
+    filtersRef.current?.scrollBy({
+      left: direction === "left" ? -140 : 140,
+      behavior: "smooth",
+    });
+  };
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
@@ -299,23 +307,52 @@ export default function MiTiendaPage() {
             />
           </div>
 
-          <div className="flex gap-2">
-            {["", "PRODUCT", "SERVICE"].map((type) => (
-              <button
-                key={type}
-                onClick={() => setCategory(type as "" | "PRODUCT" | "SERVICE")}
-                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
-                  ? "bg-[#11d473] text-white ring-emerald-200"
-                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
-                  }`}
-              >
-                {type === ""
-                  ? "Todo"
-                  : type === "PRODUCT"
-                    ? "Productos"
-                    : "Servicios"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => scrollFilters("left")}
+              className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-500 hover:bg-slate-100"
+              aria-label="Scroll filtros a la izquierda"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <div
+              ref={filtersRef}
+              className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {([
+                { key: "", label: "Todo" },
+                { key: "PRODUCT", label: "Productos" },
+                { key: "SERVICE", label: "Servicios" },
+              ] as const).map((opt) => {
+                const active = category === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setCategory(opt.key)}
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
+                      active
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                    )}
+                    type="button"
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => scrollFilters("right")}
+              className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-500 hover:bg-slate-100"
+              aria-label="Scroll filtros a la derecha"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </header>
