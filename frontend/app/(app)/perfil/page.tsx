@@ -51,6 +51,11 @@ type StoreFooterSettings = {
   phones?: Array<Omit<FooterPhone, "id">> | null;
   socials?: Array<Omit<FooterSocial, "id">> | null;
   showLogo?: boolean | null;
+  showLocationButton?: boolean | null;
+  locationLabel?: string | null;
+  googleMapsUrl?: string | null;
+  footerBackgroundColor?: string | null;
+  footerTextColor?: string | null;
 };
 
 type PhoneSource = "registration" | "manual" | "hidden";
@@ -60,6 +65,10 @@ const selectClassName =
   "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
 const inputClassName =
   "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition placeholder:text-neutral-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+const colorInputClassName =
+  "h-11 w-14 shrink-0 cursor-pointer rounded-2xl border border-neutral-200 bg-white p-1 shadow-sm";
+const FOOTER_BACKGROUND_FALLBACK = "#064e3b";
+const FOOTER_TEXT_FALLBACK = "#ffffff";
 
 const SOCIAL_TYPES = [
   { value: "facebook", label: "Facebook" },
@@ -71,6 +80,34 @@ const SOCIAL_TYPES = [
   { value: "whatsapp", label: "WhatsApp" },
   { value: "website", label: "Sitio Web" },
 ];
+const SOCIAL_TYPE_VALUES = new Set(SOCIAL_TYPES.map((item) => item.value));
+const PLACEHOLDER_VALUES = new Set([
+  "url o usuario",
+  "https://goo.gl/maps/...",
+  "email@negocio.com",
+  "ingrese numero",
+  "ingrese número",
+]);
+
+function hasRealValue(value: string | null | undefined) {
+  const clean = value?.trim();
+  if (!clean) return false;
+  return !PLACEHOLDER_VALUES.has(clean.toLowerCase());
+}
+
+function isUsableUrl(value: string | null | undefined) {
+  const clean = value?.trim();
+  return Boolean(clean && hasRealValue(clean) && /^https?:\/\/\S+\.\S+/i.test(clean));
+}
+
+function isHexColor(value: string | null | undefined) {
+  return /^#[0-9a-fA-F]{6}$/.test(value?.trim() ?? "");
+}
+
+function normalizeHexColor(value: string | null | undefined, fallback: string) {
+  const clean = value?.trim() ?? "";
+  return isHexColor(clean) ? clean.toLowerCase() : fallback;
+}
 
 function createLocalId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -109,6 +146,22 @@ function withSocialIds(socials: StoreFooterSettings["socials"]): FooterSocial[] 
   return Array.isArray(socials)
     ? socials.map((social) => ({ ...social, id: createLocalId() }))
     : [];
+}
+
+function getVisibleSocials(socials: FooterSocial[]) {
+  return socials
+    .map((social) => ({
+      ...social,
+      type: social.type.trim().toLowerCase(),
+      label: social.label.trim() || getSocialLabel(social.type),
+      value: normalizeSocialValue(social.type, social.value),
+    }))
+    .filter(
+      (social) =>
+        SOCIAL_TYPE_VALUES.has(social.type) &&
+        hasRealValue(social.value) &&
+        (social.type === "whatsapp" || isUsableUrl(social.value)),
+    );
 }
 
 function parsePhone(phoneStr: string) {
@@ -166,9 +219,9 @@ export default function PerfilPage() {
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
 
-  const [phoneSource, setPhoneSource] = useState<PhoneSource>("registration");
+  const [phoneSource, setPhoneSource] = useState<PhoneSource>("hidden");
   const [manualPublicPhone, setManualPublicPhone] = useState("");
-  const [emailSource, setEmailSource] = useState<EmailSource>("manual");
+  const [emailSource, setEmailSource] = useState<EmailSource>("hidden");
   const [publicEmail, setPublicEmail] = useState("");
   const [extraPhones, setExtraPhones] = useState<FooterPhone[]>([]);
   const [socials, setSocials] = useState<FooterSocial[]>([]);
@@ -185,6 +238,8 @@ export default function PerfilPage() {
   const [locationLabel, setLocationLabel] = useState("Cómo llegar");
   const [googleMapsUrl, setGoogleMapsUrl] = useState("");
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [footerBackgroundColor, setFooterBackgroundColor] = useState(FOOTER_BACKGROUND_FALLBACK);
+  const [footerTextColor, setFooterTextColor] = useState(FOOTER_TEXT_FALLBACK);
 
   const parseExtra = (val: string) => {
     const raw = val.replace(/\D/g, "");
@@ -226,16 +281,19 @@ export default function PerfilPage() {
         setEmailSource(footer?.email ? "manual" : "hidden");
         setShowFooterLogo(Boolean(footer?.showLogo));
 
-        const locationSettings = footer as any;
-        setShowLocationButton(Boolean(locationSettings?.showLocationButton));
-        setLocationLabel(locationSettings?.locationLabel || "Cómo llegar");
-        setGoogleMapsUrl(locationSettings?.googleMapsUrl ?? "");
+        setShowLocationButton(Boolean(footer?.showLocationButton && isUsableUrl(footer.googleMapsUrl)));
+        setLocationLabel(footer?.locationLabel || "Cómo llegar");
+        setGoogleMapsUrl(footer?.googleMapsUrl ?? "");
+        setFooterBackgroundColor(
+          normalizeHexColor(footer?.footerBackgroundColor, FOOTER_BACKGROUND_FALLBACK),
+        );
+        setFooterTextColor(normalizeHexColor(footer?.footerTextColor, FOOTER_TEXT_FALLBACK));
 
         const footerPhones = withPhoneIds(footer?.phones ?? []);
         const registrationPhone = businessProfile?.phoneWhatsapp || profile.phone || "";
         const firstPhone = footerPhones[0];
         if (!firstPhone?.value) {
-          setPhoneSource(registrationPhone ? "registration" : "manual");
+          setPhoneSource("hidden");
           setManualPublicPhone("");
           setExtraPhones([]);
         } else if (registrationPhone && firstPhone.value.replace(/\D/g, "") === registrationPhone.replace(/\D/g, "")) {
@@ -271,7 +329,14 @@ export default function PerfilPage() {
       : phoneSource === "registration"
         ? registrationPhone
         : manualPublicPhone.trim();
-  const visibleEmail = emailSource === "manual" ? publicEmail.trim() : "";
+  const visibleEmail = emailSource === "manual" && hasRealValue(publicEmail) ? publicEmail.trim() : "";
+  const visibleSocials = getVisibleSocials(socials);
+  const visibleLocationUrl = showLocationButton && isUsableUrl(googleMapsUrl) ? googleMapsUrl.trim() : "";
+  const previewFooterBackgroundColor = normalizeHexColor(
+    footerBackgroundColor,
+    FOOTER_BACKGROUND_FALLBACK,
+  );
+  const previewFooterTextColor = normalizeHexColor(footerTextColor, FOOTER_TEXT_FALLBACK);
 
   const initials = (business?.name || name || "Mi Negocio")
     .split(" ")
@@ -368,8 +433,8 @@ export default function PerfilPage() {
       if (!trimmedUrl) {
         setLocationError("Ingresá un enlace de Google Maps.");
         hasError = true;
-      } else if (!/^https?:\/\//i.test(trimmedUrl)) {
-        setLocationError("El enlace debe comenzar con http:// o https://");
+      } else if (!isUsableUrl(trimmedUrl)) {
+        setLocationError("Ingresá un enlace real que comience con http:// o https://");
         hasError = true;
       }
     }
@@ -390,16 +455,11 @@ export default function PerfilPage() {
       })),
     ];
 
-    const socialsPayload = socials
-      .map((social) => {
-        const type = social.type;
-        return {
-          type,
-          label: social.label.trim() || getSocialLabel(type),
-          value: normalizeSocialValue(type, social.value),
-        };
-      })
-      .filter((social) => social.value);
+    const socialsPayload = visibleSocials.map((social) => ({
+      type: social.type,
+      label: social.label,
+      value: social.value,
+    }));
 
     try {
       writeBusinessProfile({
@@ -416,9 +476,11 @@ export default function PerfilPage() {
           phones: phonesPayload,
           socials: socialsPayload,
           showLogo: showFooterLogo,
-          showLocationButton,
+          showLocationButton: Boolean(visibleLocationUrl),
           locationLabel: locationLabel.trim() || null,
-          googleMapsUrl: googleMapsUrl.trim() || null,
+          googleMapsUrl: visibleLocationUrl || null,
+          footerBackgroundColor: previewFooterBackgroundColor,
+          footerTextColor: previewFooterTextColor,
         }),
       });
 
@@ -426,10 +488,13 @@ export default function PerfilPage() {
       setShowFooterLogo(Boolean(footer.showLogo));
       setSocials(withSocialIds(footer.socials ?? []));
 
-      const locationSettings = footer as any;
-      setShowLocationButton(Boolean(locationSettings?.showLocationButton));
-      setLocationLabel(locationSettings?.locationLabel ?? "Cómo llegar");
-      setGoogleMapsUrl(locationSettings?.googleMapsUrl ?? "");
+      setShowLocationButton(Boolean(footer.showLocationButton && isUsableUrl(footer.googleMapsUrl)));
+      setLocationLabel(footer.locationLabel ?? "Cómo llegar");
+      setGoogleMapsUrl(footer.googleMapsUrl ?? "");
+      setFooterBackgroundColor(
+        normalizeHexColor(footer.footerBackgroundColor, FOOTER_BACKGROUND_FALLBACK),
+      );
+      setFooterTextColor(normalizeHexColor(footer.footerTextColor, FOOTER_TEXT_FALLBACK));
       const savedPhones = withPhoneIds(footer.phones ?? []);
       if (phoneSource === "manual") {
         setManualPublicPhone(savedPhones[0]?.value ?? "");
@@ -497,12 +562,12 @@ export default function PerfilPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-x-hidden bg-white">
+    <div className="flex h-screen w-full max-w-full flex-col overflow-x-hidden bg-white box-border">
       <AppHeader title="Perfil" subtitle="Datos del negocio" showBack hrefBack="/home" />
 
-      <main className="flex-1 overflow-y-auto px-4 py-5 pb-10">
-        <div className="mx-auto w-full max-w-xl space-y-4">
-          <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+      <main className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 pb-10 box-border">
+        <div className="mx-auto w-full max-w-xl space-y-4 overflow-visible box-border">
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
               icon={<ImageIcon className="h-5 w-5" />}
               title="Logo"
@@ -572,7 +637,7 @@ export default function PerfilPage() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
               icon={<Building2 className="h-5 w-5" />}
               title="Empresa"
@@ -607,7 +672,7 @@ export default function PerfilPage() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
               icon={<Phone className="h-5 w-5" />}
               title="Contacto publico"
@@ -723,8 +788,8 @@ export default function PerfilPage() {
                   {extraPhones.map((phone, index) => {
                     const error = extraPhoneErrors[phone.id];
                     return (
-                      <div key={phone.id} className="space-y-1">
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr_40px]">
+                      <div key={phone.id} className="space-y-2 rounded-2xl border border-neutral-100 p-3">
+                        <div className="flex items-center gap-2">
                           <input
                             value={phone.label}
                             onChange={(event) =>
@@ -737,62 +802,60 @@ export default function PerfilPage() {
                               )
                             }
                             placeholder="Etiqueta (ej: Ventas)"
-                            className={inputClassName}
+                            className={`${inputClassName} min-w-0`}
                           />
-                          <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-2 sm:contents">
-                            <PhoneSelector
-                              countryCode={parseExtra(phone.value).code}
-                              onCountryCodeChange={(val) => {
-                                const newNum = parseExtra(phone.value).num;
-                                setExtraPhones((prev) =>
-                                  prev.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? { ...item, value: `${val}${newNum}` }
-                                      : item,
-                                  ),
-                                );
-                                setExtraPhoneErrors((prev) => {
-                                  const next = { ...prev };
-                                  delete next[phone.id];
-                                  return next;
-                                });
-                              }}
-                              phoneNumber={parseExtra(phone.value).num}
-                              onPhoneNumberChange={(val) => {
-                                const newCode = parseExtra(phone.value).code;
-                                setExtraPhones((prev) =>
-                                  prev.map((item, itemIndex) =>
-                                    itemIndex === index
-                                      ? { ...item, value: `${newCode}${val}` }
-                                      : item,
-                                  ),
-                                );
-                                setExtraPhoneErrors((prev) => {
-                                  const next = { ...prev };
-                                  delete next[phone.id];
-                                  return next;
-                                });
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExtraPhones((prev) =>
-                                  prev.filter((_, itemIndex) => itemIndex !== index),
-                                );
-                                setExtraPhoneErrors((prev) => {
-                                  const next = { ...prev };
-                                  delete next[phone.id];
-                                  return next;
-                                });
-                              }}
-                              className="grid h-11 place-items-center rounded-2xl text-neutral-400 transition hover:bg-red-50 hover:text-red-600"
-                              aria-label="Eliminar telefono"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExtraPhones((prev) =>
+                                prev.filter((_, itemIndex) => itemIndex !== index),
+                              );
+                              setExtraPhoneErrors((prev) => {
+                                const next = { ...prev };
+                                delete next[phone.id];
+                                return next;
+                              });
+                            }}
+                            className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-neutral-400 transition hover:bg-red-50 hover:text-red-600"
+                            aria-label="Eliminar telefono"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
+                        <PhoneSelector
+                          countryCode={parseExtra(phone.value).code}
+                          onCountryCodeChange={(val) => {
+                            const newNum = parseExtra(phone.value).num;
+                            setExtraPhones((prev) =>
+                              prev.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, value: `${val}${newNum}` }
+                                  : item,
+                              ),
+                            );
+                            setExtraPhoneErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[phone.id];
+                              return next;
+                            });
+                          }}
+                          phoneNumber={parseExtra(phone.value).num}
+                          onPhoneNumberChange={(val) => {
+                            const newCode = parseExtra(phone.value).code;
+                            setExtraPhones((prev) =>
+                              prev.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, value: `${newCode}${val}` }
+                                  : item,
+                              ),
+                            );
+                            setExtraPhoneErrors((prev) => {
+                              const next = { ...prev };
+                              delete next[phone.id];
+                              return next;
+                            });
+                          }}
+                        />
                         {error && (
                           <p className="text-xs font-semibold text-red-500 pl-1">{error}</p>
                         )}
@@ -876,7 +939,7 @@ export default function PerfilPage() {
           </section>
 
           {/* Card: Ubicación del negocio */}
-          <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
               icon={<MapPin className="h-5 w-5" />}
               title="Ubicación del negocio"
@@ -944,7 +1007,7 @@ export default function PerfilPage() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
               icon={<Globe2 className="h-5 w-5" />}
               title="Footer de tienda publica"
@@ -970,8 +1033,66 @@ export default function PerfilPage() {
                 </span>
               </label>
 
-              <div className="rounded-3xl border border-emerald-900/10 bg-emerald-950 px-5 py-4 text-center text-white">
-                <p className="mb-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-100/80">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                    Color de fondo
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewFooterBackgroundColor}
+                      onChange={(event) => setFooterBackgroundColor(event.target.value)}
+                      className={colorInputClassName}
+                    />
+                    <input
+                      value={footerBackgroundColor}
+                      onChange={(event) => setFooterBackgroundColor(event.target.value)}
+                      onBlur={() =>
+                        setFooterBackgroundColor((current) =>
+                          normalizeHexColor(current, FOOTER_BACKGROUND_FALLBACK),
+                        )
+                      }
+                      className={`${inputClassName} font-mono uppercase`}
+                      placeholder="#064e3b"
+                    />
+                  </div>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                    Color de letra
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={previewFooterTextColor}
+                      onChange={(event) => setFooterTextColor(event.target.value)}
+                      className={colorInputClassName}
+                    />
+                    <input
+                      value={footerTextColor}
+                      onChange={(event) => setFooterTextColor(event.target.value)}
+                      onBlur={() =>
+                        setFooterTextColor((current) =>
+                          normalizeHexColor(current, FOOTER_TEXT_FALLBACK),
+                        )
+                      }
+                      className={`${inputClassName} font-mono uppercase`}
+                      placeholder="#ffffff"
+                    />
+                  </div>
+                </label>
+              </div>
+
+              <div
+                className="rounded-3xl border border-emerald-900/10 bg-emerald-950 px-5 py-4 text-center text-white"
+                style={{ backgroundColor: previewFooterBackgroundColor, color: previewFooterTextColor }}
+              >
+                <p
+                  className="mb-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide"
+                  style={{ color: previewFooterTextColor, opacity: 0.82 }}
+                >
                   <Eye className="h-3.5 w-3.5" />
                   Vista previa
                 </p>
@@ -982,22 +1103,41 @@ export default function PerfilPage() {
                     className="mx-auto mb-3 h-12 w-12 rounded-full object-cover sm:h-14 sm:w-14"
                   />
                 ) : null}
-                <p className="text-sm font-bold">{name || "Mi Negocio"}</p>
+                <p className="text-sm font-bold" style={{ color: previewFooterTextColor }}>{name || "Mi Negocio"}</p>
                 {subtitle ? (
-                  <p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-emerald-50/80">
+                  <p
+                    className="mx-auto mt-1 max-w-xs text-xs leading-5"
+                    style={{ color: previewFooterTextColor, opacity: 0.8 }}
+                  >
                     {subtitle}
                   </p>
                 ) : null}
                 {publicPhone ? (
-                  <p className="mt-2 text-xs text-emerald-50/80">Tel: {publicPhone}</p>
+                  <p className="mt-2 text-xs" style={{ color: previewFooterTextColor, opacity: 0.8 }}>Tel: {publicPhone}</p>
                 ) : null}
                 {visibleEmail ? (
-                  <p className="text-xs text-emerald-50/80">{visibleEmail}</p>
+                  <p className="text-xs" style={{ color: previewFooterTextColor, opacity: 0.8 }}>{visibleEmail}</p>
                 ) : null}
-                {showLocationButton && googleMapsUrl ? (
+                {visibleSocials.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap justify-center gap-2">
+                    {visibleSocials.map((social, index) => (
+                      <span
+                        key={`${social.type}-${index}`}
+                        className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-white/10"
+                        style={{ color: previewFooterTextColor }}
+                      >
+                        {social.label || getSocialLabel(social.type)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {visibleLocationUrl ? (
                   <div className="mt-3 flex justify-center">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-100 ring-1 ring-emerald-400/20">
-                      <MapPin className="h-2.5 w-2.5 text-emerald-300" />
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-white/10"
+                      style={{ color: previewFooterTextColor }}
+                    >
+                      <MapPin className="h-2.5 w-2.5" />
                       {locationLabel || "Cómo llegar"}
                     </span>
                   </div>

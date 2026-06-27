@@ -34,6 +34,8 @@ type StoreFooterSettingsPayload = {
   showLocationButton?: boolean;
   locationLabel?: string | null;
   googleMapsUrl?: string | null;
+  footerBackgroundColor?: string | null;
+  footerTextColor?: string | null;
 };
 
 type PayrollAccountingMappingTemplateRow = {
@@ -62,6 +64,17 @@ const ALLOWED_SOCIAL_TYPES = new Set([
   'website',
 ]);
 const FOOTER_LOGO_META_TYPE = 'footer_logo';
+const FOOTER_BACKGROUND_COLOR_META_TYPE = 'footer_background_color';
+const FOOTER_TEXT_COLOR_META_TYPE = 'footer_text_color';
+
+function cleanOptionalHexColor(value: unknown) {
+  const clean = cleanOptionalString(value);
+  if (!clean) return null;
+  if (!/^#[0-9a-fA-F]{6}$/.test(clean)) {
+    throw new BadRequestException('Color hexadecimal invalido');
+  }
+  return clean.toLowerCase();
+}
 
 function cleanOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -152,6 +165,8 @@ function validateStoreFooterSettingsPayload(
     showLocationButton: record.showLocationButton === true,
     locationLabel: cleanOptionalString(record.locationLabel),
     googleMapsUrl: cleanOptionalString(record.googleMapsUrl),
+    footerBackgroundColor: cleanOptionalHexColor(record.footerBackgroundColor),
+    footerTextColor: cleanOptionalHexColor(record.footerTextColor),
   };
 }
 
@@ -172,6 +187,33 @@ function removeFooterLogoMeta(socials: unknown) {
     ? socials.filter((social) => {
         if (!social || typeof social !== 'object') return true;
         return (social as Record<string, unknown>).type !== FOOTER_LOGO_META_TYPE;
+      })
+    : [];
+}
+
+function extractFooterColor(socials: unknown, type: string): string | null {
+  if (!Array.isArray(socials)) return null;
+  const found = socials.find(
+    (social) =>
+      social &&
+      typeof social === 'object' &&
+      (social as Record<string, unknown>).type === type,
+  );
+  const value = found ? (found as Record<string, unknown>).value : null;
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
+    ? value.toLowerCase()
+    : null;
+}
+
+function removeFooterColorMeta(socials: unknown) {
+  return Array.isArray(socials)
+    ? socials.filter((social) => {
+        if (!social || typeof social !== 'object') return true;
+        const type = (social as Record<string, unknown>).type;
+        return (
+          type !== FOOTER_BACKGROUND_COLOR_META_TYPE &&
+          type !== FOOTER_TEXT_COLOR_META_TYPE
+        );
       })
     : [];
 }
@@ -269,6 +311,32 @@ function withLocationMeta(
       type: LOCATION_URL_META_TYPE,
       label: 'Location url',
       value: url,
+    });
+  }
+
+  return [...publicSocials, ...meta];
+}
+
+function withFooterColorMeta(
+  socials: FooterSocial[] | undefined,
+  backgroundColor?: string | null,
+  textColor?: string | null,
+) {
+  const publicSocials = socials ?? [];
+  const meta: FooterSocial[] = [];
+
+  if (backgroundColor) {
+    meta.push({
+      type: FOOTER_BACKGROUND_COLOR_META_TYPE,
+      label: 'Footer background color',
+      value: backgroundColor,
+    });
+  }
+  if (textColor) {
+    meta.push({
+      type: FOOTER_TEXT_COLOR_META_TYPE,
+      label: 'Footer text color',
+      value: textColor,
     });
   }
 
@@ -544,10 +612,14 @@ export class BusinessesService {
         showLocationButton: false,
         locationLabel: null,
         googleMapsUrl: null,
+        footerBackgroundColor: null,
+        footerTextColor: null,
       };
     }
 
-    const cleanSocials = removeLocationMeta(removeFooterLogoMeta(settings.socials));
+    const cleanSocials = removeFooterColorMeta(
+      removeLocationMeta(removeFooterLogoMeta(settings.socials)),
+    );
 
     return {
       ...settings,
@@ -556,17 +628,30 @@ export class BusinessesService {
       showLocationButton: extractLocationShow(settings.socials),
       locationLabel: extractLocationLabel(settings.socials),
       googleMapsUrl: extractLocationUrl(settings.socials),
+      footerBackgroundColor: extractFooterColor(
+        settings.socials,
+        FOOTER_BACKGROUND_COLOR_META_TYPE,
+      ),
+      footerTextColor: extractFooterColor(
+        settings.socials,
+        FOOTER_TEXT_COLOR_META_TYPE,
+      ),
     };
   }
 
   async updateStoreFooterSettings(businessId: string, body: unknown) {
     const payload = validateStoreFooterSettingsPayload(body);
     const withLogo = withFooterLogoMeta(payload.socials, payload.showLogo);
-    const socials = withLocationMeta(
+    const withLocation = withLocationMeta(
       withLogo,
       payload.showLocationButton,
       payload.locationLabel,
       payload.googleMapsUrl,
+    );
+    const socials = withFooterColorMeta(
+      withLocation,
+      payload.footerBackgroundColor,
+      payload.footerTextColor,
     );
 
     const settings = await this.prisma.storeFooterSettings.upsert({
@@ -595,7 +680,9 @@ export class BusinessesService {
       },
     });
 
-    const cleanSocials = removeLocationMeta(removeFooterLogoMeta(settings.socials));
+    const cleanSocials = removeFooterColorMeta(
+      removeLocationMeta(removeFooterLogoMeta(settings.socials)),
+    );
 
     return {
       ...settings,
@@ -604,6 +691,14 @@ export class BusinessesService {
       showLocationButton: extractLocationShow(settings.socials),
       locationLabel: extractLocationLabel(settings.socials),
       googleMapsUrl: extractLocationUrl(settings.socials),
+      footerBackgroundColor: extractFooterColor(
+        settings.socials,
+        FOOTER_BACKGROUND_COLOR_META_TYPE,
+      ),
+      footerTextColor: extractFooterColor(
+        settings.socials,
+        FOOTER_TEXT_COLOR_META_TYPE,
+      ),
     };
   }
 
