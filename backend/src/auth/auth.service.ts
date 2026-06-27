@@ -30,7 +30,7 @@ export class AuthService {
     // Crear negocio
     const business = await this.businessesService.createBusiness({
       name: dto.name,
-      fiscalId: dto.fiscalId,
+      fiscalId: dto.fiscalId?.trim() ?? '',
       phoneWhatsapp: dto.phoneWhatsapp,
     });
 

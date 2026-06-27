@@ -12,15 +12,19 @@ import {
   Search,
   ShieldCheck,
   Share2,
+  Store,
   Truck,
   X,
+  MapPin,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
+import { getBusinessProfile } from "@/src/lib/businessLogo";
 import { getItemBadges } from "@/src/lib/itemBadges";
 import { cn } from "@/src/lib/utils";
+import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -47,16 +51,75 @@ type Item = {
   images?: { id: string; url: string }[];
 };
 
+type StoreFooterSettings = {
+  description?: string | null;
+  email?: string | null;
+  phones?: unknown;
+  socials?: unknown;
+  showLogo?: boolean | null;
+  showLocationButton?: boolean | null;
+  locationLabel?: string | null;
+  googleMapsUrl?: string | null;
+  footerBackgroundColor?: string | null;
+  footerTextColor?: string | null;
+} | null;
+
+const FOOTER_SOCIAL_TYPES = new Set([
+  "facebook",
+  "instagram",
+  "youtube",
+  "tiktok",
+  "linkedin",
+  "x",
+  "twitter",
+  "whatsapp",
+  "website",
+]);
+
+function isHexColor(value: string | null | undefined) {
+  return /^#[0-9a-fA-F]{6}$/.test(value?.trim() ?? "");
+}
+
+function normalizeFooterPhones(value: unknown): FooterPhone[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterPhone[]>((acc, phone) => {
+    if (!phone || typeof phone !== "object") return acc;
+    const record = phone as Record<string, unknown>;
+    const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    if (phoneValue) acc.push({ label, value: phoneValue });
+    return acc;
+  }, []);
+}
+
+function normalizeFooterSocials(value: unknown): FooterSocial[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<FooterSocial[]>((acc, social) => {
+    if (!social || typeof social !== "object") return acc;
+    const record = social as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    const socialValue = typeof record.value === "string" ? record.value.trim() : "";
+    if (FOOTER_SOCIAL_TYPES.has(type) && socialValue) acc.push({ type, label, value: socialValue });
+    return acc;
+  }, []);
+}
+
 export default function MiTiendaPage() {
   const { notify } = useNotification();
   const router = useRouter();
 
   const [items, setItems] = useState<Item[]>([]);
+  const [showLocationButton, setShowLocationButton] = useState(false);
+  const [locationLabel, setLocationLabel] = useState("Cómo llegar");
+  const [googleMapsUrl, setGoogleMapsUrl] = useState("");
+  const [footerSettings, setFooterSettings] = useState<StoreFooterSettings>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [businessName, setBusinessName] = useState("Mi Tienda");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
   const [category, setCategory] = useState<"" | "PRODUCT" | "SERVICE">("");
   const filtersRef = useRef<HTMLDivElement | null>(null);
   const scrollFilters = (direction: "left" | "right") => {
@@ -211,6 +274,26 @@ export default function MiTiendaPage() {
             price: Number(item.price),
           }))
         );
+
+        const resSettings = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/businesses/store-footer-settings`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (resSettings.ok) {
+          const settings = await resSettings.json() as StoreFooterSettings;
+          setFooterSettings(settings);
+          setShowLocationButton(Boolean(settings?.showLocationButton));
+          setLocationLabel(settings?.locationLabel || "Cómo llegar");
+          setGoogleMapsUrl(settings?.googleMapsUrl || "");
+          if (settings?.description?.trim()) {
+            setBusinessSubtitle(settings.description.trim());
+          }
+        }
       } catch {
         notify({
           type: "error",
@@ -234,6 +317,15 @@ export default function MiTiendaPage() {
     } catch {
       // ignore
     }
+
+    getBusinessProfile()
+      .then((profile) => {
+        setBusinessName(profile.name || "Mi Tienda");
+        setBusinessLogoUrl(profile.logoUrl || null);
+      })
+      .catch(() => {
+        // ignore
+      });
   }, []);
 
   useEffect(() => {
@@ -257,25 +349,73 @@ export default function MiTiendaPage() {
     });
   }, [items, query, category]);
 
+  const footerConfig = useMemo<FooterConfig>(() => {
+    const googleMapsValue =
+      showLocationButton && googleMapsUrl.trim() ? googleMapsUrl.trim() : "";
+
+    return {
+      backgroundColor: isHexColor(footerSettings?.footerBackgroundColor)
+        ? footerSettings?.footerBackgroundColor?.trim().toLowerCase()
+        : undefined,
+      textColor: isHexColor(footerSettings?.footerTextColor)
+        ? footerSettings?.footerTextColor?.trim().toLowerCase()
+        : undefined,
+      titulo: businessName,
+      frasePrincipal: businessSubtitle || undefined,
+      logoUrl: businessLogoUrl,
+      showLogo: Boolean(footerSettings?.showLogo),
+      contacto: {
+        email: footerSettings?.email?.trim() || undefined,
+        telefonos: normalizeFooterPhones(footerSettings?.phones),
+        redesSociales: normalizeFooterSocials(footerSettings?.socials),
+        ubicacion: googleMapsValue
+          ? {
+              label: locationLabel || "Cómo llegar",
+              value: googleMapsValue,
+            }
+          : undefined,
+      },
+    };
+  }, [
+    businessLogoUrl,
+    businessName,
+    businessSubtitle,
+    footerSettings,
+    googleMapsUrl,
+    locationLabel,
+    showLocationButton,
+  ]);
+
   return (
     <div className="min-h-dvh bg-white w-full min-w-0 overflow-x-hidden">
       <header
         className="sticky top-0 z-40 bg-white/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
+        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
+              {businessLogoUrl ? (
+                <img
+                  src={businessLogoUrl}
+                  alt={`Logo de ${businessName || "Mi Tienda"}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Store className="h-5 w-5" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1 leading-tight text-left">
               <h1 className="truncate text-[20px] font-semibold text-neutral-900">
                 {businessName}
               </h1>
               {businessSubtitle?.trim() && (
-                <div className="truncate text-[13px] font-medium text-slate-500 ml-2">
+                <div className="truncate text-[13px] font-medium text-slate-500">
                   {businessSubtitle.trim()}
                 </div>
               )}
               <div
-                className="truncate text-[13px] font-medium text-slate-500 ml-2"
+                className="truncate text-[13px] font-medium text-slate-500"
                 style={businessSubtitle?.trim() ? { display: "none" } : undefined}
               >
                 Catálogo
@@ -283,7 +423,19 @@ export default function MiTiendaPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {showLocationButton && googleMapsUrl && (
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+                aria-label="Cómo llegar"
+                title="Cómo llegar"
+              >
+                <MapPin className="h-4 w-4 text-emerald-600" />
+              </a>
+            )}
             <button
               type="button"
               onClick={handleShareStore}
@@ -381,6 +533,8 @@ export default function MiTiendaPage() {
           </div>
         )}
       </main>
+
+      <Footer config={footerConfig} />
 
       <BottomNav active="tienda" />
 

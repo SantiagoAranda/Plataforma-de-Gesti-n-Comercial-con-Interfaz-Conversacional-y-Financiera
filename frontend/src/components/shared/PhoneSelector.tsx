@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check } from "lucide-react";
@@ -11,6 +11,7 @@ type Props = {
   dark?: boolean;
   flat?: boolean;
   dropdownPosition?: "top" | "bottom";
+  disabled?: boolean;
 };
 
 const COUNTRIES = [
@@ -30,6 +31,7 @@ export default function PhoneSelector({
   dark = false,
   flat = false,
   dropdownPosition = "bottom",
+  disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -46,22 +48,23 @@ export default function PhoneSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  let buttonClasses = "flex h-11 items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[13px] font-medium text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
-  let inputClasses = "flex-1 h-11 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-medium text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
+  let buttonClasses = "flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-[13px] font-medium text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+  let inputClasses = "h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-medium text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
 
   if (dark) {
-    buttonClasses = "flex h-10 items-center gap-1.5 transition focus:outline-none bg-transparent border-0 text-white pl-1 pr-2 text-sm font-normal";
-    inputClasses = "flex-1 h-10 px-1 text-sm outline-none transition placeholder:text-neutral-500 focus:ring-0 border-0 border-b border-slate-800/60 rounded-none bg-transparent text-white placeholder:text-slate-500";
+    buttonClasses = "flex h-10 w-full items-center justify-center gap-1.5 transition focus:outline-none bg-transparent border-0 text-white px-1 text-sm font-normal";
+    inputClasses = "h-10 w-full min-w-0 max-w-full box-border px-1 text-sm outline-none transition placeholder:text-neutral-500 focus:ring-0 border-0 border-b border-slate-800/60 rounded-none bg-transparent text-white placeholder:text-slate-500";
   } else if (flat) {
-    buttonClasses = "flex h-10 items-center gap-1.5 transition focus:outline-none bg-transparent border-0 border-b border-slate-100 rounded-none text-slate-800 pl-0 pr-2 text-sm font-normal focus:border-emerald-500 focus:ring-0";
-    inputClasses = "flex-1 h-10 px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none focus:ring-0 border-0 border-b border-slate-100 rounded-none bg-transparent focus:border-emerald-500 transition-colors";
+    buttonClasses = "flex h-10 w-full items-center justify-center gap-1.5 transition focus:outline-none bg-transparent border-0 border-b border-slate-100 rounded-none text-slate-800 px-0 text-sm font-normal focus:border-emerald-500 focus:ring-0";
+    inputClasses = "h-10 w-full min-w-0 max-w-full box-border px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none focus:ring-0 border-0 border-b border-slate-100 rounded-none bg-transparent focus:border-emerald-500 transition-colors";
   }
 
   return (
-    <div className="flex gap-2 w-full">
-      <div className="relative" ref={containerRef}>
+    <div className="grid w-full max-w-full grid-cols-[96px_minmax(0,1fr)] gap-2 overflow-visible box-border">
+      <div className="relative min-w-0 overflow-visible" ref={containerRef}>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen(!open)}
           className={buttonClasses}
         >
@@ -75,7 +78,7 @@ export default function PhoneSelector({
         </button>
 
         {open && (
-          <div className={`absolute left-0 ${dropdownPosition === "top" ? "bottom-[calc(100%+8px)] origin-bottom animate-in fade-in slide-in-from-bottom-2" : "top-[calc(100%+8px)] origin-top animate-in fade-in slide-in-from-top-2"} z-50 w-36 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl`}>
+          <div className={`absolute left-0 ${dropdownPosition === "top" ? "bottom-[calc(100%+8px)] origin-bottom animate-in fade-in slide-in-from-bottom-2" : "top-[calc(100%+8px)] origin-top animate-in fade-in slide-in-from-top-2"} z-[80] w-36 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl`}>
             <div className="flex max-h-56 flex-col overflow-y-auto p-1">
               {COUNTRIES.map((c) => (
                 <button
@@ -107,6 +110,7 @@ export default function PhoneSelector({
 
       <input
         type="tel"
+        disabled={disabled}
         value={phoneNumber}
         onChange={(e) => onPhoneNumberChange(e.target.value.replace(/\D/g, ""))}
         placeholder="Ingrese número"

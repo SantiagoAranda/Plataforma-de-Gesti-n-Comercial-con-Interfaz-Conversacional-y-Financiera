@@ -1,7 +1,6 @@
-﻿"use client";
-
+"use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus, X } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -10,6 +9,16 @@ import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import ReservationSlotPicker from "@/src/components/reservations/ReservationSlotPicker";
 import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
 import type { PublicItemOptionGroup } from "@/src/types/item";
+import type { BuyerFiscalContext } from "@/src/lib/tax/api";
+import SaleTaxPanel, {
+  buildBuyerFiscalContext,
+  DEFAULT_SALE_FISCAL_FORM,
+  saleFiscalStateFromSale,
+  type SaleFiscalFormState,
+} from "@/src/components/sales/SaleTaxPanel";
+import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import { api } from "@/src/lib/api";
+import { formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
 
 type EditableItem = {
   itemId: string;
@@ -19,6 +28,9 @@ type EditableItem = {
   durationMin?: number | null;
   optionSelections?: OptionSelection[];
   optionNames?: string[];
+  key?: string;
+  orderItemId?: string;
+  excludedOptionalIngredientIds?: string[];
 };
 
 type BusinessItem = {
@@ -65,36 +77,26 @@ function ItemThumbnail() {
 }
 
 export default function SalesChatComposer({
+  mode = "create",
+  sale = null,
   expanded,
   onOpenComposer,
   onCancelComposer,
-  searchValue,
-  onSearchChange,
+  searchValue = "",
+  onSearchChange = () => {},
   onSave,
 }: {
+  mode?: "create" | "edit" | "readonly";
+  sale?: Sale | null;
   expanded: boolean;
-  onOpenComposer: () => void;
+  onOpenComposer?: () => void;
   onCancelComposer: () => void;
-  searchValue: string;
-  onSearchChange: (val: string) => void;
-  onSave: (data: {
-    customerName?: string;
-    customerWhatsapp?: string;
-    type: Sale["type"];
-    status: "PENDIENTE" | "CERRADO";
-    paymentMethod: "CASH" | "BANK_TRANSFER";
-    scheduledAt?: string;
-    durationMinutes?: number;
-    items: Array<{
-      itemId: string;
-      quantity: number;
-      optionSelections?: OptionSelection[];
-    }>;
-  }) => Promise<void> | void;
+  searchValue?: string;
+  onSearchChange?: (val: string) => void;
+  onSave: (data: any) => Promise<void> | void;
 }) {
-  const [customerName, setCustomerName] = useState("");
-  const [isStatusOpen, setIsStatusOpen] = useState(false);
-  const statusRef = useRef<HTMLDivElement>(null);
+  const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
+  const [taxPreview, setTaxPreview] = useState<any>(null);
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
@@ -107,7 +109,12 @@ export default function SalesChatComposer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
   const [formError, setFormError] = useState<string | null>(null);
-  const [customizing, setCustomizing] = useState<{ item: BusinessItem; quantity: number } | null>(null);
+  const [customizing, setCustomizing] = useState<{
+    item: BusinessItem;
+    quantity: number;
+    editIdx?: number;
+    initialSelections?: OptionSelection[];
+  } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isMounted = useRef(true);
@@ -119,27 +126,16 @@ export default function SalesChatComposer({
     };
   }, []);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (statusRef.current && !statusRef.current.contains(e.target as Node)) {
-        setIsStatusOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const fetchItems = async () => {
     try {
-      const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error();
-      const data = (await res.json()) as ApiBusinessItem[];
-      setBusinessItems(data.map((i) => ({ ...i, price: Number(i.price) })));
-    } catch (err) {
-      console.error("Error fetching items", err);
+      const data = await api<ApiBusinessItem[]>("/items?context=sales");
+      const mapped: BusinessItem[] = (data || []).map((item) => ({
+        ...item,
+        price: Number(item.price),
+      }));
+      setBusinessItems(mapped);
+    } catch (error) {
+      console.error("Error fetching items:", error);
     }
   };
 
@@ -148,8 +144,57 @@ export default function SalesChatComposer({
   }, []);
 
   useEffect(() => {
-    if (!expanded) {
-      setCustomerName("");
+    if ((mode === "edit" || mode === "readonly") && sale && expanded) {
+      setFiscalForm(saleFiscalStateFromSale(sale));
+      
+      const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
+      if (rawPhone.length > 10) {
+        setCountryCode(rawPhone.slice(0, rawPhone.length - 10));
+        setPhoneNumber(rawPhone.slice(-10));
+      } else {
+        setCountryCode("57");
+        setPhoneNumber(rawPhone);
+      }
+      
+      setType(sale.type);
+      setStatus(sale.status === "CERRADO" ? "CERRADO" : "PENDIENTE");
+      setPaymentMethod(sale.paymentMethod ?? "CASH");
+      
+      setItems(
+        sale.items.map((it, idx) => ({
+          itemId: it.itemId || "",
+          qty: it.qty,
+          name: it.name,
+          price: it.unitPrice ?? (it.price / it.qty),
+          durationMin: it.durationMin,
+          optionSelections: (it.options ?? [])
+            .filter((option) => option.groupId && option.optionId && option.action)
+            .map((option) => ({
+              groupId: option.groupId!,
+              optionId: option.optionId!,
+              action: option.action!,
+            })),
+          optionNames: (it.options ?? []).map(
+            (option) => `${option.groupTitle}: ${option.optionName}`
+          ),
+          excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
+        }))
+      );
+      
+      const parts = parseLocalDateTimeParts(sale.scheduledAt);
+      if (sale.type === "SERVICIO" && parts) {
+        setScheduledDate(parts.date);
+        const [h, m] = parts.time.split(":").map(Number);
+        if (!isNaN(h) && !isNaN(m)) {
+          setSelectedStartMinute(h * 60 + m);
+        }
+      } else {
+        setScheduledDate(null);
+        setSelectedStartMinute(null);
+      }
+    } else if (mode === "create" && !expanded) {
+      setFiscalForm(DEFAULT_SALE_FISCAL_FORM);
+      setTaxPreview(null);
       setCountryCode("57");
       setPhoneNumber("");
       setType("PRODUCTO");
@@ -163,11 +208,51 @@ export default function SalesChatComposer({
       setFormError(null);
       setIsSubmitting(false);
     }
-  }, [expanded]);
+  }, [expanded, sale?.id, mode]);
+
+  useEffect(() => {
+    if (!newItem.itemId) return;
+    const selectedBi = businessItems.find(i => i.id === newItem.itemId);
+    if (!selectedBi) return;
+    
+    setFiscalForm(prev => ({
+      ...prev,
+      saleConcept: selectedBi.type === "SERVICE" ? "SERVICES" : "GOODS"
+    }));
+  }, [newItem.itemId, businessItems]);
 
   const total = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
   }, [items]);
+
+  const totalToDisplay = useMemo(() => {
+    if (taxPreview) {
+      const chargedTotal = Number(taxPreview.vatTotal ?? 0) + Number(taxPreview.impoconsumoTotal ?? 0);
+      return Number(taxPreview.subtotal ?? 0) + chargedTotal;
+    }
+    return total;
+  }, [taxPreview, total]);
+
+  const totalLabel = useMemo(() => {
+    if (taxPreview && (Number(taxPreview.vatTotal ?? 0) > 0 || Number(taxPreview.impoconsumoTotal ?? 0) > 0)) {
+      return "Total cobrado";
+    }
+    return "Subtotal";
+  }, [taxPreview]);
+
+  const responsibilities = [
+    { key: "withholdingSubjectIsDeclarante", label: "Declarante de renta" },
+    { key: "buyerIsIvaResponsable", label: "Responsable IVA (48)" },
+    { key: "buyerIsRetenedor", label: "Agente Retención (07)" },
+    { key: "buyerIsGranContribuyente", label: "Gran Contrib. (13)" },
+    { key: "buyerIsAutorretenedor", label: "Autorretenedor (15)" },
+    { key: "buyerIsRegimenSimple", label: "Régimen Simple (47)" },
+  ] as const;
+
+  const buyerFiscalContext = useMemo<BuyerFiscalContext>(
+    () => buildBuyerFiscalContext(fiscalForm),
+    [fiscalForm],
+  );
 
   const updateItemQty = (idx: number, qty: number) => {
     setItems((prev) =>
@@ -205,7 +290,6 @@ export default function SalesChatComposer({
       setFormError("Para registrar servicios con turno, cargá la cita por separado.");
       return;
     }
-
 
     const addedQty = newItem.qty === "" ? 1 : newItem.qty;
     if ((bi.optionGroups?.length ?? 0) > 0) {
@@ -253,7 +337,7 @@ export default function SalesChatComposer({
     if (isSubmitting) return;
 
     setFormError(null);
-    const cleanedName = customerName.trim();
+    const cleanedName = fiscalForm.buyerName.trim();
     const rawPhone = phoneNumber.replace(/\D/g, "");
     const cleanedWhatsapp = rawPhone.length > 0 ? `${countryCode}${rawPhone}` : undefined;
 
@@ -285,16 +369,42 @@ export default function SalesChatComposer({
 
     setIsSubmitting(true);
     try {
-      await onSave({
-        customerName: cleanedName || undefined,
-        customerWhatsapp: cleanedWhatsapp,
-        type,
-        status,
-        paymentMethod: paymentMethod || "CASH",
-        scheduledAt,
-        durationMinutes: isService ? serviceDuration : undefined,
-        items: cleanedItems,
-      });
+      if (mode === "edit") {
+        const updated: Sale = {
+          ...sale!,
+          customerName: cleanedName || "Consumidor final",
+          customerWhatsapp: cleanedWhatsapp ?? null,
+          type,
+          status: status as any,
+          paymentMethod: paymentMethod || "CASH",
+          fiscalContext: buyerFiscalContext,
+          items: items.map(item => ({
+            orderItemId: item.orderItemId,
+            itemId: item.itemId,
+            qty: item.qty,
+            name: item.name,
+            unitPrice: item.price,
+            price: item.price * item.qty,
+            durationMin: item.durationMin,
+            optionSelections: item.optionSelections,
+            excludedOptionalIngredientIds: item.excludedOptionalIngredientIds ?? [],
+          })),
+          scheduledAt,
+        };
+        await onSave(updated);
+      } else {
+        await onSave({
+          customerName: cleanedName || undefined,
+          customerWhatsapp: cleanedWhatsapp,
+          type,
+          status,
+          paymentMethod: paymentMethod || "CASH",
+          scheduledAt,
+          durationMinutes: isService ? serviceDuration : undefined,
+          buyerFiscalContext,
+          items: cleanedItems,
+        });
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -304,271 +414,567 @@ export default function SalesChatComposer({
     }
   };
 
+  const renderFormBody = () => {
+    const isReadonly = mode === "readonly";
+    return (
+      <>
+        {/* 2. Switch Persona / Empresa */}
+        <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
+          <button
+            type="button"
+            disabled={isReadonly}
+            onClick={() => {
+              setFiscalForm(prev => ({
+                ...prev,
+                buyerType: "NATURAL" as const,
+                buyerDocumentType: "CC" as const,
+                buyerIsIvaResponsable: false,
+                buyerIsRetenedor: false,
+                buyerIsGranContribuyente: false,
+                buyerIsAutorretenedor: false,
+                buyerIsRegimenSimple: false,
+              }));
+            }}
+            className={`h-9 rounded-xl text-xs font-semibold transition ${
+              fiscalForm.buyerType === "NATURAL" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            Persona
+          </button>
+          <button
+            type="button"
+            disabled={isReadonly}
+            onClick={() => {
+              setFiscalForm(prev => ({
+                ...prev,
+                buyerType: "JURIDICA" as const,
+                buyerDocumentType: "NIT" as const,
+                buyerIsIvaResponsable: true,
+                buyerIsRetenedor: true,
+              }));
+            }}
+            className={`h-9 rounded-xl text-xs font-semibold transition ${
+              fiscalForm.buyerType === "JURIDICA" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            Empresa
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Datos del cliente
+            </span>
+            <input
+              value={fiscalForm.buyerName}
+              disabled={isReadonly}
+              onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
+              placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
+              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-[110px_1fr] gap-2 w-full min-w-0">
+            <div className="min-w-0">
+              <select
+                value={fiscalForm.buyerDocumentType}
+                disabled={isReadonly}
+                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                {fiscalForm.buyerType === "JURIDICA" ? (
+                  <option value="NIT">NIT / RUT</option>
+                ) : (
+                  <>
+                    <option value="CC">Cédula</option>
+                    <option value="CE">Cédula Extr.</option>
+                    <option value="PASAPORTE">Pasaporte</option>
+                    <option value="TI">T. Identidad</option>
+                  </>
+                )}
+              </select>
+            </div>
+            <div className="min-w-0">
+              <input
+                value={fiscalForm.buyerDocumentNumber}
+                disabled={isReadonly}
+                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
+                placeholder="Número documento"
+                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <PhoneSelector
+              countryCode={countryCode}
+              onCountryCodeChange={setCountryCode}
+              phoneNumber={phoneNumber}
+              onPhoneNumberChange={setPhoneNumber}
+              disabled={isReadonly}
+              flat
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <input
+              type="email"
+              value={fiscalForm.buyerEmail}
+              disabled={isReadonly}
+              onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
+              placeholder="Correo (opcional)"
+              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Datos fiscales de la venta
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <select
+              value={fiscalForm.saleConcept}
+              disabled={isReadonly}
+              onChange={(e) => setFiscalForm(prev => ({ ...prev, saleConcept: e.target.value as any }))}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="GOODS">Bienes / Productos</option>
+              <option value="SERVICES">Servicios</option>
+              <option value="HONORARIOS">Honorarios</option>
+              <option value="ARRENDAMIENTOS">Arrendamientos</option>
+            </select>
+
+            <select
+              value={fiscalForm.fiscalMunicipalityCode}
+              disabled={isReadonly}
+              onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <option value="">Municipio ICA</option>
+              {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                <option key={municipality.code} value={municipality.code}>
+                  {municipality.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Responsabilidades del comprador
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            {responsibilities.map(({ key, label }) => {
+              const active = Boolean(fiscalForm[key]);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={isReadonly}
+                  onClick={() => {
+                    setFiscalForm(prev => ({
+                      ...prev,
+                      [key]: !active
+                    }));
+                  }}
+                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                    active
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full min-w-0">
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Estado de venta
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={isReadonly}
+                onClick={() => setStatus("PENDIENTE")}
+                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                  status === "PENDIENTE"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                }`}
+              >
+                Pendiente
+              </button>
+              <button
+                type="button"
+                disabled={isReadonly}
+                onClick={() => setStatus("CERRADO")}
+                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                  status === "CERRADO"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                }`}
+              >
+                Confirmado
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Medio de pago
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={isReadonly}
+                onClick={() => setPaymentMethod("CASH")}
+                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                  paymentMethod === "CASH"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                }`}
+              >
+                Efectivo
+              </button>
+              <button
+                type="button"
+                disabled={isReadonly}
+                onClick={() => setPaymentMethod("BANK_TRANSFER")}
+                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                  paymentMethod === "BANK_TRANSFER"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                }`}
+              >
+                Transf.
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Ítems de venta
+          </span>
+
+          {!isReadonly && (
+            <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 w-full min-w-0">
+              <div className="flex items-center gap-2 w-full min-w-0">
+                <div className="flex-1 bg-white rounded-xl relative min-w-0">
+                  <ItemSelector
+                    value={newItem.itemId}
+                    onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
+                    options={businessItems.filter(bi =>
+                      items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                    )}
+                    placeholder={businessItems.length === 0 ? "Sin productos o servicios disponibles." : "Seleccionar producto / servicio..."}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  disabled={!newItem.itemId}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
+                  title="Agregar ítem"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
+              </div>
+
+              {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-slate-500 px-1">Cantidad</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItem.qty}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setNewItem(prev => ({ ...prev, qty: "" }));
+                        return;
+                      }
+                      const num = parseInt(val, 10);
+                      if (!isNaN(num)) {
+                        setNewItem(prev => ({ ...prev, qty: num }));
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={() => {
+                      if (newItem.qty === "" || newItem.qty <= 0) {
+                        setNewItem(prev => ({ ...prev, qty: 1 }));
+                      }
+                    }}
+                    className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {formError && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+              {formError}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {items.map((it, idx) => (
+              <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
+                <ItemThumbnail />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-slate-800 text-sm truncate">{it.name}</div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-400 mt-0.5">
+                    {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+                  </div>
+                  {it.optionNames?.map((name) => (
+                    <div key={name} className="text-[10px] text-slate-500">{name}</div>
+                  ))}
+                </div>
+
+                {((businessItems.find((item) => item.id === it.itemId)?.optionGroups?.length ?? 0) > 0) && !isReadonly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const businessItem = businessItems.find((item) => item.id === it.itemId);
+                      if (businessItem) setCustomizing({
+                        item: businessItem,
+                        quantity: it.qty,
+                        editIdx: idx,
+                        initialSelections: it.optionSelections,
+                      });
+                    }}
+                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition mr-2"
+                  >
+                    Editar
+                  </button>
+                )}
+
+                {type === "PRODUCTO" && !isReadonly && (
+                  <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-slate-200">
+                    <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">-</button>
+                    <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
+                    <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">+</button>
+                  </div>
+                )}
+
+                {!isReadonly && (
+                  <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {items.length === 0 && (
+              <div className="text-center py-6 border border-dashed border-slate-200 bg-slate-50/50 rounded-2xl">
+                <p className="text-[11px] font-medium text-slate-400 uppercase tracking-widest">Sin productos en la lista</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {type === "SERVICIO" && items.length > 0 && (
+          <div className="flex flex-col gap-3 p-4 rounded-2xl border border-emerald-50 bg-emerald-50/20">
+            <div className="rounded-xl bg-white p-3 border border-emerald-100 shadow-sm">
+              <span className="text-xs font-semibold text-emerald-700">
+                Servicio seleccionado
+              </span>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="truncate text-sm font-semibold text-slate-800">
+                  {items[0].name}
+                </span>
+                <span className="shrink-0 text-sm font-bold text-slate-800">
+                  ${formatMoney(items[0].price)}
+                </span>
+              </div>
+            </div>
+
+            <ReservationSlotPicker
+              itemId={items[0].itemId}
+              mode="private"
+              selectedDate={scheduledDate}
+              selectedStartMinute={selectedStartMinute}
+              disabled={isReadonly}
+              availabilitySaleId={mode === "edit" ? sale?.id : undefined}
+              durationMin={items[0].durationMin || Number(manualDuration) || undefined}
+              onChange={({ date, startMinute }) => {
+                setScheduledDate(date);
+                setSelectedStartMinute(startMinute);
+              }}
+            />
+
+            {!isReadonly && !items[0]?.durationMin && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-slate-500 px-1">Duración en minutos</span>
+                <input
+                  type="number"
+                  min="1"
+                  disabled={isReadonly}
+                  value={manualDuration}
+                  onChange={(e) => setManualDuration(e.target.value)}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
+            )}
+            {!isReadonly && items[0]?.durationMin && (
+              <p className="px-1 text-[11px] font-semibold text-emerald-700">
+                Duración: {items[0].durationMin} min
+              </p>
+            )}
+          </div>
+        )}
+
+        <SaleTaxPanel
+          mode={isReadonly ? "readonly" : "create"}
+          value={fiscalForm}
+          onChange={setFiscalForm}
+          saleType={type}
+          items={items.map((item) => ({
+            itemId: item.itemId,
+            quantity: normalizeQty(type, item.qty),
+          }))}
+          previewOnly={true}
+          onPreviewChange={setTaxPreview}
+          fiscalSummary={sale?.fiscalSummary}
+          taxLines={sale?.taxLines}
+        />
+
+        <div className="h-4" />
+      </>
+    );
+  };
+
+  if (mode === "readonly") {
+    return (
+      <div className="space-y-6">
+        {renderFormBody()}
+      </div>
+    );
+  }
+
+  if (mode === "edit") {
+    if (!expanded) return null;
+    return (
+      <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
+        <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] sm:rounded-2xl shadow-2xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div className="flex flex-col">
+              <h2 className="font-semibold text-slate-900 text-base">Editar Venta</h2>
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">EDICIÓN MANUAL</span>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelComposer}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
+              aria-label="Cerrar"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+            {renderFormBody()}
+          </div>
+
+          {/* Bottom Bar for Modal */}
+          <div className="p-4 bg-white border-t border-slate-100 shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{totalLabel}</span>
+                <span className="text-sm font-semibold text-slate-800">${formatMoney(totalToDisplay)}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={onCancelComposer}
+                  className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs transition active:scale-95"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={items.length === 0 || isSubmitting}
+                  className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition active:scale-95 disabled:opacity-50"
+                >
+                  {isSubmitting ? "Guardando..." : "Guardar cambios"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {customizing && (
+          <ProductOptionSelector
+            item={customizing.item}
+            quantity={customizing.quantity}
+            initialSelections={customizing.initialSelections}
+            onClose={() => setCustomizing(null)}
+            onConfirm={({ optionSelections, optionNames, unitPrice }) => {
+              if (customizing.editIdx !== undefined) {
+                setItems((current) =>
+                  current.map((line, idx) =>
+                    idx === customizing.editIdx
+                      ? { ...line, optionSelections, optionNames, price: unitPrice }
+                      : line
+                  )
+                );
+              } else {
+                setItems((current) => [
+                  ...current,
+                  {
+                    itemId: customizing.item.id,
+                    qty: customizing.quantity,
+                    name: customizing.item.name,
+                    price: unitPrice,
+                    durationMin: customizing.item.durationMinutes,
+                    optionSelections,
+                    optionNames,
+                  },
+                ]);
+              }
+              setNewItem({ itemId: "", qty: 1 });
+              setCustomizing(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pt-2 lg:left-[408px] lg:right-0"
+      style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 12px))" }}
+    >
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {expanded && (
-            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 flex flex-col bg-white rounded-[28px] border-t border-slate-100/80 overflow-hidden max-h-[75vh]">
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
+            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 mx-auto w-full max-w-[480px] z-10 flex flex-col bg-white rounded-[28px] border border-slate-100 shadow-2xl overflow-hidden max-h-[75vh]">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                 <div className="flex flex-col">
                   <h2 className="font-semibold text-slate-900 text-base">Nueva Venta</h2>
-                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Creación Manual</span>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">CREACIÓN MANUAL</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={onCancelComposer}
+                  className="rounded-full p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
+                  aria-label="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
 
-                <div className="flex flex-col gap-4 p-2 bg-white">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                      Cliente
-                    </span>
-                    <input
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Nombre del cliente"
-                      className="bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 focus:ring-0 focus:border-emerald-500 transition-colors outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                      WhatsApp
-                    </span>
-                    <div className="bg-transparent">
-                      <PhoneSelector
-                        countryCode={countryCode}
-                        onCountryCodeChange={setCountryCode}
-                        phoneNumber={phoneNumber}
-                        onPhoneNumberChange={setPhoneNumber}
-                        flat
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                        Estado Inicial
-                      </span>
-                      <div className="relative w-full" ref={statusRef}>
-                        <button
-                          type="button"
-                          onClick={() => setIsStatusOpen(!isStatusOpen)}
-                          className="flex h-10 w-full items-center justify-between bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 outline-none focus:border-emerald-500 transition-colors"
-                        >
-                          <span>{status === "PENDIENTE" ? "Pendiente" : "Cerrado"}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down text-slate-400 shrink-0"><path d="m6 9 6 6 6-6" /></svg>
-                        </button>
-
-                        {isStatusOpen && (
-                          <div className="absolute left-0 top-[calc(100%+4px)] z-20 w-full flex flex-col overflow-hidden rounded-xl border border-slate-100 bg-white shadow-md animate-in fade-in slide-in-from-top-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStatus("PENDIENTE");
-                                setIsStatusOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "PENDIENTE" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
-                                }`}
-                            >
-                              <span>Pendiente</span>
-                              {status === "PENDIENTE" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStatus("CERRADO");
-                                setIsStatusOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "CERRADO" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
-                                }`}
-                            >
-                              <span>Cerrado</span>
-                              {status === "CERRADO" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1 pt-0.5">
-                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">Medio de pago</span>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod("CASH")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "CASH"
-                              ? "bg-emerald-600 text-white rounded-xl"
-                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                            }`}
-                        >
-                          Efectívo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "BANK_TRANSFER"
-                              ? "bg-emerald-600 text-white rounded-xl"
-                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                            }`}
-                        >
-                          Transfere.
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {type === "SERVICIO" && items.length > 0 && (
-                  <div className="flex flex-col gap-3 p-4 rounded-xl border border-emerald-50 bg-emerald-50/20">
-                    <div className="rounded-xl bg-white p-3 border border-emerald-100">
-                      <span className="text-xs font-medium text-emerald-700">
-                        Servicio seleccionado
-                      </span>
-                      <div className="mt-1 flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-medium text-slate-800">
-                          {items[0].name}
-                        </span>
-                        <span className="shrink-0 text-sm font-medium text-slate-800">
-                          ${formatMoney(items[0].price)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <ReservationSlotPicker
-                      itemId={items[0].itemId}
-                      mode="private"
-                      selectedDate={scheduledDate}
-                      selectedStartMinute={selectedStartMinute}
-                      onChange={({ date, startMinute }) => {
-                        setScheduledDate(date);
-                        setSelectedStartMinute(startMinute);
-                      }}
-                    />
-
-                    {!items[0]?.durationMin && (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Duración en minutos</span>
-                        <input
-                          type="number"
-                          min="1"
-                          value={manualDuration}
-                          onChange={(e) => setManualDuration(e.target.value)}
-                          className="h-10 rounded-xl border border-transparent bg-slate-50 px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
-                        />
-                      </div>
-                    )}
-                    {items[0]?.durationMin && (
-                      <p className="px-1 text-[11px] font-semibold text-emerald-700">
-                        Duración: {items[0].durationMin} min
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {type === "PRODUCTO" && (
-                  <div className="space-y-3">
-                    <span className="text-xs font-medium text-slate-500 mb-1 px-1">Items de venta</span>
-
-                    {/* Add items composer */}
-                    <div className="flex flex-col gap-3 p-3 bg-slate-50/30 rounded-xl">
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-medium text-slate-500 mb-1 px-1">Producto / Servicio</span>
-                        <div className="relative bg-white rounded-xl">
-                          <ItemSelector
-                            value={newItem.itemId}
-                            onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                            options={businessItems.filter(bi =>
-                              items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
-                            )}
-                            placeholder="Buscar ítem..."
-                          />
-                        </div>
-                      </div>
-                      {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-xs font-medium text-slate-500 mb-1 px-1">Cantidad</span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={newItem.qty}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === "") {
-                                setNewItem(prev => ({ ...prev, qty: "" }));
-                                return;
-                              }
-                              const num = parseInt(val, 10);
-                              if (!isNaN(num)) {
-                                setNewItem(prev => ({ ...prev, qty: num }));
-                              }
-                            }}
-                            onFocus={(e) => e.target.select()}
-                            onBlur={() => {
-                              if (newItem.qty === "" || newItem.qty <= 0) {
-                                setNewItem(prev => ({ ...prev, qty: 1 }));
-                              }
-                            }}
-                            className="w-full h-10 bg-slate-50 border border-transparent rounded-xl px-3 text-sm font-normal text-slate-800 outline-none focus:bg-white focus:border-slate-200 focus:ring-0 transition"
-                          />
-                        </div>
-                      )}
-                      <button
-                        onClick={handleAddItem}
-                        disabled={!newItem.itemId}
-                        className="w-full h-10 mt-2 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition active:scale-[0.98] disabled:opacity-40 disabled:bg-neutral-200"
-                      >
-                        Añadir a la venta
-                      </button>
-                    </div>
-
-                    {formError && (
-                      <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                        {formError}
-                      </div>
-                    )}
-
-                    {/* Items List */}
-                    <div className="space-y-2">
-                      {items.map((it, idx) => (
-                        <div key={idx} className="flex items-center gap-3 p-2.5 bg-white border border-slate-100 rounded-xl">
-                          <ItemThumbnail />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-slate-800 text-xs truncate">{it.name}</div>
-                            <div className="flex items-center gap-1 text-[10px] font-normal text-slate-400 mt-0.5">
-                              {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
-                            </div>
-                            {it.optionNames?.map((name) => (
-                              <div key={name} className="text-[10px] text-slate-500">{name}</div>
-                            ))}
-                          </div>
-
-                          {type === "PRODUCTO" && (
-                            <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-transparent mr-1">
-                              <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">-</button>
-                              <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
-                              <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">+</button>
-                            </div>
-                          )}
-
-                          <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition mr-1">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {type === "SERVICIO" && formError && (
-                  <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                    {formError}
-                  </div>
-                )}
-
-                <div className="h-4" />
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+                {renderFormBody()}
               </div>
             </div>
           )}
@@ -587,8 +993,8 @@ export default function SalesChatComposer({
             centerContent={
               expanded ? (
                 <div className="flex h-full w-full items-center justify-between pt-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Total venta</span>
-                  <span className="text-sm font-medium text-slate-800">${formatMoney(total)}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{totalLabel}</span>
+                  <span className="text-sm font-medium text-slate-800">${formatMoney(totalToDisplay)}</span>
                 </div>
               ) : undefined
             }
@@ -601,20 +1007,31 @@ export default function SalesChatComposer({
         <ProductOptionSelector
           item={customizing.item}
           quantity={customizing.quantity}
+          initialSelections={customizing.initialSelections}
           onClose={() => setCustomizing(null)}
           onConfirm={({ optionSelections, optionNames, unitPrice }) => {
-            setItems((current) => [
-              ...current,
-              {
-                itemId: customizing.item.id,
-                qty: customizing.quantity,
-                name: customizing.item.name,
-                price: unitPrice,
-                durationMin: customizing.item.durationMinutes,
-                optionSelections,
-                optionNames,
-              },
-            ]);
+            if (customizing.editIdx !== undefined) {
+              setItems((current) =>
+                current.map((line, idx) =>
+                  idx === customizing.editIdx
+                    ? { ...line, optionSelections, optionNames, price: unitPrice }
+                    : line
+                )
+              );
+            } else {
+              setItems((current) => [
+                ...current,
+                {
+                  itemId: customizing.item.id,
+                  qty: customizing.quantity,
+                  name: customizing.item.name,
+                  price: unitPrice,
+                  durationMin: customizing.item.durationMinutes,
+                  optionSelections,
+                  optionNames,
+                },
+              ]);
+            }
             setNewItem({ itemId: "", qty: 1 });
             setCustomizing(null);
           }}

@@ -81,6 +81,8 @@ function MiNegocioPageContent() {
   const [badgeColor2, setBadgeColor2] = useState("#ef4444");
   const [price, setPrice] = useState("");
   const [priceDisplay, setPriceDisplay] = useState("");
+  const [appliesImpoconsumo, setAppliesImpoconsumo] = useState(false);
+  const [impoconsumoRatePercent, setImpoconsumoRatePercent] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
@@ -177,6 +179,8 @@ function MiNegocioPageContent() {
     setBadgeColor2("#ef4444");
     setPrice("");
     setPriceDisplay("");
+    setAppliesImpoconsumo(false);
+    setImpoconsumoRatePercent("");
     setDescription("");
     setNewImages([]);
     setExistingImages([]);
@@ -232,6 +236,12 @@ function MiNegocioPageContent() {
 
     setPrice(String(item.price));
     setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
+    setAppliesImpoconsumo(Boolean(item.appliesImpoconsumo));
+    setImpoconsumoRatePercent(
+      item.impoconsumoRate == null
+        ? ""
+        : String(Number(item.impoconsumoRate) * 100),
+    );
     setDescription(item.description ?? "");
     setExistingImages(item.images ?? []);
     setNewImages([]);
@@ -379,6 +389,19 @@ function MiNegocioPageContent() {
     if (!price || parseFloat(price) <= 0) {
       errors.price = "El precio debe ser mayor a 0";
     }
+    const parsedImpoconsumoRate = impoconsumoRatePercent
+      ? Number(impoconsumoRatePercent.replace(",", "."))
+      : null;
+    if (
+      type === "PRODUCT" &&
+      appliesImpoconsumo &&
+      parsedImpoconsumoRate !== null &&
+      (!Number.isFinite(parsedImpoconsumoRate) ||
+        parsedImpoconsumoRate <= 0 ||
+        parsedImpoconsumoRate > 100)
+    ) {
+      errors.impoconsumoRate = "La tarifa debe ser mayor a 0 y máximo 100";
+    }
 
     let finalDuration = duration;
     if (type === "SERVICE") {
@@ -455,6 +478,13 @@ function MiNegocioPageContent() {
         type,
         name,
         price: parseFloat(price),
+        appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
+        impoconsumoRate:
+          type === "PRODUCT" &&
+          appliesImpoconsumo &&
+          parsedImpoconsumoRate !== null
+            ? parsedImpoconsumoRate / 100
+            : null,
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
@@ -808,6 +838,10 @@ function MiNegocioPageContent() {
           priceDisplay={priceDisplay}
           setPriceDisplay={setPriceDisplay}
           setPrice={setPrice}
+          appliesImpoconsumo={appliesImpoconsumo}
+          setAppliesImpoconsumo={setAppliesImpoconsumo}
+          impoconsumoRatePercent={impoconsumoRatePercent}
+          setImpoconsumoRatePercent={setImpoconsumoRatePercent}
           durationInput={durationInput}
           setDurationInput={setDurationInput}
           setDuration={setDuration}

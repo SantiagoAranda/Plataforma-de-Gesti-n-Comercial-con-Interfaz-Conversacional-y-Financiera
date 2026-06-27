@@ -63,6 +63,72 @@ type PublicOptionGroupForCatalog = {
   options: PublicOptionForGroup[];
 };
 
+const FOOTER_LOGO_META_TYPE = 'footer_logo';
+const LOCATION_SHOW_META_TYPE = 'location_show';
+const LOCATION_LABEL_META_TYPE = 'location_label';
+const LOCATION_URL_META_TYPE = 'location_url';
+const FOOTER_BACKGROUND_COLOR_META_TYPE = 'footer_background_color';
+const FOOTER_TEXT_COLOR_META_TYPE = 'footer_text_color';
+const FOOTER_META_TYPES = new Set([
+  FOOTER_LOGO_META_TYPE,
+  LOCATION_SHOW_META_TYPE,
+  LOCATION_LABEL_META_TYPE,
+  LOCATION_URL_META_TYPE,
+  FOOTER_BACKGROUND_COLOR_META_TYPE,
+  FOOTER_TEXT_COLOR_META_TYPE,
+]);
+
+function getFooterMetaValue(socials: unknown, type: string): string | null {
+  if (!Array.isArray(socials)) return null;
+  const found = socials.find(
+    (social) =>
+      social &&
+      typeof social === 'object' &&
+      (social as Record<string, unknown>).type === type,
+  );
+  const value = found ? (found as Record<string, unknown>).value : null;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function removeFooterMeta(socials: unknown) {
+  return Array.isArray(socials)
+    ? socials.filter((social) => {
+        if (!social || typeof social !== 'object') return true;
+        const type = (social as Record<string, unknown>).type;
+        return typeof type !== 'string' || !FOOTER_META_TYPES.has(type);
+      })
+    : [];
+}
+
+function getFooterColorMetaValue(socials: unknown, type: string): string | null {
+  const value = getFooterMetaValue(socials, type);
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
+}
+
+function normalizePublicFooterSettings(settings: unknown) {
+  if (!settings || typeof settings !== 'object') return settings;
+  const record = settings as Record<string, unknown>;
+  const socials = record.socials;
+
+  return {
+    ...record,
+    socials: removeFooterMeta(socials),
+    showLogo: getFooterMetaValue(socials, FOOTER_LOGO_META_TYPE) === 'true',
+    showLocationButton:
+      getFooterMetaValue(socials, LOCATION_SHOW_META_TYPE) === 'true',
+    locationLabel: getFooterMetaValue(socials, LOCATION_LABEL_META_TYPE),
+    googleMapsUrl: getFooterMetaValue(socials, LOCATION_URL_META_TYPE),
+    footerBackgroundColor: getFooterColorMetaValue(
+      socials,
+      FOOTER_BACKGROUND_COLOR_META_TYPE,
+    ),
+    footerTextColor: getFooterColorMetaValue(
+      socials,
+      FOOTER_TEXT_COLOR_META_TYPE,
+    ),
+  };
+}
+
 @Injectable()
 export class PublicService {
   constructor(
@@ -554,7 +620,12 @@ export class PublicService {
     } = this.withPublicLogoUrl(business);
 
     return {
-      business: publicBusiness,
+      business: {
+        ...publicBusiness,
+        storeFooterSettings: normalizePublicFooterSettings(
+          publicBusiness.storeFooterSettings,
+        ),
+      },
       data: await Promise.all(
         visibleItems.map(async (item) => {
           const { currentStock, averageCost, ...cleanItem } = item;

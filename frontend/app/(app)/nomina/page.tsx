@@ -29,7 +29,6 @@ import { AppApiError } from "@/src/lib/api";
 import {
   type ArlRiskClass,
   type CalculatePayrollPayload,
-  type CiiuActivity,
   type Contract,
   type Employee,
   type MoneyLike,

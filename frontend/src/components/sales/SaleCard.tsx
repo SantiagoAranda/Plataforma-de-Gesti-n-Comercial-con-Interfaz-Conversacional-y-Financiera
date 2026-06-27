@@ -6,6 +6,7 @@ import type { Sale } from "@/src/types/sales";
 import { useLongPress } from "@/src/components/shared/selection/useLongPress";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
+import SaleFiscalSummary from "./SaleFiscalSummary";
 
 function calcTotal(sale: Sale) {
   if (sale.total !== undefined) return sale.total;
@@ -176,6 +177,10 @@ export default function SaleCard({
               Turno: {formatAppointment(sale.scheduledAt)}
             </div>
           )}
+        </div>
+
+        <div className="mb-3">
+          <SaleFiscalSummary summary={sale.fiscalSummary} />
         </div>
 
         <div className="flex items-center gap-2">

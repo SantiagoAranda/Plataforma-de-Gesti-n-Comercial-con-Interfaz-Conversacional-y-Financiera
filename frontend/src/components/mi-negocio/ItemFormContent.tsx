@@ -106,6 +106,10 @@ interface ItemFormContentProps {
   priceDisplay: string;
   setPriceDisplay: (val: string) => void;
   setPrice: (val: string) => void;
+  appliesImpoconsumo: boolean;
+  setAppliesImpoconsumo: (value: boolean) => void;
+  impoconsumoRatePercent: string;
+  setImpoconsumoRatePercent: (value: string) => void;
   durationInput: string;
   setDurationInput: (val: string) => void;
   setDuration: (val: number) => void;
@@ -144,6 +148,10 @@ export function ItemFormContent({
   priceDisplay,
   setPriceDisplay,
   setPrice,
+  appliesImpoconsumo,
+  setAppliesImpoconsumo,
+  impoconsumoRatePercent,
+  setImpoconsumoRatePercent,
   durationInput,
   setDurationInput,
   setDuration,
@@ -329,6 +337,87 @@ export function ItemFormContent({
           </div>
         )}
       </div>
+
+      {type === "PRODUCT" && (
+        <section className="space-y-4 rounded-2xl border border-neutral-100 bg-neutral-50/70 p-4">
+          <div>
+            <h3 className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+              Configuración fiscal
+            </h3>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+              El IVA se calcula automáticamente según el RUT del negocio y el concepto de venta.
+            </p>
+          </div>
+
+          <div className="space-y-3 border-t border-neutral-200/70 pt-4">
+            <label className="flex cursor-pointer items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm font-semibold text-neutral-800">
+                  Aplica impoconsumo
+                </span>
+                <span className="mt-0.5 block text-[11px] text-neutral-500">
+                  Actívalo para productos sujetos al impuesto al consumo.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={appliesImpoconsumo}
+                onChange={(event) => {
+                  setAppliesImpoconsumo(event.target.checked);
+                  if (!event.target.checked) {
+                    setImpoconsumoRatePercent("");
+                    setFormErrors((current) => ({
+                      ...current,
+                      impoconsumoRate: undefined,
+                    }));
+                  }
+                }}
+                className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+              />
+            </label>
+
+            {appliesImpoconsumo && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+                  Tarifa impoconsumo
+                </label>
+                <div
+                  className={`flex h-12 items-center rounded-2xl border bg-white px-4 shadow-sm ${
+                    formErrors.impoconsumoRate ? "border-red-300" : "border-neutral-100"
+                  }`}
+                >
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={impoconsumoRatePercent}
+                    onChange={(event) => {
+                      const value = event.target.value
+                        .replace(/[^0-9.,]/g, "")
+                        .replace(",", ".");
+                      setImpoconsumoRatePercent(value);
+                      setFormErrors((current) => ({
+                        ...current,
+                        impoconsumoRate: undefined,
+                      }));
+                    }}
+                    placeholder="Ej: 8"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
+                  />
+                  <span className="text-sm text-neutral-400">%</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-neutral-500">
+                  Déjala vacía para usar la tarifa global. El porcentaje se envía como decimal al guardar.
+                </p>
+                {formErrors.impoconsumoRate && (
+                  <p className="text-[10px] font-medium uppercase text-red-500">
+                    {formErrors.impoconsumoRate}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* INVENTARIO (PRODUCT ONLY) */}
       {type === "PRODUCT" && (

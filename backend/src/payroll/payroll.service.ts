@@ -292,7 +292,6 @@ export class PayrollService {
 
   private async assertCatalogReferences(
     arlRiskClassId?: string | null,
-    ciiuId?: string | null,
     tx: PayrollTx = this.prisma,
   ) {
     if (arlRiskClassId) {
@@ -300,13 +299,6 @@ export class PayrollService {
         where: { id: arlRiskClassId, isActive: true },
       });
       if (!arl) throw new BadRequestException('arlRiskClassId is invalid');
-    }
-
-    if (ciiuId) {
-      const ciiu = await tx.economicActivityCiiu.findFirst({
-        where: { id: ciiuId, isActive: true },
-      });
-      if (!ciiu) throw new BadRequestException('ciiuId is invalid');
     }
   }
 
@@ -1016,7 +1008,7 @@ export class PayrollService {
 
     return this.prisma.$transaction(async (tx) => {
       await this.assertEmployeeBelongsToBusiness(businessId, employeeId, tx);
-      await this.assertCatalogReferences(dto.arlRiskClassId, dto.ciiuId, tx);
+      await this.assertCatalogReferences(dto.arlRiskClassId, tx);
 
       const startDate = this.parseDate(dto.startDate, 'startDate');
       const endDate = dto.endDate
@@ -1050,7 +1042,6 @@ export class PayrollService {
             dto.installmentsCount,
           ),
           arlRiskClassId: dto.arlRiskClassId,
-          ciiuId: dto.ciiuId,
         },
       });
     });
@@ -1061,14 +1052,14 @@ export class PayrollService {
     return this.prisma.employeeContract.findMany({
       where: { businessId, employeeId },
       orderBy: { startDate: 'desc' },
-      include: { arlRiskClass: true, ciiu: true },
+      include: { arlRiskClass: true },
     });
   }
 
   async getContract(businessId: string, contractId: string) {
     const contract = await this.prisma.employeeContract.findFirst({
       where: { id: contractId, businessId },
-      include: { employee: true, arlRiskClass: true, ciiu: true },
+      include: { employee: true, arlRiskClass: true },
     });
     if (!contract) throw new NotFoundException('Contract not found');
     return contract;
@@ -1085,7 +1076,7 @@ export class PayrollService {
       });
       if (!existing) throw new NotFoundException('Contract not found');
 
-      await this.assertCatalogReferences(dto.arlRiskClassId, dto.ciiuId, tx);
+      await this.assertCatalogReferences(dto.arlRiskClassId, tx);
       const criticalFields: (keyof UpdateEmployeeContractDto)[] = [
         'salaryMonthly',
         'startDate',
@@ -1157,7 +1148,6 @@ export class PayrollService {
           paymentCycle: dto.paymentCycle,
           installmentsCount: dto.installmentsCount,
           arlRiskClassId: dto.arlRiskClassId,
-          ciiuId: dto.ciiuId,
           isActive: dto.isActive,
         },
       });
@@ -1227,7 +1217,10 @@ export class PayrollService {
     if (filters.year && !Number.isInteger(year)) {
       throw new BadRequestException('year is invalid');
     }
-    if (filters.month && (!Number.isInteger(month) || month < 1 || month > 12)) {
+    if (
+      filters.month &&
+      (month === undefined || !Number.isInteger(month) || month < 1 || month > 12)
+    ) {
       throw new BadRequestException('month is invalid');
     }
     if (
@@ -1243,7 +1236,7 @@ export class PayrollService {
       where: {
         businessId,
         ...(year ? { year } : {}),
-        ...(month ? { month } : {}),
+        ...(month !== undefined ? { month } : {}),
         ...(filters.status
           ? { status: filters.status as PayrollPeriodStatus }
           : {}),
@@ -3918,6 +3911,7 @@ export class PayrollService {
     await tx.payrollContractSettlementLine.createMany({
       data: calculated.lines.map((line) => ({
         ...line,
+        metadata: line.metadata ?? Prisma.JsonNull,
         settlementId: settlement.id,
       })),
     });

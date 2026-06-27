@@ -12,6 +12,7 @@ import {
   Search,
   ShoppingBag,
   X,
+  MapPin,
 } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
@@ -142,7 +143,47 @@ type StoreFooterSettings = {
   email?: string | null;
   phones?: unknown;
   socials?: unknown;
+  showLogo?: boolean | null;
+  showLocationButton?: boolean | null;
+  locationLabel?: string | null;
+  googleMapsUrl?: string | null;
+  footerBackgroundColor?: string | null;
+  footerTextColor?: string | null;
 } | null;
+
+const FOOTER_SOCIAL_TYPES = new Set([
+  "facebook",
+  "instagram",
+  "youtube",
+  "tiktok",
+  "linkedin",
+  "x",
+  "twitter",
+  "whatsapp",
+  "website",
+]);
+const FOOTER_PLACEHOLDERS = new Set([
+  "url o usuario",
+  "https://goo.gl/maps/...",
+  "email@negocio.com",
+  "ingrese numero",
+  "ingrese número",
+]);
+
+function hasRealFooterValue(value: string | null | undefined) {
+  const clean = value?.trim();
+  if (!clean) return false;
+  return !FOOTER_PLACEHOLDERS.has(clean.toLowerCase());
+}
+
+function isUsableFooterUrl(value: string | null | undefined) {
+  const clean = value?.trim();
+  return Boolean(clean && hasRealFooterValue(clean) && /^https?:\/\/\S+\.\S+/i.test(clean));
+}
+
+function isFooterHexColor(value: string | null | undefined) {
+  return /^#[0-9a-fA-F]{6}$/.test(value?.trim() ?? "");
+}
 
 function normalizeFooterPhones(value: unknown): FooterPhone[] {
   if (!Array.isArray(value)) return [];
@@ -151,7 +192,7 @@ function normalizeFooterPhones(value: unknown): FooterPhone[] {
     const record = phone as Record<string, unknown>;
     const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
     const label = typeof record.label === "string" ? record.label.trim() : "";
-    if (!phoneValue) return acc;
+    if (!hasRealFooterValue(phoneValue)) return acc;
     acc.push({ label, value: phoneValue });
     return acc;
   }, []);
@@ -165,7 +206,9 @@ function normalizeFooterSocials(value: unknown): FooterSocial[] {
     const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
     const label = typeof record.label === "string" ? record.label.trim() : "";
     const socialValue = typeof record.value === "string" ? record.value.trim() : "";
-    if (!type || !socialValue) return acc;
+    if (type === "footer_logo") return acc;
+    if (!FOOTER_SOCIAL_TYPES.has(type) || !hasRealFooterValue(socialValue)) return acc;
+    if (type !== "whatsapp" && !isUsableFooterUrl(socialValue)) return acc;
     acc.push({ type, label, value: socialValue });
     return acc;
   }, []);
@@ -397,18 +440,59 @@ export default function PublicStoreClient() {
       typeof footerSettings?.email === "string"
         ? footerSettings.email.trim()
         : "";
+    const googleMapsUrl =
+      typeof footerSettings?.googleMapsUrl === "string"
+        ? footerSettings.googleMapsUrl.trim()
+        : "";
+    const showLocation = Boolean(
+      footerSettings?.showLocationButton && isUsableFooterUrl(googleMapsUrl),
+    );
 
     return {
-      backgroundColor: '#064e3b',
+      backgroundColor: isFooterHexColor(footerSettings?.footerBackgroundColor)
+        ? footerSettings?.footerBackgroundColor?.trim().toLowerCase()
+        : undefined,
+      textColor: isFooterHexColor(footerSettings?.footerTextColor)
+        ? footerSettings?.footerTextColor?.trim().toLowerCase()
+        : undefined,
       titulo: businessName,
       frasePrincipal: description || undefined,
+      logoUrl: businessLogoUrl,
+      showLogo: Boolean(footerSettings?.showLogo),
       contacto: {
-        email: email || undefined,
+        email: hasRealFooterValue(email) ? email : undefined,
         telefonos: normalizeFooterPhones(footerSettings?.phones),
         redesSociales: normalizeFooterSocials(footerSettings?.socials),
+        ubicacion: showLocation
+          ? {
+              label:
+                typeof footerSettings?.locationLabel === "string" &&
+                hasRealFooterValue(footerSettings.locationLabel)
+                  ? footerSettings.locationLabel.trim()
+                  : "Como llegar",
+              value: googleMapsUrl,
+            }
+          : undefined,
       },
     };
-  }, [businessName, footerSettings]);
+  }, [businessLogoUrl, businessName, footerSettings]);
+  const headerGoogleMapsUrl =
+    typeof footerSettings?.googleMapsUrl === "string"
+      ? footerSettings.googleMapsUrl.trim()
+      : "";
+  const headerLocationUrl =
+    footerSettings?.showLocationButton && isUsableFooterUrl(headerGoogleMapsUrl)
+      ? headerGoogleMapsUrl
+      : "";
+  const headerLocationLabel =
+    typeof footerSettings?.locationLabel === "string" && hasRealFooterValue(footerSettings.locationLabel)
+      ? footerSettings.locationLabel.trim()
+      : "Cómo llegar";
+
+  const headerSubtitle =
+    typeof footerSettings?.description === "string" && hasRealFooterValue(footerSettings.description)
+      ? footerSettings.description.trim()
+      : businessSubtitle.trim();
 
   const resetReservationUi = () => {
     setSelectedService(null);
@@ -707,9 +791,9 @@ export default function PublicStoreClient() {
           transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
         }}
       >
-        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between px-4 lg:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
+        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
               {businessLogoUrl ? (
                 <img
                   src={businessLogoUrl}
@@ -720,25 +804,37 @@ export default function PublicStoreClient() {
                 <Store className="h-5 w-5" />
               )}
             </div>
-            <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
+            <div className="min-w-0 flex-1 leading-tight text-left">
               <h1 className="truncate text-[20px] font-semibold text-neutral-900">
                 {businessName || "Tienda"}
               </h1>
-              {businessSubtitle?.trim() && (
-                <div className="truncate text-[13px] font-medium text-slate-500 ml-2">
-                  {businessSubtitle.trim()}
+              {headerSubtitle && (
+                <div className="truncate text-[13px] font-medium text-slate-500">
+                  {headerSubtitle}
                 </div>
               )}
               <div
-                className="truncate text-[13px] font-medium text-slate-500 ml-2"
-                style={businessSubtitle?.trim() ? { display: "none" } : undefined}
+                className="truncate text-[13px] font-medium text-slate-500"
+                style={headerSubtitle ? { display: "none" } : undefined}
               >
                 Catálogo
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {headerLocationUrl && (
+              <a
+                href={headerLocationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+                aria-label={headerLocationLabel}
+                title="Cómo llegar"
+              >
+                <MapPin className="h-4 w-4 text-emerald-600" />
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setShowCartModal(true)}

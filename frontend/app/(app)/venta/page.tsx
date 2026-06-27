@@ -18,7 +18,8 @@ import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
-import SaleEditModal from "@/src/components/sales/SaleEditModal";
+
+import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
@@ -140,6 +141,9 @@ function mapOrderToSale(order: ApiOrder): Sale {
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
+    fiscalSummary: order.fiscalSummary ?? null,
+    fiscalContext: order.fiscalContext ?? null,
+    taxLines: order.taxLines ?? null,
     total,
     items,
   };
@@ -392,63 +396,50 @@ export default function VentaPage() {
   };
 
   const handleConfirmSale = useCallback(async (sale: Sale) => {
-    showConfirmation(
-      "¿Deseás confirmar esta venta?",
-      "Confirmar",
-      async () => {
-        const loadingId = "sale-confirm-loading";
-        const successId = "sale-confirm-success";
-        const errorId = "sale-confirm-error";
+    if (!sale.fiscalContext) {
+      toast.error("Faltan datos fiscales para liquidar esta venta. Editala antes de confirmar.");
+      return;
+    }
 
-        try {
-          setConfirmingSaleId(sale.id);
-          setError(null);
+    const loadingId = "sale-confirm-loading";
+    const successId = "sale-confirm-success";
+    const errorId = "sale-confirm-error";
 
-          toast.dismiss(loadingId);
-          toast.dismiss(successId);
-          toast.dismiss(errorId);
+    try {
+      setConfirmingSaleId(sale.id);
+      setError(null);
 
-          toast.loading("Confirmando venta...", { id: loadingId });
+      toast.dismiss(loadingId);
+      toast.dismiss(successId);
+      toast.dismiss(errorId);
 
-          await confirmSale(sale.id, sale.sourceType);
+      toast.loading("Confirmando venta e impuestos...", { id: loadingId });
 
-          invalidateCache("home:sales");
-          await loadOrders();
+      await confirmSale(sale.id, sale.sourceType, sale.fiscalContext as BuyerFiscalContext);
 
-          setDetailsSale(null);
+      invalidateCache("home:sales");
+      await loadOrders();
 
-          toast.dismiss(loadingId);
+      setDetailsSale(null);
+      toast.dismiss(loadingId);
+      toast.success("Venta confirmada con impuestos", {
+        id: successId,
+        duration: 2000,
+      });
+    } catch (err) {
+      console.error(err);
+      const message = getErrorMessage(err, "No se pudo finalizar la venta");
+      setError(message);
+      await loadOrders();
 
-          toast.success("Venta confirmada", {
-            id: successId,
-            duration: 2000,
-          });
-
-          setTimeout(() => {
-            toast.dismiss(successId);
-          }, 2100);
-        } catch (err) {
-          console.error(err);
-          const message = getErrorMessage(err, "No se pudo finalizar la venta");
-          setError(message);
-          await loadOrders();
-
-          toast.dismiss(loadingId);
-
-          toast.error(message, {
-            id: errorId,
-            duration: 5000,
-          });
-
-          setTimeout(() => {
-            toast.dismiss(errorId);
-          }, 5100);
-        } finally {
-          setConfirmingSaleId(null);
-        }
-      },
-      "emerald"
-    );
+      toast.dismiss(loadingId);
+      toast.error(message, {
+        id: errorId,
+        duration: 5000,
+      });
+    } finally {
+      setConfirmingSaleId(null);
+    }
   }, [loadOrders]);
 
   const handleSaveOptionalIngredients = useCallback(
@@ -499,6 +490,7 @@ export default function VentaPage() {
     paymentMethod: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
     durationMinutes?: number;
+    buyerFiscalContext?: BuyerFiscalContext;
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
@@ -510,10 +502,10 @@ export default function VentaPage() {
       const created = await createSale(payload);
 
       if (data.status === "CERRADO") {
-        await confirmSale(created.id, created.sourceType);
+        await confirmSale(created.id, created.sourceType, data.buyerFiscalContext);
       }
 
-      toast.success("Venta regitrada manualmente");
+      toast.success("Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
       await loadOrders();
@@ -616,6 +608,7 @@ export default function VentaPage() {
         customerWhatsapp: updated.customerWhatsapp ?? undefined,
         paymentMethod: updated.paymentMethod,
         scheduledAt: updated.scheduledAt,
+        buyerFiscalContext: updated.fiscalContext ?? undefined,
         items: updated.items
           .filter((it) => it.itemId)
           .map((it) => ({
@@ -806,12 +799,20 @@ export default function VentaPage() {
         </div>
       </main>
 
-      <SaleEditModal
-        open={!!editingSale}
-        sale={editingSale}
-        onClose={() => setEditingSale(null)}
-        onSave={handleSaveEditedSale}
-      />
+      {editingSale && (
+        <SalesChatComposer
+          mode="edit"
+          sale={editingSale}
+          expanded={true}
+          onCancelComposer={() => setEditingSale(null)}
+          onSave={handleSaveEditedSale}
+        />
+      )}
+
+
+
+
+
 
       <SaleDetailsModal
         open={!!detailsSale}

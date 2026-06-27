@@ -55,6 +55,8 @@ export default function ItemFormModal({
   const [badgeColor2, setBadgeColor2] = useState("#ef4444");
   const [price, setPrice] = useState("");
   const [priceDisplay, setPriceDisplay] = useState("");
+  const [appliesImpoconsumo, setAppliesImpoconsumo] = useState(false);
+  const [impoconsumoRatePercent, setImpoconsumoRatePercent] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
@@ -94,6 +96,12 @@ export default function ItemFormModal({
       setPrice(String(editingItem.price));
       setPriceDisplay(
         formatPriceInput(String(editingItem.price).replace(".", ",")),
+      );
+      setAppliesImpoconsumo(Boolean(editingItem.appliesImpoconsumo));
+      setImpoconsumoRatePercent(
+        editingItem.impoconsumoRate == null
+          ? ""
+          : String(Number(editingItem.impoconsumoRate) * 100),
       );
       setDescription(editingItem.description ?? "");
       setExistingImages(editingItem.images ?? []);
@@ -141,6 +149,8 @@ export default function ItemFormModal({
     setBadgeColor2("#ef4444");
     setPrice("");
     setPriceDisplay("");
+    setAppliesImpoconsumo(false);
+    setImpoconsumoRatePercent("");
     setDescription("");
     revokePendingImages(newImages);
     setNewImages([]);
@@ -231,6 +241,19 @@ export default function ItemFormModal({
     if (!name.trim()) errors.name = "El nombre es obligatorio";
     if (!price || parseFloat(price) <= 0)
       errors.price = "El precio debe ser mayor a 0";
+    const parsedImpoconsumoRate = impoconsumoRatePercent
+      ? Number(impoconsumoRatePercent.replace(",", "."))
+      : null;
+    if (
+      type === "PRODUCT" &&
+      appliesImpoconsumo &&
+      parsedImpoconsumoRate !== null &&
+      (!Number.isFinite(parsedImpoconsumoRate) ||
+        parsedImpoconsumoRate <= 0 ||
+        parsedImpoconsumoRate > 100)
+    ) {
+      errors.impoconsumoRate = "La tarifa debe ser mayor a 0 y máximo 100";
+    }
 
     let finalDuration = duration;
     if (type === "SERVICE") {
@@ -302,6 +325,13 @@ export default function ItemFormModal({
         type,
         name,
         price: parseFloat(price),
+        appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
+        impoconsumoRate:
+          type === "PRODUCT" &&
+          appliesImpoconsumo &&
+          parsedImpoconsumoRate !== null
+            ? parsedImpoconsumoRate / 100
+            : null,
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
@@ -453,6 +483,10 @@ export default function ItemFormModal({
         priceDisplay={priceDisplay}
         setPriceDisplay={setPriceDisplay}
         setPrice={setPrice}
+        appliesImpoconsumo={appliesImpoconsumo}
+        setAppliesImpoconsumo={setAppliesImpoconsumo}
+        impoconsumoRatePercent={impoconsumoRatePercent}
+        setImpoconsumoRatePercent={setImpoconsumoRatePercent}
         durationInput={durationInput}
         setDurationInput={setDurationInput}
         setDuration={setDuration}

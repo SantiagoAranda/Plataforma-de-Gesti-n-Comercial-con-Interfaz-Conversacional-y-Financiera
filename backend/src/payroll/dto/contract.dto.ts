@@ -12,14 +12,14 @@ import { PayrollContractType, PayrollPaymentCycle } from '@prisma/client';
 
 export class CreateEmployeeContractDto {
   @IsEnum(PayrollContractType)
-  contractType: PayrollContractType;
+  contractType!: PayrollContractType;
 
   @IsNumber()
   @Min(0)
-  salaryMonthly: number;
+  salaryMonthly!: number;
 
   @IsDateString()
-  startDate: string;
+  startDate!: string;
 
   @IsOptional()
   @IsDateString()
@@ -34,7 +34,7 @@ export class CreateEmployeeContractDto {
   applyLaw1819?: boolean;
 
   @IsEnum(PayrollPaymentCycle)
-  paymentCycle: PayrollPaymentCycle;
+  paymentCycle!: PayrollPaymentCycle;
 
   @IsOptional()
   @IsInt()
@@ -45,9 +45,6 @@ export class CreateEmployeeContractDto {
   @IsString()
   arlRiskClassId?: string;
 
-  @IsOptional()
-  @IsString()
-  ciiuId?: string;
 }
 
 export class UpdateEmployeeContractDto {
@@ -88,10 +85,6 @@ export class UpdateEmployeeContractDto {
   @IsOptional()
   @IsString()
   arlRiskClassId?: string;
-
-  @IsOptional()
-  @IsString()
-  ciiuId?: string;
 
   @IsOptional()
   @IsBoolean()

@@ -4,7 +4,10 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  IsBoolean,
   IsUUID,
+  Max,
+  Min,
   Matches,
   ValidateNested,
 } from 'class-validator';
@@ -51,6 +54,16 @@ export class CreateItemDto {
 
   @IsNumber()
   price!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  appliesImpoconsumo?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  impoconsumoRate?: number | null;
 
   @IsOptional()
   @IsString()

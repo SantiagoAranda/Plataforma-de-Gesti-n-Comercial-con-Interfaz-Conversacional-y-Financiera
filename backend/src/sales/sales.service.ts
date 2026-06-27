@@ -16,6 +16,7 @@ import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
+import { TaxService } from '../tax/tax.service';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -35,6 +36,20 @@ export interface UnifiedSaleDto {
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: {
+    subtotal: number;
+    iva: number;
+    impoconsumo: number;
+    reteFuente: number;
+    reteIva: number;
+    reteIca: number;
+    totalCollected: number;
+    totalCharged: number;
+    totalWithheld: number;
+    netReceived: number;
+  } | null;
+  taxLines?: any[] | null;
+  fiscalContext?: any | null;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -76,6 +91,7 @@ export class SalesService {
     private accountingService: AccountingService,
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
+    private taxService: TaxService,
   ) { }
 
   private readonly orderItemRecipeInclude = {
@@ -162,6 +178,100 @@ export class SalesService {
           : Number(option.totalQuantitySnapshot),
       unitLabel: option.unitLabelSnapshot ?? null,
     }));
+  }
+
+  private mapFiscalContextForSales(order: any) {
+    const snapshotBuyerFiscal =
+      order.taxSnapshot &&
+      typeof order.taxSnapshot.buyerFiscal === 'object' &&
+      !Array.isArray(order.taxSnapshot.buyerFiscal)
+        ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+        : {};
+
+    if (!order.fiscalContext && Object.keys(snapshotBuyerFiscal).length === 0) {
+      return null;
+    }
+
+    return {
+      buyerType:
+        snapshotBuyerFiscal.buyerType ?? order.fiscalContext?.buyerType ?? null,
+      buyerName:
+        snapshotBuyerFiscal.buyerName ?? order.fiscalContext?.buyerName ?? null,
+      buyerDocumentType:
+        snapshotBuyerFiscal.buyerDocumentType ??
+        order.fiscalContext?.buyerDocumentType ??
+        null,
+      buyerDocumentNumber:
+        snapshotBuyerFiscal.buyerDocumentNumber ??
+        order.fiscalContext?.buyerDocumentNumber ??
+        null,
+      buyerEmail:
+        snapshotBuyerFiscal.buyerEmail ?? order.fiscalContext?.buyerEmail ?? null,
+      buyerIsIvaResponsable:
+        snapshotBuyerFiscal.buyerIsIvaResponsable ??
+        order.fiscalContext?.buyerIsIvaResponsable ??
+        false,
+      buyerIsRetenedor:
+        snapshotBuyerFiscal.buyerIsRetenedor ??
+        order.fiscalContext?.buyerIsRetenedor ??
+        false,
+      buyerIsGranContribuyente:
+        snapshotBuyerFiscal.buyerIsGranContribuyente ??
+        order.fiscalContext?.buyerIsGranContribuyente ??
+        false,
+      buyerIsAutorretenedor:
+        snapshotBuyerFiscal.buyerIsAutorretenedor ??
+        order.fiscalContext?.buyerIsAutorretenedor ??
+        false,
+      buyerIsRegimenSimple:
+        snapshotBuyerFiscal.buyerIsRegimenSimple ??
+        order.fiscalContext?.buyerIsRegimenSimple ??
+        false,
+      withholdingSubjectIsDeclarante:
+        snapshotBuyerFiscal.withholdingSubjectIsDeclarante ?? true,
+      fiscalMunicipalityCode:
+        snapshotBuyerFiscal.fiscalMunicipalityCode ??
+        order.fiscalContext?.fiscalMunicipalityCode ??
+        null,
+      saleConcept:
+        snapshotBuyerFiscal.saleConcept ?? order.fiscalContext?.saleConcept ?? null,
+    };
+  }
+
+  private async persistOrderFiscalPreview(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    orderId: string,
+    buyerFiscalContext: any,
+    cartItems: Array<{ itemId: string; quantity: number }>,
+  ) {
+    if (!buyerFiscalContext || cartItems.length === 0) return;
+
+    const preview = await this.taxService.calculateTaxPreview(businessId, {
+      buyerType: buyerFiscalContext.buyerType,
+      buyerName: buyerFiscalContext.buyerName,
+      buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+      buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+      buyerEmail: buyerFiscalContext.buyerEmail,
+      buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
+      buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+      buyerIsGranContribuyente:
+        buyerFiscalContext.buyerIsGranContribuyente || false,
+      buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
+      buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+      withholdingSubjectIsDeclarante:
+        buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+      fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+      saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+      cartItems,
+    });
+
+    await this.taxService.freezeTaxCalculation(
+      tx,
+      orderId,
+      preview,
+      buyerFiscalContext,
+    );
   }
 
   private assertOrderEditable(order: {
@@ -266,7 +376,7 @@ export class SalesService {
           inventoryModeSnapshot: item.inventoryMode,
           durationMinutesSnapshot: item.durationMinutes,
           excludedOptionalIngredientIds:
-            excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+            excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
           baseUnitPriceSnapshot: baseUnitPrice,
           optionsTotalSnapshot: optionsTotal,
           finalUnitPriceSnapshot: unitPrice,
@@ -518,6 +628,24 @@ export class SalesService {
 
     const isManual = (dto.origin ?? 'MANUAL') !== 'PUBLIC_STORE';
     const itemType = isManual ? null : this.ensureSingleItemType(itemsFromDb);
+    const manualScheduledServiceItem =
+      isManual &&
+      dto.items.length === 1 &&
+      itemsFromDb.length === 1 &&
+      itemsFromDb[0].type === 'SERVICE' &&
+      Boolean(dto.scheduledAt)
+        ? itemsFromDb[0]
+        : null;
+
+    if (manualScheduledServiceItem && dto.scheduledAt) {
+      await this.validateMirrorReservationAvailability({
+        businessId,
+        itemId: manualScheduledServiceItem.id,
+        scheduledAt: dto.scheduledAt,
+        durationMinutes:
+          manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+      });
+    }
 
     // BIFURCACIÓN SEGÚN TIPO
     if (!isManual && itemType === 'SERVICE') {
@@ -594,7 +722,8 @@ export class SalesService {
       { isManual },
     );
 
-    const order = await this.prisma.order.create({
+    const order = await this.prisma.$transaction(async (tx) => {
+      const createdOrder = await tx.order.create({
       data: {
         businessId,
         customerName: dto.origin === 'PUBLIC_STORE'
@@ -615,6 +744,40 @@ export class SalesService {
           include: this.orderItemRecipeInclude,
         },
       },
+    });
+
+      if (manualScheduledServiceItem && dto.scheduledAt) {
+        const mirror = this.buildMirrorReservationData({
+          businessId,
+          orderId: createdOrder.id,
+          itemId: manualScheduledServiceItem.id,
+          customerName: createdOrder.customerName,
+          customerWhatsapp: createdOrder.customerWhatsapp,
+          paymentMethod: createdOrder.paymentMethod as any,
+          scheduledAt: dto.scheduledAt,
+          durationMinutes:
+            manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+        });
+
+        await tx.reservation.create({
+          data: mirror.create,
+        });
+      }
+
+      if (dto.buyerFiscalContext) {
+        await this.persistOrderFiscalPreview(
+          tx,
+          businessId,
+          createdOrder.id,
+          dto.buyerFiscalContext,
+          createdOrder.items.map((item) => ({
+            itemId: item.itemId,
+            quantity: Number(item.quantity),
+          })),
+        );
+      }
+
+      return createdOrder;
     });
 
     console.log(`[SalesService] Created order origin: ${order.origin}`);
@@ -638,6 +801,9 @@ export class SalesService {
           items: {
             include: this.orderItemRecipeInclude,
           },
+          fiscalContext: true,
+          taxLines: true,
+          taxSnapshot: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -659,12 +825,63 @@ export class SalesService {
     ]);
 
     const conversions = await this.prisma.unitConversion.findMany();
+    const orderIds = new Set(orders.map((order) => order.id));
+    const mirrorReservations = await this.findMirrorReservationsForOrders(
+      orders
+        .filter(
+          (order) =>
+            order.origin === 'MANUAL' &&
+            order.items.length === 1 &&
+            order.items[0]?.itemTypeSnapshot === 'SERVICE',
+        )
+        .map((order) => order.id),
+    );
 
     console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
     if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
     if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
 
-    const mappedOrders: UnifiedSaleDto[] = orders.map((o) => ({
+    const mappedOrders: UnifiedSaleDto[] = orders.map((o) => {
+      const fiscalSummary = o.fiscalContext
+        ? {
+            subtotal: Number(o.fiscalContext.subtotal),
+            iva: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'IVA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            impoconsumo: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteFuente: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEFUENTE' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteIva: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEIVA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            reteIca: Number(
+              o.taxLines.find(
+                (line) => line.taxType === 'RETEICA' && line.applied,
+              )?.taxAmount ?? 0,
+            ),
+            totalCollected:
+              Number(o.fiscalContext.subtotal) +
+              Number(o.fiscalContext.chargedTaxTotal),
+            totalCharged: Number(o.fiscalContext.chargedTaxTotal),
+            totalWithheld: Number(o.fiscalContext.withheldTaxTotal),
+            netReceived: Number(o.fiscalContext.netReceived),
+          }
+        : null;
+
+      const mirrorReservation = mirrorReservations.get(o.id);
+
+      return {
       id: o.id,
       sourceType: 'ORDER',
       customerName: o.customerName,
@@ -676,8 +893,23 @@ export class SalesService {
       accountingPostedAt: o.accountingPostedAt,
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
+      scheduledAt: mirrorReservation
+        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
+        : undefined,
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
+      fiscalSummary,
+      fiscalContext: this.mapFiscalContextForSales(o),
+      taxLines: o.taxLines ? o.taxLines.map((line) => ({
+        taxType: line.taxType,
+        direction: line.direction,
+        baseAmount: Number(line.baseAmount),
+        rate: Number(line.rate),
+        taxAmount: Number(line.taxAmount),
+        accountCode: line.accountCode,
+        applied: line.applied,
+        reason: line.reason,
+      })) : null,
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -693,9 +925,12 @@ export class SalesService {
         recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
-    }));
+    };
+    });
 
-    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => {
+    const mappedReservations: UnifiedSaleDto[] = reservations
+      .filter((r) => !orderIds.has(r.id))
+      .map((r) => {
       const item = (r as any).item;
       const price = Number(item?.price ?? 0);
 
@@ -769,6 +1004,90 @@ export class SalesService {
     return `${this.formatDateOnly(date)}T${this.formatTime(startMinute)}:00`;
   }
 
+  private getMirrorReservationIdForManualServiceOrder(orderId: string) {
+    // Manual service sales are persisted as Order for fiscal/accounting flows.
+    // Their appointment slot is mirrored in Reservation using the same id so
+    // existing availability queries can block the slot without a schema change.
+    return orderId;
+  }
+
+  private async findMirrorReservationsForOrders(orderIds: string[]) {
+    if (orderIds.length === 0) return new Map<string, any>();
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        id: { in: orderIds },
+        status: { not: 'CANCELLED' },
+      },
+    });
+    return new Map(reservations.map((reservation) => [reservation.id, reservation]));
+  }
+
+  private buildMirrorReservationData(input: {
+    businessId: string;
+    orderId: string;
+    itemId: string;
+    customerName?: string | null;
+    customerWhatsapp?: string | null;
+    paymentMethod?: 'CASH' | 'BANK_TRANSFER' | null;
+    scheduledAt: string;
+    durationMinutes: number;
+  }) {
+    const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
+    const endMinute = startMinute + input.durationMinutes;
+    const reservationId = this.getMirrorReservationIdForManualServiceOrder(
+      input.orderId,
+    );
+
+    return {
+      reservationId,
+      dateOnly,
+      startMinute,
+      endMinute,
+      create: {
+        id: reservationId,
+        businessId: input.businessId,
+        itemId: input.itemId,
+        customerName: input.customerName?.trim() || null,
+        customerWhatsapp: input.customerWhatsapp?.trim() || null,
+        date: dateOnly,
+        startMinute,
+        endMinute,
+        status: 'PENDING' as const,
+        origin: 'MANUAL' as const,
+        paymentMethod: input.paymentMethod ?? 'CASH',
+      },
+      update: {
+        itemId: input.itemId,
+        customerName: input.customerName?.trim() || null,
+        customerWhatsapp: input.customerWhatsapp?.trim() || null,
+        paymentMethod: input.paymentMethod ?? 'CASH',
+        date: dateOnly,
+        startMinute,
+        endMinute,
+        status: 'PENDING' as const,
+        origin: 'MANUAL' as const,
+      },
+    };
+  }
+
+  private async validateMirrorReservationAvailability(input: {
+    businessId: string;
+    itemId: string;
+    scheduledAt: string;
+    durationMinutes: number;
+    excludeReservationId?: string;
+  }) {
+    const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
+    await this.assertReservationSlotAvailable(
+      input.businessId,
+      input.itemId,
+      dateOnly,
+      startMinute,
+      startMinute + input.durationMinutes,
+      input.excludeReservationId,
+    );
+  }
+
   private mapOrderStatus(status: string): UnifiedStatus {
     if (status === 'COMPLETED') return 'CERRADO';
     if (status === 'CANCELLED') return 'CANCELADO';
@@ -784,10 +1103,16 @@ export class SalesService {
   async confirmOrder(
     businessId: string,
     id: string,
+    buyerFiscalContext?: any,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
+    if (typeof buyerFiscalContext === 'string') {
+      sourceType = buyerFiscalContext as UnifiedSourceType;
+      buyerFiscalContext = undefined;
+    }
+
     if (sourceType === 'RESERVATION') {
-      return this.confirmReservation(businessId, id);
+      return this.confirmReservation(businessId, id, buyerFiscalContext);
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -796,6 +1121,7 @@ export class SalesService {
         where: { id, businessId },
         include: {
           items: { include: { item: true, options: true } },
+          taxSnapshot: true,
         },
       });
 
@@ -853,6 +1179,56 @@ export class SalesService {
         });
       }
 
+      const persistedBuyerFiscal =
+        order.taxSnapshot &&
+        typeof order.taxSnapshot.buyerFiscal === 'object' &&
+        !Array.isArray(order.taxSnapshot.buyerFiscal)
+          ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+          : null;
+      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal;
+
+      if (fiscalContextToUse) {
+        const cartItems = order.items.map((it) => ({
+          itemId: it.itemId,
+          quantity: Number(it.quantity),
+        }));
+
+        const preview = await this.taxService.calculateTaxPreview(businessId, {
+          buyerType: fiscalContextToUse.buyerType,
+          buyerName: fiscalContextToUse.buyerName,
+          buyerDocumentType: fiscalContextToUse.buyerDocumentType,
+          buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
+          buyerEmail: fiscalContextToUse.buyerEmail,
+          buyerIsIvaResponsable: fiscalContextToUse.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: fiscalContextToUse.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: fiscalContextToUse.buyerIsRegimenSimple || false,
+          withholdingSubjectIsDeclarante:
+            fiscalContextToUse.withholdingSubjectIsDeclarante ?? true,
+          fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
+          saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
+          cartItems,
+        });
+
+        await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
+      }
+
+      if (
+        order.origin === 'MANUAL' &&
+        order.items.length === 1 &&
+        order.items[0]?.itemTypeSnapshot === 'SERVICE'
+      ) {
+        await tx.reservation.updateMany({
+          where: {
+            id: this.getMirrorReservationIdForManualServiceOrder(id),
+            businessId,
+            status: { not: 'CANCELLED' },
+          },
+          data: { status: 'CONFIRMED' },
+        });
+      }
+
       const finalizedOrder = {
         ...order,
         status: 'COMPLETED' as const,
@@ -897,7 +1273,7 @@ export class SalesService {
     });
   }
 
-  private async confirmReservation(businessId: string, id: string) {
+  private async confirmReservation(businessId: string, id: string, buyerFiscalContext?: any) {
     return this.prisma.$transaction(async (tx) => {
       const res = await tx.reservation.findFirst({
         where: { id, businessId },
@@ -926,6 +1302,36 @@ export class SalesService {
             });
 
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
+
+      if (buyerFiscalContext) {
+        const cartItems = [
+          {
+            itemId: res.itemId,
+            quantity: 1,
+          },
+        ];
+
+        const preview = await this.taxService.calculateTaxPreview(businessId, {
+          buyerType: buyerFiscalContext.buyerType,
+          buyerName: buyerFiscalContext.buyerName,
+          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+          buyerEmail: buyerFiscalContext.buyerEmail,
+          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+          withholdingSubjectIsDeclarante:
+            buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+          saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+          cartItems,
+        });
+
+        // Omitir congelamiento fiscal en reservas por ahora
+        // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+      }
 
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
       const inventoryMovements = res.inventoryPostedAt
@@ -968,22 +1374,41 @@ export class SalesService {
       include: { item: true },
     });
 
-    if (!reservation) {
+    const legacyOrder = reservation
+      ? null
+      : await this.prisma.order.findFirst({
+          where: { id: reservationId, businessId, origin: 'MANUAL' },
+          include: {
+            items: {
+              include: { item: true },
+            },
+          },
+        });
+    const legacyServiceLine =
+      legacyOrder?.items.length === 1 &&
+      legacyOrder.items[0]?.itemTypeSnapshot === 'SERVICE'
+        ? legacyOrder.items[0]
+        : null;
+
+    if (!reservation && !legacyServiceLine) {
       throw new NotFoundException('Reservation not found');
     }
 
+    const itemId = reservation?.itemId ?? legacyServiceLine!.itemId;
     const duration =
-      reservation.item.durationMinutes ??
-      Math.max(1, reservation.endMinute - reservation.startMinute);
+      reservation?.item.durationMinutes ??
+      legacyServiceLine?.durationMinutesSnapshot ??
+      Math.max(1, (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0));
+    const excludeReservationId = reservation?.id ?? reservationId;
 
     if (query.date) {
       const dateOnly = this.parseDateOnly(query.date);
       return this.getReservationAvailabilitySlots(
         businessId,
-        reservation.itemId,
+        itemId,
         dateOnly,
         duration,
-        reservation.id,
+        excludeReservationId,
       );
     }
 
@@ -1012,13 +1437,17 @@ export class SalesService {
     const availableDates: string[] = [];
 
     while (cursor <= lastDay) {
-      if (cursor >= today || this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date)) {
+      if (
+        cursor >= today ||
+        (reservation &&
+          this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date))
+      ) {
         const slots = await this.getReservationAvailabilitySlots(
           businessId,
-          reservation.itemId,
+          itemId,
           new Date(cursor),
           duration,
-          reservation.id,
+          excludeReservationId,
         );
 
         if (slots.length > 0) {
@@ -1142,7 +1571,8 @@ export class SalesService {
     const updated = await this.prisma.orderItem.update({
       where: { id: orderItem.id },
       data: {
-        excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
+        excludedOptionalIngredientIds:
+          excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
       },
       include: this.orderItemRecipeInclude,
     });
@@ -1284,15 +1714,78 @@ export class SalesService {
         items: {
           include: this.orderItemRecipeInclude,
         },
+        fiscalContext: true,
+        taxLines: true,
+        taxSnapshot: true,
       },
     });
 
     if (!order) throw new NotFoundException('Order not found');
 
     const conversions = await this.prisma.unitConversion.findMany();
+    const mirrorReservations = await this.findMirrorReservationsForOrders(
+      order.origin === 'MANUAL' &&
+        order.items.length === 1 &&
+        order.items[0]?.itemTypeSnapshot === 'SERVICE'
+        ? [order.id]
+        : [],
+    );
+    const mirrorReservation = mirrorReservations.get(order.id);
+
+    const fiscalSummary = order.fiscalContext
+      ? {
+          subtotal: Number(order.fiscalContext.subtotal),
+          iva: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'IVA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          impoconsumo: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteFuente: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEFUENTE' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteIva: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEIVA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteIca: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEICA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          totalCollected:
+            Number(order.fiscalContext.subtotal) +
+            Number(order.fiscalContext.chargedTaxTotal),
+          totalCharged: Number(order.fiscalContext.chargedTaxTotal),
+          totalWithheld: Number(order.fiscalContext.withheldTaxTotal),
+          netReceived: Number(order.fiscalContext.netReceived),
+        }
+      : null;
 
     return {
       ...order,
+      scheduledAt: mirrorReservation
+        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
+        : undefined,
+      fiscalSummary,
+      fiscalContext: this.mapFiscalContextForSales(order),
+      taxLines: order.taxLines ? order.taxLines.map((line) => ({
+        taxType: line.taxType,
+        direction: line.direction,
+        baseAmount: Number(line.baseAmount),
+        rate: Number(line.rate),
+        taxAmount: Number(line.taxAmount),
+        accountCode: line.accountCode,
+        applied: line.applied,
+        reason: line.reason,
+      })) : null,
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
     };
   }
@@ -1332,16 +1825,28 @@ export class SalesService {
       throw new BadRequestException('Completed orders cannot be cancelled');
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-      include: {
-        items: {
-          include: {
-            item: true,
+    return this.prisma.$transaction(async (tx) => {
+      const cancelledOrder = await tx.order.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
           },
         },
-      },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: this.getMirrorReservationIdForManualServiceOrder(id),
+          businessId,
+        },
+        data: { status: 'CANCELLED' },
+      });
+
+      return cancelledOrder;
     });
   }
 
@@ -1437,16 +1942,28 @@ export class SalesService {
       );
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: { archived: true },
-      include: {
-        items: {
-          include: {
-            item: true,
+    return this.prisma.$transaction(async (tx) => {
+      const archivedOrder = await tx.order.update({
+        where: { id },
+        data: { archived: true },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
           },
         },
-      },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: this.getMirrorReservationIdForManualServiceOrder(id),
+          businessId,
+        },
+        data: { status: 'CANCELLED' },
+      });
+
+      return archivedOrder;
     });
   }
 
@@ -1465,6 +1982,27 @@ export class SalesService {
     const resolvedItems = dto.items
       ? await this.resolveOrderLines(businessId, dto.items)
       : null;
+    const finalLines = resolvedItems?.lines ?? order.items;
+    const finalSingleManualService =
+      order.origin === 'MANUAL' &&
+      finalLines.length === 1 &&
+      finalLines[0]?.itemTypeSnapshot === 'SERVICE';
+    const finalServiceItemId = finalSingleManualService
+      ? finalLines[0].itemId
+      : null;
+    const finalServiceDuration = finalSingleManualService
+      ? Number(finalLines[0].durationMinutesSnapshot ?? 60)
+      : 60;
+
+    if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
+      await this.validateMirrorReservationAvailability({
+        businessId,
+        itemId: finalServiceItemId,
+        scheduledAt: dto.scheduledAt,
+        durationMinutes: finalServiceDuration,
+        excludeReservationId: this.getMirrorReservationIdForManualServiceOrder(orderId),
+      });
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await tx.order.update({
@@ -1500,12 +2038,68 @@ export class SalesService {
         });
       }
 
+      if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
+        const mirror = this.buildMirrorReservationData({
+          businessId,
+          orderId,
+          itemId: finalServiceItemId,
+          customerName:
+            dto.customerName !== undefined
+              ? dto.customerName
+              : order.customerName,
+          customerWhatsapp:
+            dto.customerWhatsapp !== undefined
+              ? dto.customerWhatsapp
+              : order.customerWhatsapp,
+          paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
+          scheduledAt: dto.scheduledAt,
+          durationMinutes: finalServiceDuration,
+        });
+
+        await tx.reservation.upsert({
+          where: { id: mirror.reservationId },
+          create: mirror.create,
+          update: mirror.update,
+        });
+      } else if (order.origin === 'MANUAL' && resolvedItems && !finalSingleManualService) {
+        await tx.reservation.updateMany({
+          where: {
+            id: this.getMirrorReservationIdForManualServiceOrder(orderId),
+            businessId,
+          },
+          data: { status: 'CANCELLED' },
+        });
+      }
+
+      if (dto.buyerFiscalContext) {
+        const currentItems = resolvedItems
+          ? resolvedItems.lines.map((line) => ({
+              itemId: line.itemId,
+              quantity: Number(line.quantity),
+            }))
+          : order.items.map((item) => ({
+              itemId: item.itemId,
+              quantity: Number(item.quantity),
+            }));
+
+        await this.persistOrderFiscalPreview(
+          tx,
+          businessId,
+          orderId,
+          dto.buyerFiscalContext,
+          currentItems,
+        );
+      }
+
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: {
-        items: {
+          items: {
             include: this.orderItemRecipeInclude,
           },
+          fiscalContext: true,
+          taxLines: true,
+          taxSnapshot: true,
         },
       });
     });

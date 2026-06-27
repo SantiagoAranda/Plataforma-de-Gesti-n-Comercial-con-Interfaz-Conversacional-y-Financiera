@@ -19,7 +19,7 @@ describe('SalesService.findAll', () => {
       },
     } as any;
 
-    return new SalesService(prisma, {} as any, {} as any, {} as any);
+    return new SalesService(prisma, {} as any, {} as any, {} as any, {} as any);
   }
 
   it('maps mixed manual orders without assuming the first line is the only type', async () => {
@@ -122,6 +122,76 @@ describe('SalesService.findAll', () => {
       }),
     ]);
   });
+
+  it('maps the persisted fiscal context and tax lines without recalculating them', async () => {
+    const createdAt = new Date('2026-06-24T12:00:00.000Z');
+    const service = createService(
+      [
+        {
+          id: 'order-fiscal',
+          customerName: 'Comprador',
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(100000),
+          status: 'COMPLETED',
+          inventoryPostedAt: createdAt,
+          accountingPostedAt: createdAt,
+          createdAt,
+          origin: 'MANUAL',
+          fiscalContext: {
+            subtotal: new Prisma.Decimal(100000),
+            chargedTaxTotal: new Prisma.Decimal(19000),
+            withheldTaxTotal: new Prisma.Decimal(400),
+            netReceived: new Prisma.Decimal(118600),
+          },
+          taxLines: [
+            {
+              taxType: 'IVA',
+              applied: true,
+              taxAmount: new Prisma.Decimal(19000),
+            },
+            {
+              taxType: 'RETEICA',
+              applied: true,
+              taxAmount: new Prisma.Decimal(400),
+            },
+          ],
+          items: [
+            {
+              id: 'line-product',
+              itemId: 'product-1',
+              itemNameSnapshot: 'Producto IVA',
+              itemTypeSnapshot: 'PRODUCT',
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(100000),
+              lineTotal: new Prisma.Decimal(100000),
+              inventoryModeSnapshot: 'NONE',
+              durationMinutesSnapshot: null,
+              excludedOptionalIngredientIds: null,
+              item: null,
+              options: [],
+            },
+          ],
+        },
+      ],
+      [],
+    );
+
+    const [sale] = await service.findAll(businessId);
+
+    expect(sale.fiscalSummary).toEqual({
+      subtotal: 100000,
+      iva: 19000,
+      impoconsumo: 0,
+      reteFuente: 0,
+      reteIva: 0,
+      reteIca: 400,
+      totalCollected: 119000,
+      totalCharged: 19000,
+      totalWithheld: 400,
+      netReceived: 118600,
+    });
+  });
 });
 
 describe('SalesService.remove', () => {
@@ -138,6 +208,7 @@ describe('SalesService.remove', () => {
       reservation: {
         findFirst: mockFn(),
         update: mockFn(),
+        updateMany: mockFn(),
       },
       order: {
         findFirst: mockFn().mockResolvedValue(order),
@@ -154,7 +225,7 @@ describe('SalesService.remove', () => {
 
     const accountingService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma, inventoryService };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma, inventoryService };
   }
 
   it('archives non-completed orders', async () => {
@@ -210,6 +281,122 @@ describe('SalesService.remove', () => {
   });
 });
 
+describe('SalesService manual service mirror reservations', () => {
+  const businessId = 'business-1';
+  const serviceItem = {
+    id: 'service-1',
+    businessId,
+    name: 'Servicio Test 1M',
+    status: 'ACTIVE',
+    type: 'SERVICE',
+    inventoryMode: 'NONE',
+    price: new Prisma.Decimal(1000000),
+    durationMinutes: 60,
+    recipes: [],
+    optionGroups: [],
+  };
+
+  function createService() {
+    const tx = {
+      order: {
+        create: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          businessId,
+          origin: 'MANUAL',
+          customerName: 'Cliente',
+          customerWhatsapp: '573001112233',
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(1000000),
+          items: [
+            {
+              itemId: serviceItem.id,
+              quantity: 1,
+            },
+          ],
+        }),
+      },
+      reservation: {
+        create: (jest.fn() as any).mockResolvedValue({ id: 'order-1' }),
+      },
+    };
+    const prisma = {
+      item: {
+        findMany: (jest.fn() as any).mockResolvedValue([serviceItem]),
+      },
+      reservation: {
+        findFirst: (jest.fn() as any).mockResolvedValue(null),
+      },
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    } as any;
+    const itemOptionsService = {
+      resolveSelectionsForOrderLine: (jest.fn() as any).mockResolvedValue({
+        optionsTotal: new Prisma.Decimal(0),
+        snapshots: [],
+      }),
+    } as any;
+    const inventoryService = {
+      expandOrderItemsToIngredients: (jest.fn() as any).mockResolvedValue([]),
+      validateStockAvailability: (jest.fn() as any).mockResolvedValue({
+        ok: true,
+        requirements: [],
+      }),
+    } as any;
+
+    return {
+      service: new SalesService(
+        prisma,
+        {} as any,
+        inventoryService,
+        itemOptionsService,
+        {} as any,
+      ),
+      prisma,
+      tx,
+    };
+  }
+
+  it('creates an Order and mirror Reservation for a scheduled manual service sale', async () => {
+    const { service, prisma, tx } = createService();
+
+    const result = await service.create(businessId, {
+      origin: 'MANUAL',
+      type: 'SERVICIO',
+      status: 'PENDIENTE',
+      customerName: 'Cliente',
+      customerWhatsapp: '573001112233',
+      paymentMethod: 'CASH',
+      scheduledAt: '2026-06-30T10:00:00',
+      durationMinutes: 60,
+      items: [{ itemId: serviceItem.id, quantity: 1 }],
+    });
+
+    expect(result).toEqual(expect.objectContaining({ id: 'order-1' }));
+    expect(prisma.reservation.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        businessId,
+        itemId: serviceItem.id,
+        status: { not: 'CANCELLED' },
+      }),
+    });
+    expect(prisma.reservation.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.order.create.mock.invocationCallOrder[0],
+    );
+    expect(tx.reservation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        id: 'order-1',
+        businessId,
+        itemId: serviceItem.id,
+        customerName: 'Cliente',
+        customerWhatsapp: '573001112233',
+        startMinute: 600,
+        endMinute: 660,
+        status: 'PENDING',
+        origin: 'MANUAL',
+      }),
+    });
+  });
+});
+
 describe('SalesService personalized order lines', () => {
   const businessId = 'business-1';
   const item = {
@@ -228,6 +415,14 @@ describe('SalesService personalized order lines', () => {
   function createService(orderOverrides: Record<string, any> = {}) {
     const tx: any = {
       order: {
+        create: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          origin: 'MANUAL',
+          customerName: 'Consumidor final',
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          items: [],
+        }),
         update: jest.fn(),
         findUniqueOrThrow: (jest.fn() as any).mockResolvedValue({
           id: 'order-1',
@@ -296,6 +491,7 @@ describe('SalesService personalized order lines', () => {
         {} as any,
         inventoryService,
         itemOptionsService,
+        {} as any,
       ),
       prisma,
       tx,
@@ -304,7 +500,7 @@ describe('SalesService personalized order lines', () => {
   }
 
   it('creates repeated personalized manual lines with backend snapshots', async () => {
-    const { service, prisma, itemOptionsService } = createService();
+    const { service, tx, itemOptionsService } = createService();
 
     await service.create(businessId, {
       type: 'PRODUCTO',
@@ -329,7 +525,7 @@ describe('SalesService personalized order lines', () => {
     });
 
     expect(itemOptionsService.resolveSelectionsForOrderLine).toHaveBeenCalledTimes(2);
-    expect(prisma.order.create).toHaveBeenCalledWith(
+    expect(tx.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           total: 34000,
@@ -443,7 +639,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
     } as any;
 
     const accountingService = {} as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
 
     const result = await service.reverseConfirmedOrder(businessId, orderId, {
       reason: 'Cliente canceló',
@@ -551,7 +747,7 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const accountingService = {} as any;
     const inventoryService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any), prisma };
+    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma };
   }
 
   it('persists optional ingredient exclusions before inventory is posted', async () => {
@@ -668,7 +864,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     const accountingService = {
       postOrderMovements: jest.fn(),
     } as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any);
+    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
 
     await service.confirmOrder(businessId, orderId, 'ORDER');
 
@@ -753,6 +949,7 @@ describe('SalesService.confirmReservation accounting order', () => {
       prisma,
       accountingService,
       inventoryService,
+      {} as any,
       {} as any,
     );
 

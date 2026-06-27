@@ -1,0 +1,3 @@
+ALTER TABLE "MunicipalityIcaRate"
+ALTER COLUMN "icaRate" TYPE DECIMAL(10,6),
+ALTER COLUMN "reteIcaRate" TYPE DECIMAL(10,6);

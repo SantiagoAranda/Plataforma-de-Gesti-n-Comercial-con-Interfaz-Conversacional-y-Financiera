@@ -43,9 +43,15 @@ export class SalesController {
   confirm(
     @Req() req: any,
     @Param('id') id: string,
+    @Body() buyerFiscalContext?: any,
     @Query('sourceType') sourceType?: any,
   ) {
-    return this.salesService.confirmOrder(req.user.businessId, id, sourceType);
+    return this.salesService.confirmOrder(
+      req.user.businessId,
+      id,
+      buyerFiscalContext,
+      sourceType,
+    );
   }
 
   @Get(':id/reservation-availability')

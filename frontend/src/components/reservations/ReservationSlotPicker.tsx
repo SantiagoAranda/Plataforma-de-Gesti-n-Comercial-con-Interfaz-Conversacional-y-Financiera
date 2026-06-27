@@ -26,6 +26,9 @@ type Props = {
     startMinute: number | null;
   }) => void;
   className?: string;
+  disabled?: boolean;
+  durationMin?: number;
+  availabilitySaleId?: string;
 };
 
 function startOfMonth(d: Date) {
@@ -118,6 +121,9 @@ export default function ReservationSlotPicker({
   selectedStartMinute,
   onChange,
   className,
+  disabled = false,
+  durationMin,
+  availabilitySaleId,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const initialDate = selectedDate ? new Date(`${selectedDate}T00:00:00`) : today;
@@ -149,6 +155,7 @@ export default function ReservationSlotPicker({
   }, [mode]);
 
   useEffect(() => {
+    if (disabled) return;
     if (!itemId) return;
     if (mode === "public" && !businessSlug) return;
 
@@ -156,7 +163,9 @@ export default function ReservationSlotPicker({
     const path =
       mode === "public"
         ? `/public/${businessSlug}/availability-calendar?itemId=${itemId}&month=${month}`
-        : `/reservations/availability-calendar?itemId=${itemId}&month=${month}`;
+        : availabilitySaleId
+          ? `/sales/${availabilitySaleId}/reservation-availability?month=${month}`
+          : `/reservations/availability-calendar?itemId=${itemId}&month=${month}`;
 
     let alive = true;
     setIsLoadingDays(true);
@@ -178,9 +187,10 @@ export default function ReservationSlotPicker({
     return () => {
       alive = false;
     };
-  }, [businessSlug, fetchJson, itemId, mode, viewMonth]);
+  }, [availabilitySaleId, businessSlug, fetchJson, itemId, mode, viewMonth, disabled]);
 
   useEffect(() => {
+    if (disabled) return;
     if (!itemId || !selectedDate) {
       setTimeSlots([]);
       return;
@@ -190,7 +200,9 @@ export default function ReservationSlotPicker({
     const path =
       mode === "public"
         ? `/public/${businessSlug}/availability?itemId=${itemId}&date=${selectedDate}`
-        : `/reservations/availability?itemId=${itemId}&date=${selectedDate}`;
+        : availabilitySaleId
+          ? `/sales/${availabilitySaleId}/reservation-availability?date=${selectedDate}`
+          : `/reservations/availability?itemId=${itemId}&date=${selectedDate}`;
 
     let alive = true;
     setLoadingSlots(true);
@@ -220,7 +232,48 @@ export default function ReservationSlotPicker({
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessSlug, fetchJson, itemId, mode, selectedDate]);
+  }, [availabilitySaleId, businessSlug, fetchJson, itemId, mode, selectedDate, disabled]);
+
+  function formatFriendlyDate(dateStr: string): string {
+    const date = new Date(`${dateStr}T00:00:00`);
+    if (isNaN(date.getTime())) return dateStr;
+    
+    const weekdaysEs = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const dayName = weekdaysEs[date.getDay()];
+    const dayNum = date.getDate();
+    const monthName = MONTHS_ES[date.getMonth()];
+    const year = date.getFullYear();
+    
+    return `${dayName}, ${dayNum} de ${monthName} de ${year}`;
+  }
+
+  if (disabled) {
+    const formattedDate = selectedDate ? formatFriendlyDate(selectedDate) : "Fecha no registrada";
+    const timeStr = timeFromMinutes(selectedStartMinute);
+    const formattedTime = timeStr ? formatAMPM(timeStr) : "Horario no registrado";
+
+    return (
+      <div className={cn("rounded-xl bg-white p-4 border border-emerald-100 shadow-sm space-y-3", className)}>
+        <span className="text-xs font-semibold text-emerald-700 block border-b border-emerald-50 pb-2">
+          Agenda del servicio
+        </span>
+        <div className="grid grid-cols-2 gap-y-2 text-xs">
+          <span className="text-slate-500 font-medium">Fecha</span>
+          <span className="text-slate-800 font-semibold text-right">{formattedDate}</span>
+          
+          <span className="text-slate-500 font-medium">Horario</span>
+          <span className="text-slate-800 font-semibold text-right">{formattedTime}</span>
+
+          {durationMin && (
+            <>
+              <span className="text-slate-500 font-medium">Duración</span>
+              <span className="text-slate-800 font-semibold text-right">{durationMin} min</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   function handlePickDate(date: Date, inMonth: boolean) {
     const key = formatLocalDateKey(date);
@@ -276,7 +329,7 @@ export default function ReservationSlotPicker({
         <div className="flex items-center justify-between">
           <button
             type="button"
-            disabled={isLoadingDays}
+            disabled={isLoadingDays || disabled}
             onClick={() =>
               setViewMonth(
                 startOfMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1)),
@@ -292,7 +345,7 @@ export default function ReservationSlotPicker({
 
           <button
             type="button"
-            disabled={isLoadingDays}
+            disabled={isLoadingDays || disabled}
             onClick={() =>
               setViewMonth(
                 startOfMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)),
@@ -321,7 +374,7 @@ export default function ReservationSlotPicker({
               <button
                 key={`${dateKey}-${i}`}
                 type="button"
-                disabled={isLoadingDays || !isAvailable}
+                disabled={isLoadingDays || !isAvailable || disabled}
                 onClick={() => handlePickDate(date, inMonth)}
                 className={cn(
                   "h-8 w-8 mx-auto flex items-center justify-center rounded-full text-xs font-semibold transition-all duration-200",
@@ -330,7 +383,7 @@ export default function ReservationSlotPicker({
                     : isAvailable
                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       : "text-neutral-300",
-                  isLoadingDays && "opacity-50 cursor-not-allowed",
+                  (isLoadingDays || disabled) && "opacity-50 cursor-not-allowed",
                 )}
               >
                 {date.getDate()}
@@ -349,7 +402,7 @@ export default function ReservationSlotPicker({
       <div className="mt-5">
         <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
 
-        {selectedDate && !loadingSlots && timeSlots.length === 0 && (
+        {selectedDate && !loadingSlots && timeSlots.length === 0 && !disabled && (
           <div className="mt-3 text-sm text-black/40">
             No hay horarios disponibles para este día.
           </div>
@@ -360,21 +413,28 @@ export default function ReservationSlotPicker({
         )}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {timeSlots.map((slot) => (
-            <button
-              key={slot}
-              type="button"
-              onClick={() => handlePickTime(slot)}
-              className={cn(
-                "h-10 rounded-xl border text-xs font-medium transition-all duration-150",
-                selectedTime === slot
-                  ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                  : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",
-              )}
-            >
-              {formatAMPM(slot)}
-            </button>
-          ))}
+          {(() => {
+            const slotsToDisplay = disabled && selectedTime && !timeSlots.includes(selectedTime)
+              ? [selectedTime, ...timeSlots]
+              : timeSlots;
+            return slotsToDisplay.map((slot) => (
+              <button
+                key={slot}
+                type="button"
+                disabled={disabled}
+                onClick={() => handlePickTime(slot)}
+                className={cn(
+                  "h-10 rounded-xl border text-xs font-medium transition-all duration-150",
+                  selectedTime === slot
+                    ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                    : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",
+                  disabled && selectedTime !== slot && "opacity-40 cursor-not-allowed"
+                )}
+              >
+                {formatAMPM(slot)}
+              </button>
+            ));
+          })()}
         </div>
       </div>
     </div>

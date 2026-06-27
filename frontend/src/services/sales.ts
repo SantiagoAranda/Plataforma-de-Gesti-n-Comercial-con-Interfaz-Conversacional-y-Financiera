@@ -1,4 +1,5 @@
 import { api } from "@/src/lib/api";
+import type { SaleFiscalContext, SaleFiscalSummary } from "@/src/types/sales";
 
 export type ApiOrderItem = {
   quantity: number;
@@ -26,6 +27,9 @@ export interface ApiOrder {
   scheduledAt?: string;
   type: "PRODUCTO" | "SERVICIO";
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: SaleFiscalSummary | null;
+  fiscalContext?: SaleFiscalContext | null;
+  taxLines?: any[] | null;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -92,6 +96,7 @@ export function createSale(data: {
   status?: "PENDIENTE" | "CERRADO";
   scheduledAt?: string;
   durationMinutes?: number;
+  buyerFiscalContext?: SaleFiscalContext;
   items: SaleLineInput[];
 }) {
   return api<ApiOrder>("/sales", {
@@ -100,9 +105,10 @@ export function createSale(data: {
   });
 }
 
-export function confirmSale(id: string, sourceType: string = "ORDER") {
+export function confirmSale(id: string, sourceType: string = "ORDER", buyerFiscalContext?: any) {
   return api<ConfirmOrderResponse>(`/sales/${id}/confirm?sourceType=${sourceType}`, {
     method: "PATCH",
+    body: buyerFiscalContext ? JSON.stringify(buyerFiscalContext) : undefined,
   });
 }
 export function cancelSale(id: string, sourceType: string = "ORDER") {
@@ -123,6 +129,7 @@ export function updateSale(
     note?: string;
     paymentMethod?: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
+    buyerFiscalContext?: SaleFiscalContext;
     items?: SaleLineInput[];
   },
   sourceType: string = "ORDER",

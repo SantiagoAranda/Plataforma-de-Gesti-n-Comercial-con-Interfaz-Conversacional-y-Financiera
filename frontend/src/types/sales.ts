@@ -8,6 +8,42 @@ export type SaleType = "PRODUCTO" | "SERVICIO";
 export type SourceType = "ORDER" | "RESERVATION";
 export type PaymentMethod = "CASH" | "BANK_TRANSFER";
 
+export type SaleFiscalContext = {
+  buyerType?: "NATURAL" | "JURIDICA" | null;
+  buyerName?: string | null;
+  buyerDocumentType?: "CC" | "NIT" | "CE" | "PASAPORTE" | "TI" | null;
+  buyerDocumentNumber?: string | null;
+  buyerEmail?: string | null;
+  buyerIsIvaResponsable?: boolean | null;
+  buyerIsRetenedor?: boolean | null;
+  buyerIsGranContribuyente?: boolean | null;
+  buyerIsAutorretenedor?: boolean | null;
+  buyerIsRegimenSimple?: boolean | null;
+  withholdingSubjectIsDeclarante?: boolean | null;
+  fiscalMunicipalityCode?: string | null;
+  saleConcept?:
+    | "GOODS"
+    | "SERVICES"
+    | "HONORARIOS"
+    | "ARRENDAMIENTOS"
+    | "FOOD_BEVERAGES"
+    | "OTHER"
+    | null;
+};
+
+export type SaleFiscalSummary = {
+  subtotal: number;
+  iva: number;
+  impoconsumo: number;
+  reteFuente: number;
+  reteIva: number;
+  reteIca: number;
+  totalCollected: number;
+  totalCharged: number;
+  totalWithheld: number;
+  netReceived: number;
+};
+
 export interface SaleItem {
   orderItemId?: string;
   itemId?: string;
@@ -66,6 +102,9 @@ export interface Sale {
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
   hasInvalidOptionSnapshot?: boolean;
+  fiscalSummary?: SaleFiscalSummary | null;
+  fiscalContext?: SaleFiscalContext | null;
+  taxLines?: any[] | null;
 
   items: SaleItem[];
 

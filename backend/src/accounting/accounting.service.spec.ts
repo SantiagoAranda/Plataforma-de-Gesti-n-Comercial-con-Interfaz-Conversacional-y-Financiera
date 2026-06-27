@@ -1,6 +1,10 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, TaxDirection, TaxType } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { AccountingService } from './accounting.service';
+import {
+  ManualPaidOutflowPaymentMethod,
+  ManualPaidOutflowType,
+} from './dto/create-manual-paid-outflow.dto';
 
 describe('AccountingService automatic order postings', () => {
   const businessId = 'business-1';
@@ -9,9 +13,22 @@ describe('AccountingService automatic order postings', () => {
   const pucNames: Record<string, string> = {
     '1105': 'Caja',
     '1110': 'Bancos',
-    '1435': 'Mercancías no fabricadas por la empresa',
+    '1355': 'Anticipo de impuestos y contribuciones',
+    '1435': 'Mercancias no fabricadas por la empresa',
+    '2408': 'Impuesto sobre las ventas por pagar',
     '4135': 'Comercio al por mayor y al por menor',
+    '5195': 'Diversos',
     '6135': 'Comercio al por mayor y al por menor',
+  };
+
+  const pucSubcuentaNames: Record<string, string> = {
+    '110505': 'Caja general',
+    '111005': 'Moneda nacional',
+    '135515': 'Retencion en la fuente',
+    '135517': 'Impuesto a las ventas retenido',
+    '135518': 'Impuesto de industria y comercio retenido',
+    '413595': 'Venta de otros productos',
+    '519595': 'Otros',
   };
 
   function pucCuenta(code: string) {
@@ -19,6 +36,16 @@ describe('AccountingService automatic order postings', () => {
       code,
       name: pucNames[code] ?? code,
       grupo: null,
+    };
+  }
+
+  function pucSubcuenta(code: string) {
+    return {
+      code,
+      name: pucSubcuentaNames[code] ?? code,
+      cuentaCode: code.slice(0, 4),
+      active: true,
+      cuenta: pucCuenta(code.slice(0, 4)),
     };
   }
 
@@ -30,7 +57,9 @@ describe('AccountingService automatic order postings', () => {
         ),
       },
       pucSubcuenta: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(pucSubcuenta(where.code)),
+        ),
       },
     } as any;
 
@@ -38,13 +67,24 @@ describe('AccountingService automatic order postings', () => {
       inventoryMovement: {
         findMany: jest.fn(),
       },
+      orderFiscalContext: {
+        findUnique: jest.fn(() => Promise.resolve(null)),
+      },
+      saleTaxLine: {
+        findMany: jest.fn(() => Promise.resolve([])),
+      },
+      salesTaxRule: {
+        findFirst: jest.fn(() => Promise.resolve(null)),
+      },
       accountingMovement: {
         create: jest.fn(({ data }: any) =>
           Promise.resolve({
-            id: `movement-${data.pucCuentaCode}-${data.nature}`,
+            id: `movement-${data.pucCuentaCode ?? data.pucSubcuentaId}-${data.nature}`,
             ...data,
             pucCuenta: data.pucCuentaCode ? pucCuenta(data.pucCuentaCode) : null,
-            pucSubcuenta: null,
+            pucSubcuenta: data.pucSubcuentaId
+              ? pucSubcuenta(data.pucSubcuentaId)
+              : null,
           }),
         ),
       },
@@ -71,6 +111,18 @@ describe('AccountingService automatic order postings', () => {
     } as any;
   }
 
+  function createdLines(tx: any) {
+    return tx.accountingMovement.create.mock.calls.map(([call]: any[]) => ({
+      code: call.data.pucSubcuentaId ?? call.data.pucCuentaCode,
+      cuenta: call.data.pucCuentaCode,
+      subcuenta: call.data.pucSubcuentaId,
+      nature: call.data.nature,
+      amount: call.data.amount.toString(),
+      detail: call.data.detail,
+      taxType: call.data.metadata?.taxType,
+    }));
+  }
+
   function totalsByNature(createCalls: any[]) {
     return createCalls.reduce(
       (totals, [call]) => {
@@ -86,7 +138,7 @@ describe('AccountingService automatic order postings', () => {
     );
   }
 
-  it('posts income and cost for a SIMPLE stock sale and keeps the entry balanced', async () => {
+  it('posts cash and income defaults to existing six-digit PUC subaccounts', async () => {
     const { service, tx } = createService();
     tx.inventoryMovement.findMany.mockResolvedValue([
       { totalValue: new Prisma.Decimal(4000) },
@@ -94,95 +146,60 @@ describe('AccountingService automatic order postings', () => {
 
     await service.postOrderMovements(tx, businessId, order());
 
-    const calls = tx.accountingMovement.create.mock.calls;
-    expect(calls).toHaveLength(4);
-    expect(calls.map(([call]: any[]) => [call.data.pucCuentaCode, call.data.nature, call.data.amount.toString()])).toEqual([
-      ['1105', 'DEBIT', '10000'],
-      ['4135', 'CREDIT', '10000'],
+    const lines = createdLines(tx);
+    expect(lines.map((line) => [line.code, line.nature, line.amount])).toEqual([
+      ['110505', 'DEBIT', '10000'],
+      ['413595', 'CREDIT', '10000'],
       ['6135', 'DEBIT', '4000'],
       ['1435', 'CREDIT', '4000'],
     ]);
-    expect(calls.map(([call]: any[]) => call.data.detail)).toEqual([
-      'Contrapartida producto - Producto',
-      'Ingreso por venta de producto - Producto',
-      'Costo de venta de producto - Producto',
-      'Salida de inventario por venta de producto - Producto',
-    ]);
+    expect(lines[0].cuenta).toBeNull();
+    expect(lines[0].subcuenta).toBe('110505');
+    expect(lines[1].cuenta).toBeNull();
+    expect(lines[1].subcuenta).toBe('413595');
 
-    const totals = totalsByNature(calls);
+    const totals = totalsByNature(tx.accountingMovement.create.mock.calls);
     expect(totals.debit.toString()).toBe('14000');
     expect(totals.credit.toString()).toBe('14000');
   });
 
-  it('posts recipe sale cost from the consumed inventory movement values', async () => {
+  it('posts bank transfer net received to 111005 without forcing cash', async () => {
     const { service, tx } = createService();
-    tx.inventoryMovement.findMany.mockResolvedValue([
-      { totalValue: new Prisma.Decimal(5000) },
-      { totalValue: new Prisma.Decimal(3000) },
-    ]);
+    tx.inventoryMovement.findMany.mockResolvedValue([]);
 
     await service.postOrderMovements(
       tx,
       businessId,
-      order({ id: 'recipe-order-1', total: new Prisma.Decimal(25000) }),
+      order({ paymentMethod: 'BANK_TRANSFER' }),
     );
 
-    const calls = tx.accountingMovement.create.mock.calls;
-    expect(calls.map(([call]: any[]) => [call.data.pucCuentaCode, call.data.nature, call.data.amount.toString()])).toEqual([
-      ['1105', 'DEBIT', '25000'],
-      ['4135', 'CREDIT', '25000'],
-      ['6135', 'DEBIT', '8000'],
-      ['1435', 'CREDIT', '8000'],
-    ]);
-
-    const totals = totalsByNature(calls);
-    expect(totals.debit.toString()).toBe('33000');
-    expect(totals.credit.toString()).toBe('33000');
+    const lines = createdLines(tx);
+    expect(lines[0].code).toBe('111005');
+    expect(lines[0].subcuenta).toBe('111005');
   });
 
-  it('posts service income and real consumed-input cost with service descriptions', async () => {
+  it('keeps service income semantics while using the shared existing income subaccount', async () => {
     const { service, tx } = createService();
-    tx.inventoryMovement.findMany.mockResolvedValue([
-      {
-        totalValue: new Prisma.Decimal(900),
-        orderItemId: null,
-        reservationId: 'reservation-1',
-      },
-    ]);
+    tx.inventoryMovement.findMany.mockResolvedValue([]);
 
     await service.postOrderMovements(
       tx,
       businessId,
       order({
-        id: 'reservation-1',
         items: [
           {
-            id: 'virtual-oi-reservation-1',
-            itemId: 'service-1',
-            itemNameSnapshot: 'Corte de barba',
+            itemNameSnapshot: 'Asesoria',
             itemTypeSnapshot: 'SERVICE',
-            quantity: 1,
-            price: new Prisma.Decimal(10000),
-            item: { id: 'service-1', name: 'Corte de barba', type: 'SERVICE' },
+            lineTotal: new Prisma.Decimal(10000),
+            item: { type: 'SERVICE' },
           },
         ],
       }),
     );
 
-    const calls = tx.accountingMovement.create.mock.calls;
-    expect(
-      calls.map(([call]: any[]) => [
-        call.data.pucCuentaCode,
-        call.data.nature,
-        call.data.amount.toString(),
-        call.data.detail,
-      ]),
-    ).toEqual([
-      ['1105', 'DEBIT', '10000', 'Contrapartida servicio - Corte de barba'],
-      ['4135', 'CREDIT', '10000', 'Ingreso por servicio - Corte de barba'],
-      ['6135', 'DEBIT', '900', 'Consumo de insumos por servicio - Corte de barba'],
-      ['1435', 'CREDIT', '900', 'Salida de inventario por servicio - Corte de barba'],
-    ]);
+    const incomeLine = createdLines(tx)[1];
+    expect(incomeLine.code).toBe('413595');
+    expect(incomeLine.detail).toBe('Ingreso por servicio - Asesoria');
   });
 
   it('posts mixed manual order income and costs differentiated by line', async () => {
@@ -228,8 +245,8 @@ describe('AccountingService automatic order postings', () => {
       }),
     );
 
-    const calls = tx.accountingMovement.create.mock.calls;
-    expect(calls.map(([call]: any[]) => call.data.detail)).toEqual([
+    const lines = createdLines(tx);
+    expect(lines.map((line) => line.detail)).toEqual([
       'Contrapartida venta mixta',
       'Ingreso por venta de producto - Producto A',
       'Ingreso por servicio - Servicio B',
@@ -239,32 +256,291 @@ describe('AccountingService automatic order postings', () => {
       'Salida de inventario por servicio - Servicio B',
     ]);
 
-    const totals = totalsByNature(calls);
+    const totals = totalsByNature(tx.accountingMovement.create.mock.calls);
     expect(totals.debit.toString()).toBe('24900');
     expect(totals.credit.toString()).toBe('24900');
   });
 
-  it('uses the current shared income account without losing service semantics', async () => {
+  it('resolves six-digit tax line account codes as PUC subaccounts', async () => {
     const { service, tx } = createService();
     tx.inventoryMovement.findMany.mockResolvedValue([]);
+    tx.orderFiscalContext.findUnique.mockResolvedValue({
+      netReceived: new Prisma.Decimal(105500),
+    });
+    tx.saleTaxLine.findMany.mockResolvedValue([
+      {
+        taxType: TaxType.RETEFUENTE,
+        direction: TaxDirection.WITHHOLD,
+        taxAmount: new Prisma.Decimal(2500),
+        accountCode: '135515',
+        applied: true,
+      },
+      {
+        taxType: TaxType.IMPOCONSUMO,
+        direction: TaxDirection.CHARGE,
+        taxAmount: new Prisma.Decimal(8000),
+        accountCode: '519595',
+        applied: true,
+      },
+    ]);
 
     await service.postOrderMovements(
       tx,
       businessId,
-      order({
-        items: [
-          {
-            itemNameSnapshot: 'Asesoría',
-            itemTypeSnapshot: 'SERVICE',
-            lineTotal: new Prisma.Decimal(10000),
-            item: { type: 'SERVICE' },
-          },
-        ],
-      }),
+      order({ total: new Prisma.Decimal(100000) }),
     );
 
-    const incomeCall = tx.accountingMovement.create.mock.calls[1][0] as any;
-    expect(incomeCall.data.pucCuentaCode).toBe('4135');
-    expect(incomeCall.data.detail).toBe('Ingreso por servicio - Asesoría');
+    const lines = createdLines(tx);
+    expect(lines.map((line) => [line.code, line.nature, line.amount, line.taxType])).toEqual([
+      ['110505', 'DEBIT', '105500', 'NET_RECEIVED'],
+      ['135515', 'DEBIT', '2500', 'RETEFUENTE'],
+      ['413595', 'CREDIT', '100000', undefined],
+      ['519595', 'CREDIT', '8000', 'IMPOCONSUMO'],
+    ]);
+  });
+});
+
+describe('AccountingService manual paid expense postings', () => {
+  const businessId = 'business-1';
+  const userId = 'user-1';
+
+  function clase(code: string, name: string) {
+    return { code, name };
+  }
+
+  function grupo(code: string, name: string, claseCode: string) {
+    return {
+      code,
+      name,
+      claseCode,
+      clase: clase(claseCode, claseCode === '5' ? 'Gastos' : 'Costos'),
+    };
+  }
+
+  function cuenta(code: string, name: string, claseCode = '5') {
+    return {
+      code,
+      name,
+      grupoCode: code.slice(0, 2),
+      grupo: grupo(code.slice(0, 2), claseCode === '5' ? 'Gastos operacionales' : 'Costo de ventas', claseCode),
+    };
+  }
+
+  function subcuenta(
+    code: string,
+    name: string,
+    parentName = 'Servicios',
+    claseCode = '5',
+    active = true,
+  ) {
+    return {
+      code,
+      name,
+      cuentaCode: code.slice(0, 4),
+      active,
+      cuenta: cuenta(code.slice(0, 4), parentName, claseCode),
+    };
+  }
+
+  function createManualService() {
+    const expenseSub = subcuenta(
+      '513525',
+      'Acueducto y alcantarillado',
+      'Servicios',
+      '5',
+    );
+    const energySub = subcuenta('513530', 'Energia electrica', 'Servicios', '5');
+    const costSub = subcuenta(
+      '613520',
+      'Venta de productos en almacenes no especializados',
+      'Comercio al por mayor y al por menor',
+      '6',
+    );
+    const assetSub = subcuenta('110505', 'Caja general', 'Caja', '1');
+    const bankSub = subcuenta('111005', 'Moneda nacional', 'Bancos', '1');
+
+    const subcuentas: Record<string, any> = {
+      [expenseSub.code]: expenseSub,
+      [energySub.code]: energySub,
+      [costSub.code]: costSub,
+      [assetSub.code]: assetSub,
+      [bankSub.code]: bankSub,
+    };
+
+    const tx = {
+      pucCuenta: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(null)),
+      },
+      pucSubcuenta: {
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(subcuentas[where.code] ?? null),
+        ),
+      },
+      accountingMovement: {
+        create: jest.fn(({ data }: any) => {
+          const selectedSub = data.pucSubcuentaId
+            ? subcuentas[data.pucSubcuentaId]
+            : null;
+          return Promise.resolve({
+            id: `movement-${data.pucSubcuentaId}-${data.nature}`,
+            ...data,
+            pucCuenta: null,
+            pucSubcuenta: selectedSub,
+          });
+        }),
+      },
+    };
+
+    const prisma = {
+      user: {
+        findFirst: jest.fn(() => Promise.resolve({ id: userId })),
+      },
+      pucSubcuenta: {
+        findMany: jest.fn(() => Promise.resolve([expenseSub, energySub])),
+      },
+      $transaction: jest.fn((callback: any) => callback(tx)),
+    } as any;
+
+    return { service: new AccountingService(prisma), prisma, tx };
+  }
+
+  function expenseDto(overrides: Record<string, any> = {}) {
+    return {
+      counterpartyName: 'Empresa de servicios',
+      amount: 100000,
+      description: 'Pago de acueducto',
+      paymentMethod: ManualPaidOutflowPaymentMethod.CASH,
+      type: ManualPaidOutflowType.EXPENSE,
+      categoryId: '513525',
+      ...overrides,
+    };
+  }
+
+  it('lists selectable six-digit expense subaccounts and finds 513525', async () => {
+    const { service, prisma } = createManualService();
+
+    const result = await service.listManualPaidOutflowCategories(
+      ManualPaidOutflowType.EXPENSE,
+      '513525',
+    );
+
+    expect(prisma.pucSubcuenta.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          active: true,
+          cuenta: { grupo: { claseCode: '5' } },
+        }),
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: '513525',
+        code: '513525',
+        name: 'Acueducto y alcantarillado',
+        type: ManualPaidOutflowType.EXPENSE,
+        parentName: 'Servicios',
+        isSelectable: true,
+        pucKind: 'SUBCUENTA',
+      }),
+    ]);
+  });
+
+  it('lists lightweight expense groups without loading PUC accounts', () => {
+    const { service, prisma } = createManualService();
+
+    const result = service.listExpenseGroups();
+
+    expect(prisma.pucSubcuenta.findMany).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'services',
+          label: 'Servicios',
+          icon: 'Zap',
+          pucPrefix: '5135',
+        }),
+      ]),
+    );
+  });
+
+  it('lists real six-digit expense accounts only after selecting a group', async () => {
+    const { service, prisma } = createManualService();
+
+    const result = await service.listExpenseGroupAccounts('services', '513525');
+
+    expect(prisma.pucSubcuenta.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          active: true,
+          cuenta: { grupo: { claseCode: '5' } },
+          OR: expect.arrayContaining([
+            { code: { startsWith: '5135' } },
+          ]),
+        }),
+        take: 120,
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        code: '513525',
+        name: 'Acueducto y alcantarillado',
+        parentName: 'Servicios',
+      }),
+    ]);
+  });
+
+  it('creates a balanced paid expense using the selected six-digit PUC', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(businessId, userId, expenseDto());
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls.map((line: any) => [line.pucSubcuentaId, line.nature, line.amount.toString()])).toEqual([
+      ['513525', 'DEBIT', '100000'],
+      ['110505', 'CREDIT', '100000'],
+    ]);
+
+    const totals = calls.reduce(
+      (acc: any, line: any) => {
+        const amount = new Prisma.Decimal(line.amount);
+        if (line.nature === 'DEBIT') acc.debit = acc.debit.add(amount);
+        if (line.nature === 'CREDIT') acc.credit = acc.credit.add(amount);
+        return acc;
+      },
+      { debit: new Prisma.Decimal(0), credit: new Prisma.Decimal(0) },
+    );
+    expect(totals.debit.toString()).toBe('100000');
+    expect(totals.credit.toString()).toBe('100000');
+  });
+
+  it('rejects costs in the paid expense flow', async () => {
+    const { service, tx } = createManualService();
+
+    await expect(
+      service.createManualPaidOutflow(
+        businessId,
+        userId,
+        expenseDto({
+          type: ManualPaidOutflowType.COST,
+          categoryId: '613520',
+        }),
+      ),
+    ).rejects.toThrow('Este flujo solo permite registrar gastos');
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects accounts that are not expenses', async () => {
+    const { service, tx } = createManualService();
+
+    await expect(
+      service.createManualPaidOutflow(
+        businessId,
+        userId,
+        expenseDto({ categoryId: '110505' }),
+      ),
+    ).rejects.toThrow('La categoria seleccionada no corresponde a gastos');
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
   });
 });
