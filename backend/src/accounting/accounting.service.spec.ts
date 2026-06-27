@@ -1,6 +1,10 @@
 import { Prisma, TaxDirection, TaxType } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { AccountingService } from './accounting.service';
+import {
+  ManualPaidOutflowPaymentMethod,
+  ManualPaidOutflowType,
+} from './dto/create-manual-paid-outflow.dto';
 
 describe('AccountingService automatic order postings', () => {
   const businessId = 'business-1';
@@ -293,5 +297,250 @@ describe('AccountingService automatic order postings', () => {
       ['413595', 'CREDIT', '100000', undefined],
       ['519595', 'CREDIT', '8000', 'IMPOCONSUMO'],
     ]);
+  });
+});
+
+describe('AccountingService manual paid expense postings', () => {
+  const businessId = 'business-1';
+  const userId = 'user-1';
+
+  function clase(code: string, name: string) {
+    return { code, name };
+  }
+
+  function grupo(code: string, name: string, claseCode: string) {
+    return {
+      code,
+      name,
+      claseCode,
+      clase: clase(claseCode, claseCode === '5' ? 'Gastos' : 'Costos'),
+    };
+  }
+
+  function cuenta(code: string, name: string, claseCode = '5') {
+    return {
+      code,
+      name,
+      grupoCode: code.slice(0, 2),
+      grupo: grupo(code.slice(0, 2), claseCode === '5' ? 'Gastos operacionales' : 'Costo de ventas', claseCode),
+    };
+  }
+
+  function subcuenta(
+    code: string,
+    name: string,
+    parentName = 'Servicios',
+    claseCode = '5',
+    active = true,
+  ) {
+    return {
+      code,
+      name,
+      cuentaCode: code.slice(0, 4),
+      active,
+      cuenta: cuenta(code.slice(0, 4), parentName, claseCode),
+    };
+  }
+
+  function createManualService() {
+    const expenseSub = subcuenta(
+      '513525',
+      'Acueducto y alcantarillado',
+      'Servicios',
+      '5',
+    );
+    const energySub = subcuenta('513530', 'Energia electrica', 'Servicios', '5');
+    const costSub = subcuenta(
+      '613520',
+      'Venta de productos en almacenes no especializados',
+      'Comercio al por mayor y al por menor',
+      '6',
+    );
+    const assetSub = subcuenta('110505', 'Caja general', 'Caja', '1');
+    const bankSub = subcuenta('111005', 'Moneda nacional', 'Bancos', '1');
+
+    const subcuentas: Record<string, any> = {
+      [expenseSub.code]: expenseSub,
+      [energySub.code]: energySub,
+      [costSub.code]: costSub,
+      [assetSub.code]: assetSub,
+      [bankSub.code]: bankSub,
+    };
+
+    const tx = {
+      pucCuenta: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(null)),
+      },
+      pucSubcuenta: {
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(subcuentas[where.code] ?? null),
+        ),
+      },
+      accountingMovement: {
+        create: jest.fn(({ data }: any) => {
+          const selectedSub = data.pucSubcuentaId
+            ? subcuentas[data.pucSubcuentaId]
+            : null;
+          return Promise.resolve({
+            id: `movement-${data.pucSubcuentaId}-${data.nature}`,
+            ...data,
+            pucCuenta: null,
+            pucSubcuenta: selectedSub,
+          });
+        }),
+      },
+    };
+
+    const prisma = {
+      user: {
+        findFirst: jest.fn(() => Promise.resolve({ id: userId })),
+      },
+      pucSubcuenta: {
+        findMany: jest.fn(() => Promise.resolve([expenseSub, energySub])),
+      },
+      $transaction: jest.fn((callback: any) => callback(tx)),
+    } as any;
+
+    return { service: new AccountingService(prisma), prisma, tx };
+  }
+
+  function expenseDto(overrides: Record<string, any> = {}) {
+    return {
+      counterpartyName: 'Empresa de servicios',
+      amount: 100000,
+      description: 'Pago de acueducto',
+      paymentMethod: ManualPaidOutflowPaymentMethod.CASH,
+      type: ManualPaidOutflowType.EXPENSE,
+      categoryId: '513525',
+      ...overrides,
+    };
+  }
+
+  it('lists selectable six-digit expense subaccounts and finds 513525', async () => {
+    const { service, prisma } = createManualService();
+
+    const result = await service.listManualPaidOutflowCategories(
+      ManualPaidOutflowType.EXPENSE,
+      '513525',
+    );
+
+    expect(prisma.pucSubcuenta.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          active: true,
+          cuenta: { grupo: { claseCode: '5' } },
+        }),
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: '513525',
+        code: '513525',
+        name: 'Acueducto y alcantarillado',
+        type: ManualPaidOutflowType.EXPENSE,
+        parentName: 'Servicios',
+        isSelectable: true,
+        pucKind: 'SUBCUENTA',
+      }),
+    ]);
+  });
+
+  it('lists lightweight expense groups without loading PUC accounts', () => {
+    const { service, prisma } = createManualService();
+
+    const result = service.listExpenseGroups();
+
+    expect(prisma.pucSubcuenta.findMany).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'services',
+          label: 'Servicios',
+          icon: 'Zap',
+          pucPrefix: '5135',
+        }),
+      ]),
+    );
+  });
+
+  it('lists real six-digit expense accounts only after selecting a group', async () => {
+    const { service, prisma } = createManualService();
+
+    const result = await service.listExpenseGroupAccounts('services', '513525');
+
+    expect(prisma.pucSubcuenta.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          active: true,
+          cuenta: { grupo: { claseCode: '5' } },
+          OR: expect.arrayContaining([
+            { code: { startsWith: '5135' } },
+          ]),
+        }),
+        take: 120,
+      }),
+    );
+    expect(result).toEqual([
+      expect.objectContaining({
+        code: '513525',
+        name: 'Acueducto y alcantarillado',
+        parentName: 'Servicios',
+      }),
+    ]);
+  });
+
+  it('creates a balanced paid expense using the selected six-digit PUC', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(businessId, userId, expenseDto());
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls.map((line: any) => [line.pucSubcuentaId, line.nature, line.amount.toString()])).toEqual([
+      ['513525', 'DEBIT', '100000'],
+      ['110505', 'CREDIT', '100000'],
+    ]);
+
+    const totals = calls.reduce(
+      (acc: any, line: any) => {
+        const amount = new Prisma.Decimal(line.amount);
+        if (line.nature === 'DEBIT') acc.debit = acc.debit.add(amount);
+        if (line.nature === 'CREDIT') acc.credit = acc.credit.add(amount);
+        return acc;
+      },
+      { debit: new Prisma.Decimal(0), credit: new Prisma.Decimal(0) },
+    );
+    expect(totals.debit.toString()).toBe('100000');
+    expect(totals.credit.toString()).toBe('100000');
+  });
+
+  it('rejects costs in the paid expense flow', async () => {
+    const { service, tx } = createManualService();
+
+    await expect(
+      service.createManualPaidOutflow(
+        businessId,
+        userId,
+        expenseDto({
+          type: ManualPaidOutflowType.COST,
+          categoryId: '613520',
+        }),
+      ),
+    ).rejects.toThrow('Este flujo solo permite registrar gastos');
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects accounts that are not expenses', async () => {
+    const { service, tx } = createManualService();
+
+    await expect(
+      service.createManualPaidOutflow(
+        businessId,
+        userId,
+        expenseDto({ categoryId: '110505' }),
+      ),
+    ).rejects.toThrow('La categoria seleccionada no corresponde a gastos');
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
   });
 });

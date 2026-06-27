@@ -18,6 +18,7 @@ import { AccountingService } from './accounting.service';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
+import { CreateManualPaidOutflowDto } from './dto/create-manual-paid-outflow.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
@@ -38,6 +39,39 @@ export class AccountingController {
   @Get('summary')
   getSummary(@Req() req: any, @Query() q: AccountingMovementsQueryDto) {
     return this.accountingService.getSummary(req.user.businessId, q);
+  }
+
+  @Get('manual-paid-outflows/categories')
+  listManualPaidOutflowCategories(
+    @Query('type') type?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.accountingService.listManualPaidOutflowCategories(type, q);
+  }
+
+  @Get('expense-groups')
+  listExpenseGroups() {
+    return this.accountingService.listExpenseGroups();
+  }
+
+  @Get('expense-groups/:groupId/accounts')
+  listExpenseGroupAccounts(
+    @Param('groupId') groupId: string,
+    @Query('q') q?: string,
+  ) {
+    return this.accountingService.listExpenseGroupAccounts(groupId, q);
+  }
+
+  @Post('manual-paid-outflows')
+  createManualPaidOutflow(
+    @Req() req: any,
+    @Body() dto: CreateManualPaidOutflowDto,
+  ) {
+    return this.accountingService.createManualPaidOutflow(
+      req.user.businessId,
+      req.user.userId,
+      dto,
+    );
   }
 
   @Get('movements/:id')

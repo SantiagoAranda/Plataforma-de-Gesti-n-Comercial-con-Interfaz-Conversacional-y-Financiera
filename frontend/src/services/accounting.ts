@@ -62,6 +62,40 @@ export type AccountingSummary = {
   };
 };
 
+export type ManualPaidOutflowType = "EXPENSE" | "COST";
+export type ManualPaidOutflowPaymentMethod = "CASH" | "TRANSFER";
+
+export type ManualPaidOutflowCategory = {
+  id: string;
+  code: string;
+  name: string;
+  parentName?: string | null;
+  isSelectable?: boolean;
+  pucCode: string;
+  pucName: string;
+  pucKind: "CUENTA" | "SUBCUENTA";
+  type: ManualPaidOutflowType;
+  group: { code: string; name: string };
+  clase: { code: string; name: string };
+};
+
+export type ExpenseGroup = {
+  id: string;
+  label: string;
+  icon: string;
+  description: string;
+  pucPrefix: string;
+};
+
+export type CreateManualPaidOutflowDto = {
+  counterpartyName: string;
+  amount: number;
+  description: string;
+  paymentMethod: ManualPaidOutflowPaymentMethod;
+  type: ManualPaidOutflowType;
+  categoryId: string;
+};
+
 export async function listMovements(filters: AccountingMovementsFilters = {}) {
   const qs = new URLSearchParams();
   if (filters.from) qs.set("from", filters.from);
@@ -83,6 +117,44 @@ export async function getAccountingSummary(filters: { from?: string; to?: string
 
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<AccountingSummary>(`/accounting/summary${suffix}`);
+}
+
+export async function listManualPaidOutflowCategories(
+  type: ManualPaidOutflowType,
+  search?: string,
+) {
+  const qs = new URLSearchParams({ type });
+  if (search?.trim()) qs.set("q", search.trim());
+
+  return api<ManualPaidOutflowCategory[]>(
+    `/accounting/manual-paid-outflows/categories?${qs.toString()}`,
+  );
+}
+
+export async function createManualPaidOutflow(
+  payload: CreateManualPaidOutflowDto,
+) {
+  return api<{ ok: true; originId: string; movements: AccountingMovement[] }>(
+    `/accounting/manual-paid-outflows`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function listExpenseGroups() {
+  return api<ExpenseGroup[]>(`/accounting/expense-groups`);
+}
+
+export async function listExpenseGroupAccounts(groupId: string, search?: string) {
+  const qs = new URLSearchParams();
+  if (search?.trim()) qs.set("q", search.trim());
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+
+  return api<ManualPaidOutflowCategory[]>(
+    `/accounting/expense-groups/${encodeURIComponent(groupId)}/accounts${suffix}`,
+  );
 }
 
 export async function getMovement(id: string) {

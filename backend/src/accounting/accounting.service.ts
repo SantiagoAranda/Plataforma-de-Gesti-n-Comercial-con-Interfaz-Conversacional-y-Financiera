@@ -10,10 +10,16 @@ import {
   Prisma,
   TaxDirection,
 } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
+import {
+  CreateManualPaidOutflowDto,
+  ManualPaidOutflowPaymentMethod,
+  ManualPaidOutflowType,
+} from './dto/create-manual-paid-outflow.dto';
 
 const ORDER_ACCOUNTING_DEFAULTS = {
   // Use active subaccounts from prisma/seed-data/puc_subcuenta.csv.
@@ -30,6 +36,87 @@ const ORDER_ACCOUNTING_DEFAULTS = {
     SERVICE: '413595',
   },
 } as const;
+
+const MANUAL_PAID_OUTFLOW_DEFAULTS = {
+  cashPucCode: '110505',
+  transferPucCode: '111005',
+} as const;
+
+type ExpenseGroupDefinition = {
+  id: string;
+  label: string;
+  icon: string;
+  description: string;
+  prefixes: string[];
+  nameIncludes?: string[];
+};
+
+const EXPENSE_GROUPS: ExpenseGroupDefinition[] = [
+  {
+    id: 'personnel',
+    label: 'Gastos de personal',
+    icon: 'Users',
+    description: 'Sueldos, auxilios y pagos al equipo',
+    prefixes: ['5105', '5205'],
+  },
+  {
+    id: 'honorarios',
+    label: 'Honorarios',
+    icon: 'BriefcaseBusiness',
+    description: 'Servicios profesionales y asesorias',
+    prefixes: ['5110', '5210'],
+  },
+  {
+    id: 'taxes',
+    label: 'Impuestos',
+    icon: 'Landmark',
+    description: 'Impuestos, tasas y contribuciones',
+    prefixes: ['5115', '5215'],
+  },
+  {
+    id: 'rent',
+    label: 'Arrendamientos',
+    icon: 'Building2',
+    description: 'Alquileres, arriendos y espacios',
+    prefixes: ['5120', '5220'],
+  },
+  {
+    id: 'services',
+    label: 'Servicios',
+    icon: 'Zap',
+    description: 'Servicios publicos y pagos recurrentes',
+    prefixes: ['5135', '5235'],
+  },
+  {
+    id: 'maintenance',
+    label: 'Mantenimiento',
+    icon: 'Wrench',
+    description: 'Reparaciones y conservacion de activos',
+    prefixes: ['5145', '5245'],
+  },
+  {
+    id: 'transport',
+    label: 'Transporte',
+    icon: 'Truck',
+    description: 'Movilidad, fletes y traslados',
+    prefixes: ['5130', '5155', '5230', '5255'],
+  },
+  {
+    id: 'marketing',
+    label: 'Publicidad / Marketing',
+    icon: 'Megaphone',
+    description: 'Promocion, relaciones publicas y presencia comercial',
+    prefixes: ['5195', '5295'],
+    nameIncludes: ['publicidad', 'propaganda', 'representacion', 'relaciones publicas'],
+  },
+  {
+    id: 'other',
+    label: 'Otros',
+    icon: 'MoreHorizontal',
+    description: 'Gastos diversos no clasificados',
+    prefixes: ['5195', '5295', '5305', '5315', '5395'],
+  },
+] as const;
 
 type OrderForPosting = Prisma.OrderGetPayload<{
   include: {
@@ -188,6 +275,17 @@ export class AccountingService {
     return this.loadPucReferenceOrThrow(
       code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
     );
+  }
+
+  private parseOccurredAt(value?: string) {
+    if (!value) return new Date();
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('Fecha del movimiento invalida');
+    }
+
+    return date;
   }
 
   private serializeMovement(movement: MovementWithPucRelations) {
@@ -407,6 +505,362 @@ export class AccountingService {
     });
 
     return this.serializeMovement(movement);
+  }
+
+  async listManualPaidOutflowCategories(type?: string, q?: string) {
+    const normalizedType = String(type ?? '').toUpperCase();
+    if (normalizedType && normalizedType !== ManualPaidOutflowType.EXPENSE) {
+      return [];
+    }
+
+    const subcuentas = await this.prisma.pucSubcuenta.findMany({
+      where: {
+        active: true,
+        cuenta: {
+          grupo: {
+            claseCode: '5',
+          },
+        },
+      },
+      include: {
+        cuenta: {
+          include: {
+            grupo: {
+              include: { clase: true },
+            },
+          },
+        },
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    const query = this.normalizeSearchText(q ?? '');
+    const filteredSubcuentas = query
+      ? subcuentas.filter((subcuenta) => {
+          const searchable = [
+            subcuenta.code,
+            subcuenta.name,
+            subcuenta.cuenta.name,
+            subcuenta.cuenta.grupo.name,
+          ]
+            .map((value) => this.normalizeSearchText(value))
+            .join(' ');
+
+          return searchable.includes(query);
+        })
+      : subcuentas;
+
+    return filteredSubcuentas.map((subcuenta) => ({
+      id: subcuenta.code,
+      code: subcuenta.code,
+      name: subcuenta.name,
+      type: ManualPaidOutflowType.EXPENSE,
+      parentName: subcuenta.cuenta.name,
+      isSelectable: true,
+      pucCode: subcuenta.code,
+      pucName: subcuenta.name,
+      pucKind: 'SUBCUENTA' as const,
+      group: {
+        code: subcuenta.cuenta.grupo.code,
+        name: subcuenta.cuenta.grupo.name,
+      },
+      clase: {
+        code: subcuenta.cuenta.grupo.clase.code,
+        name: subcuenta.cuenta.grupo.clase.name,
+      },
+    }));
+  }
+
+  listExpenseGroups() {
+    return EXPENSE_GROUPS.map(({ prefixes, nameIncludes, ...group }) => ({
+      ...group,
+      pucPrefix: prefixes[0],
+    }));
+  }
+
+  private expenseGroupOrThrow(groupId: string) {
+    const group = EXPENSE_GROUPS.find((item) => item.id === groupId);
+    if (!group) {
+      throw new NotFoundException('Categoria de gasto no encontrada');
+    }
+    return group;
+  }
+
+  private serializeExpenseAccount(subcuenta: any) {
+    return {
+      id: subcuenta.code,
+      code: subcuenta.code,
+      name: subcuenta.name,
+      type: ManualPaidOutflowType.EXPENSE,
+      parentName: subcuenta.cuenta.name,
+      isSelectable: true,
+      pucCode: subcuenta.code,
+      pucName: subcuenta.name,
+      pucKind: 'SUBCUENTA' as const,
+      group: {
+        code: subcuenta.cuenta.grupo.code,
+        name: subcuenta.cuenta.grupo.name,
+      },
+      clase: {
+        code: subcuenta.cuenta.grupo.clase.code,
+        name: subcuenta.cuenta.grupo.clase.name,
+      },
+    };
+  }
+
+  async listExpenseGroupAccounts(groupId: string, q?: string) {
+    const group = this.expenseGroupOrThrow(groupId);
+
+    const subcuentas = await this.prisma.pucSubcuenta.findMany({
+      where: {
+        active: true,
+        cuenta: {
+          grupo: {
+            claseCode: '5',
+          },
+        },
+        OR: group.prefixes.map((prefix) => ({
+          code: { startsWith: prefix },
+        })),
+      },
+      include: {
+        cuenta: {
+          include: {
+            grupo: {
+              include: { clase: true },
+            },
+          },
+        },
+      },
+      orderBy: { code: 'asc' },
+      take: 120,
+    });
+
+    const normalizedNameIncludes = (group as any).nameIncludes?.map((value: string) =>
+      this.normalizeSearchText(value),
+    );
+    const query = this.normalizeSearchText(q ?? '');
+
+    const filtered = subcuentas.filter((subcuenta) => {
+      const searchable = [
+        subcuenta.code,
+        subcuenta.name,
+        subcuenta.cuenta.name,
+        subcuenta.cuenta.grupo.name,
+      ]
+        .map((value) => this.normalizeSearchText(value))
+        .join(' ');
+
+      const matchesGroupNames =
+        !normalizedNameIncludes?.length ||
+        normalizedNameIncludes.some((needle: string) =>
+          searchable.includes(needle),
+        );
+
+      const matchesQuery = !query || searchable.includes(query);
+
+      return matchesGroupNames && matchesQuery;
+    });
+
+    return filtered.slice(0, 80).map((subcuenta) =>
+      this.serializeExpenseAccount(subcuenta),
+    );
+  }
+
+  async createManualPaidOutflow(
+    businessId: string,
+    userId: string,
+    dto: CreateManualPaidOutflowDto,
+  ) {
+    if (!businessId) {
+      throw new BadRequestException('businessId es obligatorio');
+    }
+
+    const businessUser = await this.prisma.user.findFirst({
+      where: { id: userId, businessId },
+      select: { id: true },
+    });
+
+    if (!businessUser) {
+      throw new ForbiddenException('El usuario no pertenece al negocio');
+    }
+
+    const counterpartyName = dto.counterpartyName?.trim();
+    const description = dto.description?.trim();
+
+    if (!counterpartyName) {
+      throw new BadRequestException('Beneficiario obligatorio');
+    }
+    if (!description) {
+      throw new BadRequestException('Descripcion obligatoria');
+    }
+
+    const amount = new Prisma.Decimal(dto.amount ?? 0).toDecimalPlaces(2);
+    if (!amount.isPositive()) {
+      throw new BadRequestException('El monto debe ser mayor a 0');
+    }
+
+    const categoryCode = dto.categoryId?.trim();
+    if (!categoryCode) {
+      throw new BadRequestException('Categoria obligatoria');
+    }
+    if (dto.type !== ManualPaidOutflowType.EXPENSE) {
+      throw new BadRequestException('Este flujo solo permite registrar gastos');
+    }
+
+    const creditPucCode =
+      dto.paymentMethod === ManualPaidOutflowPaymentMethod.CASH
+        ? MANUAL_PAID_OUTFLOW_DEFAULTS.cashPucCode
+        : MANUAL_PAID_OUTFLOW_DEFAULTS.transferPucCode;
+
+    const occurredAt = this.parseOccurredAt(dto.occurredAt);
+    const originId = `manual-outflow-${randomUUID()}`;
+
+    const movements = await this.prisma.$transaction(async (tx) => {
+      const [categoryCuenta, categorySubcuenta, creditSubcuenta, creditCuenta] =
+        await Promise.all([
+          tx.pucCuenta.findUnique({
+            where: { code: categoryCode },
+            include: {
+              grupo: {
+                include: { clase: true },
+              },
+            },
+          }),
+          tx.pucSubcuenta.findUnique({
+            where: { code: categoryCode },
+            include: {
+              cuenta: {
+                include: {
+                  grupo: {
+                    include: { clase: true },
+                  },
+                },
+              },
+            },
+          }),
+          tx.pucSubcuenta.findUnique({
+            where: { code: creditPucCode },
+            include: {
+              cuenta: {
+                include: {
+                  grupo: {
+                    include: { clase: true },
+                  },
+                },
+              },
+            },
+          }),
+          tx.pucCuenta.findUnique({
+            where: { code: creditPucCode },
+            include: {
+              grupo: {
+                include: { clase: true },
+              },
+            },
+          }),
+        ]);
+
+      const categoryClass =
+        categorySubcuenta?.cuenta.grupo.claseCode ??
+        categoryCuenta?.grupo.claseCode;
+
+      if (!categoryCuenta && !categorySubcuenta) {
+        throw new BadRequestException('Categoria contable invalida');
+      }
+      if (categoryCuenta && !categorySubcuenta) {
+        throw new BadRequestException(
+          'Debe seleccionarse una subcuenta PUC de gasto imputable',
+        );
+      }
+      if (categorySubcuenta && !categorySubcuenta.active) {
+        throw new BadRequestException('Categoria contable inactiva');
+      }
+      if (categoryClass !== '5') {
+        throw new BadRequestException(
+          'La categoria seleccionada no corresponde a gastos',
+        );
+      }
+
+      const debitReference: ResolvedPucReference = {
+        kind: 'SUBCUENTA',
+        code: categorySubcuenta!.code,
+        name: categorySubcuenta!.name,
+        cuentaCode: categorySubcuenta!.cuentaCode,
+      };
+
+      const creditReference: ResolvedPucReference | null = creditSubcuenta
+        ? {
+            kind: 'SUBCUENTA',
+            code: creditSubcuenta.code,
+            name: creditSubcuenta.name,
+            cuentaCode: creditSubcuenta.cuentaCode,
+          }
+        : creditCuenta
+          ? {
+              kind: 'CUENTA',
+              code: creditCuenta.code,
+              name: creditCuenta.name,
+            }
+          : null;
+
+      if (!creditReference || (creditSubcuenta && !creditSubcuenta.active)) {
+        throw new BadRequestException(
+          dto.paymentMethod === ManualPaidOutflowPaymentMethod.CASH
+            ? 'La cuenta de Caja no existe o esta inactiva'
+            : 'La cuenta de Bancos no existe o esta inactiva',
+        );
+      }
+
+      const metadata: Prisma.InputJsonObject = {
+        kind: 'MANUAL_PAID_OUTFLOW',
+        source: 'MANUAL',
+        type: dto.type,
+        counterpartyName,
+        paymentMethod: dto.paymentMethod,
+        accountingCategoryId: categoryCode,
+        debitPucCode: debitReference.code,
+        creditPucCode: creditReference.code,
+        createdBy: userId,
+      };
+
+      const commonData = {
+        businessId,
+        amount,
+        date: occurredAt,
+        originType: AccountingMovementOriginType.MANUAL,
+        originId,
+        metadata,
+      };
+
+      const debitMovement = await tx.accountingMovement.create({
+        data: {
+          ...commonData,
+          ...this.movementPucData(debitReference),
+          nature: MovementNature.DEBIT,
+          detail: `${description} - ${counterpartyName}`,
+        },
+        include: this.movementInclude(),
+      });
+
+      const creditMovement = await tx.accountingMovement.create({
+        data: {
+          ...commonData,
+          ...this.movementPucData(creditReference),
+          nature: MovementNature.CREDIT,
+          detail: `Pago ${dto.paymentMethod === ManualPaidOutflowPaymentMethod.CASH ? 'en efectivo' : 'por transferencia'} - ${counterpartyName}`,
+        },
+        include: this.movementInclude(),
+      });
+
+      return [debitMovement, creditMovement];
+    });
+
+    return {
+      ok: true,
+      originId,
+      movements: movements.map((movement) => this.serializeMovement(movement)),
+    };
   }
 
   async postOrderMovements(
