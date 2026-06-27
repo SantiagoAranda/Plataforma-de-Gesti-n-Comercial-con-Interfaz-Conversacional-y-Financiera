@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { X, Plus, Trash2, Send } from "lucide-react";
@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
+import { api } from "@/src/lib/api";
 
 type EditableItem = {
   itemId: string;
@@ -91,13 +92,8 @@ export default function SaleCreateModal({
 
   const fetchItems = async () => {
     try {
-      const token = localStorage.getItem("accessToken");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/items?context=sales`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setBusinessItems(data.map((i: any) => ({ ...i, price: Number(i.price) })));
+      const data = await api<any[]>("/items?context=sales");
+      setBusinessItems((data || []).map((i: any) => ({ ...i, price: Number(i.price) })));
     } catch (err) {
       console.error("Error fetching items", err);
     }
@@ -227,60 +223,76 @@ export default function SaleCreateModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/20">
-          <div className="flex flex-col gap-3 p-4 rounded-xl border border-neutral-100 bg-white">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
-                Cliente (Opcional)
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6 bg-neutral-50/10">
+          {/* Customer Data */}
+          <div className="space-y-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Datos del cliente (Opcional)
               </span>
-
               <input
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Nombre del cliente"
-                className="rounded-lg border border-neutral-200 px-3 py-2 text-[13px] font-semibold text-neutral-800 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-400 placeholder:font-medium"
+                className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition"
               />
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
-                WhatsApp (Opcional)
-              </span>
 
+            <div className="flex flex-col gap-1">
               <PhoneSelector
                 countryCode={countryCode}
                 onCountryCodeChange={setCountryCode}
                 phoneNumber={phoneNumber}
                 onPhoneNumberChange={setPhoneNumber}
+                flat
               />
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
-                  Estado Inicial
-                </span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as "PENDIENTE" | "CERRADO")}
-                  className="rounded-lg border border-neutral-200 px-2 py-1 text-[13px] font-medium text-neutral-700 outline-none bg-neutral-50 h-8"
-                >
-                  <option value="PENDIENTE">Pendiente</option>
-                  <option value="CERRADO">Cerrado</option>
-                </select>
-              </div>
+          </div>
 
-              <div className="flex flex-col gap-0.5 text-right">
+          {/* Sale Status & Payment Method */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Estado de venta
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setStatus("PENDIENTE")}
+                  className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                    status === "PENDIENTE"
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Pendiente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatus("CERRADO")}
+                  className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                    status === "CERRADO"
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  Confirmado
+                </button>
               </div>
             </div>
-            <div className="col-span-2 flex flex-col gap-1 pt-2">
-              <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">Medio de pago</span>
+
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Medio de pago
+              </span>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("CASH")}
-                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                     paymentMethod === "CASH"
-                      ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   Efectivo
@@ -288,13 +300,13 @@ export default function SaleCreateModal({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                     paymentMethod === "BANK_TRANSFER"
-                      ? "bg-emerald-500 text-white"
-                      : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  Transferencia
+                  Transf.
                 </button>
               </div>
             </div>
@@ -357,7 +369,7 @@ export default function SaleCreateModal({
                                (items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")) &&
                                isAvailableForSale(bi)
                              )}
-                             placeholder="Elegí un item..."
+                             placeholder={businessItems.length === 0 ? "Sin productos o servicios disponibles." : "Elegí un item..."}
                            />
                         </div>
                       </div>

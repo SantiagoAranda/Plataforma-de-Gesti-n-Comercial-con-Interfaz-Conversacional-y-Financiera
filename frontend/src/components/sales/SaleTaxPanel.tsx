@@ -172,6 +172,8 @@ export default function SaleTaxPanel({
   taxLines,
   onEditSale,
   className = "",
+  previewOnly = false,
+  onPreviewChange,
 }: {
   mode: "create" | "edit" | "readonly";
   value: SaleFiscalFormState;
@@ -182,6 +184,8 @@ export default function SaleTaxPanel({
   taxLines?: TaxPreviewLine[] | null;
   onEditSale?: () => void;
   className?: string;
+  previewOnly?: boolean;
+  onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
 }) {
   const readonly = mode === "readonly";
   const [preview, setPreview] = useState<TaxPreviewResponse | null>(
@@ -189,6 +193,10 @@ export default function SaleTaxPanel({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onPreviewChange?.(preview);
+  }, [preview, onPreviewChange]);
 
   const update = (patch: Partial<SaleFiscalFormState>) => {
     if (readonly || !onChange) return;
@@ -273,7 +281,8 @@ export default function SaleTaxPanel({
 
   return (
     <section className={`space-y-3 ${className}`}>
-      <div className="rounded-2xl border border-slate-100 bg-white p-4">
+      {!previewOnly && (
+        <div className="rounded-2xl border border-slate-100 bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
@@ -425,7 +434,8 @@ export default function SaleTaxPanel({
             </div>
           </>
         )}
-      </div>
+        </div>
+      )}
 
       {!missingReadonlyFiscal && (
         <>
@@ -478,11 +488,11 @@ export default function SaleTaxPanel({
           </div>
 
           {preview?.taxLines?.length ? (
-            <details className="rounded-2xl border border-slate-100 bg-white p-4">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <details className="rounded-2xl border border-slate-100 bg-white p-4 w-full min-w-0">
+              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-500 select-none">
                 Detalle de formulas y reglas aplicadas
               </summary>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-2 w-full min-w-0">
                 {preview.taxLines.map((line, index) => (
                   <div
                     key={`${line.taxType}-${line.direction}-${index}`}
