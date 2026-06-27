@@ -86,7 +86,7 @@ export default function SalesChatComposer({
   onSearchChange = () => {},
   onSave,
 }: {
-  mode?: "create" | "edit";
+  mode?: "create" | "edit" | "readonly";
   sale?: Sale | null;
   expanded: boolean;
   onOpenComposer?: () => void;
@@ -144,7 +144,7 @@ export default function SalesChatComposer({
   }, []);
 
   useEffect(() => {
-    if (mode === "edit" && sale && expanded) {
+    if ((mode === "edit" || mode === "readonly") && sale && expanded) {
       setFiscalForm(saleFiscalStateFromSale(sale));
       
       const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
@@ -208,7 +208,7 @@ export default function SalesChatComposer({
       setFormError(null);
       setIsSubmitting(false);
     }
-  }, [expanded, sale, mode]);
+  }, [expanded, sale?.id, mode]);
 
   useEffect(() => {
     if (!newItem.itemId) return;
@@ -415,12 +415,14 @@ export default function SalesChatComposer({
   };
 
   const renderFormBody = () => {
+    const isReadonly = mode === "readonly";
     return (
       <>
         {/* 2. Switch Persona / Empresa */}
         <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
           <button
             type="button"
+            disabled={isReadonly}
             onClick={() => {
               setFiscalForm(prev => ({
                 ...prev,
@@ -441,6 +443,7 @@ export default function SalesChatComposer({
           </button>
           <button
             type="button"
+            disabled={isReadonly}
             onClick={() => {
               setFiscalForm(prev => ({
                 ...prev,
@@ -465,9 +468,10 @@ export default function SalesChatComposer({
             </span>
             <input
               value={fiscalForm.buyerName}
+              disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
               placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
-              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition"
+              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
 
@@ -475,8 +479,9 @@ export default function SalesChatComposer({
             <div className="min-w-0">
               <select
                 value={fiscalForm.buyerDocumentType}
+                disabled={isReadonly}
                 onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
               >
                 {fiscalForm.buyerType === "JURIDICA" ? (
                   <option value="NIT">NIT / RUT</option>
@@ -493,9 +498,10 @@ export default function SalesChatComposer({
             <div className="min-w-0">
               <input
                 value={fiscalForm.buyerDocumentNumber}
+                disabled={isReadonly}
                 onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
                 placeholder="Número documento"
-                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition"
+                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
               />
             </div>
           </div>
@@ -506,6 +512,7 @@ export default function SalesChatComposer({
               onCountryCodeChange={setCountryCode}
               phoneNumber={phoneNumber}
               onPhoneNumberChange={setPhoneNumber}
+              disabled={isReadonly}
               flat
             />
           </div>
@@ -514,9 +521,10 @@ export default function SalesChatComposer({
             <input
               type="email"
               value={fiscalForm.buyerEmail}
+              disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
               placeholder="Correo (opcional)"
-              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition"
+              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
         </div>
@@ -528,8 +536,9 @@ export default function SalesChatComposer({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select
               value={fiscalForm.saleConcept}
+              disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, saleConcept: e.target.value as any }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
             >
               <option value="GOODS">Bienes / Productos</option>
               <option value="SERVICES">Servicios</option>
@@ -539,8 +548,9 @@ export default function SalesChatComposer({
 
             <select
               value={fiscalForm.fiscalMunicipalityCode}
+              disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
             >
               <option value="">Municipio ICA</option>
               {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
@@ -563,6 +573,7 @@ export default function SalesChatComposer({
                 <button
                   key={key}
                   type="button"
+                  disabled={isReadonly}
                   onClick={() => {
                     setFiscalForm(prev => ({
                       ...prev,
@@ -571,8 +582,8 @@ export default function SalesChatComposer({
                   }}
                   className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                     active
-                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
                   }`}
                 >
                   {label}
@@ -590,22 +601,24 @@ export default function SalesChatComposer({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
+                disabled={isReadonly}
                 onClick={() => setStatus("PENDIENTE")}
                 className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                   status === "PENDIENTE"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 }`}
               >
                 Pendiente
               </button>
               <button
                 type="button"
+                disabled={isReadonly}
                 onClick={() => setStatus("CERRADO")}
                 className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                   status === "CERRADO"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 }`}
               >
                 Confirmado
@@ -620,22 +633,24 @@ export default function SalesChatComposer({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
+                disabled={isReadonly}
                 onClick={() => setPaymentMethod("CASH")}
                 className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                   paymentMethod === "CASH"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 }`}
               >
                 Efectivo
               </button>
               <button
                 type="button"
+                disabled={isReadonly}
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
                 className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
                   paymentMethod === "BANK_TRANSFER"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 }`}
               >
                 Transf.
@@ -649,58 +664,60 @@ export default function SalesChatComposer({
             Ítems de venta
           </span>
 
-          <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 w-full min-w-0">
-            <div className="flex items-center gap-2 w-full min-w-0">
-              <div className="flex-1 bg-white rounded-xl relative min-w-0">
-                <ItemSelector
-                  value={newItem.itemId}
-                  onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
-                  options={businessItems.filter(bi =>
-                    items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
-                  )}
-                  placeholder={businessItems.length === 0 ? "Sin productos o servicios disponibles." : "Seleccionar producto / servicio..."}
-                />
+          {!isReadonly && (
+            <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 w-full min-w-0">
+              <div className="flex items-center gap-2 w-full min-w-0">
+                <div className="flex-1 bg-white rounded-xl relative min-w-0">
+                  <ItemSelector
+                    value={newItem.itemId}
+                    onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
+                    options={businessItems.filter(bi =>
+                      items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
+                    )}
+                    placeholder={businessItems.length === 0 ? "Sin productos o servicios disponibles." : "Seleccionar producto / servicio..."}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  disabled={!newItem.itemId}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
+                  title="Agregar ítem"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleAddItem}
-                disabled={!newItem.itemId}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
-                title="Agregar ítem"
-              >
-                <Plus className="h-5 w-5" />
-              </button>
-            </div>
 
-            {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-medium text-slate-500 px-1">Cantidad</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={newItem.qty}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "") {
-                      setNewItem(prev => ({ ...prev, qty: "" }));
-                      return;
-                    }
-                    const num = parseInt(val, 10);
-                    if (!isNaN(num)) {
-                      setNewItem(prev => ({ ...prev, qty: num }));
-                    }
-                  }}
-                  onFocus={(e) => e.target.select()}
-                  onBlur={() => {
-                    if (newItem.qty === "" || newItem.qty <= 0) {
-                      setNewItem(prev => ({ ...prev, qty: 1 }));
-                    }
-                  }}
-                  className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
-                />
-              </div>
-            )}
-          </div>
+              {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-medium text-slate-500 px-1">Cantidad</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItem.qty}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setNewItem(prev => ({ ...prev, qty: "" }));
+                        return;
+                      }
+                      const num = parseInt(val, 10);
+                      if (!isNaN(num)) {
+                        setNewItem(prev => ({ ...prev, qty: num }));
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={() => {
+                      if (newItem.qty === "" || newItem.qty <= 0) {
+                        setNewItem(prev => ({ ...prev, qty: 1 }));
+                      }
+                    }}
+                    className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {formError && (
             <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
@@ -722,7 +739,7 @@ export default function SalesChatComposer({
                   ))}
                 </div>
 
-                {((businessItems.find((item) => item.id === it.itemId)?.optionGroups?.length ?? 0) > 0) && (
+                {((businessItems.find((item) => item.id === it.itemId)?.optionGroups?.length ?? 0) > 0) && !isReadonly && (
                   <button
                     type="button"
                     onClick={() => {
@@ -740,7 +757,7 @@ export default function SalesChatComposer({
                   </button>
                 )}
 
-                {type === "PRODUCTO" && (
+                {type === "PRODUCTO" && !isReadonly && (
                   <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-slate-200">
                     <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">-</button>
                     <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
@@ -748,9 +765,11 @@ export default function SalesChatComposer({
                   </div>
                 )}
 
-                <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition">
-                  <Trash2 size={16} />
-                </button>
+                {!isReadonly && (
+                  <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition">
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             ))}
             {items.length === 0 && (
@@ -782,25 +801,29 @@ export default function SalesChatComposer({
               mode="private"
               selectedDate={scheduledDate}
               selectedStartMinute={selectedStartMinute}
+              disabled={isReadonly}
+              availabilitySaleId={mode === "edit" ? sale?.id : undefined}
+              durationMin={items[0].durationMin || Number(manualDuration) || undefined}
               onChange={({ date, startMinute }) => {
                 setScheduledDate(date);
                 setSelectedStartMinute(startMinute);
               }}
             />
 
-            {!items[0]?.durationMin && (
+            {!isReadonly && !items[0]?.durationMin && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-slate-500 px-1">Duración en minutos</span>
                 <input
                   type="number"
                   min="1"
+                  disabled={isReadonly}
                   value={manualDuration}
                   onChange={(e) => setManualDuration(e.target.value)}
-                  className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
             )}
-            {items[0]?.durationMin && (
+            {!isReadonly && items[0]?.durationMin && (
               <p className="px-1 text-[11px] font-semibold text-emerald-700">
                 Duración: {items[0].durationMin} min
               </p>
@@ -809,7 +832,7 @@ export default function SalesChatComposer({
         )}
 
         <SaleTaxPanel
-          mode="create"
+          mode={isReadonly ? "readonly" : "create"}
           value={fiscalForm}
           onChange={setFiscalForm}
           saleType={type}
@@ -819,12 +842,22 @@ export default function SalesChatComposer({
           }))}
           previewOnly={true}
           onPreviewChange={setTaxPreview}
+          fiscalSummary={sale?.fiscalSummary}
+          taxLines={sale?.taxLines}
         />
 
         <div className="h-4" />
       </>
     );
   };
+
+  if (mode === "readonly") {
+    return (
+      <div className="space-y-6">
+        {renderFormBody()}
+      </div>
+    );
+  }
 
   if (mode === "edit") {
     if (!expanded) return null;

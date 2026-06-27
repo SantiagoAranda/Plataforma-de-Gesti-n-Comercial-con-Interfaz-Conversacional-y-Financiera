@@ -188,15 +188,21 @@ export default function SaleTaxPanel({
   onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
 }) {
   const readonly = mode === "readonly";
-  const [preview, setPreview] = useState<TaxPreviewResponse | null>(
-    fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null,
-  );
+  const [livePreview, setLivePreview] = useState<TaxPreviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const preview = useMemo(() => {
+    if (readonly) {
+      return fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null;
+    }
+    return livePreview;
+  }, [readonly, fiscalSummary, taxLines, livePreview]);
+
   useEffect(() => {
+    if (readonly) return;
     onPreviewChange?.(preview);
-  }, [preview, onPreviewChange]);
+  }, [preview, onPreviewChange, readonly]);
 
   const update = (patch: Partial<SaleFiscalFormState>) => {
     if (readonly || !onChange) return;
@@ -221,14 +227,13 @@ export default function SaleTaxPanel({
 
   useEffect(() => {
     if (readonly) {
-      setPreview(fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null);
       setError(null);
       setLoading(false);
       return;
     }
 
     if (items.length === 0) {
-      setPreview(null);
+      setLivePreview(null);
       setError(null);
       setLoading(false);
       return;
@@ -257,7 +262,7 @@ export default function SaleTaxPanel({
             .filter((item): item is { itemId: string; quantity: number } => Boolean(item.itemId))
             .map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
         });
-        setPreview(data);
+        setLivePreview(data);
       } catch (err: any) {
         setError(err.message || "No se pudo calcular la liquidacion tributaria.");
       } finally {
@@ -266,7 +271,7 @@ export default function SaleTaxPanel({
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [context, fiscalSummary, items, readonly, taxLines]);
+  }, [context, items, readonly]);
 
   const chargedTotal = preview
     ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)

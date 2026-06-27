@@ -208,6 +208,7 @@ describe('SalesService.remove', () => {
       reservation: {
         findFirst: mockFn(),
         update: mockFn(),
+        updateMany: mockFn(),
       },
       order: {
         findFirst: mockFn().mockResolvedValue(order),
@@ -280,6 +281,122 @@ describe('SalesService.remove', () => {
   });
 });
 
+describe('SalesService manual service mirror reservations', () => {
+  const businessId = 'business-1';
+  const serviceItem = {
+    id: 'service-1',
+    businessId,
+    name: 'Servicio Test 1M',
+    status: 'ACTIVE',
+    type: 'SERVICE',
+    inventoryMode: 'NONE',
+    price: new Prisma.Decimal(1000000),
+    durationMinutes: 60,
+    recipes: [],
+    optionGroups: [],
+  };
+
+  function createService() {
+    const tx = {
+      order: {
+        create: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          businessId,
+          origin: 'MANUAL',
+          customerName: 'Cliente',
+          customerWhatsapp: '573001112233',
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(1000000),
+          items: [
+            {
+              itemId: serviceItem.id,
+              quantity: 1,
+            },
+          ],
+        }),
+      },
+      reservation: {
+        create: (jest.fn() as any).mockResolvedValue({ id: 'order-1' }),
+      },
+    };
+    const prisma = {
+      item: {
+        findMany: (jest.fn() as any).mockResolvedValue([serviceItem]),
+      },
+      reservation: {
+        findFirst: (jest.fn() as any).mockResolvedValue(null),
+      },
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    } as any;
+    const itemOptionsService = {
+      resolveSelectionsForOrderLine: (jest.fn() as any).mockResolvedValue({
+        optionsTotal: new Prisma.Decimal(0),
+        snapshots: [],
+      }),
+    } as any;
+    const inventoryService = {
+      expandOrderItemsToIngredients: (jest.fn() as any).mockResolvedValue([]),
+      validateStockAvailability: (jest.fn() as any).mockResolvedValue({
+        ok: true,
+        requirements: [],
+      }),
+    } as any;
+
+    return {
+      service: new SalesService(
+        prisma,
+        {} as any,
+        inventoryService,
+        itemOptionsService,
+        {} as any,
+      ),
+      prisma,
+      tx,
+    };
+  }
+
+  it('creates an Order and mirror Reservation for a scheduled manual service sale', async () => {
+    const { service, prisma, tx } = createService();
+
+    const result = await service.create(businessId, {
+      origin: 'MANUAL',
+      type: 'SERVICIO',
+      status: 'PENDIENTE',
+      customerName: 'Cliente',
+      customerWhatsapp: '573001112233',
+      paymentMethod: 'CASH',
+      scheduledAt: '2026-06-30T10:00:00',
+      durationMinutes: 60,
+      items: [{ itemId: serviceItem.id, quantity: 1 }],
+    });
+
+    expect(result).toEqual(expect.objectContaining({ id: 'order-1' }));
+    expect(prisma.reservation.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        businessId,
+        itemId: serviceItem.id,
+        status: { not: 'CANCELLED' },
+      }),
+    });
+    expect(prisma.reservation.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.order.create.mock.invocationCallOrder[0],
+    );
+    expect(tx.reservation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        id: 'order-1',
+        businessId,
+        itemId: serviceItem.id,
+        customerName: 'Cliente',
+        customerWhatsapp: '573001112233',
+        startMinute: 600,
+        endMinute: 660,
+        status: 'PENDING',
+        origin: 'MANUAL',
+      }),
+    });
+  });
+});
+
 describe('SalesService personalized order lines', () => {
   const businessId = 'business-1';
   const item = {
@@ -298,6 +415,14 @@ describe('SalesService personalized order lines', () => {
   function createService(orderOverrides: Record<string, any> = {}) {
     const tx: any = {
       order: {
+        create: (jest.fn() as any).mockResolvedValue({
+          id: 'order-1',
+          origin: 'MANUAL',
+          customerName: 'Consumidor final',
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          items: [],
+        }),
         update: jest.fn(),
         findUniqueOrThrow: (jest.fn() as any).mockResolvedValue({
           id: 'order-1',
@@ -375,7 +500,7 @@ describe('SalesService personalized order lines', () => {
   }
 
   it('creates repeated personalized manual lines with backend snapshots', async () => {
-    const { service, prisma, itemOptionsService } = createService();
+    const { service, tx, itemOptionsService } = createService();
 
     await service.create(businessId, {
       type: 'PRODUCTO',
@@ -400,7 +525,7 @@ describe('SalesService personalized order lines', () => {
     });
 
     expect(itemOptionsService.resolveSelectionsForOrderLine).toHaveBeenCalledTimes(2);
-    expect(prisma.order.create).toHaveBeenCalledWith(
+    expect(tx.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           total: 34000,

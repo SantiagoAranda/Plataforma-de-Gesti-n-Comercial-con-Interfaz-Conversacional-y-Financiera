@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Check } from "lucide-react";
@@ -11,6 +11,7 @@ type Props = {
   dark?: boolean;
   flat?: boolean;
   dropdownPosition?: "top" | "bottom";
+  disabled?: boolean;
 };
 
 const COUNTRIES = [
@@ -30,6 +31,7 @@ export default function PhoneSelector({
   dark = false,
   flat = false,
   dropdownPosition = "bottom",
+  disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,7 @@ export default function PhoneSelector({
       <div className="relative" ref={containerRef}>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => setOpen(!open)}
           className={buttonClasses}
         >
@@ -107,6 +110,7 @@ export default function PhoneSelector({
 
       <input
         type="tel"
+        disabled={disabled}
         value={phoneNumber}
         onChange={(e) => onPhoneNumberChange(e.target.value.replace(/\D/g, ""))}
         placeholder="Ingrese número"

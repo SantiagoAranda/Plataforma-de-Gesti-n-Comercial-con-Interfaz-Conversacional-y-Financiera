@@ -628,6 +628,24 @@ export class SalesService {
 
     const isManual = (dto.origin ?? 'MANUAL') !== 'PUBLIC_STORE';
     const itemType = isManual ? null : this.ensureSingleItemType(itemsFromDb);
+    const manualScheduledServiceItem =
+      isManual &&
+      dto.items.length === 1 &&
+      itemsFromDb.length === 1 &&
+      itemsFromDb[0].type === 'SERVICE' &&
+      Boolean(dto.scheduledAt)
+        ? itemsFromDb[0]
+        : null;
+
+    if (manualScheduledServiceItem && dto.scheduledAt) {
+      await this.validateMirrorReservationAvailability({
+        businessId,
+        itemId: manualScheduledServiceItem.id,
+        scheduledAt: dto.scheduledAt,
+        durationMinutes:
+          manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+      });
+    }
 
     // BIFURCACIÓN SEGÚN TIPO
     if (!isManual && itemType === 'SERVICE') {
@@ -704,7 +722,8 @@ export class SalesService {
       { isManual },
     );
 
-    const order = await this.prisma.order.create({
+    const order = await this.prisma.$transaction(async (tx) => {
+      const createdOrder = await tx.order.create({
       data: {
         businessId,
         customerName: dto.origin === 'PUBLIC_STORE'
@@ -727,20 +746,39 @@ export class SalesService {
       },
     });
 
-    if (dto.buyerFiscalContext) {
-      await this.prisma.$transaction((tx) =>
-        this.persistOrderFiscalPreview(
+      if (manualScheduledServiceItem && dto.scheduledAt) {
+        const mirror = this.buildMirrorReservationData({
+          businessId,
+          orderId: createdOrder.id,
+          itemId: manualScheduledServiceItem.id,
+          customerName: createdOrder.customerName,
+          customerWhatsapp: createdOrder.customerWhatsapp,
+          paymentMethod: createdOrder.paymentMethod as any,
+          scheduledAt: dto.scheduledAt,
+          durationMinutes:
+            manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+        });
+
+        await tx.reservation.create({
+          data: mirror.create,
+        });
+      }
+
+      if (dto.buyerFiscalContext) {
+        await this.persistOrderFiscalPreview(
           tx,
           businessId,
-          order.id,
+          createdOrder.id,
           dto.buyerFiscalContext,
-          order.items.map((item) => ({
+          createdOrder.items.map((item) => ({
             itemId: item.itemId,
             quantity: Number(item.quantity),
           })),
-        ),
-      );
-    }
+        );
+      }
+
+      return createdOrder;
+    });
 
     console.log(`[SalesService] Created order origin: ${order.origin}`);
 
@@ -787,6 +825,17 @@ export class SalesService {
     ]);
 
     const conversions = await this.prisma.unitConversion.findMany();
+    const orderIds = new Set(orders.map((order) => order.id));
+    const mirrorReservations = await this.findMirrorReservationsForOrders(
+      orders
+        .filter(
+          (order) =>
+            order.origin === 'MANUAL' &&
+            order.items.length === 1 &&
+            order.items[0]?.itemTypeSnapshot === 'SERVICE',
+        )
+        .map((order) => order.id),
+    );
 
     console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
     if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
@@ -830,6 +879,8 @@ export class SalesService {
           }
         : null;
 
+      const mirrorReservation = mirrorReservations.get(o.id);
+
       return {
       id: o.id,
       sourceType: 'ORDER',
@@ -842,6 +893,9 @@ export class SalesService {
       accountingPostedAt: o.accountingPostedAt,
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
+      scheduledAt: mirrorReservation
+        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
+        : undefined,
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
       fiscalSummary,
@@ -874,7 +928,9 @@ export class SalesService {
     };
     });
 
-    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => {
+    const mappedReservations: UnifiedSaleDto[] = reservations
+      .filter((r) => !orderIds.has(r.id))
+      .map((r) => {
       const item = (r as any).item;
       const price = Number(item?.price ?? 0);
 
@@ -946,6 +1002,90 @@ export class SalesService {
 
   private toScheduledAt(date: Date, startMinute: number) {
     return `${this.formatDateOnly(date)}T${this.formatTime(startMinute)}:00`;
+  }
+
+  private getMirrorReservationIdForManualServiceOrder(orderId: string) {
+    // Manual service sales are persisted as Order for fiscal/accounting flows.
+    // Their appointment slot is mirrored in Reservation using the same id so
+    // existing availability queries can block the slot without a schema change.
+    return orderId;
+  }
+
+  private async findMirrorReservationsForOrders(orderIds: string[]) {
+    if (orderIds.length === 0) return new Map<string, any>();
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        id: { in: orderIds },
+        status: { not: 'CANCELLED' },
+      },
+    });
+    return new Map(reservations.map((reservation) => [reservation.id, reservation]));
+  }
+
+  private buildMirrorReservationData(input: {
+    businessId: string;
+    orderId: string;
+    itemId: string;
+    customerName?: string | null;
+    customerWhatsapp?: string | null;
+    paymentMethod?: 'CASH' | 'BANK_TRANSFER' | null;
+    scheduledAt: string;
+    durationMinutes: number;
+  }) {
+    const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
+    const endMinute = startMinute + input.durationMinutes;
+    const reservationId = this.getMirrorReservationIdForManualServiceOrder(
+      input.orderId,
+    );
+
+    return {
+      reservationId,
+      dateOnly,
+      startMinute,
+      endMinute,
+      create: {
+        id: reservationId,
+        businessId: input.businessId,
+        itemId: input.itemId,
+        customerName: input.customerName?.trim() || null,
+        customerWhatsapp: input.customerWhatsapp?.trim() || null,
+        date: dateOnly,
+        startMinute,
+        endMinute,
+        status: 'PENDING' as const,
+        origin: 'MANUAL' as const,
+        paymentMethod: input.paymentMethod ?? 'CASH',
+      },
+      update: {
+        itemId: input.itemId,
+        customerName: input.customerName?.trim() || null,
+        customerWhatsapp: input.customerWhatsapp?.trim() || null,
+        paymentMethod: input.paymentMethod ?? 'CASH',
+        date: dateOnly,
+        startMinute,
+        endMinute,
+        status: 'PENDING' as const,
+        origin: 'MANUAL' as const,
+      },
+    };
+  }
+
+  private async validateMirrorReservationAvailability(input: {
+    businessId: string;
+    itemId: string;
+    scheduledAt: string;
+    durationMinutes: number;
+    excludeReservationId?: string;
+  }) {
+    const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
+    await this.assertReservationSlotAvailable(
+      input.businessId,
+      input.itemId,
+      dateOnly,
+      startMinute,
+      startMinute + input.durationMinutes,
+      input.excludeReservationId,
+    );
   }
 
   private mapOrderStatus(status: string): UnifiedStatus {
@@ -1072,6 +1212,21 @@ export class SalesService {
         });
 
         await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
+      }
+
+      if (
+        order.origin === 'MANUAL' &&
+        order.items.length === 1 &&
+        order.items[0]?.itemTypeSnapshot === 'SERVICE'
+      ) {
+        await tx.reservation.updateMany({
+          where: {
+            id: this.getMirrorReservationIdForManualServiceOrder(id),
+            businessId,
+            status: { not: 'CANCELLED' },
+          },
+          data: { status: 'CONFIRMED' },
+        });
       }
 
       const finalizedOrder = {
@@ -1219,22 +1374,41 @@ export class SalesService {
       include: { item: true },
     });
 
-    if (!reservation) {
+    const legacyOrder = reservation
+      ? null
+      : await this.prisma.order.findFirst({
+          where: { id: reservationId, businessId, origin: 'MANUAL' },
+          include: {
+            items: {
+              include: { item: true },
+            },
+          },
+        });
+    const legacyServiceLine =
+      legacyOrder?.items.length === 1 &&
+      legacyOrder.items[0]?.itemTypeSnapshot === 'SERVICE'
+        ? legacyOrder.items[0]
+        : null;
+
+    if (!reservation && !legacyServiceLine) {
       throw new NotFoundException('Reservation not found');
     }
 
+    const itemId = reservation?.itemId ?? legacyServiceLine!.itemId;
     const duration =
-      reservation.item.durationMinutes ??
-      Math.max(1, reservation.endMinute - reservation.startMinute);
+      reservation?.item.durationMinutes ??
+      legacyServiceLine?.durationMinutesSnapshot ??
+      Math.max(1, (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0));
+    const excludeReservationId = reservation?.id ?? reservationId;
 
     if (query.date) {
       const dateOnly = this.parseDateOnly(query.date);
       return this.getReservationAvailabilitySlots(
         businessId,
-        reservation.itemId,
+        itemId,
         dateOnly,
         duration,
-        reservation.id,
+        excludeReservationId,
       );
     }
 
@@ -1263,13 +1437,17 @@ export class SalesService {
     const availableDates: string[] = [];
 
     while (cursor <= lastDay) {
-      if (cursor >= today || this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date)) {
+      if (
+        cursor >= today ||
+        (reservation &&
+          this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date))
+      ) {
         const slots = await this.getReservationAvailabilitySlots(
           businessId,
-          reservation.itemId,
+          itemId,
           new Date(cursor),
           duration,
-          reservation.id,
+          excludeReservationId,
         );
 
         if (slots.length > 0) {
@@ -1545,6 +1723,14 @@ export class SalesService {
     if (!order) throw new NotFoundException('Order not found');
 
     const conversions = await this.prisma.unitConversion.findMany();
+    const mirrorReservations = await this.findMirrorReservationsForOrders(
+      order.origin === 'MANUAL' &&
+        order.items.length === 1 &&
+        order.items[0]?.itemTypeSnapshot === 'SERVICE'
+        ? [order.id]
+        : [],
+    );
+    const mirrorReservation = mirrorReservations.get(order.id);
 
     const fiscalSummary = order.fiscalContext
       ? {
@@ -1585,6 +1771,9 @@ export class SalesService {
 
     return {
       ...order,
+      scheduledAt: mirrorReservation
+        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
+        : undefined,
       fiscalSummary,
       fiscalContext: this.mapFiscalContextForSales(order),
       taxLines: order.taxLines ? order.taxLines.map((line) => ({
@@ -1636,16 +1825,28 @@ export class SalesService {
       throw new BadRequestException('Completed orders cannot be cancelled');
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
-      include: {
-        items: {
-          include: {
-            item: true,
+    return this.prisma.$transaction(async (tx) => {
+      const cancelledOrder = await tx.order.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
           },
         },
-      },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: this.getMirrorReservationIdForManualServiceOrder(id),
+          businessId,
+        },
+        data: { status: 'CANCELLED' },
+      });
+
+      return cancelledOrder;
     });
   }
 
@@ -1741,16 +1942,28 @@ export class SalesService {
       );
     }
 
-    return this.prisma.order.update({
-      where: { id },
-      data: { archived: true },
-      include: {
-        items: {
-          include: {
-            item: true,
+    return this.prisma.$transaction(async (tx) => {
+      const archivedOrder = await tx.order.update({
+        where: { id },
+        data: { archived: true },
+        include: {
+          items: {
+            include: {
+              item: true,
+            },
           },
         },
-      },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: this.getMirrorReservationIdForManualServiceOrder(id),
+          businessId,
+        },
+        data: { status: 'CANCELLED' },
+      });
+
+      return archivedOrder;
     });
   }
 
@@ -1769,6 +1982,27 @@ export class SalesService {
     const resolvedItems = dto.items
       ? await this.resolveOrderLines(businessId, dto.items)
       : null;
+    const finalLines = resolvedItems?.lines ?? order.items;
+    const finalSingleManualService =
+      order.origin === 'MANUAL' &&
+      finalLines.length === 1 &&
+      finalLines[0]?.itemTypeSnapshot === 'SERVICE';
+    const finalServiceItemId = finalSingleManualService
+      ? finalLines[0].itemId
+      : null;
+    const finalServiceDuration = finalSingleManualService
+      ? Number(finalLines[0].durationMinutesSnapshot ?? 60)
+      : 60;
+
+    if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
+      await this.validateMirrorReservationAvailability({
+        businessId,
+        itemId: finalServiceItemId,
+        scheduledAt: dto.scheduledAt,
+        durationMinutes: finalServiceDuration,
+        excludeReservationId: this.getMirrorReservationIdForManualServiceOrder(orderId),
+      });
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await tx.order.update({
@@ -1801,6 +2035,39 @@ export class SalesService {
         await tx.order.update({
           where: { id: orderId },
           data: { total: resolvedItems.total },
+        });
+      }
+
+      if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
+        const mirror = this.buildMirrorReservationData({
+          businessId,
+          orderId,
+          itemId: finalServiceItemId,
+          customerName:
+            dto.customerName !== undefined
+              ? dto.customerName
+              : order.customerName,
+          customerWhatsapp:
+            dto.customerWhatsapp !== undefined
+              ? dto.customerWhatsapp
+              : order.customerWhatsapp,
+          paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
+          scheduledAt: dto.scheduledAt,
+          durationMinutes: finalServiceDuration,
+        });
+
+        await tx.reservation.upsert({
+          where: { id: mirror.reservationId },
+          create: mirror.create,
+          update: mirror.update,
+        });
+      } else if (order.origin === 'MANUAL' && resolvedItems && !finalSingleManualService) {
+        await tx.reservation.updateMany({
+          where: {
+            id: this.getMirrorReservationIdForManualServiceOrder(orderId),
+            businessId,
+          },
+          data: { status: 'CANCELLED' },
         });
       }
 
