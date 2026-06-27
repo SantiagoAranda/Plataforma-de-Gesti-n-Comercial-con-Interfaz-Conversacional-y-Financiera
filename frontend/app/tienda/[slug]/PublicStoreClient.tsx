@@ -12,6 +12,7 @@ import {
   Search,
   ShoppingBag,
   X,
+  MapPin,
 } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
@@ -142,6 +143,10 @@ type StoreFooterSettings = {
   email?: string | null;
   phones?: unknown;
   socials?: unknown;
+  showLogo?: boolean | null;
+  showLocationButton?: boolean | null;
+  locationLabel?: string | null;
+  googleMapsUrl?: string | null;
 } | null;
 
 function normalizeFooterPhones(value: unknown): FooterPhone[] {
@@ -165,10 +170,20 @@ function normalizeFooterSocials(value: unknown): FooterSocial[] {
     const type = typeof record.type === "string" ? record.type.trim().toLowerCase() : "";
     const label = typeof record.label === "string" ? record.label.trim() : "";
     const socialValue = typeof record.value === "string" ? record.value.trim() : "";
+    if (type === "footer_logo") return acc;
     if (!type || !socialValue) return acc;
     acc.push({ type, label, value: socialValue });
     return acc;
   }, []);
+}
+
+function hasFooterLogoFlag(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((social) => {
+    if (!social || typeof social !== "object") return false;
+    const record = social as Record<string, unknown>;
+    return record.type === "footer_logo" && record.value === "true";
+  });
 }
 
 function canonicalizeOptionSelections(selections: OptionSelection[]) {
@@ -402,13 +417,17 @@ export default function PublicStoreClient() {
       backgroundColor: '#064e3b',
       titulo: businessName,
       frasePrincipal: description || undefined,
+      logoUrl: businessLogoUrl,
+      showLogo:
+        Boolean(footerSettings?.showLogo) ||
+        hasFooterLogoFlag(footerSettings?.socials),
       contacto: {
         email: email || undefined,
         telefonos: normalizeFooterPhones(footerSettings?.phones),
         redesSociales: normalizeFooterSocials(footerSettings?.socials),
       },
     };
-  }, [businessName, footerSettings]);
+  }, [businessLogoUrl, businessName, footerSettings]);
 
   const resetReservationUi = () => {
     setSelectedService(null);
@@ -739,6 +758,17 @@ export default function PublicStoreClient() {
           </div>
 
           <div className="flex items-center gap-2">
+            {footerSettings?.showLocationButton && footerSettings?.googleMapsUrl && (
+              <a
+                href={footerSettings.googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 text-[11px] sm:text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+              >
+                <MapPin className="h-3.5 w-3.5 text-emerald-600" />
+                <span>{footerSettings.locationLabel || "Cómo llegar"}</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setShowCartModal(true)}

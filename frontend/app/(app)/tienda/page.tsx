@@ -14,6 +14,7 @@ import {
   Share2,
   Truck,
   X,
+  MapPin,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/src/components/layout/BottomNav";
@@ -52,6 +53,9 @@ export default function MiTiendaPage() {
   const router = useRouter();
 
   const [items, setItems] = useState<Item[]>([]);
+  const [showLocationButton, setShowLocationButton] = useState(false);
+  const [locationLabel, setLocationLabel] = useState("Cómo llegar");
+  const [googleMapsUrl, setGoogleMapsUrl] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
@@ -211,6 +215,22 @@ export default function MiTiendaPage() {
             price: Number(item.price),
           }))
         );
+
+        const resSettings = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/businesses/store-footer-settings`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (resSettings.ok) {
+          const settings = await resSettings.json();
+          setShowLocationButton(Boolean(settings?.showLocationButton));
+          setLocationLabel(settings?.locationLabel || "Cómo llegar");
+          setGoogleMapsUrl(settings?.googleMapsUrl || "");
+        }
       } catch {
         notify({
           type: "error",
@@ -284,6 +304,17 @@ export default function MiTiendaPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {showLocationButton && googleMapsUrl && (
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 text-[11px] sm:text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+              >
+                <MapPin className="h-3.5 w-3.5 text-emerald-600" />
+                <span>{locationLabel || "Cómo llegar"}</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={handleShareStore}

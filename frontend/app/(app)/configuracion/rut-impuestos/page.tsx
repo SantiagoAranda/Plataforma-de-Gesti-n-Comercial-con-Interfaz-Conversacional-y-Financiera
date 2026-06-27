@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Landmark, MapPin, Store } from "lucide-react";
+import { ArrowLeft, Check, Landmark } from "lucide-react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
 import {
   getTaxProfile,
@@ -37,16 +37,16 @@ const RESPONSIBILITY_LABELS: Record<string, string> = {
   "52": "Facturador Electronico",
 };
 
+const inputClassName =
+  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:ring-4 focus:ring-blue-50 disabled:bg-slate-50 disabled:text-slate-400";
+
 function DianBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-4 min-w-5 items-center justify-center rounded bg-slate-950 px-1.5 text-[9px] font-bold leading-none text-white">
+    <span className="inline-flex min-w-6 items-center justify-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
       {children}
     </span>
   );
 }
-
-const inputClassName =
-  "h-12 w-full rounded-2xl border border-transparent bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-200 focus:bg-white focus:ring-4 focus:ring-blue-50";
 
 function decimalToPerThousand(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -88,9 +88,6 @@ export default function RutImpuestosPage() {
 
   const [icaRates, setIcaRates] = useState<IcaRate[]>([]);
   const [icaRateId, setIcaRateId] = useState<string | null>(null);
-  const [icaMunicipalityCode, setIcaMunicipalityCode] = useState("");
-  const [icaCiiuCode, setIcaCiiuCode] = useState("");
-  const [icaActivityName, setIcaActivityName] = useState("");
   const [icaRatePerMil, setIcaRatePerMil] = useState(SIMULATOR_RETEICA_PER_THOUSAND);
   const [useSameReteIcaRate, setUseSameReteIcaRate] = useState(true);
   const [reteIcaRatePerMil, setReteIcaRatePerMil] = useState(SIMULATOR_RETEICA_PER_THOUSAND);
@@ -123,10 +120,6 @@ export default function RutImpuestosPage() {
           setMainCiiuDescription(profile.mainCiiuDescription || "");
           setSelectedRespCodes(profile.responsibilities.map((r) => r.responsibility.code));
 
-          setIcaMunicipalityCode(profile.municipalityCode);
-          setIcaCiiuCode(profile.mainCiiuCode || "");
-          setIcaActivityName(profile.mainCiiuDescription || "");
-
           const configuredRate = rates.find(
             (rate) =>
               rate.municipalityCode === profile.municipalityCode &&
@@ -141,7 +134,6 @@ export default function RutImpuestosPage() {
                 decimalToPerThousand(configuredRate.reteIcaRate),
             );
             setMinBaseUvt(String(configuredRate.minBaseUvt ?? "0"));
-            setIcaActivityName(configuredRate.activityName || profile.mainCiiuDescription || "");
           }
         }
       } catch (err: any) {
@@ -187,12 +179,11 @@ export default function RutImpuestosPage() {
     RUT_VISIBLE_RESPONSIBILITY_CODES.includes(responsibility.code),
   );
 
+
+
   const handleMunicipalityChange = (code: string) => {
     setMunicipalityCode(code);
     setDepartmentCode(code ? getDepartmentCodeFromMunicipality(code) : "");
-    if (!icaMunicipalityCode || icaMunicipalityCode === municipalityCode) {
-      setIcaMunicipalityCode(code);
-    }
   };
 
   const handleRespChange = (code: string, checked: boolean) => {
@@ -214,16 +205,12 @@ export default function RutImpuestosPage() {
   const handleSelectCiiu = (activity: CiiuActivity) => {
     setMainCiiuCode(activity.code);
     setMainCiiuDescription(activity.description);
-    if (!icaCiiuCode || icaCiiuCode === mainCiiuCode) setIcaCiiuCode(activity.code);
-    if (!icaActivityName || icaActivityName === mainCiiuDescription) {
-      setIcaActivityName(activity.description);
-    }
     setShowCiiuDropdown(false);
     setCiiuSearch("");
   };
 
   const saveIcaRate = async () => {
-    if (!icaMunicipalityCode || !icaCiiuCode) return;
+    if (!municipalityCode || !mainCiiuCode) return;
 
     const icaRatePerThousand = parsePerThousand(icaRatePerMil);
     const reteIcaRatePerThousand = parsePerThousand(reteIcaRatePerMil);
@@ -241,9 +228,9 @@ export default function RutImpuestosPage() {
     }
 
     const payload = {
-      municipalityCode: icaMunicipalityCode,
-      ciiuCode: icaCiiuCode.trim(),
-      activityName: icaActivityName.trim() || null,
+      municipalityCode,
+      ciiuCode: mainCiiuCode.trim(),
+      activityName: mainCiiuDescription.trim() || null,
       icaRatePerThousand,
       reteIcaRatePerThousand,
       minBaseUvt: parsedMinBaseUvt,
@@ -307,42 +294,76 @@ export default function RutImpuestosPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f4f7fb]">
+      <div className="flex min-h-screen items-center justify-center bg-white">
         <p className="text-sm text-slate-500">Cargando configuracion fiscal...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] pb-10 text-slate-950">
-      <header className="mx-auto flex max-w-lg items-center px-4 pb-5 pt-5">
+    <div className="min-h-screen bg-white pb-10 text-slate-950">
+      <header className="mx-auto flex max-w-3xl items-center px-4 pb-5 pt-5">
         <button
           type="button"
           onClick={() => router.push("/configuracion")}
           aria-label="Volver a configuracion"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-700 transition hover:bg-white"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-700 transition hover:bg-slate-100"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1 pr-10 text-center">
-          <h1 className="text-xl font-extrabold tracking-tight">RUT Digital</h1>
+          <h1 className="text-xl font-extrabold tracking-tight">RUT e Impuestos</h1>
           <p className="mt-0.5 text-xs font-medium text-slate-400">
-            Datos fiscales y configuracion ICA/ReteICA
+            Datos fiscales, responsabilidades e ICA/ReteICA
           </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-lg px-4">
-        <form onSubmit={handleSave} className="space-y-4">
-          <section className="space-y-5 rounded-[24px] border border-slate-100 bg-white p-6 shadow-[0_10px_35px_rgba(15,23,42,0.035)]">
-            <h2 className="text-xs font-bold">Datos basicos</h2>
-            <p className="text-xs text-slate-500">
-              Estos datos se usan para calcular impuestos y completar informacion del negocio.
-            </p>
+      <main className="mx-auto max-w-3xl px-4">
+        <form onSubmit={handleSave} className="space-y-5">
+          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div>
+              <h2 className="text-sm font-bold">Datos basicos del RUT</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Estos datos se usan para calcular impuestos y completar informacion del negocio.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold text-slate-600">Tipo persona</span>
+                <select
+                  value={personType}
+                  onChange={(event) => setPersonType(event.target.value as "NATURAL" | "JURIDICA")}
+                  className={inputClassName}
+                >
+                  <option value="NATURAL">Persona Natural</option>
+                  <option value="JURIDICA">Persona Juridica</option>
+                </select>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold text-slate-600">Tipo documento</span>
+                <select
+                  value={documentType}
+                  onChange={(event) => setDocumentType(event.target.value as any)}
+                  className={inputClassName}
+                >
+                  <option value="NIT">31 - NIT</option>
+                  <option value="CC">13 - Cedula de Ciudadania</option>
+                  <option value="CE">22 - Cedula de Extranjeria</option>
+                  <option value="PASAPORTE">41 - Pasaporte</option>
+                  <option value="TI">12 - Tarjeta de Identidad</option>
+                </select>
+              </label>
+            </div>
 
             <div className="grid grid-cols-[minmax(0,1fr)_72px] gap-3">
               <label className="space-y-2">
-                <DianBadge>05</DianBadge>
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>05</DianBadge>
+                  NIT / documento fiscal
+                </span>
                 <input
                   type="text"
                   required
@@ -354,91 +375,66 @@ export default function RutImpuestosPage() {
               </label>
 
               <label className="space-y-2">
-                <DianBadge>06</DianBadge>
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>06</DianBadge>
+                  DV
+                </span>
                 <input
                   type="text"
                   maxLength={1}
                   value={dv}
                   onChange={(event) => setDv(event.target.value)}
                   placeholder="DV"
-                  className={`${inputClassName} px-3 text-center font-semibold`}
+                  className={`${inputClassName} px-2 text-center font-semibold`}
                 />
               </label>
             </div>
 
-            <label className="block">
-              <span className="sr-only">Tipo de persona</span>
-              <select
-                value={personType}
-                onChange={(event) => setPersonType(event.target.value as "NATURAL" | "JURIDICA")}
-                className={inputClassName}
-              >
-                <option value="NATURAL">Persona Natural</option>
-                <option value="JURIDICA">Persona Juridica</option>
-              </select>
-            </label>
-
-            <label className="block space-y-2">
-              <DianBadge>24</DianBadge>
-              <select
-                value={documentType}
-                onChange={(event) => setDocumentType(event.target.value as any)}
-                className={inputClassName}
-              >
-                <option value="NIT">31 - NIT</option>
-                <option value="CC">13 - Cedula de Ciudadania</option>
-                <option value="CE">22 - Cedula de Extranjeria</option>
-                <option value="PASAPORTE">41 - Pasaporte</option>
-                <option value="TI">12 - Tarjeta de Identidad</option>
-              </select>
-            </label>
-
-            <label className="block space-y-2">
-              <DianBadge>35</DianBadge>
-              <input
-                type="text"
-                required
-                value={tradeName}
-                onChange={(event) => setTradeName(event.target.value)}
-                placeholder="Nombre / razon social"
-                className={inputClassName}
-              />
-            </label>
-          </section>
-
-          <section className="space-y-5 rounded-[24px] border border-slate-100 bg-white p-6 shadow-[0_10px_35px_rgba(15,23,42,0.035)]">
-            <h2 className="flex items-center gap-2 text-xs font-bold">
-              <MapPin className="h-4 w-4 text-slate-600" />
-              Actividad y municipio
-            </h2>
-
-            <label className="block space-y-2">
-              <DianBadge>42</DianBadge>
-              <input
-                type="text"
-                required
-                value={address}
-                onChange={(event) => setAddress(event.target.value)}
-                placeholder="Direccion"
-                className={inputClassName}
-              />
-            </label>
-
-            <div className="grid grid-cols-[92px_minmax(0,1fr)] gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="block space-y-2">
-                <DianBadge>40</DianBadge>
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>35</DianBadge>
+                  Razon social / nombre
+                </span>
                 <input
                   type="text"
                   required
-                  value={departmentCode}
-                  onChange={(event) => setDepartmentCode(event.target.value)}
-                  placeholder="Depto"
+                  value={tradeName}
+                  onChange={(event) => setTradeName(event.target.value)}
+                  placeholder="Nombre / razon social"
                   className={inputClassName}
                 />
               </label>
 
               <label className="block space-y-2">
-                <DianBadge>41</DianBadge>
+                <span className="text-xs font-semibold text-slate-600">Correo RUT</span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="Correo"
+                  className={inputClassName}
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold text-slate-600">Telefono / WhatsApp</span>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  placeholder="Telefono"
+                  className={inputClassName}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>41</DianBadge>
+                  Municipio fiscal
+                </span>
                 <select
                   required
                   value={municipalityCode}
@@ -455,10 +451,42 @@ export default function RutImpuestosPage() {
               </label>
             </div>
 
-            <div className="relative space-y-3">
-              <h3 className="flex items-center gap-2 text-xs font-bold">
+            <div className="grid gap-3 sm:grid-cols-[92px_minmax(0,1fr)]">
+              <label className="block space-y-2">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>40</DianBadge>
+                  Depto
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={departmentCode}
+                  onChange={(event) => setDepartmentCode(event.target.value)}
+                  placeholder="Depto"
+                  className={inputClassName}
+                />
+              </label>
+
+              <label className="block space-y-2">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <DianBadge>42</DianBadge>
+                  Direccion
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value)}
+                  placeholder="Direccion"
+                  className={inputClassName}
+                />
+              </label>
+            </div>
+
+            <div className="relative space-y-2">
+              <h3 className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 <DianBadge>46</DianBadge>
-                Actividad economica principal
+                Actividad economica / CIIU
               </h3>
               <input
                 type="text"
@@ -491,87 +519,78 @@ export default function RutImpuestosPage() {
                 </div>
               )}
             </div>
-          </section>
 
-          <section className="space-y-5 rounded-[24px] border border-slate-100 bg-white p-6 shadow-[0_10px_35px_rgba(15,23,42,0.035)]">
-            <h2 className="flex items-center gap-2 text-xs font-bold">
-              <DianBadge>53</DianBadge>
-              Responsabilidades tributarias
-            </h2>
             <div className="space-y-2">
-              {visibleResponsibilities.map((responsibility) => {
-                const selected = selectedRespCodes.includes(responsibility.code);
+              <h3 className="text-xs font-bold text-slate-800">Responsabilidades</h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {visibleResponsibilities.map((responsibility) => {
+                  const selected = selectedRespCodes.includes(responsibility.code);
 
-                return (
-                  <label
-                    key={responsibility.id}
-                    className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
-                      selected
-                        ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                        : "border-slate-100 bg-slate-50 text-slate-800 hover:border-blue-200"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={(event) => handleRespChange(responsibility.code, event.target.checked)}
-                      className="sr-only"
-                    />
-                    <span
-                      className={`inline-flex min-w-7 items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                        selected ? "bg-blue-400/70 text-white" : "bg-white text-slate-600"
+                  return (
+                    <label
+                      key={responsibility.id}
+                      className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
+                        selected
+                          ? "border-blue-600 bg-blue-600 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-800 hover:border-blue-200"
                       }`}
                     >
-                      {responsibility.code}
-                    </span>
-                    <span className="min-w-0 flex-1 text-[11px] font-semibold">
-                      {RESPONSIBILITY_LABELS[responsibility.code] || responsibility.name}
-                    </span>
-                    {selected && <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />}
-                  </label>
-                );
-              })}
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(event) => handleRespChange(responsibility.code, event.target.checked)}
+                        className="sr-only"
+                      />
+                      <span
+                        className={`inline-flex min-w-7 items-center justify-center rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                          selected ? "bg-blue-400/70 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {responsibility.code}
+                      </span>
+                      <span className="min-w-0 flex-1 text-[11px] font-semibold">
+                        {RESPONSIBILITY_LABELS[responsibility.code] || responsibility.name}
+                      </span>
+                      {selected && <Check className="h-3.5 w-3.5 shrink-0" strokeWidth={2.5} />}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </section>
 
-          <section className="space-y-5 rounded-[24px] border border-slate-100 bg-white p-6 shadow-[0_10px_35px_rgba(15,23,42,0.035)]">
-            <h2 className="flex items-center gap-2 text-xs font-bold">
-              <Landmark className="h-4 w-4 text-slate-600" />
-              ICA / ReteICA
-            </h2>
-            <p className="text-xs text-slate-500">
-              ICA/ReteICA depende del municipio y actividad economica. Verifica estos datos con tu contador si corresponde.
-            </p>
+          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold">
+                <Landmark className="h-4 w-4 text-slate-600" />
+                ICA / ReteICA
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                ICA/ReteICA depende del municipio y actividad economica.
+              </p>
+            </div>
 
-            <label className="block space-y-2">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Municipio ICA</span>
-              <select
-                value={icaMunicipalityCode}
-                onChange={(event) => setIcaMunicipalityCode(event.target.value)}
-                className={inputClassName}
-              >
-                <option value="">Usar municipio fiscal</option>
-                {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
-                  <option key={municipality.code} value={municipality.code}>
-                    {municipality.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-600">
+              <p>
+                <span className="font-semibold text-slate-800">Municipio fiscal usado:</span>{" "}
+                {selectedMunicipalityName || "No disponible"}
+                {municipalityCode ? ` (${municipalityCode})` : ""} - tomado de Datos basicos.
+              </p>
+              <p>
+                <span className="font-semibold text-slate-800">Actividad usada:</span>{" "}
+                {mainCiiuCode
+                  ? `CIIU ${mainCiiuCode}${mainCiiuDescription ? ` - ${mainCiiuDescription}` : ""}`
+                  : "No disponible"}{" "}
+                - tomada de Datos basicos.
+              </p>
+              <p className="text-slate-400">
+                Para cambiar municipio o actividad, edita Datos basicos del RUT.
+              </p>
+            </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <label className="block space-y-2">
-                <span className="text-[11px] font-bold uppercase text-slate-400">CIIU ICA</span>
-                <input
-                  type="text"
-                  value={icaCiiuCode}
-                  onChange={(event) => setIcaCiiuCode(event.target.value)}
-                  placeholder={mainCiiuCode || "CIIU"}
-                  className={inputClassName}
-                />
-              </label>
-              <label className="block space-y-2">
-                <span className="text-[11px] font-bold uppercase text-slate-400">Tarifa ICA</span>
+                <span className="text-xs font-semibold text-slate-600">Tarifa ICA</span>
                 <div className="relative">
                   <input
                     type="text"
@@ -581,24 +600,30 @@ export default function RutImpuestosPage() {
                     className={`${inputClassName} pr-9`}
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">
-                    ‰
+                    â€°
+                  </span>
+                </div>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold text-slate-600">Tarifa ReteICA</span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={reteIcaRatePerMil}
+                    disabled={useSameReteIcaRate}
+                    onChange={(event) => setReteIcaRatePerMil(event.target.value)}
+                    className={`${inputClassName} pr-9 disabled:text-slate-400`}
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">
+                    â€°
                   </span>
                 </div>
               </label>
             </div>
 
-            <label className="block space-y-2">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Actividad ICA</span>
-              <input
-                type="text"
-                value={icaActivityName}
-                onChange={(event) => setIcaActivityName(event.target.value)}
-                placeholder={mainCiiuDescription || "Descripcion de actividad"}
-                className={inputClassName}
-              />
-            </label>
-
-            <label className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-700">
+            <label className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-xs font-semibold text-slate-700">
               <input
                 type="checkbox"
                 checked={useSameReteIcaRate}
@@ -608,29 +633,12 @@ export default function RutImpuestosPage() {
               Usar misma tarifa ICA para ReteICA
             </label>
 
-            <label className="block space-y-2">
-              <span className="text-[11px] font-bold uppercase text-slate-400">Tarifa ReteICA</span>
-              <div className="relative">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={reteIcaRatePerMil}
-                  disabled={useSameReteIcaRate}
-                  onChange={(event) => setReteIcaRatePerMil(event.target.value)}
-                  className={`${inputClassName} pr-9 disabled:text-slate-400`}
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">
-                  ‰
-                </span>
-              </div>
-            </label>
-
-            <details className="rounded-2xl bg-slate-50 px-4 py-3">
+            <details className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
               <summary className="cursor-pointer text-xs font-bold text-slate-600">
                 Opciones avanzadas
               </summary>
               <label className="mt-3 block space-y-2">
-                <span className="text-[11px] font-bold uppercase text-slate-400">
+                <span className="text-xs font-semibold text-slate-600">
                   Base minima ReteICA UVT
                 </span>
                 <input
@@ -645,42 +653,13 @@ export default function RutImpuestosPage() {
             </details>
           </section>
 
-          <section className="space-y-4 rounded-[24px] border border-slate-100 bg-white p-6 shadow-[0_10px_35px_rgba(15,23,42,0.035)]">
-            <h2 className="flex items-center gap-2 text-xs font-bold">
-              <Store className="h-4 w-4 text-slate-600" />
-              Datos reutilizables para tienda
-            </h2>
-            <p className="text-xs text-slate-500">
-              Puedes usar los datos del RUT o escribir un valor distinto en la configuracion de tienda.
-            </p>
-            <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-600">
-              <p className="font-semibold text-slate-800">{tradeName || "Razon social pendiente"}</p>
-              <p>{email || "Correo RUT pendiente"} · {phone || "Telefono RUT pendiente"}</p>
-              <p>{address || "Direccion RUT pendiente"}</p>
-              {address && (
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex font-semibold text-blue-600"
-                >
-                  Abrir en Maps
-                </a>
-              )}
-            </div>
-            {municipalityCode && (
-              <p className="text-[11px] text-slate-400">
-                Municipio fiscal: {selectedMunicipalityName} ({municipalityCode})
-              </p>
-            )}
-          </section>
 
           <button
             type="submit"
             disabled={saving}
-            className="h-12 w-full rounded-full bg-blue-600 px-6 text-sm font-bold text-white shadow-[0_10px_24px_rgba(37,99,235,0.25)] transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-12 w-full rounded-full bg-blue-600 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Guardando..." : "Guardar RUT e ICA"}
+            {saving ? "Guardando..." : "Guardar cambios"}
           </button>
         </form>
       </main>

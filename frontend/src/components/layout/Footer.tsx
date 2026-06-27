@@ -28,6 +28,8 @@ export interface FooterConfig {
   backgroundColor?: string;
   titulo?: string;
   frasePrincipal?: string;
+  logoUrl?: string | null;
+  showLogo?: boolean;
   contacto: {
     email?: string;
     telefonos: FooterPhone[];
@@ -44,6 +46,8 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
     backgroundColor = '#064e3b',
     titulo,
     frasePrincipal,
+    logoUrl,
+    showLogo,
     contacto
   } = config;
 
@@ -69,6 +73,13 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
           
           {/* Columna Izquierda: Branding */}
           <div className="flex flex-col items-center md:items-start text-center md:text-left">
+            {showLogo && logoUrl && (
+              <img
+                src={logoUrl}
+                alt={titulo || 'Logo'}
+                className="mb-3 h-12 w-12 rounded-full object-cover md:h-14 md:w-14"
+              />
+            )}
             {titulo && (
               <div className="text-sm font-medium tracking-tight leading-none text-[#064e3b]">
                 {titulo}

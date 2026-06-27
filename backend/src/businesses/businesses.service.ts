@@ -30,6 +30,10 @@ type StoreFooterSettingsPayload = {
   email?: string | null;
   phones?: FooterPhone[];
   socials?: FooterSocial[];
+  showLogo?: boolean;
+  showLocationButton?: boolean;
+  locationLabel?: string | null;
+  googleMapsUrl?: string | null;
 };
 
 type PayrollAccountingMappingTemplateRow = {
@@ -57,6 +61,7 @@ const ALLOWED_SOCIAL_TYPES = new Set([
   'whatsapp',
   'website',
 ]);
+const FOOTER_LOGO_META_TYPE = 'footer_logo';
 
 function cleanOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -143,7 +148,131 @@ function validateStoreFooterSettingsPayload(
     email: cleanOptionalString(record.email),
     phones: validatePhones(record.phones),
     socials: validateSocials(record.socials),
+    showLogo: record.showLogo === true,
+    showLocationButton: record.showLocationButton === true,
+    locationLabel: cleanOptionalString(record.locationLabel),
+    googleMapsUrl: cleanOptionalString(record.googleMapsUrl),
   };
+}
+
+function extractFooterLogoFlag(socials: unknown) {
+  return Array.isArray(socials)
+    ? socials.some((social) => {
+        if (!social || typeof social !== 'object') return false;
+        const record = social as Record<string, unknown>;
+        return (
+          record.type === FOOTER_LOGO_META_TYPE && record.value === 'true'
+        );
+      })
+    : false;
+}
+
+function removeFooterLogoMeta(socials: unknown) {
+  return Array.isArray(socials)
+    ? socials.filter((social) => {
+        if (!social || typeof social !== 'object') return true;
+        return (social as Record<string, unknown>).type !== FOOTER_LOGO_META_TYPE;
+      })
+    : [];
+}
+
+function withFooterLogoMeta(socials: FooterSocial[] | undefined, showLogo?: boolean) {
+  const publicSocials = socials ?? [];
+  if (!showLogo) return publicSocials;
+
+  // Technical convention: showLogo is persisted without a migration as hidden metadata
+  // inside the existing StoreFooterSettings.socials JSON column.
+  return [
+    ...publicSocials,
+    { type: FOOTER_LOGO_META_TYPE, label: 'Footer logo', value: 'true' },
+  ];
+}
+
+const LOCATION_SHOW_META_TYPE = 'location_show';
+const LOCATION_LABEL_META_TYPE = 'location_label';
+const LOCATION_URL_META_TYPE = 'location_url';
+
+function extractLocationShow(socials: unknown): boolean {
+  return Array.isArray(socials)
+    ? socials.some(
+        (social) =>
+          social &&
+          typeof social === 'object' &&
+          social.type === LOCATION_SHOW_META_TYPE &&
+          social.value === 'true',
+      )
+    : false;
+}
+
+function extractLocationLabel(socials: unknown): string | null {
+  if (!Array.isArray(socials)) return null;
+  const found = socials.find(
+    (social) =>
+      social &&
+      typeof social === 'object' &&
+      social.type === LOCATION_LABEL_META_TYPE,
+  );
+  return found ? found.value : null;
+}
+
+function extractLocationUrl(socials: unknown): string | null {
+  if (!Array.isArray(socials)) return null;
+  const found = socials.find(
+    (social) =>
+      social &&
+      typeof social === 'object' &&
+      social.type === LOCATION_URL_META_TYPE,
+  );
+  return found ? found.value : null;
+}
+
+function removeLocationMeta(socials: unknown) {
+  return Array.isArray(socials)
+    ? socials.filter(
+        (social) =>
+          !social ||
+          typeof social !== 'object' ||
+          ![
+            LOCATION_SHOW_META_TYPE,
+            LOCATION_LABEL_META_TYPE,
+            LOCATION_URL_META_TYPE,
+          ].includes(social.type),
+      )
+    : [];
+}
+
+function withLocationMeta(
+  socials: FooterSocial[] | undefined,
+  showLocation?: boolean,
+  label?: string | null,
+  url?: string | null,
+) {
+  const publicSocials = socials ?? [];
+  const meta: FooterSocial[] = [];
+
+  if (showLocation) {
+    meta.push({
+      type: LOCATION_SHOW_META_TYPE,
+      label: 'Location show',
+      value: 'true',
+    });
+  }
+  if (label) {
+    meta.push({
+      type: LOCATION_LABEL_META_TYPE,
+      label: 'Location label',
+      value: label,
+    });
+  }
+  if (url) {
+    meta.push({
+      type: LOCATION_URL_META_TYPE,
+      label: 'Location url',
+      value: url,
+    });
+  }
+
+  return [...publicSocials, ...meta];
 }
 
 function parsePayrollAccountingMappingTemplate() {
@@ -405,33 +534,55 @@ export class BusinessesService {
       },
     });
 
-    return (
-      settings ?? {
+    if (!settings) {
+      return {
         description: null,
         email: null,
         phones: [],
         socials: [],
-      }
-    );
+        showLogo: false,
+        showLocationButton: false,
+        locationLabel: null,
+        googleMapsUrl: null,
+      };
+    }
+
+    const cleanSocials = removeLocationMeta(removeFooterLogoMeta(settings.socials));
+
+    return {
+      ...settings,
+      socials: cleanSocials,
+      showLogo: extractFooterLogoFlag(settings.socials),
+      showLocationButton: extractLocationShow(settings.socials),
+      locationLabel: extractLocationLabel(settings.socials),
+      googleMapsUrl: extractLocationUrl(settings.socials),
+    };
   }
 
   async updateStoreFooterSettings(businessId: string, body: unknown) {
     const payload = validateStoreFooterSettingsPayload(body);
+    const withLogo = withFooterLogoMeta(payload.socials, payload.showLogo);
+    const socials = withLocationMeta(
+      withLogo,
+      payload.showLocationButton,
+      payload.locationLabel,
+      payload.googleMapsUrl,
+    );
 
-    return this.prisma.storeFooterSettings.upsert({
+    const settings = await this.prisma.storeFooterSettings.upsert({
       where: { businessId },
       create: {
         businessId,
         description: payload.description,
         email: payload.email,
         phones: payload.phones ?? [],
-        socials: payload.socials ?? [],
+        socials,
       },
       update: {
         description: payload.description,
         email: payload.email,
         phones: payload.phones ?? [],
-        socials: payload.socials ?? [],
+        socials,
       },
       select: {
         id: true,
@@ -443,6 +594,17 @@ export class BusinessesService {
         updatedAt: true,
       },
     });
+
+    const cleanSocials = removeLocationMeta(removeFooterLogoMeta(settings.socials));
+
+    return {
+      ...settings,
+      socials: cleanSocials,
+      showLogo: extractFooterLogoFlag(settings.socials),
+      showLocationButton: extractLocationShow(settings.socials),
+      locationLabel: extractLocationLabel(settings.socials),
+      googleMapsUrl: extractLocationUrl(settings.socials),
+    };
   }
 
   async uploadLogo(businessId: string, file?: Express.Multer.File) {

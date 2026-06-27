@@ -18,17 +18,17 @@ export const COUNTRY_RULES: Record<string, CountryConfig> = {
     maxLength: 10,
     prefixes: ["3"],
     regionalCodes: [],
-    errorMessage: "El número de Colombia debe tener 10 dígitos y comenzar con 3 (ej. 300...).",
+    errorMessage: "Revisá el número antes de guardar.",
   },
   "54": {
     code: "54",
     name: "Argentina",
     flag: "ar",
     minLength: 10,
-    maxLength: 10,
+    maxLength: 11,
     prefixes: [],
     regionalCodes: ["11", "221", "223", "261", "341", "342", "351", "381", "387"],
-    errorMessage: "El número de Argentina debe tener 10 dígitos y comenzar con un código de área válido (ej. 342...).",
+    errorMessage: "Revisá el número antes de guardar.",
   },
 };
 
@@ -40,43 +40,49 @@ export function validatePhoneNumber(countryCode: string, localNumber: string): {
 
   const cleaned = localNumber.replace(/\D/g, "");
 
-  // Validar prefijo si aplica
-  if (rule.prefixes.length > 0) {
+  // Validación para Argentina (54)
+  if (countryCode === "54") {
+    if (cleaned.length !== 10 && cleaned.length !== 11) {
+      return {
+        isValid: false,
+        error: "Revisá el número antes de guardar.",
+      };
+    }
+    // Si tiene 11 dígitos, debe empezar con 9 (prefijo móvil internacional)
+    if (cleaned.length === 11 && !cleaned.startsWith("9")) {
+      return {
+        isValid: false,
+        error: "Revisá el número antes de guardar.",
+      };
+    }
+    // Validar código regional (quitando el 9 si está presente)
+    const withoutPrefix = cleaned.length === 11 ? cleaned.slice(1) : cleaned;
+    const hasValidRegion = rule.regionalCodes.some(reg => withoutPrefix.startsWith(reg));
+    if (!hasValidRegion) {
+      return {
+        isValid: false,
+        error: "Revisá el número antes de guardar.",
+      };
+    }
+    return { isValid: true };
+  }
+
+  // Validación para Colombia (57)
+  if (countryCode === "57") {
+    if (cleaned.length !== 10) {
+      return {
+        isValid: false,
+        error: "Revisá el número antes de guardar.",
+      };
+    }
     const hasValidPrefix = rule.prefixes.some(pref => cleaned.startsWith(pref));
     if (!hasValidPrefix) {
       return {
         isValid: false,
-        error: `Debe comenzar con el prefijo correcto: ${rule.prefixes.join(", ")}`,
+        error: "Revisá el número antes de guardar.",
       };
     }
-  }
-
-  // Validar código regional si aplica
-  if (rule.regionalCodes.length > 0) {
-    const prefix = rule.prefixes[0] || "";
-    const withoutPrefix = prefix && cleaned.startsWith(prefix) ? cleaned.slice(prefix.length) : cleaned;
-    const hasValidRegion = rule.regionalCodes.some(reg => withoutPrefix.startsWith(reg));
-    if (!hasValidRegion) {
-      const errorMsg = prefix
-        ? `Debe incluir un código de área válido después de ${prefix} (ej: ${prefix}${rule.regionalCodes[0]}...)`
-        : `Debe incluir un código de área válido (ej: ${rule.regionalCodes[0]}...)`;
-      return {
-        isValid: false,
-        error: errorMsg,
-      };
-    }
-  }
-
-  // Validar longitud
-  if (cleaned.length < rule.minLength || cleaned.length > rule.maxLength) {
-    const lengthMessage = rule.minLength === rule.maxLength
-      ? `El número debe tener exactamente ${rule.minLength} dígitos.`
-      : `El número debe tener entre ${rule.minLength} y ${rule.maxLength} dígitos.`;
-
-    return {
-      isValid: false,
-      error: lengthMessage,
-    };
+    return { isValid: true };
   }
 
   return { isValid: true };
