@@ -10,6 +10,11 @@ import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
 import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
 import type { PublicItemOptionGroup } from "@/src/types/item";
+import SaleTaxPanel, {
+  buildBuyerFiscalContext,
+  saleFiscalStateFromSale,
+  type SaleFiscalFormState,
+} from "@/src/components/sales/SaleTaxPanel";
 
 type EditableItem = {
   key: string;
@@ -96,6 +101,9 @@ export default function SaleEditModal({
     editKey?: string;
     initialSelections?: OptionSelection[];
   } | null>(null);
+  const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(() =>
+    saleFiscalStateFromSale(null),
+  );
 
   const fetchItems = async () => {
     try {
@@ -131,6 +139,7 @@ export default function SaleEditModal({
     setType(sale.type);
     setStatus(sale.status);
     setPaymentMethod(sale.paymentMethod ?? "CASH");
+    setFiscalForm(saleFiscalStateFromSale(sale));
     setExpanded(false);
     setNewItem({ itemId: "", qty: 1 });
     setAvailabilityError(null);
@@ -298,6 +307,7 @@ export default function SaleEditModal({
       type,
       status,
       paymentMethod,
+      fiscalContext: buildBuyerFiscalContext(fiscalForm),
       items: cleanedItems.map(item => ({
         ...item,
         unitPrice: item.price / item.qty,
@@ -487,6 +497,17 @@ export default function SaleEditModal({
               )}
             </div>
           </div>
+
+          <SaleTaxPanel
+            mode="edit"
+            value={fiscalForm}
+            onChange={setFiscalForm}
+            saleType={type}
+            items={items.map((item) => ({
+              itemId: item.itemId,
+              quantity: normalizeQty(type, item.qty),
+            }))}
+          />
 
           <div className="h-16" />
         </div>

@@ -36,6 +36,7 @@ export type BuyerFiscalContext = {
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
   buyerIsRegimenSimple: boolean;
+  withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode: string | null;
   saleConcept:
     | "GOODS"
@@ -57,6 +58,7 @@ export type TaxPreviewRequest = {
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
   buyerIsRegimenSimple: boolean;
+  withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode?: string;
   saleConcept: BuyerFiscalContext["saleConcept"];
   cartItems: Array<{ itemId: string; quantity: number }>;

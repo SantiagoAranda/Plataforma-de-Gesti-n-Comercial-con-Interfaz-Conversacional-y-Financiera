@@ -10,6 +10,12 @@ import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import ReservationSlotPicker from "@/src/components/reservations/ReservationSlotPicker";
 import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
 import type { PublicItemOptionGroup } from "@/src/types/item";
+import type { BuyerFiscalContext } from "@/src/lib/tax/api";
+import SaleTaxPanel, {
+  buildBuyerFiscalContext,
+  DEFAULT_SALE_FISCAL_FORM,
+  type SaleFiscalFormState,
+} from "@/src/components/sales/SaleTaxPanel";
 
 type EditableItem = {
   itemId: string;
@@ -85,6 +91,7 @@ export default function SalesChatComposer({
     paymentMethod: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
     durationMinutes?: number;
+    buyerFiscalContext?: BuyerFiscalContext;
     items: Array<{
       itemId: string;
       quantity: number;
@@ -92,7 +99,7 @@ export default function SalesChatComposer({
     }>;
   }) => Promise<void> | void;
 }) {
-  const [customerName, setCustomerName] = useState("");
+  const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
   const [isStatusOpen, setIsStatusOpen] = useState(false);
   const statusRef = useRef<HTMLDivElement>(null);
   const [countryCode, setCountryCode] = useState("57");
@@ -149,7 +156,7 @@ export default function SalesChatComposer({
 
   useEffect(() => {
     if (!expanded) {
-      setCustomerName("");
+      setFiscalForm(DEFAULT_SALE_FISCAL_FORM);
       setCountryCode("57");
       setPhoneNumber("");
       setType("PRODUCTO");
@@ -168,6 +175,11 @@ export default function SalesChatComposer({
   const total = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
   }, [items]);
+
+  const buyerFiscalContext = useMemo<BuyerFiscalContext>(
+    () => buildBuyerFiscalContext(fiscalForm),
+    [fiscalForm],
+  );
 
   const updateItemQty = (idx: number, qty: number) => {
     setItems((prev) =>
@@ -253,7 +265,7 @@ export default function SalesChatComposer({
     if (isSubmitting) return;
 
     setFormError(null);
-    const cleanedName = customerName.trim();
+    const cleanedName = fiscalForm.buyerName.trim();
     const rawPhone = phoneNumber.replace(/\D/g, "");
     const cleanedWhatsapp = rawPhone.length > 0 ? `${countryCode}${rawPhone}` : undefined;
 
@@ -293,6 +305,7 @@ export default function SalesChatComposer({
         paymentMethod: paymentMethod || "CASH",
         scheduledAt,
         durationMinutes: isService ? serviceDuration : undefined,
+        buyerFiscalContext,
         items: cleanedItems,
       });
     } catch (err) {
@@ -316,111 +329,75 @@ export default function SalesChatComposer({
                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Creación Manual</span>
                 </div>
 
-                <div className="flex flex-col gap-4 p-2 bg-white">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                      Cliente
-                    </span>
-                    <input
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Nombre del cliente"
-                      className="bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 focus:ring-0 focus:border-emerald-500 transition-colors outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                      WhatsApp
-                    </span>
-                    <div className="bg-transparent">
-                      <PhoneSelector
-                        countryCode={countryCode}
-                        onCountryCodeChange={setCountryCode}
-                        phoneNumber={phoneNumber}
-                        onPhoneNumberChange={setPhoneNumber}
-                        flat
-                      />
-                    </div>
-                  </div>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+                  <div className="space-y-5">
+                    <section className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-4">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
+                          WhatsApp
+                        </span>
+                        <PhoneSelector
+                          countryCode={countryCode}
+                          onCountryCodeChange={setCountryCode}
+                          phoneNumber={phoneNumber}
+                          onPhoneNumberChange={setPhoneNumber}
+                          flat
+                        />
+                      </div>
+                    </section>
 
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">
-                        Estado Inicial
-                      </span>
+                    <section className="grid grid-cols-2 gap-3">
                       <div className="relative w-full" ref={statusRef}>
                         <button
                           type="button"
                           onClick={() => setIsStatusOpen(!isStatusOpen)}
-                          className="flex h-10 w-full items-center justify-between bg-transparent border-0 border-b border-slate-100 rounded-none px-0 py-2 text-sm font-normal text-slate-800 outline-none focus:border-emerald-500 transition-colors"
+                          className="flex h-11 w-full items-center justify-between rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-800 outline-none"
                         >
-                          <span>{status === "PENDIENTE" ? "Pendiente" : "Cerrado"}</span>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-chevron-down text-slate-400 shrink-0"><path d="m6 9 6 6 6-6" /></svg>
+                          <span>{status === "PENDIENTE" ? "Pendiente" : "Confirmada"}</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400 shrink-0"><path d="m6 9 6 6 6-6" /></svg>
                         </button>
 
                         {isStatusOpen && (
                           <div className="absolute left-0 top-[calc(100%+4px)] z-20 w-full flex flex-col overflow-hidden rounded-xl border border-slate-100 bg-white shadow-md animate-in fade-in slide-in-from-top-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStatus("PENDIENTE");
-                                setIsStatusOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "PENDIENTE" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
+                            {(["PENDIENTE", "CERRADO"] as const).map((nextStatus) => (
+                              <button
+                                key={nextStatus}
+                                type="button"
+                                onClick={() => {
+                                  setStatus(nextStatus);
+                                  setIsStatusOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${
+                                  status === nextStatus ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
                                 }`}
-                            >
-                              <span>Pendiente</span>
-                              {status === "PENDIENTE" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStatus("CERRADO");
-                                setIsStatusOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 ${status === "CERRADO" ? "bg-emerald-50/50 text-emerald-700 font-medium" : "text-slate-700"
-                                }`}
-                            >
-                              <span>Cerrado</span>
-                              {status === "CERRADO" && (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M20 6 9 17l-5-5" /></svg>
-                              )}
-                            </button>
+                              >
+                                <span>{nextStatus === "PENDIENTE" ? "Pendiente" : "Confirmada"}</span>
+                              </button>
+                            ))}
                           </div>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex flex-col gap-1 pt-0.5">
-                      <span className="text-xs font-medium text-slate-500 mb-0.5 px-0">Medio de pago</span>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1">
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("CASH")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "CASH"
-                              ? "bg-emerald-600 text-white rounded-xl"
-                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                            }`}
+                          className={`rounded-lg px-2 py-2 text-[10px] font-semibold transition ${
+                            paymentMethod === "CASH" ? "bg-emerald-600 text-white" : "text-slate-600"
+                          }`}
                         >
-                          Efectívo
+                          Efectivo
                         </button>
                         <button
                           type="button"
                           onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                          className={`rounded-lg px-2 py-1.5 text-[10px] font-medium transition ${paymentMethod === "BANK_TRANSFER"
-                              ? "bg-emerald-600 text-white rounded-xl"
-                              : "border border-slate-100 bg-slate-50/50 text-slate-600 hover:bg-slate-50 rounded-xl"
-                            }`}
+                          className={`rounded-lg px-2 py-2 text-[10px] font-semibold transition ${
+                            paymentMethod === "BANK_TRANSFER" ? "bg-emerald-600 text-white" : "text-slate-600"
+                          }`}
                         >
-                          Transfere.
+                          Transf.
                         </button>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
+                    </section>
                 {type === "SERVICIO" && items.length > 0 && (
                   <div className="flex flex-col gap-3 p-4 rounded-xl border border-emerald-50 bg-emerald-50/20">
                     <div className="rounded-xl bg-white p-3 border border-emerald-100">
@@ -567,6 +544,21 @@ export default function SalesChatComposer({
                     {formError}
                   </div>
                 )}
+                  </div>
+
+                  <aside className="space-y-3 lg:sticky lg:top-0 lg:self-start">
+                    <SaleTaxPanel
+                      mode="create"
+                      value={fiscalForm}
+                      onChange={setFiscalForm}
+                      saleType={type}
+                      items={items.map((item) => ({
+                        itemId: item.itemId,
+                        quantity: normalizeQty(type, item.qty),
+                      }))}
+                    />
+                  </aside>
+                </div>
 
                 <div className="h-4" />
               </div>

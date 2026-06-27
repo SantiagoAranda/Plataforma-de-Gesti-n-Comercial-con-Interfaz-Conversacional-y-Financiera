@@ -48,6 +48,8 @@ export interface UnifiedSaleDto {
     totalWithheld: number;
     netReceived: number;
   } | null;
+  taxLines?: any[] | null;
+  fiscalContext?: any | null;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -176,6 +178,100 @@ export class SalesService {
           : Number(option.totalQuantitySnapshot),
       unitLabel: option.unitLabelSnapshot ?? null,
     }));
+  }
+
+  private mapFiscalContextForSales(order: any) {
+    const snapshotBuyerFiscal =
+      order.taxSnapshot &&
+      typeof order.taxSnapshot.buyerFiscal === 'object' &&
+      !Array.isArray(order.taxSnapshot.buyerFiscal)
+        ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+        : {};
+
+    if (!order.fiscalContext && Object.keys(snapshotBuyerFiscal).length === 0) {
+      return null;
+    }
+
+    return {
+      buyerType:
+        snapshotBuyerFiscal.buyerType ?? order.fiscalContext?.buyerType ?? null,
+      buyerName:
+        snapshotBuyerFiscal.buyerName ?? order.fiscalContext?.buyerName ?? null,
+      buyerDocumentType:
+        snapshotBuyerFiscal.buyerDocumentType ??
+        order.fiscalContext?.buyerDocumentType ??
+        null,
+      buyerDocumentNumber:
+        snapshotBuyerFiscal.buyerDocumentNumber ??
+        order.fiscalContext?.buyerDocumentNumber ??
+        null,
+      buyerEmail:
+        snapshotBuyerFiscal.buyerEmail ?? order.fiscalContext?.buyerEmail ?? null,
+      buyerIsIvaResponsable:
+        snapshotBuyerFiscal.buyerIsIvaResponsable ??
+        order.fiscalContext?.buyerIsIvaResponsable ??
+        false,
+      buyerIsRetenedor:
+        snapshotBuyerFiscal.buyerIsRetenedor ??
+        order.fiscalContext?.buyerIsRetenedor ??
+        false,
+      buyerIsGranContribuyente:
+        snapshotBuyerFiscal.buyerIsGranContribuyente ??
+        order.fiscalContext?.buyerIsGranContribuyente ??
+        false,
+      buyerIsAutorretenedor:
+        snapshotBuyerFiscal.buyerIsAutorretenedor ??
+        order.fiscalContext?.buyerIsAutorretenedor ??
+        false,
+      buyerIsRegimenSimple:
+        snapshotBuyerFiscal.buyerIsRegimenSimple ??
+        order.fiscalContext?.buyerIsRegimenSimple ??
+        false,
+      withholdingSubjectIsDeclarante:
+        snapshotBuyerFiscal.withholdingSubjectIsDeclarante ?? true,
+      fiscalMunicipalityCode:
+        snapshotBuyerFiscal.fiscalMunicipalityCode ??
+        order.fiscalContext?.fiscalMunicipalityCode ??
+        null,
+      saleConcept:
+        snapshotBuyerFiscal.saleConcept ?? order.fiscalContext?.saleConcept ?? null,
+    };
+  }
+
+  private async persistOrderFiscalPreview(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    orderId: string,
+    buyerFiscalContext: any,
+    cartItems: Array<{ itemId: string; quantity: number }>,
+  ) {
+    if (!buyerFiscalContext || cartItems.length === 0) return;
+
+    const preview = await this.taxService.calculateTaxPreview(businessId, {
+      buyerType: buyerFiscalContext.buyerType,
+      buyerName: buyerFiscalContext.buyerName,
+      buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+      buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+      buyerEmail: buyerFiscalContext.buyerEmail,
+      buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
+      buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+      buyerIsGranContribuyente:
+        buyerFiscalContext.buyerIsGranContribuyente || false,
+      buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
+      buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+      withholdingSubjectIsDeclarante:
+        buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+      fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+      saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+      cartItems,
+    });
+
+    await this.taxService.freezeTaxCalculation(
+      tx,
+      orderId,
+      preview,
+      buyerFiscalContext,
+    );
   }
 
   private assertOrderEditable(order: {
@@ -631,6 +727,21 @@ export class SalesService {
       },
     });
 
+    if (dto.buyerFiscalContext) {
+      await this.prisma.$transaction((tx) =>
+        this.persistOrderFiscalPreview(
+          tx,
+          businessId,
+          order.id,
+          dto.buyerFiscalContext,
+          order.items.map((item) => ({
+            itemId: item.itemId,
+            quantity: Number(item.quantity),
+          })),
+        ),
+      );
+    }
+
     console.log(`[SalesService] Created order origin: ${order.origin}`);
 
     return {
@@ -654,6 +765,7 @@ export class SalesService {
           },
           fiscalContext: true,
           taxLines: true,
+          taxSnapshot: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -733,6 +845,17 @@ export class SalesService {
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
       fiscalSummary,
+      fiscalContext: this.mapFiscalContextForSales(o),
+      taxLines: o.taxLines ? o.taxLines.map((line) => ({
+        taxType: line.taxType,
+        direction: line.direction,
+        baseAmount: Number(line.baseAmount),
+        rate: Number(line.rate),
+        taxAmount: Number(line.taxAmount),
+        accountCode: line.accountCode,
+        applied: line.applied,
+        reason: line.reason,
+      })) : null,
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -858,6 +981,7 @@ export class SalesService {
         where: { id, businessId },
         include: {
           items: { include: { item: true, options: true } },
+          taxSnapshot: true,
         },
       });
 
@@ -915,29 +1039,39 @@ export class SalesService {
         });
       }
 
-      if (buyerFiscalContext) {
+      const persistedBuyerFiscal =
+        order.taxSnapshot &&
+        typeof order.taxSnapshot.buyerFiscal === 'object' &&
+        !Array.isArray(order.taxSnapshot.buyerFiscal)
+          ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+          : null;
+      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal;
+
+      if (fiscalContextToUse) {
         const cartItems = order.items.map((it) => ({
           itemId: it.itemId,
           quantity: Number(it.quantity),
         }));
 
         const preview = await this.taxService.calculateTaxPreview(businessId, {
-          buyerType: buyerFiscalContext.buyerType,
-          buyerName: buyerFiscalContext.buyerName,
-          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
-          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
-          buyerEmail: buyerFiscalContext.buyerEmail,
-          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
-          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
-          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
-          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
-          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
-          saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+          buyerType: fiscalContextToUse.buyerType,
+          buyerName: fiscalContextToUse.buyerName,
+          buyerDocumentType: fiscalContextToUse.buyerDocumentType,
+          buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
+          buyerEmail: fiscalContextToUse.buyerEmail,
+          buyerIsIvaResponsable: fiscalContextToUse.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: fiscalContextToUse.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: fiscalContextToUse.buyerIsRegimenSimple || false,
+          withholdingSubjectIsDeclarante:
+            fiscalContextToUse.withholdingSubjectIsDeclarante ?? true,
+          fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
+          saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
           cartItems,
         });
 
-        await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+        await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
       }
 
       const finalizedOrder = {
@@ -1033,6 +1167,8 @@ export class SalesService {
           buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
           buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
           buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+          withholdingSubjectIsDeclarante:
+            buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
           fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
           saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
           cartItems,
@@ -1400,6 +1536,9 @@ export class SalesService {
         items: {
           include: this.orderItemRecipeInclude,
         },
+        fiscalContext: true,
+        taxLines: true,
+        taxSnapshot: true,
       },
     });
 
@@ -1407,8 +1546,57 @@ export class SalesService {
 
     const conversions = await this.prisma.unitConversion.findMany();
 
+    const fiscalSummary = order.fiscalContext
+      ? {
+          subtotal: Number(order.fiscalContext.subtotal),
+          iva: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'IVA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          impoconsumo: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteFuente: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEFUENTE' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteIva: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEIVA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          reteIca: Number(
+            order.taxLines.find(
+              (line) => line.taxType === 'RETEICA' && line.applied,
+            )?.taxAmount ?? 0,
+          ),
+          totalCollected:
+            Number(order.fiscalContext.subtotal) +
+            Number(order.fiscalContext.chargedTaxTotal),
+          totalCharged: Number(order.fiscalContext.chargedTaxTotal),
+          totalWithheld: Number(order.fiscalContext.withheldTaxTotal),
+          netReceived: Number(order.fiscalContext.netReceived),
+        }
+      : null;
+
     return {
       ...order,
+      fiscalSummary,
+      fiscalContext: this.mapFiscalContextForSales(order),
+      taxLines: order.taxLines ? order.taxLines.map((line) => ({
+        taxType: line.taxType,
+        direction: line.direction,
+        baseAmount: Number(line.baseAmount),
+        rate: Number(line.rate),
+        taxAmount: Number(line.taxAmount),
+        accountCode: line.accountCode,
+        applied: line.applied,
+        reason: line.reason,
+      })) : null,
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
     };
   }
@@ -1616,12 +1804,35 @@ export class SalesService {
         });
       }
 
+      if (dto.buyerFiscalContext) {
+        const currentItems = resolvedItems
+          ? resolvedItems.lines.map((line) => ({
+              itemId: line.itemId,
+              quantity: Number(line.quantity),
+            }))
+          : order.items.map((item) => ({
+              itemId: item.itemId,
+              quantity: Number(item.quantity),
+            }));
+
+        await this.persistOrderFiscalPreview(
+          tx,
+          businessId,
+          orderId,
+          dto.buyerFiscalContext,
+          currentItems,
+        );
+      }
+
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: {
-        items: {
+          items: {
             include: this.orderItemRecipeInclude,
           },
+          fiscalContext: true,
+          taxLines: true,
+          taxSnapshot: true,
         },
       });
     });

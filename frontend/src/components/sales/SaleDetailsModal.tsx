@@ -1,12 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Calculator, Loader2, X } from "lucide-react";
-
+import { AlertTriangle, Loader2, X } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { getSaleOriginLabel } from "@/src/lib/saleOrigin";
-import SaleFiscalSummary from "./SaleFiscalSummary";
+import SaleTaxPanel, { saleFiscalStateFromSale } from "./SaleTaxPanel";
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -74,7 +73,6 @@ export default function SaleDetailsModal({
   onClose,
   onEdit,
   onConfirm,
-  onTaxPreview,
   onCancel,
   onSaveOptionalIngredients,
   confirming = false,
@@ -84,7 +82,6 @@ export default function SaleDetailsModal({
   onClose: () => void;
   onEdit?: (sale: Sale) => void;
   onConfirm?: (sale: Sale) => void;
-  onTaxPreview?: (sale: Sale) => void;
   onCancel?: (sale: Sale) => void;
   onSaveOptionalIngredients?: (
     sale: Sale,
@@ -96,6 +93,7 @@ export default function SaleDetailsModal({
   const [draftExclusions, setDraftExclusions] = useState<Record<string, string[]>>({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [optionalError, setOptionalError] = useState<string | null>(null);
+
 
   useEffect(() => {
     if (!sale) {
@@ -150,6 +148,7 @@ export default function SaleDetailsModal({
     }
     if (onConfirm) onConfirm(sale);
   };
+
 
   const handleCancelAction = () => {
     if (onCancel) onCancel(sale);
@@ -418,12 +417,18 @@ export default function SaleDetailsModal({
             </div>
           )}
 
-          <section className="space-y-2">
-            <span className="px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">
-              Resumen fiscal
-            </span>
-            <SaleFiscalSummary summary={sale.fiscalSummary} detailed />
-          </section>
+          <SaleTaxPanel
+            mode="readonly"
+            value={saleFiscalStateFromSale(sale)}
+            saleType={sale.type}
+            items={sale.items.map((item) => ({
+              itemId: item.itemId,
+              quantity: item.qty,
+            }))}
+            fiscalSummary={sale.fiscalSummary}
+            taxLines={sale.taxLines as any}
+            onEditSale={onEdit ? () => onEdit(sale) : undefined}
+          />
         </div>
 
         <div className="p-4 sm:p-5 bg-white border-t border-neutral-100/50">
@@ -450,18 +455,6 @@ export default function SaleDetailsModal({
                   className="h-10 px-4 rounded-full border border-rose-100 text-rose-500 font-medium text-[11px] uppercase tracking-widest hover:bg-rose-50 transition active:scale-95 whitespace-nowrap disabled:opacity-50"
                 >
                   Eliminar
-                </button>
-              )}
-
-              {canConfirm && onTaxPreview && (
-                <button
-                  type="button"
-                  onClick={() => onTaxPreview(sale)}
-                  disabled={confirming || hasUnsavedOptionalChanges}
-                  className="inline-flex h-10 items-center gap-1.5 rounded-full border border-sky-200 px-4 text-[11px] font-medium uppercase tracking-widest text-sky-700 transition hover:bg-sky-50 disabled:opacity-50"
-                >
-                  <Calculator size={14} />
-                  Impuestos
                 </button>
               )}
 

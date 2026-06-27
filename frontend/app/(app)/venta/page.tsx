@@ -19,7 +19,6 @@ import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrder
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import SaleEditModal from "@/src/components/sales/SaleEditModal";
-import TaxPreviewModal from "@/src/components/sales/TaxPreviewModal";
 import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
@@ -143,6 +142,8 @@ function mapOrderToSale(order: ApiOrder): Sale {
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
     fiscalSummary: order.fiscalSummary ?? null,
+    fiscalContext: order.fiscalContext ?? null,
+    taxLines: order.taxLines ?? null,
     total,
     items,
   };
@@ -182,11 +183,6 @@ export default function VentaPage() {
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
-  const [taxPreviewSale, setTaxPreviewSale] = useState<Sale | null>(null);
-  const [taxPreviewMode, setTaxPreviewMode] = useState<"REVIEW" | "CONFIRM">("CONFIRM");
-  const [buyerFiscalContexts, setBuyerFiscalContexts] = useState<
-    Record<string, BuyerFiscalContext>
-  >({});
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -399,43 +395,18 @@ export default function VentaPage() {
     window.open(url, "_blank");
   };
 
-  const handleConfirmSale = useCallback((sale: Sale) => {
-    setTaxPreviewMode("CONFIRM");
-    setTaxPreviewSale(sale);
-  }, []);
+  const handleConfirmSale = useCallback(async (sale: Sale) => {
+    if (!sale.fiscalContext) {
+      toast.error("Faltan datos fiscales para liquidar esta venta. Editala antes de confirmar.");
+      return;
+    }
 
-  const handleOpenTaxPreview = useCallback((sale: Sale) => {
-    setTaxPreviewMode("REVIEW");
-    setTaxPreviewSale(sale);
-  }, []);
-
-  const saleFiscalKey = useCallback(
-    (sale: Sale) => `${sale.sourceType}:${sale.id}`,
-    [],
-  );
-
-  const handleApplyFiscalContext = useCallback(async (
-    buyerFiscalContext: BuyerFiscalContext,
-  ) => {
-    if (!taxPreviewSale) return;
-    setBuyerFiscalContexts((current) => ({
-      ...current,
-      [saleFiscalKey(taxPreviewSale)]: buyerFiscalContext,
-    }));
-    setTaxPreviewSale(null);
-    toast.success("Datos fiscales guardados para esta venta");
-  }, [saleFiscalKey, taxPreviewSale]);
-
-  const handleExecuteConfirmSale = useCallback(async (
-    buyerFiscalContext: BuyerFiscalContext,
-  ) => {
-    if (!taxPreviewSale) return;
     const loadingId = "sale-confirm-loading";
     const successId = "sale-confirm-success";
     const errorId = "sale-confirm-error";
 
     try {
-      setConfirmingSaleId(taxPreviewSale.id);
+      setConfirmingSaleId(sale.id);
       setError(null);
 
       toast.dismiss(loadingId);
@@ -444,29 +415,17 @@ export default function VentaPage() {
 
       toast.loading("Confirmando venta e impuestos...", { id: loadingId });
 
-      await confirmSale(taxPreviewSale.id, taxPreviewSale.sourceType, buyerFiscalContext);
+      await confirmSale(sale.id, sale.sourceType, sale.fiscalContext as BuyerFiscalContext);
 
       invalidateCache("home:sales");
       await loadOrders();
 
-      setTaxPreviewSale(null);
       setDetailsSale(null);
-      setBuyerFiscalContexts((current) => {
-        const next = { ...current };
-        delete next[saleFiscalKey(taxPreviewSale)];
-        return next;
-      });
-
       toast.dismiss(loadingId);
-
       toast.success("Venta confirmada con impuestos", {
         id: successId,
         duration: 2000,
       });
-
-      setTimeout(() => {
-        toast.dismiss(successId);
-      }, 2100);
     } catch (err) {
       console.error(err);
       const message = getErrorMessage(err, "No se pudo finalizar la venta");
@@ -474,19 +433,14 @@ export default function VentaPage() {
       await loadOrders();
 
       toast.dismiss(loadingId);
-
       toast.error(message, {
         id: errorId,
         duration: 5000,
       });
-
-      setTimeout(() => {
-        toast.dismiss(errorId);
-      }, 5100);
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [taxPreviewSale, loadOrders, saleFiscalKey]);
+  }, [loadOrders]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -536,6 +490,7 @@ export default function VentaPage() {
     paymentMethod: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
     durationMinutes?: number;
+    buyerFiscalContext?: BuyerFiscalContext;
     items: { itemId: string; quantity: number }[];
   }) => {
     try {
@@ -547,10 +502,10 @@ export default function VentaPage() {
       const created = await createSale(payload);
 
       if (data.status === "CERRADO") {
-        await confirmSale(created.id, created.sourceType);
+        await confirmSale(created.id, created.sourceType, data.buyerFiscalContext);
       }
 
-      toast.success("Venta regitrada manualmente");
+      toast.success("Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
       await loadOrders();
@@ -653,6 +608,7 @@ export default function VentaPage() {
         customerWhatsapp: updated.customerWhatsapp ?? undefined,
         paymentMethod: updated.paymentMethod,
         scheduledAt: updated.scheduledAt,
+        buyerFiscalContext: updated.fiscalContext ?? undefined,
         items: updated.items
           .filter((it) => it.itemId)
           .map((it) => ({
@@ -855,7 +811,6 @@ export default function VentaPage() {
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
         onConfirm={handleConfirmSale}
-        onTaxPreview={handleOpenTaxPreview}
         onSaveOptionalIngredients={handleSaveOptionalIngredients}
         onCancel={handleDeleteSale}
         onEdit={(sale) => {
@@ -869,28 +824,6 @@ export default function VentaPage() {
         open={!!receiptSale}
         sale={receiptSale}
         onClose={() => setReceiptSale(null)}
-      />
-
-      <TaxPreviewModal
-        open={!!taxPreviewSale}
-        sale={taxPreviewSale}
-        onClose={() => setTaxPreviewSale(null)}
-        onConfirm={
-          taxPreviewMode === "REVIEW"
-            ? handleApplyFiscalContext
-            : handleExecuteConfirmSale
-        }
-        initialContext={
-          taxPreviewSale
-            ? buyerFiscalContexts[saleFiscalKey(taxPreviewSale)] ?? null
-            : null
-        }
-        actionLabel={
-          taxPreviewMode === "REVIEW"
-            ? "Guardar datos fiscales"
-            : "Confirmar y contabilizar"
-        }
-        confirming={confirmingSaleId === taxPreviewSale?.id}
       />
 
       <SalesFilterModal

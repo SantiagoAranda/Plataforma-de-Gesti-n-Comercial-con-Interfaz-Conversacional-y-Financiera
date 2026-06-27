@@ -9,6 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BuyerFiscalContextDto } from './create-order.dto';
 import { SalesOrderLineInputDto } from './order-line-input.dto';
 
 export class UpdateOrderDto {
@@ -37,4 +38,9 @@ export class UpdateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => SalesOrderLineInputDto)
   items?: SalesOrderLineInputDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BuyerFiscalContextDto)
+  buyerFiscalContext?: BuyerFiscalContextDto;
 }
