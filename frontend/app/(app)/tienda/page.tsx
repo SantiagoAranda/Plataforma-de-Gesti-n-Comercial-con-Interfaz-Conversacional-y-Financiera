@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotification } from "@/src/components/ui/NotificationProvider";
@@ -20,6 +20,7 @@ import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getItemBadges } from "@/src/lib/itemBadges";
+import { cn } from "@/src/lib/utils";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -57,6 +58,13 @@ export default function MiTiendaPage() {
   const [businessName, setBusinessName] = useState("Mi Tienda");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
   const [category, setCategory] = useState<"" | "PRODUCT" | "SERVICE">("");
+  const filtersRef = useRef<HTMLDivElement | null>(null);
+  const scrollFilters = (direction: "left" | "right") => {
+    filtersRef.current?.scrollBy({
+      left: direction === "left" ? -140 : 140,
+      behavior: "smooth",
+    });
+  };
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
@@ -299,23 +307,52 @@ export default function MiTiendaPage() {
             />
           </div>
 
-          <div className="flex gap-2">
-            {["", "PRODUCT", "SERVICE"].map((type) => (
-              <button
-                key={type}
-                onClick={() => setCategory(type as "" | "PRODUCT" | "SERVICE")}
-                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
-                  ? "bg-[#11d473] text-white ring-emerald-200"
-                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
-                  }`}
-              >
-                {type === ""
-                  ? "Todo"
-                  : type === "PRODUCT"
-                    ? "Productos"
-                    : "Servicios"}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => scrollFilters("left")}
+              className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-500 hover:bg-slate-100"
+              aria-label="Scroll filtros a la izquierda"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            <div
+              ref={filtersRef}
+              className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {([
+                { key: "", label: "Todo" },
+                { key: "PRODUCT", label: "Productos" },
+                { key: "SERVICE", label: "Servicios" },
+              ] as const).map((opt) => {
+                const active = category === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setCategory(opt.key)}
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
+                      active
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                    )}
+                    type="button"
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => scrollFilters("right")}
+              className="hidden md:grid h-8 w-8 shrink-0 place-items-center rounded-full text-slate-500 hover:bg-slate-100"
+              aria-label="Scroll filtros a la derecha"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </header>
@@ -510,6 +547,12 @@ function AdminProductCard({
         <div className="truncate text-[14px] font-medium leading-[1.2] text-slate-800">
           {item.name}
         </div>
+        {item.type === "SERVICE" && item.durationMinutes && (
+          <div className="mt-[2px] text-[11px] font-medium text-slate-500 flex items-center gap-1">
+            <span>🕒</span>
+            <span>{item.durationMinutes / 60} h</span>
+          </div>
+        )}
         {item.description?.trim() ? (
           <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
             {item.description.trim()}
@@ -679,6 +722,11 @@ function PrivateProductDetailOverlay({
                     ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                   </div>
                 </div>
+                {item.type === "SERVICE" && item.durationMinutes && (
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-650 mt-1">
+                    <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                  </div>
+                )}
               </div>
               </div>
             </div>
@@ -752,6 +800,11 @@ function PrivateProductDetailOverlay({
                     <div className="text-4xl font-semibold tracking-tight text-slate-900">
                       ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
                     </div>
+                    {item.type === "SERVICE" && item.durationMinutes && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                        <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

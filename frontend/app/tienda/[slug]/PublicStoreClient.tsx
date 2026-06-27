@@ -423,45 +423,7 @@ export default function PublicStoreClient() {
       });
       return;
     }
-
-    if (!selectedService || !data.time || !data.date) return;
-
-    const service = selectedService;
-    const [h, m] = data.time.split(":").map(Number);
-    const startMinute = h * 60 + m;
-    const endMinute = startMinute + (service.durationMinutes ?? 60);
-
-    try {
-      const res = await fetch(`${API_URL}/public/${slug}/reserve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          itemId: service.id,
-          customerName: data.fullName,
-          customerWhatsapp: data.whatsapp,
-          date: formatLocalDateKey(data.date),
-          startMinute,
-          endMinute,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Error creating reservation");
-
-      notify({
-        type: "success",
-        message: "Reserva creada correctamente",
-      });
-
-      resetReservationUi();
-    } catch (error) {
-      console.error("Reservation error:", error);
-      notify({
-        type: "error",
-        message: "No se pudo crear la reserva",
-      });
-    }
+    // El fetch lo maneja ReservationDrawer internamente
   };
 
   const getRequiredRecipeLines = (item: Item | null) => {
@@ -805,14 +767,14 @@ export default function PublicStoreClient() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {["", "PRODUCT", "SERVICE"].map((type) => (
               <button
                 key={type}
                 onClick={() => setCategory(type)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
-                  ? "bg-[#11d473] text-white ring-emerald-200"
-                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                   }`}
               >
                 {type === ""
@@ -1029,7 +991,7 @@ export default function PublicStoreClient() {
         businessSlug={slug}
         title={selectedService?.name}
         selectedDateValue={selectedDateKey}
-        onConfirm={handleReserve}
+        serviceDurationMinutes={selectedService?.durationMinutes}
       />
 
       <ProductDetailOverlay
@@ -1334,6 +1296,12 @@ function ProductCard({
         <div className="truncate text-[15px] font-semibold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
+        {item.type === "SERVICE" && item.durationMinutes && (
+          <div className="mt-[2px] text-[11px] font-medium text-neutral-500 flex items-center gap-1">
+            <span>🕒</span>
+            <span>{item.durationMinutes / 60} h</span>
+          </div>
+        )}
         {item.description?.trim() ? (
           <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
             {item.description.trim()}
@@ -1484,6 +1452,11 @@ function ProductDetailOverlay({
                           </div>
                         )}
                     </div>
+                    {item.type === "SERVICE" && item.durationMinutes && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                        <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -1806,6 +1779,11 @@ function ReelLikeProductView({
                   </div>
                 )}
             </div>
+            {item.type === "SERVICE" && item.durationMinutes && (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mt-1">
+                <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+              </div>
+            )}
           </div>
 
           <button

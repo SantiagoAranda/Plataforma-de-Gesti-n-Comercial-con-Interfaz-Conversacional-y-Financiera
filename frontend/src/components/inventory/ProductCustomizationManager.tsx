@@ -908,167 +908,160 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Tipo de impacto</span>
-                    <select
-                      value={form.targetType}
-                      onChange={(e) =>
-                        setOptionForm(group.id, {
-                          ...form,
-                          targetType: e.target.value as TargetType,
-                          ingredientId: "",
-                          itemId: "",
-                        })
-                      }
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                    >
-                      {targetChoices.map((target) => (
-                        <option key={target} value={target}>
-                          {translateTargetType(target)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    {form.targetType === "INGREDIENT" ? (
-                      <div className="relative">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                          Insumo (Buscar primero)
-                        </span>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={ingredientSearch[group.id] || ""}
-                            onFocus={() => setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
-                            onChange={(e) => {
-                              setIngredientSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
-                              setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
-                            }}
-                            placeholder="Buscar insumo..."
-                            className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                          />
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                        </div>
-
-                        {/* Search dropdown */}
-                        {ingredientDropdownOpen[group.id] && (
-                          <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-                            {filteredIngredients.length === 0 ? (
-                              <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron insumos</div>
-                            ) : (
-                              filteredIngredients.map((ing) => (
-                                <button
-                                  key={ing.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setOptionForm(group.id, {
-                                      ...form,
-                                      ingredientId: ing.id,
-                                      name: ing.name,
-                                      unitId: ing.stockUnitId || "",
-                                    });
-                                    setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
-                                    setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                                  }}
-                                  className={cn(
-                                    "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50",
-                                    form.ingredientId === ing.id && "bg-slate-100 text-slate-900"
-                                  )}
-                                >
-                                  <span>{ing.name}</span>
-                                  {ing.currentStock !== undefined && (
-                                    <span className="text-[10px] text-slate-400 font-semibold">
-                                      Stock: {formatMoney(Number(ing.currentStock))}
-                                    </span>
-                                  )}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ) : form.targetType === "ITEM" ? (
-                      <div className="relative">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                          Producto (Buscar primero)
-                        </span>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={itemSearch[group.id] || ""}
-                            onFocus={() => setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
-                            onChange={(e) => {
-                              setItemSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
-                              setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
-                            }}
-                            placeholder="Buscar producto..."
-                            className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                          />
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                        </div>
-
-                        {/* Search dropdown */}
-                        {itemDropdownOpen[group.id] && (
-                          <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-                            {filteredItems.length === 0 ? (
-                              <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron productos</div>
-                            ) : (
-                              filteredItems.map((it) => (
-                                <button
-                                  key={it.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setOptionForm(group.id, {
-                                      ...form,
-                                      itemId: it.id,
-                                      name: it.name,
-                                    });
-                                    setItemSearch((prev) => ({ ...prev, [group.id]: it.name }));
-                                    setItemDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                                  }}
-                                  className={cn(
-                                    "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-750 hover:bg-slate-50",
-                                    form.itemId === it.id && "bg-slate-100 text-slate-900"
-                                  )}
-                                >
-                                  <span>{it.name}</span>
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div />
-                    )}
-                  </div>
+                {/* Tipo de impacto - full width */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Tipo de impacto</span>
+                  <select
+                    value={form.targetType}
+                    onChange={(e) =>
+                      setOptionForm(group.id, {
+                        ...form,
+                        targetType: e.target.value as TargetType,
+                        ingredientId: "",
+                        itemId: "",
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                  >
+                    {targetChoices.map((target) => (
+                      <option key={target} value={target}>
+                        {translateTargetType(target)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nombre visible al cliente</span>
-                    <input
-                      value={form.name}
-                      onChange={(e) => setOptionForm(group.id, { ...form, name: e.target.value })}
-                      placeholder="Queso Cheddar, Con hielo"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Precio adicional para el cliente</span>
-                    <input
-                      value={form.priceDelta}
-                      onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
-                      inputMode="decimal"
-                      placeholder="0 si no suma al precio"
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                    />
-                    <span className="block text-[8.5px] leading-tight text-slate-450 mt-0.5">
-                      Este valor se suma al precio base del producto cuando el cliente elige esta opción. No cambia el costo ni el precio del insumo.
+                {/* Ingredient / Item search - full width */}
+                {form.targetType === "INGREDIENT" ? (
+                  <div className="relative space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Insumo (Buscar primero)
                     </span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={ingredientSearch[group.id] || ""}
+                        onFocus={() => setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
+                        onChange={(e) => {
+                          setIngredientSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
+                          setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
+                        }}
+                        placeholder="Buscar insumo..."
+                        className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                      />
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    </div>
+                    {ingredientDropdownOpen[group.id] && (
+                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        {filteredIngredients.length === 0 ? (
+                          <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron insumos</div>
+                        ) : (
+                          filteredIngredients.map((ing) => (
+                            <button
+                              key={ing.id}
+                              type="button"
+                              onClick={() => {
+                                setOptionForm(group.id, {
+                                  ...form,
+                                  ingredientId: ing.id,
+                                  name: ing.name,
+                                  unitId: ing.stockUnitId || "",
+                                });
+                                setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
+                                setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50",
+                                form.ingredientId === ing.id && "bg-slate-100 text-slate-900"
+                              )}
+                            >
+                              <span>{ing.name}</span>
+                              {ing.currentStock !== undefined && (
+                                <span className="text-[10px] text-slate-400 font-semibold">
+                                  Stock: {formatMoney(Number(ing.currentStock))}
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
+                ) : form.targetType === "ITEM" ? (
+                  <div className="relative space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Producto (Buscar primero)
+                    </span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={itemSearch[group.id] || ""}
+                        onFocus={() => setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
+                        onChange={(e) => {
+                          setItemSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
+                          setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
+                        }}
+                        placeholder="Buscar producto..."
+                        className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                      />
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    </div>
+                    {itemDropdownOpen[group.id] && (
+                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                        {filteredItems.length === 0 ? (
+                          <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron productos</div>
+                        ) : (
+                          filteredItems.map((it) => (
+                            <button
+                              key={it.id}
+                              type="button"
+                              onClick={() => {
+                                setOptionForm(group.id, {
+                                  ...form,
+                                  itemId: it.id,
+                                  name: it.name,
+                                });
+                                setItemSearch((prev) => ({ ...prev, [group.id]: it.name }));
+                                setItemDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-750 hover:bg-slate-50",
+                                form.itemId === it.id && "bg-slate-100 text-slate-900"
+                              )}
+                            >
+                              <span>{it.name}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* Nombre visible - full width */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nombre visible al cliente</span>
+                  <input
+                    value={form.name}
+                    onChange={(e) => setOptionForm(group.id, { ...form, name: e.target.value })}
+                    placeholder="Queso Cheddar, Con hielo"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                  />
+                </div>
+
+                {/* Precio adicional - full width */}
+                <div className="space-y-1">
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Precio adicional para el cliente</span>
+                  <input
+                    value={form.priceDelta}
+                    onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
+                    inputMode="decimal"
+                    placeholder="0 si no suma al precio"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                  />
+                  <p className="text-xs text-slate-500 leading-relaxed mt-1">
+                    Este valor se suma al precio base del producto cuando el cliente elige esta opción. No cambia el costo ni el precio del insumo.
+                  </p>
                 </div>
 
                 {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && (
@@ -1144,39 +1137,37 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
                   </div>
                 )}
 
-                <div className="flex items-center justify-between gap-3 pt-2">
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={form.selectedByDefault}
-                          onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
-                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                        />
-                        Preselección
-                      </label>
-                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={form.removable}
-                          onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
-                          className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                        />
-                        Removible
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-semibold">
-                      <HelpCircle className="h-3 w-3 shrink-0 text-slate-350" />
-                      <span>Los cambios aplican solo a pedidos nuevos.</span>
-                    </div>
+                <div className="space-y-2.5 pt-2">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={form.selectedByDefault}
+                        onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                      />
+                      Preselección
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={form.removable}
+                        onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                      />
+                      Removible
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-1 text-[9px] text-slate-400 font-semibold">
+                    <HelpCircle className="h-3 w-3 shrink-0 text-slate-350" />
+                    <span>Los cambios aplican solo a pedidos nuevos.</span>
                   </div>
                   <button
                     type="button"
                     disabled={hasIncompatibleUnit || !!duplicateError}
                     onClick={() => saveOption(group)}
                     className={cn(
-                      "rounded-xl px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm transition active:scale-[0.98]",
+                      "flex w-full items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm transition active:scale-[0.98]",
                       (hasIncompatibleUnit || duplicateError)
                         ? "bg-slate-300 cursor-not-allowed opacity-50"
                         : "bg-orange-500 hover:bg-orange-600"

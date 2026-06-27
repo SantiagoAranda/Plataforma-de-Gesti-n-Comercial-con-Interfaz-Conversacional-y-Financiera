@@ -225,7 +225,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-neutral-400" />
                   <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
-                  <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes} min</span>
+                  <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes ? `${displayItem.durationMinutes / 60} h` : "0 h"}</span>
                 </div>
 
                 {activeDays && (
