@@ -62,7 +62,7 @@ export function ExpandableRecipeCard({
   initiallyExpanded = false,
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
-  const [activeSubTab, setActiveSubTab] = useState<"config" | "history">("config");
+  const [activeSubTab, setActiveSubTab] = useState<"config" | "customization" | "history">("config");
   const [draftLines, setDraftLines] = useState<DraftRecipeLine[]>([]);
   const [showAddSelector, setShowAddSelector] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -501,6 +501,18 @@ export function ExpandableRecipeCard({
             </button>
             <button
               type="button"
+              onClick={() => setActiveSubTab("customization")}
+              className={cn(
+                "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
+                activeSubTab === "customization"
+                  ? "border-slate-800 text-slate-800"
+                  : "border-transparent text-slate-450 hover:text-slate-600"
+              )}
+            >
+              Personalización
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveSubTab("history")}
               className={cn(
                 "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
@@ -515,6 +527,14 @@ export function ExpandableRecipeCard({
 
           {activeSubTab === "history" ? (
             <ConsumptionHistoryTab itemId={item.id} type="recipe" />
+          ) : activeSubTab === "customization" ? (
+            item.type === "PRODUCT" ? (
+              <ProductCustomizationManager item={item} allIngredients={allIngredients} />
+            ) : (
+              <p className="py-6 text-center text-xs font-semibold text-slate-400">
+                La personalización solo está disponible para productos.
+              </p>
+            )
           ) : (
             <>
               <div className="space-y-2.5">
@@ -755,9 +775,7 @@ export function ExpandableRecipeCard({
                   </button>
                 </div>
               )}
-              {item.type === "PRODUCT" && (
-                <ProductCustomizationManager item={item} allIngredients={allIngredients} />
-              )}
+
             </>
           )}
         </div>

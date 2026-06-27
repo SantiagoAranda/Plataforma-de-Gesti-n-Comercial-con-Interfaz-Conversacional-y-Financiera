@@ -242,13 +242,6 @@ export default async function ReservationDetailPage({
       <main className="mx-auto w-full max-w-md px-4 py-4 pb-28">
         <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
 
-          {/* Fila 1 – Estado */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3.5">
-            <span className="text-[13px] font-medium text-slate-500">
-              Estado del turno
-            </span>
-            <StatusBadge status={reservation.status} />
-          </div>
 
           {/* Divider section – Info rows */}
           <div className="divide-y divide-slate-100 px-4">
@@ -330,10 +323,7 @@ export default async function ReservationDetailPage({
           Reserva #{id.slice(0, 8).toUpperCase()}
         </p>
 
-        {/* Cancelación — solo visible cuando la reserva está CONFIRMED */}
-        {reservation.status === "CONFIRMED" && (
-          <CancelReservationButton reservationId={reservation.id} />
-        )}
+
       </main>
 
       {/* ── Footer ─────────────────────────────────────────────── */}
@@ -352,11 +342,10 @@ export default async function ReservationDetailPage({
             Contactar por WhatsApp
           </a>
 
-          {/* Disclaimer */}
-          <p className="text-center text-[11px] leading-relaxed text-slate-400">
-            Si necesitas cancelar o reprogramar, por favor comunícate
-            directamente por WhatsApp.
-          </p>
+          {/* Cancelar reserva — siempre visible salvo si ya está cancelada */}
+          {reservation.status !== "CANCELLED" && (
+            <CancelReservationButton reservationId={reservation.id} />
+          )}
         </div>
       </footer>
     </div>
