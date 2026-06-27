@@ -9,7 +9,7 @@ export function formatSaleMessage(opts: {
   customerName: string;
   type?: "PRODUCTO" | "SERVICIO";
   scheduledAt?: string;
-  items: { qty: number; name: string; price: number }[];
+  items: { qty: number; name: string; price: number; options?: { optionName: string }[] }[];
 }) {
   const total = opts.items.reduce((acc, i) => acc + (i.price || 0), 0);
   const isService = opts.type === "SERVICIO";
@@ -37,7 +37,12 @@ export function formatSaleMessage(opts: {
     : [
         `Hola, *${opts.customerName}*. Te compartimos el detalle de tu pedido${opts.businessName ? ` en *${opts.businessName}*` : ""}:`,
         "",
-        ...opts.items.map((i) => `- ${i.name} x${i.qty}`),
+        ...opts.items.flatMap((i) => [
+          `- ${i.name} x${i.qty}`,
+          ...(i.options?.length
+            ? [`  Opciones: ${i.options.map((option) => option.optionName).join(", ")}`]
+            : []),
+        ]),
         "",
         `*Total: $${total.toLocaleString("es-CO", { minimumFractionDigits: 0 })}*`,
         "",

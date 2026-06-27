@@ -111,6 +111,14 @@ function mapOrderToSale(order: ApiOrder): Sale {
       durationMin: it.durationMin,
       itemInventoryMode: it.itemInventoryMode,
       excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
+      optionSelections: (it.options ?? [])
+        .filter((option) => option.groupId && option.optionId && option.action)
+        .map((option) => ({
+          groupId: option.groupId!,
+          optionId: option.optionId!,
+          action: option.action!,
+        })),
+      options: it.options ?? [],
       recipe: it.recipe ?? [],
     };
   });
@@ -128,6 +136,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     type: order.type,
     status: order.status as Sale["status"],
     inventoryPostedAt: order.inventoryPostedAt ?? null,
+    accountingPostedAt: order.accountingPostedAt ?? null,
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
@@ -362,13 +371,20 @@ export default function VentaPage() {
       return;
     }
 
-    const msg = formatSaleMessage({
+    const baseMsg = formatSaleMessage({
       businessName,
       customerName: sale.customerName || "Cliente",
       type: sale.type,
       scheduledAt: sale.scheduledAt,
       items: sale.items,
     });
+
+    const reservaLink =
+      sale.type === "SERVICIO" && sale.id
+        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${window.location.origin}/reserva/${sale.id}`
+        : "";
+
+    const msg = baseMsg + reservaLink;
 
     const url = buildWhatsAppUrl(sale.customerWhatsapp, msg);
 
@@ -605,6 +621,8 @@ export default function VentaPage() {
           .map((it) => ({
             itemId: it.itemId!,
             quantity: it.qty,
+            optionSelections: it.optionSelections,
+            excludedOptionalIngredientIds: it.excludedOptionalIngredientIds,
           })),
       };
 

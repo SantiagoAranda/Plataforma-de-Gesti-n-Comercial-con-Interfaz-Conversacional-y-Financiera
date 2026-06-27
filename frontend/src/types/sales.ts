@@ -25,6 +25,22 @@ export interface SaleItem {
 
   itemInventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
   excludedOptionalIngredientIds?: string[];
+  optionSelections?: Array<{
+    groupId: string;
+    optionId: string;
+    action: "SELECT" | "ADD" | "REMOVE";
+  }>;
+  options?: Array<{
+    groupId?: string | null;
+    optionId?: string | null;
+    action?: "SELECT" | "ADD" | "REMOVE";
+    groupTitle: string;
+    optionName: string;
+    priceDelta: number;
+    quantityPerUnit?: number | null;
+    totalQuantity?: number | null;
+    unitLabel?: string | null;
+  }>;
   recipe?: Array<{
     ingredientId: string;
     isOptional: boolean;
@@ -48,6 +64,8 @@ export interface Sale {
   type: SaleType;
   status: SaleStatus;
   inventoryPostedAt?: string | null;
+  accountingPostedAt?: string | null;
+  hasInvalidOptionSnapshot?: boolean;
 
   items: SaleItem[];
 

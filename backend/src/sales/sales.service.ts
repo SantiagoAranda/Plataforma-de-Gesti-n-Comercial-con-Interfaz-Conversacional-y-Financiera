@@ -14,6 +14,8 @@ import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
+import { ItemOptionsService } from '../item-options/item-options.service';
+import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -27,10 +29,12 @@ export interface UnifiedSaleDto {
   total: number;
   status: UnifiedStatus;
   inventoryPostedAt?: Date | null;
+  accountingPostedAt?: Date | null;
   createdAt: Date;
   scheduledAt?: string;
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
+  hasInvalidOptionSnapshot?: boolean;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -40,6 +44,17 @@ export interface UnifiedSaleDto {
     itemId: string;
     itemInventoryMode?: string | null;
     excludedOptionalIngredientIds?: string[];
+    options?: Array<{
+      groupId?: string | null;
+      optionId?: string | null;
+      action?: 'SELECT' | 'ADD' | 'REMOVE';
+      groupTitle: string;
+      optionName: string;
+      priceDelta: number;
+      quantityPerUnit?: number | null;
+      totalQuantity?: number | null;
+      unitLabel?: string | null;
+    }>;
     recipe?: Array<{
       ingredientId: string;
       isOptional: boolean;
@@ -60,6 +75,7 @@ export class SalesService {
     private prisma: PrismaService,
     private accountingService: AccountingService,
     private inventoryService: InventoryService,
+    private itemOptionsService: ItemOptionsService,
   ) { }
 
   private readonly orderItemRecipeInclude = {
@@ -80,6 +96,17 @@ export class SalesService {
           },
         },
       },
+    },
+    options: {
+      include: {
+        ingredient: {
+          select: {
+            id: true,
+            stockUnitId: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' as const },
     },
   } satisfies Prisma.OrderItemInclude;
 
@@ -103,16 +130,183 @@ export class SalesService {
   }
 
   private mapRecipeForSales(item: any) {
-    return (item?.recipes ?? []).map((recipe: any) => ({
-      ingredientId: recipe.ingredientId,
-      isOptional: Boolean(recipe.isOptional),
-      quantityRequired: Number(recipe.quantityRequired),
-      ingredient: {
-        id: recipe.ingredient.id,
-        name: recipe.ingredient.name,
-        consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
-      },
+    return (item?.recipes ?? [])
+      .filter((recipe: any) => recipe?.ingredient)
+      .map((recipe: any) => ({
+        ingredientId: recipe.ingredientId,
+        isOptional: Boolean(recipe.isOptional),
+        quantityRequired: Number(recipe.quantityRequired ?? 0),
+        ingredient: {
+          id: recipe.ingredient.id,
+          name: recipe.ingredient.name ?? 'Insumo no disponible',
+          consumptionUnit: recipe.ingredient.consumptionUnit ?? null,
+        },
+      }));
+  }
+
+  private mapOptionsForSales(orderItem: any) {
+    return (orderItem?.options ?? []).map((option: any) => ({
+      groupId: option.groupId,
+      optionId: option.optionId,
+      action: option.action,
+      groupTitle: option.groupTitleSnapshot,
+      optionName: option.optionNameSnapshot,
+      priceDelta: Number(option.priceDeltaSnapshot ?? 0),
+      quantityPerUnit:
+        option.quantityPerUnitSnapshot == null
+          ? null
+          : Number(option.quantityPerUnitSnapshot),
+      totalQuantity:
+        option.totalQuantitySnapshot == null
+          ? null
+          : Number(option.totalQuantitySnapshot),
+      unitLabel: option.unitLabelSnapshot ?? null,
     }));
+  }
+
+  private assertOrderEditable(order: {
+    status: OrderStatus;
+    inventoryPostedAt?: Date | null;
+    accountingPostedAt?: Date | null;
+  }) {
+    if (order.inventoryPostedAt) {
+      throw new ConflictException('Order inventory has already been posted');
+    }
+    if (order.accountingPostedAt) {
+      throw new ConflictException('Order accounting has already been posted');
+    }
+    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
+    if (!editableStatuses.includes(order.status)) {
+      throw new BadRequestException('Order not editable');
+    }
+  }
+
+  private async resolveOrderLines(
+    businessId: string,
+    inputs: SalesOrderLineInputDto[],
+    options?: { isManual?: boolean },
+  ) {
+    if (!inputs.length) {
+      throw new BadRequestException('Order must contain at least one item');
+    }
+    if (inputs.some((input) => !Number.isInteger(input.quantity) || input.quantity <= 0)) {
+      throw new BadRequestException('Item quantity must be a positive integer');
+    }
+
+    const uniqueItemIds = Array.from(new Set(inputs.map((input) => input.itemId)));
+    const dbItems = await this.prisma.item.findMany({
+      where: {
+        businessId,
+        id: { in: uniqueItemIds },
+        status: 'ACTIVE',
+      },
+      include: {
+        recipes: {
+          include: {
+            ingredient: { select: { id: true, name: true } },
+          },
+        },
+        optionGroups: {
+          where: { isActive: true },
+          select: { id: true },
+        },
+      },
+    });
+    if (dbItems.length !== uniqueItemIds.length) {
+      throw new BadRequestException('One or more items are invalid');
+    }
+
+    if (!options?.isManual) {
+      this.ensureSingleItemType(dbItems);
+    }
+    const itemById = new Map(dbItems.map((item) => [item.id, item]));
+    const resolved = await Promise.all(
+      inputs.map(async (input) => {
+        const item = itemById.get(input.itemId)!;
+        const excludedIds = item.optionGroups.length
+          ? []
+          : this.normalizeExcludedOptionalIngredientIds(
+              input.excludedOptionalIngredientIds,
+            );
+        if (excludedIds.length) {
+          const optionalIds = new Set(
+            item.recipes
+              .filter((line) => line.isOptional)
+              .map((line) => line.ingredientId),
+          );
+          for (const ingredientId of excludedIds) {
+            if (!optionalIds.has(ingredientId)) {
+              throw new BadRequestException(
+                'excludedOptionalIngredientIds contains an ingredient outside the optional recipe',
+              );
+            }
+          }
+        }
+
+        const resolvedOptions =
+          await this.itemOptionsService.resolveSelectionsForOrderLine(
+            businessId,
+            item.id,
+            input.quantity,
+            input.optionSelections ?? [],
+          );
+        const baseUnitPrice = item.price;
+        const optionsTotal = resolvedOptions.optionsTotal;
+        const unitPrice = baseUnitPrice.add(optionsTotal);
+        const lineTotal = unitPrice.mul(input.quantity);
+
+        const data: Prisma.OrderItemUncheckedCreateWithoutOrderInput = {
+          businessId,
+          itemId: item.id,
+          quantity: input.quantity,
+          unitPrice,
+          lineTotal,
+          itemNameSnapshot: item.name,
+          itemTypeSnapshot: item.type,
+          inventoryModeSnapshot: item.inventoryMode,
+          durationMinutesSnapshot: item.durationMinutes,
+          excludedOptionalIngredientIds:
+            excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+          baseUnitPriceSnapshot: baseUnitPrice,
+          optionsTotalSnapshot: optionsTotal,
+          finalUnitPriceSnapshot: unitPrice,
+          lineTotalSnapshot: lineTotal,
+          options: resolvedOptions.snapshots.length
+            ? { create: resolvedOptions.snapshots }
+            : undefined,
+        };
+        return { item, data, resolvedOptions };
+      }),
+    );
+
+    const lines = resolved.map(({ data }) => data);
+    const requirements =
+      await this.inventoryService.expandOrderItemsToIngredients(
+        this.prisma,
+        businessId,
+        lines.map((line, index) => ({
+          id: `pending-line-${index}`,
+          itemId: line.itemId,
+          quantity: line.quantity ?? 1,
+          itemNameSnapshot: line.itemNameSnapshot,
+          itemTypeSnapshot: line.itemTypeSnapshot,
+          inventoryModeSnapshot: line.inventoryModeSnapshot,
+          excludedOptionalIngredientIds: line.excludedOptionalIngredientIds,
+          options: resolved[index].resolvedOptions.snapshots,
+        })) as any,
+        { sourceType: 'ORDER_EDIT', orderOrigin: 'MANUAL' },
+      );
+    await this.inventoryService.validateStockAvailability(
+      businessId,
+      requirements,
+      this.prisma,
+    );
+
+    return {
+      itemType: resolved[0].item.type,
+      lines,
+      total: resolved.reduce((sum, { data }) => sum + Number(data.lineTotal), 0),
+    };
   }
 
   private parseDateOnly(value: string) {
@@ -307,21 +501,26 @@ export class SalesService {
       throw new BadRequestException('Order must contain at least one item');
     }
 
+    const uniqueItemIds = Array.from(
+      new Set(dto.items.map((item) => item.itemId)),
+    );
     const itemsFromDb = await this.prisma.item.findMany({
       where: {
-        id: { in: dto.items.map((i) => i.itemId) },
+        id: { in: uniqueItemIds },
         businessId,
+        status: 'ACTIVE',
       },
     });
 
-    if (itemsFromDb.length !== dto.items.length) {
+    if (itemsFromDb.length !== uniqueItemIds.length) {
       throw new BadRequestException('One or more items are invalid');
     }
 
-    const itemType = this.ensureSingleItemType(itemsFromDb);
+    const isManual = (dto.origin ?? 'MANUAL') !== 'PUBLIC_STORE';
+    const itemType = isManual ? null : this.ensureSingleItemType(itemsFromDb);
 
     // BIFURCACIÓN SEGÚN TIPO
-    if (itemType === 'SERVICE') {
+    if (!isManual && itemType === 'SERVICE') {
       if (dto.items.length !== 1) {
         throw new BadRequestException('Services with appointment must be registered separately');
       }
@@ -389,29 +588,18 @@ export class SalesService {
     }
 
     // LÓGICA PARA PRODUCTO (ORDER)
-    let total = 0;
-    const orderItemsData = dto.items.map((input) => {
-      const item = itemsFromDb.find((i) => i.id === input.itemId)!;
-      const lineTotal = Number(item.price) * input.quantity;
-      total += lineTotal;
-
-      return {
-        businessId,
-        itemId: item.id,
-        quantity: input.quantity,
-        unitPrice: item.price,
-        lineTotal,
-        itemNameSnapshot: item.name,
-        itemTypeSnapshot: item.type,
-        inventoryModeSnapshot: item.inventoryMode,
-        durationMinutesSnapshot: item.durationMinutes,
-      };
-    });
+    const { lines: orderItemsData, total } = await this.resolveOrderLines(
+      businessId,
+      dto.items,
+      { isManual },
+    );
 
     const order = await this.prisma.order.create({
       data: {
         businessId,
-        customerName: dto.customerName?.trim() || null,
+        customerName: dto.origin === 'PUBLIC_STORE'
+          ? (dto.customerName?.trim() || null)
+          : (dto.customerName?.trim() || 'Consumidor final'),
         customerWhatsapp: dto.customerWhatsapp?.trim() || null,
         note: dto.note,
         paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
@@ -421,12 +609,10 @@ export class SalesService {
         items: {
           create: orderItemsData,
         },
-      } as any,
+      },
       include: {
         items: {
-          include: {
-            item: true,
-          },
+          include: this.orderItemRecipeInclude,
         },
       },
     });
@@ -472,6 +658,8 @@ export class SalesService {
       }),
     ]);
 
+    const conversions = await this.prisma.unitConversion.findMany();
+
     console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
     if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
     if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
@@ -485,9 +673,11 @@ export class SalesService {
       total: Number(o.total),
       status: this.mapOrderStatus(o.status),
       inventoryPostedAt: o.inventoryPostedAt,
+      accountingPostedAt: o.accountingPostedAt,
       createdAt: o.createdAt,
       origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
       type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
+      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -499,38 +689,80 @@ export class SalesService {
         excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
           it.excludedOptionalIngredientIds,
         ),
+        options: this.mapOptionsForSales(it),
         recipe: this.mapRecipeForSales(it.item),
         durationMin: it.durationMinutesSnapshot ?? null,
       })),
     }));
 
-    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => ({
-      id: r.id,
-      sourceType: 'RESERVATION',
-      customerName: r.customerName,
-      customerWhatsapp: r.customerWhatsapp,
-      paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
-      total: Number(r.item.price),
-      status: this.mapReservationStatus(r.status),
-      createdAt: r.createdAt,
-      origin: r.origin as 'MANUAL' | 'PUBLIC_STORE',
-      scheduledAt: this.toScheduledAt(r.date, r.startMinute),
-      type: 'SERVICIO',
-      items: [
-        {
-          name: r.item.name,
-          qty: 1,
-          unitPrice: Number(r.item.price),
-          price: Number(r.item.price),
-          itemId: r.itemId,
-          durationMin: r.item.durationMinutes ?? null,
-        },
-      ],
-    }));
+    const mappedReservations: UnifiedSaleDto[] = reservations.map((r) => {
+      const item = (r as any).item;
+      const price = Number(item?.price ?? 0);
+
+      return {
+        id: r.id,
+        sourceType: 'RESERVATION',
+        customerName: r.customerName ?? null,
+        customerWhatsapp: r.customerWhatsapp ?? null,
+        paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
+        total: Number.isFinite(price) ? price : 0,
+        status: this.mapReservationStatus(r.status),
+        inventoryPostedAt: r.inventoryPostedAt ?? null,
+        accountingPostedAt: r.status === 'CONFIRMED' ? (r.updatedAt ?? null) : null,
+        createdAt: r.createdAt,
+        origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
+        scheduledAt: this.toScheduledAt(r.date, r.startMinute),
+        type: 'SERVICIO',
+        items: [
+          {
+            name: item?.name ?? 'Servicio no disponible',
+            qty: 1,
+            unitPrice: Number.isFinite(price) ? price : 0,
+            price: Number.isFinite(price) ? price : 0,
+            itemId: r.itemId,
+            durationMin: item?.durationMinutes ?? null,
+          },
+        ],
+      };
+    });
 
     return [...mappedOrders, ...mappedReservations].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
+  }
+
+  private checkInvalidOptionSnapshot(order: any, conversions: any[]): boolean {
+    if (order.origin !== 'PUBLIC_STORE') return false;
+    const isPending = order.status === 'DRAFT' || order.status === 'SENT';
+    if (!isPending) return false;
+
+    for (const item of order.items ?? []) {
+      for (const option of item.options ?? []) {
+        if (option.targetTypeSnapshot === 'INGREDIENT' && option.ingredientId) {
+          const ingredient = option.ingredient;
+          if (!ingredient || !ingredient.stockUnitId) {
+            return true;
+          }
+          const unitId = option.unitIdSnapshot;
+          if (!unitId) {
+            return true;
+          }
+          if (unitId === ingredient.stockUnitId) {
+            continue;
+          }
+          const direct = conversions.some(
+            (c) => c.fromUnitId === unitId && c.toUnitId === ingredient.stockUnitId,
+          );
+          const reverse = conversions.some(
+            (c) => c.fromUnitId === ingredient.stockUnitId && c.toUnitId === unitId,
+          );
+          if (!direct && !reverse) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   private toScheduledAt(date: Date, startMinute: number) {
@@ -563,7 +795,7 @@ export class SalesService {
       const order = await tx.order.findFirst({
         where: { id, businessId },
         include: {
-          items: { include: { item: true } },
+          items: { include: { item: true, options: true } },
         },
       });
 
@@ -602,7 +834,7 @@ export class SalesService {
         if (claim.count === 0) {
           const currentOrder = await tx.order.findFirst({
             where: { id, businessId },
-            include: { items: { include: { item: true } } },
+            include: { items: { include: { item: true, options: true } } },
           });
           if (!currentOrder) throw new NotFoundException('Order not found');
           return {
@@ -648,7 +880,7 @@ export class SalesService {
 
       const updatedOrder = await tx.order.findUniqueOrThrow({
         where: { id },
-        include: { items: { include: { item: true } } },
+        include: { items: { include: { item: true, options: true } } },
       });
 
       return {
@@ -660,6 +892,7 @@ export class SalesService {
         movements,
       };
     }, {
+      timeout: 20000, // P2028 fix: accounting + inventory posting needs extra time
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
@@ -695,6 +928,14 @@ export class SalesService {
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
 
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
+      const inventoryMovements = res.inventoryPostedAt
+        ? []
+        : await this.inventoryService.applyInventoryConsumptionForReservation(
+            tx,
+            businessId,
+            updated,
+          );
+
       const shouldPostAccounting = existingMovements.length === 0;
       const movements = shouldPostAccounting
         ? await this.accountingService.postOrderMovements(
@@ -707,10 +948,13 @@ export class SalesService {
       return {
         order: virtualOrder, // Frontend expects something that looks like an order/sale
         accountingCreated: shouldPostAccounting,
-        alreadyPosted: !shouldPostAccounting,
+        alreadyPosted: !shouldPostAccounting && res.inventoryPostedAt != null,
         movements,
+        inventoryMovements,
         isReservation: true,
       };
+    }, {
+      timeout: 20000, // P2028 fix: accounting posting for reservation confirmation needs extra time
     });
   }
 
@@ -789,8 +1033,12 @@ export class SalesService {
   }
 
   private mapReservationToVirtualOrder(res: any) {
+    if (!res?.item) {
+      throw new BadRequestException('Reservation service is not available');
+    }
+
     // Falls back to current item price if no snapshot (as per user request)
-    const price = res.item.price;
+    const price = res.item.price ?? 0;
 
     return {
       id: res.id,
@@ -824,9 +1072,7 @@ export class SalesService {
       where: { id: orderId, businessId },
       include: {
         items: {
-          include: {
-            item: true,
-          },
+          include: this.orderItemRecipeInclude,
         },
       },
     });
@@ -857,14 +1103,7 @@ export class SalesService {
     });
 
     if (!order) throw new NotFoundException('Order not found');
-    if (order.inventoryPostedAt) {
-      throw new ConflictException('Order inventory has already been posted');
-    }
-
-    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
-    if (!editableStatuses.includes(order.status)) {
-      throw new BadRequestException('Order not editable');
-    }
+    this.assertOrderEditable(order);
 
     const orderItem = order.items[0];
     if (!orderItem) throw new NotFoundException('OrderItem not found');
@@ -920,19 +1159,13 @@ export class SalesService {
 
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
     const order = await this.getOrderOrThrow(businessId, orderId);
-
-    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
-    if (!editableStatuses.includes(order.status)) {
-      throw new BadRequestException('Order not editable');
-    }
-
-    const item = await this.prisma.item.findFirst({
-      where: { id: dto.itemId, businessId, status: 'ACTIVE' },
+    this.assertOrderEditable(order);
+    const resolved = await this.resolveOrderLines(businessId, [dto], { isManual: order.origin === 'MANUAL' });
+    const item = await this.prisma.item.findFirstOrThrow({
+      where: { id: dto.itemId, businessId },
     });
 
-    if (!item) throw new BadRequestException('Invalid item');
-
-    if (order.items.length > 0) {
+    if (order.origin !== 'MANUAL' && order.items.length > 0) {
       const existingType = this.ensureSingleItemType(order.items);
       if (item.type !== existingType) {
         throw new BadRequestException(
@@ -941,23 +1174,13 @@ export class SalesService {
       }
     }
 
-    const unitPrice = item.price;
-    const lineTotal = Number(unitPrice) * dto.quantity;
-
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.orderItem.create({
         data: {
+          ...resolved.lines[0],
           orderId: order.id,
-          businessId,
-          itemId: item.id,
-          quantity: dto.quantity,
-          itemNameSnapshot: item.name,
-          itemTypeSnapshot: item.type,
-          inventoryModeSnapshot: item.inventoryMode,
-          durationMinutesSnapshot: item.durationMinutes,
-          unitPrice,
-          lineTotal,
-        } as any,
+        },
+        include: this.orderItemRecipeInclude,
       });
 
       const totals = await tx.orderItem.aggregate({
@@ -981,11 +1204,7 @@ export class SalesService {
     dto: UpdateOrderItemDto,
   ) {
     const order = await this.getOrderOrThrow(businessId, orderId);
-
-    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
-    if (!editableStatuses.includes(order.status)) {
-      throw new BadRequestException('Order not editable');
-    }
+    this.assertOrderEditable(order);
 
     const oi = await this.prisma.orderItem.findFirst({
       where: { id: orderItemId, orderId, businessId },
@@ -993,12 +1212,28 @@ export class SalesService {
 
     if (!oi) throw new NotFoundException('OrderItem not found');
 
-    const nextLineTotal = Number(oi.unitPrice) * dto.quantity;
+    const resolved = await this.resolveOrderLines(
+      businessId,
+      [
+        {
+          itemId: dto.itemId ?? oi.itemId,
+          quantity: dto.quantity,
+          optionSelections: dto.optionSelections,
+          excludedOptionalIngredientIds: dto.excludedOptionalIngredientIds,
+        },
+      ],
+      { isManual: order.origin === 'MANUAL' },
+    );
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.orderItem.update({
-        where: { id: oi.id },
-        data: { quantity: dto.quantity, lineTotal: nextLineTotal },
+      await tx.orderItem.delete({ where: { id: oi.id } });
+      const updated = await tx.orderItem.create({
+        data: {
+          ...resolved.lines[0],
+          id: oi.id,
+          orderId,
+        },
+        include: this.orderItemRecipeInclude,
       });
 
       const totals = await tx.orderItem.aggregate({
@@ -1017,11 +1252,7 @@ export class SalesService {
 
   async removeItem(businessId: string, orderId: string, orderItemId: string) {
     const order = await this.getOrderOrThrow(businessId, orderId);
-
-    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
-    if (!editableStatuses.includes(order.status)) {
-      throw new BadRequestException('Order not editable');
-    }
+    this.assertOrderEditable(order);
 
     const oi = await this.prisma.orderItem.findFirst({
       where: { id: orderItemId, orderId, businessId },
@@ -1058,7 +1289,12 @@ export class SalesService {
 
     if (!order) throw new NotFoundException('Order not found');
 
-    return order;
+    const conversions = await this.prisma.unitConversion.findMany();
+
+    return {
+      ...order,
+      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
+    };
   }
 
   async cancel(
@@ -1067,10 +1303,22 @@ export class SalesService {
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
     if (sourceType === 'RESERVATION') {
-      return this.prisma.reservation.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
-        include: { item: true },
+      return this.prisma.$transaction(async (tx) => {
+        const res = await tx.reservation.findFirst({
+          where: { id, businessId },
+          include: { item: true },
+        });
+        if (!res) throw new NotFoundException('Reservation not found');
+
+        if (res.inventoryPostedAt) {
+          await this.inventoryService.reverseInventoryConsumptionForReservation(tx, businessId, res.id);
+        }
+
+        return tx.reservation.update({
+          where: { id },
+          data: { status: 'CANCELLED' },
+          include: { item: true },
+        });
       });
     }
 
@@ -1213,18 +1461,18 @@ export class SalesService {
     }
 
     const order = await this.getOrderOrThrow(businessId, orderId);
-
-    const editableStatuses: OrderStatus[] = ['DRAFT', 'SENT'];
-    if (!editableStatuses.includes(order.status)) {
-      throw new BadRequestException('Order not editable in current status');
-    }
+    this.assertOrderEditable(order);
+    const resolvedItems = dto.items
+      ? await this.resolveOrderLines(businessId, dto.items)
+      : null;
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update general info if provided
       await tx.order.update({
         where: { id: orderId },
         data: {
-          customerName: dto.customerName,
+          customerName: order.origin === 'PUBLIC_STORE'
+            ? (dto.customerName !== undefined ? (dto.customerName?.trim() || null) : undefined)
+            : (dto.customerName !== undefined ? (dto.customerName?.trim() || 'Consumidor final') : undefined),
           customerWhatsapp: dto.customerWhatsapp,
           note: dto.note,
           paymentMethod: dto.paymentMethod as any,
@@ -1232,65 +1480,31 @@ export class SalesService {
       });
 
       // 2. Handle Items Sync if provided
-      if (dto.items) {
-        // Validate items exist and belong to business
-        const itemsFromDb = await tx.item.findMany({
-          where: {
-            id: { in: dto.items.map((i) => i.itemId) },
-            businessId,
-          },
-        });
-
-        if (itemsFromDb.length !== dto.items.length) {
-          throw new BadRequestException('One or more items are invalid');
-        }
-
-        this.ensureSingleItemType(itemsFromDb);
-
-        // Delete existing items
+      if (resolvedItems) {
         await tx.orderItem.deleteMany({
           where: { orderId },
         });
 
-        // Create new items
-        let newTotal = 0;
-        const newOrderItems = dto.items.map((input) => {
-          const item = itemsFromDb.find((i) => i.id === input.itemId)!;
-          const lineTotal = Number(item.price) * input.quantity;
-          newTotal += lineTotal;
+        for (const line of resolvedItems.lines) {
+          await tx.orderItem.create({
+            data: {
+              ...line,
+              orderId,
+            },
+          });
+        }
 
-          return {
-            orderId,
-            businessId,
-            itemId: item.id,
-            quantity: input.quantity,
-            unitPrice: item.price,
-            lineTotal,
-            itemNameSnapshot: item.name,
-            itemTypeSnapshot: item.type,
-            inventoryModeSnapshot: item.inventoryMode,
-            durationMinutesSnapshot: item.durationMinutes,
-          };
-        });
-
-        await tx.orderItem.createMany({
-          data: newOrderItems,
-        });
-
-        // Update total
         await tx.order.update({
           where: { id: orderId },
-          data: { total: newTotal },
+          data: { total: resolvedItems.total },
         });
       }
 
       return tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: {
-          items: {
-            include: {
-              item: true,
-            },
+        items: {
+            include: this.orderItemRecipeInclude,
           },
         },
       });

@@ -1,16 +1,18 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { ShoppingBag, Minus, Plus, X } from "lucide-react";
+import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
 import PhoneSelector from "./PhoneSelector";
 import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
 
 interface CartItem {
   id: string;
+  cartKey?: string;
   name: string;
   price: number;
   quantity: number;
+  selectedOptionNames?: string[];
   excludedOptionalIngredientNames?: string[];
 }
 
@@ -18,6 +20,8 @@ type Props = {
   items: CartItem[];
   onIncreaseQty: (id: string) => void;
   onDecreaseQty: (id: string) => void;
+  onEdit?: (id: string) => void;
+  onRemove?: (id: string) => void;
   customerName: string;
   onCustomerNameChange: (val: string) => void;
   countryCode: string;
@@ -32,6 +36,8 @@ export default function CartSummary({
   items,
   onIncreaseQty,
   onDecreaseQty,
+  onEdit,
+  onRemove,
   customerName,
   onCustomerNameChange,
   countryCode,
@@ -102,7 +108,7 @@ export default function CartSummary({
         <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
           {items.map((item) => (
             <div
-              key={item.id}
+              key={item.cartKey ?? item.id}
               className="flex items-center justify-between gap-4 p-3 bg-neutral-50/50 rounded-xl border border-neutral-100"
             >
               <div className="min-w-0 flex-1">
@@ -112,6 +118,11 @@ export default function CartSummary({
                 <span className="block text-sm font-medium text-emerald-600 mt-0.5">
                   ${formatPrice(item.price)}
                 </span>
+                {item.selectedOptionNames?.length ? (
+                  <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
+                    Opciones: {item.selectedOptionNames.join(", ")}
+                  </span>
+                ) : null}
                 {item.excludedOptionalIngredientNames?.length ? (
                   <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
                     Sin: {item.excludedOptionalIngredientNames.join(", ")}
@@ -123,7 +134,7 @@ export default function CartSummary({
               <div className="flex items-center gap-2 bg-neutral-100 rounded-full px-2.5 py-1 shrink-0">
                 <button
                   type="button"
-                  onClick={() => onDecreaseQty(item.id)}
+                  onClick={() => onDecreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Minus size={12} />
@@ -133,11 +144,23 @@ export default function CartSummary({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onIncreaseQty(item.id)}
+                  onClick={() => onIncreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Plus size={12} />
                 </button>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                {onEdit && (
+                  <button type="button" onClick={() => onEdit(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-emerald-600" aria-label="Editar producto">
+                    <Pencil size={14} />
+                  </button>
+                )}
+                {onRemove && (
+                  <button type="button" onClick={() => onRemove(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-rose-600" aria-label="Eliminar producto">
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

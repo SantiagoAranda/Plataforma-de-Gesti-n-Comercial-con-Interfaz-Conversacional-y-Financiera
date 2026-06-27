@@ -8,6 +8,8 @@ import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ItemSelector from "@/src/components/shared/ItemSelector";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import ReservationSlotPicker from "@/src/components/reservations/ReservationSlotPicker";
+import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
+import type { PublicItemOptionGroup } from "@/src/types/item";
 
 type EditableItem = {
   itemId: string;
@@ -15,6 +17,8 @@ type EditableItem = {
   name: string;
   price: number;
   durationMin?: number | null;
+  optionSelections?: OptionSelection[];
+  optionNames?: string[];
 };
 
 type BusinessItem = {
@@ -25,6 +29,7 @@ type BusinessItem = {
   inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
   currentStock?: number | string | null;
   durationMinutes?: number | null;
+  optionGroups?: PublicItemOptionGroup[];
 };
 
 type ApiBusinessItem = Omit<BusinessItem, "price"> & {
@@ -80,7 +85,11 @@ export default function SalesChatComposer({
     paymentMethod: "CASH" | "BANK_TRANSFER";
     scheduledAt?: string;
     durationMinutes?: number;
-    items: { itemId: string; quantity: number }[];
+    items: Array<{
+      itemId: string;
+      quantity: number;
+      optionSelections?: OptionSelection[];
+    }>;
   }) => Promise<void> | void;
 }) {
   const [customerName, setCustomerName] = useState("");
@@ -98,6 +107,7 @@ export default function SalesChatComposer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
   const [formError, setFormError] = useState<string | null>(null);
+  const [customizing, setCustomizing] = useState<{ item: BusinessItem; quantity: number } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isMounted = useRef(true);
@@ -198,6 +208,10 @@ export default function SalesChatComposer({
 
 
     const addedQty = newItem.qty === "" ? 1 : newItem.qty;
+    if ((bi.optionGroups?.length ?? 0) > 0) {
+      setCustomizing({ item: bi, quantity: addedQty });
+      return;
+    }
     const existingQty = items
       .filter((it) => it.itemId === bi.id)
       .reduce((acc, it) => acc + it.qty, 0);
@@ -247,6 +261,7 @@ export default function SalesChatComposer({
       .map((it) => ({
         itemId: it.itemId,
         quantity: normalizeQty(type, it.qty),
+        optionSelections: it.optionSelections,
       }));
 
     if (cleanedItems.length === 0) return;
@@ -525,6 +540,9 @@ export default function SalesChatComposer({
                             <div className="flex items-center gap-1 text-[10px] font-normal text-slate-400 mt-0.5">
                               {it.qty} unid. x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                             </div>
+                            {it.optionNames?.map((name) => (
+                              <div key={name} className="text-[10px] text-slate-500">{name}</div>
+                            ))}
                           </div>
 
                           {type === "PRODUCTO" && (
@@ -579,6 +597,29 @@ export default function SalesChatComposer({
           />
         </div>
       </div>
+      {customizing && (
+        <ProductOptionSelector
+          item={customizing.item}
+          quantity={customizing.quantity}
+          onClose={() => setCustomizing(null)}
+          onConfirm={({ optionSelections, optionNames, unitPrice }) => {
+            setItems((current) => [
+              ...current,
+              {
+                itemId: customizing.item.id,
+                qty: customizing.quantity,
+                name: customizing.item.name,
+                price: unitPrice,
+                durationMin: customizing.item.durationMinutes,
+                optionSelections,
+                optionNames,
+              },
+            ]);
+            setNewItem({ itemId: "", qty: 1 });
+            setCustomizing(null);
+          }}
+        />
+      )}
     </div>
   );
 }

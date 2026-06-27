@@ -241,7 +241,11 @@ export function ItemFormContent({
             </div>
           ))}
         </div>
-        {imageError && <p className="text-[10px] font-medium text-red-500 uppercase">{imageError}</p>}
+        {imageError && (
+          <p className="text-xs font-medium text-rose-600 mt-2 transition-all">
+            {imageError}
+          </p>
+        )}
       </div>
 
       {/* NOMBRE */}

@@ -208,6 +208,7 @@ export default function ItemFormModal({
   };
 
   const handleSend = async () => {
+    if (isSubmitting) return;
     if (type === "SERVICE") {
       const hasOverlap = week.some((day) => {
         if (!day.active || day.ranges.length !== 2) return false;
@@ -313,6 +314,7 @@ export default function ItemFormModal({
 
       let savedItem: Item;
       if (editingItem) {
+        // ── EDIT PATH ────────────────────────────────────────────────
         savedItem = await api<Item>(`/items/${editingItem.id}`, {
           method: "PATCH",
           body: JSON.stringify(body),
@@ -323,29 +325,58 @@ export default function ItemFormModal({
             method: "DELETE",
           });
         }
+
+        // Upload new images — abort on first failure (item already existed, no orphan risk).
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${editingItem.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${editingItem.id}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (uploadErr) {
+            console.error("[ItemFormModal handleSend] Image upload failed on edit:", uploadErr);
+            toast.error("Error al subir una imagen. El resto de los cambios se guardaron.");
+            setIsSubmitting(false);
+            return;
+          }
         }
+
         savedItem = await api<Item>(`/items/${editingItem.id}`);
       } else {
+        // ── CREATE PATH ──────────────────────────────────────────────
+        // Step 1: create the item record.
         const created = await api<Item>(`/items`, {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
 
+        // Step 2: upload images. On failure → rollback (deactivate the orphan record).
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${created.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${created.id}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (uploadErr) {
+            console.error("[ItemFormModal handleSend] Image upload failed on create — rolling back:", uploadErr);
+            try {
+              await api(`/items/${created.id}/status`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: "INACTIVE" }),
+              });
+            } catch (rollbackErr) {
+              console.error("[ItemFormModal handleSend] Rollback failed:", rollbackErr);
+            }
+            toast.error("Error al subir la imagen. No se guardó el ítem.");
+            setIsSubmitting(false);
+            return;
+          }
         }
+
         savedItem = await api<Item>(`/items/${created.id}`);
       }
 

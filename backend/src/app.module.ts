@@ -19,6 +19,7 @@ import { IngredientsModule } from './ingredients/ingredients.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { PayrollModule } from './payroll/payroll.module';
+import { ItemOptionsModule } from './item-options/item-options.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PayrollModule } from './payroll/payroll.module';
     RecipesModule,
     InventoryModule,
     PayrollModule,
+    ItemOptionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

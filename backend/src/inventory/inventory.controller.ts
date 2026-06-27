@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
@@ -8,6 +8,7 @@ import { CreateInventoryPurchaseReturnDto } from './dto/create-inventory-purchas
 import { InventoryKardexGlobalQueryDto } from './dto/inventory-kardex-global.query.dto';
 import { InventoryKardexQueryDto } from './dto/inventory-kardex.query.dto';
 import { InventorySummaryQueryDto } from './dto/inventory-summary.query.dto';
+import { ReplaceServiceConsumptionDto } from './dto/replace-service-consumption.dto';
 import { InventoryService } from './inventory.service';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
@@ -136,6 +137,61 @@ export class InventoryController {
     return this.inventoryService.listItemKardex(
       req.user.businessId,
       itemId,
+      query,
+    );
+  }
+
+  @Get('services/consumption')
+  listServiceConsumption(@Req() req: any) {
+    return this.inventoryService.listServiceConsumption(req.user.businessId);
+  }
+
+  @Get('services/:serviceItemId/consumption')
+  getServiceConsumption(
+    @Req() req: any,
+    @Param('serviceItemId') serviceItemId: string,
+  ) {
+    return this.inventoryService.getServiceConsumption(
+      req.user.businessId,
+      serviceItemId,
+    );
+  }
+
+  @Put('services/:serviceItemId/consumption')
+  replaceServiceConsumption(
+    @Req() req: any,
+    @Param('serviceItemId') serviceItemId: string,
+    @Body() dto: ReplaceServiceConsumptionDto,
+  ) {
+    return this.inventoryService.replaceServiceConsumption(
+      req.user.businessId,
+      serviceItemId,
+      dto,
+    );
+  }
+
+  @Get('recipes/:itemId/consumption-history')
+  getRecipeConsumptionHistory(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Query() query: { from?: string; to?: string },
+  ) {
+    return this.inventoryService.getRecipeConsumptionHistory(
+      req.user.businessId,
+      itemId,
+      query,
+    );
+  }
+
+  @Get('services/:serviceItemId/consumption-history')
+  getServiceConsumptionHistory(
+    @Req() req: any,
+    @Param('serviceItemId') serviceItemId: string,
+    @Query() query: { from?: string; to?: string },
+  ) {
+    return this.inventoryService.getServiceConsumptionHistory(
+      req.user.businessId,
+      serviceItemId,
       query,
     );
   }

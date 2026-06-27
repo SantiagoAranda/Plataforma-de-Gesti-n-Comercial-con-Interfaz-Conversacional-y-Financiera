@@ -9,15 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-
-class UpdateOrderItemInput {
-  @IsString()
-  itemId: string;
-
-  @IsInt()
-  @Min(1)
-  quantity: number;
-}
+import { SalesOrderLineInputDto } from './order-line-input.dto';
 
 export class UpdateOrderDto {
   @IsOptional()
@@ -43,6 +35,6 @@ export class UpdateOrderDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => UpdateOrderItemInput)
-  items?: UpdateOrderItemInput[];
+  @Type(() => SalesOrderLineInputDto)
+  items?: SalesOrderLineInputDto[];
 }

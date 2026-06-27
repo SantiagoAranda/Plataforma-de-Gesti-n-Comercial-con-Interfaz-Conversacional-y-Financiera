@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { memo, useState } from "react";
 import { api } from "@/src/lib/api";
@@ -102,7 +102,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
             <div className="flex items-center justify-between gap-1.5 w-full text-[10px] font-medium">
               <div className="flex items-center gap-1.5 text-neutral-500">
                 <span>🕒</span>
-                <span>{item.durationMinutes} min</span>
+                <span>{item.durationMinutes ? `${item.durationMinutes / 60} h` : "0 h"}</span>
               </div>
               {activeDays && (
                 <span className="text-neutral-700 font-semibold italic">

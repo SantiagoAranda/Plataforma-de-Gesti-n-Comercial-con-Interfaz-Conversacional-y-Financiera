@@ -118,6 +118,12 @@ export default function SaleDetailsModal({
     sale?.sourceType === "ORDER" &&
     !sale?.inventoryPostedAt &&
     Boolean(onSaveOptionalIngredients);
+  const canEditSale =
+    Boolean(onEdit) &&
+    canConfirm &&
+    sale?.sourceType === "ORDER" &&
+    !sale?.inventoryPostedAt &&
+    !sale?.accountingPostedAt;
   const hasUnsavedOptionalChanges = useMemo(
     () =>
       items.some((item, index) => {
@@ -192,6 +198,18 @@ export default function SaleDetailsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6 bg-neutral-50/30">
+          {sale.hasInvalidOptionSnapshot && canConfirm && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-sm flex items-start gap-3 animate-in fade-in duration-200">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold text-amber-900">Personalización Desactualizada</h4>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  Este pedido usa una configuración anterior o inválida de opciones. Se recomienda eliminar la orden y generarla nuevamente desde la tienda pública para evitar conflictos de stock.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="p-4 rounded-2xl bg-white border border-neutral-100 shadow-sm space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -284,6 +302,22 @@ export default function SaleDetailsModal({
                         ${formatMoney(it.price)}
                       </div>
                     </div>
+
+                    {it.options?.length ? (
+                      <div className="pt-3 border-t border-neutral-50 space-y-1.5">
+                        <div className="text-[9px] font-semibold uppercase tracking-widest text-neutral-400">Opciones</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {it.options.map((option, index) => (
+                            <span
+                              key={`${option.groupTitle}-${option.optionName}-${index}`}
+                              className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-medium text-orange-700"
+                            >
+                              {option.optionName}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {recipe.length > 0 && (
                       <div className="pt-3 border-t border-neutral-50 space-y-3">
@@ -390,6 +424,15 @@ export default function SaleDetailsModal({
             </div>
 
             <div className="flex items-center gap-2">
+              {canEditSale && (
+                <button
+                  onClick={() => onEdit?.(sale)}
+                  disabled={confirming}
+                  className="h-10 rounded-full border border-emerald-200 px-4 text-[11px] font-medium uppercase tracking-widest text-emerald-700"
+                >
+                  Editar
+                </button>
+              )}
               {onCancel && (
                 <button
                   onClick={handleCancelAction}

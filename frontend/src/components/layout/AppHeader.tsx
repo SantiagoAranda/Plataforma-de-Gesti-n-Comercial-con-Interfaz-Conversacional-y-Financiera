@@ -83,10 +83,10 @@ export default function AppHeader({
             </button>
           )}
 
-          <div className="min-w-0 leading-tight text-left">
+          <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
             <h1 className="truncate text-[20px] font-semibold text-neutral-900">{title}</h1>
             {subtitle && (
-              <p className="mt-0.5 truncate text-[13px] font-medium text-neutral-500">
+              <p className="shrink-0 text-[13px] font-medium text-slate-500 ml-2">
                 {subtitle}
               </p>
             )}

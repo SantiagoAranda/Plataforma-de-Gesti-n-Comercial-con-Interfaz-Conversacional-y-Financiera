@@ -32,6 +32,52 @@ export type Schedule = {
   endMinute: number;
 };
 
+export type ItemOptionTargetType = "NONE" | "INGREDIENT" | "ITEM";
+
+export type ItemOptionQuantityMode =
+  | "FIXED_PER_OPTION"
+  | "SHARED_TOTAL"
+  | "NO_QUANTITY";
+
+export type PublicItemOption = {
+  id: string;
+  groupId: string;
+  name: string;
+  description?: string | null;
+  targetType: ItemOptionTargetType;
+  ingredientId?: string | null;
+  itemId?: string | null;
+  quantity?: number | null;
+  unitId?: string | null;
+  priceDelta: number;
+  selectedByDefault: boolean;
+  removable: boolean;
+  sortOrder: number;
+  ingredient?: { id: string; name: string } | null;
+  item?: {
+    id: string;
+    name: string;
+    type: ItemType;
+    inventoryMode?: ItemInventoryMode | null;
+  } | null;
+  unit?: { id: string; code?: string; name?: string; symbol?: string } | null;
+};
+
+export type PublicItemOptionGroup = {
+  id: string;
+  title: string;
+  description?: string | null;
+  required: boolean;
+  minSelections: number;
+  maxSelections?: number | null;
+  quantityMode: ItemOptionQuantityMode;
+  totalQuantityLimit?: number | null;
+  totalQuantityUnitId?: string | null;
+  totalQuantityUnit?: { id: string; code?: string; name?: string; symbol?: string } | null;
+  sortOrder: number;
+  options: PublicItemOption[];
+};
+
 export type Item = {
   id: string;
   type: ItemType;
@@ -49,6 +95,7 @@ export type Item = {
   averageCost?: number | string;
   schedule?: Schedule[];
   images?: { id: string; url: string; order: number }[];
+  optionGroups?: PublicItemOptionGroup[];
   status: "ACTIVE" | "INACTIVE";
   createdAt?: string;
   updatedAt?: string;

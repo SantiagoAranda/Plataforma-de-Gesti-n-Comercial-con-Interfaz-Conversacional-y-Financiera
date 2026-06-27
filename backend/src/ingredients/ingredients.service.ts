@@ -157,6 +157,23 @@ export class IngredientsService {
 
     const recipeFields = this.resolveRecipeUnitFields(dto.recipeUnitLabel, dto.recipeUnitFactor);
 
+    let finalFactor = units.purchaseToConsumptionFactor;
+    if (dto.purchaseToConsumptionFactor !== undefined) {
+      const explicitFactor = new Prisma.Decimal(dto.purchaseToConsumptionFactor);
+      if (explicitFactor.lte(0)) {
+        throw new BadRequestException(
+          'purchaseToConsumptionFactor must be greater than zero',
+        );
+      }
+      const isWeightOrVolume =
+        (units.stockUnit.kind === UnitKind.WEIGHT && units.defaultPurchaseUnit.kind === UnitKind.WEIGHT) ||
+        (units.stockUnit.kind === UnitKind.VOLUME && units.defaultPurchaseUnit.kind === UnitKind.VOLUME);
+
+      if (!isWeightOrVolume) {
+        finalFactor = explicitFactor;
+      }
+    }
+
     try {
       return await this.prisma.ingredient.create({
         data: {
@@ -172,7 +189,7 @@ export class IngredientsService {
           ),
           stockUnitId: units.stockUnitId,
           defaultPurchaseUnitId: units.defaultPurchaseUnitId,
-          purchaseToConsumptionFactor: units.purchaseToConsumptionFactor,
+          purchaseToConsumptionFactor: finalFactor,
           customUnitLabel: undefined,
           minStock,
           recipeUnitLabel: recipeFields.recipeUnitLabel,

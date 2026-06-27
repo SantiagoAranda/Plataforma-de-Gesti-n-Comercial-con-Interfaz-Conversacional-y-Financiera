@@ -102,6 +102,12 @@ describe('AccountingService automatic order postings', () => {
       ['6135', 'DEBIT', '4000'],
       ['1435', 'CREDIT', '4000'],
     ]);
+    expect(calls.map(([call]: any[]) => call.data.detail)).toEqual([
+      'Contrapartida producto - Producto',
+      'Ingreso por venta de producto - Producto',
+      'Costo de venta de producto - Producto',
+      'Salida de inventario por venta de producto - Producto',
+    ]);
 
     const totals = totalsByNature(calls);
     expect(totals.debit.toString()).toBe('14000');
@@ -132,5 +138,133 @@ describe('AccountingService automatic order postings', () => {
     const totals = totalsByNature(calls);
     expect(totals.debit.toString()).toBe('33000');
     expect(totals.credit.toString()).toBe('33000');
+  });
+
+  it('posts service income and real consumed-input cost with service descriptions', async () => {
+    const { service, tx } = createService();
+    tx.inventoryMovement.findMany.mockResolvedValue([
+      {
+        totalValue: new Prisma.Decimal(900),
+        orderItemId: null,
+        reservationId: 'reservation-1',
+      },
+    ]);
+
+    await service.postOrderMovements(
+      tx,
+      businessId,
+      order({
+        id: 'reservation-1',
+        items: [
+          {
+            id: 'virtual-oi-reservation-1',
+            itemId: 'service-1',
+            itemNameSnapshot: 'Corte de barba',
+            itemTypeSnapshot: 'SERVICE',
+            quantity: 1,
+            price: new Prisma.Decimal(10000),
+            item: { id: 'service-1', name: 'Corte de barba', type: 'SERVICE' },
+          },
+        ],
+      }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls;
+    expect(
+      calls.map(([call]: any[]) => [
+        call.data.pucCuentaCode,
+        call.data.nature,
+        call.data.amount.toString(),
+        call.data.detail,
+      ]),
+    ).toEqual([
+      ['1105', 'DEBIT', '10000', 'Contrapartida servicio - Corte de barba'],
+      ['4135', 'CREDIT', '10000', 'Ingreso por servicio - Corte de barba'],
+      ['6135', 'DEBIT', '900', 'Consumo de insumos por servicio - Corte de barba'],
+      ['1435', 'CREDIT', '900', 'Salida de inventario por servicio - Corte de barba'],
+    ]);
+  });
+
+  it('posts mixed manual order income and costs differentiated by line', async () => {
+    const { service, tx } = createService();
+    tx.inventoryMovement.findMany.mockResolvedValue([
+      {
+        totalValue: new Prisma.Decimal(4000),
+        orderItemId: 'product-line',
+        reservationId: null,
+      },
+      {
+        totalValue: new Prisma.Decimal(900),
+        orderItemId: 'service-line',
+        reservationId: null,
+      },
+    ]);
+
+    await service.postOrderMovements(
+      tx,
+      businessId,
+      order({
+        total: new Prisma.Decimal(20000),
+        items: [
+          {
+            id: 'product-line',
+            itemId: 'product-1',
+            itemNameSnapshot: 'Producto A',
+            itemTypeSnapshot: 'PRODUCT',
+            quantity: 1,
+            lineTotal: new Prisma.Decimal(10000),
+            item: { id: 'product-1', name: 'Producto A', type: 'PRODUCT' },
+          },
+          {
+            id: 'service-line',
+            itemId: 'service-1',
+            itemNameSnapshot: 'Servicio B',
+            itemTypeSnapshot: 'SERVICE',
+            quantity: 1,
+            lineTotal: new Prisma.Decimal(10000),
+            item: { id: 'service-1', name: 'Servicio B', type: 'SERVICE' },
+          },
+        ],
+      }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls;
+    expect(calls.map(([call]: any[]) => call.data.detail)).toEqual([
+      'Contrapartida venta mixta',
+      'Ingreso por venta de producto - Producto A',
+      'Ingreso por servicio - Servicio B',
+      'Costo de venta de producto - Producto A',
+      'Salida de inventario por venta de producto - Producto A',
+      'Consumo de insumos por servicio - Servicio B',
+      'Salida de inventario por servicio - Servicio B',
+    ]);
+
+    const totals = totalsByNature(calls);
+    expect(totals.debit.toString()).toBe('24900');
+    expect(totals.credit.toString()).toBe('24900');
+  });
+
+  it('uses the current shared income account without losing service semantics', async () => {
+    const { service, tx } = createService();
+    tx.inventoryMovement.findMany.mockResolvedValue([]);
+
+    await service.postOrderMovements(
+      tx,
+      businessId,
+      order({
+        items: [
+          {
+            itemNameSnapshot: 'Asesoría',
+            itemTypeSnapshot: 'SERVICE',
+            lineTotal: new Prisma.Decimal(10000),
+            item: { type: 'SERVICE' },
+          },
+        ],
+      }),
+    );
+
+    const incomeCall = tx.accountingMovement.create.mock.calls[1][0] as any;
+    expect(incomeCall.data.pucCuentaCode).toBe('4135');
+    expect(incomeCall.data.detail).toBe('Ingreso por servicio - Asesoría');
   });
 });

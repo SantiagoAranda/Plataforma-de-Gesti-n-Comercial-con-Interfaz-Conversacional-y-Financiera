@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, Edit, Trash2, Tag, Clock, Calendar, Info } from "lucide-react";
+import { X, Edit, Trash2, Tag, Clock, Calendar, Info, Plus } from "lucide-react";
 import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney } from "@/src/lib/formatters";
 import { formatFullDate } from "@/src/lib/datetime";
@@ -73,6 +73,38 @@ function inventoryMeta(item: Item, recipeLineCount = 0) {
     href: `/inventario?tab=recipes&itemId=${encodeURIComponent(item.id)}`,
   };
 }
+
+type QuantityMode = "FIXED_PER_OPTION" | "SHARED_TOTAL" | "NO_QUANTITY";
+type TargetType = "NONE" | "INGREDIENT" | "ITEM";
+
+type OptionGroup = {
+  id: string;
+  title: string;
+  description?: string | null;
+  required: boolean;
+  minSelections: number;
+  maxSelections?: number | null;
+  quantityMode: QuantityMode;
+  totalQuantityLimit?: number | null;
+  totalQuantityUnitId?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  options: Array<{
+    id: string;
+    name: string;
+    targetType: TargetType;
+    priceDelta: number;
+    selectedByDefault: boolean;
+    removable: boolean;
+    isActive: boolean;
+  }>;
+};
+
+type UnitOption = { id: string; name: string; symbol: string; kind: string };
+type IngredientOption = { id: string; name: string; stockUnitId?: string | null };
+type ItemOptionTarget = { id: string; name: string; inventoryMode?: string | null; type?: string };
+
+
 
 export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete, recipeLineCount = 0 }: ItemDetailModalProps) {
   const router = useRouter();
@@ -193,7 +225,7 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-neutral-400" />
                   <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">Duración estimada:</span>
-                  <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes} min</span>
+                  <span className="text-sm font-semibold text-neutral-700">{displayItem.durationMinutes ? `${displayItem.durationMinutes / 60} h` : "0 h"}</span>
                 </div>
 
                 {activeDays && (
@@ -246,6 +278,25 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
               </p>
             </div>
           )}
+
+          {displayItem.type === "PRODUCT" ? (
+            <div className="rounded-2xl border border-neutral-100 bg-white p-4 shadow-sm space-y-3">
+              <div>
+                <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest block">Personalización</span>
+                <p className="mt-1 text-xs font-semibold text-neutral-500">Configura grupos de opciones y personalizaciones de este producto.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(`/inventario?tab=recipes&itemId=${displayItem.id}`);
+                }}
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 text-xs font-bold uppercase tracking-wider text-white shadow-sm transition active:scale-[0.99] hover:bg-neutral-800"
+              >
+                Configurar en Inventario → Recetas
+              </button>
+            </div>
+          ) : null}
 
           {/* META INFO */}
           <div className="flex items-center gap-4 px-1 pt-2">

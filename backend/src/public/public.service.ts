@@ -1,10 +1,67 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
-import { Weekday } from '@prisma/client';
+import { Prisma, Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { ItemOptionsService } from '../item-options/item-options.service';
+
+type PublicRecipeLine = {
+  ingredientId: string;
+  quantityRequired: Prisma.Decimal;
+  isOptional: boolean;
+  ingredient: {
+    id: string;
+    name: string;
+    currentStock: Prisma.Decimal;
+  };
+};
+
+type PublicOptionForGroup = {
+  id: string;
+  groupId: string;
+  name: string;
+  description: string | null;
+  targetType: string;
+  ingredientId: string | null;
+  itemId: string | null;
+  quantity: Prisma.Decimal | null;
+  unitId: string | null;
+  priceDelta: Prisma.Decimal | null;
+  selectedByDefault: boolean;
+  removable: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  ingredient?: {
+    id: string;
+    name: string;
+    currentStock: Prisma.Decimal;
+  } | null;
+  item?: {
+    id: string;
+    name: string;
+    type: string;
+    inventoryMode: string;
+  } | null;
+  unit?: unknown | null;
+};
+
+type PublicOptionGroupForCatalog = {
+  id: string;
+  title: string;
+  description: string | null;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  quantityMode: string;
+  totalQuantityLimit: Prisma.Decimal | null;
+  totalQuantityUnitId: string | null;
+  totalQuantityUnit?: unknown | null;
+  sortOrder: number;
+  isActive: boolean;
+  options: PublicOptionForGroup[];
+};
 
 @Injectable()
 export class PublicService {
@@ -12,23 +69,111 @@ export class PublicService {
     private prisma: PrismaService,
     private storageService: StorageService,
     private inventoryService: InventoryService,
+    private itemOptionsService: ItemOptionsService,
   ) {}
 
   private normalizeExcludedOptionalIngredientIds(value: unknown) {
     if (value === null || value === undefined) return [];
     if (!Array.isArray(value)) {
-      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must be an array',
+      );
     }
     if (!value.every((id) => typeof id === 'string')) {
-      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must contain only strings',
+      );
     }
     return value;
   }
 
   private assertNoDuplicateIds(ids: string[]) {
     if (new Set(ids).size !== ids.length) {
-      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds contains duplicates',
+      );
     }
+  }
+
+  private async mapPublicOptionGroups(
+    groups: PublicOptionGroupForCatalog[],
+    optionSellabilityById: Map<string, { sellable: boolean }>,
+  ) {
+    return Promise.all(
+      groups
+        .filter((group) => group.isActive !== false)
+        .map(async (group) => {
+          const mappedOptions = await Promise.all(
+            group.options
+              .filter((option) => option.isActive !== false)
+              .map(async (option) => {
+                let requiredQty = 1;
+                if (group.quantityMode === 'SHARED_TOTAL') {
+                  requiredQty =
+                    group.totalQuantityLimit == null
+                      ? 1
+                      : Number(group.totalQuantityLimit);
+                } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+                  requiredQty =
+                    option.quantity == null ? 1 : Number(option.quantity);
+                }
+
+                let hasStock = true;
+                if (option.targetType === 'INGREDIENT') {
+                  const currentStock =
+                    option.ingredient?.currentStock == null
+                      ? 0
+                      : Number(option.ingredient.currentStock);
+                  hasStock = currentStock >= requiredQty;
+                } else if (option.targetType === 'ITEM') {
+                  hasStock =
+                    optionSellabilityById.get(option.id)?.sellable ?? false;
+                }
+
+                return {
+                  id: option.id,
+                  groupId: option.groupId,
+                  name: option.name,
+                  description: option.description,
+                  targetType: option.targetType,
+                  ingredientId: option.ingredientId,
+                  itemId: option.itemId,
+                  quantity:
+                    option.quantity == null ? null : Number(option.quantity),
+                  unitId: option.unitId,
+                  priceDelta: Number(option.priceDelta ?? 0),
+                  selectedByDefault: option.selectedByDefault,
+                  removable: option.removable,
+                  sortOrder: option.sortOrder,
+                  ingredient: option.ingredient
+                    ? { id: option.ingredient.id, name: option.ingredient.name }
+                    : null,
+                  item: option.item,
+                  unit: option.unit,
+                  hasStock,
+                };
+              }),
+          );
+
+          return {
+            id: group.id,
+            title: group.title,
+            description: group.description,
+            required: group.required,
+            minSelections: group.minSelections,
+            maxSelections: group.maxSelections,
+            quantityMode: group.quantityMode,
+            totalQuantityLimit:
+              group.totalQuantityLimit == null
+                ? null
+                : Number(group.totalQuantityLimit),
+            totalQuantityUnitId: group.totalQuantityUnitId,
+            totalQuantityUnit: group.totalQuantityUnit,
+            sortOrder: group.sortOrder,
+            options: mappedOptions,
+          };
+        }),
+    );
   }
 
   private withPublicLogoUrl<
@@ -171,9 +316,13 @@ export class PublicService {
       }
     }
 
+    // Duration of the service in minutes. Drives both the slot length and the
+    // step between consecutive slot offers so the grid never has overlapping
+    // or unreachable windows.
+    //   • 60-min service  → step = 60  → 08:00, 09:00, 10:00 …
+    //   • 120-min service → step = 120 → 08:00, 10:00, 12:00 …
     const duration = item.durationMinutes ?? 60;
-    // Fixed 60-minute step — NEVER use durationMinutes as step or slots will be skipped.
-    const step = 60;
+    const step = duration; // step is coupled to service duration
     const slots: string[] = [];
 
     // Compute "today" and current time in the business timezone (America/Bogota).
@@ -188,10 +337,13 @@ export class PublicService {
     ].join('-');
     const isToday = dateKey === todayKey;
     // Use < (not <=) so a slot starting exactly at the current minute is still offered.
-    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+    const currentMinutes =
+      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
-      // Align cursor to the next full-hour boundary (slots are always HH:00).
+      // Snap the cursor to the next full-hour boundary so slots always start
+      // on clean HH:00 marks (e.g. a window that opens at 08:30 offers 09:00
+      // as its first slot, not a fractional time).
       let cursor = window.startMinute;
       if (cursor % 60 !== 0) {
         cursor = cursor + (60 - (cursor % 60));
@@ -199,23 +351,34 @@ export class PublicService {
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
-        const end = cursor + duration;
+        const end   = cursor + duration; // guaranteed not to exceed window end
 
+        // Skip past slots that have already elapsed today.
         if (isToday && start < currentMinutes) {
           cursor += step;
           continue;
         }
 
-        const overlap = reservations.some(
-          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
+        // Reject any slot that overlaps an existing reservation.
+        const hasOverlapWithReservation = reservations.some(
+          (res) =>
+            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
-        const blocked = blocks.some((block) => {
-          if (block.startMinute === null && block.endMinute === null) return true;
-          return start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0);
+        // Reject any slot that falls inside a manual block.
+        const isBlocked = blocks.some((block) => {
+          // A block with no time bounds covers the entire day.
+          if (block.startMinute === null && block.endMinute === null) {
+            return true;
+          }
+          return (
+            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
+          );
         });
 
-        if (!overlap && !blocked) slots.push(this.formatTime(start));
+        if (!hasOverlapWithReservation && !isBlocked) {
+          slots.push(this.formatTime(start));
+        }
 
         cursor += step;
       }
@@ -223,7 +386,6 @@ export class PublicService {
 
     return slots;
   }
-
 
   /* =====================================================
      ITEMS
@@ -304,22 +466,84 @@ export class PublicService {
           },
           orderBy: { createdAt: 'asc' },
         },
+        optionGroups: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            totalQuantityUnit: true,
+            options: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              include: {
+                ingredient: {
+                  select: { id: true, name: true, currentStock: true },
+                },
+                item: {
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    inventoryMode: true,
+                  },
+                },
+                unit: true,
+              },
+            },
+          },
+        },
       },
     });
 
+    const itemRequests = data.map((item) => item.id);
+    const targetOptionRequests = data.flatMap((item) =>
+      item.optionGroups
+        .filter((group) => group.isActive !== false)
+        .flatMap((group) =>
+          group.options
+            .filter(
+              (option) =>
+                option.isActive !== false &&
+                option.targetType === 'ITEM' &&
+                option.itemId,
+            )
+            .map((option) => {
+              let quantity = 1;
+              if (group.quantityMode === 'SHARED_TOTAL') {
+                quantity =
+                  group.totalQuantityLimit == null
+                    ? 1
+                    : Number(group.totalQuantityLimit);
+              } else if (group.quantityMode === 'FIXED_PER_OPTION') {
+                quantity =
+                  option.quantity == null ? 1 : Number(option.quantity);
+              }
+              return { optionId: option.id, itemId: option.itemId!, quantity };
+            }),
+        ),
+    );
+    const sellabilities = await this.inventoryService.getItemsSellabilityBulk(
+      business.id,
+      [
+        ...itemRequests,
+        ...targetOptionRequests.map(({ itemId, quantity }) => ({
+          itemId,
+          quantity,
+        })),
+      ],
+    );
+    const itemSellabilities = sellabilities.slice(0, itemRequests.length);
+    const optionSellabilityById = new Map(
+      targetOptionRequests.map((request, index) => [
+        request.optionId,
+        sellabilities[itemRequests.length + index],
+      ]),
+    );
+
     const visibleItems: any[] = [];
-    for (const item of data) {
-      const sellability = await this.inventoryService.getItemSellability(
-        business.id,
-        item.id,
-      );
+    for (const [index, item] of data.entries()) {
+      const sellability = itemSellabilities[index];
       if (sellability.sellable) {
-        visibleItems.push({
-          ...item,
-          sellability,
-          currentStock: sellability.currentStock,
-          averageCost: sellability.averageCost,
-        });
+        visibleItems.push(item);
       }
     }
 
@@ -331,16 +555,30 @@ export class PublicService {
 
     return {
       business: publicBusiness,
-      data: visibleItems.map((item) => ({
-        ...item,
-        price: Number(item.price),
-        recipes: item.recipes.map((recipe) => ({
-          ingredientId: recipe.ingredientId,
-          quantityRequired: Number(recipe.quantityRequired),
-          isOptional: recipe.isOptional,
-          ingredient: recipe.ingredient,
-        })),
-      })),
+      data: await Promise.all(
+        visibleItems.map(async (item) => {
+          const { currentStock, averageCost, ...cleanItem } = item;
+          return {
+            ...cleanItem,
+            price: Number(item.price),
+            sellability: { sellable: true },
+            recipes: item.recipes
+              .filter((recipe: PublicRecipeLine) => recipe.isOptional)
+              .map((recipe: PublicRecipeLine) => ({
+                ingredientId: recipe.ingredientId,
+                isOptional: recipe.isOptional,
+                ingredient: {
+                  id: recipe.ingredient.id,
+                  name: recipe.ingredient.name,
+                },
+              })),
+            optionGroups: await this.mapPublicOptionGroups(
+              item.optionGroups as PublicOptionGroupForCatalog[],
+              optionSellabilityById,
+            ),
+          };
+        }),
+      ),
     };
   }
 
@@ -583,10 +821,22 @@ export class PublicService {
 
     if (!dto.items || dto.items.length === 0)
       throw new BadRequestException('Order must contain items');
+    if (
+      dto.items.some(
+        (item) => !Number.isInteger(item.quantity) || item.quantity <= 0,
+      )
+    ) {
+      throw new BadRequestException(
+        'Item quantity must be a positive integer',
+      );
+    }
 
+    const uniqueItemIds = Array.from(
+      new Set(dto.items.map((item) => item.itemId)),
+    );
     const dbItems = await this.prisma.item.findMany({
       where: {
-        id: { in: dto.items.map((i) => i.itemId) },
+        id: { in: uniqueItemIds },
         businessId: business.id,
         status: 'ACTIVE',
       },
@@ -598,78 +848,149 @@ export class PublicService {
             },
           },
         },
+        optionGroups: {
+          where: { isActive: true },
+          select: { id: true },
+        },
       },
     });
 
-    if (dbItems.length !== dto.items.length)
+    if (
+      dbItems.length !== uniqueItemIds.length ||
+      dbItems.some((item) => item.status !== 'ACTIVE')
+    )
       throw new BadRequestException('Invalid items');
+    const dbItemById = new Map(dbItems.map((item) => [item.id, item]));
 
     const visibleCustomizationNotes: string[] = [];
-    const normalizedInputs = dto.items.map((input) => {
-      const item = dbItems.find((i) => i.id === input.itemId)!;
-      const excludedIds = this.normalizeExcludedOptionalIngredientIds(
-        input.excludedOptionalIngredientIds,
-      );
-      this.assertNoDuplicateIds(excludedIds);
+    const normalizedInputs = await Promise.all(
+      dto.items.map(async (input) => {
+        const item = dbItemById.get(input.itemId)!;
+        const hasOptionGroups = item.optionGroups.length > 0;
+        const excludedIds = hasOptionGroups
+          ? []
+          : this.normalizeExcludedOptionalIngredientIds(
+              input.excludedOptionalIngredientIds,
+            );
+        this.assertNoDuplicateIds(excludedIds);
 
-      if (excludedIds.length > 0) {
-        if (item.type === 'SERVICE' || item.recipes.length === 0) {
-          throw new BadRequestException('Item does not allow optional ingredient exclusions');
-        }
+        const resolvedOptions =
+          await this.itemOptionsService.resolveSelectionsForOrderLine(
+            business.id,
+            item.id,
+            input.quantity,
+            input.optionSelections ?? [],
+          );
 
-        const recipeIngredientIds = new Set(
-          item.recipes.map((recipe) => recipe.ingredientId),
-        );
-        const mandatoryIngredientIds = new Set(
-          item.recipes
-            .filter((recipe) => !recipe.isOptional)
-            .map((recipe) => recipe.ingredientId),
-        );
-
-        for (const ingredientId of excludedIds) {
-          if (!recipeIngredientIds.has(ingredientId)) {
+        if (excludedIds.length > 0) {
+          if (item.type === 'SERVICE' || item.recipes.length === 0) {
             throw new BadRequestException(
-              'excludedOptionalIngredientIds contains an ingredient outside the recipe',
+              'Item does not allow optional ingredient exclusions',
             );
           }
-          if (mandatoryIngredientIds.has(ingredientId)) {
-            throw new BadRequestException('Mandatory ingredients cannot be excluded');
+
+          const recipeIngredientIds = new Set(
+            item.recipes.map((recipe) => recipe.ingredientId),
+          );
+          const mandatoryIngredientIds = new Set(
+            item.recipes
+              .filter((recipe) => !recipe.isOptional)
+              .map((recipe) => recipe.ingredientId),
+          );
+
+          for (const ingredientId of excludedIds) {
+            if (!recipeIngredientIds.has(ingredientId)) {
+              throw new BadRequestException(
+                'excludedOptionalIngredientIds contains an ingredient outside the recipe',
+              );
+            }
+            if (mandatoryIngredientIds.has(ingredientId)) {
+              throw new BadRequestException(
+                'Mandatory ingredients cannot be excluded',
+              );
+            }
+          }
+
+          const excludedNames = excludedIds
+            .map(
+              (ingredientId) =>
+                item.recipes.find(
+                  (recipe) => recipe.ingredientId === ingredientId,
+                )?.ingredient.name,
+            )
+            .filter(Boolean);
+
+          if (excludedNames.length > 0) {
+            visibleCustomizationNotes.push(
+              `${item.name}: sin ${excludedNames.join(', ')}`,
+            );
           }
         }
 
-        const excludedNames = excludedIds
-          .map(
-            (ingredientId) =>
-              item.recipes.find((recipe) => recipe.ingredientId === ingredientId)
-                ?.ingredient.name,
-          )
-          .filter(Boolean);
+        return { input, item, excludedIds, resolvedOptions };
+      }),
+    );
 
-        if (excludedNames.length > 0) {
-          visibleCustomizationNotes.push(`${item.name}: sin ${excludedNames.join(', ')}`);
-        }
-      }
-
-      return { input, item, excludedIds };
-    });
-
-    for (const { input, item } of normalizedInputs) {
-      const sellability = await this.inventoryService.getItemSellability(
+    const lineSellabilities =
+      await this.inventoryService.getItemsSellabilityBulk(
         business.id,
-        item.id,
-        input.quantity,
+        normalizedInputs.map(({ input, item }) => ({
+          itemId: item.id,
+          quantity: input.quantity,
+        })),
       );
+    for (const [index] of normalizedInputs.entries()) {
+      const sellability = lineSellabilities[index];
       if (!sellability.sellable) {
-        throw new BadRequestException(sellability.message ?? 'Producto no vendible');
+        throw new BadRequestException(
+          sellability.message ?? 'Producto no vendible',
+        );
       }
     }
 
-    const visibleNote = [
-      dto.note?.trim() || null,
-      ...visibleCustomizationNotes,
-    ]
-      .filter(Boolean)
-      .join('\n') || null;
+    const visibleNote =
+      [dto.note?.trim() || null, ...visibleCustomizationNotes]
+        .filter(Boolean)
+        .join('\n') || null;
+
+    const orderItemCreates: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] =
+      normalizedInputs.map(
+        ({ input, item, excludedIds, resolvedOptions }) => {
+          const quantity = input.quantity;
+          const baseUnitPrice = item.price;
+          const optionsTotal = resolvedOptions.optionsTotal;
+          const unitPrice = baseUnitPrice.add(optionsTotal);
+          const lineTotal = unitPrice.mul(quantity);
+
+          return {
+            businessId: business.id,
+            itemId: item.id,
+            quantity,
+            unitPrice,
+            lineTotal,
+            itemNameSnapshot: item.name,
+            itemTypeSnapshot: item.type,
+            inventoryModeSnapshot: item.inventoryMode,
+            durationMinutesSnapshot: item.durationMinutes,
+            excludedOptionalIngredientIds:
+              excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+            baseUnitPriceSnapshot: baseUnitPrice,
+            optionsTotalSnapshot: optionsTotal,
+            finalUnitPriceSnapshot: unitPrice,
+            lineTotalSnapshot: lineTotal,
+            options: resolvedOptions.snapshots.length
+              ? {
+                  create: resolvedOptions.snapshots,
+                }
+              : undefined,
+          };
+        },
+      );
+
+    const total = orderItemCreates.reduce(
+      (acc, item) => acc + Number(item.lineTotal),
+      0,
+    );
 
     const order = await this.prisma.order.create({
       data: {
@@ -680,43 +1001,82 @@ export class PublicService {
         customerWhatsapp: dto.customerWhatsapp,
         note: visibleNote,
         sentAt: new Date(),
-
+        total,
         items: {
-          create: normalizedInputs.map(({ input, item, excludedIds }) => {
-            const quantity = input.quantity;
-            const unitPrice = item.price;
-            const lineTotal = unitPrice.mul(quantity);
-
-            return {
-              businessId: business.id,
-              itemId: item.id,
-              quantity,
-              unitPrice,
-              lineTotal,
-              itemNameSnapshot: item.name,
-              itemTypeSnapshot: item.type,
-              inventoryModeSnapshot: item.inventoryMode,
-              durationMinutesSnapshot: item.durationMinutes,
-              excludedOptionalIngredientIds: excludedIds.length > 0 ? excludedIds : null,
-            };
-          }),
+          create: orderItemCreates,
         },
       },
-      include: { items: true },
+      select: {
+        publicToken: true,
+        origin: true,
+      },
     });
 
     console.log(`[PublicService] Created order origin: ${order.origin}`);
-
-    const total = order.items.reduce((acc, i) => acc + Number(i.lineTotal), 0);
-
-    await this.prisma.order.update({
-      where: { id: order.id },
-      data: { total },
-    });
 
     return {
       message: 'Order created',
       orderId: order.publicToken,
     };
+  }
+
+  /* =====================================================
+     FIND RESERVATION BY ID (página pública de consulta)
+  ===================================================== */
+
+
+  async findReservationById(id: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        customerName: true,
+        customerWhatsapp: true,
+        date: true,
+        startMinute: true,
+        endMinute: true,
+        note: true,
+        item: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMinutes: true,
+          },
+        },
+        business: {
+          select: {
+            id: true,
+            name: true,
+            phoneWhatsapp: true,
+          },
+        },
+      },
+    });
+
+    if (!reservation) return null;
+
+    return {
+      ...reservation,
+      date: reservation.date.toISOString(),
+      item: {
+        ...reservation.item,
+        price: Number(reservation.item.price),
+      },
+    };
+  }
+
+  async cancelReservation(id: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+    });
+
+    if (!reservation) return null;
+
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+    });
   }
 }

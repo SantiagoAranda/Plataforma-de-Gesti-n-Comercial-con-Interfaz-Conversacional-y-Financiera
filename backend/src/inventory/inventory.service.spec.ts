@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { InventoryService } from './inventory.service';
@@ -18,6 +22,7 @@ describe('InventoryService', () => {
       item: {
         findFirst: mockFn(),
         findMany: mockFn(),
+        update: mockFn(),
       },
       inventoryMovement: {
         findMany: mockFn(),
@@ -44,6 +49,15 @@ describe('InventoryService', () => {
       },
       recipe: {
         findMany: mockFn(),
+      },
+      serviceIngredient: {
+        findMany: (jest.fn() as any).mockResolvedValue([]),
+        create: mockFn(),
+        deleteMany: mockFn(),
+      },
+      reservation: {
+        findFirst: mockFn(),
+        update: mockFn(),
       },
       order: {
         update: mockFn(),
@@ -85,13 +99,17 @@ describe('InventoryService', () => {
     );
     tx.ingredient.update.mockResolvedValue({});
 
-    const movement = await service.applyInventoryMovement(tx as any, businessId, {
-      ingredientId,
-      type: 'PURCHASE',
-      quantity: 10,
-      unitCost: 4,
-      referenceType: 'PURCHASE_MANUAL',
-    });
+    const movement = await service.applyInventoryMovement(
+      tx as any,
+      businessId,
+      {
+        ingredientId,
+        type: 'PURCHASE',
+        quantity: 10,
+        unitCost: 4,
+        referenceType: 'PURCHASE_MANUAL',
+      },
+    );
 
     expect(movement.stockAfter.toString()).toBe('20');
     expect(movement.averageCostAfter.toString()).toBe('3');
@@ -102,6 +120,367 @@ describe('InventoryService', () => {
         averageCost: new Prisma.Decimal(3),
       },
     });
+  });
+
+  it('rejects a movement without a target', async () => {
+    const { service, tx } = createService();
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 1,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow(
+      'Inventory movement must target exactly one itemId or ingredientId',
+    );
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a movement with ingredientId and itemId together', async () => {
+    const { service, tx } = createService();
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        itemId: 'item-1',
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 1,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow(
+      'Inventory movement must target exactly one itemId or ingredientId',
+    );
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it.each([0, -1, null, undefined])(
+    'rejects invalid movement quantity %s',
+    async (quantity) => {
+      const { service, tx } = createService();
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: ingredientId,
+        businessId,
+        name: 'Flour',
+        status: 'ACTIVE',
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(2),
+      });
+
+      await expect(
+        service.applyInventoryMovement(tx as any, businessId, {
+          ingredientId,
+          type: 'PURCHASE',
+          quantity: quantity as any,
+          unitCost: 1,
+          referenceType: 'PURCHASE_MANUAL',
+        }),
+      ).rejects.toThrow('quantity must be greater than zero');
+
+      expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks a SALE movement that would make stock negative', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+      currentStock: new Prisma.Decimal(1),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'SALE',
+        quantity: 2,
+        referenceType: 'ORDER_ITEM',
+        orderId: 'order-1',
+        orderItemId: 'order-item-1',
+      }),
+    ).rejects.toThrow('Insufficient stock for ingredient Flour');
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
+  });
+
+  it('creates a valid positive adjustment with complete audit balances', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+    tx.inventoryMovement.create.mockImplementation(
+      ({ data }: { data: any }) =>
+        Promise.resolve({ id: 'movement-1', ...data }),
+    );
+
+    const movement = await service.applyInventoryMovement(
+      tx as any,
+      businessId,
+      {
+        ingredientId,
+        type: 'ADJUSTMENT_POSITIVE',
+        quantity: 5,
+        unitCost: 4,
+        referenceType: 'MANUAL',
+        referenceId: 'audit-1',
+        detail: 'Physical count correction',
+      },
+    );
+
+    expect(movement.stockAfter.toString()).toBe('10');
+    expect(movement.averageCostAfter.toString()).toBe('3');
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          businessId,
+          ingredientId,
+          itemId: null,
+          type: 'ADJUSTMENT_POSITIVE',
+          quantity: new Prisma.Decimal(5),
+          referenceType: 'MANUAL',
+          referenceId: 'audit-1',
+          stockAfter: new Prisma.Decimal(10),
+          averageCostAfter: new Prisma.Decimal(3),
+          occurredAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(tx.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: {
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(3),
+      },
+    });
+  });
+
+  it('rejects movements for an inactive ingredient', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'INACTIVE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 2,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow(
+      'Cannot create inventory movements for an inactive ingredient',
+    );
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects movements for an inactive SIMPLE item', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'INACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        itemId: 'item-1',
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 2,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow(
+      'Cannot create inventory movements for an inactive item',
+    );
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps valid SIMPLE item movements working', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(3),
+      averageCost: new Prisma.Decimal(2),
+    });
+    tx.inventoryMovement.create.mockImplementation(
+      ({ data }: { data: any }) =>
+        Promise.resolve({ id: 'movement-1', ...data }),
+    );
+
+    const movement = await service.applyInventoryMovement(
+      tx as any,
+      businessId,
+      {
+        itemId: 'item-1',
+        type: 'PURCHASE',
+        quantity: 2,
+        unitCost: 5,
+        referenceType: 'PURCHASE_MANUAL',
+      },
+    );
+
+    expect(movement.itemId).toBe('item-1');
+    expect(movement.ingredientId).toBeNull();
+    expect(movement.stockAfter.toString()).toBe('5');
+    expect(movement.averageCostAfter.toString()).toBe('3.2');
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(5),
+        averageCost: new Prisma.Decimal('3.2'),
+      },
+    });
+  });
+
+  it('creates initial inventory for a SIMPLE item and materializes its balance', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+    tx.inventoryMovement.findFirst.mockResolvedValue(null);
+    tx.inventoryMovement.create.mockImplementation(
+      ({ data }: { data: any }) =>
+        Promise.resolve({ id: 'movement-1', ...data }),
+    );
+
+    const movement = await service.registerInitial(businessId, {
+      itemId: 'item-1',
+      quantity: '10',
+      unitCost: '2.5',
+    });
+
+    expect(movement.stockAfter).toEqual(new Prisma.Decimal(10));
+    expect(movement.averageCostAfter).toEqual(new Prisma.Decimal('2.5'));
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal('2.5'),
+      },
+    });
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          itemId: 'item-1',
+          ingredientId: null,
+          type: 'INVENTORY_INITIAL',
+          stockAfter: new Prisma.Decimal(10),
+          averageCostAfter: new Prisma.Decimal('2.5'),
+        }),
+      }),
+    );
+  });
+
+  it('reads SIMPLE stock directly from Item without consulting Kardex', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Keychain',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
+    });
+
+    const state = await service.getSimpleItemStockState(
+      businessId,
+      'item-1',
+      tx as any,
+    );
+
+    expect(state.currentStock).toEqual(new Prisma.Decimal(0));
+    expect(state.averageCost).toEqual(new Prisma.Decimal(0));
+    expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-finite cost for a cost-bearing movement', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 'Infinity',
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow('unitCost must be a valid non-negative number');
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a purchase return that would produce a negative average cost', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'PURCHASE_RETURN',
+        quantity: 1,
+        unitCost: 100,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow('Movement would produce an invalid average cost');
+
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.ingredient.update).not.toHaveBeenCalled();
   });
 
   it('blocks negative adjustment when stock is insufficient', async () => {
@@ -163,13 +542,17 @@ describe('InventoryService', () => {
     );
     tx.ingredient.update.mockResolvedValue({});
 
-    const movement = await service.applyInventoryMovement(tx as any, businessId, {
-      ingredientId,
-      type: 'ADJUSTMENT_NEGATIVE',
-      quantity: 2,
-      referenceType: 'MANUAL',
-      detail: 'waste',
-    });
+    const movement = await service.applyInventoryMovement(
+      tx as any,
+      businessId,
+      {
+        ingredientId,
+        type: 'ADJUSTMENT_NEGATIVE',
+        quantity: 2,
+        referenceType: 'MANUAL',
+        detail: 'waste',
+      },
+    );
 
     expect(movement.unitCost.toString()).toBe('3');
     expect(movement.averageCostAfter.toString()).toBe('3');
@@ -192,7 +575,9 @@ describe('InventoryService', () => {
         purchaseUnitCost: '12000',
         detail: 'buy packs',
       } as any),
-    ).rejects.toThrow('Ingredient must be migrated to the new unit model before purchasing');
+    ).rejects.toThrow(
+      'Ingredient must be migrated to the new unit model before purchasing',
+    );
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
 
@@ -281,7 +666,9 @@ describe('InventoryService', () => {
       }),
     );
     tx.ingredient.update.mockResolvedValue({});
-    tx.accountingMovement.findFirst.mockResolvedValue({ id: 'accounting-existing' });
+    tx.accountingMovement.findFirst.mockResolvedValue({
+      id: 'accounting-existing',
+    });
 
     await service.registerNegativeAdjustment(businessId, {
       ingredientId,
@@ -441,7 +828,12 @@ describe('InventoryService', () => {
     });
     tx.unitConversion.findUnique.mockResolvedValue({
       factor: new Prisma.Decimal(6),
-      fromUnit: { id: 'unit-package', code: 'PACKAGE', symbol: 'paquete', kind: 'COUNT' },
+      fromUnit: {
+        id: 'unit-package',
+        code: 'PACKAGE',
+        symbol: 'paquete',
+        kind: 'COUNT',
+      },
       toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
     });
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
@@ -601,7 +993,9 @@ describe('InventoryService', () => {
         purchaseQuantity: '1',
         purchaseUnitCost: '1000',
       } as any),
-    ).rejects.toThrow('La unidad de compra no es compatible con la unidad base del insumo.');
+    ).rejects.toThrow(
+      'La unidad de compra no es compatible con la unidad base del insumo.',
+    );
     expect(tx.unitConversion.findUnique).not.toHaveBeenCalled();
   });
 
@@ -632,18 +1026,20 @@ describe('InventoryService', () => {
     expect(movement.unitCost.toString()).toBe('2.5');
     expect(movement.stockAfter.toString()).toBe('10');
     expect(movement.averageCostAfter.toString()).toBe('2.5');
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        type: 'INVENTORY_INITIAL',
-        quantity: new Prisma.Decimal(10),
-        unitCost: new Prisma.Decimal(2.5),
-        totalValue: new Prisma.Decimal(25),
-        stockAfter: new Prisma.Decimal(10),
-        averageCostAfter: new Prisma.Decimal(2.5),
-        referenceType: 'MANUAL',
-        detail: 'opening stock',
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'INVENTORY_INITIAL',
+          quantity: new Prisma.Decimal(10),
+          unitCost: new Prisma.Decimal(2.5),
+          totalValue: new Prisma.Decimal(25),
+          stockAfter: new Prisma.Decimal(10),
+          averageCostAfter: new Prisma.Decimal(2.5),
+          referenceType: 'MANUAL',
+          detail: 'opening stock',
+        }),
       }),
-    }));
+    );
     expect(tx.ingredient.update).toHaveBeenCalledWith({
       where: { id: ingredientId },
       data: {
@@ -662,7 +1058,9 @@ describe('InventoryService', () => {
       currentStock: new Prisma.Decimal(5),
       averageCost: new Prisma.Decimal(2),
     });
-    tx.inventoryMovement.findFirst.mockResolvedValue({ id: 'existing-movement' });
+    tx.inventoryMovement.findFirst.mockResolvedValue({
+      id: 'existing-movement',
+    });
 
     await expect(
       service.registerInitial(businessId, {
@@ -849,11 +1247,9 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
       recipes: [],
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(10),
-      averageCostAfter: new Prisma.Decimal(3),
     });
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
       Promise.resolve({ id: 'sale-movement-1', ...data }),
@@ -880,24 +1276,168 @@ describe('InventoryService', () => {
     );
 
     expect(movements).toHaveLength(1);
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        businessId,
-        ingredientId: null,
-        itemId: 'item-1',
-        type: 'SALE',
-        referenceType: 'ORDER_ITEM',
-        orderId: 'order-1',
-        orderItemId: 'order-item-1',
-        quantity: new Prisma.Decimal(1),
-        unitCost: new Prisma.Decimal(3),
-        totalValue: new Prisma.Decimal(3),
-        stockAfter: new Prisma.Decimal(9),
-        averageCostAfter: new Prisma.Decimal(3),
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          businessId,
+          ingredientId: null,
+          itemId: 'item-1',
+          type: 'SALE',
+          referenceType: 'ORDER_ITEM',
+          orderId: 'order-1',
+          orderItemId: 'order-item-1',
+          quantity: new Prisma.Decimal(1),
+          unitCost: new Prisma.Decimal(3),
+          totalValue: new Prisma.Decimal(3),
+          stockAfter: new Prisma.Decimal(9),
+          averageCostAfter: new Prisma.Decimal(3),
+        }),
       }),
-    }));
+    );
     expect(tx.ingredient.update).not.toHaveBeenCalled();
+    expect(tx.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: {
+        currentStock: new Prisma.Decimal(9),
+        averageCost: new Prisma.Decimal(3),
+      },
+    });
     expect(tx.recipe.findMany).not.toHaveBeenCalled();
+  });
+
+  it('expands an INGREDIENT option snapshot into ingredient consumption', async () => {
+    const { service, tx } = createService();
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'INGREDIENT',
+              ingredientId,
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(2),
+              unitIdSnapshot: null,
+              optionNameSnapshot: 'Queso',
+              groupTitleSnapshot: 'Extras',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        ingredientId,
+        quantity: new Prisma.Decimal(2),
+      }),
+    ]);
+  });
+
+  it('expands an ITEM SIMPLE option snapshot into item consumption', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'simple-option-item',
+      businessId,
+      name: 'Drink',
+      type: 'PRODUCT',
+      status: 'ACTIVE',
+      inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(1),
+      recipes: [],
+    });
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'ITEM',
+              itemId: 'simple-option-item',
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(1),
+              optionNameSnapshot: 'Drink',
+              groupTitleSnapshot: 'Bebida',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        itemId: 'simple-option-item',
+        quantity: new Prisma.Decimal(1),
+      }),
+    ]);
+  });
+
+  it('expands an ITEM RECIPE_BASED option snapshot into ingredient consumption', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'recipe-option-item',
+      businessId,
+      name: 'Fries',
+      type: 'PRODUCT',
+      status: 'ACTIVE',
+      inventoryMode: 'RECIPE_BASED',
+      recipes: [
+        {
+          ingredientId: 'potato',
+          quantityRequired: new Prisma.Decimal(3),
+          isOptional: false,
+        },
+      ],
+    });
+
+    const result = await service.expandOrderItemsToIngredients(
+      tx as any,
+      businessId,
+      [
+        {
+          id: 'order-item-1',
+          itemId: 'base-item',
+          quantity: 1,
+          itemNameSnapshot: 'Combo',
+          itemTypeSnapshot: 'PRODUCT',
+          inventoryModeSnapshot: 'NONE',
+          options: [
+            {
+              targetTypeSnapshot: 'ITEM',
+              itemId: 'recipe-option-item',
+              quantityModeSnapshot: 'FIXED_PER_OPTION',
+              totalQuantitySnapshot: new Prisma.Decimal(2),
+              optionNameSnapshot: 'Papas',
+              groupTitleSnapshot: 'Acompañante',
+            },
+          ],
+        },
+      ],
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        ingredientId: 'potato',
+        quantity: new Prisma.Decimal(6),
+      }),
+    ]);
   });
 
   it('consumes multiple ingredients for RECIPE_BASED item sales', async () => {
@@ -915,16 +1455,30 @@ describe('InventoryService', () => {
       },
     ]);
     tx.ingredient.findMany.mockResolvedValue([
-      { id: 'ingredient-1', name: 'Flour', currentStock: new Prisma.Decimal(10) },
-      { id: 'ingredient-2', name: 'Water', currentStock: new Prisma.Decimal(20) },
+      {
+        id: 'ingredient-1',
+        name: 'Flour',
+        currentStock: new Prisma.Decimal(10),
+      },
+      {
+        id: 'ingredient-2',
+        name: 'Water',
+        currentStock: new Prisma.Decimal(20),
+      },
     ]);
     tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
       Promise.resolve({
         id: where.id,
         businessId,
         name: where.id === 'ingredient-1' ? 'Flour' : 'Water',
-        currentStock: where.id === 'ingredient-1' ? new Prisma.Decimal(10) : new Prisma.Decimal(20),
-        averageCost: where.id === 'ingredient-1' ? new Prisma.Decimal(3) : new Prisma.Decimal(1),
+        currentStock:
+          where.id === 'ingredient-1'
+            ? new Prisma.Decimal(10)
+            : new Prisma.Decimal(20),
+        averageCost:
+          where.id === 'ingredient-1'
+            ? new Prisma.Decimal(3)
+            : new Prisma.Decimal(1),
       }),
     );
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
@@ -984,8 +1538,16 @@ describe('InventoryService', () => {
       },
     ]);
     tx.ingredient.findMany.mockResolvedValue([
-      { id: 'ingredient-1', name: 'Bread', currentStock: new Prisma.Decimal(10) },
-      { id: 'ingredient-optional', name: 'Mayo', currentStock: new Prisma.Decimal(10) },
+      {
+        id: 'ingredient-1',
+        name: 'Bread',
+        currentStock: new Prisma.Decimal(10),
+      },
+      {
+        id: 'ingredient-optional',
+        name: 'Mayo',
+        currentStock: new Prisma.Decimal(10),
+      },
     ]);
     tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
       Promise.resolve({
@@ -1021,12 +1583,16 @@ describe('InventoryService', () => {
     );
 
     expect(movements).toHaveLength(2);
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
-    }));
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ ingredientId: 'ingredient-optional' }),
-    }));
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
+      }),
+    );
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ingredientId: 'ingredient-optional' }),
+      }),
+    );
   });
 
   it('does not consume excluded optional ingredients for RECIPE_BASED item sales', async () => {
@@ -1044,7 +1610,11 @@ describe('InventoryService', () => {
       },
     ]);
     tx.ingredient.findMany.mockResolvedValue([
-      { id: 'ingredient-1', name: 'Bread', currentStock: new Prisma.Decimal(10) },
+      {
+        id: 'ingredient-1',
+        name: 'Bread',
+        currentStock: new Prisma.Decimal(10),
+      },
     ]);
     tx.ingredient.findFirst.mockResolvedValue({
       id: 'ingredient-1',
@@ -1080,9 +1650,11 @@ describe('InventoryService', () => {
 
     expect(movements).toHaveLength(1);
     expect(tx.inventoryMovement.create).toHaveBeenCalledTimes(1);
-    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
-    }));
+    expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
+      }),
+    );
   });
 
   it('does not affect stock for SERVICE item sales', async () => {
@@ -1158,11 +1730,9 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(3),
       recipes: [],
-    });
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(3),
     });
 
     await expect(
@@ -1197,9 +1767,10 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       status: 'ACTIVE',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
       recipes: [],
     });
-    tx.inventoryMovement.findFirst.mockResolvedValue(null);
 
     await expect(
       service.applyInventoryConsumptionForOrder(tx as any, businessId, {
@@ -1215,9 +1786,7 @@ describe('InventoryService', () => {
           },
         ],
       }),
-    ).rejects.toThrow(
-      'Bread no tiene stock disponible.',
-    );
+    ).rejects.toThrow('Bread no tiene stock disponible.');
 
     expect(tx.recipe.findMany).not.toHaveBeenCalled();
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
@@ -1324,15 +1893,17 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
       recipes: [],
     });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(5),
-      averageCostAfter: new Prisma.Decimal(2),
-    });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
 
     expect(result.sellable).toBe(true);
     expect(result.status).toBe('SELLABLE');
@@ -1347,15 +1918,22 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(0),
+      averageCost: new Prisma.Decimal(0),
       recipes: [],
     });
-    tx.inventoryMovement.count.mockResolvedValue(0);
-    tx.inventoryMovement.findFirst.mockResolvedValue(null);
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
 
     expect(result.sellable).toBe(false);
-    expect(result.status).toBe('MISSING_INITIAL_STOCK');
+    expect(result.status).toBe('NO_STOCK');
+    expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.count).not.toHaveBeenCalled();
   });
 
   it('marks RECIPE_BASED item without recipe as not sellable', async () => {
@@ -1370,7 +1948,12 @@ describe('InventoryService', () => {
       recipes: [],
     });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
 
     expect(result.sellable).toBe(false);
     expect(result.status).toBe('MISSING_RECIPE');
@@ -1401,13 +1984,16 @@ describe('InventoryService', () => {
       ],
     });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
 
     expect(result.sellable).toBe(false);
     expect(result.status).toBe('INSUFFICIENT_RECIPE_STOCK');
-    expect(result.message).toBe(
-      'Hamburguesa no tiene stock disponible.',
-    );
+    expect(result.message).toBe('Hamburguesa no tiene stock disponible.');
   });
 
   it('marks NONE item as sellable', async () => {
@@ -1422,7 +2008,12 @@ describe('InventoryService', () => {
       recipes: [],
     });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
 
     expect(result.sellable).toBe(true);
     expect(result.status).toBe('SELLABLE');
@@ -1453,7 +2044,12 @@ describe('InventoryService', () => {
       ],
     });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 3, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      3,
+      tx as any,
+    );
     expect(result.sellable).toBe(false);
     expect(result.missingItems?.[0].required.toString()).toBe('750');
   });
@@ -1530,15 +2126,17 @@ describe('InventoryService', () => {
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
       minStock: new Prisma.Decimal(3),
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(10),
       recipes: [],
     });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(10),
-    });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 1, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
     expect(result.sellable).toBe(true);
     expect(result.status).toBe('LOW_STOCK');
     expect(result.message).toBe('Llaveros tiene stock bajo.');
@@ -1553,18 +2151,138 @@ describe('InventoryService', () => {
       status: 'ACTIVE',
       type: 'PRODUCT',
       inventoryMode: 'SIMPLE',
+      currentStock: new Prisma.Decimal(2),
+      averageCost: new Prisma.Decimal(10),
       recipes: [],
     });
-    tx.inventoryMovement.count.mockResolvedValue(1);
-    tx.inventoryMovement.findFirst.mockResolvedValue({
-      stockAfter: new Prisma.Decimal(2),
-      averageCostAfter: new Prisma.Decimal(10),
-    });
 
-    const result = await service.getItemSellability(businessId, 'item-1', 5, tx as any);
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      5,
+      tx as any,
+    );
     expect(result.sellable).toBe(false);
     expect(result.status).toBe('NO_STOCK');
-    expect(result.message).toBe('Stock insuficiente para Llaveros. Disponible: 2, requerido: 5.');
+    expect(result.message).toBe(
+      'Stock insuficiente para Llaveros. Disponible: 2, requerido: 5.',
+    );
+  });
+
+  it('calculates sellability for a catalog in grouped queries', async () => {
+    const { service, tx } = createService();
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'simple-1',
+        businessId,
+        name: 'Llaveros',
+        status: 'ACTIVE',
+        type: 'PRODUCT',
+        inventoryMode: 'SIMPLE',
+        minStock: new Prisma.Decimal(0),
+        currentStock: new Prisma.Decimal(3),
+        averageCost: new Prisma.Decimal(10),
+        recipes: [],
+      },
+      {
+        id: 'recipe-1',
+        businessId,
+        name: 'Hamburguesa',
+        status: 'ACTIVE',
+        type: 'PRODUCT',
+        inventoryMode: 'RECIPE_BASED',
+        recipes: [
+          {
+            ingredientId: 'ingredient-pan',
+            quantityRequired: new Prisma.Decimal(1),
+            isOptional: false,
+            ingredient: {
+              id: 'ingredient-pan',
+              name: 'Pan',
+              currentStock: new Prisma.Decimal(2),
+              consumptionUnit: 'UNIT',
+              customUnitLabel: null,
+            },
+          },
+        ],
+      },
+    ]);
+    const result = await service.getItemsSellabilityBulk(
+      businessId,
+      ['simple-1', { itemId: 'recipe-1', quantity: 3 }],
+      tx as any,
+    );
+
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        sellable: true,
+        currentStock: new Prisma.Decimal(3),
+      }),
+    );
+    expect(result[1]).toEqual(
+      expect.objectContaining({
+        sellable: false,
+        status: 'INSUFFICIENT_RECIPE_STOCK',
+      }),
+    );
+    expect(tx.item.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
+    expect(tx.item.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.findFirst).not.toHaveBeenCalled();
+    expect(tx.inventoryMovement.count).not.toHaveBeenCalled();
+  });
+
+  it('calculates valid and missing RECIPE_BASED catalog items in memory', async () => {
+    const { service, tx } = createService();
+    tx.item.findMany.mockResolvedValue([
+      {
+        id: 'recipe-valid',
+        businessId,
+        name: 'Burger',
+        status: 'ACTIVE',
+        type: 'PRODUCT',
+        inventoryMode: 'RECIPE_BASED',
+        recipes: [
+          {
+            ingredientId: 'ingredient-pan',
+            quantityRequired: new Prisma.Decimal(1),
+            isOptional: false,
+            ingredient: {
+              id: 'ingredient-pan',
+              name: 'Bread',
+              currentStock: new Prisma.Decimal(5),
+              consumptionUnit: 'UNIT',
+              customUnitLabel: null,
+            },
+          },
+        ],
+      },
+      {
+        id: 'recipe-missing',
+        businessId,
+        name: 'Unconfigured burger',
+        status: 'ACTIVE',
+        type: 'PRODUCT',
+        inventoryMode: 'RECIPE_BASED',
+        recipes: [],
+      },
+    ]);
+
+    const result = await service.getItemsSellabilityBulk(
+      businessId,
+      ['recipe-valid', 'recipe-missing'],
+      tx as any,
+    );
+
+    expect(result).toEqual([
+      { sellable: true, status: 'SELLABLE' },
+      expect.objectContaining({
+        sellable: false,
+        status: 'MISSING_RECIPE',
+      }),
+    ]);
+    expect(tx.item.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.inventoryMovement.findMany).not.toHaveBeenCalled();
   });
 
   it('lists SALE movements in Kardex', async () => {
@@ -1654,28 +2372,34 @@ describe('InventoryService', () => {
 
     expect(returns).toHaveLength(2);
 
-    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      data: expect.objectContaining({
-        type: 'SALE_RETURN',
-        ingredientId,
-        orderId: 'order-1',
-        orderItemId: 'order-item-1',
-        quantity: new Prisma.Decimal(2),
-        unitCost: new Prisma.Decimal(3),
-        totalValue: new Prisma.Decimal(6),
-        stockAfter: new Prisma.Decimal(7),
-        averageCostAfter: new Prisma.Decimal(4),
-        detail: 'Cliente canceló',
+    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 'SALE_RETURN',
+          ingredientId,
+          orderId: 'order-1',
+          orderItemId: 'order-item-1',
+          quantity: new Prisma.Decimal(2),
+          unitCost: new Prisma.Decimal(3),
+          totalValue: new Prisma.Decimal(6),
+          stockAfter: new Prisma.Decimal(7),
+          averageCostAfter: new Prisma.Decimal(4),
+          detail: 'Cliente canceló',
+        }),
       }),
-    }));
+    );
 
-    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      data: expect.objectContaining({
-        orderItemId: 'order-item-2',
-        stockAfter: new Prisma.Decimal(8),
-        averageCostAfter: new Prisma.Decimal(4),
+    expect(tx.inventoryMovement.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orderItemId: 'order-item-2',
+          stockAfter: new Prisma.Decimal(8),
+          averageCostAfter: new Prisma.Decimal(4),
+        }),
       }),
-    }));
+    );
 
     expect(tx.ingredient.update).toHaveBeenNthCalledWith(1, {
       where: { id: ingredientId },
@@ -1867,7 +2591,9 @@ describe('InventoryService', () => {
         take: 25,
         orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
         include: expect.objectContaining({
-          ingredient: { select: { id: true, name: true, consumptionUnit: true } },
+          ingredient: {
+            select: { id: true, name: true, consumptionUnit: true },
+          },
           item: { select: { id: true, name: true } },
         }),
       }),
@@ -1900,5 +2626,182 @@ describe('InventoryService', () => {
         take: 20,
       }),
     );
+  });
+
+  describe('Service Consumption CRUD & History', () => {
+    it('listServiceConsumption returns active services with mapped service ingredients', async () => {
+      const { service, tx } = createService();
+      tx.item.findMany.mockResolvedValue([
+        {
+          id: 'service-1',
+          name: 'Spa Treatment',
+          price: new Prisma.Decimal(120),
+          durationMinutes: 60,
+          status: 'ACTIVE',
+          serviceIngredients: [
+            {
+              id: 'si-1',
+              ingredientId: 'ing-1',
+              quantityRequired: new Prisma.Decimal(10),
+              ingredient: {
+                name: 'Oil',
+                currentStock: new Prisma.Decimal(500),
+                consumptionUnit: 'ml',
+                customUnitLabel: 'ml',
+              },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.listServiceConsumption(businessId);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        id: 'service-1',
+        name: 'Spa Treatment',
+        price: 120,
+        durationMinutes: 60,
+        status: 'ACTIVE',
+        ingredients: [
+          {
+            id: 'si-1',
+            ingredientId: 'ing-1',
+            name: 'Oil',
+            quantityRequired: 10,
+            currentStock: 500,
+            consumptionUnit: 'ml',
+            customUnitLabel: 'ml',
+          },
+        ],
+      });
+    });
+
+    it('replaceServiceConsumption replaces existing rules with validation', async () => {
+      const { service, tx } = createService();
+      tx.item.findFirst.mockResolvedValue({ id: 'service-1', type: 'SERVICE' });
+      tx.ingredient.findMany.mockResolvedValue([
+        { id: 'ing-1', businessId, status: 'ACTIVE' },
+      ]);
+      tx.serviceIngredient.deleteMany.mockResolvedValue({ count: 1 });
+      tx.serviceIngredient.create.mockResolvedValue({
+        id: 'new-si-1',
+        ingredientId: 'ing-1',
+        quantityRequired: new Prisma.Decimal(5),
+        ingredient: {
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(500),
+          consumptionUnit: 'ml',
+          customUnitLabel: 'ml',
+        },
+      });
+
+      const result = await service.replaceServiceConsumption(businessId, 'service-1', {
+        ingredients: [{ ingredientId: 'ing-1', quantityRequired: '5' }],
+      });
+
+      expect(result).toHaveLength(1);
+      expect(tx.serviceIngredient.deleteMany).toHaveBeenCalledWith({
+        where: { businessId, serviceItemId: 'service-1' },
+      });
+      expect(tx.serviceIngredient.create).toHaveBeenCalledWith({
+        data: {
+          businessId,
+          serviceItemId: 'service-1',
+          ingredientId: 'ing-1',
+          quantityRequired: new Prisma.Decimal(5),
+        },
+        include: {
+          ingredient: {
+            select: {
+              id: true,
+              name: true,
+              currentStock: true,
+              consumptionUnit: true,
+              customUnitLabel: true,
+            },
+          },
+        },
+      });
+    });
+
+    it('applyInventoryConsumptionForReservation validates stock and posts reservation movements', async () => {
+      const { service, tx } = createService();
+      tx.serviceIngredient.findMany.mockResolvedValue([
+        {
+          ingredientId: 'ing-1',
+          quantityRequired: new Prisma.Decimal(10),
+        },
+      ]);
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: 'ing-1',
+        name: 'Oil',
+        currentStock: new Prisma.Decimal(100),
+        averageCost: new Prisma.Decimal(1.5),
+      });
+      tx.ingredient.findMany.mockResolvedValue([
+        {
+          id: 'ing-1',
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(100),
+          averageCost: new Prisma.Decimal(1.5),
+        },
+      ]);
+      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({ id: 'm-1', ...data }),
+      );
+
+      const movements = await service.applyInventoryConsumptionForReservation(
+        tx as any,
+        businessId,
+        {
+          id: 'res-1',
+          itemId: 'service-1',
+          customerName: 'Alice',
+          item: { name: 'Spa' },
+          inventoryPostedAt: null,
+        },
+      );
+
+      expect(movements).toHaveLength(1);
+      expect(tx.reservation.update).toHaveBeenCalledWith({
+        where: { id: 'res-1' },
+        data: { inventoryPostedAt: expect.any(Date) },
+      });
+    });
+
+    it('reverseInventoryConsumptionForReservation generates returns and restores stock', async () => {
+      const { service, tx } = createService();
+      tx.inventoryMovement.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'm-sale-1',
+            ingredientId: 'ing-1',
+            quantity: new Prisma.Decimal(10),
+            unitCost: new Prisma.Decimal(1.5),
+            totalValue: new Prisma.Decimal(15),
+          },
+        ]) // SALE movements
+        .mockResolvedValueOnce([]); // no existing SALE_RETURN
+      tx.ingredient.findMany.mockResolvedValue([
+        {
+          id: 'ing-1',
+          name: 'Oil',
+          currentStock: new Prisma.Decimal(90),
+          averageCost: new Prisma.Decimal(1.5),
+        },
+      ]);
+
+      const returnedMovements = await service.reverseInventoryConsumptionForReservation(
+        tx as any,
+        businessId,
+        'res-1',
+      );
+
+      expect(returnedMovements).toHaveLength(1);
+      expect(tx.ingredient.update).toHaveBeenCalledWith({
+        where: { id: 'ing-1' },
+        data: { currentStock: new Prisma.Decimal(100) },
+      });
+    });
   });
 });

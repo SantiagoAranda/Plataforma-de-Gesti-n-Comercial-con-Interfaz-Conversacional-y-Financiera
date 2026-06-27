@@ -278,6 +278,37 @@ export class ItemsService {
         scheduleWindows: {
           orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }],
         },
+        recipes: {
+          include: {
+            ingredient: {
+              select: { id: true, name: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        optionGroups: {
+          where: { isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+          include: {
+            totalQuantityUnit: true,
+            options: {
+              where: { isActive: true },
+              orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+              include: {
+                ingredient: { select: { id: true, name: true } },
+                item: {
+                  select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    inventoryMode: true,
+                  },
+                },
+                unit: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -288,25 +319,26 @@ export class ItemsService {
     );
   }
 
-  private async withSellabilityForItems<T extends { id: string; inventoryMode?: string | null }>(
+  private async withSellabilityForItems<
+    T extends { id: string; inventoryMode?: string | null },
+  >(
     items: T[],
     businessId: string,
     context: 'management' | 'sales' | 'public-store',
   ) {
-    const enriched = await Promise.all(
-      items.map(async (item) => {
-        const sellability = await this.inventoryService.getItemSellability(
-          businessId,
-          item.id,
-        );
-        return {
-          ...item,
-          sellability,
-          currentStock: sellability.currentStock,
-          averageCost: sellability.averageCost,
-        };
-      }),
+    const sellabilities = await this.inventoryService.getItemsSellabilityBulk(
+      businessId,
+      items.map((item) => item.id),
     );
+    const enriched = items.map((item, index) => {
+      const sellability = sellabilities[index];
+      return {
+        ...item,
+        sellability,
+        currentStock: sellability.currentStock,
+        averageCost: sellability.averageCost,
+      };
+    });
 
     if (context === 'management') return enriched;
     return enriched.filter((item) => item.sellability.sellable);
@@ -344,7 +376,7 @@ export class ItemsService {
 
     const nextDuration =
       nextType === 'SERVICE'
-        ? dto.durationMinutes ?? existing.durationMinutes ?? 0
+        ? (dto.durationMinutes ?? existing.durationMinutes ?? 0)
         : null;
 
     if (
@@ -636,7 +668,9 @@ export class ItemsService {
     const nextInventoryMode = inventoryMode ?? InventoryMode.NONE;
 
     if (type === 'SERVICE' && nextInventoryMode !== InventoryMode.NONE) {
-      throw new BadRequestException('SERVICE items must use inventoryMode NONE');
+      throw new BadRequestException(
+        'SERVICE items must use inventoryMode NONE',
+      );
     }
 
     return nextInventoryMode;

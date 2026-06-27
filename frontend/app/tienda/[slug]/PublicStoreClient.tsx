@@ -80,6 +80,39 @@ type PublicRecipeLine = {
   } | null;
 };
 
+type OptionAction = "SELECT" | "ADD" | "REMOVE";
+
+type OptionSelection = {
+  groupId: string;
+  optionId: string;
+  action: OptionAction;
+};
+
+type PublicOption = {
+  id: string;
+  groupId: string;
+  name: string;
+  description?: string | null;
+  targetType: "NONE" | "INGREDIENT" | "ITEM";
+  priceDelta: number;
+  selectedByDefault: boolean;
+  removable: boolean;
+  sortOrder: number;
+  hasStock?: boolean;
+};
+
+type PublicOptionGroup = {
+  id: string;
+  title: string;
+  description?: string | null;
+  required: boolean;
+  minSelections: number;
+  maxSelections?: number | null;
+  quantityMode: "FIXED_PER_OPTION" | "SHARED_TOTAL" | "NO_QUANTITY";
+  sortOrder: number;
+  options: PublicOption[];
+};
+
 type Item = {
   id: string;
   name: string;
@@ -94,12 +127,14 @@ type Item = {
   badges?: Array<{ text: string; color: string }> | null;
   images?: { id: string; url: string }[];
   recipes?: PublicRecipeLine[];
+  optionGroups?: PublicOptionGroup[];
 };
 
 type CartLine = {
   itemId: string;
   quantity: number;
   excludedOptionalIngredientIds: string[];
+  optionSelections: OptionSelection[];
 };
 
 type StoreFooterSettings = {
@@ -136,6 +171,75 @@ function normalizeFooterSocials(value: unknown): FooterSocial[] {
   }, []);
 }
 
+function canonicalizeOptionSelections(selections: OptionSelection[]) {
+  return [...selections].sort((a, b) =>
+    `${a.groupId}:${a.optionId}:${a.action}`.localeCompare(
+      `${b.groupId}:${b.optionId}:${b.action}`,
+    ),
+  );
+}
+
+function optionSelectionKey(selections: OptionSelection[]) {
+  return JSON.stringify(canonicalizeOptionSelections(selections));
+}
+
+function cartLineKey(line: CartLine) {
+  return `${line.itemId}:${optionSelectionKey(line.optionSelections)}:${JSON.stringify(
+    line.excludedOptionalIngredientIds,
+  )}`;
+}
+
+function getDefaultSelectedOptionIds(item: Item) {
+  return (item.optionGroups ?? []).flatMap((group) =>
+    group.options
+      .filter((option) => option.selectedByDefault)
+      .map((option) => option.id),
+  );
+}
+
+function resolveSelectedOptionIds(item: Item, selections: OptionSelection[]) {
+  const selected = new Set(getDefaultSelectedOptionIds(item));
+  const optionById = new Map(
+    (item.optionGroups ?? []).flatMap((group) =>
+      group.options.map((option) => [option.id, option] as const),
+    ),
+  );
+
+  for (const selection of selections) {
+    const option = optionById.get(selection.optionId);
+    if (!option) continue;
+    if (selection.action === "REMOVE") selected.delete(option.id);
+    else selected.add(option.id);
+  }
+
+  return selected;
+}
+
+function buildOptionSelectionsFromSelectedIds(item: Item, selectedIds: Set<string>) {
+  const selections: OptionSelection[] = [];
+  for (const group of item.optionGroups ?? []) {
+    for (const option of group.options) {
+      const selected = selectedIds.has(option.id);
+      if (selected && !option.selectedByDefault) {
+        selections.push({ groupId: group.id, optionId: option.id, action: "ADD" });
+      }
+      if (!selected && option.selectedByDefault) {
+        selections.push({ groupId: group.id, optionId: option.id, action: "REMOVE" });
+      }
+    }
+  }
+  return canonicalizeOptionSelections(selections);
+}
+
+function selectedOptionsForItem(item: Item, selections: OptionSelection[]) {
+  const selectedIds = resolveSelectedOptionIds(item, selections);
+  return (item.optionGroups ?? []).flatMap((group) =>
+    group.options
+      .filter((option) => selectedIds.has(option.id))
+      .map((option) => ({ ...option, groupTitle: group.title })),
+  );
+}
+
 export default function PublicStoreClient() {
   const params = useParams();
   const slug = typeof params?.slug === "string" ? params.slug : "";
@@ -159,6 +263,8 @@ export default function PublicStoreClient() {
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [customizingProduct, setCustomizingProduct] = useState<Item | null>(null);
   const [draftExcludedOptionalIds, setDraftExcludedOptionalIds] = useState<string[]>([]);
+  const [draftSelectedOptionIds, setDraftSelectedOptionIds] = useState<string[]>([]);
+  const [editingCartKey, setEditingCartKey] = useState<string | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
 
   const [customerName, setCustomerName] = useState("");
@@ -317,45 +423,7 @@ export default function PublicStoreClient() {
       });
       return;
     }
-
-    if (!selectedService || !data.time || !data.date) return;
-
-    const service = selectedService;
-    const [h, m] = data.time.split(":").map(Number);
-    const startMinute = h * 60 + m;
-    const endMinute = startMinute + (service.durationMinutes ?? 60);
-
-    try {
-      const res = await fetch(`${API_URL}/public/${slug}/reserve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          itemId: service.id,
-          customerName: data.fullName,
-          customerWhatsapp: data.whatsapp,
-          date: formatLocalDateKey(data.date),
-          startMinute,
-          endMinute,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Error creating reservation");
-
-      notify({
-        type: "success",
-        message: "Reserva creada correctamente",
-      });
-
-      resetReservationUi();
-    } catch (error) {
-      console.error("Reservation error:", error);
-      notify({
-        type: "error",
-        message: "No se pudo crear la reserva",
-      });
-    }
+    // El fetch lo maneja ReservationDrawer internamente
   };
 
   const getRequiredRecipeLines = (item: Item | null) => {
@@ -366,7 +434,11 @@ export default function PublicStoreClient() {
     return (item?.recipes ?? []).filter((line) => line.isOptional);
   };
 
-  const addToCart = (id: string, excludedOptionalIngredientIds: string[] = []) => {
+  const addToCart = (
+    id: string,
+    excludedOptionalIngredientIds: string[] = [],
+    optionSelections: OptionSelection[] = [],
+  ) => {
     if (preview) {
       notify({
         type: "info",
@@ -376,15 +448,23 @@ export default function PublicStoreClient() {
     }
 
     const uniqueExcludedIds = Array.from(new Set(excludedOptionalIngredientIds));
+    const canonicalSelections = canonicalizeOptionSelections(optionSelections);
+    const canonicalKey = optionSelectionKey(canonicalSelections);
     setCart((prev) => {
-      const existing = prev.find((line) => line.itemId === id);
+      const existing = prev.find(
+        (line) =>
+          line.itemId === id &&
+          optionSelectionKey(line.optionSelections) === canonicalKey &&
+          JSON.stringify(line.excludedOptionalIngredientIds) === JSON.stringify(uniqueExcludedIds),
+      );
       if (existing) {
         return prev.map((line) =>
-          line.itemId === id
+          line === existing
             ? {
               ...line,
               quantity: line.quantity + 1,
               excludedOptionalIngredientIds: uniqueExcludedIds,
+              optionSelections: canonicalSelections,
             }
             : line,
         );
@@ -395,38 +475,47 @@ export default function PublicStoreClient() {
           itemId: id,
           quantity: 1,
           excludedOptionalIngredientIds: uniqueExcludedIds,
+          optionSelections: canonicalSelections,
         },
       ];
     });
     notify({ type: "success", message: "Producto agregado" });
   };
 
-  const increaseQty = (id: string) => {
+  const increaseQty = (key: string) => {
     setCart((prev) =>
       prev.map((line) =>
-        line.itemId === id ? { ...line, quantity: line.quantity + 1 } : line,
+        cartLineKey(line) === key ? { ...line, quantity: line.quantity + 1 } : line,
       ),
     );
   };
 
-  const decreaseQty = (id: string) => {
+  const decreaseQty = (key: string) => {
     setCart((prev) =>
       prev
         .map((line) =>
-          line.itemId === id ? { ...line, quantity: line.quantity - 1 } : line,
+          cartLineKey(line) === key ? { ...line, quantity: line.quantity - 1 } : line,
         )
         .filter((line) => line.quantity > 0),
     );
   };
 
-  const removeItem = (id: string) => {
-    setCart((prev) => prev.filter((line) => line.itemId !== id));
+  const removeItem = (key: string) => {
+    setCart((prev) => prev.filter((line) => cartLineKey(line) !== key));
   };
 
   const openCustomizationOrAdd = (item: Item) => {
+    if (item.type === "PRODUCT" && (item.optionGroups?.length ?? 0) > 0) {
+      setDraftSelectedOptionIds(getDefaultSelectedOptionIds(item));
+      setDraftExcludedOptionalIds([]);
+      setCustomizingProduct(item);
+      return;
+    }
+
     const optionalLines = getOptionalRecipeLines(item);
     if (item.type === "PRODUCT" && optionalLines.length > 0) {
       setDraftExcludedOptionalIds([]);
+      setDraftSelectedOptionIds([]);
       setCustomizingProduct(item);
       return;
     }
@@ -435,9 +524,45 @@ export default function PublicStoreClient() {
 
   const confirmCustomizedProduct = () => {
     if (!customizingProduct) return;
-    addToCart(customizingProduct.id, draftExcludedOptionalIds);
+    const optionSelections =
+      (customizingProduct.optionGroups?.length ?? 0) > 0
+        ? buildOptionSelectionsFromSelectedIds(
+            customizingProduct,
+            new Set(draftSelectedOptionIds),
+          )
+        : [];
+    if (editingCartKey) {
+      const previous = cart.find((line) => cartLineKey(line) === editingCartKey);
+      setCart((current) => {
+        const withoutEdited = current.filter(
+          (line) => cartLineKey(line) !== editingCartKey,
+        );
+        const replacement: CartLine = {
+          itemId: customizingProduct.id,
+          quantity: previous?.quantity ?? 1,
+          excludedOptionalIngredientIds: Array.from(
+            new Set(draftExcludedOptionalIds),
+          ),
+          optionSelections: canonicalizeOptionSelections(optionSelections),
+        };
+        const replacementKey = cartLineKey(replacement);
+        const duplicate = withoutEdited.find(
+          (line) => cartLineKey(line) === replacementKey,
+        );
+        if (!duplicate) return [...withoutEdited, replacement];
+        return withoutEdited.map((line) =>
+          line === duplicate
+            ? { ...line, quantity: line.quantity + replacement.quantity }
+            : line,
+        );
+      });
+    } else {
+      addToCart(customizingProduct.id, draftExcludedOptionalIds, optionSelections);
+    }
     setCustomizingProduct(null);
+    setEditingCartKey(null);
     setDraftExcludedOptionalIds([]);
+    setDraftSelectedOptionIds([]);
   };
 
   const cartItems = useMemo(() => {
@@ -452,18 +577,42 @@ export default function PublicStoreClient() {
                 ?.ingredient?.name,
           )
           .filter(Boolean) as string[];
+        const selectedOptions = selectedOptionsForItem(item, line.optionSelections);
+        const optionsTotal = selectedOptions.reduce(
+          (acc, option) => acc + Number(option.priceDelta || 0),
+          0,
+        );
         return {
           ...item,
+          cartKey: cartLineKey(line),
           quantity: line.quantity,
+          price: item.price + optionsTotal,
+          basePrice: item.price,
+          optionSelections: line.optionSelections,
+          selectedOptionNames: selectedOptions.map((option) => option.name),
+          selectedOptionSummary: selectedOptions.map((option) => ({
+            groupTitle: option.groupTitle,
+            optionName: option.name,
+            priceDelta: option.priceDelta,
+          })),
           excludedOptionalIngredientIds: line.excludedOptionalIngredientIds,
           excludedOptionalIngredientNames: excludedNames,
         };
       })
       .filter(Boolean) as (Item & {
-        quantity: number;
-        excludedOptionalIngredientIds: string[];
-        excludedOptionalIngredientNames: string[];
-      })[];
+      quantity: number;
+      cartKey: string;
+      basePrice: number;
+      optionSelections: OptionSelection[];
+      selectedOptionNames: string[];
+      selectedOptionSummary: Array<{
+        groupTitle: string;
+        optionName: string;
+        priceDelta: number;
+      }>;
+      excludedOptionalIngredientIds: string[];
+      excludedOptionalIngredientNames: string[];
+    })[];
   }, [cart, items]);
 
   const cartTotal = useMemo(() => {
@@ -525,6 +674,7 @@ export default function PublicStoreClient() {
             itemId: item.id,
             quantity: item.quantity,
             excludedOptionalIngredientIds: item.excludedOptionalIngredientIds,
+            optionSelections: item.optionSelections,
           })),
           note,
         }),
@@ -617,14 +767,14 @@ export default function PublicStoreClient() {
             />
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {["", "PRODUCT", "SERVICE"].map((type) => (
               <button
                 key={type}
                 onClick={() => setCategory(type)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold ring-1 transition ${category === type
-                  ? "bg-[#11d473] text-white ring-emerald-200"
-                  : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                   }`}
               >
                 {type === ""
@@ -655,7 +805,11 @@ export default function PublicStoreClient() {
                 item={item}
                 preview={preview}
                 onOpen={() =>
-                  item.type === "SERVICE" ? setSelectedService(item) : setSelectedProduct(item)
+                  item.type === "SERVICE"
+                    ? setSelectedProduct(item)
+                    : (item.optionGroups?.length ?? 0) > 0
+                      ? openCustomizationOrAdd(item)
+                      : setSelectedProduct(item)
                 }
                 onPlus={() =>
                   item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
@@ -680,6 +834,19 @@ export default function PublicStoreClient() {
               items={cartItems}
               onIncreaseQty={increaseQty}
               onDecreaseQty={decreaseQty}
+              onRemove={removeItem}
+              onEdit={(key) => {
+                const line = cart.find((entry) => cartLineKey(entry) === key);
+                const item = line && items.find((entry) => entry.id === line.itemId);
+                if (!line || !item) return;
+                setEditingCartKey(key);
+                setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
+                setDraftSelectedOptionIds(
+                  Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
+                );
+                setCustomizingProduct(item);
+                setShowCartModal(false);
+              }}
               customerName={customerName}
               onCustomerNameChange={setCustomerName}
               countryCode={countryCode}
@@ -699,6 +866,7 @@ export default function PublicStoreClient() {
             className="absolute inset-0 bg-black/40"
             onClick={() => {
               setCustomizingProduct(null);
+              setEditingCartKey(null);
               setDraftExcludedOptionalIds([]);
             }}
           />
@@ -708,6 +876,7 @@ export default function PublicStoreClient() {
               type="button"
               onClick={() => {
                 setCustomizingProduct(null);
+                setEditingCartKey(null);
                 setDraftExcludedOptionalIds([]);
               }}
               className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
@@ -716,6 +885,15 @@ export default function PublicStoreClient() {
               <X className="h-4 w-4" />
             </button>
 
+            {(customizingProduct.optionGroups?.length ?? 0) > 0 ? (
+              <ProductOptionsCustomizer
+                item={customizingProduct}
+                selectedOptionIds={draftSelectedOptionIds}
+                onSelectedOptionIdsChange={setDraftSelectedOptionIds}
+                onConfirm={confirmCustomizedProduct}
+              />
+            ) : (
+              <>
             <div className="pr-10">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
                 Personalizar
@@ -800,6 +978,8 @@ export default function PublicStoreClient() {
               <ShoppingBag className="h-4 w-4" />
               Agregar al carrito
             </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -811,7 +991,7 @@ export default function PublicStoreClient() {
         businessSlug={slug}
         title={selectedService?.name}
         selectedDateValue={selectedDateKey}
-        onConfirm={handleReserve}
+        serviceDurationMinutes={selectedService?.durationMinutes}
       />
 
       <ProductDetailOverlay
@@ -825,16 +1005,175 @@ export default function PublicStoreClient() {
           if (preview) {
             notify({
               type: "info",
-              message: "Modo administrador: las compras estan deshabilitadas",
+              message: "Modo administrador: las compras/reservas están deshabilitadas",
             });
             return;
           }
-          openCustomizationOrAdd(selectedProduct);
-          closeProductDetail();
+          if (selectedProduct.type === "SERVICE") {
+            const itemToReserve = selectedProduct;
+            closeProductDetail();
+            setSelectedService(itemToReserve);
+          } else {
+            openCustomizationOrAdd(selectedProduct);
+            closeProductDetail();
+          }
         }}
       />
 
       <Footer config={footerConfig} />
+    </div>
+  );
+}
+
+function ProductOptionsCustomizer({
+  item,
+  selectedOptionIds,
+  onSelectedOptionIdsChange,
+  onConfirm,
+}: {
+  item: Item;
+  selectedOptionIds: string[];
+  onSelectedOptionIdsChange: (ids: string[]) => void;
+  onConfirm: () => void;
+}) {
+  const selectedSet = useMemo(() => new Set(selectedOptionIds), [selectedOptionIds]);
+  const selectedOptions = useMemo(
+    () =>
+      (item.optionGroups ?? []).flatMap((group) =>
+        group.options.filter((option) => selectedSet.has(option.id)),
+      ),
+    [item.optionGroups, selectedSet],
+  );
+  const finalPrice =
+    item.price +
+    selectedOptions.reduce((acc, option) => acc + Number(option.priceDelta || 0), 0);
+
+  const validationMessage = useMemo(() => {
+    for (const group of item.optionGroups ?? []) {
+      const count = group.options.filter((option) => selectedSet.has(option.id)).length;
+      const min = Math.max(group.required ? 1 : 0, group.minSelections ?? 0);
+      if (count < min) return `Completa: ${group.title}`;
+      if (group.maxSelections != null && count > group.maxSelections) {
+        return `Máximo ${group.maxSelections}: ${group.title}`;
+      }
+    }
+    return null;
+  }, [item.optionGroups, selectedSet]);
+
+  const toggleOption = (group: PublicOptionGroup, option: PublicOption) => {
+    if (option.hasStock === false) return; // Prevent selection of out-of-stock options
+    const next = new Set(selectedSet);
+    const checked = next.has(option.id);
+    if (checked) {
+      if (option.selectedByDefault && !option.removable) return;
+      next.delete(option.id);
+    } else if (group.maxSelections === 1) {
+      for (const groupOption of group.options) next.delete(groupOption.id);
+      next.add(option.id);
+    } else {
+      const currentCount = group.options.filter((groupOption) =>
+        next.has(groupOption.id),
+      ).length;
+      if (group.maxSelections != null && currentCount >= group.maxSelections) return;
+      next.add(option.id);
+    }
+    onSelectedOptionIdsChange(Array.from(next));
+  };
+
+  return (
+    <div className="-m-5 flex max-h-[86vh] flex-col overflow-hidden bg-white sm:rounded-3xl">
+      <div className="px-5 pb-3 pt-5">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-orange-500">
+          Personalizar
+        </p>
+        <h2 className="mt-1 pr-10 text-lg font-semibold text-neutral-900">
+          {item.name}
+        </h2>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-28 pt-2">
+        {(item.optionGroups ?? []).map((group, index) => (
+          <section key={group.id} className="mb-7">
+            <div className="mb-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-neutral-400">
+                {index + 1}. {group.title}
+              </p>
+              {group.description?.trim() ? (
+                <p className="mt-1 text-xs font-medium text-neutral-500">
+                  {group.description.trim()}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {group.options.map((option) => {
+                const checked = selectedSet.has(option.id);
+                const isOutOfStock = option.hasStock === false;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    disabled={isOutOfStock}
+                    onClick={() => toggleOption(group, option)}
+                    className={[
+                      "flex min-h-[54px] items-center gap-2 rounded-xl border px-3 py-2 text-left transition",
+                      isOutOfStock
+                        ? "border-neutral-100 bg-neutral-50/70 text-neutral-400 cursor-not-allowed opacity-60"
+                        : checked
+                          ? "border-orange-400 bg-orange-50 text-orange-900 active:scale-[0.99]"
+                          : "border-neutral-200 bg-white text-neutral-700 active:scale-[0.99]",
+                    ].join(" ")}
+                  >
+                    {!isOutOfStock && (
+                      <span
+                        className={[
+                          "grid h-5 w-5 shrink-0 place-items-center rounded-md border text-[12px] font-bold",
+                          checked
+                            ? "border-orange-500 bg-orange-500 text-white"
+                            : "border-neutral-200 bg-white text-transparent",
+                        ].join(" ")}
+                      >
+                        ✓
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className={["block text-sm font-semibold leading-tight", isOutOfStock ? "text-neutral-400 line-through" : "text-neutral-900"].join(" ")}>
+                        {option.name}
+                      </span>
+                      {isOutOfStock ? (
+                        <span className="mt-0.5 block text-[10px] font-bold text-rose-500 uppercase tracking-wider">
+                          Sin stock
+                        </span>
+                      ) : option.priceDelta > 0 ? (
+                        <span className="mt-0.5 block text-[11px] font-semibold text-orange-600">
+                          +{formatCop(option.priceDelta)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-10px_24px_rgba(15,23,42,0.08)] backdrop-blur">
+        {validationMessage ? (
+          <p className="mb-2 text-center text-xs font-semibold text-orange-700">
+            {validationMessage}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!!validationMessage}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-sm font-bold text-white shadow-md transition hover:bg-orange-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ShoppingBag className="h-4 w-4" />
+          Confirmar pedido - {formatCop(finalPrice)}
+        </button>
+      </div>
     </div>
   );
 }
@@ -957,6 +1296,12 @@ function ProductCard({
         <div className="truncate text-[15px] font-semibold leading-[1.2] text-[#0f172a]">
           {item.name}
         </div>
+        {item.type === "SERVICE" && item.durationMinutes && (
+          <div className="mt-[2px] text-[11px] font-medium text-neutral-500 flex items-center gap-1">
+            <span>🕒</span>
+            <span>{item.durationMinutes / 60} h</span>
+          </div>
+        )}
         {item.description?.trim() ? (
           <div className="mt-[2px] text-[11px] font-medium text-slate-500 [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">
             {item.description.trim()}
@@ -1107,6 +1452,11 @@ function ProductDetailOverlay({
                           </div>
                         )}
                     </div>
+                    {item.type === "SERVICE" && item.durationMinutes && (
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                        <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -1115,9 +1465,18 @@ function ProductDetailOverlay({
                     onClick={onPrimaryAction}
                     className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <ShoppingBag className="h-4 w-4" />
-                    Comprar
-                    <ArrowRight className="h-4 w-4" />
+                    {item.type === "SERVICE" ? (
+                      <>
+                        Reservar
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingBag className="h-4 w-4" />
+                        Comprar
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -1420,6 +1779,11 @@ function ReelLikeProductView({
                   </div>
                 )}
             </div>
+            {item.type === "SERVICE" && item.durationMinutes && (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mt-1">
+                <span>🕒 Duración: {item.durationMinutes / 60} h</span>
+              </div>
+            )}
           </div>
 
           <button
@@ -1428,9 +1792,18 @@ function ReelLikeProductView({
             onClick={onPrimaryAction}
             className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-[#11d473] px-6 text-sm font-medium text-white shadow-[0_0_24px_rgba(17,212,115,0.35)] transition hover:brightness-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <ShoppingBag className="h-4 w-4" />
-            Comprar
-            <ArrowRight className="h-4 w-4" />
+            {item.type === "SERVICE" ? (
+              <>
+                Reservar
+                <ArrowRight className="h-4 w-4" />
+              </>
+            ) : (
+              <>
+                <ShoppingBag className="h-4 w-4" />
+                Comprar
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
           </button>
         </div>
       </div>

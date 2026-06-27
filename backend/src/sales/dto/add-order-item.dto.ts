@@ -1,11 +1,3 @@
-import { IsInt, IsNotEmpty, IsString, Min } from "class-validator";
+import { SalesOrderLineInputDto } from './order-line-input.dto';
 
-export class AddOrderItemDto {
-  @IsString()
-  @IsNotEmpty()
-  itemId: string;
-
-  @IsInt()
-  @Min(1)
-  quantity: number;
-}
+export class AddOrderItemDto extends SalesOrderLineInputDto {}

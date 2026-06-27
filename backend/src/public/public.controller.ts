@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Body,
+  NotFoundException,
 } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
@@ -12,6 +13,22 @@ import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 @Controller('public')
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
+
+  // ── Ruta pública de consulta de reserva por ID (sin autenticación) ──────
+  // IMPORTANTE: debe declararse ANTES de ':slug/...' para evitar colisión de rutas.
+  @Get('reservations/:id')
+  async getReservationById(@Param('id') id: string) {
+    const reservation = await this.publicService.findReservationById(id);
+    if (!reservation) throw new NotFoundException('Reserva no encontrada');
+    return reservation;
+  }
+
+  @Post('reservations/:id/cancel')
+  async cancelReservation(@Param('id') id: string) {
+    const reservation = await this.publicService.cancelReservation(id);
+    if (!reservation) throw new NotFoundException('Reserva no encontrada');
+    return reservation;
+  }
 
   @Get(':slug/items')
   listPublicItems(

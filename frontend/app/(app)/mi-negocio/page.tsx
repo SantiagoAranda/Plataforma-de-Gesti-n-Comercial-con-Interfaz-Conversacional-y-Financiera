@@ -67,6 +67,7 @@ function MiNegocioPageContent() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
+  const submitInFlightRef = useRef(false);
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<
@@ -85,6 +86,9 @@ function MiNegocioPageContent() {
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [createdItemId, setCreatedItemId] = useState<string | null>(null);
+  const [imageUploadFailed, setImageUploadFailed] = useState(false);
   const [duration, setDuration] = useState(60);
   const [durationInput, setDurationInput] = useState("1");
   const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<
@@ -147,6 +151,15 @@ function MiNegocioPageContent() {
     fetchItems(true);
   }, [fetchItems]);
 
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   const filteredItems = items.filter((item) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
@@ -169,6 +182,9 @@ function MiNegocioPageContent() {
     setExistingImages([]);
     setRemovedImageIds([]);
     setImageError(null);
+    setPendingImageFile(null);
+    setCreatedItemId(null);
+    setImageUploadFailed(false);
     setDuration(60);
     setDurationInput("1");
     setDurationAdjustmentMessage(null);
@@ -197,6 +213,8 @@ function MiNegocioPageContent() {
     }
 
     setEditingItem(item);
+    setCreatedItemId(item.id);
+    setImageUploadFailed(false);
     setComposerMode("edit");
     setSelectedItem(null);
 
@@ -219,6 +237,7 @@ function MiNegocioPageContent() {
     setNewImages([]);
     setRemovedImageIds([]);
     setImageError(null);
+    setPendingImageFile(null);
     setDuration(item.durationMinutes ?? 60);
     setDurationInput(
       item.durationMinutes ? String(item.durationMinutes / 60) : "1",
@@ -260,6 +279,13 @@ function MiNegocioPageContent() {
   const handleAddImages = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const selectedFiles = Array.from(files);
+
+    const fileWithLargeSize = selectedFiles.find((file) => file.size > 2 * 1024 * 1024);
+    if (fileWithLargeSize) {
+      setImageError("El peso máximo de la imagen es de 2 MB");
+      return;
+    }
+
     const totalImages = existingImages.length + newImages.length;
     const availableSlots = MAX_ITEM_IMAGES - totalImages;
 
@@ -268,16 +294,20 @@ function MiNegocioPageContent() {
       return;
     }
 
+    setImageError(null);
+
     const nextPendingImages: PendingImage[] = [];
     selectedFiles.slice(0, availableSlots).forEach((file) => {
-      if (file.size > MAX_ITEM_IMAGE_SIZE_BYTES) return;
       nextPendingImages.push({
         id: generateCreationId(),
         file,
         previewUrl: URL.createObjectURL(file),
       });
     });
-    setNewImages((prev) => [...prev, ...nextPendingImages]);
+    const nextImages = [...newImages, ...nextPendingImages];
+    setNewImages(nextImages);
+    setPendingImageFile(nextImages[0]?.file ?? null);
+    setImageUploadFailed(false);
   };
 
   const handleRemoveExistingImage = (id: string) => {
@@ -286,11 +316,13 @@ function MiNegocioPageContent() {
   };
 
   const handleRemoveNewImage = (id: string) => {
-    setNewImages((prev) => {
-      const img = prev.find((i) => i.id === id);
-      if (img) URL.revokeObjectURL(img.previewUrl);
-      return prev.filter((i) => i.id !== id);
-    });
+    const image = newImages.find((candidate) => candidate.id === id);
+    if (image) URL.revokeObjectURL(image.previewUrl);
+
+    const nextImages = newImages.filter((candidate) => candidate.id !== id);
+    setNewImages(nextImages);
+    setPendingImageFile(nextImages[0]?.file ?? null);
+    if (nextImages.length === 0) setImageUploadFailed(false);
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
@@ -324,6 +356,8 @@ function MiNegocioPageContent() {
   }, [items.length, loading, scrollToBottom]);
 
   const handleSend = async () => {
+    if (isSubmitting || submitInFlightRef.current) return;
+
     if (type === "SERVICE") {
       const hasOverlap = week.some((day) => {
         if (!day.active || day.ranges.length !== 2) return false;
@@ -337,15 +371,14 @@ function MiNegocioPageContent() {
         return first.e >= second.s;
       });
 
-      if (hasOverlap) {
-        return;
-      }
+      if (hasOverlap) return;
     }
 
     const errors: FormErrors = {};
     if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0)
+    if (!price || parseFloat(price) <= 0) {
       errors.price = "El precio debe ser mayor a 0";
+    }
 
     let finalDuration = duration;
     if (type === "SERVICE") {
@@ -384,19 +417,21 @@ function MiNegocioPageContent() {
       return;
     }
 
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
+
     try {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-            day.active
-              ? day.ranges.map((r) => ({
-                weekday: WEEKDAY_ENUM[dayIndex],
-                startMinute: timeToMinutes(r.start),
-                endMinute: timeToMinutes(r.end),
-              }))
-              : [],
-          )
+              day.active
+                ? day.ranges.map((r) => ({
+                    weekday: WEEKDAY_ENUM[dayIndex],
+                    startMinute: timeToMinutes(r.start),
+                    endMinute: timeToMinutes(r.end),
+                  }))
+                : [],
+            )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -430,39 +465,76 @@ function MiNegocioPageContent() {
       };
 
       let savedItem: Item;
-      if (editingItem) {
-        savedItem = await api<Item>(`/items/${editingItem.id}`, {
+      let failedImages: PendingImage[] = [];
+      let targetItemId = editingItem?.id ?? createdItemId;
+      const wasCreating = !targetItemId;
+
+      if (targetItemId) {
+        savedItem = await api<Item>(`/items/${targetItemId}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
+
         for (const id of removedImageIds) {
-          await api(`/items/${editingItem.id}/images/${id}`, {
+          await api(`/items/${targetItemId}/images/${id}`, {
             method: "DELETE",
           });
         }
+
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${editingItem.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${targetItemId}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (error) {
+            console.error(error);
+            failedImages.push(img);
+          }
         }
-        savedItem = await api<Item>(`/items/${editingItem.id}`);
+
+        try {
+          savedItem = await api<Item>(`/items/${targetItemId}`);
+        } catch (error) {
+          console.error(error);
+        }
       } else {
         const created = await api<Item>(`/items`, {
           method: "POST",
           body: JSON.stringify({ ...body, id: generateCreationId() }),
         });
+
+        savedItem = created;
+        targetItemId = created.id;
+
+        setCreatedItemId(created.id);
+        setEditingItem(created);
+        setComposerMode("edit");
+        setImageUploadFailed(false);
+
         for (const img of newImages) {
           const formData = new FormData();
           formData.append("file", img.file);
-          await api(`/items/${created.id}/images/upload`, {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            await api(`/items/${created.id}/images/upload`, {
+              method: "POST",
+              body: formData,
+            });
+          } catch (error) {
+            console.error(error);
+            failedImages.push(img);
+          }
         }
-        savedItem = await api<Item>(`/items/${created.id}`);
+
+        if (failedImages.length === 0) {
+          try {
+            savedItem = await api<Item>(`/items/${created.id}`);
+          } catch (error) {
+            console.error(error);
+          }
+        }
       }
 
       invalidateCache("mi-negocio:items:ACTIVE");
@@ -470,24 +542,48 @@ function MiNegocioPageContent() {
 
       setItems((prev) => {
         const exists = prev.find((i) => i.id === savedItem.id);
-        if (exists)
+        if (exists) {
           return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
+        }
         return [savedItem, ...prev];
       });
+
       if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
 
       shouldStickToBottomRef.current = true;
 
+      if (failedImages.length > 0) {
+        setCreatedItemId(targetItemId);
+        setImageUploadFailed(true);
+        setPendingImageFile(failedImages[0]?.file ?? pendingImageFile);
+        setToast({
+          message:
+            type === "SERVICE"
+              ? "Servicio creado, pero no se pudo subir la imagen. Podés reintentar la imagen sin crear otro servicio."
+              : "Producto creado, pero no se pudo subir la imagen. Podés reintentar la imagen sin crear otro producto.",
+          type: "error",
+        });
+        setEditingItem(savedItem);
+        setComposerMode("edit");
+        setExistingImages(savedItem.images ?? existingImages);
+        setNewImages(failedImages);
+        setRemovedImageIds([]);
+        return;
+      }
+
       setToast({
-        message: editingItem ? "Item actualizado" : "Item creado",
+        message: wasCreating ? "Item creado" : "Item actualizado",
         type: "success",
       });
+      setImageUploadFailed(false);
+      setPendingImageFile(null);
       setComposerMode("closed");
       resetForm();
     } catch (err) {
       console.error(err);
       setToast({ message: "Error al guardar", type: "error" });
     } finally {
+      submitInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -507,7 +603,6 @@ function MiNegocioPageContent() {
       console.error(err);
       setToast({ message: "Error al eliminar", type: "error" });
     }
-    setTimeout(() => setToast(null), 2500);
   };
 
   const handleScroll = useCallback(() => {
