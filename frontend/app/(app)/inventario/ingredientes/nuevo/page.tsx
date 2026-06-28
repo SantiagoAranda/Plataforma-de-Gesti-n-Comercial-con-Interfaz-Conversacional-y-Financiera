@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
-import { createIngredient } from "@/src/services/inventory";
+import { createIngredient, createPurchasePresentation } from "@/src/services/inventory";
 import { getErrorMessage } from "@/src/lib/errors";
 
 export default function NuevoIngredientePage() {
@@ -35,9 +35,15 @@ export default function NuevoIngredientePage() {
                     name: values.name,
                     stockUnitId: values.stockUnitId,
                     defaultPurchaseUnitId: values.defaultPurchaseUnitId,
+                    consumptionUnit: values.consumptionUnit,
+                    purchaseUnit: values.purchaseUnit,
+                    purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
                     minStock: values.minStock,
                   };
                   const created = await createIngredient(payload);
+                  if (values.purchasePresentationDraft) {
+                    await createPurchasePresentation(created.id, values.purchasePresentationDraft);
+                  }
                   toast.dismiss(loadingId);
                   toast.success("Ingrediente creado");
                   router.replace(`/inventario/ingredientes/${created.id}`);

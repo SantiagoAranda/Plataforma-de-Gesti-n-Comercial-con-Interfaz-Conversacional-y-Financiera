@@ -104,9 +104,19 @@ async function seedInventoryUnits() {
         { code: "LB", name: "Libra", symbol: "lb", kind: UnitKind.WEIGHT },
         { code: "ML", name: "Mililitro", symbol: "ml", kind: UnitKind.VOLUME },
         { code: "L", name: "Litro", symbol: "l", kind: UnitKind.VOLUME },
-        { code: "PACKAGE", name: "Paquete", symbol: "paquete", kind: UnitKind.COUNT },
+        { code: "CM", name: "Centimetro", symbol: "cm", kind: UnitKind.LENGTH },
+        { code: "M", name: "Metro", symbol: "m", kind: UnitKind.LENGTH },
+        { code: "PACKAGE", name: "Paquete", symbol: "paquete", kind: UnitKind.COMMERCIAL },
         { code: "DOZEN", name: "Docena", symbol: "docena", kind: UnitKind.COUNT },
-        { code: "BOX", name: "Caja", symbol: "caja", kind: UnitKind.COUNT },
+        { code: "SIX_PACK", name: "Six-pack", symbol: "six-pack", kind: UnitKind.COUNT },
+        { code: "BOX", name: "Caja", symbol: "caja", kind: UnitKind.COMMERCIAL },
+        { code: "BAG", name: "Bolsa", symbol: "bolsa", kind: UnitKind.COMMERCIAL },
+        { code: "BUCKET", name: "Balde", symbol: "balde", kind: UnitKind.COMMERCIAL },
+        { code: "BULTO", name: "Bulto", symbol: "bulto", kind: UnitKind.COMMERCIAL },
+        { code: "BOTTLE", name: "Botella", symbol: "botella", kind: UnitKind.COMMERCIAL },
+        { code: "GARRAFA", name: "Garrafa", symbol: "garrafa", kind: UnitKind.COMMERCIAL },
+        { code: "BIDON", name: "Bidon", symbol: "bidon", kind: UnitKind.COMMERCIAL },
+        { code: "ROLL", name: "Rollo", symbol: "rollo", kind: UnitKind.COMMERCIAL },
     ];
 
     for (const unit of units) {
@@ -132,24 +142,47 @@ async function seedInventoryUnits() {
             .map((unit) => [unit.code, unit]),
     );
 
+    await prisma.unitConversion.deleteMany({
+        where: {
+            OR: [
+                { fromUnit: { code: { in: ["PACKAGE", "BOX"] } } },
+                { toUnit: { code: { in: ["PACKAGE", "BOX"] } } },
+            ],
+        },
+    });
+
+    await prisma.$executeRaw`
+        UPDATE "Ingredient" i
+        SET
+            "defaultPurchaseUnitId" = i."stockUnitId",
+            "purchaseUnit" = i."consumptionUnit",
+            "purchaseToConsumptionFactor" = 1
+        FROM "Unit" pu
+        WHERE i."defaultPurchaseUnitId" = pu."id"
+          AND pu."code" IN ('PACKAGE', 'BOX')
+          AND i."stockUnitId" IS NOT NULL
+    `;
+
     const conversions = [
         ["UNIT", "UNIT", "1"],
-        ["PACKAGE", "PACKAGE", "1"],
         ["DOZEN", "DOZEN", "1"],
-        ["BOX", "BOX", "1"],
+        ["SIX_PACK", "SIX_PACK", "1"],
         ["G", "G", "1"],
         ["KG", "KG", "1"],
         ["LB", "LB", "1"],
         ["ML", "ML", "1"],
         ["L", "L", "1"],
+        ["CM", "CM", "1"],
+        ["M", "M", "1"],
         ["KG", "G", "1000"],
         ["G", "KG", "0.001"],
         ["LB", "G", "500"],
         ["L", "ML", "1000"],
         ["ML", "L", "0.001"],
-        ["PACKAGE", "UNIT", "6"],
+        ["M", "CM", "100"],
+        ["CM", "M", "0.01"],
         ["DOZEN", "UNIT", "12"],
-        ["BOX", "UNIT", "24"],
+        ["SIX_PACK", "UNIT", "6"],
     ] as const;
 
     for (const [fromCode, toCode, factor] of conversions) {

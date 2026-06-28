@@ -15,6 +15,23 @@ import { UpsertPurchasePresentationDto } from './dto/purchase-presentation.dto';
 export class IngredientsService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly fixedPurchaseConversionCodes: Record<string, string[]> = {
+    G: ['KG'],
+    ML: ['L'],
+    CM: ['M'],
+    UNIT: ['SIX_PACK', 'DOZEN'],
+  };
+
+  private readonly editablePresentationCodesByStockUnit: Record<string, string[]> = {
+    G: ['PACKAGE', 'BAG', 'BOX', 'BUCKET', 'BULTO'],
+    KG: ['PACKAGE', 'BAG', 'BOX', 'BUCKET', 'GARRAFA', 'BULTO'],
+    ML: ['BOTTLE', 'GARRAFA', 'BIDON', 'BOX'],
+    L: ['BOTTLE', 'GARRAFA', 'BIDON', 'BOX'],
+    CM: ['ROLL'],
+    M: ['ROLL'],
+    UNIT: ['BOX', 'PACKAGE'],
+  };
+
   private normalizeText(value: string) {
     return value.trim();
   }
@@ -36,6 +53,14 @@ export class IngredientsService {
 
   private async getUnitById(id: string, tx: Prisma.TransactionClient | PrismaService = this.prisma) {
     return tx.unit.findUnique({ where: { id } });
+  }
+
+  private lockedPresentationId(fromCode: string, toCode: string) {
+    return `fixed:${fromCode}:${toCode}`;
+  }
+
+  private isLockedPresentationId(id: string) {
+    return id.startsWith('fixed:');
   }
 
   private async resolveIngredientUnits(
@@ -76,6 +101,12 @@ export class IngredientsService {
 
     if (!stockUnit || !defaultPurchaseUnit) {
       throw new BadRequestException('La unidad del insumo no existe.');
+    }
+
+    if (defaultPurchaseUnit.kind === UnitKind.COMMERCIAL) {
+      throw new BadRequestException(
+        'La unidad normal de compra no es compatible con la unidad base del insumo.',
+      );
     }
 
     const conversion = await this.prisma.unitConversion.findUnique({
@@ -145,6 +176,126 @@ export class IngredientsService {
     }
 
     return { recipeUnitLabel: null, recipeUnitFactor: null };
+  }
+
+  private async getPresentationFactorToBaseUnit(
+    tx: Prisma.TransactionClient | PrismaService,
+    presentation: {
+      innerQuantity: Prisma.Decimal | number | string;
+      contentQuantity: Prisma.Decimal | number | string;
+      contentUnitId: string;
+    },
+    stockUnitId: string,
+  ) {
+    const conversion = await tx.unitConversion.findUnique({
+      where: {
+        fromUnitId_toUnitId: {
+          fromUnitId: presentation.contentUnitId,
+          toUnitId: stockUnitId,
+        },
+      },
+    });
+
+    if (!conversion) return null;
+
+    return new Prisma.Decimal(presentation.innerQuantity)
+      .mul(new Prisma.Decimal(presentation.contentQuantity))
+      .mul(new Prisma.Decimal(conversion.factor))
+      .toDecimalPlaces(6);
+  }
+
+  private async formatPurchasePresentation(
+    tx: Prisma.TransactionClient | PrismaService,
+    presentation: any,
+    stockUnitId: string,
+  ) {
+    const factorToBaseUnit = await this.getPresentationFactorToBaseUnit(
+      tx,
+      presentation,
+      stockUnitId,
+    );
+
+    return {
+      ...presentation,
+      purchaseUnitLabel:
+        presentation.purchaseUnit?.symbol || presentation.purchaseUnit?.name || presentation.name,
+      factorToBaseUnit,
+      isLocked: false,
+    };
+  }
+
+  private async buildLockedPurchasePresentations(
+    tx: Prisma.TransactionClient | PrismaService,
+    ingredient: {
+      id: string;
+      businessId: string;
+      stockUnitId: string | null;
+      defaultPurchaseUnitId?: string | null;
+      stockUnit?: any;
+    },
+  ) {
+    if (!ingredient.stockUnitId || !ingredient.stockUnit?.code) return [];
+
+    const fromCodes = this.fixedPurchaseConversionCodes[ingredient.stockUnit.code] ?? [];
+    if (fromCodes.length === 0) return [];
+
+    const conversions = await tx.unitConversion.findMany({
+      where: {
+        toUnitId: ingredient.stockUnitId,
+        fromUnit: { code: { in: fromCodes }, isActive: true },
+      },
+      include: { fromUnit: true, toUnit: true },
+      orderBy: { factor: 'asc' },
+    });
+
+    return conversions.map((conversion) => {
+      const from = conversion.fromUnit;
+      const to = conversion.toUnit;
+      const factor = new Prisma.Decimal(conversion.factor).toDecimalPlaces(6);
+
+      return {
+        id: this.lockedPresentationId(from.code, to.code),
+        businessId: ingredient.businessId,
+        ingredientId: ingredient.id,
+        name: from.name,
+        purchaseUnitId: from.id,
+        purchaseUnit: from,
+        innerQuantity: new Prisma.Decimal(1),
+        innerUnitLabel: null,
+        contentQuantity: factor,
+        contentUnitId: to.id,
+        contentUnit: to,
+        isDefault: ingredient.defaultPurchaseUnitId === from.id,
+        isActive: true,
+        purchaseUnitLabel: from.symbol || from.name,
+        factorToBaseUnit: factor,
+        isLocked: true,
+      };
+    });
+  }
+
+  private sortPurchasePresentationsForUi(presentations: any[]) {
+    return [...presentations].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      if (a.isLocked !== b.isLocked) return a.isLocked ? 1 : -1;
+      return String(a.name).localeCompare(String(b.name), 'es');
+    });
+  }
+
+  private ensureEditablePresentationAllowed(
+    ingredient: { stockUnit?: { code: string } | null },
+    purchaseUnit: { code: string; name: string },
+  ) {
+    const stockCode = ingredient.stockUnit?.code;
+    const allowedCodes = stockCode
+      ? this.editablePresentationCodesByStockUnit[stockCode] ?? []
+      : [];
+
+    if (!allowedCodes.includes(purchaseUnit.code)) {
+      throw new BadRequestException(
+        'La presentación de compra no está permitida para la unidad base del insumo.',
+      );
+    }
   }
 
   async create(businessId: string, dto: CreateIngredientDto) {
@@ -240,7 +391,26 @@ export class IngredientsService {
       throw new NotFoundException('Ingredient not found');
     }
 
-    return this.withMovementFlags(ingredient);
+    const lockedPresentations = await this.buildLockedPurchasePresentations(
+      this.prisma,
+      ingredient,
+    );
+    const persistedPresentations = ingredient.purchasePresentations ?? [];
+    const editablePresentations = ingredient.stockUnitId
+      ? await Promise.all(
+          persistedPresentations.map((presentation) =>
+            this.formatPurchasePresentation(this.prisma, presentation, ingredient.stockUnitId!),
+          ),
+        )
+      : persistedPresentations;
+
+    return this.withMovementFlags({
+      ...ingredient,
+      purchasePresentations: this.sortPurchasePresentationsForUi([
+        ...editablePresentations,
+        ...lockedPresentations,
+      ]),
+    });
   }
 
   async update(businessId: string, id: string, dto: UpdateIngredientDto) {
@@ -328,12 +498,34 @@ export class IngredientsService {
   }
 
   async listPurchasePresentations(businessId: string, ingredientId: string) {
-    await this.findOne(businessId, ingredientId);
-    return this.prisma.ingredientPurchasePresentation.findMany({
+    const ingredient = await this.prisma.ingredient.findFirst({
+      where: { id: ingredientId, businessId },
+      include: { stockUnit: true },
+    });
+    if (!ingredient) throw new NotFoundException('Ingredient not found');
+    if (!ingredient.stockUnitId) {
+      throw new BadRequestException('Ingredient must have stockUnitId before configuring purchase presentations');
+    }
+
+    const [lockedPresentations, editablePresentations] = await Promise.all([
+      this.buildLockedPurchasePresentations(this.prisma, ingredient),
+      this.prisma.ingredientPurchasePresentation.findMany({
       where: { businessId, ingredientId, isActive: true },
       include: { purchaseUnit: true, contentUnit: true },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
-    });
+      }),
+    ]);
+
+    const formattedEditablePresentations = await Promise.all(
+      editablePresentations.map((presentation) =>
+        this.formatPurchasePresentation(this.prisma, presentation, ingredient.stockUnitId!),
+      ),
+    );
+
+    return this.sortPurchasePresentationsForUi([
+      ...formattedEditablePresentations,
+      ...lockedPresentations,
+    ]);
   }
 
   private async validatePresentationInput(
@@ -364,6 +556,7 @@ export class IngredientsService {
     if (!purchaseUnit || purchaseUnit.kind !== UnitKind.COMMERCIAL) {
       throw new BadRequestException('purchaseUnitId must reference a commercial unit');
     }
+    this.ensureEditablePresentationAllowed(ingredient, purchaseUnit);
     if (!contentUnit || contentUnit.kind === UnitKind.COMMERCIAL) {
       throw new BadRequestException('contentUnitId must reference a standard unit');
     }
@@ -392,7 +585,6 @@ export class IngredientsService {
     ingredientId: string,
     dto: UpsertPurchasePresentationDto,
   ) {
-    throw new BadRequestException('Las presentaciones de compra por insumo ya no están disponibles.');
     return this.prisma.$transaction(async (tx) => {
       const validated = await this.validatePresentationInput(tx, businessId, ingredientId, dto);
 
@@ -403,7 +595,34 @@ export class IngredientsService {
         });
       }
 
-      return tx.ingredientPurchasePresentation.create({
+      const existing = await tx.ingredientPurchasePresentation.findFirst({
+        where: {
+          businessId,
+          ingredientId,
+          purchaseUnitId: dto.purchaseUnitId,
+          isActive: true,
+        },
+      });
+
+      if (existing) {
+        const updated = await tx.ingredientPurchasePresentation.update({
+          where: { id: existing.id },
+          data: {
+            name: dto.name.trim(),
+            innerQuantity: validated.innerQuantity,
+            innerUnitLabel: dto.innerUnitLabel?.trim() || null,
+            contentQuantity: validated.contentQuantity,
+            contentUnitId: dto.contentUnitId,
+            isDefault: !!dto.isDefault,
+            isActive: dto.isActive ?? true,
+          },
+          include: { purchaseUnit: true, contentUnit: true },
+        });
+
+        return this.formatPurchasePresentation(tx, updated, validated.ingredient.stockUnitId!);
+      }
+
+      const created = await tx.ingredientPurchasePresentation.create({
         data: {
           businessId,
           ingredientId,
@@ -418,6 +637,8 @@ export class IngredientsService {
         },
         include: { purchaseUnit: true, contentUnit: true },
       });
+
+      return this.formatPurchasePresentation(tx, created, validated.ingredient.stockUnitId!);
     });
   }
 
@@ -427,7 +648,10 @@ export class IngredientsService {
     presentationId: string,
     dto: UpsertPurchasePresentationDto,
   ) {
-    throw new BadRequestException('Las presentaciones de compra por insumo ya no están disponibles.');
+    if (this.isLockedPresentationId(presentationId)) {
+      throw new BadRequestException('Las conversiones fijas no se pueden editar.');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.ingredientPurchasePresentation.findFirst({
         where: { id: presentationId, businessId, ingredientId },
@@ -449,7 +673,7 @@ export class IngredientsService {
         });
       }
 
-      return tx.ingredientPurchasePresentation.update({
+      const updated = await tx.ingredientPurchasePresentation.update({
         where: { id: presentationId },
         data: {
           name: dto.name.trim(),
@@ -463,6 +687,8 @@ export class IngredientsService {
         },
         include: { purchaseUnit: true, contentUnit: true },
       });
+
+      return this.formatPurchasePresentation(tx, updated, validated.ingredient.stockUnitId!);
     });
   }
 
@@ -471,16 +697,29 @@ export class IngredientsService {
     ingredientId: string,
     presentationId: string,
   ) {
+    if (this.isLockedPresentationId(presentationId)) {
+      throw new BadRequestException('Las conversiones fijas no se pueden desactivar.');
+    }
+
     const existing = await this.prisma.ingredientPurchasePresentation.findFirst({
       where: { id: presentationId, businessId, ingredientId },
     });
     if (!existing) throw new NotFoundException('Purchase presentation not found');
 
-    return this.prisma.ingredientPurchasePresentation.update({
+    const ingredient = await this.prisma.ingredient.findFirst({
+      where: { id: ingredientId, businessId },
+      select: { stockUnitId: true },
+    });
+
+    const updated = await this.prisma.ingredientPurchasePresentation.update({
       where: { id: presentationId },
       data: { isActive: false, isDefault: false },
       include: { purchaseUnit: true, contentUnit: true },
     });
+
+    return ingredient?.stockUnitId
+      ? this.formatPurchasePresentation(this.prisma, updated, ingredient.stockUnitId)
+      : updated;
   }
 
   private withMovementFlags<T extends { _count?: { inventoryMovements?: number } }>(

@@ -7,7 +7,13 @@ import toast from "react-hot-toast";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { getErrorMessage } from "@/src/lib/errors";
-import { getIngredient, updateIngredient, type Ingredient } from "@/src/services/inventory";
+import {
+  createPurchasePresentation,
+  getIngredient,
+  updateIngredient,
+  updatePurchasePresentation,
+  type Ingredient,
+} from "@/src/services/inventory";
 
 export default function EditarIngredientePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
@@ -78,6 +84,22 @@ export default function EditarIngredientePage({ params }: { params: Promise<{ id
                       status: values.status,
                     };
                     const updated = await updateIngredient(ingredientId, payload);
+                    if (values.purchasePresentationDraft && ingredient) {
+                      const existingPresentation = ingredient.purchasePresentations?.find(
+                        (presentation) =>
+                          !presentation.isLocked &&
+                          presentation.purchaseUnitId === values.purchasePresentationDraft?.purchaseUnitId,
+                      );
+                      if (existingPresentation) {
+                        await updatePurchasePresentation(
+                          ingredientId,
+                          existingPresentation.id,
+                          values.purchasePresentationDraft,
+                        );
+                      } else {
+                        await createPurchasePresentation(ingredientId, values.purchasePresentationDraft);
+                      }
+                    }
                     toast.dismiss(loadingId);
                     toast.success("Ingrediente actualizado");
                     router.replace(`/inventario/ingredientes/${updated.id}`);

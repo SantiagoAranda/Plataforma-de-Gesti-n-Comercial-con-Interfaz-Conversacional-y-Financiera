@@ -83,6 +83,7 @@ type ApplyInventoryMovementInput = {
   purchasePresentationId?: string | null;
   purchaseQuantity?: number | string | Prisma.Decimal | null;
   purchaseUnitLabel?: string | null;
+  factorToBaseUnitSnapshot?: number | string | Prisma.Decimal | null;
   conversionDetail?: string | null;
   orderId?: string | null;
   orderItemId?: string | null;
@@ -172,6 +173,7 @@ export class InventoryService {
         purchasePresentationId: purchase.purchasePresentationId,
         purchaseQuantity: purchase.purchaseQuantity,
         purchaseUnitLabel: purchase.purchaseUnitLabel,
+        factorToBaseUnitSnapshot: purchase.factorToBaseUnitSnapshot,
         conversionDetail: purchase.conversionDetail,
         detail: dto.detail ?? null,
       });
@@ -456,20 +458,8 @@ export class InventoryService {
   }
 
   async listUnits() {
-    const activePurchaseUnitCodes = [
-      'UNIT',
-      'PACKAGE',
-      'DOZEN',
-      'BOX',
-      'G',
-      'KG',
-      'LB',
-      'ML',
-      'L',
-    ];
-
     return this.prisma.unit.findMany({
-      where: { isActive: true, code: { in: activePurchaseUnitCodes } },
+      where: { isActive: true },
       orderBy: [{ kind: 'asc' }, { code: 'asc' }],
     });
   }
@@ -1667,13 +1657,14 @@ export class InventoryService {
         purchasePresentationId: input.purchasePresentationId ?? null,
         purchaseQuantity: input.purchaseQuantity ?? null,
         purchaseUnitLabel: input.purchaseUnitLabel ?? null,
+        factorToBaseUnitSnapshot: input.factorToBaseUnitSnapshot ?? null,
         conversionDetail: input.conversionDetail ?? null,
         orderId: input.orderId ?? null,
         orderItemId: input.orderItemId ?? null,
         reservationId: input.reservationId ?? null,
         detail: input.detail?.trim() || null,
         occurredAt: input.occurredAt ?? new Date(),
-      },
+      } as any,
       include: {
         ingredient: true,
         item: true,
@@ -2095,6 +2086,7 @@ export class InventoryService {
     purchasePresentationId?: string | null;
     purchaseQuantity?: Prisma.Decimal | null;
     purchaseUnitLabel?: string | null;
+    factorToBaseUnitSnapshot?: Prisma.Decimal | null;
     conversionDetail?: string | null;
   }> {
     const legacyTouched =
@@ -2102,7 +2094,8 @@ export class InventoryService {
     const purchaseTouched =
       dto.purchaseQuantity !== undefined ||
       dto.purchaseUnitCost !== undefined ||
-      dto.purchaseUnitId !== undefined;
+      dto.purchaseUnitId !== undefined ||
+      dto.purchasePresentationId !== undefined;
 
     if (legacyTouched && purchaseTouched) {
       throw new BadRequestException(
@@ -2207,6 +2200,20 @@ export class InventoryService {
           );
         }
 
+        if (dto.purchasePresentationId && dto.purchaseUnitId) {
+          throw new BadRequestException(
+            'Provide purchasePresentationId or purchaseUnitId, not both',
+          );
+        }
+
+        if (dto.purchasePresentationId) {
+          return this.resolvePresentationPurchaseInput(tx, businessId, ingredient, {
+            purchasePresentationId: dto.purchasePresentationId,
+            purchaseQuantity,
+            purchaseUnitCost,
+          });
+        }
+
         return this.resolveStandardPurchaseInput(tx, ingredient, {
           purchaseUnitId:
             dto.purchaseUnitId ?? ingredient.defaultPurchaseUnitId,
@@ -2215,7 +2222,7 @@ export class InventoryService {
         });
       }
 
-      if (dto.purchaseUnitId) {
+      if (dto.purchaseUnitId || dto.purchasePresentationId) {
         throw new BadRequestException(
           'Unit purchase fields require ingredient stockUnitId',
         );
@@ -2247,7 +2254,7 @@ export class InventoryService {
       );
     }
 
-    // Block legacy COMMERCIAL kind only – COUNT units (PACKAGE, DOZEN, BOX) are allowed.
+    // Commercial package labels are ingredient-specific presentations, not global conversions.
     if (
       conversion.fromUnit.kind === UnitKind.COMMERCIAL ||
       conversion.toUnit.kind === UnitKind.COMMERCIAL
@@ -2262,7 +2269,7 @@ export class InventoryService {
       conversion.fromUnit.code !== conversion.toUnit.code &&
       !(
         conversion.toUnit.code === 'UNIT' &&
-        ['PACKAGE', 'DOZEN', 'BOX'].includes(conversion.fromUnit.code)
+        ['DOZEN', 'SIX_PACK'].includes(conversion.fromUnit.code)
       )
     ) {
       throw new BadRequestException(
@@ -2298,7 +2305,7 @@ export class InventoryService {
     });
     if (!purchaseUnit)
       throw new BadRequestException('purchaseUnitId is invalid');
-    // Block legacy COMMERCIAL kind – COUNT kind (PACKAGE, DOZEN, BOX) are allowed.
+    // Commercial package labels are ingredient-specific presentations, not standard units.
     if (purchaseUnit.kind === UnitKind.COMMERCIAL) {
       throw new BadRequestException(
         'La unidad de compra no es compatible con la unidad base del insumo.',
@@ -2323,7 +2330,89 @@ export class InventoryService {
       purchaseMode: InventoryPurchaseMode.STANDARD,
       purchaseQuantity: input.purchaseQuantity,
       purchaseUnitLabel: conversion.fromUnit.symbol,
+      factorToBaseUnitSnapshot: factor,
       conversionDetail: `1 ${conversion.fromUnit.symbol} = ${factor.toString()} ${conversion.toUnit.symbol}`,
+    };
+  }
+
+  private async resolvePresentationPurchaseInput(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    ingredient: Ingredient,
+    input: {
+      purchasePresentationId: string;
+      purchaseQuantity: Prisma.Decimal;
+      purchaseUnitCost: Prisma.Decimal;
+    },
+  ) {
+    if (!ingredient.stockUnitId) {
+      throw new BadRequestException(
+        'Ingredient stockUnitId is required for presentation purchase',
+      );
+    }
+
+    const presentation = await tx.ingredientPurchasePresentation.findFirst({
+      where: {
+        id: input.purchasePresentationId,
+        businessId,
+        ingredientId: ingredient.id,
+      } as any,
+      include: { purchaseUnit: true, contentUnit: true },
+    });
+
+    if (!presentation) {
+      throw new NotFoundException('Purchase presentation not found');
+    }
+    if (!presentation.isActive) {
+      throw new BadRequestException('Purchase presentation is inactive');
+    }
+
+    const conversion = await this.resolveUnitConversionFactor(
+      tx,
+      presentation.contentUnitId,
+      ingredient.stockUnitId,
+    );
+    const contentFactor = this.decimal(conversion.factor);
+    const presentationFactor = this.decimal(presentation.innerQuantity)
+      .mul(this.decimal(presentation.contentQuantity))
+      .mul(contentFactor)
+      .toDecimalPlaces(6);
+
+    if (presentationFactor.lte(0)) {
+      throw new BadRequestException(
+        'Purchase presentation conversion is invalid',
+      );
+    }
+
+    const quantity = input.purchaseQuantity
+      .mul(presentationFactor)
+      .toDecimalPlaces(6);
+    const totalValue = input.purchaseQuantity
+      .mul(input.purchaseUnitCost)
+      .toDecimalPlaces(6);
+    const unitCost = totalValue.div(quantity).toDecimalPlaces(6);
+    const purchaseUnitLabel =
+      presentation.purchaseUnit.symbol || presentation.purchaseUnit.name;
+    const contentUnitLabel =
+      presentation.contentUnit.symbol || presentation.contentUnit.name;
+    const stockUnitLabel = conversion.toUnit.symbol || conversion.toUnit.name;
+    const innerLabel = presentation.innerUnitLabel?.trim() || 'unidades';
+
+    return {
+      quantity,
+      unitCost,
+      purchaseMode: InventoryPurchaseMode.PRESENTATION,
+      purchasePresentationId: presentation.id,
+      purchaseQuantity: input.purchaseQuantity,
+      purchaseUnitLabel,
+      factorToBaseUnitSnapshot: presentationFactor,
+      conversionDetail:
+        this.decimal(presentation.innerQuantity).eq(1)
+          ? `1 ${purchaseUnitLabel} × ${presentationFactor.toString()} ${stockUnitLabel} = ${presentationFactor.toString()} ${stockUnitLabel}`
+          : `1 ${purchaseUnitLabel} ${presentation.name} = ` +
+            `${this.decimal(presentation.innerQuantity).toString()} ${innerLabel} x ` +
+            `${this.decimal(presentation.contentQuantity).toString()} ${contentUnitLabel} = ` +
+            `${presentationFactor.toString()} ${stockUnitLabel}`,
     };
   }
 

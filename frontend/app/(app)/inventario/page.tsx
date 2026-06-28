@@ -26,6 +26,7 @@ import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 import {
   createIngredient,
+  createPurchasePresentation,
   getInventorySummary,
   getRecipesBulk,
   getSimpleItemsInventorySummary,
@@ -503,7 +504,10 @@ function InventarioPageContent() {
                         minStock: values.minStock,
                         purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
                       };
-                      await createIngredient(payload);
+                      const created = await createIngredient(payload);
+                      if (values.purchasePresentationDraft) {
+                        await createPurchasePresentation(created.id, values.purchasePresentationDraft);
+                      }
                       toast.dismiss(loadingId);
                       toast.success("Ingrediente creado");
                       setIngredientSheetOpen(false);

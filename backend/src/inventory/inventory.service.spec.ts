@@ -809,7 +809,7 @@ describe('InventoryService', () => {
     expect(movement.purchaseMode).toBe('STANDARD');
   });
 
-  it('standard PACKAGE to UNIT purchase enters 6 units', async () => {
+  it('standard SIX_PACK to UNIT purchase enters 6 units as a locked conversion', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -818,20 +818,20 @@ describe('InventoryService', () => {
       currentStock: new Prisma.Decimal(0),
       averageCost: new Prisma.Decimal(0),
       stockUnitId: 'unit-unit',
-      defaultPurchaseUnitId: 'unit-package',
+      defaultPurchaseUnitId: 'unit-six-pack',
     });
     tx.unit.findUnique.mockResolvedValue({
-      id: 'unit-package',
-      code: 'PACKAGE',
-      symbol: 'paquete',
+      id: 'unit-six-pack',
+      code: 'SIX_PACK',
+      symbol: 'six-pack',
       kind: 'COUNT',
     });
     tx.unitConversion.findUnique.mockResolvedValue({
       factor: new Prisma.Decimal(6),
       fromUnit: {
-        id: 'unit-package',
-        code: 'PACKAGE',
-        symbol: 'paquete',
+        id: 'unit-six-pack',
+        code: 'SIX_PACK',
+        symbol: 'six-pack',
         kind: 'COUNT',
       },
       toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
@@ -851,10 +851,10 @@ describe('InventoryService', () => {
     expect(movement.unitCost.toString()).toBe('1000');
     expect(movement.purchaseMode).toBe('STANDARD');
     expect(movement.purchasePresentationId).toBeNull();
-    expect(movement.conversionDetail).toBe('1 paquete = 6 u');
+    expect(movement.conversionDetail).toBe('1 six-pack = 6 u');
   });
 
-  it('standard BOX to UNIT purchase enters 24 units', async () => {
+  it('presentation BOX to UNIT purchase enters its ingredient-specific stock quantity', async () => {
     const { service, tx } = createService();
     tx.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -863,17 +863,37 @@ describe('InventoryService', () => {
       currentStock: new Prisma.Decimal(0),
       averageCost: new Prisma.Decimal(0),
       stockUnitId: 'unit-unit',
-      defaultPurchaseUnitId: 'unit-box',
+      defaultPurchaseUnitId: 'unit-unit',
     });
-    tx.unit.findUnique.mockResolvedValue({
-      id: 'unit-box',
-      code: 'BOX',
-      symbol: 'caja',
-      kind: 'COUNT',
+    tx.ingredientPurchasePresentation.findFirst.mockResolvedValue({
+      id: 'presentation-box-1',
+      businessId,
+      ingredientId,
+      name: 'Paquete',
+      purchaseUnitId: 'unit-box',
+      purchaseUnit: {
+        id: 'unit-box',
+        code: 'PACKAGE',
+        symbol: 'paquete',
+        name: 'Paquete',
+        kind: 'COMMERCIAL',
+      },
+      innerQuantity: new Prisma.Decimal(1),
+      innerUnitLabel: 'unidades',
+      contentQuantity: new Prisma.Decimal(24),
+      contentUnitId: 'unit-unit',
+      contentUnit: {
+        id: 'unit-unit',
+        code: 'UNIT',
+        symbol: 'u',
+        name: 'Unidad',
+        kind: 'COUNT',
+      },
+      isActive: true,
     });
     tx.unitConversion.findUnique.mockResolvedValue({
-      factor: new Prisma.Decimal(24),
-      fromUnit: { id: 'unit-box', code: 'BOX', symbol: 'caja', kind: 'COUNT' },
+      factor: new Prisma.Decimal(1),
+      fromUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
       toUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
     });
     tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
@@ -885,12 +905,16 @@ describe('InventoryService', () => {
       ingredientId,
       purchaseQuantity: '1',
       purchaseUnitCost: '24000',
+      purchasePresentationId: 'presentation-box-1',
     } as any);
 
     expect(movement.quantity.toString()).toBe('24');
     expect(movement.unitCost.toString()).toBe('1000');
     expect(movement.totalValue.toString()).toBe('24000');
-    expect(movement.purchaseMode).toBe('STANDARD');
+    expect(movement.purchaseMode).toBe('PRESENTATION');
+    expect(movement.purchasePresentationId).toBe('presentation-box-1');
+    expect((movement as any).factorToBaseUnitSnapshot.toString()).toBe('24');
+    expect(movement.conversionDetail).toBe('1 paquete × 24 u = 24 u');
   });
 
   it('standard LB to G purchase enters 500 g', async () => {

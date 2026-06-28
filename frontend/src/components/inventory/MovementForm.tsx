@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { Scale, FileText, Hash } from "lucide-react";
 
-import type { Ingredient, Unit } from "@/src/services/inventory";
+import type { Ingredient, IngredientPurchasePresentation, Unit } from "@/src/services/inventory";
 import {
   listUnits,
   registerInitial,
@@ -16,13 +16,10 @@ import {
 import { getErrorMessage } from "@/src/lib/errors";
 import { cn } from "@/src/lib/utils";
 import {
-  getStandardPurchasePreview,
   getStockUnitSymbol,
   formatUnitSymbol,
-  type UnitConversionLike,
 } from "@/src/components/inventory/inventoryUnits";
 import { formatMoney } from "@/src/lib/formatters";
-import { api } from "@/src/lib/api";
 
 export type MovementAction =
   | "INITIAL"
@@ -39,10 +36,15 @@ const ALL_ACTIONS: Array<{ label: string; value: MovementAction }> = [
   { label: "Ajuste −", value: "ADJUSTMENT_NEGATIVE" },
 ];
 
-const PURCHASE_UNIT_CODES_BY_STOCK: Record<string, string[]> = {
-  UNIT: ["UNIT", "PACKAGE", "DOZEN", "BOX"],
-  G: ["G", "KG", "LB"],
-  ML: ["ML", "L"],
+type PurchaseOption = {
+  key: string;
+  label: string;
+  unitLabel: string;
+  factorToBaseUnit: number;
+  purchaseUnitId?: string;
+  purchasePresentationId?: string;
+  isDefault?: boolean;
+  isLocked?: boolean;
 };
 
 type Props = {
@@ -67,6 +69,15 @@ function isPositiveDecimal(value: string) {
   return Number(normalized) > 0;
 }
 
+function presentationFactor(presentation: IngredientPurchasePresentation) {
+  const direct = Number(presentation.factorToBaseUnit);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const inner = Number(presentation.innerQuantity ?? 1);
+  const content = Number(presentation.contentQuantity ?? 1);
+  const factor = inner * content;
+  return Number.isFinite(factor) && factor > 0 ? factor : 1;
+}
+
 export function MovementForm({
   ingredient,
   onSuccess,
@@ -85,9 +96,8 @@ export function MovementForm({
   const [unitCost, setUnitCost] = useState("");
   const [purchaseQuantity, setPurchaseQuantity] = useState("");
   const [purchaseUnitCost, setPurchaseUnitCost] = useState("");
-  const [purchaseUnitId, setPurchaseUnitId] = useState("");
+  const [purchaseOptionKey, setPurchaseOptionKey] = useState("");
   const [units, setUnits] = useState<Unit[]>([]);
-  const [conversions, setConversions] = useState<UnitConversionLike[]>([]);
   const [detail, setDetail] = useState("");
   const [referenceId, setReferenceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -102,10 +112,6 @@ export function MovementForm({
   );
   const stockUnitId = ingredient.stockUnitId ?? stockUnit?.id ?? null;
   const stockUnitCode = stockUnit?.code ?? ingredient.consumptionUnit ?? "";
-  const ingredientWithStockUnit = useMemo(
-    () => ({ ...ingredient, stockUnit, stockUnitId }),
-    [ingredient, stockUnit, stockUnitId],
-  );
   const usesUnitModel = Boolean(stockUnit && stockUnitId);
   const stockUnitLabel = stockUnit?.symbol ?? getStockUnitSymbol(ingredient);
 
@@ -115,38 +121,56 @@ export function MovementForm({
    * any unit (KG, LB, BOX, DOZEN, PACKAGE, etc.) that has a conversion
    * entry in UnitConversion → stockUnitId.
    */
-  const purchaseUnits = useMemo(() => {
-    if (!stockUnit) return [];
-    const allowedCodes = PURCHASE_UNIT_CODES_BY_STOCK[stockUnit.code] ?? [stockUnit.code];
+  const purchaseOptions = useMemo<PurchaseOption[]>(() => {
+    if (!stockUnit?.id) return [];
+    const baseOption: PurchaseOption = {
+      key: `unit:${stockUnit.id}`,
+      label: stockUnit.name,
+      unitLabel: stockUnit.symbol || stockUnit.name,
+      factorToBaseUnit: 1,
+      purchaseUnitId: stockUnit.id,
+    };
+    const presentationOptions = (ingredient.purchasePresentations ?? [])
+      .filter((presentation) => presentation.isActive)
+      .map((presentation) => {
+        const unitLabel =
+          presentation.purchaseUnitLabel ||
+          presentation.purchaseUnit?.symbol ||
+          presentation.purchaseUnit?.name ||
+          presentation.name;
+        return {
+          key: presentation.isLocked ? `unit:${presentation.purchaseUnitId}` : `presentation:${presentation.id}`,
+          label: presentation.name,
+          unitLabel,
+          factorToBaseUnit: presentationFactor(presentation),
+          purchaseUnitId: presentation.purchaseUnitId,
+          purchasePresentationId: presentation.isLocked ? undefined : presentation.id,
+          isDefault: presentation.isDefault,
+          isLocked: presentation.isLocked,
+        };
+      });
 
-    const compatibleFromIds = new Set(
-      conversions
-        .filter((c) => c.toUnitId === stockUnitId || c.toUnit?.id === stockUnitId || c.toUnit?.code === stockUnit.code)
-        .map((c) => c.fromUnitId ?? c.fromUnit?.id)
-        .filter(Boolean) as string[],
-    );
-    const compatibleFromCodes = new Set(
-      conversions
-        .filter((c) => c.toUnitId === stockUnitId || c.toUnit?.id === stockUnitId || c.toUnit?.code === stockUnit.code)
-        .map((c) => c.fromUnit?.code)
-        .filter(Boolean) as string[],
-    );
-
-    return units.filter((unit) => {
-      if (!allowedCodes.includes(unit.code)) return false;
-      if (unit.id === stockUnitId || unit.code === stockUnit.code) return true;
-      return compatibleFromIds.has(unit.id) || compatibleFromCodes.has(unit.code);
+    const deduped = new Map<string, PurchaseOption>();
+    [baseOption, ...presentationOptions].forEach((option) => {
+      if (!deduped.has(option.key)) deduped.set(option.key, option);
     });
-  }, [units, conversions, stockUnit, stockUnitId]);
 
-  const selectedPurchaseUnit =
-    purchaseUnits.find((unit) => unit.id === purchaseUnitId) ??
-    ingredient.defaultPurchaseUnit ??
-    purchaseUnits.find((unit) => unit.id === ingredient.defaultPurchaseUnitId) ??
-    purchaseUnits.find((unit) => unit.code === ingredient.purchaseUnit) ??
+    return [...deduped.values()].sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      if (a.key === baseOption.key) return 1;
+      if (b.key === baseOption.key) return -1;
+      if (a.isLocked !== b.isLocked) return a.isLocked ? 1 : -1;
+      return a.label.localeCompare(b.label, "es");
+    });
+  }, [ingredient.purchasePresentations, stockUnit]);
+
+  const selectedPurchaseOption =
+    purchaseOptions.find((option) => option.key === purchaseOptionKey) ??
+    purchaseOptions.find((option) => option.isDefault) ??
+    purchaseOptions[0] ??
     null;
 
-  const purchaseUnitLabel = selectedPurchaseUnit?.symbol ?? ingredient.defaultPurchaseUnit?.symbol ?? "";
+  const purchaseUnitLabel = selectedPurchaseOption?.unitLabel ?? "";
 
   const needsUnitCost =
     action === "INITIAL" ||
@@ -167,13 +191,8 @@ export function MovementForm({
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [loadedUnits, loadedConversions] = await Promise.all([
-          listUnits(),
-          api<UnitConversionLike[]>("/inventory/unit-conversions"),
-        ]);
-        console.log("[inventory units]", loadedUnits.map((unit) => unit.code));
+        const loadedUnits = await listUnits();
         setUnits(loadedUnits);
-        setConversions(loadedConversions);
       } catch (error) {
         console.error(error);
         toast.error("No se pudieron cargar las unidades");
@@ -183,13 +202,12 @@ export function MovementForm({
   }, []);
 
   useEffect(() => {
-    const fallbackUnit =
-      purchaseUnits.find((unit) => unit.id === ingredient.defaultPurchaseUnitId) ??
-      purchaseUnits.find((unit) => unit.code === ingredient.purchaseUnit) ??
-      purchaseUnits[0] ??
-      null;
-    setPurchaseUnitId(fallbackUnit?.id ?? "");
-  }, [ingredient.defaultPurchaseUnitId, ingredient.purchaseUnit, purchaseUnits]);
+    setPurchaseOptionKey(
+      purchaseOptions.find((option) => option.isDefault)?.key ??
+        purchaseOptions[0]?.key ??
+        "",
+    );
+  }, [purchaseOptions]);
 
   const actions = useMemo(
     () => ALL_ACTIONS.filter((item) => {
@@ -212,21 +230,45 @@ export function MovementForm({
       };
     }
 
-    return getStandardPurchasePreview({
-      ingredient: ingredientWithStockUnit,
-      purchaseUnit: selectedPurchaseUnit,
-      quantity: purchaseQuantity,
-      unitCost: purchaseUnitCost,
-      conversions,
-    });
-  }, [usesUnitModel, ingredientWithStockUnit, selectedPurchaseUnit, purchaseQuantity, purchaseUnitCost, conversions]);
+    if (!selectedPurchaseOption || !stockUnit) {
+      return {
+        valid: false,
+        lines: ["No hay presentación configurada para esta compra."],
+        stockQuantityAdded: null,
+        baseUnitCost: null,
+        purchaseUnitLabel: "",
+        stockUnitLabel: "",
+      };
+    }
+
+    const factor = selectedPurchaseOption.factorToBaseUnit;
+    const purchaseQty = Number(normalizeDecimalInput(purchaseQuantity || "0"));
+    const purchaseCost = Number(normalizeDecimalInput(purchaseUnitCost || "0"));
+    const stockLabel = stockUnit.symbol || stockUnit.name;
+    const stockQuantityAdded = purchaseQty > 0 ? purchaseQty * factor : null;
+    const baseUnitCost = purchaseCost > 0 ? purchaseCost / factor : null;
+
+    return {
+      valid: factor > 0,
+      factor,
+      stockQuantityAdded,
+      baseUnitCost,
+      purchaseUnitLabel: selectedPurchaseOption.unitLabel,
+      stockUnitLabel: stockLabel,
+      lines: [
+        `1 ${selectedPurchaseOption.unitLabel} × ${factor} ${stockLabel} = ${factor} ${stockLabel}`,
+        stockQuantityAdded !== null ? `Ingresan: ${formatMoney(stockQuantityAdded)} ${stockLabel}` : null,
+        baseUnitCost !== null ? `Costo base: $${formatMoney(baseUnitCost)}/${stockLabel}` : null,
+      ].filter((line): line is string => Boolean(line)),
+    };
+  }, [usesUnitModel, selectedPurchaseOption, purchaseQuantity, purchaseUnitCost, stockUnit]);
 
   const canSubmit = useMemo(() => {
     if (action === "PURCHASE") {
       if (!isPositiveDecimal(purchaseQuantity)) return false;
       if (!isPositiveDecimal(purchaseUnitCost)) return false;
       if (!usesUnitModel || !preview.valid) return false;
-      if (!selectedPurchaseUnit?.id) return false;
+      if (!selectedPurchaseOption?.key) return false;
     } else {
       if (!isPositiveDecimal(quantity)) return false;
       if (needsUnitCost && !isPositiveDecimal(unitCost)) return false;
@@ -239,7 +281,7 @@ export function MovementForm({
     purchaseUnitCost,
     usesUnitModel,
     preview.valid,
-    selectedPurchaseUnit?.id,
+    selectedPurchaseOption?.key,
     quantity,
     needsUnitCost,
     unitCost,
@@ -278,7 +320,10 @@ export function MovementForm({
           ingredientId: ingredient.id,
           purchaseQuantity: normalizeDecimalInput(purchaseQuantity),
           purchaseUnitCost: normalizeDecimalInput(purchaseUnitCost),
-          purchaseUnitId: selectedPurchaseUnit?.id,
+          purchaseUnitId: selectedPurchaseOption?.purchasePresentationId
+            ? undefined
+            : selectedPurchaseOption?.purchaseUnitId,
+          purchasePresentationId: selectedPurchaseOption?.purchasePresentationId,
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
@@ -379,14 +424,14 @@ export function MovementForm({
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Comprás por</label>
               <div className="relative">
                 <select
-                  value={purchaseUnitId || ingredient.defaultPurchaseUnitId || ""}
-                  onChange={(e) => setPurchaseUnitId(e.target.value)}
+                  value={selectedPurchaseOption?.key ?? ""}
+                  onChange={(e) => setPurchaseOptionKey(e.target.value)}
                   className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
                 >
                   <option value="">Seleccionar...</option>
-                  {purchaseUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name} ({unit.symbol})
+                  {purchaseOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label} ({option.unitLabel})
                     </option>
                   ))}
                 </select>
