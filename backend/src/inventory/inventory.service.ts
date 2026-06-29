@@ -980,8 +980,15 @@ export class InventoryService {
     occurredAt: Date = new Date(),
     diagnosticContext: { sourceType?: string } = {},
   ) {
-    if (order.inventoryPostedAt) {
-      return [];
+    const sourceType = diagnosticContext.sourceType ?? 'ORDER';
+
+    if (sourceType === 'ORDER') {
+      if (!order || !order.id) {
+        throw new BadRequestException('orderId is required for ORDER inventory flow');
+      }
+      if (order.inventoryPostedAt) {
+        return [];
+      }
     }
 
     const consumptions = await this.expandOrderItemsToIngredients(
@@ -989,9 +996,9 @@ export class InventoryService {
       businessId,
       order.items,
       {
-        orderId: order.id,
-        sourceType: diagnosticContext.sourceType ?? 'ORDER',
-        orderOrigin: order.origin,
+        orderId: order?.id,
+        sourceType,
+        orderOrigin: order?.origin,
       },
     );
     const consolidatedConsumptions =
@@ -1001,6 +1008,10 @@ export class InventoryService {
       consolidatedConsumptions,
       tx,
     );
+
+    if (sourceType === 'ORDER_EDIT') {
+      return { ok: true, requirements: consolidatedConsumptions } as any;
+    }
 
     const movements = [];
     for (const consumption of consolidatedConsumptions) {
@@ -1274,7 +1285,11 @@ export class InventoryService {
       };
 
       // TODO(inventory-audit): remove temporary sale inventory diagnostic logs after production verification.
-      console.log('[InventoryService] Sale inventory item', baseLog);
+      const logMessage =
+        (diagnosticContext.sourceType ?? 'ORDER') === 'ORDER_EDIT'
+          ? '[InventoryService] Sale inventory simulation'
+          : '[InventoryService] Sale inventory item';
+      console.log(logMessage, baseLog);
 
       if (inventoryMode === 'NONE') {
         console.log('[InventoryService] Sale inventory skip', {

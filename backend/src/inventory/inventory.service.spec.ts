@@ -1908,6 +1908,222 @@ describe('InventoryService', () => {
     expect(tx.order.update).not.toHaveBeenCalled();
   });
 
+  it('ORDER_EDIT: RECIPE_BASED order edit calculates consumption but does not create movements or update DB', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(2),
+        isOptional: false,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      {
+        id: 'ingredient-1',
+        name: 'Flour',
+        currentStock: new Prisma.Decimal(10),
+      },
+    ]);
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: 'ingredient-1',
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+
+    const result = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 2,
+            itemNameSnapshot: 'Cake',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      } as any,
+      new Date(),
+      { sourceType: 'ORDER_EDIT' },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      requirements: [
+        expect.objectContaining({
+          ingredientId: 'ingredient-1',
+          quantity: new Prisma.Decimal(4),
+        }),
+      ],
+    });
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.order.update).not.toHaveBeenCalled();
+  });
+
+  it('ORDER: confirming order creates movements and updates order', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(2),
+        isOptional: false,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      {
+        id: 'ingredient-1',
+        name: 'Flour',
+        currentStock: new Prisma.Decimal(10),
+      },
+    ]);
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: 'ingredient-1',
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.order.update.mockResolvedValue({});
+
+    const movements = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 2,
+            itemNameSnapshot: 'Cake',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      } as any,
+      new Date(),
+      { sourceType: 'ORDER' },
+    );
+
+    expect(movements).toHaveLength(1);
+    expect(tx.inventoryMovement.create).toHaveBeenCalled();
+    expect(tx.order.update).toHaveBeenCalledWith({
+      where: { id: 'order-1' },
+      data: { inventoryPostedAt: expect.any(Date) },
+    });
+  });
+
+  it('ORDER: confirming twice does not duplicate movements', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(2),
+        isOptional: false,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      {
+        id: 'ingredient-1',
+        name: 'Flour',
+        currentStock: new Prisma.Decimal(10),
+      },
+    ]);
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: 'ingredient-1',
+      businessId,
+      name: 'Flour',
+      currentStock: new Prisma.Decimal(10),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+    tx.ingredient.update.mockResolvedValue({});
+    tx.order.update.mockResolvedValue({});
+
+    // First call:
+    const movements1 = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 2,
+            itemNameSnapshot: 'Cake',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      } as any,
+      new Date(),
+      { sourceType: 'ORDER' },
+    );
+
+    expect(movements1).toHaveLength(1);
+
+    // Second call with inventoryPostedAt set:
+    const movements2 = await service.applyInventoryConsumptionForOrder(
+      tx as any,
+      businessId,
+      {
+        id: 'order-1',
+        inventoryPostedAt: new Date(),
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 2,
+            itemNameSnapshot: 'Cake',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      } as any,
+      new Date(),
+      { sourceType: 'ORDER' },
+    );
+
+    expect(movements2).toEqual([]);
+    expect(tx.inventoryMovement.create).toHaveBeenCalledTimes(1); // Only from the first call
+  });
+
+  it('ORDER: ORDER flow without orderId throws controlled error', async () => {
+    const { service, tx } = createService();
+
+    await expect(
+      service.applyInventoryConsumptionForOrder(
+        tx as any,
+        businessId,
+        {
+          items: [
+            {
+              id: 'order-item-1',
+              itemId: 'item-1',
+              quantity: 2,
+              itemNameSnapshot: 'Cake',
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'RECIPE_BASED',
+            },
+          ],
+        } as any,
+        new Date(),
+        { sourceType: 'ORDER' },
+      ),
+    ).rejects.toThrow('orderId is required for ORDER inventory flow');
+  });
+
   it('marks SIMPLE item with stock as sellable', async () => {
     const { service, tx } = createService();
     tx.item.findFirst.mockResolvedValue({
