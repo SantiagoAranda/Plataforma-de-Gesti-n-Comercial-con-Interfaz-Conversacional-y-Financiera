@@ -87,6 +87,7 @@ enum IngredientUnit {
 enum UnitKind {
   WEIGHT
   VOLUME
+  LENGTH
   COUNT
   COMMERCIAL
 }
@@ -710,6 +711,7 @@ model InventoryMovement {
 
   purchaseQuantity  Decimal? @db.Decimal(20, 6)
   purchaseUnitLabel String?
+  factorToBaseUnitSnapshot Decimal? @db.Decimal(20, 6)
   conversionDetail  String?
 
   // Sale order that generated this movement, nullable for purchases and manual adjustments.

@@ -17,7 +17,8 @@ describe('IngredientsService (minStock)', () => {
       ML: { id: 'unit-ml', code: 'ML', symbol: 'ml', kind: 'VOLUME' },
       UNIT: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
       PACKAGE: { id: 'unit-package', code: 'PACKAGE', symbol: 'paquete', kind: 'COMMERCIAL' },
-      DOZEN: { id: 'unit-dozen', code: 'DOZEN', symbol: 'docena', kind: 'COMMERCIAL' },
+      DOZEN: { id: 'unit-dozen', code: 'DOZEN', symbol: 'docena', kind: 'COUNT' },
+      SIX_PACK: { id: 'unit-six-pack', code: 'SIX_PACK', symbol: 'six-pack', kind: 'COUNT' },
       BOX: { id: 'unit-box', code: 'BOX', symbol: 'caja', kind: 'COMMERCIAL' },
     };
     const unitsById = Object.values(unitsByCode).reduce<Record<string, any>>((acc, unit: any) => {
@@ -38,6 +39,7 @@ describe('IngredientsService (minStock)', () => {
       'unit-unit:unit-unit': '1',
       'unit-package:unit-unit': '6',
       'unit-dozen:unit-unit': '12',
+      'unit-six-pack:unit-unit': '6',
       'unit-box:unit-unit': '24',
     };
     const prisma = {
@@ -60,6 +62,26 @@ describe('IngredientsService (minStock)', () => {
           const key = `${where.fromUnitId_toUnitId.fromUnitId}:${where.fromUnitId_toUnitId.toUnitId}`;
           const factor = conversionFactors[key];
           return Promise.resolve(factor ? { factor: new Prisma.Decimal(factor) } : null);
+        }),
+        findMany: jest.fn(({ where }: { where: any }) => {
+          const toUnitId = where.toUnitId;
+          const codes = where.fromUnit?.code?.in ?? [];
+          return Promise.resolve(
+            codes
+              .map((code: string) => {
+                const fromUnit = unitsByCode[code];
+                const toUnit = unitsById[toUnitId];
+                const factor = fromUnit && toUnit ? conversionFactors[`${fromUnit.id}:${toUnit.id}`] : null;
+                return factor
+                  ? {
+                      factor: new Prisma.Decimal(factor),
+                      fromUnit,
+                      toUnit,
+                    }
+                  : null;
+              })
+              .filter(Boolean),
+          );
         }),
       },
       ingredientPurchasePresentation: {
@@ -156,10 +178,9 @@ describe('IngredientsService (minStock)', () => {
   });
 
   it.each([
-    ['PACKAGE', 'unit-package', '6'],
     ['DOZEN', 'unit-dozen', '12'],
-    ['BOX', 'unit-box', '24'],
-  ])('creates unit-stock ingredient with default purchase unit %s without writing it to legacy enum', async (code, unitId, factor) => {
+    ['SIX_PACK', 'unit-six-pack', '6'],
+  ])('creates unit-stock ingredient with fixed default purchase unit %s without writing it to legacy enum', async (code, unitId, factor) => {
     const { service, prisma } = createService();
     prisma.ingredient.create.mockResolvedValue({});
 
@@ -216,7 +237,7 @@ describe('IngredientsService (minStock)', () => {
     );
   });
 
-  it('updates an existing unit-stock ingredient to default purchase unit BOX without writing BOX to legacy enum', async () => {
+  it('updates an existing unit-stock ingredient to fixed default purchase unit DOZEN without writing it to legacy enum', async () => {
     const { service, prisma } = createService();
     prisma.ingredient.findFirst.mockResolvedValue({
       id: ingredientId,
@@ -225,7 +246,7 @@ describe('IngredientsService (minStock)', () => {
       consumptionUnit: IngredientUnit.UNIT,
       purchaseUnit: IngredientUnit.UNIT,
       stockUnitId: 'unit-unit',
-      defaultPurchaseUnitId: 'unit-package',
+        defaultPurchaseUnitId: 'unit-unit',
       stockUnit: { id: 'unit-unit', code: 'UNIT' },
       defaultPurchaseUnit: { id: 'unit-package', code: 'PACKAGE' },
       _count: { inventoryMovements: 0 },
@@ -233,19 +254,33 @@ describe('IngredientsService (minStock)', () => {
     prisma.ingredient.update.mockResolvedValue({});
 
     await service.update(businessId, ingredientId, {
-      defaultPurchaseUnitId: 'unit-box',
+      defaultPurchaseUnitId: 'unit-dozen',
     } as any);
 
     expect(prisma.ingredient.update).toHaveBeenCalledWith({
       where: { id: ingredientId },
       data: expect.objectContaining({
         stockUnitId: 'unit-unit',
-        defaultPurchaseUnitId: 'unit-box',
+        defaultPurchaseUnitId: 'unit-dozen',
         consumptionUnit: IngredientUnit.UNIT,
         purchaseUnit: IngredientUnit.UNIT,
-        purchaseToConsumptionFactor: new Prisma.Decimal('24'),
+        purchaseToConsumptionFactor: new Prisma.Decimal('12'),
       }),
     });
+  });
+
+  it('rejects commercial PACKAGE as default purchase unit because it must be a presentation', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.create(businessId, {
+        name: 'Custom package',
+        stockUnitId: 'unit-unit',
+        defaultPurchaseUnitId: 'unit-package',
+      } as any),
+    ).rejects.toThrow(
+      'La unidad normal de compra no es compatible con la unidad base del insumo.',
+    );
   });
 
   it('rejects custom legacy factors when there is no global UnitConversion', async () => {

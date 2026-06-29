@@ -342,8 +342,21 @@ export function IngredientDetailSheet({ ingredientId, open, onClose, onChanged }
         minStock: values.minStock,
         status: values.status,
       };
-      const updated = await updateIngredient(ingredient.id, payload);
-      setIngredient(updated);
+      await updateIngredient(ingredient.id, payload);
+      if (values.purchasePresentationDraft) {
+        const existingPresentation = ingredient.purchasePresentations?.find(
+          (presentation) =>
+            !presentation.isLocked &&
+            presentation.purchaseUnitId === values.purchasePresentationDraft.purchaseUnitId,
+        );
+        if (existingPresentation) {
+          await updatePurchasePresentation(ingredient.id, existingPresentation.id, values.purchasePresentationDraft);
+        } else {
+          await createPurchasePresentation(ingredient.id, values.purchasePresentationDraft);
+        }
+      }
+      const refreshed = await getIngredient(ingredient.id);
+      setIngredient(refreshed);
       toast.success("Cambios guardados", { id: toastId });
       onChanged();
     } catch (err) {

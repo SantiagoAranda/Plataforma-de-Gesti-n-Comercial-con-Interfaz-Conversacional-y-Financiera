@@ -2,7 +2,8 @@ import { api } from "@/src/lib/api";
 
 export type IngredientStatus = "ACTIVE" | "INACTIVE";
 export type IngredientUnit = "UNIT" | "PACKAGE" | "DOZEN" | "BOX" | "G" | "KG" | "LB" | "ML" | "L";
-export type UnitKind = "WEIGHT" | "VOLUME" | "COUNT" | "COMMERCIAL";
+export type UnitCode = IngredientUnit | "CM" | "M" | "SIX_PACK" | "BAG" | "BUCKET" | "BULTO" | "BOTTLE" | "GARRAFA" | "BIDON" | "ROLL";
+export type UnitKind = "WEIGHT" | "VOLUME" | "LENGTH" | "COUNT" | "COMMERCIAL";
 export type InventoryPurchaseMode = "STANDARD" | "PRESENTATION" | "LEGACY";
 
 export type Unit = {
@@ -29,6 +30,9 @@ export type IngredientPurchasePresentation = {
   contentUnit?: Unit;
   isDefault: boolean;
   isActive: boolean;
+  purchaseUnitLabel?: string | null;
+  factorToBaseUnit?: string | number | null;
+  isLocked?: boolean;
 };
 
 export type Ingredient = {
@@ -108,6 +112,7 @@ export type InventoryMovement = {
   purchasePresentationId?: string | null;
   purchaseQuantity?: number | string | null;
   purchaseUnitLabel?: string | null;
+  factorToBaseUnitSnapshot?: number | string | null;
   conversionDetail?: string | null;
   orderId: string | null;
   orderItemId: string | null;
@@ -203,6 +208,7 @@ export type CreateInventoryPurchaseByUnitDto = CreateInventoryPurchaseBaseDto & 
   purchaseQuantity: string;
   purchaseUnitCost: string;
   purchaseUnitId?: string;
+  purchasePresentationId?: string;
   quantity?: never;
   unitCost?: never;
 };

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { cn } from "@/src/lib/utils";
-import { listUnits, type Ingredient, type IngredientStatus, type IngredientUnit, type Unit } from "@/src/services/inventory";
+import { listUnits, type Ingredient, type IngredientPurchasePresentation, type IngredientStatus, type IngredientUnit, type Unit, type UnitCode } from "@/src/services/inventory";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
 import { formatUnit, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
@@ -15,6 +15,16 @@ type SubmitValues = {
   consumptionUnit: IngredientUnit;
   purchaseUnit: IngredientUnit;
   purchaseToConsumptionFactor?: string;
+  purchasePresentationDraft?: {
+    name: string;
+    purchaseUnitId: string;
+    innerQuantity: string;
+    innerUnitLabel?: string;
+    contentQuantity: string;
+    contentUnitId: string;
+    isDefault: boolean;
+    isActive: boolean;
+  };
   minStock: string;
   status?: IngredientStatus;
 };
@@ -37,45 +47,113 @@ type Props = {
 const STANDARD_FACTORS: Record<string, number> = {
   "KG:G": 1000,
   "G:KG": 0.001,
-  "LB:G": 500,
   "L:ML": 1000,
   "ML:L": 0.001,
-  "PACKAGE:UNIT": 6,
+  "M:CM": 100,
+  "CM:M": 0.01,
   "DOZEN:UNIT": 12,
-  "BOX:UNIT": 24,
+  "SIX_PACK:UNIT": 6,
 };
 
-const STOCK_UNIT_OPTIONS = INGREDIENT_UNIT_OPTIONS.filter((unit) =>
-  ["UNIT", "G", "ML"].includes(unit.value),
-);
+const STOCK_UNIT_CODES: UnitCode[] = ["UNIT", "G", "KG", "ML", "L", "CM", "M"];
 
-const PURCHASE_UNIT_OPTIONS_BY_STOCK: Record<string, IngredientUnit[]> = {
-  UNIT: ["UNIT", "PACKAGE", "DOZEN", "BOX"],
-  G: ["G", "KG", "LB"],
-  ML: ["ML", "L"],
+const STOCK_UNIT_OPTIONS = INGREDIENT_UNIT_OPTIONS.filter((unit) => STOCK_UNIT_CODES.includes(unit.value));
+
+type PurchaseSuggestion = {
+  code: UnitCode;
+  label: string;
+  factorToBaseUnit: number | null;
+  isLocked: boolean;
 };
 
-const UNIT_KINDS: Record<string, string> = {
-  UNIT: "COUNT",
-  G: "WEIGHT",
-  KG: "WEIGHT",
-  LB: "WEIGHT",
-  ML: "VOLUME",
-  L: "VOLUME",
-  PACKAGE: "COMMERCIAL",
-  DOZEN: "COMMERCIAL",
-  BOX: "COMMERCIAL",
+const PURCHASE_SUGGESTIONS_BY_STOCK: Record<string, PurchaseSuggestion[]> = {
+  UNIT: [
+    { code: "SIX_PACK", label: "Six-pack", factorToBaseUnit: 6, isLocked: true },
+    { code: "DOZEN", label: "Docena", factorToBaseUnit: 12, isLocked: true },
+    { code: "BOX", label: "Caja", factorToBaseUnit: null, isLocked: false },
+    { code: "PACKAGE", label: "Paquete", factorToBaseUnit: null, isLocked: false },
+  ],
+  G: [
+    { code: "KG", label: "Kilogramo", factorToBaseUnit: 1000, isLocked: true },
+    { code: "PACKAGE", label: "Paquete", factorToBaseUnit: null, isLocked: false },
+    { code: "BAG", label: "Bolsa", factorToBaseUnit: null, isLocked: false },
+    { code: "BOX", label: "Caja", factorToBaseUnit: null, isLocked: false },
+    { code: "BUCKET", label: "Balde", factorToBaseUnit: null, isLocked: false },
+    { code: "BULTO", label: "Bulto", factorToBaseUnit: null, isLocked: false },
+  ],
+  KG: [
+    { code: "PACKAGE", label: "Paquete", factorToBaseUnit: null, isLocked: false },
+    { code: "BAG", label: "Bolsa", factorToBaseUnit: null, isLocked: false },
+    { code: "BOX", label: "Caja", factorToBaseUnit: null, isLocked: false },
+    { code: "BUCKET", label: "Balde", factorToBaseUnit: null, isLocked: false },
+    { code: "GARRAFA", label: "Garrafa", factorToBaseUnit: null, isLocked: false },
+    { code: "BULTO", label: "Bulto", factorToBaseUnit: null, isLocked: false },
+  ],
+  ML: [
+    { code: "L", label: "Litro", factorToBaseUnit: 1000, isLocked: true },
+    { code: "BOTTLE", label: "Botella", factorToBaseUnit: null, isLocked: false },
+    { code: "GARRAFA", label: "Garrafa", factorToBaseUnit: null, isLocked: false },
+    { code: "BIDON", label: "Bidón", factorToBaseUnit: null, isLocked: false },
+    { code: "BOX", label: "Caja", factorToBaseUnit: null, isLocked: false },
+  ],
+  L: [
+    { code: "BOTTLE", label: "Botella", factorToBaseUnit: null, isLocked: false },
+    { code: "GARRAFA", label: "Garrafa", factorToBaseUnit: null, isLocked: false },
+    { code: "BIDON", label: "Bidón", factorToBaseUnit: null, isLocked: false },
+    { code: "BOX", label: "Caja", factorToBaseUnit: null, isLocked: false },
+  ],
+  CM: [
+    { code: "M", label: "Metro", factorToBaseUnit: 100, isLocked: true },
+    { code: "ROLL", label: "Rollo", factorToBaseUnit: null, isLocked: false },
+  ],
+  M: [
+    { code: "ROLL", label: "Rollo", factorToBaseUnit: null, isLocked: false },
+  ],
 };
 
-function getUnitKind(code: string, unitsList: Unit[]): string {
-  const found = unitsList.find((u) => u.code === code);
-  if (found) return found.kind;
-  return UNIT_KINDS[code] ?? "COUNT";
-}
+const LEGACY_UNIT_BY_CODE: Record<string, IngredientUnit> = {
+  UNIT: "UNIT",
+  G: "G",
+  KG: "KG",
+  ML: "ML",
+  L: "L",
+  DOZEN: "DOZEN",
+  PACKAGE: "PACKAGE",
+  BOX: "BOX",
+  CM: "UNIT",
+  M: "UNIT",
+  SIX_PACK: "UNIT",
+  BAG: "UNIT",
+  BUCKET: "UNIT",
+  BULTO: "UNIT",
+  BOTTLE: "UNIT",
+  GARRAFA: "UNIT",
+  BIDON: "UNIT",
+  ROLL: "UNIT",
+};
 
 function getConversionFactor(from: string, to: string): number | null {
   if (from === to) return 1;
   return STANDARD_FACTORS[`${from}:${to}`] ?? null;
+}
+
+function getPresentationFactor(presentation: IngredientPurchasePresentation) {
+  const direct = Number(presentation.factorToBaseUnit);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const inner = Number(presentation.innerQuantity ?? 1);
+  const content = Number(presentation.contentQuantity ?? 1);
+  const factor = inner * content;
+  return Number.isFinite(factor) && factor > 0 ? factor : 1;
+}
+
+function selectDisplayPresentation(ingredient?: Ingredient | null) {
+  const presentations = ingredient?.purchasePresentations?.filter((presentation) => presentation.isActive) ?? [];
+  return (
+    presentations.find((presentation) => presentation.isDefault) ??
+    presentations.find((presentation) => !presentation.isLocked) ??
+    presentations.find((presentation) => presentation.isLocked) ??
+    null
+  );
 }
 
 export function IngredientForm({
@@ -92,28 +170,36 @@ export function IngredientForm({
   onValidationChange,
   formRef,
 }: Props) {
+  const initialPresentation = useMemo(() => selectDisplayPresentation(initial), [initial]);
   const [name, setName] = useState(initial?.name ?? defaults?.name ?? "");
-  const [consumptionUnit, setConsumptionUnit] = useState<IngredientUnit>(
-    (initial?.stockUnit?.code as IngredientUnit | undefined) ?? initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "UNIT",
+  const [consumptionUnit, setConsumptionUnit] = useState<UnitCode>(
+    (initial?.stockUnit?.code as UnitCode | undefined) ?? (defaults?.consumptionUnit as UnitCode | undefined) ?? initial?.consumptionUnit ?? "UNIT",
   );
-  const [purchaseUnit, setPurchaseUnit] = useState<IngredientUnit>(
-    (initial?.defaultPurchaseUnit?.code as IngredientUnit | undefined) ?? initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "UNIT",
+  const [purchaseUnit, setPurchaseUnit] = useState<UnitCode>(
+    (initialPresentation?.purchaseUnit?.code as UnitCode | undefined) ??
+      (initial?.defaultPurchaseUnit?.code as UnitCode | undefined) ??
+      (defaults?.purchaseUnit as UnitCode | undefined) ??
+      initial?.purchaseUnit ??
+      "UNIT",
   );
   const [units, setUnits] = useState<Unit[]>([]);
   
   // Custom equivalence factor (defaults to standard factor if compatible)
   const [equivalence, setEquivalence] = useState<string>(
+    (initialPresentation ? String(getPresentationFactor(initialPresentation)) : undefined) ??
     initial?.purchaseToConsumptionFactor?.toString() ??
     getConversionFactor(
-      (initial?.defaultPurchaseUnit?.code as IngredientUnit | undefined) ?? initial?.purchaseUnit ?? defaults?.purchaseUnit ?? "UNIT",
-      (initial?.stockUnit?.code as IngredientUnit | undefined) ?? initial?.consumptionUnit ?? defaults?.consumptionUnit ?? "UNIT"
+      (initial?.defaultPurchaseUnit?.code as UnitCode | undefined) ?? (defaults?.purchaseUnit as UnitCode | undefined) ?? initial?.purchaseUnit ?? "UNIT",
+      (initial?.stockUnit?.code as UnitCode | undefined) ?? (defaults?.consumptionUnit as UnitCode | undefined) ?? initial?.consumptionUnit ?? "UNIT"
     )?.toString() ?? "1"
   );
 
   // minStock in UI represents purchase units
   const getInitialMinStock = () => {
     if (mode === "edit" && initial) {
-      const factor = Number(initial.purchaseToConsumptionFactor) || 1;
+      const factor = initialPresentation
+        ? getPresentationFactor(initialPresentation)
+        : Number(initial.purchaseToConsumptionFactor) || 1;
       const baseMinStock = Number(initial.minStock) || 0;
       return (baseMinStock / factor).toString();
     }
@@ -141,11 +227,6 @@ export function IngredientForm({
     };
   }, []);
 
-  const purchaseUnitOptions = useMemo(() => {
-    const allowed = PURCHASE_UNIT_OPTIONS_BY_STOCK[consumptionUnit] ?? [consumptionUnit];
-    return INGREDIENT_UNIT_OPTIONS.filter((unit) => allowed.includes(unit.value));
-  }, [consumptionUnit]);
-
   const selectedStockUnit = useMemo(
     () =>
       units.find((unit) => unit.code === consumptionUnit) ??
@@ -153,41 +234,86 @@ export function IngredientForm({
     [consumptionUnit, initial?.stockUnit, units],
   );
 
-  const selectedDefaultPurchaseUnit = useMemo(
+  const purchaseUnitOptions = useMemo(() => {
+    const suggestions = PURCHASE_SUGGESTIONS_BY_STOCK[consumptionUnit] ?? [];
+    return suggestions.filter((suggestion) => units.some((unit) => unit.code === suggestion.code));
+  }, [consumptionUnit, units]);
+
+  const selectedPurchaseSuggestion = useMemo(
+    () => purchaseUnitOptions.find((unit) => unit.code === purchaseUnit) ?? null,
+    [purchaseUnit, purchaseUnitOptions],
+  );
+
+  const selectedPersistedPresentation = useMemo(
     () =>
-      units.find((unit) => unit.code === purchaseUnit) ??
-      (initial?.defaultPurchaseUnit?.code === purchaseUnit
+      initial?.purchasePresentations?.find(
+        (presentation) => presentation.isActive && presentation.purchaseUnit?.code === purchaseUnit,
+      ) ?? null,
+    [initial?.purchasePresentations, purchaseUnit],
+  );
+
+  const isPurchasePresentationEditable = selectedPurchaseSuggestion?.isLocked === false;
+  const isPurchaseConversionLocked = selectedPurchaseSuggestion?.isLocked === true;
+
+  const sameUnitSuggestion: PurchaseSuggestion = useMemo(
+    () => ({
+      code: consumptionUnit,
+      label: formatUnit(consumptionUnit),
+      factorToBaseUnit: 1,
+      isLocked: true,
+    }),
+    [consumptionUnit],
+  );
+
+  const effectivePurchaseSuggestion = selectedPurchaseSuggestion ?? sameUnitSuggestion;
+
+  const selectedPurchaseUnitRecord = useMemo(
+    () =>
+      units.find((unit) => unit.code === effectivePurchaseSuggestion.code) ??
+      (initial?.defaultPurchaseUnit?.code === effectivePurchaseSuggestion.code
         ? initial.defaultPurchaseUnit
         : null),
-    [initial?.defaultPurchaseUnit, purchaseUnit, units],
+    [effectivePurchaseSuggestion.code, initial?.defaultPurchaseUnit, units],
+  );
+
+  const selectedContentUnitForPresentation = useMemo(
+    () =>
+      units.find((unit) => unit.code === consumptionUnit) ??
+      (initial?.stockUnit?.code === consumptionUnit ? initial.stockUnit : null),
+    [consumptionUnit, initial?.stockUnit, units],
+  );
+
+  const defaultPurchaseUnitForPayload = useMemo(() => {
+    if (isPurchasePresentationEditable) return selectedStockUnit;
+    return selectedPurchaseUnitRecord ?? selectedStockUnit;
+  }, [isPurchasePresentationEditable, selectedPurchaseUnitRecord, selectedStockUnit]);
+
+  const selectedDefaultPurchaseUnit = useMemo(
+    () => defaultPurchaseUnitForPayload,
+    [defaultPurchaseUnitForPayload],
   );
 
   // Auto-prefill equivalence when units change
   useEffect(() => {
     const stdFactor = getConversionFactor(purchaseUnit, consumptionUnit);
-    if (stdFactor !== null) {
-      setEquivalence(stdFactor.toString());
+    if (selectedPersistedPresentation) {
+      setEquivalence(String(getPresentationFactor(selectedPersistedPresentation)));
+    } else if (selectedPurchaseSuggestion?.factorToBaseUnit) {
+      setEquivalence(String(selectedPurchaseSuggestion.factorToBaseUnit));
+    } else if (stdFactor !== null) {
+      setEquivalence(String(stdFactor));
     } else {
       setEquivalence("");
     }
-  }, [purchaseUnit, consumptionUnit]);
+  }, [purchaseUnit, consumptionUnit, selectedPurchaseSuggestion, selectedPersistedPresentation]);
 
   // Adjust purchase unit selection if it becomes incompatible
   useEffect(() => {
-    if (!purchaseUnitOptions.some((unit) => unit.value === purchaseUnit)) {
-      setPurchaseUnit(purchaseUnitOptions[0]?.value ?? consumptionUnit);
+    if (units.length === 0) return;
+    if (!purchaseUnitOptions.some((unit) => unit.code === purchaseUnit)) {
+      setPurchaseUnit(purchaseUnitOptions[0]?.code ?? consumptionUnit);
     }
-  }, [consumptionUnit, purchaseUnit, purchaseUnitOptions]);
-
-  // Determine unit kind to enforce physical vs commercial conversions
-  const isWeightOrVolume = useMemo(() => {
-    const stockKind = getUnitKind(consumptionUnit, units);
-    const purchaseKind = getUnitKind(purchaseUnit, units);
-    return (
-      (stockKind === "WEIGHT" && purchaseKind === "WEIGHT") ||
-      (stockKind === "VOLUME" && purchaseKind === "VOLUME")
-    );
-  }, [consumptionUnit, purchaseUnit, units]);
+  }, [consumptionUnit, purchaseUnit, purchaseUnitOptions, units.length]);
 
   // Inline Validation Messages
   const nameError = useMemo(() => {
@@ -217,6 +343,7 @@ export function IngredientForm({
     if (!name.trim()) return false;
     if (!consumptionUnit || !purchaseUnit) return false;
     if (!selectedStockUnit?.id || !selectedDefaultPurchaseUnit?.id) return false;
+    if (isPurchasePresentationEditable && (!selectedPurchaseUnitRecord?.id || !selectedContentUnitForPresentation?.id)) return false;
     
     const eqNum = Number(equivalence.replace(",", "."));
     if (isNaN(eqNum) || eqNum <= 0) return false;
@@ -225,7 +352,18 @@ export function IngredientForm({
     if (isNaN(msNum) || msNum < 0) return false;
 
     return true;
-  }, [name, consumptionUnit, purchaseUnit, selectedStockUnit, selectedDefaultPurchaseUnit, equivalence, minStock]);
+  }, [
+    name,
+    consumptionUnit,
+    purchaseUnit,
+    selectedStockUnit,
+    selectedDefaultPurchaseUnit,
+    isPurchasePresentationEditable,
+    selectedPurchaseUnitRecord,
+    selectedContentUnitForPresentation,
+    equivalence,
+    minStock,
+  ]);
 
   useEffect(() => {
     onValidationChange?.(canSubmit);
@@ -289,7 +427,7 @@ export function IngredientForm({
           <label className="text-xs font-medium text-slate-500">Unidad base de stock</label>
           <select
             value={consumptionUnit}
-            onChange={(e) => setConsumptionUnit(e.target.value as IngredientUnit)}
+            onChange={(e) => setConsumptionUnit(e.target.value as UnitCode)}
             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none shadow-sm focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20"
           >
             {STOCK_UNIT_OPTIONS.map((unit) => (
@@ -304,12 +442,12 @@ export function IngredientForm({
           <label className="text-xs font-medium text-slate-500">Unidad normal de compra</label>
           <select
             value={purchaseUnit}
-            onChange={(e) => setPurchaseUnit(e.target.value as IngredientUnit)}
+            onChange={(e) => setPurchaseUnit(e.target.value as UnitCode)}
             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none shadow-sm focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20"
           >
             {purchaseUnitOptions.map((unit) => (
-              <option key={unit.value} value={unit.value}>
-                {unit.label}
+              <option key={unit.code} value={unit.code}>
+                {unit.label}{unit.isLocked ? " (fija)" : ""}
               </option>
             ))}
           </select>
@@ -322,23 +460,23 @@ export function IngredientForm({
           <label className="text-xs font-medium text-slate-500">Equivalencia real</label>
           <div className={cn(
             "flex items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/30 px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.01)] transition-colors",
-            isWeightOrVolume ? "bg-slate-100/50" : "bg-white"
+            isPurchaseConversionLocked ? "bg-slate-100/50" : "bg-white"
           )}>
             <span className="text-sm font-normal text-slate-500 shrink-0">1 {formatUnit(purchaseUnit)} contiene</span>
             <input
               value={equivalence}
               onChange={(e) => setEquivalence(e.target.value.replace(/[^0-9.,]/g, ""))}
               onBlur={() => setEquivalenceTouched(true)}
-              disabled={isWeightOrVolume}
+              disabled={isPurchaseConversionLocked}
               placeholder="Ej: 1000"
               inputMode="decimal"
               className={cn(
                 "w-20 text-center text-sm font-semibold text-emerald-700 bg-emerald-50/60 border border-emerald-200 rounded-lg py-1 px-2 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/35 outline-none transition disabled:bg-slate-100 disabled:border-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed",
-                isWeightOrVolume ? "font-normal" : ""
+                isPurchaseConversionLocked ? "font-normal" : ""
               )}
             />
             <span className="text-sm font-normal text-slate-500 shrink-0">{displayUnitLabel(consumptionUnit)}</span>
-            {isWeightOrVolume && (
+            {isPurchaseConversionLocked && (
               <span title="Relación física estándar bloqueada" className="shrink-0 ml-1">
                 <Lock className="h-3.5 w-3.5 text-slate-400" />
               </span>
@@ -426,14 +564,28 @@ export function IngredientForm({
         const factorNum = Number(equivalence.replace(",", "."));
         const minStockPurchase = Number(minStock.replace(",", "."));
         const calculatedMinStockBase = factorNum * minStockPurchase;
+        const normalizedEquivalence = equivalence.replace(",", ".").trim();
+        const purchasePresentationDraft =
+          isPurchasePresentationEditable && selectedPurchaseUnitRecord?.id && selectedContentUnitForPresentation?.id
+            ? {
+                name: selectedPurchaseSuggestion?.label ?? selectedPurchaseUnitRecord.name,
+                purchaseUnitId: selectedPurchaseUnitRecord.id,
+                innerQuantity: "1",
+                contentQuantity: normalizedEquivalence,
+                contentUnitId: selectedContentUnitForPresentation.id,
+                isDefault: true,
+                isActive: true,
+              }
+            : undefined;
 
         const payload: SubmitValues = {
           name: name.trim(),
           stockUnitId: selectedStockUnit!.id,
           defaultPurchaseUnitId: selectedDefaultPurchaseUnit!.id,
-          consumptionUnit,
-          purchaseUnit,
-          purchaseToConsumptionFactor: equivalence.replace(",", ".").trim(),
+          consumptionUnit: LEGACY_UNIT_BY_CODE[consumptionUnit] ?? "UNIT",
+          purchaseUnit: LEGACY_UNIT_BY_CODE[purchaseUnit] ?? "UNIT",
+          purchaseToConsumptionFactor: normalizedEquivalence,
+          purchasePresentationDraft,
           minStock: calculatedMinStockBase.toString(),
           ...(mode === "edit" ? { status } : {}),
         };

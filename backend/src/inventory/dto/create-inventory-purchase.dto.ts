@@ -54,6 +54,11 @@ export class CreateInventoryPurchaseDto {
 
   @IsOptional()
   @IsString()
+  @IsUUID()
+  purchasePresentationId?: string;
+
+  @IsOptional()
+  @IsString()
   @IsNotEmpty()
   referenceId?: string;
 
