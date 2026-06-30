@@ -9,15 +9,17 @@ import { ItemImageViewer } from "@/src/components/ui/ItemImageViewer";
 import { formatMoney, truncateText } from "@/src/lib/formatters";
 import { formatCompactDate } from "@/src/lib/datetime";
 
+import { useRouter } from "next/navigation";
+import { MoreVertical, Eye, Pencil, Settings, Trash2 } from "lucide-react";
+import { formatActiveDaysCompact } from "@/src/lib/availability";
+
 type Props = {
-  item: any; 
-  selected?: boolean;
-  onSelect: () => void;
-  onOpen?: () => void;
+  item: any;
+  onEdit: () => void;
+  onDelete: () => void;
+  onView: () => void;
   recipeLineCount?: number;
 };
-
-import { formatActiveDaysCompact } from "@/src/lib/availability";
 
 function inventoryMeta(item: any, recipeLineCount = 0) {
   const status = item.sellability?.status;
@@ -48,7 +50,9 @@ function inventoryMeta(item: any, recipeLineCount = 0) {
   };
 }
 
-function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount = 0 }: Props) {
+function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0 }: Props) {
+  const router = useRouter();
+  const [isOpen, setIsOpen] = useState(false);
   const [hydratedImages, setHydratedImages] = useState<any[] | null>(null);
   const currentImages = hydratedImages ?? item.images ?? [];
   const imageCount = item._count?.images ?? currentImages.length;
@@ -56,15 +60,128 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
   const activeDays = item.type === "SERVICE" ? formatActiveDaysCompact(item.schedule) : "";
   const inventory = inventoryMeta(item, recipeLineCount);
 
+  const inventoryAction = (() => {
+    if (
+      item.type !== "PRODUCT" ||
+      !item.inventoryMode ||
+      item.inventoryMode === "NONE"
+    ) {
+      return null;
+    }
+
+    if (item.inventoryMode === "SIMPLE") {
+      return {
+        label: "Gestionar stock",
+        url: "/inventario?tab=insumos",
+      };
+    }
+
+    return {
+      label: "Configurar receta",
+      url: `/inventario?tab=recipes&itemId=${encodeURIComponent(item.id)}`,
+    };
+  })();
+
   return (
-    <div className="relative group">
+    <div className="relative group select-none">
       <SelectableCard
-        selected={selected}
-        onSelect={onSelect}
-        onOpen={onOpen}
+        onSelect={() => {}}
         disableOpenOnClick={true}
-        className="ml-auto max-w-[85%] lg:max-w-[460px] overflow-hidden flex flex-col min-h-[140px]"
+        disableLongPress={true}
+        className="relative select-none ml-auto max-w-[85%] lg:max-w-[460px] overflow-hidden flex flex-col min-h-[140px]"
       >
+        {/* Botón de 3 puntitos como nuevo gatillador */}
+        <div className="absolute top-2 right-2 z-10">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setIsOpen(!isOpen);
+            }}
+            className="p-1.5 bg-white/80 backdrop-blur-sm hover:bg-neutral-100 rounded-full text-neutral-600 transition-colors duration-200 shadow-sm border border-neutral-100"
+            aria-label="Opciones de producto"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {/* Dropdown absoluto local corregido estéticamente */}
+          {isOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setIsOpen(false);
+                }}
+              />
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-neutral-100 rounded-xl shadow-xl py-1.5 z-50 text-xs text-neutral-700 font-medium animate-in fade-in duration-150">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onView();
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-neutral-50 transition-colors flex items-center gap-2.5 text-neutral-800"
+                >
+                  <Eye className="w-3.5 h-3.5 text-neutral-400" />
+                  Ver detalle
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onEdit();
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-neutral-50 transition-colors flex items-center gap-2.5 text-neutral-800"
+                >
+                  <Pencil className="w-3.5 h-3.5 text-neutral-400" />
+                  Editar item
+                </button>
+
+                {inventoryAction && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      router.push(inventoryAction.url);
+                      setIsOpen(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-neutral-50 transition-colors flex items-center gap-2.5 text-neutral-800"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-neutral-400" />
+                    {inventoryAction.label}
+                  </button>
+                )}
+
+                {/* Línea divisoria sutil antes de una acción crítica como borrar */}
+                <div className="border-t border-neutral-100 my-1" />
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onDelete();
+                    setIsOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-2.5 text-rose-600 hover:bg-rose-50/60 transition-colors flex items-center gap-2.5 font-semibold"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  Eliminar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
         {(currentImages.length > 0) && (
           <div className="aspect-[4/3] w-full overflow-hidden border-b border-neutral-100 bg-neutral-50 shrink-0 lg:aspect-auto lg:h-[220px]">
             <ItemImageViewer
@@ -80,7 +197,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
               }}
               name={item.name}
               containerClassName="h-full w-full flex items-center justify-center"
-              imageClassName="h-full w-full object-cover"
+              imageClassName="h-full w-full object-cover pointer-events-none select-none"
               lazy
             />
           </div>
@@ -88,7 +205,7 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
 
         <div className="px-4 py-3 flex-1 flex flex-col gap-1.5">
           {/* HEADER: NOMBRE + PRECIO */}
-          <div className="flex justify-between items-start gap-2">
+          <div className="flex justify-between items-start gap-2 pr-8">
             <p className="text-sm font-semibold text-neutral-900 flex-1 line-clamp-1">
               {item.name}
             </p>
@@ -141,7 +258,6 @@ function ItemCardComponent({ item, selected, onSelect, onOpen, recipeLineCount =
 
 export const ItemCard = memo(ItemCardComponent, (prev, next) => {
   return (
-    prev.selected === next.selected &&
     prev.item.id === next.item.id &&
     prev.item.name === next.item.name &&
     prev.item.price === next.item.price &&

@@ -3,19 +3,15 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Trash2,
   X,
   Clock,
   Search,
   ArrowDown,
   Calendar as CalendarIcon,
-  BookOpen,
-  Package,
 } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
-import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
@@ -52,7 +48,6 @@ function MiNegocioPageContent() {
     Record<string, number>
   >({});
   const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [itemForDetail, setItemForDetail] = useState<Item | null>(null);
   const [toast, setToast] = useState<{
     message: string;
@@ -220,7 +215,6 @@ function MiNegocioPageContent() {
     setCreatedItemId(item.id);
     setImageUploadFailed(false);
     setComposerMode("edit");
-    setSelectedItem(null);
 
     setType(item.type);
     const nextInventoryMode: ItemInventoryMode =
@@ -578,8 +572,6 @@ function MiNegocioPageContent() {
         return [savedItem, ...prev];
       });
 
-      if (selectedItem?.id === savedItem.id) setSelectedItem(savedItem);
-
       shouldStickToBottomRef.current = true;
 
       if (failedImages.length > 0) {
@@ -625,7 +617,6 @@ function MiNegocioPageContent() {
         body: JSON.stringify({ status: "INACTIVE" }),
       });
       setItems((prev) => prev.filter((i) => i.id !== item.id));
-      setSelectedItem(null);
       invalidateCache("mi-negocio:items:ACTIVE");
       invalidateCache("home:businessActivity");
       setToast({ message: "Item eliminado", type: "success" });
@@ -672,30 +663,6 @@ function MiNegocioPageContent() {
     return groups;
   }, [filteredItems, visibleCount]);
 
-  const selectedInventoryAction = useMemo(() => {
-    if (
-      !selectedItem ||
-      selectedItem.type !== "PRODUCT" ||
-      !selectedItem.inventoryMode ||
-      selectedItem.inventoryMode === "NONE"
-    ) {
-      return null;
-    }
-
-    if (selectedItem.inventoryMode === "SIMPLE") {
-      return {
-        label: "Gestionar stock",
-        icon: Package,
-        href: "/inventario?tab=insumos",
-      };
-    }
-
-    return {
-      label: "Configurar receta",
-      icon: BookOpen,
-      href: `/inventario?tab=recipes&itemId=${encodeURIComponent(selectedItem.id)}`,
-    };
-  }, [selectedItem]);
 
   const hasScheduleOverlap = type === "SERVICE" && week.some((day) => {
     if (!day.active || day.ranges.length !== 2) return false;
@@ -710,28 +677,7 @@ function MiNegocioPageContent() {
 
   return (
     <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
-      {selectedItem ? (
-        <SelectionActionBar
-          visible
-          title="Item seleccionado"
-          onClose={() => setSelectedItem(null)}
-          onView={() => setItemForDetail(selectedItem)}
-          onEdit={() => handleStartEdit(selectedItem)}
-          editLabel="Editar"
-          onDelete={() => setDeleteId(selectedItem.id)}
-          deleteLabel="Eliminar"
-          deleteIcon={Trash2}
-          onExtraAction={
-            selectedInventoryAction
-              ? () => router.push(selectedInventoryAction.href)
-              : undefined
-          }
-          extraActionLabel={selectedInventoryAction?.label}
-          extraActionIcon={selectedInventoryAction?.icon}
-        />
-      ) : (
-        <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
-      )}
+      <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
 
       <main
         ref={scrollRef}
@@ -755,12 +701,9 @@ function MiNegocioPageContent() {
                 <ItemCard
                   key={item.id}
                   item={item}
-                  selected={selectedItem?.id === item.id}
-                  onSelect={() =>
-                    setSelectedItem((prev) =>
-                      prev?.id === item.id ? null : item,
-                    )
-                  }
+                  onEdit={() => handleStartEdit(item)}
+                  onDelete={() => setDeleteId(item.id)}
+                  onView={() => setItemForDetail(item)}
                   recipeLineCount={recipeLineCounts[item.id] ?? 0}
                 />
               ))}

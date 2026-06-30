@@ -10,6 +10,7 @@ type Props = {
   children: ReactNode;
   className?: string;
   disableOpenOnClick?: boolean;
+  disableLongPress?: boolean;
 };
 
 export function SelectableCard({
@@ -19,14 +20,15 @@ export function SelectableCard({
   children,
   className = "",
   disableOpenOnClick = false,
+  disableLongPress = false,
 }: Props) {
   const { handlers, consumeLongPress } = useLongPress({
-    onLongPress: onSelect,
+    onLongPress: disableLongPress ? () => {} : onSelect,
     delay: 450,
   });
 
   const handleClick = (e: React.MouseEvent) => {
-    if (consumeLongPress()) {
+    if (!disableLongPress && consumeLongPress()) {
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -37,6 +39,7 @@ export function SelectableCard({
   };
 
   const handleContextMenu = (e: MouseEvent<HTMLDivElement>) => {
+    if (disableLongPress) return;
     e.preventDefault();
     if (consumeLongPress()) return;
     onSelect();
@@ -44,7 +47,7 @@ export function SelectableCard({
 
   return (
     <div
-      {...handlers}
+      {...(disableLongPress ? {} : handlers)}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       className={[
