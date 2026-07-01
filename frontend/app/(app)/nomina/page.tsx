@@ -42,7 +42,6 @@ import {
   payrollApi,
 } from "@/src/lib/payroll/api";
 import { cn } from "@/src/lib/utils";
-import { useLongPress } from "@/src/hooks/useLongPress";
 
 const PAYROLL_OVERTIME_ITEMS: Array<{ type: OvertimeType; label: string; hint: string }> = [
   { type: "HORA_EXTRA_DIURNA", label: "Extra diurna", hint: "+25%" },
@@ -2207,11 +2206,6 @@ function PayrollSummaryPanel({
   ].filter((item) => toNumber(item.value) > 0);
   const viewModel = payrollRunViewModel(run);
 
-  const longPress = useLongPress({
-    onLongPress: () => onOpenEditor?.(run),
-    delay: 600,
-  });
-
   const isBiweekly = run.contract?.paymentCycle === "BIWEEKLY";
   const canCalculateNews = run.contract?.isActive !== false && !run.contract?.endDate;
   const primarySalaryPayment = viewModel.salaryPayments[0];
@@ -2231,14 +2225,7 @@ function PayrollSummaryPanel({
       aria-expanded={expanded}
     >
       <article 
-        {...longPress.handlers}
-        onClick={(e) => {
-          if (longPress.isLongPressTriggered()) {
-            e.stopPropagation();
-            return;
-          }
-        }}
-        className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:shadow-md cursor-pointer select-none"
+        className="overflow-hidden rounded-[24px] border border-slate-100 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:shadow-md cursor-pointer"
       >
         <div className="mb-3 flex items-start gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-sm font-medium text-[#0f8f76]">
@@ -2249,11 +2236,25 @@ function PayrollSummaryPanel({
             <p className="mt-0.5 text-[12px] font-medium uppercase text-slate-500">{employeeRole(run.employee, run.contract)}</p>
             <p className="mt-0.5 text-[11px] text-slate-400">{run.employee.documentNumber ?? "Sin documento"}</p>
           </div>
-          <div className="text-right">
-            <p className="text-[16px] font-medium tabular-nums text-[#0fb18f]">{money(netPayDisplay)}</p>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-              {f < 1 ? "Neto quincenal" : "Transferencia neta"}
-            </p>
+          <div className="flex items-start gap-2">
+            <div className="text-right">
+              <p className="text-[16px] font-medium tabular-nums text-[#0fb18f]">{money(netPayDisplay)}</p>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                {f < 1 ? "Neto quincenal" : "Transferencia neta"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenEditor?.(run);
+              }}
+              className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 transition-colors rounded-full shrink-0"
+              title="Editar empleado"
+              aria-label="Editar"
+            >
+              <Edit3 className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
