@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Landmark } from "lucide-react";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import {
   getTaxProfile,
   updateTaxProfile,
@@ -61,7 +61,6 @@ function parsePerThousand(value: string) {
 
 export default function RutImpuestosPage() {
   const router = useRouter();
-  const { notify } = useNotification();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -137,16 +136,13 @@ export default function RutImpuestosPage() {
           }
         }
       } catch (err: any) {
-        notify({
-          message: err.message || "No se pudieron obtener los datos fiscales.",
-          type: "error",
-        });
+        toast.error(err.message || "No se pudieron obtener los datos fiscales.");
       } finally {
         setLoading(false);
       }
     }
     loadData();
-  }, [notify]);
+  }, []);
 
   useEffect(() => {
     if (ciiuSearch.length < 2) {
@@ -278,15 +274,9 @@ export default function RutImpuestosPage() {
 
       await saveIcaRate();
 
-      notify({
-        message: "El perfil fiscal y la configuracion ICA/ReteICA se actualizaron correctamente.",
-        type: "success",
-      });
+      toast.success("El perfil fiscal y la configuracion ICA/ReteICA se actualizaron correctamente.");
     } catch (err: any) {
-      notify({
-        message: err.message || "Verifique los datos ingresados.",
-        type: "error",
-      });
+      toast.error(err.message || "Verifique los datos ingresados.");
     } finally {
       setSaving(false);
     }

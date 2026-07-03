@@ -19,6 +19,9 @@ export async function generateMetadata({ params }: Props) {
         title: {
           absolute: "Tienda",
         },
+        icons: {
+          icon: "/favicon.ico",
+        },
       };
     }
 
@@ -31,15 +34,22 @@ export async function generateMetadata({ params }: Props) {
         title: {
           absolute: "Tienda",
         },
+        icons: {
+          icon: "/favicon.ico",
+        },
       };
     }
 
     const data = await res.json();
     const nombreNegocio = data?.business?.name;
+    const logoUrl = data?.business?.logoUrl;
 
     return {
       title: {
         absolute: nombreNegocio || "Tienda",
+      },
+      icons: {
+        icon: logoUrl || "/favicon.ico",
       },
     };
   } catch (error) {
@@ -47,6 +57,9 @@ export async function generateMetadata({ params }: Props) {
     return {
       title: {
         absolute: "Tienda",
+      },
+      icons: {
+        icon: "/favicon.ico",
       },
     };
   }

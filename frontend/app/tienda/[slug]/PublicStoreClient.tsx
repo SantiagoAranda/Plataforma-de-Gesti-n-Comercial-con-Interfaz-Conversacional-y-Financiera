@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,7 +15,7 @@ import {
   X,
   MapPin,
 } from "lucide-react";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
@@ -289,7 +290,6 @@ export default function PublicStoreClient() {
   const searchParams = useSearchParams();
   const preview = searchParams.get("preview") === "true";
   const router = useRouter();
-  const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
   const [businessName, setBusinessName] = useState("");
@@ -419,17 +419,14 @@ export default function PublicStoreClient() {
         );
       } catch (error) {
         console.error("Fetch items error:", error);
-        notify({
-          type: "error",
-          message: "No se pudieron cargar los productos",
-        });
+        toast.error("No se pudieron cargar los productos");
       } finally {
         setLoading(false);
       }
     };
 
     fetchItems();
-  }, [slug, category, notify]);
+  }, [slug, category]);
 
   const footerConfig = useMemo<FooterConfig>(() => {
     const description =
@@ -501,10 +498,7 @@ export default function PublicStoreClient() {
 
   const handleReserve = async (data: any) => {
     if (preview) {
-      notify({
-        type: "info",
-        message: "Modo administrador: las reservas estan deshabilitadas",
-      });
+      toast("Modo administrador: las reservas estan deshabilitadas");
       return;
     }
     // El fetch lo maneja ReservationDrawer internamente
@@ -524,10 +518,7 @@ export default function PublicStoreClient() {
     optionSelections: OptionSelection[] = [],
   ) => {
     if (preview) {
-      notify({
-        type: "info",
-        message: "Modo administrador: las compras estan deshabilitadas",
-      });
+      toast("Modo administrador: las compras estan deshabilitadas");
       return;
     }
 
@@ -563,7 +554,7 @@ export default function PublicStoreClient() {
         },
       ];
     });
-    notify({ type: "success", message: "Producto agregado" });
+    toast.success("Producto agregado");
   };
 
   const increaseQty = (key: string) => {
@@ -736,10 +727,7 @@ export default function PublicStoreClient() {
 
   const handleConfirmOrder = async (documentVal?: string) => {
     if (preview) {
-      notify({
-        type: "info",
-        message: "Modo administrador: no se pueden realizar pedidos",
-      });
+      toast("Modo administrador: no se pueden realizar pedidos");
       return;
     }
 
@@ -766,11 +754,11 @@ export default function PublicStoreClient() {
 
       if (!res.ok) {
         const message = await readApiError(res);
-        notify({ type: "error", message });
+        toast.error(message);
         return;
       }
 
-      notify({ type: "success", message: "Compra enviada" });
+      toast.success("Compra enviada");
 
       setCart([]);
       setShowCartModal(false);
@@ -778,7 +766,7 @@ export default function PublicStoreClient() {
       setPhoneNumber("");
     } catch (error) {
       console.error("Order error:", error);
-      notify({ type: "error", message: "Error al enviar pedido" });
+      toast.error("Error al enviar pedido");
     }
   };
 
@@ -793,12 +781,14 @@ export default function PublicStoreClient() {
       >
         <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
               {businessLogoUrl ? (
-                <img
+                <Image
                   src={businessLogoUrl}
                   alt={`Logo de ${businessName || "Tienda"}`}
-                  className="h-full w-full object-cover"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain rounded-full"
                 />
               ) : (
                 <Store className="h-5 w-5" />
@@ -1099,10 +1089,7 @@ export default function PublicStoreClient() {
         onPrimaryAction={() => {
           if (!selectedProduct) return;
           if (preview) {
-            notify({
-              type: "info",
-              message: "Modo administrador: las compras/reservas están deshabilitadas",
-            });
+            toast("Modo administrador: las compras/reservas están deshabilitadas");
             return;
           }
           if (selectedProduct.type === "SERVICE") {

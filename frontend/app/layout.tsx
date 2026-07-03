@@ -1,7 +1,6 @@
 import "./globals.css";
 import BottomNav from "../src/components/layout/BottomNav";
 import  AppHeader from "../src/components/layout/AppHeader";
-import { NotificationProvider } from "../src/components/ui/NotificationProvider";
 import { Toaster } from "react-hot-toast";
 
 export const metadata = {
@@ -28,8 +27,8 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-white">
-        <NotificationProvider>{children}</NotificationProvider>
-        <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
+        {children}
+        <Toaster position="top-right" reverseOrder={false} />
       </body>
     </html>
   );

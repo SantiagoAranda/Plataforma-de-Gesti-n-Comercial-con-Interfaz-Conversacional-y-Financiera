@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect, useState } from "react";
 import { api } from "@/src/lib/api";
 import AppHeader from "@/src/components/layout/AppHeader";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import { cn } from "@/src/lib/utils";
 
 type BusinessDetail = {
@@ -24,7 +24,6 @@ type Props = {
 };
 
 export function BusinessDetailPage({ businessId }: Props) {
-  const { notify } = useNotification();
   const [business, setBusiness] = useState<BusinessDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,16 +58,14 @@ export function BusinessDetailPage({ businessId }: Props) {
 
     try {
       await api(patchUrl, { method: "PATCH" });
-      
-      notify({
-        type: "success",
-        message: business.status === "ACTIVE" ? "Negocio inhabilitado correctamente" : "Negocio reactivado correctamente"
-      });
+      toast.success(
+        business.status === "ACTIVE" ? "Negocio inhabilitado correctamente" : "Negocio reactivado correctamente"
+      );
       
       await fetchBusiness();
     } catch (err) {
       console.error(err);
-      notify({ type: "error", message: "No se pudo actualizar el estado del negocio" });
+      toast.error("No se pudo actualizar el estado del negocio");
     } finally {
       setUpdating(false);
     }
