@@ -20,7 +20,7 @@ import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
-import { getItemBadges } from "@/src/lib/itemBadges";
+import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -1326,8 +1326,8 @@ function ProductCard({
                 {badges.map((badge) => (
                   <div
                     key={`${badge.text}-${badge.color}`}
-                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
-                    style={{ background: badge.color }}
+                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                    style={{ background: badge.color, color: getContrastColor(badge.color) }}
                   >
                     {badge.text}
                   </div>

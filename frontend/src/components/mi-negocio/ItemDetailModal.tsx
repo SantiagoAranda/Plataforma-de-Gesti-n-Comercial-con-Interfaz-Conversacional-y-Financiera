@@ -9,7 +9,7 @@ import { formatFullDate } from "@/src/lib/datetime";
 import { api } from "@/src/lib/api";
 
 import { groupScheduleByDay, formatActiveDaysCompact } from "@/src/lib/availability";
-import { getItemBadges } from "@/src/lib/itemBadges";
+import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 
 import { ItemPanelLayout } from "./ItemPanelLayout";
 
@@ -162,15 +162,15 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
 
               {badges.length ? (
                 <div className="absolute bottom-3 left-3 z-20 flex flex-col gap-1">
-                  {badges.map((badge) => (
-                    <div
-                      key={`${badge.text}-${badge.color}`}
-                      className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
-                      style={{ background: badge.color }}
-                    >
-                      {badge.text}
-                    </div>
-                  ))}
+              {badges.map((badge) => (
+                <div
+                  key={`${badge.text}-${badge.color}`}
+                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                  style={{ background: badge.color, color: getContrastColor(badge.color) }}
+                >
+                  {badge.text}
+                </div>
+              ))}
                 </div>
               ) : null}
             </div>

@@ -35,7 +35,7 @@ export function MiNegocioChatComposer({
   const label = mode === "edit" ? "Editar" : "Crear";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   const handleDescriptionChange = (val: string) => {
     if (val.length <= 250) {
       onDescriptionChange(val);
@@ -55,13 +55,13 @@ export function MiNegocioChatComposer({
     if (textarea && isOpen) {
       textarea.style.height = "auto";
       const scrollHeight = textarea.scrollHeight;
-      
+
       // text-sm leading-relaxed gives ~22.75px per line. 2 lines is ~45.5px.
       // 50px is a safe threshold for > 2 lines (i.e. 3 lines or more).
       setIsExpanded(scrollHeight > 50);
 
       // Approximate 6 lines height (20px per line + padding)
-      const maxRowsHeight = 20 * 6 + 12; 
+      const maxRowsHeight = 20 * 6 + 12;
       if (scrollHeight > maxRowsHeight) {
         textarea.style.height = `${maxRowsHeight}px`;
         textarea.style.overflowY = "auto";
@@ -78,10 +78,18 @@ export function MiNegocioChatComposer({
     <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
+          {/* OVERLAY BACKDROP */}
+          {isOpen && (
+            <div
+              className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+              onClick={onToggle}
+            />
+          )}
+
           {/* EXPANDABLE CONTENT */}
           {isOpen && (
-            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10">
-              <div className="max-h-[min(65vh,520px)] overflow-y-auto custom-scrollbar rounded-[28px] border border-black/5 bg-white p-5 shadow-[0_18px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom-4 duration-300">
+            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 rounded-[28px] overflow-hidden border border-neutral-400 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom-4 duration-300">
+              <div className="max-h-[min(65vh,520px)] overflow-y-auto pt-4 pb-5 px-5 custom-scrollbar scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent">
                 {children}
               </div>
             </div>
