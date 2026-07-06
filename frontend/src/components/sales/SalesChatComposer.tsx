@@ -94,15 +94,6 @@ function chipClass(active: boolean) {
     : "border-emerald-200 bg-white text-slate-700 hover:border-emerald-400";
 }
 
-const SALE_CONCEPT_LABELS: Record<NonNullable<SaleFiscalFormState["saleConcept"]>, string> = {
-  GOODS: "Bienes / Productos",
-  SERVICES: "Servicios",
-  HONORARIOS: "Honorarios",
-  ARRENDAMIENTOS: "Arrendamientos",
-  FOOD_BEVERAGES: "Comidas y bebidas",
-  OTHER: "Otro",
-};
-
 const SALE_CONCEPT_PRIORITY: NonNullable<SaleFiscalFormState["saleConcept"]>[] = [
   "SERVICES",
   "HONORARIOS",
@@ -122,11 +113,6 @@ function deriveSaleConceptFromItems(items: EditableItem[], saleType: Sale["type"
     .filter(Boolean) as NonNullable<SaleFiscalFormState["saleConcept"]>[];
   if (concepts.length === 0) return saleType === "SERVICIO" ? "SERVICES" : "GOODS";
   return SALE_CONCEPT_PRIORITY.find((concept) => concepts.includes(concept)) ?? concepts[0];
-}
-
-function hasMixedSaleConcepts(items: EditableItem[]) {
-  const concepts = new Set(items.map((item) => item.saleConcept).filter(Boolean));
-  return concepts.size > 1;
 }
 
 export default function SalesChatComposer({
@@ -321,8 +307,23 @@ export default function SalesChatComposer({
   );
 
   const updateItemQty = (idx: number, qty: number) => {
+    const current = items[idx];
+    if (!current) return;
+    const nextQty = normalizeQty(type, qty);
+    const businessItem = businessItems.find((item) => item.id === current.itemId);
+    if (type === "PRODUCTO" && businessItem?.inventoryMode === "SIMPLE") {
+      const available = Number(businessItem.currentStock ?? 0);
+      const otherQty = items.reduce(
+        (acc, item, itemIdx) => acc + (itemIdx !== idx && item.itemId === current.itemId ? item.qty : 0),
+        0
+      );
+      if (otherQty + nextQty > available) {
+        toast.error(`Stock insuficiente para ${current.name}. Disponible: ${available}.`);
+        return;
+      }
+    }
     setItems((prev) =>
-      prev.map((it, i) => (i === idx ? { ...it, qty: normalizeQty(type, qty) } : it))
+      prev.map((it, i) => (i === idx ? { ...it, qty: nextQty } : it))
     );
   };
 
@@ -483,16 +484,6 @@ export default function SalesChatComposer({
 
   const renderFormBody = () => {
     const isReadonly = mode === "readonly";
-    const effectiveSaleConcept = (
-      taxPreview?.saleConceptUsed ??
-      fiscalForm.saleConcept ??
-      deriveSaleConceptFromItems(items, type)
-    ) as NonNullable<SaleFiscalFormState["saleConcept"]>;
-    const mixedConcepts = Boolean(
-      taxPreview?.hasMixedConcepts ||
-      taxPreview?.mixedConceptsWarning ||
-      hasMixedSaleConcepts(items)
-    );
     return (
       <>
         {/* 2. Switch Persona / Empresa */}
@@ -558,7 +549,7 @@ export default function SalesChatComposer({
           />
 
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <div className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-emerald-800">
+            <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
               <FileText className="h-4 w-4" />
               {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
             </div>
@@ -634,7 +625,7 @@ export default function SalesChatComposer({
                           [key]: !active
                         }));
                       }}
-                      className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-black transition ${
+                      className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
                         active
                           ? "border-emerald-600 bg-white text-emerald-800 shadow-sm"
                           : "border-emerald-300 bg-white/70 text-emerald-900 hover:border-emerald-500"
@@ -647,32 +638,6 @@ export default function SalesChatComposer({
               </div>
             )}
           </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-100 bg-white p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Concepto fiscal
-              </span>
-              <div className="mt-1 text-sm font-black text-slate-900">
-                {SALE_CONCEPT_LABELS[effectiveSaleConcept] ?? "No calculado"}
-              </div>
-              <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                Calculado automaticamente segun los items agregados
-              </p>
-            </div>
-            {mixedConcepts && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-                Conceptos mixtos
-              </span>
-            )}
-          </div>
-          {mixedConcepts && (
-            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-800">
-              La venta contiene items con distinto tratamiento fiscal. Se usara el criterio calculado por el sistema.
-            </p>
-          )}
         </div>
 
         {fiscalForm.buyerType === "JURIDICA" && (
@@ -699,7 +664,7 @@ export default function SalesChatComposer({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
               <input
                 type="number"
                 step="0.01"
@@ -717,8 +682,8 @@ export default function SalesChatComposer({
 
             {taxPreview && (
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Régimen Simple</span>
-                <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-bold ${
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
+                <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${
                   taxPreview.sellerIsSimpleRegime 
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
                     : "border-slate-200 bg-slate-50 text-slate-600"
@@ -731,7 +696,7 @@ export default function SalesChatComposer({
         </div>
 
         <div className="hidden">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Contexto fiscal del comprador
           </span>
           <div className="grid grid-cols-2 gap-2">
@@ -765,7 +730,7 @@ export default function SalesChatComposer({
                       [key]: !active
                     }));
                   }}
-                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${chipClass(active)}`}
+                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)}`}
                 >
                   {label}
                 </button>
@@ -786,7 +751,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("PENDIENTE")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-bold transition-all text-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
                   status === "PENDIENTE"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
@@ -798,7 +763,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("CERRADO")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-bold transition-all text-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
                   status === "CERRADO"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
@@ -818,7 +783,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("CASH")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-bold transition-all text-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
                   paymentMethod === "CASH"
                     ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
@@ -830,7 +795,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-bold transition-all text-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
                   paymentMethod === "BANK_TRANSFER"
                     ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
@@ -843,7 +808,7 @@ export default function SalesChatComposer({
         </div>
 
         <div className="space-y-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Ítems de venta
           </span>
 
@@ -871,34 +836,6 @@ export default function SalesChatComposer({
                 </button>
               </div>
 
-              {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
-                <div className="flex flex-col gap-1">
-                  <span className="sr-only">Cantidad</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newItem.qty}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "") {
-                        setNewItem(prev => ({ ...prev, qty: "" }));
-                        return;
-                      }
-                      const num = parseInt(val, 10);
-                      if (!isNaN(num)) {
-                        setNewItem(prev => ({ ...prev, qty: num }));
-                      }
-                    }}
-                    onFocus={(e) => e.target.select()}
-                    onBlur={() => {
-                      if (newItem.qty === "" || newItem.qty <= 0) {
-                        setNewItem(prev => ({ ...prev, qty: 1 }));
-                      }
-                    }}
-                    className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
-                  />
-                </div>
-              )}
             </div>
           )}
 
@@ -910,10 +847,10 @@ export default function SalesChatComposer({
 
           <div className="space-y-2">
             {items.map((it, idx) => (
-              <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+              <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-bold text-slate-900 text-sm truncate">{it.name}</div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-400 mt-0.5">
+                  <div className="font-medium text-slate-800 text-sm truncate">{it.name}</div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
                     {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                   </div>
                   {it.optionNames?.map((name) => (
@@ -939,11 +876,30 @@ export default function SalesChatComposer({
                   </button>
                 )}
 
-                {type === "PRODUCTO" && !isReadonly && (
+                {!isReadonly ? (
                   <div className="flex items-center gap-2 px-1 py-1">
-                    <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-slate-400 hover:text-slate-800 w-4 flex justify-center font-bold text-sm">-</button>
-                    <span className="text-sm font-black text-slate-900 w-4 text-center">{it.qty}</span>
-                    <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-slate-400 hover:text-slate-800 w-4 flex justify-center font-bold text-sm">+</button>
+                    <button
+                      type="button"
+                      onClick={() => updateItemQty(idx, it.qty - 1)}
+                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                      aria-label={`Restar ${it.name}`}
+                    >
+                      -
+                    </button>
+                    <span className="w-5 text-center text-sm font-medium tabular-nums text-slate-800">{it.qty}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateItemQty(idx, it.qty + 1)}
+                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                      aria-label={`Sumar ${it.name}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-right text-xs text-slate-500">
+                    <div>Cant. {it.qty}</div>
+                    <div className="mt-0.5 text-slate-700">${formatMoney(it.price * it.qty)}</div>
                   </div>
                 )}
 
@@ -1036,12 +992,6 @@ export default function SalesChatComposer({
   if (mode === "readonly") {
     return (
       <div className="space-y-4 rounded-[28px] bg-slate-50 p-4">
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="text-xl font-black text-slate-950">Detalle de Venta</h2>
-          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
-            {sale?.status === "CERRADO" ? "VENTA CERRADA" : sale?.status === "PENDIENTE" ? "VENTA PENDIENTE" : "VENTA CONFIRMADA"}
-          </p>
-        </div>
         {renderFormBody()}
       </div>
     );
@@ -1054,7 +1004,7 @@ export default function SalesChatComposer({
         <div className="w-full max-w-[344px] flex max-h-[92vh] flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl relative animate-in slide-in-from-bottom-full duration-300">
           <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div className="flex flex-col">
-              <h2 className="font-bold text-slate-950 text-xl">Editar Venta</h2>
+              <h2 className="font-semibold text-slate-950 text-xl">Editar Venta</h2>
               <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">EDICIÓN MANUAL</span>
             </div>
             <button
@@ -1082,8 +1032,8 @@ export default function SalesChatComposer({
                 <X className="h-5 w-5" />
               </button>
               <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
-                <span className="text-lg font-black text-slate-950">${formatMoney(totalToDisplay)}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
+                <span className="text-lg font-semibold text-slate-950">${formatMoney(totalToDisplay)}</span>
               </div>
                 <button
                   type="button"
@@ -1147,7 +1097,7 @@ export default function SalesChatComposer({
             <div className="pointer-events-auto mx-auto flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl">
               <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                 <div className="flex flex-col">
-                  <h2 className="font-bold text-slate-950 text-xl">Nueva Venta</h2>
+                  <h2 className="font-semibold text-slate-950 text-xl">Nueva Venta</h2>
                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">CREACIÓN MANUAL</span>
                 </div>
                 <button
@@ -1173,8 +1123,8 @@ export default function SalesChatComposer({
                   <X className="h-5 w-5" />
                 </button>
                 <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
-                  <div className="text-lg font-black leading-tight text-slate-950">${formatMoney(totalToDisplay)}</div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
+                  <div className="text-lg font-semibold leading-tight text-slate-950">${formatMoney(totalToDisplay)}</div>
                 </div>
                 <button
                   type="button"

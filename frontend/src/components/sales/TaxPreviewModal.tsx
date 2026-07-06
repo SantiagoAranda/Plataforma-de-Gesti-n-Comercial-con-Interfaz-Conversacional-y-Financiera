@@ -32,26 +32,6 @@ function formatTaxRate(
     : formatPercentage(rate);
 }
 
-const SALE_CONCEPT_LABELS: Record<
-  "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER",
-  string
-> = {
-  GOODS: "Bienes / Productos",
-  SERVICES: "Servicios",
-  HONORARIOS: "Honorarios",
-  ARRENDAMIENTOS: "Arrendamientos",
-  FOOD_BEVERAGES: "Comidas y bebidas",
-  OTHER: "Otro",
-};
-
-function saleConceptLabel(value?: string | null) {
-  return value
-    ? SALE_CONCEPT_LABELS[
-        value as "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER"
-      ] ?? "No calculado"
-    : "No calculado";
-}
-
 export default function TaxPreviewModal({
   open,
   sale,
@@ -204,9 +184,6 @@ export default function TaxPreviewModal({
 
   if (!open || !sale) return null;
 
-  const effectiveSaleConcept = preview?.saleConceptUsed ?? saleConcept;
-  const mixedConcepts = Boolean(preview?.hasMixedConcepts || preview?.mixedConceptsWarning);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const context: BuyerFiscalContext = {
@@ -272,7 +249,7 @@ export default function TaxPreviewModal({
           
           {/* Column 1: Buyer Fiscal Form */}
           <div className="flex-1 p-6 space-y-6 md:border-r border-slate-100 md:max-w-md overflow-y-auto">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Contexto Fiscal del Comprador
             </h3>
 
@@ -355,32 +332,8 @@ export default function TaxPreviewModal({
               </div>
             </div>
 
-            {/* Concepto y Municipio */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[11px] font-semibold uppercase text-slate-500">Concepto fiscal</span>
-                    <div className="mt-1 text-xs font-bold text-slate-900">
-                      {saleConceptLabel(effectiveSaleConcept)}
-                    </div>
-                    <p className="mt-1 text-[10px] leading-snug text-slate-500">
-                      Calculado automaticamente segun los items agregados
-                    </p>
-                  </div>
-                  {mixedConcepts && (
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-700">
-                      Conceptos mixtos
-                    </span>
-                  )}
-                </div>
-                {mixedConcepts && (
-                  <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-800">
-                    La venta contiene items con distinto tratamiento fiscal. Se usara el criterio calculado por el sistema.
-                  </p>
-                )}
-              </div>
-
+            {/* Municipio */}
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-slate-500 uppercase">Municipio Fiscal (ICA)</label>
                 <select
@@ -418,7 +371,7 @@ export default function TaxPreviewModal({
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-slate-500 uppercase">Régimen Simple (Vendedor)</label>
-                <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-bold ${
+                <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-medium ${
                   preview?.sellerIsSimpleRegime 
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
                     : "border-slate-200 bg-slate-100 text-slate-600"
@@ -430,7 +383,7 @@ export default function TaxPreviewModal({
 
             {/* Checkboxes Tributarios */}
             <div className="space-y-3 pt-3 border-t border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block mb-2">
                 Contexto fiscal del comprador
               </span>
 
@@ -514,7 +467,7 @@ export default function TaxPreviewModal({
 
           {/* Column 2: Live calculation breakdown */}
           <div className="flex-1 p-6 flex flex-col overflow-y-auto">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Liquidación Detallada en Tiempo Real
             </h3>
 
@@ -597,10 +550,10 @@ export default function TaxPreviewModal({
 
                   <div className="pt-3 border-t border-white/10 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Neto a Recibir</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Neto a Recibir</span>
                       <p className="text-[9px] text-slate-400 leading-tight">Valor a cobrar al cliente final</p>
                     </div>
-                    <span className="text-2xl font-bold text-emerald-400 tabular-nums">
+                    <span className="text-2xl font-semibold text-emerald-400 tabular-nums">
                       {formatMoney(preview.netReceived)}
                     </span>
                   </div>
@@ -627,7 +580,7 @@ export default function TaxPreviewModal({
 
                 {/* Tax Lines Explanations */}
                 <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">
                     Detalle de Fórmulas y Reglas Aplicadas
                   </span>
 
@@ -644,7 +597,7 @@ export default function TaxPreviewModal({
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-slate-700 flex items-center gap-1.5">
                             {line.taxType} 
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
                               line.direction === "CHARGE"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
                                 : line.direction === "WITHHOLD"
@@ -655,7 +608,7 @@ export default function TaxPreviewModal({
                             </span>
                           </span>
                           {line.applied ? (
-                            <span className="font-bold text-slate-800 tabular-nums">
+                            <span className="font-medium text-slate-800 tabular-nums">
                               {formatMoney(line.taxAmount)}
                             </span>
                           ) : (
@@ -696,7 +649,7 @@ export default function TaxPreviewModal({
             <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest leading-none mb-1">
               Valor Final
             </span>
-            <span className="text-lg font-bold text-slate-800 tabular-nums leading-none">
+            <span className="text-lg font-semibold text-slate-800 tabular-nums leading-none">
               {preview ? formatMoney(preview.netReceived) : formatMoney(sale.total ?? 0)}
             </span>
           </div>

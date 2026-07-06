@@ -193,21 +193,6 @@ function fiscalChipClass(active: boolean, readonly: boolean) {
     : "border-emerald-200 bg-white text-slate-700 hover:border-emerald-400";
 }
 
-const SALE_CONCEPT_LABELS: Record<NonNullable<SaleFiscalFormState["saleConcept"]>, string> = {
-  GOODS: "Bienes / Productos",
-  SERVICES: "Servicios",
-  HONORARIOS: "Honorarios",
-  ARRENDAMIENTOS: "Arrendamientos",
-  FOOD_BEVERAGES: "Comidas y bebidas",
-  OTHER: "Otro",
-};
-
-function saleConceptLabel(value?: string | null) {
-  return value
-    ? SALE_CONCEPT_LABELS[value as NonNullable<SaleFiscalFormState["saleConcept"]>] ?? "No calculado"
-    : "No calculado";
-}
-
 function summaryToPreview(summary: SaleFiscalSummary, taxLines?: TaxPreviewLine[] | null): TaxPreviewResponse {
   return {
     subtotal: Number(summary.subtotal ?? 0),
@@ -346,16 +331,13 @@ export default function SaleTaxPanel({
     : 0;
 
   const missingReadonlyFiscal = readonly && !fiscalSummary;
-  const effectiveSaleConcept = preview?.saleConceptUsed ?? value.saleConcept;
-  const mixedConcepts = Boolean(preview?.hasMixedConcepts || preview?.mixedConceptsWarning);
-
   return (
     <section className={`space-y-3 ${className}`}>
       {!previewOnly && (
         <div className="rounded-2xl border border-slate-100 bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-slate-500">
               Liquidacion e impuestos
             </h3>
             <p className="mt-1 text-[11px] text-slate-400">
@@ -449,31 +431,6 @@ export default function SaleTaxPanel({
                 className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
               />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Concepto fiscal
-                      </span>
-                      <div className="mt-1 text-xs font-bold text-slate-900">
-                        {saleConceptLabel(effectiveSaleConcept)}
-                      </div>
-                      <p className="mt-1 text-[10px] leading-snug text-slate-500">
-                        Calculado automaticamente segun los items agregados.
-                      </p>
-                    </div>
-                    {mixedConcepts && (
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-700">
-                        Conceptos mixtos
-                      </span>
-                    )}
-                  </div>
-                  {mixedConcepts && (
-                    <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-800">
-                      La venta contiene items con distinto tratamiento fiscal. Se usara el criterio calculado por el sistema.
-                    </p>
-                  )}
-                </div>
                 <select
                   value={value.fiscalMunicipalityCode}
                   disabled={readonly}
@@ -490,7 +447,7 @@ export default function SaleTaxPanel({
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ReteICA / ICA retenido (por mil)</label>
+                  <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ReteICA / ICA retenido (por mil)</label>
                   <input
                     type="number"
                     step="0.01"
@@ -507,8 +464,8 @@ export default function SaleTaxPanel({
                 </div>
                 {preview && (
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Régimen Simple</span>
-                    <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-bold ${
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Régimen Simple</span>
+                    <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-medium ${
                       preview.sellerIsSimpleRegime 
                         ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
                         : "border-slate-100 bg-slate-50 text-slate-600"
@@ -544,7 +501,7 @@ export default function SaleTaxPanel({
                       }
                       update({ [key]: !active } as Partial<SaleFiscalFormState>);
                     }}
-                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-bold transition ${fiscalChipClass(active, readonly)}`}
+                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-semibold transition ${fiscalChipClass(active, readonly)}`}
                   >
                     {label}
                   </button>
@@ -583,7 +540,7 @@ export default function SaleTaxPanel({
                     <span>{preview.mixedConceptsWarning}</span>
                   </div>
                 )}
-                <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                   Liquidación detallada en tiempo real
                 </div>
                 <div className="space-y-2">
@@ -595,40 +552,17 @@ export default function SaleTaxPanel({
                   <SummaryRow label="ReteIVA" value={Number(preview.reteIvaTotal)} />
                   <SummaryRow label="Autorretencion" value={Number(preview.autoRetencionTotal)} />
                 </div>
-                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 font-semibold text-slate-900">
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 font-medium text-slate-800">
                   <SummaryRow label="Total cobrado" value={Number(preview.subtotal) + chargedTotal} />
                   <SummaryRow label="Total retenido" value={withheldTotal} />
                 </div>
                 <div className="mt-4 flex items-end justify-between gap-4 border-t border-slate-100 pt-4">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                     Neto recibido
                   </span>
-                  <span className="text-2xl font-black text-emerald-600 tabular-nums">
+                  <span className="text-2xl font-semibold text-emerald-600 tabular-nums">
                     ${formatCop(Number(preview.netReceived))}
                   </span>
-                </div>
-                <div className="mt-4 border-t border-slate-100 pt-4">
-                  <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    Validación de retenciones
-                  </div>
-                  <div className="space-y-2">
-                    <RetentionValidationCard
-                      label="ReteFuente"
-                      line={findTaxLine(preview.taxLines, "RETEFUENTE")}
-                    />
-                    <RetentionValidationCard
-                      label="ReteICA"
-                      line={findTaxLine(preview.taxLines, "RETEICA")}
-                    />
-                    <RetentionValidationCard
-                      label="ReteIVA"
-                      line={findTaxLine(preview.taxLines, "RETEIVA")}
-                    />
-                    <RetentionValidationCard
-                      label="Autorretención"
-                      line={findTaxLine(preview.taxLines, "AUTORRETENCION")}
-                    />
-                  </div>
                 </div>
               </>
             ) : (
@@ -638,7 +572,7 @@ export default function SaleTaxPanel({
 
           {preview?.taxLines?.length ? (
             <details className="rounded-2xl border border-slate-100 bg-white p-4 w-full min-w-0">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-widest text-slate-500 select-none">
+              <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-widest text-slate-500 select-none">
                 Detalle de formulas y reglas aplicadas
               </summary>
               <div className="mt-3 space-y-2 w-full min-w-0">
@@ -650,8 +584,8 @@ export default function SaleTaxPanel({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-slate-800">{line.taxType}</span>
-                          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-bold uppercase text-slate-600">
+                          <span className="font-medium text-slate-800">{line.taxType}</span>
+                          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] font-semibold uppercase text-slate-600">
                             {lineStatus(line)}
                           </span>
                         </div>
