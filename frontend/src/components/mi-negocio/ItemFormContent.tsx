@@ -19,6 +19,19 @@ import {
   MAX_ITEM_IMAGES,
 } from "@/src/lib/itemImages";
 
+const BADGE_PRESET_COLORS = [
+  "#EF4444", // Rojo
+  "#10B981", // Verde
+  "#3B82F6", // Azul
+  "#FBBF24", // Amarillo
+  "#F97316", // Naranja
+  "#000000", // Negro
+  "#6B7280", // Gris
+  "#8B5CF6", // Violeta
+  "#EC4899", // Rosa
+  "#34D399", // Esmeralda
+];
+
 // ────────────────────────────────────────────────────────────────────────
 // Selector de hora en formato 12h AM/PM (Colombia).
 // Recibe y emite strings en formato 24h ("14:30") para compatibilidad
@@ -132,58 +145,59 @@ interface ItemFormContentProps {
   setSaleConcept: (concept: "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER") => void;
 }
 
-export function ItemFormContent({
-  type,
-  setType,
-  inventoryMode,
-  setInventoryMode,
-  name,
-  setName,
-  badgeText1,
-  setBadgeText1,
-  badgeColor1,
-  setBadgeColor1,
-  badgeText2,
-  setBadgeText2,
-  badgeColor2,
-  setBadgeColor2,
-  priceDisplay,
-  setPriceDisplay,
-  setPrice,
-  appliesImpoconsumo,
-  setAppliesImpoconsumo,
-  impoconsumoRatePercent,
-  setImpoconsumoRatePercent,
-  durationInput,
-  setDurationInput,
-  setDuration,
-  durationAdjustmentMessage,
-  setDurationAdjustmentMessage,
-  week,
-  setWeek,
-  currentDayIndex,
-  setCurrentDayIndex,
-  existingImages,
-  newImages,
-  handleAddImages,
-  handleRemoveExistingImage,
-  handleRemoveNewImage,
-  formErrors,
-  setFormErrors,
-  imageError,
-  editingItem,
-  saleConcept,
-  setSaleConcept,
-}: ItemFormContentProps) {
+export function ItemFormContent(props: ItemFormContentProps) {
+  const {
+    type,
+    setType,
+    inventoryMode,
+    setInventoryMode,
+    name,
+    setName,
+    badgeText1,
+    setBadgeText1,
+    badgeColor1,
+    setBadgeColor1,
+    badgeText2,
+    setBadgeText2,
+    badgeColor2,
+    setBadgeColor2,
+    priceDisplay,
+    setPriceDisplay,
+    setPrice,
+    appliesImpoconsumo,
+    setAppliesImpoconsumo,
+    impoconsumoRatePercent,
+    setImpoconsumoRatePercent,
+    durationInput,
+    setDurationInput,
+    setDuration,
+    durationAdjustmentMessage,
+    setDurationAdjustmentMessage,
+    week,
+    setWeek,
+    currentDayIndex,
+    setCurrentDayIndex,
+    existingImages,
+    newImages,
+    handleAddImages,
+    handleRemoveExistingImage,
+    handleRemoveNewImage,
+    formErrors,
+    setFormErrors,
+    imageError,
+    editingItem,
+    saleConcept,
+    setSaleConcept,
+  } = props;
+
   const totalImages = existingImages.length + newImages.length;
   const [badgeIndex, setBadgeIndex] = useState<0 | 1>(0);
 
-  const isBadge1 = badgeIndex === 0;
-  const currentBadgeText = isBadge1 ? badgeText1 : badgeText2;
-  const currentBadgeColor = isBadge1 ? badgeColor1 : badgeColor2;
-  const setCurrentBadgeText = isBadge1 ? setBadgeText1 : setBadgeText2;
-  const setCurrentBadgeColor = isBadge1 ? setBadgeColor1 : setBadgeColor2;
-  const currentPlaceholder = isBadge1 ? "Ej: POP" : "Ej: Nuevo";
+  const currentBadgeColor = badgeIndex === 0 ? props.badgeColor1 : props.badgeColor2;
+  const setCurrentBadgeColor = badgeIndex === 0 ? props.setBadgeColor1 : props.setBadgeColor2;
+  const currentBadgeText = badgeIndex === 0 ? props.badgeText1 : props.badgeText2;
+  const setCurrentBadgeText = badgeIndex === 0 ? props.setBadgeText1 : props.setBadgeText2;
+  const currentPlaceholder = badgeIndex === 0 ? "Ej: POP" : "Ej: Nuevo";
 
   const activeDay = week[currentDayIndex];
   let hasOverlapError = false;
@@ -445,24 +459,25 @@ export function ItemFormContent({
 
       {/* INVENTARIO (PRODUCT ONLY) */}
       {type === "PRODUCT" && (
-        <div className="space-y-4">
+        <div className="space-y-2">
           <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
             Inventario
           </label>
 
-          <div className="grid grid-cols-1 gap-2">
+          <div className="flex bg-neutral-100 rounded-xl p-1 w-full gap-1 border border-neutral-200/50">
             <button
               type="button"
               onClick={() => {
                 setInventoryMode("NONE");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "NONE"
-                  ? "border-green-500 bg-green-50/50"
-                  : "border-neutral-100 bg-white shadow-sm"
-                }`}
+              className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
+                inventoryMode === "NONE"
+                  ? "bg-green-600 text-white shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-700"
+              }`}
             >
-              No controla stock
+              No controla
             </button>
             <button
               type="button"
@@ -470,12 +485,13 @@ export function ItemFormContent({
                 setInventoryMode("SIMPLE");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "SIMPLE"
-                  ? "border-green-500 bg-green-50/50"
-                  : "border-neutral-100 bg-white shadow-sm"
-                }`}
+              className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
+                inventoryMode === "SIMPLE"
+                  ? "bg-green-600 text-white shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-700"
+              }`}
             >
-              Producto simple
+              Simple
             </button>
             <button
               type="button"
@@ -483,17 +499,18 @@ export function ItemFormContent({
                 setInventoryMode("RECIPE_BASED");
                 setFormErrors((p) => ({ ...p, inventory: undefined }));
               }}
-              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${inventoryMode === "RECIPE_BASED"
-                  ? "border-green-500 bg-green-50/50"
-                  : "border-neutral-100 bg-white shadow-sm"
-                }`}
+              className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
+                inventoryMode === "RECIPE_BASED"
+                  ? "bg-green-600 text-white shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-700"
+              }`}
             >
-              Producto compuesto / receta
+              Receta
             </button>
           </div>
 
           {formErrors.inventory && (
-            <p className="text-[10px] font-medium text-red-500 uppercase">
+            <p className="text-[10px] font-medium text-red-500 uppercase mt-1">
               {formErrors.inventory}
             </p>
           )}
@@ -679,7 +696,7 @@ export function ItemFormContent({
             ‹
           </button>
           <p className="text-xs font-medium text-neutral-700 uppercase tracking-widest">
-            {isBadge1 ? "Badge 1" : "Badge 2"}
+            {badgeIndex === 0 ? "Badge 1" : "Badge 2"}
           </p>
           <button
             type="button"
@@ -704,14 +721,30 @@ export function ItemFormContent({
 
           <div className="space-y-2">
             <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Color</label>
-            <div className="flex items-center gap-3 rounded-2xl border border-neutral-100 bg-white px-4 h-[48px] shadow-sm">
-              <input
-                type="color"
-                value={currentBadgeColor}
-                onChange={(e) => setCurrentBadgeColor(e.target.value)}
-                className="h-7 w-10 cursor-pointer rounded-md border border-neutral-200 bg-white p-0"
-                aria-label="Seleccionar color del badge"
-              />
+            <div className="flex flex-col gap-3 rounded-2xl border border-neutral-100 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap gap-2.5">
+                {BADGE_PRESET_COLORS.map((c) => {
+                  const isSelected = currentBadgeColor.toLowerCase() === c.toLowerCase();
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCurrentBadgeColor(c)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition active:scale-95 duration-150 border ${
+                        isSelected ? "ring-2 ring-green-500 border-white scale-110 shadow-sm" : "border-neutral-200 hover:scale-105"
+                      }`}
+                      style={{ backgroundColor: c }}
+                      aria-label={`Color ${c}`}
+                    >
+                      {isSelected && (
+                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} style={{ color: c === "#FBBF24" ? "#000000" : "#ffffff" }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="text-xs font-semibold text-neutral-500">{currentBadgeColor.toUpperCase()}</div>
             </div>
           </div>

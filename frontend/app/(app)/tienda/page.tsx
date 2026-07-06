@@ -22,7 +22,7 @@ import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getBusinessProfile } from "@/src/lib/businessLogo";
-import { getItemBadges } from "@/src/lib/itemBadges";
+import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { cn } from "@/src/lib/utils";
 import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
 
@@ -618,8 +618,8 @@ function AdminProductCard({
               {badges.map((badge) => (
                 <div
                   key={`${badge.text}-${badge.color}`}
-                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
-                  style={{ background: badge.color }}
+                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                  style={{ background: badge.color, color: getContrastColor(badge.color) }}
                 >
                   {badge.text}
                 </div>

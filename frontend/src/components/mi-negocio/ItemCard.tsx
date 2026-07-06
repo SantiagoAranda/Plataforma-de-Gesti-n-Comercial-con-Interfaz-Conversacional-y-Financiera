@@ -85,7 +85,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
   return (
     <div className="relative group select-none">
       <SelectableCard
-        onSelect={() => {}}
+        onSelect={() => { }}
         disableOpenOnClick={true}
         disableLongPress={true}
         className="relative select-none ml-auto max-w-[85%] lg:max-w-[460px] overflow-hidden flex flex-col min-h-[140px]"
@@ -130,7 +130,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                   <Eye className="w-3.5 h-3.5 text-neutral-400" />
                   Ver detalle
                 </button>
-                
+
                 <button
                   type="button"
                   onClick={(e) => {
@@ -192,7 +192,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                   try {
                     const res = await getCached(`item-detail:${item.id}`, 60000, () => api<any>(`/items/${item.id}`));
                     if (res?.images) setHydratedImages(res.images);
-                  } catch (e) {}
+                  } catch (e) { }
                 }
               }}
               name={item.name}
@@ -247,7 +247,15 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
             </div>
 
             <span className="text-[9px] text-neutral-400 font-medium tabular-nums lowercase italic whitespace-nowrap ml-auto">
-              {formatCompactDate(item.createdAt)}
+              {item.createdAt
+                ? new Date(item.createdAt)
+                  .toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: true,
+                  })
+                  .toLowerCase()
+                : ""}
             </span>
           </div>
         </div>
