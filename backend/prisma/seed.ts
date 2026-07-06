@@ -764,6 +764,69 @@ async function seedTaxGlobalParameters() {
     console.log("Tax global parameters seed OK for 2026");
 }
 
+async function seedSimpleTaxRateBrackets() {
+    const brackets = [
+        {
+            groupCode: "1",
+            groupName: "Tiendas pequeñas, minimercados, micromercados y peluquerías",
+            rows: [
+                ["0", "1000", "0.012000"],
+                ["1000", "2500", "0.028000"],
+                ["2500", "5000", "0.044000"],
+                ["5000", "16666.67", "0.056000"],
+            ],
+        },
+        {
+            groupCode: "2",
+            groupName: "Comercio, industria, servicios técnicos, construcción, telecomunicaciones y demás actividades",
+            rows: [
+                ["0", "1000", "0.016000"],
+                ["1000", "2500", "0.020000"],
+                ["2500", "5000", "0.035000"],
+                ["5000", "16666.67", "0.045000"],
+            ],
+        },
+        {
+            groupCode: "3",
+            groupName: "Servicios profesionales, consultoría, científicos y profesiones liberales",
+            rows: [
+                ["0", "1000", "0.059000"],
+                ["1000", "2500", "0.073000"],
+                ["2500", "5000", "0.120000"],
+                ["5000", "16666.67", "0.145000"],
+            ],
+        },
+        {
+            groupCode: "4",
+            groupName: "Expendio de comidas y bebidas / hoteles",
+            rows: [
+                ["0", "1000", "0.044000"],
+            ],
+        },
+    ];
+
+    await prisma.simpleTaxRateBracket.deleteMany({
+        where: { taxYear: 2026, periodType: "BIMONTHLY" },
+    });
+
+    await prisma.simpleTaxRateBracket.createMany({
+        data: brackets.flatMap((group) =>
+            group.rows.map(([lowerUvt, upperUvt, rate]) => ({
+                taxYear: 2026,
+                periodType: "BIMONTHLY" as const,
+                groupCode: group.groupCode,
+                groupName: group.groupName,
+                lowerUvt,
+                upperUvt,
+                rate,
+                active: true,
+            })),
+        ),
+    });
+
+    console.log("Simple tax RST bimonthly brackets seed OK for 2026");
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
@@ -781,6 +844,7 @@ async function main() {
 
     await seedTaxResponsibilities();
     await seedTaxGlobalParameters();
+    await seedSimpleTaxRateBrackets();
 }
 
 main()

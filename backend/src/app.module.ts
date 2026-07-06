@@ -22,6 +22,7 @@ import { PayrollModule } from './payroll/payroll.module';
 import { ItemOptionsModule } from './item-options/item-options.module';
 import { SettingsModule } from './settings/settings.module';
 import { TaxModule } from './tax/tax.module';
+import { SimpleTaxModule } from './simple-tax/simple-tax.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { TaxModule } from './tax/tax.module';
     ItemOptionsModule,
     SettingsModule,
     TaxModule,
+    SimpleTaxModule,
   ],
   controllers: [AppController],
   providers: [AppService],

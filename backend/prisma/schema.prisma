@@ -161,6 +161,17 @@ enum TaxDirection {
   SELF      // Autorretención del vendedor
 }
 
+enum SimpleTaxPeriodType {
+  BIMONTHLY
+  ANNUAL
+}
+
+enum SimpleTaxPeriodStatus {
+  DRAFT
+  CALCULATED
+  POSTED
+}
+
 enum SaleConcept {
   GOODS
   SERVICES
@@ -276,6 +287,8 @@ model Business {
   taxProfile                      BusinessTaxProfile?
   municipalityIcaRates            MunicipalityIcaRate[]
   salesTaxRules                   SalesTaxRule[]
+  simpleTaxConfig                 BusinessSimpleTaxConfig?
+  simpleTaxPeriods                SimpleTaxPeriod[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1799,6 +1812,69 @@ model TaxGlobalParameter {
   active                 Boolean   @default(true)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
+}
+
+model SimpleTaxRateBracket {
+  id         String              @id @default(uuid())
+  taxYear    Int
+  periodType SimpleTaxPeriodType
+  groupCode  String
+  groupName  String
+  lowerUvt   Decimal             @db.Decimal(14, 2)
+  upperUvt   Decimal?            @db.Decimal(14, 2)
+  rate       Decimal             @db.Decimal(8, 6)
+  active     Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([taxYear, periodType, groupCode, lowerUvt, upperUvt])
+  @@index([taxYear, periodType, groupCode, active])
+}
+
+model BusinessSimpleTaxConfig {
+  id            String   @id @default(uuid())
+  businessId    String   @unique
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  enabled       Boolean  @default(false)
+  taxYear       Int
+  groupCode     String?
+  activityLabel String?
+  ciiuCode      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SimpleTaxPeriod {
+  id                           String                @id @default(uuid())
+  businessId                   String
+  business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxYear                      Int
+  periodNumber                 Int
+  periodStart                  DateTime
+  periodEnd                    DateTime
+  status                       SimpleTaxPeriodStatus @default(DRAFT)
+  salesGrossIncome             Decimal               @default(0) @db.Decimal(14, 2)
+  manualGrossIncome            Decimal               @default(0) @db.Decimal(14, 2)
+  excludedIncome               Decimal               @default(0) @db.Decimal(14, 2)
+  taxableGrossIncome           Decimal               @default(0) @db.Decimal(14, 2)
+  taxableGrossIncomeUvt        Decimal               @default(0) @db.Decimal(14, 4)
+  groupCode                    String
+  groupName                    String?
+  appliedRate                  Decimal               @default(0) @db.Decimal(8, 6)
+  grossSimpleTax               Decimal               @default(0) @db.Decimal(14, 2)
+  electronicPaymentsIncome     Decimal               @default(0) @db.Decimal(14, 2)
+  electronicPaymentsDiscount   Decimal               @default(0) @db.Decimal(14, 2)
+  pensionContributionsDiscount Decimal               @default(0) @db.Decimal(14, 2)
+  totalDiscounts               Decimal               @default(0) @db.Decimal(14, 2)
+  netSimpleTax                 Decimal               @default(0) @db.Decimal(14, 2)
+  calculationSnapshot          Json?
+  notes                        String?
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+
+  @@unique([businessId, taxYear, periodNumber])
+  @@index([businessId, taxYear])
+  @@index([businessId, status])
 }
 
 model BusinessTaxProfile {

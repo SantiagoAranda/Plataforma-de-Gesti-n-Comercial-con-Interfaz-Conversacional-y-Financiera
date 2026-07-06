@@ -21,6 +21,7 @@ import {
   getDepartmentCodeFromMunicipality,
   getMunicipalityName,
 } from "@/src/constants/colombianMunicipalities";
+import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 
 const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "47", "48", "49", "52"];
 const SIMULATOR_RETEICA_PER_THOUSAND = "9.66";
@@ -36,6 +37,25 @@ const RESPONSIBILITY_LABELS: Record<string, string> = {
   "49": "No Responsable IVA",
   "52": "Facturador Electrónico",
 };
+
+const SIMPLE_TAX_GROUPS = [
+  {
+    code: "1",
+    label: "Grupo 1 - Tiendas pequenas, minimercados, micromercados y peluquerias",
+  },
+  {
+    code: "2",
+    label: "Grupo 2 - Comercio, industria, servicios tecnicos y demas actividades",
+  },
+  {
+    code: "3",
+    label: "Grupo 3 - Servicios profesionales y consultoria",
+  },
+  {
+    code: "4",
+    label: "Grupo 4 - Comidas, bebidas y hoteles",
+  },
+];
 
 type TaxBusinessProfileKey =
   | "PN_NO_RESPONSABLE"
@@ -183,18 +203,28 @@ export default function RutImpuestosPage() {
   const [useSameReteIcaRate, setUseSameReteIcaRate] = useState(true);
   const [reteIcaRatePerMil, setReteIcaRatePerMil] = useState(SIMULATOR_RETEICA_PER_THOUSAND);
   const [minBaseUvt, setMinBaseUvt] = useState("0");
+  const [simpleTaxYear, setSimpleTaxYear] = useState("2026");
+  const [simpleTaxGroupCode, setSimpleTaxGroupCode] = useState("");
+  const [simpleTaxActivityLabel, setSimpleTaxActivityLabel] = useState("");
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [profile, catalog, rates] = await Promise.all([
+        const [profile, catalog, rates, simpleTaxConfig] = await Promise.all([
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
+          getSimpleTaxConfig().catch(() => null),
         ]);
 
         setResponsibilitiesCatalog(catalog);
         setIcaRates(rates);
+
+        if (simpleTaxConfig) {
+          setSimpleTaxYear(String(simpleTaxConfig.taxYear || 2026));
+          setSimpleTaxGroupCode(simpleTaxConfig.groupCode || "");
+          setSimpleTaxActivityLabel(simpleTaxConfig.activityLabel || "");
+        }
 
         if (profile) {
           setPersonType(profile.personType);
@@ -378,6 +408,15 @@ export default function RutImpuestosPage() {
       });
 
       await saveIcaRate();
+
+      const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
+      await updateSimpleTaxConfig({
+        enabled: hasSimpleTaxResponsibility,
+        taxYear: Number(simpleTaxYear) || 2026,
+        groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
+        activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
+        ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
+      });
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
       toast.error(err.message || "Verifique los datos ingresados.");
@@ -672,6 +711,68 @@ export default function RutImpuestosPage() {
                 })}
               </div>
             </div>
+
+            {selectedRespCodes.includes("47") && (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-emerald-950">
+                      Regimen Simple
+                    </h3>
+                    <p className="mt-1 text-[11px] font-medium text-emerald-800">
+                      Configuracion para liquidacion bimestral. No afecta el calculo fiscal de ventas.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/contabilidad/regimen-simple")}
+                    className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
+                  >
+                    Liquidar
+                  </button>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-[112px_minmax(0,1fr)]">
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Ano fiscal</span>
+                    <input
+                      type="number"
+                      min="2026"
+                      value={simpleTaxYear}
+                      onChange={(event) => setSimpleTaxYear(event.target.value)}
+                      className={inputClassName}
+                    />
+                  </label>
+
+                  <label className="space-y-1.5">
+                    <span className={labelClassName}>Grupo RST</span>
+                    <select
+                      value={simpleTaxGroupCode}
+                      onChange={(event) => setSimpleTaxGroupCode(event.target.value)}
+                      className={inputClassName}
+                    >
+                      <option value="">Seleccionar grupo</option>
+                      {SIMPLE_TAX_GROUPS.map((group) => (
+                        <option key={group.code} value={group.code}>
+                          {group.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <label className="mt-3 block space-y-1.5">
+                  <span className={labelClassName}>Actividad RST</span>
+                  <input
+                    type="text"
+                    value={simpleTaxActivityLabel}
+                    onChange={(event) => setSimpleTaxActivityLabel(event.target.value)}
+                    placeholder="Descripcion de actividad para Regimen Simple"
+                    className={inputClassName}
+                  />
+                </label>
+              </div>
+            )}
 
             <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-slate-700">
