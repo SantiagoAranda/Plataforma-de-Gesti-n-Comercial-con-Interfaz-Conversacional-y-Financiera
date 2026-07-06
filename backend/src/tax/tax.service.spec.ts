@@ -337,6 +337,55 @@ describe('TaxService', () => {
     expect(reteIcaLine?.rate.toString()).toBe('0.00966');
   });
 
+  it('does not apply ReteFuente or ReteICA when buyer belongs to RST', async () => {
+    mockSeller(['05', '07', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        buyerIsGranContribuyente: false,
+        buyerIsRegimenSimple: true,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 10,
+      }),
+    );
+
+    expect(result.vatTotal.toNumber()).toBe(190000);
+    expect(result.reteFuenteTotal.toNumber()).toBe(0);
+    expect(result.reteIcaTotal.toNumber()).toBe(0);
+    expect(result.reteIvaTotal.toNumber()).toBe(0);
+    expect(result.subtotal.add(result.vatTotal).toNumber()).toBe(1190000);
+    expect(
+      result.reteFuenteTotal
+        .add(result.reteIcaTotal)
+        .add(result.reteIvaTotal)
+        .toNumber(),
+    ).toBe(0);
+    expect(result.netReceived.toNumber()).toBe(1190000);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEICA)?.applied).toBe(false);
+  });
+
+  it('keeps calculating ReteICA when buyer is not RST and rate is 10 per thousand', async () => {
+    mockSeller(['05', '07', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        buyerIsGranContribuyente: false,
+        buyerIsRegimenSimple: false,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 10,
+      }),
+    );
+
+    expect(result.reteIcaTotal.toNumber()).toBe(10000);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEICA)?.applied).toBe(true);
+  });
+
   it('does not apply ReteICA for buyer Persona Natural', async () => {
     mockSeller(['48']);
     mockItems([{ price: 1000000 }]);

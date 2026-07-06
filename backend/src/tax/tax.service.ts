@@ -331,7 +331,7 @@ export class TaxService {
     // Determinar la tarifa de ReteICA y si aplica
     if (reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null) {
       reteIcaRate = new Prisma.Decimal(reteIcaRateOverridePerThousand).div(1000);
-      if (reteIcaRate.gt(0)) {
+      if (reteIcaRate.gt(0) && !dto.buyerIsRegimenSimple) {
         useReteIca = true;
       }
     } else {
@@ -365,6 +365,7 @@ export class TaxService {
       if (
         buyerIsRetenedorOrGran &&
         !buyerIsPersonaNatural &&
+        !dto.buyerIsRegimenSimple &&
         !sellerIsRegimenSimple &&
         !sellerIsGranContribuyente &&
         dto.fiscalMunicipalityCode
@@ -445,9 +446,11 @@ export class TaxService {
             ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
             : sellerIsRegimenSimple
               ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
-              : buyerIsPersonaNatural
-                ? 'El comprador es Persona Natural; no practica ReteICA.'
-                : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
+              : dto.buyerIsRegimenSimple
+                ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteICA.'
+                : buyerIsPersonaNatural
+                  ? 'El comprador es Persona Natural; no practica ReteICA.'
+                  : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
       });
     }
 
