@@ -97,8 +97,8 @@ function MiNegocioPageContent() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [editingItem, setEditingItem] = useState<Item | null>(null);
 
-  // Inventory (PRODUCT only)
   const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
+  const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -192,6 +192,7 @@ function MiNegocioPageContent() {
     setFormErrors({});
     setType("PRODUCT");
     setInventoryMode("NONE");
+    setSaleConcept("GOODS");
     setEditingItem(null);
   }, []);
 
@@ -217,6 +218,7 @@ function MiNegocioPageContent() {
     setComposerMode("edit");
 
     setType(item.type);
+    setSaleConcept(item.saleConcept || (item.type === "SERVICE" ? "SERVICES" : "GOODS"));
     const nextInventoryMode: ItemInventoryMode =
       item.type === "SERVICE" ? "NONE" : (item.inventoryMode ?? "NONE");
     setInventoryMode(nextInventoryMode);
@@ -472,6 +474,7 @@ function MiNegocioPageContent() {
         type,
         name,
         price: parseFloat(price),
+        saleConcept,
         appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
         impoconsumoRate:
           type === "PRODUCT" &&
@@ -803,6 +806,8 @@ function MiNegocioPageContent() {
           setFormErrors={setFormErrors}
           imageError={imageError}
           editingItem={!!editingItem}
+          saleConcept={saleConcept}
+          setSaleConcept={setSaleConcept}
         />
       </MiNegocioChatComposer>
 

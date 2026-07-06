@@ -99,6 +99,7 @@ export type Item = {
   images?: { id: string; url: string; order: number }[];
   optionGroups?: PublicItemOptionGroup[];
   status: "ACTIVE" | "INACTIVE";
+  saleConcept?: "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER" | null;
   createdAt?: string;
   updatedAt?: string;
   _count?: { images: number };

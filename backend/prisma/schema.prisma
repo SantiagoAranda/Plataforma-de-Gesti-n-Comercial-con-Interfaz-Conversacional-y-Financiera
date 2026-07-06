@@ -332,6 +332,7 @@ model Item {
 
   appliesImpoconsumo Boolean  @default(false)
   impoconsumoRate    Decimal? @db.Decimal(6, 4)
+  saleConcept        SaleConcept @default(GOODS)
 
   images             ItemImage[]
   scheduleWindows    ServiceScheduleWindow[]
@@ -1816,6 +1817,7 @@ model BusinessTaxProfile {
   address                String
   mainCiiuCode           String?                    // Código CIIU opcional
   mainCiiuDescription    String?                    // Descripción manual del CIIU
+  isIncomeTaxDeclarant   Boolean                    @default(true)
   responsibilities       BusinessTaxResponsibility[]
   createdAt              DateTime                   @default(now())
   updatedAt              DateTime                   @updatedAt
@@ -1889,13 +1891,25 @@ model OrderFiscalContext {
   buyerIsGranContribuyente Boolean      @default(false)
   buyerIsAutorretenedor    Boolean      @default(false)
   buyerIsRegimenSimple     Boolean      @default(false)
-  fiscalMunicipalityCode   String?
-  saleConcept              SaleConcept?
-  subtotal                 Decimal      @db.Decimal(14, 2)
-  chargedTaxTotal          Decimal      @default(0) @db.Decimal(14, 2) // IVA + impoconsumo
-  withheldTaxTotal         Decimal      @default(0) @db.Decimal(14, 2) // retefuente + reteiva + reteica
-  netReceived              Decimal      @db.Decimal(14, 2)
-  createdAt                DateTime     @default(now())
+  buyerRequiresElectronicInvoice Boolean @default(false)
+  fiscalMunicipalityCode     String?
+  saleConcept                SaleConcept?
+  subtotal                   Decimal      @db.Decimal(14, 2)
+  chargedTaxTotal            Decimal      @default(0) @db.Decimal(14, 2) // IVA + impoconsumo
+  withheldTaxTotal           Decimal      @default(0) @db.Decimal(14, 2) // retefuente + reteiva + reteica
+  netReceived                Decimal      @db.Decimal(14, 2)
+  sellerPersonType           PersonType?
+  sellerIsSimpleRegime       Boolean?
+  sellerIsIncomeTaxDeclarant Boolean?
+  icaRateUsed                Decimal?     @db.Decimal(6, 4)
+  reteIcaRateUsed            Decimal?     @db.Decimal(6, 4)
+  reteIcaRateOverride        Decimal?     @db.Decimal(6, 4)
+  hasMixedConcepts           Boolean      @default(false)
+  mixedConceptsWarning       String?
+  impoconsumoRateUsed        Decimal?     @db.Decimal(6, 4)
+  taxYear                    Int?
+  uvtValue                   Decimal?     @db.Decimal(10, 2)
+  createdAt                  DateTime     @default(now())
 }
 
 model SaleTaxLine {

@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  IsNumber,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -55,11 +56,23 @@ export class BuyerFiscalContextDto {
 
   @IsOptional()
   @IsBoolean()
+  buyerRequiresElectronicInvoice?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   withholdingSubjectIsDeclarante?: boolean;
 
   @IsOptional()
   @IsString()
   fiscalMunicipalityCode?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  icaRateOverride?: number;
+
+  @IsOptional()
+  @IsNumber()
+  reteIcaRateOverride?: number;
 
   @IsOptional()
   @IsIn(['GOODS', 'SERVICES', 'HONORARIOS', 'ARRENDAMIENTOS', 'FOOD_BEVERAGES', 'OTHER'])

@@ -23,6 +23,12 @@ export type TaxPreviewResponse = {
   taxLines: TaxPreviewLine[];
   uvtValue: number;
   profileMissing?: boolean;
+  saleConceptUsed?: string;
+  reteIcaRateUsed?: number;
+  reteIcaRateOverride?: number | null;
+  sellerIsSimpleRegime?: boolean;
+  hasMixedConcepts?: boolean;
+  mixedConceptsWarning?: string | null;
 };
 
 export type BuyerFiscalContext = {
@@ -36,9 +42,13 @@ export type BuyerFiscalContext = {
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
   buyerIsRegimenSimple: boolean;
+  buyerRequiresElectronicInvoice: boolean;
   withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode: string | null;
-  saleConcept:
+  reteIcaRateOverride?: number;
+  /** @deprecated Use reteIcaRateOverride. */
+  icaRateOverride?: number;
+  saleConcept?:
     | "GOODS"
     | "SERVICES"
     | "HONORARIOS"
@@ -58,9 +68,13 @@ export type TaxPreviewRequest = {
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
   buyerIsRegimenSimple: boolean;
+  buyerRequiresElectronicInvoice?: boolean;
   withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode?: string;
-  saleConcept: BuyerFiscalContext["saleConcept"];
+  reteIcaRateOverride?: number;
+  /** @deprecated Use reteIcaRateOverride. */
+  icaRateOverride?: number;
+  saleConcept?: BuyerFiscalContext["saleConcept"];
   cartItems: Array<{ itemId: string; quantity: number }>;
 };
 

@@ -227,6 +227,10 @@ export class SalesService {
         snapshotBuyerFiscal.buyerIsRegimenSimple ??
         order.fiscalContext?.buyerIsRegimenSimple ??
         false,
+      buyerRequiresElectronicInvoice:
+        snapshotBuyerFiscal.buyerRequiresElectronicInvoice ??
+        order.fiscalContext?.buyerRequiresElectronicInvoice ??
+        false,
       withholdingSubjectIsDeclarante:
         snapshotBuyerFiscal.withholdingSubjectIsDeclarante ?? true,
       fiscalMunicipalityCode:
@@ -235,6 +239,16 @@ export class SalesService {
         null,
       saleConcept:
         snapshotBuyerFiscal.saleConcept ?? order.fiscalContext?.saleConcept ?? null,
+      reteIcaRateOverride:
+        snapshotBuyerFiscal.reteIcaRateOverride ??
+        snapshotBuyerFiscal.icaRateOverride ??
+        order.fiscalContext?.reteIcaRateOverride ??
+        null,
+      icaRateOverride:
+        snapshotBuyerFiscal.icaRateOverride ??
+        snapshotBuyerFiscal.reteIcaRateOverride ??
+        order.fiscalContext?.reteIcaRateOverride ??
+        null,
     };
   }
 
@@ -259,10 +273,13 @@ export class SalesService {
         buyerFiscalContext.buyerIsGranContribuyente || false,
       buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
       buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-      withholdingSubjectIsDeclarante:
-        buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+      buyerRequiresElectronicInvoice:
+        buyerFiscalContext.buyerRequiresElectronicInvoice || false,
       fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
       saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+      reteIcaRateOverride:
+        buyerFiscalContext.reteIcaRateOverride ??
+        buyerFiscalContext.icaRateOverride,
       cartItems,
     });
 
@@ -1204,10 +1221,13 @@ export class SalesService {
           buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
           buyerIsAutorretenedor: fiscalContextToUse.buyerIsAutorretenedor || false,
           buyerIsRegimenSimple: fiscalContextToUse.buyerIsRegimenSimple || false,
-          withholdingSubjectIsDeclarante:
-            fiscalContextToUse.withholdingSubjectIsDeclarante ?? true,
+          buyerRequiresElectronicInvoice:
+            fiscalContextToUse.buyerRequiresElectronicInvoice || false,
           fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
           saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
+          reteIcaRateOverride:
+            fiscalContextToUse.reteIcaRateOverride ??
+            fiscalContextToUse.icaRateOverride,
           cartItems,
         });
 
@@ -1322,10 +1342,13 @@ export class SalesService {
           buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
           buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
           buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-          withholdingSubjectIsDeclarante:
-            buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+          buyerRequiresElectronicInvoice:
+            buyerFiscalContext.buyerRequiresElectronicInvoice || false,
           fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
           saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+          reteIcaRateOverride:
+            buyerFiscalContext.reteIcaRateOverride ??
+            buyerFiscalContext.icaRateOverride,
           cartItems,
         });
 

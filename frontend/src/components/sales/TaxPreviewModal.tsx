@@ -32,6 +32,26 @@ function formatTaxRate(
     : formatPercentage(rate);
 }
 
+const SALE_CONCEPT_LABELS: Record<
+  "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER",
+  string
+> = {
+  GOODS: "Bienes / Productos",
+  SERVICES: "Servicios",
+  HONORARIOS: "Honorarios",
+  ARRENDAMIENTOS: "Arrendamientos",
+  FOOD_BEVERAGES: "Comidas y bebidas",
+  OTHER: "Otro",
+};
+
+function saleConceptLabel(value?: string | null) {
+  return value
+    ? SALE_CONCEPT_LABELS[
+        value as "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER"
+      ] ?? "No calculado"
+    : "No calculado";
+}
+
 export default function TaxPreviewModal({
   open,
   sale,
@@ -54,6 +74,7 @@ export default function TaxPreviewModal({
   const [buyerDocumentNumber, setBuyerDocumentNumber] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
+  const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   
   // Fiscal responsibilities of the buyer
   const [buyerIsIvaResponsable, setBuyerIsIvaResponsable] = useState(false);
@@ -61,6 +82,7 @@ export default function TaxPreviewModal({
   const [buyerIsGranContribuyente, setBuyerIsGranContribuyente] = useState(false);
   const [buyerIsAutorretenedor, setBuyerIsAutorretenedor] = useState(false);
   const [buyerIsRegimenSimple, setBuyerIsRegimenSimple] = useState(false);
+  const [buyerRequiresElectronicInvoice, setBuyerRequiresElectronicInvoice] = useState(false);
 
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
@@ -73,6 +95,9 @@ export default function TaxPreviewModal({
   useEffect(() => {
     if (!sale) return;
     setBuyerName(initialContext?.buyerName || sale.customerName || "");
+    setReteIcaRateOverride(
+      initialContext?.reteIcaRateOverride ?? initialContext?.icaRateOverride ?? undefined,
+    );
     setBuyerDocumentNumber(initialContext?.buyerDocumentNumber || "");
     setBuyerEmail(initialContext?.buyerEmail || "");
     
@@ -89,7 +114,7 @@ export default function TaxPreviewModal({
     }
 
     // Set default concept based on sale type
-    if (initialContext) {
+    if (initialContext?.saleConcept) {
       setSaleConcept(initialContext.saleConcept);
     } else if (sale.type === "SERVICIO") {
       setSaleConcept("SERVICES");
@@ -102,6 +127,7 @@ export default function TaxPreviewModal({
     setBuyerIsGranContribuyente(initialContext?.buyerIsGranContribuyente ?? false);
     setBuyerIsAutorretenedor(initialContext?.buyerIsAutorretenedor ?? false);
     setBuyerIsRegimenSimple(initialContext?.buyerIsRegimenSimple ?? false);
+    setBuyerRequiresElectronicInvoice(initialContext?.buyerRequiresElectronicInvoice ?? false);
     setFiscalMunicipalityCode(initialContext?.fiscalMunicipalityCode || "");
     setPreview(null);
   }, [sale, initialContext]);
@@ -136,7 +162,9 @@ export default function TaxPreviewModal({
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
           buyerIsRegimenSimple,
+          buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
+          reteIcaRateOverride,
           saleConcept,
           cartItems,
         });
@@ -168,11 +196,16 @@ export default function TaxPreviewModal({
     buyerIsGranContribuyente,
     buyerIsAutorretenedor,
     buyerIsRegimenSimple,
+    buyerRequiresElectronicInvoice,
     fiscalMunicipalityCode,
+    reteIcaRateOverride,
     saleConcept,
   ]);
 
   if (!open || !sale) return null;
+
+  const effectiveSaleConcept = preview?.saleConceptUsed ?? saleConcept;
+  const mixedConcepts = Boolean(preview?.hasMixedConcepts || preview?.mixedConceptsWarning);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,7 +220,9 @@ export default function TaxPreviewModal({
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
       buyerIsRegimenSimple,
+      buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
+      reteIcaRateOverride,
       saleConcept,
     };
     onConfirm(context);
@@ -322,20 +357,28 @@ export default function TaxPreviewModal({
 
             {/* Concepto y Municipio */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-slate-500 uppercase">Concepto Venta</label>
-                <select
-                  value={saleConcept}
-                  onChange={(e) => setSaleConcept(e.target.value as any)}
-                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
-                >
-                  <option value="GOODS">Bienes / Productos</option>
-                  <option value="SERVICES">Servicios Generales</option>
-                  <option value="HONORARIOS">Honorarios</option>
-                  <option value="ARRENDAMIENTOS">Arrendamientos</option>
-                  <option value="FOOD_BEVERAGES">Consumo (Comidas)</option>
-                  <option value="OTHER">Otros Conceptos</option>
-                </select>
+              <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-semibold uppercase text-slate-500">Concepto fiscal</span>
+                    <div className="mt-1 text-xs font-bold text-slate-900">
+                      {saleConceptLabel(effectiveSaleConcept)}
+                    </div>
+                    <p className="mt-1 text-[10px] leading-snug text-slate-500">
+                      Calculado automaticamente segun los items agregados
+                    </p>
+                  </div>
+                  {mixedConcepts && (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-700">
+                      Conceptos mixtos
+                    </span>
+                  )}
+                </div>
+                {mixedConcepts && (
+                  <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-800">
+                    La venta contiene items con distinto tratamiento fiscal. Se usara el criterio calculado por el sistema.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -355,24 +398,68 @@ export default function TaxPreviewModal({
               </div>
             </div>
 
+            {/* Tarifa ReteICA y Régimen Simple */}
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-500 uppercase">ReteICA / ICA retenido (por mil)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Defecto (RUT)"
+                  value={reteIcaRateOverride !== undefined ? reteIcaRateOverride : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                    setReteIcaRateOverride(val);
+                  }}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-500 uppercase">Régimen Simple (Vendedor)</label>
+                <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-bold ${
+                  preview?.sellerIsSimpleRegime 
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
+                    : "border-slate-200 bg-slate-100 text-slate-600"
+                }`}>
+                  {preview?.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                </div>
+              </div>
+            </div>
+
             {/* Checkboxes Tributarios */}
             <div className="space-y-3 pt-3 border-t border-slate-100">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
-                Responsabilidades del Comprador
+                Contexto fiscal del comprador
               </span>
 
               <div className="space-y-2">
                 <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
-                    checked={buyerIsIvaResponsable}
-                    onChange={(e) => setBuyerIsIvaResponsable(e.target.checked)}
+                    checked={buyerType === "JURIDICA"}
+                    onChange={(e) => {
+                      const juridica = e.target.checked;
+                      setBuyerType(juridica ? "JURIDICA" : "NATURAL");
+                      setBuyerDocumentType(juridica ? "NIT" : "CC");
+                      if (!juridica) {
+                        setBuyerIsIvaResponsable(false);
+                        setBuyerIsRetenedor(false);
+                        setBuyerIsGranContribuyente(false);
+                        setBuyerIsAutorretenedor(false);
+                        setBuyerIsRegimenSimple(false);
+                        setBuyerRequiresElectronicInvoice(false);
+                      } else {
+                        setBuyerIsIvaResponsable(true);
+                      }
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
-                  <span>Responsable de IVA (48)</span>
+                  <span>Jurídica</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
                     checked={buyerIsRetenedor}
@@ -410,6 +497,16 @@ export default function TaxPreviewModal({
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Régimen Simple (RST - 47)</span>
+                </label>
+
+                <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                  <input
+                    type="checkbox"
+                    checked={buyerRequiresElectronicInvoice}
+                    onChange={(e) => setBuyerRequiresElectronicInvoice(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
+                  />
+                  <span>Facturación Electrónica</span>
                 </label>
               </div>
             </div>
@@ -510,6 +607,13 @@ export default function TaxPreviewModal({
                 </div>
 
                 {/* Warnings / Alerts */}
+                {preview.mixedConceptsWarning && (
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-700">
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5 text-amber-600" />
+                    <span>{preview.mixedConceptsWarning}</span>
+                  </div>
+                )}
+
                 {buyerIsRetenedor &&
                   fiscalMunicipalityCode &&
                   !withholdLines.some(l => l.taxType === "RETEICA") && (

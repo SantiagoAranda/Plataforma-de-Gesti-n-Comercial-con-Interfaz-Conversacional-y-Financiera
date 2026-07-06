@@ -22,9 +22,10 @@ export type SaleFiscalFormState = {
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
   buyerIsRegimenSimple: boolean;
-  withholdingSubjectIsDeclarante: boolean;
+  buyerRequiresElectronicInvoice: boolean;
   fiscalMunicipalityCode: string;
   saleConcept: BuyerFiscalContext["saleConcept"];
+  reteIcaRateOverride?: number;
 };
 
 export const DEFAULT_SALE_FISCAL_FORM: SaleFiscalFormState = {
@@ -38,9 +39,10 @@ export const DEFAULT_SALE_FISCAL_FORM: SaleFiscalFormState = {
   buyerIsGranContribuyente: false,
   buyerIsAutorretenedor: false,
   buyerIsRegimenSimple: false,
-  withholdingSubjectIsDeclarante: true,
+  buyerRequiresElectronicInvoice: false,
   fiscalMunicipalityCode: "",
   saleConcept: "GOODS",
+  reteIcaRateOverride: undefined,
 };
 
 export function buildBuyerFiscalContext(state: SaleFiscalFormState): BuyerFiscalContext {
@@ -55,9 +57,10 @@ export function buildBuyerFiscalContext(state: SaleFiscalFormState): BuyerFiscal
     buyerIsGranContribuyente: state.buyerIsGranContribuyente,
     buyerIsAutorretenedor: state.buyerIsAutorretenedor,
     buyerIsRegimenSimple: state.buyerIsRegimenSimple,
-    withholdingSubjectIsDeclarante: state.withholdingSubjectIsDeclarante,
+    buyerRequiresElectronicInvoice: state.buyerRequiresElectronicInvoice,
     fiscalMunicipalityCode: state.fiscalMunicipalityCode || null,
     saleConcept: state.saleConcept,
+    reteIcaRateOverride: state.reteIcaRateOverride,
   };
 }
 
@@ -77,12 +80,13 @@ export function saleFiscalStateFromSale(sale: Sale | null): SaleFiscalFormState 
       buyerIsGranContribuyente: Boolean(context.buyerIsGranContribuyente),
       buyerIsAutorretenedor: Boolean(context.buyerIsAutorretenedor),
       buyerIsRegimenSimple: Boolean(context.buyerIsRegimenSimple),
-      withholdingSubjectIsDeclarante:
-        context.withholdingSubjectIsDeclarante ?? true,
+      buyerRequiresElectronicInvoice: Boolean(context.buyerRequiresElectronicInvoice),
       fiscalMunicipalityCode: context.fiscalMunicipalityCode ?? "",
       saleConcept:
         context.saleConcept ??
         (sale?.type === "SERVICIO" ? "SERVICES" : "GOODS"),
+      reteIcaRateOverride:
+        context.reteIcaRateOverride ?? context.icaRateOverride ?? undefined,
     };
   }
 
@@ -116,11 +120,92 @@ function lineStatus(line: TaxPreviewLine) {
   return "Autorretencion";
 }
 
+function findTaxLine(lines: TaxPreviewLine[] | undefined, taxType: TaxPreviewLine["taxType"]) {
+  return lines?.find((line) => line.taxType === taxType && line.applied) ??
+    lines?.find((line) => line.taxType === taxType);
+}
+
+function taxValidationDescription(taxType: TaxPreviewLine["taxType"]) {
+  if (taxType === "RETEFUENTE") {
+    return "Depende del declarante del vendedor y del concepto fiscal de la venta.";
+  }
+  if (taxType === "RETEICA") {
+    return "Depende del municipio, actividad económica y comprador retenedor.";
+  }
+  if (taxType === "RETEIVA") {
+    return "Aplica según responsabilidad IVA y comprador retenedor.";
+  }
+  if (taxType === "AUTORRETENCION") {
+    return "Aplica según perfil del vendedor/autorretenedor.";
+  }
+  return "Validación tributaria de la venta.";
+}
+
+function RetentionValidationCard({
+  label,
+  line,
+}: {
+  label: string;
+  line?: TaxPreviewLine;
+}) {
+  const applied = Boolean(line?.applied);
+  const rate = line ? formatTaxRate(line.taxType, Number(line.rate)) : "0%";
+  const amount = line ? Number(line.taxAmount) : 0;
+
+  return (
+    <div className="rounded-xl border border-slate-100 bg-white p-3 text-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-slate-900">{label}</span>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${
+                applied
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {applied ? "Aplica" : "No aplica"}
+            </span>
+            <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-500">
+              {rate}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+            {line ? taxValidationDescription(line.taxType) : "No calculado"}
+          </p>
+          {!applied && line?.reason ? (
+            <p className="mt-1 text-[10px] text-slate-400">{line.reason}</p>
+          ) : null}
+        </div>
+        <span className="shrink-0 font-bold tabular-nums text-slate-900">
+          ${formatCop(amount)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function fiscalChipClass(active: boolean, readonly: boolean) {
   if (active) return "border-emerald-500 bg-emerald-50 text-emerald-800";
   return readonly
     ? "border-slate-100 bg-slate-50 text-slate-400"
     : "border-emerald-200 bg-white text-slate-700 hover:border-emerald-400";
+}
+
+const SALE_CONCEPT_LABELS: Record<NonNullable<SaleFiscalFormState["saleConcept"]>, string> = {
+  GOODS: "Bienes / Productos",
+  SERVICES: "Servicios",
+  HONORARIOS: "Honorarios",
+  ARRENDAMIENTOS: "Arrendamientos",
+  FOOD_BEVERAGES: "Comidas y bebidas",
+  OTHER: "Otro",
+};
+
+function saleConceptLabel(value?: string | null) {
+  return value
+    ? SALE_CONCEPT_LABELS[value as NonNullable<SaleFiscalFormState["saleConcept"]>] ?? "No calculado"
+    : "No calculado";
 }
 
 function summaryToPreview(summary: SaleFiscalSummary, taxLines?: TaxPreviewLine[] | null): TaxPreviewResponse {
@@ -136,30 +221,6 @@ function summaryToPreview(summary: SaleFiscalSummary, taxLines?: TaxPreviewLine[
     taxLines: taxLines ?? [],
     uvtValue: 0,
   };
-}
-
-function ConceptSelect({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: SaleFiscalFormState["saleConcept"];
-  disabled: boolean;
-  onChange: (value: SaleFiscalFormState["saleConcept"]) => void;
-}) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(event.target.value as SaleFiscalFormState["saleConcept"])}
-      className="h-10 w-full rounded-xl border border-slate-100 bg-white px-3 text-xs text-slate-700 outline-none focus:border-emerald-500 disabled:bg-slate-50 disabled:text-slate-400"
-    >
-      <option value="GOODS">Bienes / Productos</option>
-      <option value="SERVICES">Servicios</option>
-      <option value="HONORARIOS">Honorarios</option>
-      <option value="ARRENDAMIENTOS">Arrendamientos</option>
-    </select>
-  );
 }
 
 export default function SaleTaxPanel({
@@ -214,11 +275,13 @@ export default function SaleTaxPanel({
       next.buyerIsGranContribuyente = false;
       next.buyerIsAutorretenedor = false;
       next.buyerIsRegimenSimple = false;
+      next.buyerRequiresElectronicInvoice = false;
     }
     if (patch.buyerType === "JURIDICA") {
       next.buyerDocumentType = "NIT";
       next.buyerIsIvaResponsable = true;
-      next.buyerIsRetenedor = true;
+      next.buyerIsRetenedor = false;
+      next.buyerRequiresElectronicInvoice = false;
     }
     onChange(next);
   };
@@ -254,9 +317,9 @@ export default function SaleTaxPanel({
           buyerIsGranContribuyente: context.buyerIsGranContribuyente,
           buyerIsAutorretenedor: context.buyerIsAutorretenedor,
           buyerIsRegimenSimple: context.buyerIsRegimenSimple,
-          withholdingSubjectIsDeclarante:
-            context.withholdingSubjectIsDeclarante,
+          buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
+          reteIcaRateOverride: context.reteIcaRateOverride,
           saleConcept: context.saleConcept,
           cartItems: items
             .filter((item): item is { itemId: string; quantity: number } => Boolean(item.itemId))
@@ -283,6 +346,8 @@ export default function SaleTaxPanel({
     : 0;
 
   const missingReadonlyFiscal = readonly && !fiscalSummary;
+  const effectiveSaleConcept = preview?.saleConceptUsed ?? value.saleConcept;
+  const mixedConcepts = Boolean(preview?.hasMixedConcepts || preview?.mixedConceptsWarning);
 
   return (
     <section className={`space-y-3 ${className}`}>
@@ -383,12 +448,32 @@ export default function SaleTaxPanel({
                 placeholder="Correo"
                 className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <ConceptSelect
-                  value={value.saleConcept}
-                  disabled={readonly}
-                  onChange={(saleConcept) => update({ saleConcept })}
-                />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Concepto fiscal
+                      </span>
+                      <div className="mt-1 text-xs font-bold text-slate-900">
+                        {saleConceptLabel(effectiveSaleConcept)}
+                      </div>
+                      <p className="mt-1 text-[10px] leading-snug text-slate-500">
+                        Calculado automaticamente segun los items agregados.
+                      </p>
+                    </div>
+                    {mixedConcepts && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-700">
+                        Conceptos mixtos
+                      </span>
+                    )}
+                  </div>
+                  {mixedConcepts && (
+                    <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-800">
+                      La venta contiene items con distinto tratamiento fiscal. Se usara el criterio calculado por el sistema.
+                    </p>
+                  )}
+                </div>
                 <select
                   value={value.fiscalMunicipalityCode}
                   disabled={readonly}
@@ -403,33 +488,62 @@ export default function SaleTaxPanel({
                   ))}
                 </select>
               </div>
-              <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={value.withholdingSubjectIsDeclarante}
-                  disabled={readonly}
-                  onChange={(event) => update({ withholdingSubjectIsDeclarante: event.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
-                />
-                Declarante de renta
-              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ReteICA / ICA retenido (por mil)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Defecto (RUT)"
+                    value={value.reteIcaRateOverride !== undefined ? value.reteIcaRateOverride : ""}
+                    disabled={readonly}
+                    onChange={(event) => {
+                      const val = event.target.value === "" ? undefined : parseFloat(event.target.value);
+                      update({ reteIcaRateOverride: val });
+                    }}
+                    className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  />
+                </div>
+                {preview && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Régimen Simple</span>
+                    <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-bold ${
+                      preview.sellerIsSimpleRegime 
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
+                        : "border-slate-100 bg-slate-50 text-slate-600"
+                    }`}>
+                      {preview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
+            {value.buyerType === "JURIDICA" && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               {[
-                ["buyerIsIvaResponsable", "Responsable IVA (48)"],
-                ["buyerIsRetenedor", "Agente Retencion (07)"],
-                ["buyerIsGranContribuyente", "Gran Contrib. (13)"],
-                ["buyerIsAutorretenedor", "Autorretenedor (15)"],
-                ["buyerIsRegimenSimple", "Regimen Simple (47)"],
+                ["buyerIsRegimenSimple", "Regimen Simple"],
+                ["buyerType", "Juridica"],
+                ["buyerIsAutorretenedor", "Autorretenedor"],
+                ["buyerIsGranContribuyente", "Gran Contrib."],
               ].map(([key, label]) => {
-                const active = Boolean(value[key as keyof SaleFiscalFormState]);
+                const active =
+                  key === "buyerType"
+                    ? value.buyerType === "JURIDICA"
+                    : Boolean(value[key as keyof SaleFiscalFormState]);
                 return (
                   <button
                     key={key}
                     type="button"
                     disabled={readonly}
-                    onClick={() => update({ [key]: !active } as Partial<SaleFiscalFormState>)}
+                    onClick={() => {
+                      if (key === "buyerType") {
+                        update({ buyerType: active ? "NATURAL" : "JURIDICA" });
+                        return;
+                      }
+                      update({ [key]: !active } as Partial<SaleFiscalFormState>);
+                    }}
                     className={`min-h-9 rounded-xl border px-2 text-[10px] font-bold transition ${fiscalChipClass(active, readonly)}`}
                   >
                     {label}
@@ -437,6 +551,7 @@ export default function SaleTaxPanel({
                 );
               })}
             </div>
+            )}
           </>
         )}
         </div>
@@ -444,14 +559,14 @@ export default function SaleTaxPanel({
 
       {!missingReadonlyFiscal && (
         <>
-          <div className="rounded-2xl bg-slate-950 p-4 text-xs text-slate-300 shadow-sm">
+          <div className="rounded-2xl border border-slate-100 bg-white p-4 text-xs text-slate-600 shadow-sm">
             {loading && !preview ? (
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
                 Calculando liquidacion...
               </div>
             ) : error ? (
-              <div className="flex items-start gap-2 text-rose-200">
+              <div className="flex items-start gap-2 text-rose-600">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 {error}
               </div>
@@ -462,8 +577,14 @@ export default function SaleTaxPanel({
                     No hay RUT fiscal configurado. La venta se confirmara sin calculo tributario.
                   </div>
                 )}
-                <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  Liquidacion detallada en tiempo real
+                {preview.mixedConceptsWarning && (
+                  <div className="mb-3 rounded-xl border border-amber-300/20 bg-amber-500/10 p-3 text-amber-200 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+                    <span>{preview.mixedConceptsWarning}</span>
+                  </div>
+                )}
+                <div className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  Liquidación detallada en tiempo real
                 </div>
                 <div className="space-y-2">
                   <SummaryRow label="Subtotal" value={Number(preview.subtotal)} />
@@ -474,17 +595,40 @@ export default function SaleTaxPanel({
                   <SummaryRow label="ReteIVA" value={Number(preview.reteIvaTotal)} />
                   <SummaryRow label="Autorretencion" value={Number(preview.autoRetencionTotal)} />
                 </div>
-                <div className="mt-3 space-y-2 border-t border-white/10 pt-3 font-semibold text-white">
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 font-semibold text-slate-900">
                   <SummaryRow label="Total cobrado" value={Number(preview.subtotal) + chargedTotal} />
                   <SummaryRow label="Total retenido" value={withheldTotal} />
                 </div>
-                <div className="mt-4 flex items-end justify-between gap-4 border-t border-white/10 pt-4">
+                <div className="mt-4 flex items-end justify-between gap-4 border-t border-slate-100 pt-4">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     Neto recibido
                   </span>
-                  <span className="text-2xl font-bold text-emerald-400 tabular-nums">
+                  <span className="text-2xl font-black text-emerald-600 tabular-nums">
                     ${formatCop(Number(preview.netReceived))}
                   </span>
+                </div>
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    Validación de retenciones
+                  </div>
+                  <div className="space-y-2">
+                    <RetentionValidationCard
+                      label="ReteFuente"
+                      line={findTaxLine(preview.taxLines, "RETEFUENTE")}
+                    />
+                    <RetentionValidationCard
+                      label="ReteICA"
+                      line={findTaxLine(preview.taxLines, "RETEICA")}
+                    />
+                    <RetentionValidationCard
+                      label="ReteIVA"
+                      line={findTaxLine(preview.taxLines, "RETEIVA")}
+                    />
+                    <RetentionValidationCard
+                      label="Autorretención"
+                      line={findTaxLine(preview.taxLines, "AUTORRETENCION")}
+                    />
+                  </div>
                 </div>
               </>
             ) : (

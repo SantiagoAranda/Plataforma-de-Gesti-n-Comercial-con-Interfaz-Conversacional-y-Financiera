@@ -49,14 +49,27 @@ export class TaxPreviewDto {
 
   @IsOptional()
   @IsBoolean()
+  buyerRequiresElectronicInvoice?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   withholdingSubjectIsDeclarante?: boolean;
 
   @IsOptional()
   @IsString()
   fiscalMunicipalityCode?: string;
 
+  @IsOptional()
   @IsEnum(SaleConcept)
-  saleConcept!: SaleConcept;
+  saleConcept?: SaleConcept;
+
+  @IsOptional()
+  @IsNumber()
+  icaRateOverride?: number;
+
+  @IsOptional()
+  @IsNumber()
+  reteIcaRateOverride?: number;
 
   @IsArray()
   @ValidateNested({ each: true })

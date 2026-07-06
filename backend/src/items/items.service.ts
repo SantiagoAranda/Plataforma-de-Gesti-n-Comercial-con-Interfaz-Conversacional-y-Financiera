@@ -121,6 +121,7 @@ export class ItemsService {
               dto.type === 'PRODUCT' && dto.appliesImpoconsumo
                 ? dto.impoconsumoRate
                 : null,
+            saleConcept: dto.saleConcept ?? (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS'),
             description: dto.description?.trim() || null,
             minStock:
               dto.minStock === undefined
@@ -242,6 +243,7 @@ export class ItemsService {
           price: true,
           appliesImpoconsumo: true,
           impoconsumoRate: true,
+          saleConcept: true,
           type: true,
           status: true,
           inventoryMode: true,
@@ -452,6 +454,11 @@ export class ItemsService {
                 : dto.impoconsumoRate === undefined
                   ? undefined
                   : dto.impoconsumoRate,
+          saleConcept: dto.saleConcept !== undefined 
+            ? dto.saleConcept 
+            : dto.type !== undefined
+              ? (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS')
+              : undefined,
           description:
             dto.description === undefined
               ? undefined

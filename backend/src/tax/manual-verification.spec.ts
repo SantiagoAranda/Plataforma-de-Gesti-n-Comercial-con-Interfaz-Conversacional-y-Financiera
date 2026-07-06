@@ -388,6 +388,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     const buyerData = {
       buyerType: PersonType.JURIDICA,
       buyerName: 'Buyer Test',
+      buyerRequiresElectronicInvoice: true,
     };
 
     await service.freezeTaxCalculation(txMock as any, 'order-1', preview, buyerData);
@@ -399,6 +400,25 @@ describe('Manual Verification of Colombian Tax Module', () => {
     expect(createdLines.length).toBe(2);
     expect(createdLines[0].applied).toBe(true);
     expect(createdLines[1].applied).toBe(false);
+    expect(txMock.orderFiscalContext.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          buyerRequiresElectronicInvoice: true,
+        }),
+        update: expect.objectContaining({
+          buyerRequiresElectronicInvoice: true,
+        }),
+      }),
+    );
+    expect(txMock.taxCalculationSnapshot.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          buyerFiscal: expect.objectContaining({
+            buyerRequiresElectronicInvoice: true,
+          }),
+        }),
+      }),
+    );
   });
 
   it('9. AccountingMovement cuadrado por originType=ORDER y originId=orderId - should assert balanced entries and throw on desbalance', async () => {
@@ -510,5 +530,129 @@ describe('Manual Verification of Colombian Tax Module', () => {
       accountingService.postOrderMovements(txMock, 'business-1', orderData)
     ).rejects.toThrow();
     console.log('Balance check verified: Throws exception when entries are unbalanced.');
+  });
+
+  it('10. saleConcept derivation - should prioritize SERVICES over GOODS and return warning on mixed concepts', async () => {
+    prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
+      id: 'profile-1',
+      responsibilities: [{ responsibility: { code: '48' } }],
+      isIncomeTaxDeclarant: true,
+    });
+    prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
+      uvt: new Prisma.Decimal(52374),
+      defaultVatRate: new Prisma.Decimal(0.19),
+      defaultImpoconsumoRate: new Prisma.Decimal(0.08),
+    });
+    prismaMock.item.findMany.mockResolvedValue([
+      { id: 'item-goods', price: new Prisma.Decimal(10000), appliesImpoconsumo: false, saleConcept: SaleConcept.GOODS },
+      { id: 'item-services', price: new Prisma.Decimal(20000), appliesImpoconsumo: false, saleConcept: SaleConcept.SERVICES },
+    ]);
+    prismaMock.salesTaxRule.findMany.mockResolvedValue([]);
+
+    const dto: TaxPreviewDto = {
+      buyerIsIvaResponsable: false,
+      buyerIsRetenedor: false,
+      buyerIsGranContribuyente: false,
+      buyerIsAutorretenedor: false,
+      buyerIsRegimenSimple: false,
+      cartItems: [
+        { itemId: 'item-goods', quantity: 1 },
+        { itemId: 'item-services', quantity: 1 },
+      ],
+    };
+
+    const result = await service.calculateTaxPreview('business-1', dto);
+    console.log('--- TEST 10: Derivación saleConcept mixto ---');
+    console.log('saleConceptUsed:', result.saleConceptUsed);
+    console.log('hasMixedConcepts:', result.hasMixedConcepts);
+    console.log('mixedConceptsWarning:', result.mixedConceptsWarning);
+
+    expect(result.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(result.hasMixedConcepts).toBe(true);
+    expect(result.mixedConceptsWarning).toContain('Se detectaron múltiples conceptos fiscales');
+  });
+
+  it('11. icaRateOverride - should apply ReteICA if override is specified and > 0, bypassing buyer checks', async () => {
+    prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
+      id: 'profile-1',
+      personType: PersonType.JURIDICA,
+      responsibilities: [{ responsibility: { code: '48' } }],
+    });
+    prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
+      uvt: new Prisma.Decimal(52374),
+      defaultVatRate: new Prisma.Decimal(0.19),
+      defaultImpoconsumoRate: new Prisma.Decimal(0.08),
+    });
+    prismaMock.item.findMany.mockResolvedValue([
+      { id: 'item-1', price: new Prisma.Decimal(1000000), appliesImpoconsumo: false, saleConcept: SaleConcept.GOODS },
+    ]);
+    prismaMock.salesTaxRule.findMany.mockResolvedValue([]);
+
+    const dto: TaxPreviewDto = {
+      buyerIsIvaResponsable: false,
+      buyerIsRetenedor: false,
+      buyerIsGranContribuyente: false,
+      buyerIsAutorretenedor: false,
+      buyerIsRegimenSimple: false,
+      icaRateOverride: 5, // 5 por mil -> 0.005
+      cartItems: [{ itemId: 'item-1', quantity: 1 }],
+    };
+
+    const result = await service.calculateTaxPreview('business-1', dto);
+    console.log('--- TEST 11: icaRateOverride ---');
+    const icaLine = result.taxLines.find(l => l.taxType === TaxType.RETEICA);
+    console.log('reteIca applied:', icaLine?.applied);
+    console.log('reteIca rate:', icaLine?.rate.toString());
+    console.log('reteIca taxAmount:', icaLine?.taxAmount.toString());
+
+    expect(icaLine?.applied).toBe(true);
+    expect(icaLine?.rate.toNumber()).toBe(0.005);
+    expect(icaLine?.taxAmount.toNumber()).toBe(5000); // 1000000 * 0.005
+  });
+
+  it('12. ReteICA default by personType - Natural = 0, Juridica = config or 9.66', async () => {
+    prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
+      uvt: new Prisma.Decimal(52374),
+      defaultVatRate: new Prisma.Decimal(0.19),
+      defaultImpoconsumoRate: new Prisma.Decimal(0.08),
+    });
+    prismaMock.item.findMany.mockResolvedValue([
+      { id: 'item-1', price: new Prisma.Decimal(1000000), appliesImpoconsumo: false, saleConcept: SaleConcept.GOODS },
+    ]);
+    prismaMock.salesTaxRule.findMany.mockResolvedValue([]);
+    prismaMock.municipalityIcaRate.findFirst.mockResolvedValue(null);
+
+    // Vendedor es Persona Natural
+    prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
+      id: 'profile-1',
+      personType: PersonType.NATURAL,
+      responsibilities: [{ responsibility: { code: '48' } }],
+    });
+
+    const dtoNatural: TaxPreviewDto = {
+      buyerIsIvaResponsable: true,
+      buyerIsRetenedor: true,
+      buyerIsGranContribuyente: true,
+      buyerIsAutorretenedor: false,
+      buyerIsRegimenSimple: false,
+      fiscalMunicipalityCode: '11001',
+      cartItems: [{ itemId: 'item-1', quantity: 1 }],
+    };
+
+    const resultNatural = await service.calculateTaxPreview('business-1', dtoNatural);
+    console.log('--- TEST 12: ReteICA Persona Natural vs Juridica ---');
+    console.log('Natural ReteICA total:', resultNatural.reteIcaTotal.toNumber());
+    expect(resultNatural.reteIcaTotal.toNumber()).toBe(0);
+
+    // Vendedor es Persona Jurídica
+    prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
+      id: 'profile-1',
+      personType: PersonType.JURIDICA,
+      responsibilities: [{ responsibility: { code: '48' } }],
+    });
+
+    const resultJuridica = await service.calculateTaxPreview('business-1', dtoNatural);
+    console.log('Juridica ReteICA total:', resultJuridica.reteIcaTotal.toNumber());
+    expect(resultJuridica.reteIcaTotal.toNumber()).toBe(9660);
   });
 });
