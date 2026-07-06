@@ -27,6 +27,15 @@ export type SimpleTaxAppliedBracket = {
   rate: number | string;
 };
 
+export type SimpleTaxIncludedSale = {
+  id: string;
+  displayNumber?: string | null;
+  customerName?: string | null;
+  fiscalDate: string;
+  subtotal: number;
+  status: string;
+};
+
 export type SimpleTaxCalculation = {
   id?: string;
   status?: "DRAFT" | "CALCULATED" | "POSTED";
@@ -34,6 +43,7 @@ export type SimpleTaxCalculation = {
   periodNumber: number;
   periodStart: string;
   periodEnd: string;
+  uvtValue?: number;
   salesGrossIncome: number;
   manualGrossIncome: number;
   excludedIncome: number;
@@ -51,7 +61,10 @@ export type SimpleTaxCalculation = {
   bracket?: SimpleTaxAppliedBracket | null;
   calculationSnapshot?: {
     bracket?: SimpleTaxAppliedBracket | null;
+    includedSales?: SimpleTaxIncludedSale[];
   } | null;
+  includedSales?: SimpleTaxIncludedSale[];
+  calculatedAt?: string;
   warnings?: string[];
 };
 

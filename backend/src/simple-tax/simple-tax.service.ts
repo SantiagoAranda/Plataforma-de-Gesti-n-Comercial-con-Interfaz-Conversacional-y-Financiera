@@ -24,6 +24,15 @@ type CalculationInput = {
   notes?: string | null;
 };
 
+type IncludedSale = {
+  id: string;
+  displayNumber: string | null;
+  customerName: string | null;
+  fiscalDate: string;
+  subtotal: number;
+  status: string;
+};
+
 @Injectable()
 export class SimpleTaxService {
   constructor(private readonly prisma: PrismaService) {}
@@ -194,11 +203,12 @@ export class SimpleTaxService {
     }
 
     const periodRange = this.getBimonthlyRange(input.taxYear, input.periodNumber);
-    const salesGrossIncome = await this.calculateSalesGrossIncome(
+    const salesSummary = await this.calculateSalesGrossIncome(
       businessId,
       periodRange.start,
       periodRange.endExclusive,
     );
+    const salesGrossIncome = salesSummary.total;
     const manualGrossIncome = this.toNonNegativeDecimal(input.manualGrossIncome);
     const excludedIncome = this.toNonNegativeDecimal(input.excludedIncome);
     const electronicPaymentsIncome = this.toNonNegativeDecimal(
@@ -265,6 +275,9 @@ export class SimpleTaxService {
         upperUvt: bracket.upperUvt,
         rate: bracket.rate,
       },
+      uvtValue: globalParams.uvt,
+      includedSales: salesSummary.includedSales,
+      calculatedAt: new Date(),
       warnings,
       notes: input.notes ?? null,
       response: this.serializeCalculation({
@@ -272,6 +285,7 @@ export class SimpleTaxService {
         periodNumber: input.periodNumber,
         periodStart: this.formatDateOnly(periodRange.start),
         periodEnd: this.formatDateOnly(periodRange.end),
+        uvtValue: globalParams.uvt,
         salesGrossIncome,
         manualGrossIncome,
         excludedIncome,
@@ -291,6 +305,8 @@ export class SimpleTaxService {
           upperUvt: bracket.upperUvt,
           rate: bracket.rate,
         },
+        includedSales: salesSummary.includedSales,
+        calculatedAt: new Date(),
         warnings,
       }),
     };
@@ -315,6 +331,12 @@ export class SimpleTaxService {
         ],
       },
       select: {
+        id: true,
+        documentNumber: true,
+        customerName: true,
+        status: true,
+        accountingPostedAt: true,
+        createdAt: true,
         total: true,
         fiscalContext: {
           select: {
@@ -324,10 +346,31 @@ export class SimpleTaxService {
       },
     });
 
-    return orders.reduce(
-      (acc, order) => acc.add(order.fiscalContext?.subtotal ?? order.total),
-      new Prisma.Decimal(0),
-    );
+    let total = new Prisma.Decimal(0);
+    const includedSales: IncludedSale[] = orders.map((order) => {
+      const subtotal = order.fiscalContext?.subtotal ?? order.total;
+      total = total.add(subtotal);
+      const fiscalDate = this.getSimpleTaxSaleDate(order);
+
+      return {
+        id: order.id,
+        displayNumber: order.documentNumber,
+        customerName: order.customerName,
+        fiscalDate: this.formatDateOnly(fiscalDate),
+        subtotal: this.toNumber(subtotal),
+        status: order.status,
+      };
+    });
+
+    return { total, includedSales };
+  }
+
+  private getSimpleTaxSaleDate(order: {
+    accountingPostedAt?: Date | null;
+    createdAt: Date;
+  }) {
+    // RST usa fecha fiscal de cierre/posteo cuando existe; fallback a createdAt para ventas historicas.
+    return order.accountingPostedAt ?? order.createdAt;
   }
 
   private async findBracket(taxYear: number, groupCode: string, baseUvt: Prisma.Decimal) {
@@ -408,6 +451,7 @@ export class SimpleTaxService {
       periodNumber: value.periodNumber,
       periodStart: value.periodStart,
       periodEnd: value.periodEnd,
+      uvtValue: this.toNumber(value.uvtValue),
       salesGrossIncome: this.toNumber(value.salesGrossIncome),
       manualGrossIncome: this.toNumber(value.manualGrossIncome),
       excludedIncome: this.toNumber(value.excludedIncome),
@@ -429,6 +473,11 @@ export class SimpleTaxService {
         upperUvt: value.bracket.upperUvt ? this.toNumber(value.bracket.upperUvt) : null,
         rate: this.toRateNumber(value.bracket.rate),
       },
+      includedSales: value.includedSales ?? [],
+      calculatedAt:
+        value.calculatedAt instanceof Date
+          ? value.calculatedAt.toISOString()
+          : value.calculatedAt,
       warnings: value.warnings ?? [],
     };
   }

@@ -42,6 +42,11 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function validateNonNegative(label: string, value: number) {
+  if (value < 0) return `${label} no puede ser negativo.`;
+  return null;
+}
+
 function Metric({
   label,
   value,
@@ -109,7 +114,14 @@ export default function RegimenSimplePage() {
   );
 
   useEffect(() => {
-    if (!selectedStoredPeriod) return;
+    if (!selectedStoredPeriod) {
+      setCalculation(null);
+      setManualGrossIncome("0");
+      setExcludedIncome("0");
+      setElectronicPaymentsIncome("0");
+      setPensionContributionsDiscount("0");
+      return;
+    }
 
     setManualGrossIncome(String(selectedStoredPeriod.manualGrossIncome ?? 0));
     setExcludedIncome(String(selectedStoredPeriod.excludedIncome ?? 0));
@@ -120,6 +132,12 @@ export default function RegimenSimplePage() {
 
   const appliedBracket =
     calculation?.bracket ?? calculation?.calculationSnapshot?.bracket ?? null;
+  const includedSales =
+    calculation?.includedSales ?? calculation?.calculationSnapshot?.includedSales ?? [];
+  const includedSalesTotal = includedSales.reduce(
+    (total, sale) => total + Number(sale.subtotal ?? 0),
+    0,
+  );
 
   const handleCalculate = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -127,13 +145,40 @@ export default function RegimenSimplePage() {
     setError(null);
 
     try {
+      if (!config?.enabled || !config.groupCode) {
+        throw new Error("Configura el grupo RST en RUT Digital antes de calcular.");
+      }
+
+      const manualAmount = parseNumber(manualGrossIncome);
+      const excludedAmount = parseNumber(excludedIncome);
+      const electronicAmount = parseNumber(electronicPaymentsIncome);
+      const pensionAmount = parseNumber(pensionContributionsDiscount);
+      const validationError =
+        validateNonNegative("Ingresos manuales", manualAmount) ??
+        validateNonNegative("Ingresos excluidos", excludedAmount) ??
+        validateNonNegative("Ingresos por pagos electronicos", electronicAmount) ??
+        validateNonNegative("Aportes pension empleador", pensionAmount);
+
+      if (validationError) throw new Error(validationError);
+
+      const estimatedSalesIncome = Number(calculation?.salesGrossIncome ?? 0);
+      const estimatedTaxableIncome = Math.max(
+        estimatedSalesIncome + manualAmount - excludedAmount,
+        0,
+      );
+      if (calculation && electronicAmount > estimatedTaxableIncome) {
+        throw new Error(
+          "Los ingresos por pagos electronicos no pueden superar la base gravable estimada.",
+        );
+      }
+
       const result = await calculateSimpleTaxPeriod({
         taxYear: Number(taxYear) || 2026,
         periodNumber,
-        manualGrossIncome: parseNumber(manualGrossIncome),
-        excludedIncome: parseNumber(excludedIncome),
-        electronicPaymentsIncome: parseNumber(electronicPaymentsIncome),
-        pensionContributionsDiscount: parseNumber(pensionContributionsDiscount),
+        manualGrossIncome: manualAmount,
+        excludedIncome: excludedAmount,
+        electronicPaymentsIncome: electronicAmount,
+        pensionContributionsDiscount: pensionAmount,
       });
       setCalculation(result);
       setPeriods((prev) => [
@@ -326,6 +371,45 @@ export default function RegimenSimplePage() {
                     </div>
                   )}
                 </div>
+
+                <details className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+                    Ventas incluidas en el bimestre
+                  </summary>
+                  <div className="mt-3 space-y-2">
+                    {includedSales.length > 0 ? (
+                      includedSales.map((sale) => (
+                        <div
+                          key={sale.id}
+                          className="grid grid-cols-[88px_minmax(0,1fr)_auto] gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs"
+                        >
+                          <span className="font-medium text-slate-500">
+                            {sale.fiscalDate}
+                          </span>
+                          <span className="min-w-0 truncate font-medium text-slate-700">
+                            {sale.customerName || sale.displayNumber || sale.id}
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {formatCurrency(sale.subtotal)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
+                        No hay ventas del sistema incluidas en este bimestre.
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm">
+                      <span className="font-medium text-slate-500">
+                        Total ventas del sistema
+                      </span>
+                      <span className="font-semibold text-slate-800">
+                        {formatCurrency(includedSalesTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </details>
               </>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">

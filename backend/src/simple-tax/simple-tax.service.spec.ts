@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Prisma, SimpleTaxPeriodType } from '@prisma/client';
+import { Prisma, SimpleTaxPeriodStatus, SimpleTaxPeriodType } from '@prisma/client';
 import { SimpleTaxService } from './simple-tax.service';
 
 const mockFn = () => jest.fn<(...args: any[]) => any>();
@@ -96,6 +96,12 @@ describe('SimpleTaxService', () => {
   function mockSales(amount: number) {
     prisma.order.findMany.mockResolvedValue([
       {
+        id: 'order-1',
+        documentNumber: 'FV-1',
+        customerName: 'Cliente Demo',
+        status: 'COMPLETED',
+        accountingPostedAt: new Date('2026-01-20T10:00:00.000Z'),
+        createdAt: new Date('2026-01-10T10:00:00.000Z'),
         total: new Prisma.Decimal(amount),
         fiscalContext: { subtotal: new Prisma.Decimal(amount) },
       },
@@ -223,6 +229,12 @@ describe('SimpleTaxService', () => {
   it('uses fiscal subtotal instead of order total, net received, IVA or costs', async () => {
     prisma.order.findMany.mockResolvedValue([
       {
+        id: 'order-1',
+        documentNumber: 'FV-1',
+        customerName: 'Cliente Demo',
+        status: 'COMPLETED',
+        accountingPostedAt: new Date('2026-01-20T10:00:00.000Z'),
+        createdAt: new Date('2026-01-10T10:00:00.000Z'),
         total: new Prisma.Decimal(1190000),
         fiscalContext: { subtotal: new Prisma.Decimal(1000000) },
       },
@@ -235,6 +247,14 @@ describe('SimpleTaxService', () => {
 
     expect(result.response.salesGrossIncome).toBe(1000000);
     expect(result.response.grossSimpleTax).toBe(16000);
+    expect(result.response.includedSales).toEqual([
+      expect.objectContaining({
+        id: 'order-1',
+        fiscalDate: '2026-01-20',
+        subtotal: 1000000,
+        status: 'COMPLETED',
+      }),
+    ]);
   });
 
   it('rejects electronic payments above taxable income', async () => {
@@ -258,8 +278,142 @@ describe('SimpleTaxService', () => {
           businessId,
           status: 'COMPLETED',
           archived: false,
+          OR: [
+            {
+              accountingPostedAt: {
+                gte: new Date('2026-01-01T00:00:00.000Z'),
+                lt: new Date('2026-03-01T00:00:00.000Z'),
+              },
+            },
+            {
+              accountingPostedAt: null,
+              createdAt: {
+                gte: new Date('2026-01-01T00:00:00.000Z'),
+                lt: new Date('2026-03-01T00:00:00.000Z'),
+              },
+            },
+          ],
         }),
       }),
     );
+  });
+
+  it('uses accountingPostedAt as fiscal date when available', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: 'order-2',
+        documentNumber: 'FV-2',
+        customerName: 'Cliente Fiscal',
+        status: 'COMPLETED',
+        accountingPostedAt: new Date('2026-02-28T23:00:00.000Z'),
+        createdAt: new Date('2026-01-05T10:00:00.000Z'),
+        total: new Prisma.Decimal(1190000),
+        fiscalContext: { subtotal: new Prisma.Decimal(1000000) },
+      },
+    ]);
+
+    const result = await service.calculate(businessId, { taxYear: 2026, periodNumber: 1 });
+
+    expect(result.response.includedSales[0]).toEqual(
+      expect.objectContaining({
+        id: 'order-2',
+        fiscalDate: '2026-02-28',
+        subtotal: 1000000,
+      }),
+    );
+  });
+
+  it('falls back to createdAt as fiscal date when accountingPostedAt is missing', async () => {
+    prisma.order.findMany.mockResolvedValue([
+      {
+        id: 'order-3',
+        documentNumber: null,
+        customerName: null,
+        status: 'COMPLETED',
+        accountingPostedAt: null,
+        createdAt: new Date('2026-01-15T10:00:00.000Z'),
+        total: new Prisma.Decimal(500000),
+        fiscalContext: { subtotal: new Prisma.Decimal(500000) },
+      },
+    ]);
+
+    const result = await service.calculate(businessId, { taxYear: 2026, periodNumber: 1 });
+
+    expect(result.response.includedSales[0].fiscalDate).toBe('2026-01-15');
+  });
+
+  it('persists a complete calculation snapshot with bracket, UVT and included sales', async () => {
+    mockSales(1000000);
+    prisma.simpleTaxPeriod.findUnique.mockResolvedValue(null);
+    prisma.simpleTaxPeriod.upsert.mockImplementation(async (args: any) => ({
+      id: 'period-1',
+      status: args.create.status,
+      ...args.create,
+    }));
+
+    const result = await service.calculateAndPersist(businessId, {
+      taxYear: 2026,
+      periodNumber: 1,
+    });
+
+    expect(result.id).toBe('period-1');
+    expect(prisma.simpleTaxPeriod.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.simpleTaxPeriod.upsert.mock.calls[0][0] as any;
+    expect(upsertArg.create.calculationSnapshot).toEqual(
+      expect.objectContaining({
+        taxYear: 2026,
+        periodNumber: 1,
+        uvtValue: 52374,
+        bracket: expect.objectContaining({ lowerUvt: 0, upperUvt: 1000, rate: 0.016 }),
+        includedSales: [
+          expect.objectContaining({
+            id: 'order-1',
+            fiscalDate: '2026-01-20',
+            subtotal: 1000000,
+            status: 'COMPLETED',
+          }),
+        ],
+        calculatedAt: expect.any(String),
+      }),
+    );
+  });
+
+  it('recalculates the same period through upsert without creating duplicates', async () => {
+    mockSales(1000000);
+    prisma.simpleTaxPeriod.findUnique.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.CALCULATED,
+    });
+    prisma.simpleTaxPeriod.upsert.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.CALCULATED,
+    });
+
+    await service.calculateAndPersist(businessId, { taxYear: 2026, periodNumber: 1 });
+
+    expect(prisma.simpleTaxPeriod.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          businessId_taxYear_periodNumber: {
+            businessId,
+            taxYear: 2026,
+            periodNumber: 1,
+          },
+        },
+      }),
+    );
+    expect(prisma.simpleTaxPeriod.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not recalculate posted periods', async () => {
+    prisma.simpleTaxPeriod.findUnique.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.POSTED,
+    });
+
+    await expect(
+      service.calculateAndPersist(businessId, { taxYear: 2026, periodNumber: 1 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.simpleTaxPeriod.upsert).not.toHaveBeenCalled();
   });
 });
