@@ -7,6 +7,7 @@ import {
   SimpleTaxFilingMode,
   SimpleTaxPeriodStatus,
   SimpleTaxPeriodType,
+  SimpleTaxAnnualReturnStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
@@ -16,6 +17,10 @@ import {
   SimpleTaxPaymentMethod,
   SimpleTaxUpdatePeriodDto,
 } from './dto/simple-tax-period.dto';
+import {
+  CalculateSimpleTaxAnnualReturnDto,
+  PaySimpleTaxAnnualReturnDto,
+} from './dto/simple-tax-annual.dto';
 
 const ELECTRONIC_PAYMENTS_DISCOUNT_RATE = new Prisma.Decimal('0.005');
 const SIMPLE_TAX_EXPENSE_PUC_CODE = '519595';
@@ -790,6 +795,371 @@ export class SimpleTaxService {
 
   private toRateNumber(value: Prisma.Decimal) {
     return Number(value.toDecimalPlaces(6).toString());
+  }
+
+  async calculateAnnualReturn(businessId: string, taxYear: number, payload: CalculateSimpleTaxAnnualReturnDto) {
+    const config = await this.prisma.businessSimpleTaxConfig.findUnique({
+      where: { businessId },
+    });
+    if (!config?.enabled || !config.groupCode) {
+      throw new BadRequestException('Configura el grupo del Regimen Simple antes de calcular.');
+    }
+
+    const hasResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    if (!hasResponsibility) {
+      throw new BadRequestException('El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.');
+    }
+
+    // Verify annual brackets exist for the year
+    const annualBrackets = await this.prisma.simpleTaxRateBracket.findMany({
+      where: {
+        taxYear,
+        periodType: SimpleTaxPeriodType.ANNUAL,
+        groupCode: config.groupCode,
+        active: true,
+      },
+    });
+
+    if (annualBrackets.length === 0) {
+      throw new BadRequestException('Falta parametrizar tabla anual RST para este año fiscal.');
+    }
+
+    const globalParams = await this.prisma.taxGlobalParameter.findUnique({
+      where: { year: taxYear },
+    });
+    if (!globalParams) {
+      throw new BadRequestException(`No existe UVT configurada para ${taxYear}.`);
+    }
+
+    const start = new Date(Date.UTC(taxYear, 0, 1, 0, 0, 0, 0));
+    const endExclusive = new Date(Date.UTC(taxYear + 1, 0, 1, 0, 0, 0, 0));
+    const salesSummary = await this.calculateSalesGrossIncome(businessId, start, endExclusive);
+
+    const grossIncome = salesSummary.total;
+    const manualGrossIncome = this.toNonNegativeDecimal(payload.manualGrossIncome);
+    const excludedIncome = this.toNonNegativeDecimal(payload.excludedIncome);
+    const electronicPaymentsIncome = this.toNonNegativeDecimal(payload.electronicPaymentsIncome);
+    const pensionContributionsDiscount = this.toNonNegativeDecimal(payload.pensionContributionsDiscount);
+
+    const taxableGrossIncome = Prisma.Decimal.max(
+      grossIncome.add(manualGrossIncome).sub(excludedIncome),
+      new Prisma.Decimal(0),
+    );
+
+    if (electronicPaymentsIncome.gt(taxableGrossIncome)) {
+      throw new BadRequestException(
+        'Los ingresos por pagos electronicos no pueden superar la base gravable.',
+      );
+    }
+
+    const taxableGrossIncomeUvt = taxableGrossIncome.div(globalParams.uvt);
+
+    const bracket = annualBrackets.find((candidate) => {
+      const lowerMatches = taxableGrossIncomeUvt.gte(candidate.lowerUvt);
+      const upperMatches = !candidate.upperUvt || taxableGrossIncomeUvt.lt(candidate.upperUvt);
+      return lowerMatches && upperMatches;
+    });
+
+    if (!bracket) {
+      throw new BadRequestException(
+        `No existe tarifa RST anual para el grupo ${config.groupCode} y base ${taxableGrossIncomeUvt.toFixed(2)} UVT.`,
+      );
+    }
+
+    const grossSimpleTax = taxableGrossIncome.mul(bracket.rate);
+    const electronicPaymentsDiscount = electronicPaymentsIncome.mul(ELECTRONIC_PAYMENTS_DISCOUNT_RATE);
+    const totalDiscounts = electronicPaymentsDiscount.add(pensionContributionsDiscount);
+    const netAnnualTax = Prisma.Decimal.max(grossSimpleTax.sub(totalDiscounts), new Prisma.Decimal(0));
+
+    // Sum netSimpleTax from bimonthly periods of the same year with status POSTED or PAID
+    const bimonthlyPeriods = await this.prisma.simpleTaxPeriod.findMany({
+      where: {
+        businessId,
+        taxYear,
+        status: { in: [SimpleTaxPeriodStatus.POSTED, SimpleTaxPeriodStatus.PAID] },
+      },
+    });
+
+    const bimonthlyAdvancesTotal = bimonthlyPeriods.reduce(
+      (sum, p) => sum.add(p.netSimpleTax),
+      new Prisma.Decimal(0),
+    );
+
+    const balanceDue = Prisma.Decimal.max(netAnnualTax.sub(bimonthlyAdvancesTotal), new Prisma.Decimal(0));
+    const balanceInFavor = Prisma.Decimal.max(bimonthlyAdvancesTotal.sub(netAnnualTax), new Prisma.Decimal(0));
+
+    const existing = await this.prisma.simpleTaxAnnualReturn.findUnique({
+      where: { businessId_taxYear: { businessId, taxYear } },
+    });
+    if (existing && existing.status !== SimpleTaxAnnualReturnStatus.CALCULATED) {
+      throw new BadRequestException('La declaracion anual RST ya esta presentada o pagada.');
+    }
+
+    const snapshot = {
+      taxYear,
+      salesGrossIncome: this.toNumber(grossIncome),
+      manualGrossIncome: this.toNumber(manualGrossIncome),
+      excludedIncome: this.toNumber(excludedIncome),
+      taxableGrossIncome: this.toNumber(taxableGrossIncome),
+      taxableGrossIncomeUvt: Number(taxableGrossIncomeUvt.toFixed(4)),
+      groupCode: config.groupCode,
+      groupName: bracket.groupName,
+      appliedRate: this.toRateNumber(bracket.rate),
+      grossSimpleTax: this.toNumber(grossSimpleTax),
+      electronicPaymentsIncome: this.toNumber(electronicPaymentsIncome),
+      electronicPaymentsDiscount: this.toNumber(electronicPaymentsDiscount),
+      pensionContributionsDiscount: this.toNumber(pensionContributionsDiscount),
+      totalDiscounts: this.toNumber(totalDiscounts),
+      bimonthlyAdvancesTotal: this.toNumber(bimonthlyAdvancesTotal),
+      netAnnualTax: this.toNumber(netAnnualTax),
+      balanceDue: this.toNumber(balanceDue),
+      balanceInFavor: this.toNumber(balanceInFavor),
+      bracket: {
+        lowerUvt: this.toNumber(bracket.lowerUvt),
+        upperUvt: bracket.upperUvt ? this.toNumber(bracket.upperUvt) : null,
+        rate: this.toRateNumber(bracket.rate),
+      },
+      uvtValue: this.toNumber(globalParams.uvt),
+      includedSales: salesSummary.includedSales,
+      includedPeriods: bimonthlyPeriods.map((p) => ({
+        id: p.id,
+        periodNumber: p.periodNumber,
+        netSimpleTax: this.toNumber(p.netSimpleTax),
+        status: p.status,
+      })),
+      calculatedAt: new Date().toISOString(),
+    };
+
+    const returnData = {
+      businessId,
+      taxYear,
+      status: SimpleTaxAnnualReturnStatus.CALCULATED,
+      filingMode: config.filingMode,
+      groupCode: config.groupCode,
+      groupName: bracket.groupName,
+      grossIncome,
+      manualGrossIncome,
+      excludedIncome,
+      taxableGrossIncome,
+      taxableGrossIncomeUvt,
+      grossSimpleTax,
+      electronicPaymentsIncome,
+      electronicPaymentsDiscount,
+      pensionContributionsDiscount,
+      totalDiscounts,
+      bimonthlyAdvancesTotal,
+      netAnnualTax,
+      balanceDue,
+      balanceInFavor,
+      calculationSnapshot: snapshot as any,
+    };
+
+    return this.prisma.simpleTaxAnnualReturn.upsert({
+      where: { businessId_taxYear: { businessId, taxYear } },
+      update: returnData,
+      create: returnData,
+    });
+  }
+
+  async getAnnualReturn(businessId: string, taxYear: number) {
+    return this.prisma.simpleTaxAnnualReturn.findUnique({
+      where: { businessId_taxYear: { businessId, taxYear } },
+    });
+  }
+
+  async listAnnualReturns(businessId: string) {
+    return this.prisma.simpleTaxAnnualReturn.findMany({
+      where: { businessId },
+      orderBy: { taxYear: 'desc' },
+    });
+  }
+
+  async postAnnualReturn(businessId: string, id: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
+        where: { id, businessId },
+      });
+      if (!annualReturn) throw new NotFoundException('Declaracion anual RST no encontrada.');
+
+      if (annualReturn.status !== SimpleTaxAnnualReturnStatus.CALCULATED) {
+        throw new BadRequestException('La declaracion anual RST ya esta presentada.');
+      }
+
+      const balanceDue = new Prisma.Decimal(annualReturn.balanceDue).toDecimalPlaces(2);
+      const accountingEntryId = `simple-tax-annual-post-${annualReturn.id}`;
+
+      if (balanceDue.gt(0)) {
+        await this.assertSimpleTaxPucAccounts(tx, [
+          SIMPLE_TAX_EXPENSE_PUC_CODE,
+          SIMPLE_TAX_PAYABLE_PUC_CODE,
+        ]);
+
+        const detail = `Declaración anual Régimen Simple ${annualReturn.taxYear}`;
+        await tx.accountingMovement.createMany({
+          data: [
+            {
+              businessId,
+              pucSubcuentaId: SIMPLE_TAX_EXPENSE_PUC_CODE,
+              amount: balanceDue,
+              nature: MovementNature.DEBIT,
+              date: new Date(Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999)),
+              detail: `${detail} - Gasto Impuesto régimen simple`,
+              originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
+              originId: annualReturn.id,
+              metadata: {
+                annualReturnId: annualReturn.id,
+                kind: 'POST',
+                taxYear: annualReturn.taxYear,
+              },
+            },
+            {
+              businessId,
+              pucSubcuentaId: SIMPLE_TAX_PAYABLE_PUC_CODE,
+              amount: balanceDue,
+              nature: MovementNature.CREDIT,
+              date: new Date(Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999)),
+              detail: `${detail} - Impuesto simple por pagar`,
+              originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
+              originId: annualReturn.id,
+              metadata: {
+                annualReturnId: annualReturn.id,
+                kind: 'POST',
+                taxYear: annualReturn.taxYear,
+              },
+            },
+          ],
+        });
+      }
+
+      return tx.simpleTaxAnnualReturn.update({
+        where: { id: annualReturn.id },
+        data: {
+          status: SimpleTaxAnnualReturnStatus.POSTED,
+          postedAt: now,
+          accountingEntryId: balanceDue.gt(0) ? accountingEntryId : null,
+        },
+      });
+    });
+  }
+
+  async payAnnualReturn(businessId: string, id: string, dto: PaySimpleTaxAnnualReturnDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
+        where: { id, businessId },
+      });
+      if (!annualReturn) throw new NotFoundException('Declaracion anual RST no encontrada.');
+
+      if (annualReturn.status === SimpleTaxAnnualReturnStatus.CALCULATED) {
+        throw new BadRequestException('La declaracion anual RST debe estar presentada antes de pagar.');
+      }
+      if (annualReturn.status === SimpleTaxAnnualReturnStatus.PAID) {
+        throw new BadRequestException('La declaracion anual RST ya fue pagada.');
+      }
+
+      const balanceDue = new Prisma.Decimal(annualReturn.balanceDue).toDecimalPlaces(2);
+      if (balanceDue.lte(0)) {
+        throw new BadRequestException('Las declaraciones con saldo a pagar cero no requieren pago.');
+      }
+
+      const paidAmount = new Prisma.Decimal(dto.paidAmount).toDecimalPlaces(2);
+      if (!paidAmount.eq(balanceDue)) {
+        throw new BadRequestException('Solo se permite pago total del impuesto RST.');
+      }
+
+      const paymentAccountCode =
+        dto.paymentMethod === SimpleTaxPaymentMethod.CASH
+          ? SIMPLE_TAX_CASH_PUC_CODE
+          : dto.paymentAccountCode || SIMPLE_TAX_BANK_PUC_CODE;
+
+      if (
+        dto.paymentMethod === SimpleTaxPaymentMethod.BANK &&
+        paymentAccountCode !== SIMPLE_TAX_BANK_PUC_CODE
+      ) {
+        throw new BadRequestException('La cuenta bancaria permitida es 111005.');
+      }
+
+      await this.assertSimpleTaxPucAccounts(tx, [
+        SIMPLE_TAX_PAYABLE_PUC_CODE,
+        paymentAccountCode,
+      ]);
+
+      const paymentDate = new Date(dto.paymentDate);
+      if (Number.isNaN(paymentDate.getTime())) {
+        throw new BadRequestException('Fecha de pago invalida.');
+      }
+
+      const paidAccountingEntryId = `simple-tax-annual-pay-${annualReturn.id}`;
+
+      const existingMovements = await tx.accountingMovement.count({
+        where: {
+          businessId,
+          originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
+          originId: annualReturn.id,
+          metadata: {
+            path: ['kind'],
+            equals: 'PAY',
+          },
+        },
+      });
+      if (existingMovements > 0) {
+        throw new BadRequestException('El pago RST ya tiene movimientos contables.');
+      }
+
+      const detail = `Pago declaración anual Régimen Simple ${annualReturn.taxYear}`;
+      await tx.accountingMovement.createMany({
+        data: [
+          {
+            businessId,
+            pucSubcuentaId: SIMPLE_TAX_PAYABLE_PUC_CODE,
+            amount: paidAmount,
+            nature: MovementNature.DEBIT,
+            date: paymentDate,
+            detail: `${detail} - Impuesto simple por pagar`,
+            originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
+            originId: annualReturn.id,
+            metadata: {
+              annualReturnId: annualReturn.id,
+              kind: 'PAY',
+              taxYear: annualReturn.taxYear,
+              paymentAccountCode,
+            },
+          },
+          {
+            businessId,
+            pucSubcuentaId: paymentAccountCode,
+            amount: paidAmount,
+            nature: MovementNature.CREDIT,
+            date: paymentDate,
+            detail:
+              dto.paymentMethod === SimpleTaxPaymentMethod.CASH
+                ? 'Pago Régimen Simple en efectivo'
+                : 'Pago Régimen Simple por banco',
+            originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
+            originId: annualReturn.id,
+            metadata: {
+              annualReturnId: annualReturn.id,
+              kind: 'PAY',
+              taxYear: annualReturn.taxYear,
+              paymentMethod: dto.paymentMethod,
+              paymentAccountCode,
+              notes: dto.notes ?? null,
+            },
+          },
+        ],
+      });
+
+      return tx.simpleTaxAnnualReturn.update({
+        where: { id: annualReturn.id },
+        data: {
+          status: SimpleTaxAnnualReturnStatus.PAID,
+          paidAt: paymentDate,
+          paidAmount,
+          paymentAccountCode,
+          paidAccountingEntryId,
+        },
+      });
+    });
   }
 
   private formatDateOnly(date: Date) {

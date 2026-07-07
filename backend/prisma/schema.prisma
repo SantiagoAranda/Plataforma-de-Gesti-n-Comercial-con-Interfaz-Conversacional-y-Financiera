@@ -126,6 +126,7 @@ enum AccountingMovementOriginType {
   PAYROLL_BENEFIT_PAYMENT
   PAYROLL_INITIAL_BALANCE
   PAYROLL_COMPLEMENTARY_RUN
+  SIMPLE_TAX_ANNUAL_RETURN
 }
 
 enum PaymentMethod {
@@ -169,6 +170,12 @@ enum SimpleTaxPeriodType {
 
 enum SimpleTaxPeriodStatus {
   DRAFT
+  CALCULATED
+  POSTED
+  PAID
+}
+
+enum SimpleTaxAnnualReturnStatus {
   CALCULATED
   POSTED
   PAID
@@ -296,6 +303,7 @@ model Business {
   salesTaxRules                   SalesTaxRule[]
   simpleTaxConfig                 BusinessSimpleTaxConfig?
   simpleTaxPeriods                SimpleTaxPeriod[]
+  simpleTaxAnnualReturns          SimpleTaxAnnualReturn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2026,4 +2034,41 @@ model TaxCalculationSnapshot {
   buyerFiscal    Json     // Snapshot JSON del contexto fiscal del comprador
   rawCalculation Json     // Log/Detalle de las fórmulas aplicadas
   createdAt      DateTime @default(now())
+}
+
+model SimpleTaxAnnualReturn {
+  id                           String                      @id @default(uuid())
+  businessId                   String
+  business                     Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxYear                      Int
+  status                       SimpleTaxAnnualReturnStatus @default(CALCULATED)
+  filingMode                   SimpleTaxFilingMode
+  groupCode                    String?
+  groupName                    String?
+  grossIncome                  Decimal                     @default(0) @db.Decimal(14, 2)
+  manualGrossIncome            Decimal                     @default(0) @db.Decimal(14, 2)
+  excludedIncome               Decimal                     @default(0) @db.Decimal(14, 2)
+  taxableGrossIncome           Decimal                     @default(0) @db.Decimal(14, 2)
+  taxableGrossIncomeUvt        Decimal                     @default(0) @db.Decimal(14, 4)
+  grossSimpleTax               Decimal                     @default(0) @db.Decimal(14, 2)
+  electronicPaymentsIncome     Decimal                     @default(0) @db.Decimal(14, 2)
+  electronicPaymentsDiscount   Decimal                     @default(0) @db.Decimal(14, 2)
+  pensionContributionsDiscount Decimal                     @default(0) @db.Decimal(14, 2)
+  totalDiscounts               Decimal                     @default(0) @db.Decimal(14, 2)
+  bimonthlyAdvancesTotal       Decimal                     @default(0) @db.Decimal(14, 2)
+  netAnnualTax                 Decimal                     @default(0) @db.Decimal(14, 2)
+  balanceDue                   Decimal                     @default(0) @db.Decimal(14, 2)
+  balanceInFavor               Decimal                     @default(0) @db.Decimal(14, 2)
+  calculationSnapshot          Json?
+  postedAt                     DateTime?
+  paidAt                       DateTime?
+  paidAmount                   Decimal?                    @db.Decimal(14, 2)
+  paymentAccountCode           String?
+  accountingEntryId            String?
+  paidAccountingEntryId        String?
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
+
+  @@unique([businessId, taxYear])
+  @@index([businessId, status])
 }

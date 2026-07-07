@@ -5,6 +5,7 @@ import {
   SimpleTaxFilingMode,
   SimpleTaxPeriodStatus,
   SimpleTaxPeriodType,
+  SimpleTaxAnnualReturnStatus,
 } from '@prisma/client';
 import { SimpleTaxService } from './simple-tax.service';
 
@@ -31,6 +32,13 @@ describe('SimpleTaxService', () => {
     },
     businessTaxProfile: {
       findUnique: mockFn(),
+    },
+    simpleTaxAnnualReturn: {
+      findMany: mockFn(),
+      findFirst: mockFn(),
+      findUnique: mockFn(),
+      upsert: mockFn(),
+      update: mockFn(),
     },
     simpleTaxPeriod: {
       findMany: mockFn(),
@@ -816,5 +824,381 @@ describe('SimpleTaxService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
     expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
+  });
+
+  describe('Consolidated Annual Simple Tax Return (RST)', () => {
+    beforeEach(() => {
+      prisma.simpleTaxAnnualReturn.findUnique.mockResolvedValue(null);
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue(null);
+      prisma.simpleTaxAnnualReturn.upsert.mockImplementation(async (args: any) => ({
+        id: 'annual-1',
+        ...args.create,
+      }));
+      prisma.simpleTaxAnnualReturn.update.mockImplementation(async (args: any) => ({
+        id: 'annual-1',
+        ...args.data,
+      }));
+    });
+
+    const mockAnnualRatesHelper = (groupCode = '2') => {
+      const group = groups[groupCode as keyof typeof groups];
+      prisma.simpleTaxRateBracket.findMany.mockResolvedValue(
+        group.rows.map(([lowerUvt, upperUvt, rate]) => ({
+          taxYear: 2026,
+          periodType: SimpleTaxPeriodType.ANNUAL,
+          groupCode,
+          groupName: group.name,
+          lowerUvt: new Prisma.Decimal(lowerUvt),
+          upperUvt: upperUvt ? new Prisma.Decimal(upperUvt) : null,
+          rate: new Prisma.Decimal(rate),
+          active: true,
+        })),
+      );
+    };
+
+    it('calculates gross income from completed orders in the fiscal year', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: 'order-1',
+          documentNumber: 'FV-1',
+          customerName: 'C1',
+          status: 'COMPLETED',
+          accountingPostedAt: new Date('2026-06-15T12:00:00Z'),
+          createdAt: new Date('2026-06-15T12:00:00Z'),
+          total: new Prisma.Decimal(10000000),
+          fiscalContext: { subtotal: new Prisma.Decimal(9000000) },
+        },
+      ]);
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([]);
+
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.grossIncome.toString()).toBe('9000000');
+    });
+
+    it('throws error if the business does not have simple tax responsibility 47', async () => {
+      prisma.businessTaxProfile.findUnique.mockResolvedValue({
+        responsibilities: [{ responsibility: { code: '10' } }],
+      });
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.');
+    });
+
+    it('throws error if business simple tax group is not configured', async () => {
+      prisma.businessSimpleTaxConfig.findUnique.mockResolvedValue({
+        enabled: true,
+        groupCode: null,
+      });
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('Configura el grupo del Regimen Simple antes de calcular.');
+    });
+
+    it('throws error if global params (UVT) for the tax year do not exist', async () => {
+      prisma.taxGlobalParameter.findUnique.mockResolvedValue(null);
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('No existe UVT configurada para 2026.');
+    });
+
+    it('throws custom error when no annual rates are configured for the year', async () => {
+      prisma.simpleTaxRateBracket.findMany.mockResolvedValue([]);
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('Falta parametrizar tabla anual RST para este año fiscal.');
+    });
+
+    it('applies electronic payments discount limited to taxable gross income', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([]);
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, {
+          taxYear: 2026,
+          electronicPaymentsIncome: 1000,
+        }),
+      ).rejects.toThrow('Los ingresos por pagos electronicos no pueden superar la base gravable.');
+    });
+
+    it('sums netSimpleTax of POSTED or PAID bimonthly periods as advances', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([
+        { id: 'p1', periodNumber: 1, netSimpleTax: new Prisma.Decimal(50000), status: SimpleTaxPeriodStatus.POSTED },
+        { id: 'p2', periodNumber: 2, netSimpleTax: new Prisma.Decimal(40000), status: SimpleTaxPeriodStatus.PAID },
+      ]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.bimonthlyAdvancesTotal.toString()).toBe('90000');
+    });
+
+    it('determines balance due when net annual tax exceeds bimonthly advances', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: 'o1',
+          documentNumber: 'FV-1',
+          customerName: 'C1',
+          status: 'COMPLETED',
+          accountingPostedAt: new Date('2026-06-15T12:00:00Z'),
+          createdAt: new Date('2026-06-15T12:00:00Z'),
+          total: new Prisma.Decimal(100000000),
+          fiscalContext: { subtotal: new Prisma.Decimal(100000000) },
+        },
+      ]);
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([
+        { id: 'p1', periodNumber: 1, netSimpleTax: new Prisma.Decimal(1000000), status: SimpleTaxPeriodStatus.POSTED },
+      ]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.netAnnualTax.toString()).toBe('2000000');
+      expect(result.balanceDue.toString()).toBe('1000000');
+      expect(result.balanceInFavor.toString()).toBe('0');
+    });
+
+    it('determines balance in favor when advances exceed net annual tax', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.order.findMany.mockResolvedValue([]);
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([
+        { id: 'p1', periodNumber: 1, netSimpleTax: new Prisma.Decimal(200000), status: SimpleTaxPeriodStatus.POSTED },
+      ]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.netAnnualTax.toString()).toBe('0');
+      expect(result.balanceDue.toString()).toBe('0');
+      expect(result.balanceInFavor.toString()).toBe('200000');
+    });
+
+    it('determines zero balance when net annual tax matches advances', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.order.findMany.mockResolvedValue([
+        {
+          id: 'o1',
+          documentNumber: 'FV-1',
+          customerName: 'C1',
+          status: 'COMPLETED',
+          accountingPostedAt: new Date('2026-06-15T12:00:00Z'),
+          createdAt: new Date('2026-06-15T12:00:00Z'),
+          total: new Prisma.Decimal(100000000),
+          fiscalContext: { subtotal: new Prisma.Decimal(100000000) },
+        },
+      ]);
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([
+        { id: 'p1', periodNumber: 1, netSimpleTax: new Prisma.Decimal(2000000), status: SimpleTaxPeriodStatus.POSTED },
+      ]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.netAnnualTax.toString()).toBe('2000000');
+      expect(result.balanceDue.toString()).toBe('0');
+      expect(result.balanceInFavor.toString()).toBe('0');
+    });
+
+    it('persists structured calculation snapshot including sales, advances and UVT info', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      const snapshot = result.calculationSnapshot as any;
+      expect(snapshot).toBeDefined();
+      expect(snapshot.taxYear).toBe(2026);
+      expect(snapshot.uvtValue).toBe(52374);
+      expect(snapshot.bracket.rate).toBe(0.016);
+    });
+
+    it('allows recalculating when the existing return is in CALCULATED status', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxAnnualReturn.findUnique.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.CALCULATED,
+      });
+      prisma.simpleTaxPeriod.findMany.mockResolvedValue([]);
+      const result = await service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 });
+      expect(result.status).toBe(SimpleTaxAnnualReturnStatus.CALCULATED);
+      expect(prisma.simpleTaxAnnualReturn.upsert).toHaveBeenCalled();
+    });
+
+    it('throws error when trying to calculate and the existing return is POSTED', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxAnnualReturn.findUnique.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+      });
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('La declaracion anual RST ya esta presentada o pagada.');
+    });
+
+    it('throws error when trying to calculate and the existing return is PAID', async () => {
+      mockAnnualRatesHelper('2');
+      prisma.simpleTaxAnnualReturn.findUnique.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.PAID,
+      });
+      await expect(
+        service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),
+      ).rejects.toThrow('La declaracion anual RST ya esta presentada o pagada.');
+    });
+
+    it('throws error if presenting a return that is not in CALCULATED status', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+        balanceDue: new Prisma.Decimal(0),
+      });
+      await expect(service.postAnnualReturn(businessId, 'annual-1')).rejects.toThrow(
+        'La declaracion anual RST ya esta presentada.',
+      );
+    });
+
+    it('creates accounting entries on post when balanceDue > 0', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.CALCULATED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+
+      const result = await service.postAnnualReturn(businessId, 'annual-1');
+      expect(result.status).toBe(SimpleTaxAnnualReturnStatus.POSTED);
+      expect(result.accountingEntryId).toBe('simple-tax-annual-post-annual-1');
+
+      expect(prisma.accountingMovement.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              pucSubcuentaId: '519595',
+              amount: new Prisma.Decimal(600000),
+              nature: 'DEBIT',
+              originType: 'SIMPLE_TAX_ANNUAL_RETURN',
+              originId: 'annual-1',
+              date: new Date(Date.UTC(2026, 11, 31, 23, 59, 59, 999)),
+            }),
+            expect.objectContaining({
+              pucSubcuentaId: '219595',
+              amount: new Prisma.Decimal(600000),
+              nature: 'CREDIT',
+              originType: 'SIMPLE_TAX_ANNUAL_RETURN',
+              originId: 'annual-1',
+              date: new Date(Date.UTC(2026, 11, 31, 23, 59, 59, 999)),
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('posts successfully without generating accounting movements when balanceDue is 0', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.CALCULATED,
+        balanceDue: new Prisma.Decimal(0),
+        taxYear: 2026,
+      });
+
+      const result = await service.postAnnualReturn(businessId, 'annual-1');
+      expect(result.status).toBe(SimpleTaxAnnualReturnStatus.POSTED);
+      expect(result.accountingEntryId).toBeNull();
+      expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    });
+
+    it('throws error if paying a return that is not POSTED', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.CALCULATED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+      await expect(
+        service.payAnnualReturn(businessId, 'annual-1', {
+          paymentDate: '2027-04-10',
+          paymentMethod: 'CASH' as any,
+          paidAmount: 600000,
+        }),
+      ).rejects.toThrow('La declaracion anual RST debe estar presentada antes de pagar.');
+    });
+
+    it('throws error if paidAmount does not match balanceDue exactly', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+      await expect(
+        service.payAnnualReturn(businessId, 'annual-1', {
+          paymentDate: '2027-04-10',
+          paymentMethod: 'CASH' as any,
+          paidAmount: 500000,
+        }),
+      ).rejects.toThrow('Solo se permite pago total del impuesto RST.');
+    });
+
+    it('throws error if paymentMethod is BANK but bank account code is not 111005', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+      await expect(
+        service.payAnnualReturn(businessId, 'annual-1', {
+          paymentDate: '2027-04-10',
+          paymentMethod: 'BANK' as any,
+          paymentAccountCode: '111001' as any,
+          paidAmount: 600000,
+        }),
+      ).rejects.toThrow('La cuenta bancaria permitida es 111005.');
+    });
+
+    it('creates correct accounting movements when paying with BANK', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+
+      const result = await service.payAnnualReturn(businessId, 'annual-1', {
+        paymentDate: '2027-04-10',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 600000,
+      });
+
+      expect(result.status).toBe(SimpleTaxAnnualReturnStatus.PAID);
+      expect(result.paidAmount.toString()).toBe('600000');
+      expect(result.paymentAccountCode).toBe('111005');
+
+      expect(prisma.accountingMovement.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [
+            expect.objectContaining({
+              pucSubcuentaId: '219595',
+              amount: new Prisma.Decimal(600000),
+              nature: 'DEBIT',
+              originType: 'SIMPLE_TAX_ANNUAL_RETURN',
+              originId: 'annual-1',
+            }),
+            expect.objectContaining({
+              pucSubcuentaId: '111005',
+              amount: new Prisma.Decimal(600000),
+              nature: 'CREDIT',
+              originType: 'SIMPLE_TAX_ANNUAL_RETURN',
+              originId: 'annual-1',
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('throws error if the payment has already generated accounting movements', async () => {
+      prisma.simpleTaxAnnualReturn.findFirst.mockResolvedValue({
+        id: 'annual-1',
+        status: SimpleTaxAnnualReturnStatus.POSTED,
+        balanceDue: new Prisma.Decimal(600000),
+        taxYear: 2026,
+      });
+      prisma.accountingMovement.count.mockResolvedValue(2);
+
+      await expect(
+        service.payAnnualReturn(businessId, 'annual-1', {
+          paymentDate: '2027-04-10',
+          paymentMethod: 'CASH' as any,
+          paidAmount: 600000,
+        }),
+      ).rejects.toThrow('El pago RST ya tiene movimientos contables.');
+    });
   });
 });

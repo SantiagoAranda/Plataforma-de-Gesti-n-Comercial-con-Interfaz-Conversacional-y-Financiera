@@ -20,6 +20,10 @@ import {
   SimpleTaxUpdatePeriodDto,
 } from './dto/simple-tax-period.dto';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
+import {
+  CalculateSimpleTaxAnnualReturnDto,
+  PaySimpleTaxAnnualReturnDto,
+} from './dto/simple-tax-annual.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('tax/simple')
@@ -70,6 +74,35 @@ export class SimpleTaxController {
     @Body() dto: SimpleTaxPayPeriodDto,
   ) {
     return this.simpleTaxService.payPeriod(req.user.businessId, id, dto);
+  }
+
+  @Get('annual')
+  listAnnual(@Req() req: any) {
+    return this.simpleTaxService.listAnnualReturns(req.user.businessId);
+  }
+
+  @Get('annual/:year')
+  getAnnual(@Req() req: any, @Param('year') year: string) {
+    return this.simpleTaxService.getAnnualReturn(req.user.businessId, Number(year));
+  }
+
+  @Post('annual/calculate')
+  calculateAnnual(@Req() req: any, @Body() dto: CalculateSimpleTaxAnnualReturnDto) {
+    return this.simpleTaxService.calculateAnnualReturn(req.user.businessId, Number(dto.taxYear), dto);
+  }
+
+  @Patch('annual/:id/post')
+  postAnnual(@Req() req: any, @Param('id') id: string) {
+    return this.simpleTaxService.postAnnualReturn(req.user.businessId, id);
+  }
+
+  @Patch('annual/:id/pay')
+  payAnnual(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: PaySimpleTaxAnnualReturnDto,
+  ) {
+    return this.simpleTaxService.payAnnualReturn(req.user.businessId, id, dto);
   }
 }
 
