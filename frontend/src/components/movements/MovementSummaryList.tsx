@@ -59,11 +59,23 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
 
   const iva = Math.abs(Math.round(impuestos.iva || 0));
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
-  const provisionesImpuesto = iva + retenciones;
+  const simpleTaxProjection = metrics.simpleTaxProjection;
+  const hasConfiguredSimpleTax =
+    Boolean(simpleTaxProjection?.enabled && simpleTaxProjection.configured);
+  const isOpenSimpleTaxEstimate = simpleTaxProjection?.source === "MONTHLY_MIN_RATE";
+  const provisionesImpuesto = isOpenSimpleTaxEstimate
+    ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
+    : hasConfiguredSimpleTax
+      ? 0
+      : iva + retenciones;
 
-  const utilidadLiquida = utilidadAntesDeImpuestos - provisionesImpuesto;
+  const utilidadLiquida = hasConfiguredSimpleTax
+    ? Math.round(simpleTaxProjection?.netProfitAfterSimpleTax ?? utilidadAntesDeImpuestos - provisionesImpuesto)
+    : utilidadAntesDeImpuestos - provisionesImpuesto;
 
-  const reservaLegal = Math.abs(Math.round(impuestos.fondosReserva || 0));
+  const reservaLegal = hasConfiguredSimpleTax
+    ? 0
+    : Math.abs(Math.round(impuestos.fondosReserva || 0));
 
   // ¡AQUÍ SE CLAVA EL CIERRE CONSTANTE!
   const utilidadDelEjercicio = utilidadLiquida - reservaLegal;
@@ -268,9 +280,11 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
 
         {/* 2. ÍTEMS NORMALES Y DE FLUJO INTERMEDIO */}
         <div className="space-y-4">
-          <ProfitRow label="Provisiones Impuesto de Renta" value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
-          <ProfitRow label="Utilidad Líquida"              value={utilidadLiquida}       pct={rawPctUtilidadLiquida}        isDeduction={false} />
-          <ProfitRow label="Reserva Legal"                 value={reservaLegal}            pct={pctReservaLegal}           isDeduction={true} />
+          <ProfitRow label={isOpenSimpleTaxEstimate ? "Régimen Simple estimado" : hasConfiguredSimpleTax ? "RST ya reflejado en contabilidad" : "Provisiones Impuesto de Renta"} value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
+          <ProfitRow label={isOpenSimpleTaxEstimate ? "Utilidad después de RST" : hasConfiguredSimpleTax ? "Utilidad contable" : "Utilidad Líquida"}              value={utilidadLiquida}       pct={rawPctUtilidadLiquida}        isDeduction={false} />
+          {!hasConfiguredSimpleTax && (
+            <ProfitRow label="Reserva Legal"                 value={reservaLegal}            pct={pctReservaLegal}           isDeduction={true} />
+          )}
         </div>
 
         {/* 3. LÍNEA DE SEPARACIÓN ANTES DE LA UTILIDAD DEL EJERCICIO */}

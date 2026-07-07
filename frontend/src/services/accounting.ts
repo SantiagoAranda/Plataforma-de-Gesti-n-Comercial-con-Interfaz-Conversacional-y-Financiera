@@ -69,6 +69,27 @@ export type AccountingSummary = {
     retenciones: number;
     fondosReserva: number;
   };
+  simpleTaxProjection?: {
+    enabled: boolean;
+    configured: boolean;
+    taxYear: number;
+    periodNumber: number;
+    month: number;
+    periodStart: string;
+    periodEnd: string;
+    projectionStart: string;
+    projectionEnd: string;
+    groupCode: string;
+    groupName?: string;
+    estimatedRate: number;
+    grossIncomeBase: number;
+    estimatedSimpleTax: number;
+    netProfitBeforeSimpleTax: number;
+    netProfitAfterSimpleTax: number;
+    source: "MONTHLY_MIN_RATE" | "POSTED_ACTUAL";
+    periodStatus?: "DRAFT" | "CALCULATED" | "POSTED" | "PAID";
+    message?: string;
+  };
 };
 
 export type ManualPaidOutflowType = "EXPENSE" | "COST";

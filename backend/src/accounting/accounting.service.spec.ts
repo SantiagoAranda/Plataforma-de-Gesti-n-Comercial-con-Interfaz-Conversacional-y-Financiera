@@ -544,3 +544,250 @@ describe('AccountingService manual paid expense postings', () => {
     expect(tx.accountingMovement.create).not.toHaveBeenCalled();
   });
 });
+
+describe('AccountingService simple tax dashboard projection', () => {
+  const businessId = 'business-1';
+
+  function createSummaryService(overrides: Record<string, any> = {}) {
+    let orderFindManyCalls = 0;
+    const prisma = {
+      order: {
+        findMany: jest.fn(() => {
+          orderFindManyCalls += 1;
+          return Promise.resolve(orderFindManyCalls === 1 ? [] : overrides.orders ?? []);
+        }),
+      },
+      reservation: {
+        findMany: jest.fn(() => Promise.resolve([])),
+      },
+      accountingMovement: {
+        findMany: jest.fn(() => Promise.resolve(overrides.movements ?? [])),
+      },
+      businessTaxProfile: {
+        findUnique: jest.fn(() =>
+          Promise.resolve(
+            overrides.hasSimpleResponsibility === false
+              ? null
+              : {
+                  responsibilities: [
+                    { responsibility: { code: '47' } },
+                  ],
+                },
+          ),
+        ),
+      },
+      businessSimpleTaxConfig: {
+        findUnique: jest.fn(() =>
+          Promise.resolve(overrides.config ?? {
+            enabled: true,
+            taxYear: 2026,
+            groupCode: '2',
+          }),
+        ),
+      },
+      simpleTaxPeriod: {
+        findUnique: jest.fn(() => Promise.resolve(overrides.period ?? null)),
+        update: jest.fn(),
+        upsert: jest.fn(),
+      },
+      simpleTaxRateBracket: {
+        findFirst: jest.fn(() =>
+          Promise.resolve(overrides.bracket ?? {
+            groupCode: '2',
+            groupName: 'Grupo 2',
+            lowerUvt: new Prisma.Decimal(0),
+            upperUvt: new Prisma.Decimal(1000),
+            rate: new Prisma.Decimal('0.016'),
+          }),
+        ),
+      },
+    } as any;
+
+    return { service: new AccountingService(prisma), prisma };
+  }
+
+  const saleMovement = (amount: number) => ({
+    pucCuentaCode: null,
+    pucSubcuentaId: '413595',
+    amount: new Prisma.Decimal(amount),
+    nature: 'CREDIT',
+  });
+
+  const movement = (code: string, nature: 'DEBIT' | 'CREDIT', amount: number) => ({
+    pucCuentaCode: null,
+    pucSubcuentaId: code,
+    amount: new Prisma.Decimal(amount),
+    nature,
+  });
+
+  const completedOrder = (subtotal: number, total = subtotal) => ({
+    total: new Prisma.Decimal(total),
+    fiscalContext: { subtotal: new Prisma.Decimal(subtotal) },
+  });
+
+  it('does not return a simple tax projection for non-RST businesses', async () => {
+    const { service } = createSummaryService({
+      hasSimpleResponsibility: false,
+      movements: [saleMovement(20000000)],
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toBeUndefined();
+    expect(result.balanceTotal).toBe(11700000);
+  });
+
+  it('projects monthly RST with the minimum group rate and avoids the 35% provision', async () => {
+    const { service, prisma } = createSummaryService({
+      movements: [saleMovement(20000000)],
+      orders: [completedOrder(20000000, 23800000)],
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-15T00:00:00',
+      to: '2026-01-15T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        configured: true,
+        taxYear: 2026,
+        month: 1,
+        periodNumber: 1,
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        estimatedRate: 0.016,
+        grossIncomeBase: 20000000,
+        estimatedSimpleTax: 320000,
+        netProfitBeforeSimpleTax: 20000000,
+        netProfitAfterSimpleTax: 19680000,
+        source: 'MONTHLY_MIN_RATE',
+      }),
+    );
+    expect(result.balanceTotal).toBe(19680000);
+    expect(result.impuestosReservas.iva).toBe(0);
+    expect(result.impuestosReservas.retenciones).toBe(320000);
+    expect(result.impuestosReservas.fondosReserva).toBe(0);
+    expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
+    expect(prisma.simpleTaxPeriod.upsert).not.toHaveBeenCalled();
+  });
+
+  it('uses fiscal subtotal for the RST base instead of total with IVA', async () => {
+    const { service } = createSummaryService({
+      movements: [saleMovement(1190000)],
+      orders: [completedOrder(1000000, 1190000)],
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection?.grossIncomeBase).toBe(1000000);
+    expect(result.simpleTaxProjection?.estimatedSimpleTax).toBe(16000);
+  });
+
+  it('returns a configuration message for RST businesses without group', async () => {
+    const { service } = createSummaryService({
+      movements: [saleMovement(20000000)],
+      config: { enabled: true, taxYear: 2026, groupCode: null },
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        configured: false,
+        message: expect.stringContaining('Configura el grupo'),
+      }),
+    );
+    expect(result.balanceTotal).toBe(11700000);
+  });
+
+  it('uses posted period actual tax as information without duplicating the 519595 expense', async () => {
+    const { service } = createSummaryService({
+      movements: [
+        saleMovement(50000000),
+        movement('519595', 'DEBIT', 800000),
+        movement('219595', 'CREDIT', 800000),
+      ],
+      orders: [completedOrder(50000000)],
+      period: {
+        status: 'POSTED',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        appliedRate: new Prisma.Decimal('0.016'),
+        taxableGrossIncome: new Prisma.Decimal(50000000),
+        netSimpleTax: new Prisma.Decimal(800000),
+      },
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-03-01T00:00:00',
+      to: '2026-03-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        source: 'POSTED_ACTUAL',
+        periodStatus: 'POSTED',
+        estimatedRate: 0.016,
+        grossIncomeBase: 50000000,
+        estimatedSimpleTax: 800000,
+        netProfitBeforeSimpleTax: 49200000,
+        netProfitAfterSimpleTax: 49200000,
+      }),
+    );
+    expect(result.gastosAdministrativos.nominaSueldos).toBe(480000);
+    expect(result.balanceTotal).toBe(49200000);
+    expect(result.impuestosReservas.iva).toBe(0);
+    expect(result.impuestosReservas.retenciones).toBe(0);
+    expect(result.impuestosReservas.fondosReserva).toBe(0);
+  });
+
+  it('keeps PAID payment movements out of profit and does not duplicate RST', async () => {
+    const { service } = createSummaryService({
+      movements: [
+        saleMovement(50000000),
+        movement('519595', 'DEBIT', 800000),
+        movement('219595', 'CREDIT', 800000),
+        movement('219595', 'DEBIT', 800000),
+        movement('111005', 'CREDIT', 800000),
+      ],
+      orders: [completedOrder(50000000)],
+      period: {
+        status: 'PAID',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        appliedRate: new Prisma.Decimal('0.016'),
+        taxableGrossIncome: new Prisma.Decimal(50000000),
+        netSimpleTax: new Prisma.Decimal(800000),
+      },
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-03-01T00:00:00',
+      to: '2026-03-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        source: 'POSTED_ACTUAL',
+        periodStatus: 'PAID',
+        estimatedSimpleTax: 800000,
+        netProfitBeforeSimpleTax: 49200000,
+        netProfitAfterSimpleTax: 49200000,
+      }),
+    );
+    expect(result.balanceTotal).toBe(49200000);
+    expect(result.impuestosReservas.retenciones).toBe(0);
+  });
+});

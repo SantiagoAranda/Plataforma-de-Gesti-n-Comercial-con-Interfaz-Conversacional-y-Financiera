@@ -7,7 +7,10 @@ import {
 import {
   AccountingMovementOriginType,
   MovementNature,
+  OrderStatus,
   Prisma,
+  SimpleTaxPeriodStatus,
+  SimpleTaxPeriodType,
   TaxDirection,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -41,6 +44,8 @@ const MANUAL_PAID_OUTFLOW_DEFAULTS = {
   cashPucCode: '110505',
   transferPucCode: '111005',
 } as const;
+
+const SIMPLE_TAX_RESPONSIBILITY_CODE = '47';
 
 type ExpenseGroupDefinition = {
   id: string;
@@ -1576,10 +1581,36 @@ export class AccountingService {
     const operatingProfit = grossProfit - operatingExpenses;
     const profitBeforeTax = operatingProfit + nonOperatingIncome - nonOperatingExpenses;
     
-    const taxProvision = profitBeforeTax > 0 ? profitBeforeTax * 0.35 : 0;
+    const simpleTaxProjection = await this.buildSimpleTaxProjection(
+      businessId,
+      q,
+      Math.round(profitBeforeTax),
+    );
+    const isOpenSimpleTaxEstimate =
+      simpleTaxProjection?.enabled &&
+      simpleTaxProjection.configured &&
+      simpleTaxProjection.source === 'MONTHLY_MIN_RATE';
+    const hasConfiguredSimpleTaxProjection =
+      simpleTaxProjection?.enabled && simpleTaxProjection.configured;
+
+    const taxProvision = isOpenSimpleTaxEstimate
+      ? simpleTaxProjection.estimatedSimpleTax
+      : hasConfiguredSimpleTaxProjection
+        ? 0
+        : profitBeforeTax > 0
+        ? profitBeforeTax * 0.35
+        : 0;
     const netIncome = profitBeforeTax - taxProvision;
-    const legalReserve = netIncome > 0 ? netIncome * 0.10 : 0;
+    const legalReserve = hasConfiguredSimpleTaxProjection
+      ? 0
+      : netIncome > 0
+        ? netIncome * 0.10
+        : 0;
     const netProfit = netIncome - legalReserve;
+    if (simpleTaxProjection?.source === 'POSTED_ACTUAL') {
+      simpleTaxProjection.netProfitBeforeSimpleTax = Math.round(netProfit);
+      simpleTaxProjection.netProfitAfterSimpleTax = Math.round(netProfit);
+    }
 
     return {
       balanceTotal: Math.round(netProfit),
@@ -1596,10 +1627,222 @@ export class AccountingService {
         serviciosFijos: Math.round(operatingExpenses * 0.15 + nonOperatingExpenses),
       },
       impuestosReservas: {
-        iva: Math.round(taxProvision * 0.50),
-        retenciones: Math.round(taxProvision * 0.50),
+        iva: isOpenSimpleTaxEstimate ? 0 : Math.round(taxProvision * 0.50),
+        retenciones: isOpenSimpleTaxEstimate
+          ? Math.round(taxProvision)
+          : Math.round(taxProvision * 0.50),
         fondosReserva: Math.round(legalReserve),
       },
+      simpleTaxProjection,
     };
+  }
+
+  private async buildSimpleTaxProjection(
+    businessId: string,
+    q: AccountingMovementsQueryDto,
+    netProfitBeforeSimpleTax: number,
+  ) {
+    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    if (!hasSimpleResponsibility) return undefined;
+
+    const projectionRange = this.resolveSimpleTaxProjectionRange(q);
+    const config = await this.prisma.businessSimpleTaxConfig.findUnique({
+      where: { businessId },
+    });
+
+    const periodNumber = this.getBimonthlyPeriodNumber(projectionRange.month);
+    const periodRange = this.getBimonthlyRange(projectionRange.taxYear, periodNumber);
+    const base = {
+      enabled: true,
+      configured: Boolean(config?.enabled && config.groupCode),
+      taxYear: projectionRange.taxYear,
+      periodNumber,
+      month: projectionRange.month,
+      periodStart: this.formatDateOnly(periodRange.start),
+      periodEnd: this.formatDateOnly(periodRange.end),
+      projectionStart: this.formatDateOnly(projectionRange.start),
+      projectionEnd: this.formatDateOnly(
+        new Date(projectionRange.endExclusive.getTime() - 1),
+      ),
+      groupCode: config?.groupCode ?? '',
+      groupName: undefined as string | undefined,
+      estimatedRate: 0,
+      grossIncomeBase: 0,
+      estimatedSimpleTax: 0,
+      netProfitBeforeSimpleTax,
+      netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
+      source: 'MONTHLY_MIN_RATE' as const,
+      periodStatus: undefined as SimpleTaxPeriodStatus | undefined,
+      message: undefined as string | undefined,
+    };
+
+    if (!config?.enabled || !config.groupCode) {
+      return {
+        ...base,
+        message: 'Configura el grupo del Regimen Simple para estimar el impuesto.',
+      };
+    }
+
+    const existingPeriod = await this.prisma.simpleTaxPeriod.findUnique({
+      where: {
+        businessId_taxYear_periodNumber: {
+          businessId,
+          taxYear: projectionRange.taxYear,
+          periodNumber,
+        },
+      },
+    });
+
+    if (
+      existingPeriod?.status === SimpleTaxPeriodStatus.POSTED ||
+      existingPeriod?.status === SimpleTaxPeriodStatus.PAID
+    ) {
+      const actualTax = Number(existingPeriod.netSimpleTax ?? 0);
+      return {
+        ...base,
+        configured: true,
+        groupCode: existingPeriod.groupCode || config.groupCode,
+        groupName: existingPeriod.groupName ?? undefined,
+        estimatedRate: Number(existingPeriod.appliedRate ?? 0),
+        grossIncomeBase: Number(existingPeriod.taxableGrossIncome ?? 0),
+        estimatedSimpleTax: Math.round(actualTax),
+        netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
+        source: 'POSTED_ACTUAL' as const,
+        periodStatus: existingPeriod.status,
+        message:
+          existingPeriod.status === SimpleTaxPeriodStatus.PAID
+            ? 'Periodo pagado. El gasto ya esta reflejado en Contabilidad.'
+            : 'Periodo cerrado. El gasto ya esta reflejado en Contabilidad.',
+      };
+    }
+
+    const bracket = await this.prisma.simpleTaxRateBracket.findFirst({
+      where: {
+        taxYear: projectionRange.taxYear,
+        periodType: SimpleTaxPeriodType.BIMONTHLY,
+        groupCode: config.groupCode,
+        active: true,
+      },
+      orderBy: { lowerUvt: 'asc' },
+    });
+
+    if (!bracket) {
+      return {
+        ...base,
+        configured: false,
+        groupCode: config.groupCode,
+        message: 'No hay tarifas del Regimen Simple configuradas para este grupo y ano.',
+      };
+    }
+
+    const grossIncomeBase = await this.calculateSimpleTaxProjectionGrossIncome(
+      businessId,
+      projectionRange.start,
+      projectionRange.endExclusive,
+    );
+    const estimatedRate = Number(bracket.rate);
+    const estimatedSimpleTax = grossIncomeBase.mul(bracket.rate);
+    const estimatedSimpleTaxNumber = Math.round(Number(estimatedSimpleTax));
+
+    return {
+      ...base,
+      configured: true,
+      groupCode: config.groupCode,
+      groupName: bracket.groupName,
+      estimatedRate,
+      grossIncomeBase: Math.round(Number(grossIncomeBase)),
+      estimatedSimpleTax: estimatedSimpleTaxNumber,
+      netProfitAfterSimpleTax: netProfitBeforeSimpleTax - estimatedSimpleTaxNumber,
+      source: 'MONTHLY_MIN_RATE' as const,
+      periodStatus: existingPeriod?.status,
+      message: 'Estimacion usando tarifa minima del grupo. No genera asiento contable hasta presentar el bimestre.',
+    };
+  }
+
+  private async businessHasSimpleResponsibility(businessId: string) {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      include: {
+        responsibilities: {
+          include: { responsibility: true },
+        },
+      },
+    });
+
+    return Boolean(
+      profile?.responsibilities.some(
+        (item) => item.responsibility.code === SIMPLE_TAX_RESPONSIBILITY_CODE,
+      ),
+    );
+  }
+
+  private async calculateSimpleTaxProjectionGrossIncome(
+    businessId: string,
+    start: Date,
+    endExclusive: Date,
+  ) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        businessId,
+        status: OrderStatus.COMPLETED,
+        archived: false,
+        OR: [
+          { accountingPostedAt: { gte: start, lt: endExclusive } },
+          {
+            accountingPostedAt: null,
+            createdAt: { gte: start, lt: endExclusive },
+          },
+        ],
+      },
+      select: {
+        total: true,
+        fiscalContext: {
+          select: { subtotal: true },
+        },
+      },
+    });
+
+    return orders.reduce(
+      (total, order) => total.add(order.fiscalContext?.subtotal ?? order.total),
+      new Prisma.Decimal(0),
+    );
+  }
+
+  private resolveSimpleTaxProjectionRange(q: AccountingMovementsQueryDto) {
+    const anchor = q.from
+      ? this.parseDateBoundary(q.from, 'start')
+      : q.to
+        ? this.parseDateBoundary(q.to, 'start')
+        : new Date();
+    const taxYear = anchor.getFullYear();
+    const monthIndex = anchor.getMonth();
+    const start = new Date(taxYear, monthIndex, 1, 0, 0, 0, 0);
+    const endExclusive = new Date(taxYear, monthIndex + 1, 1, 0, 0, 0, 0);
+
+    return {
+      taxYear,
+      month: monthIndex + 1,
+      start,
+      endExclusive,
+    };
+  }
+
+  private getBimonthlyPeriodNumber(month: number) {
+    return Math.floor((month - 1) / 2) + 1;
+  }
+
+  private getBimonthlyRange(taxYear: number, periodNumber: number) {
+    const startMonth = (periodNumber - 1) * 2;
+    const start = new Date(taxYear, startMonth, 1, 0, 0, 0, 0);
+    const endExclusive = new Date(taxYear, startMonth + 2, 1, 0, 0, 0, 0);
+    const end = new Date(endExclusive.getTime() - 1);
+    return { start, end, endExclusive };
+  }
+
+  private formatDateOnly(date: Date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

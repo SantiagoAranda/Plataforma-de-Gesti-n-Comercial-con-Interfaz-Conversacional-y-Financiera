@@ -51,10 +51,22 @@ export function MovementProfitHero({
 
   const iva = Math.abs(Math.round(impuestos.iva || 0));
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
-  const provisionesImpuesto = iva + retenciones;
+  const simpleTaxProjection = metrics.simpleTaxProjection;
+  const hasConfiguredSimpleTax =
+    Boolean(simpleTaxProjection?.enabled && simpleTaxProjection.configured);
+  const isOpenSimpleTaxEstimate = simpleTaxProjection?.source === "MONTHLY_MIN_RATE";
+  const provisionesImpuesto = isOpenSimpleTaxEstimate
+    ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
+    : hasConfiguredSimpleTax
+      ? 0
+      : iva + retenciones;
 
-  const utilidadLiquida = utilidadAntesDeImpuestos - provisionesImpuesto;
-  const reservaLegal = Math.abs(Math.round(impuestos.fondosReserva || 0));
+  const utilidadLiquida = hasConfiguredSimpleTax
+    ? Math.round(simpleTaxProjection?.netProfitAfterSimpleTax ?? utilidadAntesDeImpuestos - provisionesImpuesto)
+    : utilidadAntesDeImpuestos - provisionesImpuesto;
+  const reservaLegal = hasConfiguredSimpleTax
+    ? 0
+    : Math.abs(Math.round(impuestos.fondosReserva || 0));
 
   // MONTO PRINCIPAL DESTACADO EN LA TARJETA
   const utilidadDelEjercicioFinal = utilidadLiquida - reservaLegal;
