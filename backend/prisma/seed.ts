@@ -95,6 +95,49 @@ async function seedPuc(base: string) {
     );
 }
 
+async function seedSimpleTaxPucAccounts() {
+    const accounts = [
+        {
+            code: "519595",
+            name: "Otros",
+            cuentaCode: "5195",
+        },
+        {
+            code: "219595",
+            name: "Otras",
+            cuentaCode: "2195",
+        },
+    ];
+
+    for (const account of accounts) {
+        const existing = await prisma.pucSubcuenta.findUnique({
+            where: { code: account.code },
+        });
+
+        if (!existing) {
+            await prisma.pucSubcuenta.create({
+                data: {
+                    code: account.code,
+                    name: account.name,
+                    cuentaCode: account.cuentaCode,
+                    active: true,
+                },
+            });
+        }
+    }
+
+    const [cashAccount, bankAccount] = await Promise.all([
+        prisma.pucSubcuenta.findUnique({ where: { code: "110505" } }),
+        prisma.pucSubcuenta.findUnique({ where: { code: "111005" } }),
+    ]);
+
+    if (!cashAccount || !bankAccount) {
+        throw new Error("Simple tax payment accounts 110505 and 111005 must exist in PUC seed data");
+    }
+
+    console.log("Simple tax PUC accounts seed OK");
+}
+
 async function seedInventoryUnits() {
     const units = [
         // Base units
@@ -831,6 +874,7 @@ async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
     await seedPuc(base);
+    await seedSimpleTaxPucAccounts();
     await seedAdmin();
     await seedInventoryUnits();
 

@@ -119,6 +119,7 @@ enum InventoryReferenceType {
 enum AccountingMovementOriginType {
   MANUAL
   ORDER
+  SIMPLE_TAX_PERIOD
   PAYROLL_RUN
   PAYROLL_SETTLEMENT
   PAYROLL_PAYMENT
@@ -170,6 +171,7 @@ enum SimpleTaxPeriodStatus {
   DRAFT
   CALCULATED
   POSTED
+  PAID
 }
 
 enum SaleConcept {
@@ -1869,6 +1871,12 @@ model SimpleTaxPeriod {
   netSimpleTax                 Decimal               @default(0) @db.Decimal(14, 2)
   calculationSnapshot          Json?
   notes                        String?
+  accountingEntryId            String?
+  paidAccountingEntryId        String?
+  postedAt                     DateTime?
+  paidAt                       DateTime?
+  paidAmount                   Decimal?              @db.Decimal(14, 2)
+  paymentAccountCode           String?
   createdAt                    DateTime              @default(now())
   updatedAt                    DateTime              @updatedAt
 

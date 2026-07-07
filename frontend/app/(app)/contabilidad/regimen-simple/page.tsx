@@ -6,6 +6,8 @@ import {
   calculateSimpleTaxPeriod,
   getSimpleTaxConfig,
   listSimpleTaxPeriods,
+  paySimpleTaxPeriod,
+  postSimpleTaxPeriod,
   type SimpleTaxCalculation,
   type SimpleTaxConfig,
   type SimpleTaxPeriod,
@@ -80,7 +82,13 @@ export default function RegimenSimplePage() {
   const [calculation, setCalculation] = useState<SimpleTaxCalculation | null>(null);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK">("BANK");
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentNotes, setPaymentNotes] = useState("");
 
   useEffect(() => {
     async function loadData() {
@@ -138,6 +146,27 @@ export default function RegimenSimplePage() {
     (total, sale) => total + Number(sale.subtotal ?? 0),
     0,
   );
+  const periodStatus = calculation?.status;
+  const periodLocked = periodStatus === "POSTED" || periodStatus === "PAID";
+  const netSimpleTax = Number(calculation?.netSimpleTax ?? 0);
+  const paymentAccountCode = paymentMethod === "CASH" ? "110505" : "111005";
+
+  const mergePeriod = (period: SimpleTaxPeriod) => {
+    setCalculation((prev) => ({
+      ...(prev ?? {}),
+      ...period,
+      bracket: period.bracket ?? prev?.bracket ?? period.calculationSnapshot?.bracket ?? null,
+      includedSales:
+        period.includedSales ??
+        prev?.includedSales ??
+        period.calculationSnapshot?.includedSales ??
+        [],
+    }) as SimpleTaxCalculation);
+    setPeriods((prev) => [
+      ...prev.filter((item) => item.id !== period.id),
+      period,
+    ]);
+  };
 
   const handleCalculate = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -145,6 +174,10 @@ export default function RegimenSimplePage() {
     setError(null);
 
     try {
+      if (periodLocked) {
+        throw new Error("El periodo ya esta cerrado y no puede recalcularse.");
+      }
+
       if (!config?.enabled || !config.groupCode) {
         throw new Error("Configura el grupo RST en RUT Digital antes de calcular.");
       }
@@ -189,6 +222,44 @@ export default function RegimenSimplePage() {
       setError(err.message || "No se pudo calcular el anticipo RST.");
     } finally {
       setCalculating(false);
+    }
+  };
+
+  const handlePostPeriod = async () => {
+    if (!calculation?.id) return;
+    setPosting(true);
+    setError(null);
+
+    try {
+      const posted = await postSimpleTaxPeriod(calculation.id);
+      mergePeriod(posted);
+    } catch (err: any) {
+      setError(err.message || "No se pudo presentar el impuesto RST.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handlePayPeriod = async () => {
+    if (!calculation?.id) return;
+    setPaying(true);
+    setError(null);
+
+    try {
+      const paid = await paySimpleTaxPeriod(calculation.id, {
+        paymentDate,
+        paymentMethod,
+        paymentAccountCode,
+        paidAmount: netSimpleTax,
+        notes: paymentNotes || null,
+      });
+      mergePeriod(paid);
+      setPaymentOpen(false);
+      setPaymentNotes("");
+    } catch (err: any) {
+      setError(err.message || "No se pudo registrar el pago RST.");
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -265,6 +336,7 @@ export default function RegimenSimplePage() {
                 type="text"
                 inputMode="decimal"
                 value={manualGrossIncome}
+                disabled={periodLocked}
                 onChange={(event) => setManualGrossIncome(event.target.value)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:bg-white"
               />
@@ -278,6 +350,7 @@ export default function RegimenSimplePage() {
                 type="text"
                 inputMode="decimal"
                 value={excludedIncome}
+                disabled={periodLocked}
                 onChange={(event) => setExcludedIncome(event.target.value)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:bg-white"
               />
@@ -291,6 +364,7 @@ export default function RegimenSimplePage() {
                 type="text"
                 inputMode="decimal"
                 value={electronicPaymentsIncome}
+                disabled={periodLocked}
                 onChange={(event) => setElectronicPaymentsIncome(event.target.value)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:bg-white"
               />
@@ -304,6 +378,7 @@ export default function RegimenSimplePage() {
                 type="text"
                 inputMode="decimal"
                 value={pensionContributionsDiscount}
+                disabled={periodLocked}
                 onChange={(event) => setPensionContributionsDiscount(event.target.value)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:bg-white"
               />
@@ -311,10 +386,10 @@ export default function RegimenSimplePage() {
 
             <button
               type="submit"
-              disabled={calculating}
+              disabled={calculating || periodLocked}
               className="h-11 w-full rounded-2xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {calculating ? "Calculando..." : "Calcular anticipo"}
+              {periodLocked ? "Periodo cerrado" : calculating ? "Calculando..." : "Calcular anticipo"}
             </button>
           </section>
 
@@ -410,6 +485,147 @@ export default function RegimenSimplePage() {
                     </div>
                   </div>
                 </details>
+
+                <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Estado contable
+                  </div>
+
+                  {periodStatus === "CALCULATED" || !periodStatus ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-sm font-medium text-slate-600">
+                        Esto registrara el gasto y el impuesto por pagar en Contabilidad.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={posting || !calculation.id}
+                        onClick={handlePostPeriod}
+                        className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {posting ? "Presentando..." : "Presentar impuesto"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {periodStatus === "POSTED" ? (
+                    <div className="mt-3 space-y-3">
+                      <p className="text-sm font-semibold text-slate-800">
+                        Periodo cerrado
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        Impuesto simple por pagar: {formatCurrency(netSimpleTax)}
+                      </p>
+                      {netSimpleTax > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setPaymentOpen(true)}
+                          className="h-10 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                        >
+                          Registrar pago del impuesto
+                        </button>
+                      ) : (
+                        <p className="text-sm font-medium text-slate-500">
+                          No requiere pago porque el impuesto neto es cero.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {periodStatus === "PAID" ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-semibold text-emerald-700">
+                        Impuesto pagado
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        Fecha: {calculation.paidAt ? String(calculation.paidAt).slice(0, 10) : "No disponible"}
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        Valor: {formatCurrency(calculation.paidAmount)}
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        Cuenta: {calculation.paymentAccountCode || "No disponible"}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+
+                {paymentOpen ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 shadow-sm">
+                    <h3 className="text-sm font-semibold text-emerald-950">
+                      Registrar pago del impuesto
+                    </h3>
+
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="space-y-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                          Medio de pago
+                        </span>
+                        <select
+                          value={paymentMethod}
+                          onChange={(event) => setPaymentMethod(event.target.value as "CASH" | "BANK")}
+                          className="h-10 w-full rounded-xl border border-emerald-100 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+                        >
+                          <option value="BANK">Transferencia/Banco - 111005</option>
+                          <option value="CASH">Efectivo - 110505</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                          Fecha de pago
+                        </span>
+                        <input
+                          type="date"
+                          value={paymentDate}
+                          onChange={(event) => setPaymentDate(event.target.value)}
+                          className="h-10 w-full rounded-xl border border-emerald-100 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="mt-3 block space-y-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Valor a pagar
+                      </span>
+                      <input
+                        type="text"
+                        value={formatCurrency(netSimpleTax)}
+                        disabled
+                        className="h-10 w-full rounded-xl border border-emerald-100 bg-white px-3 text-sm font-medium text-slate-500 outline-none"
+                      />
+                    </label>
+
+                    <label className="mt-3 block space-y-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Notas
+                      </span>
+                      <input
+                        type="text"
+                        value={paymentNotes}
+                        onChange={(event) => setPaymentNotes(event.target.value)}
+                        className="h-10 w-full rounded-xl border border-emerald-100 bg-white px-3 text-sm font-medium text-slate-800 outline-none focus:border-emerald-500"
+                      />
+                    </label>
+
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handlePayPeriod}
+                        disabled={paying}
+                        className="h-10 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {paying ? "Registrando..." : "Confirmar pago"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentOpen(false)}
+                        className="h-10 rounded-xl bg-white px-4 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-100"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">

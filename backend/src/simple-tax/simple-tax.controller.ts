@@ -16,6 +16,7 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { SimpleTaxService } from './simple-tax.service';
 import {
   SimpleTaxCalculateDto,
+  SimpleTaxPayPeriodDto,
   SimpleTaxUpdatePeriodDto,
 } from './dto/simple-tax-period.dto';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
@@ -60,6 +61,15 @@ export class SimpleTaxController {
   @Patch('periods/:id/post')
   postPeriod(@Req() req: any, @Param('id') id: string) {
     return this.simpleTaxService.postPeriod(req.user.businessId, id);
+  }
+
+  @Patch('periods/:id/pay')
+  payPeriod(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: SimpleTaxPayPeriodDto,
+  ) {
+    return this.simpleTaxService.payPeriod(req.user.businessId, id, dto);
   }
 }
 

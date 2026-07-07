@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  AccountingMovementOriginType,
+  MovementNature,
   OrderStatus,
   Prisma,
   SimpleTaxPeriodStatus,
@@ -9,10 +11,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
 import {
   SimpleTaxCalculateDto,
+  SimpleTaxPayPeriodDto,
+  SimpleTaxPaymentMethod,
   SimpleTaxUpdatePeriodDto,
 } from './dto/simple-tax-period.dto';
 
 const ELECTRONIC_PAYMENTS_DISCOUNT_RATE = new Prisma.Decimal('0.005');
+const SIMPLE_TAX_EXPENSE_PUC_CODE = '519595';
+const SIMPLE_TAX_PAYABLE_PUC_CODE = '219595';
+const SIMPLE_TAX_CASH_PUC_CODE = '110505';
+const SIMPLE_TAX_BANK_PUC_CODE = '111005';
 
 type CalculationInput = {
   taxYear: number;
@@ -110,7 +118,10 @@ export class SimpleTaxService {
       },
     });
 
-    if (existing?.status === SimpleTaxPeriodStatus.POSTED) {
+    if (
+      existing?.status === SimpleTaxPeriodStatus.POSTED ||
+      existing?.status === SimpleTaxPeriodStatus.PAID
+    ) {
       throw new BadRequestException('El periodo RST ya esta cerrado.');
     }
 
@@ -142,7 +153,10 @@ export class SimpleTaxService {
 
   async updatePeriod(businessId: string, id: string, dto: SimpleTaxUpdatePeriodDto) {
     const existing = await this.getPeriod(businessId, id);
-    if (existing.status === SimpleTaxPeriodStatus.POSTED) {
+    if (
+      existing.status === SimpleTaxPeriodStatus.POSTED ||
+      existing.status === SimpleTaxPeriodStatus.PAID
+    ) {
       throw new BadRequestException('El periodo RST ya esta cerrado.');
     }
 
@@ -171,7 +185,6 @@ export class SimpleTaxService {
   }
 
   async postPeriod(businessId: string, id: string) {
-    const period = await this.getPeriod(businessId, id);
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
@@ -179,9 +192,222 @@ export class SimpleTaxService {
       );
     }
 
-    return this.prisma.simpleTaxPeriod.update({
-      where: { id: period.id },
-      data: { status: SimpleTaxPeriodStatus.POSTED },
+    return this.prisma.$transaction(async (tx) => {
+      const period = await tx.simpleTaxPeriod.findFirst({
+        where: { id, businessId },
+      });
+      if (!period) throw new NotFoundException('Periodo RST no encontrado');
+
+      if (
+        period.status === SimpleTaxPeriodStatus.POSTED ||
+        period.status === SimpleTaxPeriodStatus.PAID
+      ) {
+        return period;
+      }
+
+      if (period.status !== SimpleTaxPeriodStatus.CALCULATED) {
+        throw new BadRequestException('Solo se pueden presentar periodos calculados.');
+      }
+
+      const netSimpleTax = new Prisma.Decimal(period.netSimpleTax);
+      if (netSimpleTax.lt(0)) {
+        throw new BadRequestException('El impuesto neto RST no puede ser negativo.');
+      }
+
+      const accountingEntryId = `simple-tax-post-${period.id}`;
+      const now = new Date();
+
+      if (netSimpleTax.gt(0)) {
+        await this.assertSimpleTaxPucAccounts(tx, [
+          SIMPLE_TAX_EXPENSE_PUC_CODE,
+          SIMPLE_TAX_PAYABLE_PUC_CODE,
+        ]);
+
+        const existingMovements = await tx.accountingMovement.count({
+          where: {
+            businessId,
+            originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+            originId: period.id,
+            metadata: {
+              path: ['kind'],
+              equals: 'POST',
+            },
+          },
+        });
+
+        if (existingMovements === 0) {
+          const detail = `Régimen Simple ${period.taxYear} bimestre ${period.periodNumber}`;
+          await tx.accountingMovement.createMany({
+            data: [
+              {
+                businessId,
+                pucSubcuentaId: SIMPLE_TAX_EXPENSE_PUC_CODE,
+                amount: netSimpleTax,
+                nature: MovementNature.DEBIT,
+                date: period.periodEnd,
+                detail: `${detail} - Otro - Gasto Impuesto régimen simple`,
+                originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+                originId: period.id,
+                metadata: {
+                  periodId: period.id,
+                  kind: 'POST',
+                  taxYear: period.taxYear,
+                  periodNumber: period.periodNumber,
+                },
+              },
+              {
+                businessId,
+                pucSubcuentaId: SIMPLE_TAX_PAYABLE_PUC_CODE,
+                amount: netSimpleTax,
+                nature: MovementNature.CREDIT,
+                date: period.periodEnd,
+                detail: `${detail} - Otro - Impuesto simple por pagar`,
+                originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+                originId: period.id,
+                metadata: {
+                  periodId: period.id,
+                  kind: 'POST',
+                  taxYear: period.taxYear,
+                  periodNumber: period.periodNumber,
+                },
+              },
+            ],
+          });
+        }
+      }
+
+      return tx.simpleTaxPeriod.update({
+        where: { id: period.id },
+        data: {
+          status: SimpleTaxPeriodStatus.POSTED,
+          postedAt: now,
+          accountingEntryId: netSimpleTax.gt(0) ? accountingEntryId : null,
+        },
+      });
+    });
+  }
+
+  async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const period = await tx.simpleTaxPeriod.findFirst({
+        where: { id, businessId },
+      });
+      if (!period) throw new NotFoundException('Periodo RST no encontrado');
+
+      if (period.status === SimpleTaxPeriodStatus.CALCULATED) {
+        throw new BadRequestException('El periodo RST debe estar presentado antes de pagar.');
+      }
+      if (period.status === SimpleTaxPeriodStatus.PAID) {
+        throw new BadRequestException('El periodo RST ya fue pagado.');
+      }
+      if (period.status !== SimpleTaxPeriodStatus.POSTED) {
+        throw new BadRequestException('El periodo RST no esta listo para pago.');
+      }
+
+      const netSimpleTax = new Prisma.Decimal(period.netSimpleTax).toDecimalPlaces(2);
+      if (netSimpleTax.lte(0)) {
+        throw new BadRequestException('Los periodos con impuesto cero no requieren pago.');
+      }
+
+      const paidAmount = new Prisma.Decimal(dto.paidAmount).toDecimalPlaces(2);
+      if (!paidAmount.eq(netSimpleTax)) {
+        throw new BadRequestException('Solo se permite pago total del impuesto RST.');
+      }
+
+      const paymentAccountCode =
+        dto.paymentMethod === SimpleTaxPaymentMethod.CASH
+          ? SIMPLE_TAX_CASH_PUC_CODE
+          : dto.paymentAccountCode || SIMPLE_TAX_BANK_PUC_CODE;
+
+      if (
+        dto.paymentMethod === SimpleTaxPaymentMethod.BANK &&
+        paymentAccountCode !== SIMPLE_TAX_BANK_PUC_CODE
+      ) {
+        throw new BadRequestException('La cuenta bancaria permitida es 111005.');
+      }
+
+      await this.assertSimpleTaxPucAccounts(tx, [
+        SIMPLE_TAX_PAYABLE_PUC_CODE,
+        paymentAccountCode,
+      ]);
+
+      const paymentDate = new Date(dto.paymentDate);
+      if (Number.isNaN(paymentDate.getTime())) {
+        throw new BadRequestException('Fecha de pago invalida.');
+      }
+
+      const paidAccountingEntryId = `simple-tax-pay-${period.id}`;
+      const existingMovements = await tx.accountingMovement.count({
+        where: {
+          businessId,
+          originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+          originId: period.id,
+          metadata: {
+            path: ['kind'],
+            equals: 'PAY',
+          },
+        },
+      });
+
+      if (existingMovements > 0) {
+        throw new BadRequestException('El pago RST ya tiene movimientos contables.');
+      }
+
+      const detail = `Pago Régimen Simple ${period.taxYear} bimestre ${period.periodNumber}`;
+      await tx.accountingMovement.createMany({
+        data: [
+          {
+            businessId,
+            pucSubcuentaId: SIMPLE_TAX_PAYABLE_PUC_CODE,
+            amount: paidAmount,
+            nature: MovementNature.DEBIT,
+            date: paymentDate,
+            detail: `${detail} - Otro - Impuesto simple por pagar`,
+            originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+            originId: period.id,
+            metadata: {
+              periodId: period.id,
+              kind: 'PAY',
+              taxYear: period.taxYear,
+              periodNumber: period.periodNumber,
+              paymentAccountCode,
+            },
+          },
+          {
+            businessId,
+            pucSubcuentaId: paymentAccountCode,
+            amount: paidAmount,
+            nature: MovementNature.CREDIT,
+            date: paymentDate,
+            detail:
+              dto.paymentMethod === SimpleTaxPaymentMethod.CASH
+                ? 'Pago Régimen Simple en efectivo'
+                : 'Pago Régimen Simple por banco',
+            originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+            originId: period.id,
+            metadata: {
+              periodId: period.id,
+              kind: 'PAY',
+              taxYear: period.taxYear,
+              periodNumber: period.periodNumber,
+              paymentMethod: dto.paymentMethod,
+              paymentAccountCode,
+              notes: dto.notes ?? null,
+            },
+          },
+        ],
+      });
+
+      return tx.simpleTaxPeriod.update({
+        where: { id: period.id },
+        data: {
+          status: SimpleTaxPeriodStatus.PAID,
+          paidAt: paymentDate,
+          paidAmount,
+          paymentAccountCode,
+          paidAccountingEntryId,
+        },
+      });
     });
   }
 
@@ -414,6 +640,21 @@ export class SimpleTaxService {
     return Boolean(
       profile?.responsibilities.some((item) => item.responsibility.code === '47'),
     );
+  }
+
+  private async assertSimpleTaxPucAccounts(
+    tx: Prisma.TransactionClient,
+    codes: string[],
+  ) {
+    const accounts = await tx.pucSubcuenta.findMany({
+      where: { code: { in: codes }, active: true },
+      select: { code: true },
+    });
+    const foundCodes = new Set(accounts.map((account) => account.code));
+    const missing = codes.filter((code) => !foundCodes.has(code));
+    if (missing.length > 0) {
+      throw new BadRequestException(`Cuentas PUC RST no configuradas: ${missing.join(', ')}`);
+    }
   }
 
   private periodPersistenceData(

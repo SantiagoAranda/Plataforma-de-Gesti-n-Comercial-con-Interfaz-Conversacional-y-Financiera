@@ -132,6 +132,7 @@ function originSearchText(originType?: string | null) {
   if (!originType) return "";
   if (originType === "MANUAL") return "manual";
   if (originType === "ORDER") return "automatica venta orden";
+  if (originType === "SIMPLE_TAX_PERIOD") return "regimen simple impuesto rst";
   if (originType.startsWith("PAYROLL_")) return "nomina payroll";
   return originType.replace(/_/g, " ").toLowerCase();
 }

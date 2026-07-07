@@ -10,6 +10,7 @@ describe('SimpleTaxService', () => {
   let service: SimpleTaxService;
 
   const prisma = {
+    $transaction: mockFn(),
     businessSimpleTaxConfig: {
       findUnique: mockFn(),
       upsert: mockFn(),
@@ -32,6 +33,13 @@ describe('SimpleTaxService', () => {
       findUnique: mockFn(),
       upsert: mockFn(),
       update: mockFn(),
+    },
+    accountingMovement: {
+      count: mockFn(),
+      createMany: mockFn(),
+    },
+    pucSubcuenta: {
+      findMany: mockFn(),
     },
   };
 
@@ -111,6 +119,16 @@ describe('SimpleTaxService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     service = new SimpleTaxService(prisma as any);
+    prisma.$transaction.mockImplementation((callback: any) => callback(prisma));
+    prisma.accountingMovement.count.mockResolvedValue(0);
+    prisma.accountingMovement.createMany.mockResolvedValue({ count: 2 });
+    prisma.pucSubcuenta.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.code.in.map((code: string) => ({
+          code,
+        })),
+      ),
+    );
     prisma.taxGlobalParameter.findUnique.mockResolvedValue({
       year: 2026,
       uvt: new Prisma.Decimal(52374),
@@ -415,5 +433,257 @@ describe('SimpleTaxService', () => {
       service.calculateAndPersist(businessId, { taxYear: 2026, periodNumber: 1 }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.simpleTaxPeriod.upsert).not.toHaveBeenCalled();
+  });
+
+  it('does not recalculate paid periods', async () => {
+    prisma.simpleTaxPeriod.findUnique.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.PAID,
+    });
+
+    await expect(
+      service.calculateAndPersist(businessId, { taxYear: 2026, periodNumber: 1 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.simpleTaxPeriod.upsert).not.toHaveBeenCalled();
+  });
+
+  it('posts a period and creates balanced simple tax accounting movements', async () => {
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.CALCULATED,
+      taxYear: 2026,
+      periodNumber: 1,
+      periodEnd: new Date('2026-02-28T23:59:59.999Z'),
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    prisma.simpleTaxPeriod.update.mockImplementation(async ({ data }: any) => ({
+      id: 'period-1',
+      ...data,
+    }));
+
+    const result = await service.postPeriod(businessId, 'period-1');
+
+    expect(result.status).toBe(SimpleTaxPeriodStatus.POSTED);
+    expect(result.accountingEntryId).toBe('simple-tax-post-period-1');
+    const createManyArg = prisma.accountingMovement.createMany.mock.calls[0][0] as any;
+    expect(createManyArg.data).toEqual([
+      expect.objectContaining({
+        pucSubcuentaId: '519595',
+        amount: new Prisma.Decimal(800000),
+        nature: 'DEBIT',
+        originType: 'SIMPLE_TAX_PERIOD',
+        originId: 'period-1',
+        metadata: expect.objectContaining({
+          periodId: 'period-1',
+          kind: 'POST',
+          taxYear: 2026,
+          periodNumber: 1,
+        }),
+      }),
+      expect.objectContaining({
+        pucSubcuentaId: '219595',
+        amount: new Prisma.Decimal(800000),
+        nature: 'CREDIT',
+        originType: 'SIMPLE_TAX_PERIOD',
+        originId: 'period-1',
+        metadata: expect.objectContaining({
+          periodId: 'period-1',
+          kind: 'POST',
+          taxYear: 2026,
+          periodNumber: 1,
+        }),
+      }),
+    ]);
+    expect(prisma.simpleTaxPeriod.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: SimpleTaxPeriodStatus.POSTED,
+          postedAt: expect.any(Date),
+          accountingEntryId: 'simple-tax-post-period-1',
+        }),
+      }),
+    );
+  });
+
+  it('posts a zero-value period without creating accounting movements', async () => {
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-zero',
+      businessId,
+      status: SimpleTaxPeriodStatus.CALCULATED,
+      taxYear: 2026,
+      periodNumber: 1,
+      periodEnd: new Date('2026-02-28T23:59:59.999Z'),
+      netSimpleTax: new Prisma.Decimal(0),
+    });
+    prisma.simpleTaxPeriod.update.mockImplementation(async ({ data }: any) => ({
+      id: 'period-zero',
+      ...data,
+    }));
+
+    const result = await service.postPeriod(businessId, 'period-zero');
+
+    expect(result.status).toBe(SimpleTaxPeriodStatus.POSTED);
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    expect(result.accountingEntryId).toBeNull();
+  });
+
+  it('does not duplicate accounting movements when posting an already posted period', async () => {
+    const postedPeriod = {
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.POSTED,
+      accountingEntryId: 'simple-tax-post-period-1',
+    };
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue(postedPeriod);
+
+    const result = await service.postPeriod(businessId, 'period-1');
+
+    expect(result).toBe(postedPeriod);
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
+  });
+
+  it('pays a posted period with BANK using 111005', async () => {
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.POSTED,
+      taxYear: 2026,
+      periodNumber: 1,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    prisma.simpleTaxPeriod.update.mockImplementation(async ({ data }: any) => ({
+      id: 'period-1',
+      ...data,
+    }));
+
+    const result = await service.payPeriod(businessId, 'period-1', {
+      paymentDate: '2026-03-15',
+      paymentMethod: 'BANK' as any,
+      paidAmount: 800000,
+    });
+
+    expect(result.status).toBe(SimpleTaxPeriodStatus.PAID);
+    expect(result.paymentAccountCode).toBe('111005');
+    const createManyArg = prisma.accountingMovement.createMany.mock.calls[0][0] as any;
+    expect(createManyArg.data).toEqual([
+      expect.objectContaining({
+        pucSubcuentaId: '219595',
+        nature: 'DEBIT',
+        amount: new Prisma.Decimal(800000),
+        originType: 'SIMPLE_TAX_PERIOD',
+        originId: 'period-1',
+        metadata: expect.objectContaining({
+          periodId: 'period-1',
+          kind: 'PAY',
+          taxYear: 2026,
+          periodNumber: 1,
+          paymentAccountCode: '111005',
+        }),
+      }),
+      expect.objectContaining({
+        pucSubcuentaId: '111005',
+        nature: 'CREDIT',
+        amount: new Prisma.Decimal(800000),
+        originType: 'SIMPLE_TAX_PERIOD',
+        originId: 'period-1',
+        metadata: expect.objectContaining({
+          periodId: 'period-1',
+          kind: 'PAY',
+          taxYear: 2026,
+          periodNumber: 1,
+          paymentAccountCode: '111005',
+        }),
+      }),
+    ]);
+  });
+
+  it('pays a posted period with CASH using 110505', async () => {
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.POSTED,
+      taxYear: 2026,
+      periodNumber: 1,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    prisma.simpleTaxPeriod.update.mockImplementation(async ({ data }: any) => ({
+      id: 'period-1',
+      ...data,
+    }));
+
+    await service.payPeriod(businessId, 'period-1', {
+      paymentDate: '2026-03-15',
+      paymentMethod: 'CASH' as any,
+      paidAmount: 800000,
+    });
+
+    const createManyArg = prisma.accountingMovement.createMany.mock.calls[0][0] as any;
+    expect(createManyArg.data[1]).toEqual(
+      expect.objectContaining({
+        pucSubcuentaId: '110505',
+        nature: 'CREDIT',
+        originType: 'SIMPLE_TAX_PERIOD',
+        originId: 'period-1',
+        metadata: expect.objectContaining({
+          periodId: 'period-1',
+          kind: 'PAY',
+          taxYear: 2026,
+          periodNumber: 1,
+          paymentAccountCode: '110505',
+        }),
+      }),
+    );
+  });
+
+  it('does not allow paying calculated, paid, partial or duplicated payments', async () => {
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.CALCULATED,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 800000,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.PAID,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 800000,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      status: SimpleTaxPeriodStatus.POSTED,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 799999,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    prisma.accountingMovement.count.mockResolvedValue(2);
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 800000,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

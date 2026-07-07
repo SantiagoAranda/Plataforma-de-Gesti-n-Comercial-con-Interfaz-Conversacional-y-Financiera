@@ -38,7 +38,7 @@ export type SimpleTaxIncludedSale = {
 
 export type SimpleTaxCalculation = {
   id?: string;
-  status?: "DRAFT" | "CALCULATED" | "POSTED";
+  status?: "DRAFT" | "CALCULATED" | "POSTED" | "PAID";
   taxYear: number;
   periodNumber: number;
   periodStart: string;
@@ -65,12 +65,18 @@ export type SimpleTaxCalculation = {
   } | null;
   includedSales?: SimpleTaxIncludedSale[];
   calculatedAt?: string;
+  accountingEntryId?: string | null;
+  paidAccountingEntryId?: string | null;
+  postedAt?: string | null;
+  paidAt?: string | null;
+  paidAmount?: number | string | null;
+  paymentAccountCode?: string | null;
   warnings?: string[];
 };
 
 export type SimpleTaxPeriod = SimpleTaxCalculation & {
   id: string;
-  status: "DRAFT" | "CALCULATED" | "POSTED";
+  status: "DRAFT" | "CALCULATED" | "POSTED" | "PAID";
   calculationSnapshot?: SimpleTaxCalculation | null;
 };
 
@@ -119,5 +125,21 @@ export function calculateSimpleTaxPeriod(data: {
 export function postSimpleTaxPeriod(id: string) {
   return api<SimpleTaxPeriod>(`/tax/simple/periods/${id}/post`, {
     method: "PATCH",
+  });
+}
+
+export function paySimpleTaxPeriod(
+  id: string,
+  data: {
+    paymentDate: string;
+    paymentMethod: "CASH" | "BANK";
+    paymentAccountCode?: "110505" | "111005";
+    paidAmount: number;
+    notes?: string | null;
+  },
+) {
+  return api<SimpleTaxPeriod>(`/tax/simple/periods/${id}/pay`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
   });
 }
