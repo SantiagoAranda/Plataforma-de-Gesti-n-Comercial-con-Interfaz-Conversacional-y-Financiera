@@ -313,6 +313,8 @@ export default function MovimientosPage() {
                           ? summary.simpleTaxProjection.periodStatus === "PAID"
                             ? "Periodo pagado"
                             : "Periodo cerrado"
+                          : summary.simpleTaxProjection.informativeOnly
+                          ? "Estimación informativa"
                           : "Estimación mensual"
                         : "Configuración pendiente"}
                     </h2>

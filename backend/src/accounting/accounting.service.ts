@@ -9,6 +9,7 @@ import {
   MovementNature,
   OrderStatus,
   Prisma,
+  SimpleTaxFilingMode,
   SimpleTaxPeriodStatus,
   SimpleTaxPeriodType,
   TaxDirection,
@@ -46,6 +47,7 @@ const MANUAL_PAID_OUTFLOW_DEFAULTS = {
 } as const;
 
 const SIMPLE_TAX_RESPONSIBILITY_CODE = '47';
+const SIMPLE_TAX_EXPENSE_PUC_CODE = '519595';
 
 type ExpenseGroupDefinition = {
   id: string;
@@ -1666,6 +1668,8 @@ export class AccountingService {
       ),
       groupCode: config?.groupCode ?? '',
       groupName: undefined as string | undefined,
+      filingMode: config?.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
+      informativeOnly: config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION,
       estimatedRate: 0,
       grossIncomeBase: 0,
       estimatedSimpleTax: 0,
@@ -1694,8 +1698,8 @@ export class AccountingService {
     });
 
     if (
-      existingPeriod?.status === SimpleTaxPeriodStatus.POSTED ||
-      existingPeriod?.status === SimpleTaxPeriodStatus.PAID
+      (existingPeriod?.status === SimpleTaxPeriodStatus.POSTED ||
+        existingPeriod?.status === SimpleTaxPeriodStatus.PAID)
     ) {
       const actualTax = Number(existingPeriod.netSimpleTax ?? 0);
       return {
@@ -1713,6 +1717,20 @@ export class AccountingService {
           existingPeriod.status === SimpleTaxPeriodStatus.PAID
             ? 'Periodo pagado. El gasto ya esta reflejado en Contabilidad.'
             : 'Periodo cerrado. El gasto ya esta reflejado en Contabilidad.',
+      };
+    }
+
+    const postedMovementTax = await this.sumPostedSimpleTaxMovements(businessId, q);
+    if (postedMovementTax.gt(0)) {
+      const postedMovementTaxNumber = Math.round(Number(postedMovementTax));
+      return {
+        ...base,
+        configured: true,
+        groupCode: config.groupCode,
+        estimatedSimpleTax: postedMovementTaxNumber,
+        netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
+        source: 'POSTED_ACTUAL' as const,
+        message: 'Impuesto historico Regimen Simple ya reflejado en Contabilidad.',
       };
     }
 
@@ -1755,7 +1773,10 @@ export class AccountingService {
       netProfitAfterSimpleTax: netProfitBeforeSimpleTax - estimatedSimpleTaxNumber,
       source: 'MONTHLY_MIN_RATE' as const,
       periodStatus: existingPeriod?.status,
-      message: 'Estimacion usando tarifa minima del grupo. No genera asiento contable hasta presentar el bimestre.',
+      message:
+        config.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION
+          ? 'Estimacion informativa Regimen Simple. El cierre contable se realizara en la declaracion anual.'
+          : 'Estimacion usando tarifa minima del grupo. No genera asiento contable hasta presentar el bimestre.',
     };
   }
 
@@ -1806,6 +1827,38 @@ export class AccountingService {
       (total, order) => total.add(order.fiscalContext?.subtotal ?? order.total),
       new Prisma.Decimal(0),
     );
+  }
+
+  private async sumPostedSimpleTaxMovements(
+    businessId: string,
+    q: AccountingMovementsQueryDto,
+  ) {
+    const where: Prisma.AccountingMovementWhereInput = {
+      businessId,
+      originType: AccountingMovementOriginType.SIMPLE_TAX_PERIOD,
+      pucSubcuentaId: SIMPLE_TAX_EXPENSE_PUC_CODE,
+    };
+
+    if (q.from || q.to) {
+      where.date = {};
+      if (q.from) where.date.gte = this.parseDateBoundary(q.from, 'start');
+      if (q.to) where.date.lte = this.parseDateBoundary(q.to, 'end');
+    }
+
+    const movements = await this.prisma.accountingMovement.findMany({
+      where,
+      select: {
+        amount: true,
+        nature: true,
+      },
+    });
+
+    return movements.reduce((total, movement) => {
+      const amount = new Prisma.Decimal(movement.amount ?? 0);
+      return movement.nature === MovementNature.DEBIT
+        ? total.add(amount)
+        : total.sub(amount);
+    }, new Prisma.Decimal(0));
   }
 
   private resolveSimpleTaxProjectionRange(q: AccountingMovementsQueryDto) {

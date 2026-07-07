@@ -1,5 +1,6 @@
-import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SimpleTaxFilingMode } from '@prisma/client';
 
 export class UpsertSimpleTaxConfigDto {
   @IsBoolean()
@@ -20,4 +21,8 @@ export class UpsertSimpleTaxConfigDto {
   @IsOptional()
   @IsString()
   ciiuCode?: string | null;
+
+  @IsOptional()
+  @IsEnum(SimpleTaxFilingMode)
+  filingMode?: SimpleTaxFilingMode;
 }

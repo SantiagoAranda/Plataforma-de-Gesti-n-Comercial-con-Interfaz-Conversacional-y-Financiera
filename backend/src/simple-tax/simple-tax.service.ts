@@ -4,6 +4,7 @@ import {
   MovementNature,
   OrderStatus,
   Prisma,
+  SimpleTaxFilingMode,
   SimpleTaxPeriodStatus,
   SimpleTaxPeriodType,
 } from '@prisma/client';
@@ -58,21 +59,27 @@ export class SimpleTaxService {
       groupCode: null,
       activityLabel: null,
       ciiuCode: null,
+      filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
       createdAt: null,
       updatedAt: null,
     };
   }
 
   async upsertConfig(businessId: string, dto: UpsertSimpleTaxConfigDto) {
+    const updateData: Prisma.BusinessSimpleTaxConfigUpdateInput = {
+      enabled: dto.enabled,
+      taxYear: dto.taxYear,
+      groupCode: dto.groupCode?.trim() || null,
+      activityLabel: dto.activityLabel?.trim() || null,
+      ciiuCode: dto.ciiuCode?.trim() || null,
+    };
+    if (dto.filingMode !== undefined) {
+      updateData.filingMode = dto.filingMode;
+    }
+
     return this.prisma.businessSimpleTaxConfig.upsert({
       where: { businessId },
-      update: {
-        enabled: dto.enabled,
-        taxYear: dto.taxYear,
-        groupCode: dto.groupCode?.trim() || null,
-        activityLabel: dto.activityLabel?.trim() || null,
-        ciiuCode: dto.ciiuCode?.trim() || null,
-      },
+      update: updateData,
       create: {
         businessId,
         enabled: dto.enabled,
@@ -80,6 +87,7 @@ export class SimpleTaxService {
         groupCode: dto.groupCode?.trim() || null,
         activityLabel: dto.activityLabel?.trim() || null,
         ciiuCode: dto.ciiuCode?.trim() || null,
+        filingMode: dto.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
       },
     });
   }
@@ -191,6 +199,7 @@ export class SimpleTaxService {
         'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
       );
     }
+    await this.assertBimonthlyFilingMode(businessId);
 
     return this.prisma.$transaction(async (tx) => {
       const period = await tx.simpleTaxPeriod.findFirst({
@@ -288,6 +297,8 @@ export class SimpleTaxService {
   }
 
   async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
+    await this.assertBimonthlyFilingMode(businessId);
+
     return this.prisma.$transaction(async (tx) => {
       const period = await tx.simpleTaxPeriod.findFirst({
         where: { id, businessId },
@@ -471,9 +482,16 @@ export class SimpleTaxService {
       new Prisma.Decimal(0),
     );
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const filingMode = config.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE;
     const warnings = hasSimpleResponsibility
       ? []
       : ['El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.'];
+    if (filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION) {
+      warnings.push(
+        'Este negocio esta configurado con modalidad anual. El bimestre es informativo y no genera presentacion ni asiento contable.',
+      );
+    }
+    const informativeOnly = filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION;
 
     return {
       taxYear: input.taxYear,
@@ -505,6 +523,8 @@ export class SimpleTaxService {
       includedSales: salesSummary.includedSales,
       calculatedAt: new Date(),
       warnings,
+      filingMode,
+      informativeOnly,
       notes: input.notes ?? null,
       response: this.serializeCalculation({
         taxYear: input.taxYear,
@@ -534,6 +554,8 @@ export class SimpleTaxService {
         includedSales: salesSummary.includedSales,
         calculatedAt: new Date(),
         warnings,
+        filingMode,
+        informativeOnly,
       }),
     };
   }
@@ -642,6 +664,19 @@ export class SimpleTaxService {
     );
   }
 
+  private async assertBimonthlyFilingMode(businessId: string) {
+    const config = await this.prisma.businessSimpleTaxConfig.findUnique({
+      where: { businessId },
+      select: { filingMode: true },
+    });
+
+    if (config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION) {
+      throw new BadRequestException(
+        'Este negocio esta configurado con excepcion anual. El bimestre es informativo y no genera presentacion, pago ni asiento contable.',
+      );
+    }
+  }
+
   private async assertSimpleTaxPucAccounts(
     tx: Prisma.TransactionClient,
     codes: string[],
@@ -720,6 +755,8 @@ export class SimpleTaxService {
           ? value.calculatedAt.toISOString()
           : value.calculatedAt,
       warnings: value.warnings ?? [],
+      filingMode: value.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
+      informativeOnly: Boolean(value.informativeOnly),
     };
   }
 

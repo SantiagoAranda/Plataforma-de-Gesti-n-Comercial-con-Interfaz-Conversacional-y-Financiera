@@ -1,4 +1,4 @@
-import { Prisma, TaxDirection, TaxType } from '@prisma/client';
+import { Prisma, SimpleTaxFilingMode, TaxDirection, TaxType } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { AccountingService } from './accounting.service';
 import {
@@ -561,7 +561,15 @@ describe('AccountingService simple tax dashboard projection', () => {
         findMany: jest.fn(() => Promise.resolve([])),
       },
       accountingMovement: {
-        findMany: jest.fn(() => Promise.resolve(overrides.movements ?? [])),
+        findMany: jest.fn(({ where }: any = {}) => {
+          const movements = overrides.movements ?? [];
+          if (where?.pucSubcuentaId) {
+            return Promise.resolve(
+              movements.filter((movement: any) => movement.pucSubcuentaId === where.pucSubcuentaId),
+            );
+          }
+          return Promise.resolve(movements);
+        }),
       },
       businessTaxProfile: {
         findUnique: jest.fn(() =>
@@ -582,6 +590,7 @@ describe('AccountingService simple tax dashboard projection', () => {
             enabled: true,
             taxYear: 2026,
             groupCode: '2',
+            filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
           }),
         ),
       },
@@ -789,5 +798,119 @@ describe('AccountingService simple tax dashboard projection', () => {
     );
     expect(result.balanceTotal).toBe(49200000);
     expect(result.impuestosReservas.retenciones).toBe(0);
+  });
+
+  it('shows annual exception projection as informative when there is no posted history', async () => {
+    const { service, prisma } = createSummaryService({
+      movements: [saleMovement(20000000)],
+      orders: [completedOrder(20000000)],
+      config: {
+        enabled: true,
+        taxYear: 2026,
+        groupCode: '2',
+        filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+      },
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        source: 'MONTHLY_MIN_RATE',
+        filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+        informativeOnly: true,
+        estimatedSimpleTax: 320000,
+        netProfitBeforeSimpleTax: 20000000,
+        netProfitAfterSimpleTax: 19680000,
+        message: expect.stringContaining('declaracion anual'),
+      }),
+    );
+    expect(result.balanceTotal).toBe(19680000);
+    expect(result.impuestosReservas.iva).toBe(0);
+    expect(result.impuestosReservas.retenciones).toBe(320000);
+    expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
+    expect(prisma.simpleTaxPeriod.upsert).not.toHaveBeenCalled();
+  });
+
+  it('uses annual exception posted history as already reflected in accounting', async () => {
+    const { service } = createSummaryService({
+      movements: [
+        saleMovement(20000000),
+        movement('519595', 'DEBIT', 320000),
+        movement('219595', 'CREDIT', 320000),
+      ],
+      orders: [completedOrder(20000000)],
+      config: {
+        enabled: true,
+        taxYear: 2026,
+        groupCode: '2',
+        filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+      },
+      period: {
+        status: 'POSTED',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        appliedRate: new Prisma.Decimal('0.016'),
+        taxableGrossIncome: new Prisma.Decimal(20000000),
+        netSimpleTax: new Prisma.Decimal(320000),
+      },
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        source: 'POSTED_ACTUAL',
+        filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+        informativeOnly: true,
+        periodStatus: 'POSTED',
+        estimatedSimpleTax: 320000,
+        netProfitBeforeSimpleTax: 19680000,
+        netProfitAfterSimpleTax: 19680000,
+        message: expect.stringContaining('reflejado en Contabilidad'),
+      }),
+    );
+    expect(result.balanceTotal).toBe(19680000);
+    expect(result.impuestosReservas.retenciones).toBe(0);
+  });
+
+  it('uses annual exception RST movements as posted actual when no period is found', async () => {
+    const { service } = createSummaryService({
+      movements: [
+        saleMovement(20000000),
+        movement('519595', 'DEBIT', 320000),
+        movement('219595', 'CREDIT', 320000),
+      ],
+      orders: [completedOrder(20000000)],
+      config: {
+        enabled: true,
+        taxYear: 2026,
+        groupCode: '2',
+        filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+      },
+      period: null,
+    });
+
+    const result = await service.getSummary(businessId, {
+      from: '2026-01-01T00:00:00',
+      to: '2026-01-31T23:59:59',
+    } as any);
+
+    expect(result.simpleTaxProjection).toEqual(
+      expect.objectContaining({
+        source: 'POSTED_ACTUAL',
+        estimatedSimpleTax: 320000,
+        netProfitBeforeSimpleTax: 19680000,
+        netProfitAfterSimpleTax: 19680000,
+        message: expect.stringContaining('historico'),
+      }),
+    );
+    expect(result.balanceTotal).toBe(19680000);
   });
 });

@@ -8,6 +8,7 @@ export type SimpleTaxConfig = {
   groupCode: string | null;
   activityLabel: string | null;
   ciiuCode: string | null;
+  filingMode: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
 };
 
 export type SimpleTaxRateBracket = {
@@ -72,6 +73,8 @@ export type SimpleTaxCalculation = {
   paidAmount?: number | string | null;
   paymentAccountCode?: string | null;
   warnings?: string[];
+  filingMode?: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
+  informativeOnly?: boolean;
 };
 
 export type SimpleTaxPeriod = SimpleTaxCalculation & {
@@ -90,6 +93,7 @@ export function updateSimpleTaxConfig(data: {
   groupCode?: string | null;
   activityLabel?: string | null;
   ciiuCode?: string | null;
+  filingMode?: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
 }) {
   return api<SimpleTaxConfig>("/settings/simple-tax-config", {
     method: "PUT",

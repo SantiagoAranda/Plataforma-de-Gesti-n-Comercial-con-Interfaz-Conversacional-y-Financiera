@@ -148,6 +148,7 @@ export default function RegimenSimplePage() {
   );
   const periodStatus = calculation?.status;
   const periodLocked = periodStatus === "POSTED" || periodStatus === "PAID";
+  const isAnnualException = config?.filingMode === "ANNUAL_EXCEPTION";
   const netSimpleTax = Number(calculation?.netSimpleTax ?? 0);
   const paymentAccountCode = paymentMethod === "CASH" ? "110505" : "111005";
 
@@ -231,6 +232,9 @@ export default function RegimenSimplePage() {
     setError(null);
 
     try {
+      if (isAnnualException) {
+        throw new Error("Este negocio esta configurado con modalidad anual. El bimestre es informativo y no genera presentacion ni asiento contable.");
+      }
       const posted = await postSimpleTaxPeriod(calculation.id);
       mergePeriod(posted);
     } catch (err: any) {
@@ -246,6 +250,9 @@ export default function RegimenSimplePage() {
     setError(null);
 
     try {
+      if (isAnnualException) {
+        throw new Error("Este negocio esta configurado con modalidad anual. No permite pago bimestral.");
+      }
       const paid = await paySimpleTaxPeriod(calculation.id, {
         paymentDate,
         paymentMethod,
@@ -267,7 +274,7 @@ export default function RegimenSimplePage() {
     <div className="min-h-screen bg-slate-50 pb-8 text-slate-950">
       <AppHeader
         title="Regimen Simple"
-        subtitle="Anticipo bimestral estimado"
+        subtitle={isAnnualException ? "Calculo informativo anual" : "Anticipo bimestral estimado"}
         showBack
       />
 
@@ -287,6 +294,13 @@ export default function RegimenSimplePage() {
         {!config?.enabled ? (
           <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Activa la responsabilidad 47 y configura el grupo RST en RUT Digital antes de cerrar periodos.
+          </div>
+        ) : null}
+
+        {config?.enabled && isAnnualException ? (
+          <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            <span className="font-semibold">Modalidad anual.</span>{" "}
+            Este periodo se muestra solo como calculo informativo y no genera asiento bimestral.
           </div>
         ) : null}
 
@@ -402,6 +416,11 @@ export default function RegimenSimplePage() {
                 Grupo {config?.groupCode || "sin configurar"}
                 {config?.activityLabel ? ` - ${config.activityLabel}` : ""}
               </div>
+              {config?.enabled ? (
+                <div className="mt-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                  {isAnnualException ? "Modalidad anual" : "Anticipos bimestrales"}
+                </div>
+              ) : null}
             </div>
 
             {calculation ? (
@@ -491,7 +510,18 @@ export default function RegimenSimplePage() {
                     Estado contable
                   </div>
 
-                  {periodStatus === "CALCULATED" || !periodStatus ? (
+                  {isAnnualException ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-sm font-semibold text-sky-700">
+                        Calculo informativo
+                      </p>
+                      <p className="text-sm font-medium text-slate-600">
+                        Este periodo no genera asiento bimestral porque el negocio esta configurado con modalidad anual.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {!isAnnualException && (periodStatus === "CALCULATED" || !periodStatus) ? (
                     <div className="mt-3 space-y-3">
                       <p className="text-sm font-medium text-slate-600">
                         Esto registrara el gasto y el impuesto por pagar en Contabilidad.
@@ -507,7 +537,7 @@ export default function RegimenSimplePage() {
                     </div>
                   ) : null}
 
-                  {periodStatus === "POSTED" ? (
+                  {!isAnnualException && periodStatus === "POSTED" ? (
                     <div className="mt-3 space-y-3">
                       <p className="text-sm font-semibold text-slate-800">
                         Periodo cerrado
@@ -531,7 +561,7 @@ export default function RegimenSimplePage() {
                     </div>
                   ) : null}
 
-                  {periodStatus === "PAID" ? (
+                  {!isAnnualException && periodStatus === "PAID" ? (
                     <div className="mt-3 space-y-2">
                       <p className="text-sm font-semibold text-emerald-700">
                         Impuesto pagado
@@ -549,7 +579,7 @@ export default function RegimenSimplePage() {
                   ) : null}
                 </div>
 
-                {paymentOpen ? (
+                {paymentOpen && !isAnnualException ? (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 shadow-sm">
                     <h3 className="text-sm font-semibold text-emerald-950">
                       Registrar pago del impuesto

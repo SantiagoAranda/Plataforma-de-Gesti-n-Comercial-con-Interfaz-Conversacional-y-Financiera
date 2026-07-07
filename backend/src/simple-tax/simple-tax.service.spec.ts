@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Prisma, SimpleTaxPeriodStatus, SimpleTaxPeriodType } from '@prisma/client';
+import {
+  Prisma,
+  SimpleTaxFilingMode,
+  SimpleTaxPeriodStatus,
+  SimpleTaxPeriodType,
+} from '@prisma/client';
 import { SimpleTaxService } from './simple-tax.service';
 
 const mockFn = () => jest.fn<(...args: any[]) => any>();
@@ -82,6 +87,7 @@ describe('SimpleTaxService', () => {
       groupCode,
       activityLabel: null,
       ciiuCode: null,
+      filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
     });
   }
 
@@ -685,5 +691,130 @@ describe('SimpleTaxService', () => {
         paidAmount: 800000,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns BIMONTHLY_ADVANCE as the default filing mode when no config exists', async () => {
+    prisma.businessSimpleTaxConfig.findUnique.mockResolvedValue(null);
+
+    const result = await service.getConfig(businessId);
+
+    expect(result.filingMode).toBe(SimpleTaxFilingMode.BIMONTHLY_ADVANCE);
+  });
+
+  it('saves ANNUAL_EXCEPTION filing mode in simple tax config', async () => {
+    prisma.businessSimpleTaxConfig.upsert.mockResolvedValue({
+      id: 'config-1',
+      businessId,
+      enabled: true,
+      taxYear: 2026,
+      groupCode: '2',
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+
+    await service.upsertConfig(businessId, {
+      enabled: true,
+      taxYear: 2026,
+      groupCode: '2',
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+
+    expect(prisma.businessSimpleTaxConfig.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+        }),
+        create: expect.objectContaining({
+          filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+        }),
+      }),
+    );
+  });
+
+  it('does not overwrite filing mode when config payload omits it', async () => {
+    prisma.businessSimpleTaxConfig.upsert.mockResolvedValue({
+      id: 'config-1',
+      businessId,
+      enabled: true,
+      taxYear: 2026,
+      groupCode: '2',
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+
+    await service.upsertConfig(businessId, {
+      enabled: true,
+      taxYear: 2026,
+      groupCode: '2',
+    });
+
+    expect(prisma.businessSimpleTaxConfig.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.not.objectContaining({
+          filingMode: expect.anything(),
+        }),
+        create: expect.objectContaining({
+          filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
+        }),
+      }),
+    );
+  });
+
+  it('calculates annual exception periods as informative only', async () => {
+    prisma.businessSimpleTaxConfig.findUnique.mockResolvedValue({
+      id: 'config-1',
+      businessId,
+      enabled: true,
+      taxYear: 2026,
+      groupCode: '2',
+      activityLabel: null,
+      ciiuCode: null,
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+    mockSales(50000000);
+
+    const result = await service.calculate(businessId, {
+      taxYear: 2026,
+      periodNumber: 1,
+    });
+
+    expect(result.response.informativeOnly).toBe(true);
+    expect(result.response.filingMode).toBe(SimpleTaxFilingMode.ANNUAL_EXCEPTION);
+    expect(result.response.warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining('modalidad anual')]),
+    );
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects posting bimonthly periods when annual exception is configured', async () => {
+    prisma.businessSimpleTaxConfig.findUnique.mockResolvedValue({
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.CALCULATED,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+
+    await expect(service.postPeriod(businessId, 'period-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects bimonthly payment when annual exception is configured', async () => {
+    prisma.businessSimpleTaxConfig.findUnique.mockResolvedValue({
+      filingMode: SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+    });
+
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 800000,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+    expect(prisma.simpleTaxPeriod.update).not.toHaveBeenCalled();
   });
 });

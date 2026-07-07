@@ -81,6 +81,8 @@ export type AccountingSummary = {
     projectionEnd: string;
     groupCode: string;
     groupName?: string;
+    filingMode?: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
+    informativeOnly?: boolean;
     estimatedRate: number;
     grossIncomeBase: number;
     estimatedSimpleTax: number;

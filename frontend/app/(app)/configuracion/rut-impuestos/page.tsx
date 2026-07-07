@@ -206,6 +206,8 @@ export default function RutImpuestosPage() {
   const [simpleTaxYear, setSimpleTaxYear] = useState("2026");
   const [simpleTaxGroupCode, setSimpleTaxGroupCode] = useState("");
   const [simpleTaxActivityLabel, setSimpleTaxActivityLabel] = useState("");
+  const [simpleTaxFilingMode, setSimpleTaxFilingMode] = useState<"BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION">("BIMONTHLY_ADVANCE");
+  const [simpleTaxConfigLoaded, setSimpleTaxConfigLoaded] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -214,16 +216,20 @@ export default function RutImpuestosPage() {
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
-          getSimpleTaxConfig().catch(() => null),
+          getSimpleTaxConfig()
+            .then((data) => ({ loaded: true, data }))
+            .catch(() => ({ loaded: false, data: null })),
         ]);
 
         setResponsibilitiesCatalog(catalog);
         setIcaRates(rates);
 
-        if (simpleTaxConfig) {
-          setSimpleTaxYear(String(simpleTaxConfig.taxYear || 2026));
-          setSimpleTaxGroupCode(simpleTaxConfig.groupCode || "");
-          setSimpleTaxActivityLabel(simpleTaxConfig.activityLabel || "");
+        setSimpleTaxConfigLoaded(simpleTaxConfig.loaded);
+        if (simpleTaxConfig.data) {
+          setSimpleTaxYear(String(simpleTaxConfig.data.taxYear || 2026));
+          setSimpleTaxGroupCode(simpleTaxConfig.data.groupCode || "");
+          setSimpleTaxActivityLabel(simpleTaxConfig.data.activityLabel || "");
+          setSimpleTaxFilingMode(simpleTaxConfig.data.filingMode || "BIMONTHLY_ADVANCE");
         }
 
         if (profile) {
@@ -410,13 +416,19 @@ export default function RutImpuestosPage() {
       await saveIcaRate();
 
       const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
-      await updateSimpleTaxConfig({
+      const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
         enabled: hasSimpleTaxResponsibility,
         taxYear: Number(simpleTaxYear) || 2026,
         groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
         activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
         ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
-      });
+      };
+      if (simpleTaxConfigLoaded) {
+        simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
+          ? simpleTaxFilingMode
+          : "BIMONTHLY_ADVANCE";
+      }
+      await updateSimpleTaxConfig(simpleTaxPayload);
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
       toast.error(err.message || "Verifique los datos ingresados.");
@@ -771,6 +783,46 @@ export default function RutImpuestosPage() {
                     className={inputClassName}
                   />
                 </label>
+
+                <div className="mt-3 space-y-2">
+                  <span className={labelClassName}>Modalidad Regimen Simple</span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {[
+                      {
+                        value: "BIMONTHLY_ADVANCE" as const,
+                        title: "Anticipos bimestrales",
+                        description: "Calcula, presenta y paga anticipos por bimestre.",
+                      },
+                      {
+                        value: "ANNUAL_EXCEPTION" as const,
+                        title: "Excepcion anual",
+                        description: "No genera cierre bimestral. Controla estimaciones hasta la declaracion anual.",
+                      },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={!simpleTaxConfigLoaded}
+                        onClick={() => setSimpleTaxFilingMode(option.value)}
+                        className={`rounded-xl border px-3 py-2 text-left transition ${
+                          simpleTaxFilingMode === option.value
+                            ? "border-emerald-400 bg-white text-emerald-950"
+                            : "border-emerald-100 bg-emerald-50/40 text-emerald-900 hover:bg-white"
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
+                      >
+                        <span className="block text-xs font-black">{option.title}</span>
+                        <span className="mt-1 block text-[11px] font-medium leading-snug text-emerald-700">
+                          {option.description}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="rounded-xl bg-white/70 px-3 py-2 text-[11px] font-medium leading-snug text-emerald-800 ring-1 ring-emerald-100">
+                    {simpleTaxConfigLoaded
+                      ? "Usa esta opcion solo si corresponde al perfil tributario del negocio. Esta configuracion afecta cuando se generan asientos contables del Regimen Simple."
+                      : "No se pudo cargar la modalidad actual. Recarga antes de cambiar esta configuracion."}
+                  </p>
+                </div>
               </div>
             )}
 
