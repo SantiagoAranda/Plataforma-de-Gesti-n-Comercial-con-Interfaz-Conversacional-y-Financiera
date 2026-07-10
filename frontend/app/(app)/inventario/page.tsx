@@ -270,7 +270,7 @@ function InventarioPageContent() {
   }, [ingredientSheetOpen, setTab]);
 
   return (
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-neutral-50">
       <div className="shrink-0">
         <AppHeader
           title="Inventario"
@@ -579,7 +579,7 @@ export default function InventarioPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
+        <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-neutral-50">
           <div className="shrink-0">
             <AppHeader title="Inventario" showBack hrefBack="/home" />
           </div>

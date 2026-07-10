@@ -96,14 +96,14 @@ export function IngredientList({
           <article
             key={it.id}
             className={cn(
-              "w-full rounded-2xl border-l-[5px] border-y border-r border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden",
+              "w-full rounded-2xl border-t-4 border-t-blue-500 border-l-[5px] border-b border-r border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
               statusConfig.borderClass
             )}
           >
             <button
               type="button"
               onClick={() => onSelect(it.id)}
-              className="w-full text-left p-4 transition active:scale-[0.99]"
+              className="w-full text-left p-4 transition active:scale-[0.99] font-sans"
             >
               <div className="flex gap-4">
                 {/* Visual indicator / avatar */}
@@ -117,7 +117,7 @@ export function IngredientList({
                 {/* Information content */}
                 <div className="min-w-0 flex-1 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="min-w-0 line-clamp-1 text-sm font-bold text-slate-800 leading-tight">
+                    <h3 className="min-w-0 line-clamp-1 text-sm font-semibold text-black tracking-tight leading-tight">
                       {it.name}
                     </h3>
                     <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide", statusConfig.badgeClass)}>
@@ -148,9 +148,9 @@ export function IngredientList({
                   </div>
 
                   {/* Footer metadata */}
-                  <div className="flex items-center justify-between gap-2 border-t border-slate-50/80 pt-2 text-[9px] font-bold text-slate-400">
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-50/80 pt-2 text-xs font-medium text-neutral-500">
                     <span className="truncate">Último movimiento</span>
-                    <time className="shrink-0 text-slate-400/85">{lastDate}</time>
+                    <time className="shrink-0 text-neutral-500">{lastDate}</time>
                   </div>
                 </div>
               </div>

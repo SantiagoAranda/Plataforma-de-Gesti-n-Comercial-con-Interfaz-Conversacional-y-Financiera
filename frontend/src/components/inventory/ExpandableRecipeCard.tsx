@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, ChevronUp, Plus, Trash2, BookOpen, AlertTriangle, Info, Save } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2, BookOpen, AlertTriangle, Info, Save, Eye, EyeOff } from "lucide-react";
 import { ProductCustomizationManager } from "@/src/components/inventory/ProductCustomizationManager";
 import { cn } from "@/src/lib/utils";
 import { formatMoney } from "@/src/lib/formatters";
@@ -389,23 +389,23 @@ export function ExpandableRecipeCard({
   return (
     <article
       className={cn(
-        "rounded-2xl bg-white border border-slate-100 p-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden",
-        isExpanded && "border-slate-200/80 bg-slate-50/10"
+        "rounded-2xl bg-white border border-neutral-200/80 border-t-4 border-t-blue-500 p-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
+        isExpanded && "bg-slate-50/10"
       )}
     >
       {/* HEADER CARD */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full text-left flex items-start gap-4 select-none"
+        className="w-full text-left flex items-start gap-4 select-none font-sans"
       >
         <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 shadow-inner">
           <BookOpen className="h-5 w-5" />
         </div>
 
-        <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="min-w-0 flex-1 space-y-1.5 font-sans">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate text-sm font-bold text-slate-800 leading-tight">
+            <h3 className="truncate text-sm font-semibold text-black tracking-tight leading-tight">
               {item.name}
             </h3>
             <div className="text-slate-400 shrink-0">
@@ -426,22 +426,22 @@ export function ExpandableRecipeCard({
       </button>
 
       {/* METRICS GRID */}
-      <div className="mt-3.5 grid grid-cols-3 gap-2 border-t border-slate-50/80 pt-3 text-[10px] font-bold text-slate-400">
-        <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-50 text-center">
-          <span className="block text-[8px] uppercase tracking-wider text-slate-400/85">Venta</span>
-          <span className="text-slate-700 block mt-0.5 truncate text-xs font-extrabold">
+      <div className="mt-3.5 grid grid-cols-3 gap-2 border-t border-slate-100/80 pt-3">
+        <div className="bg-emerald-50 rounded-xl p-2 text-center border-none">
+          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Venta</span>
+          <span className="text-emerald-700 block mt-0.5 truncate text-sm font-bold">
             ${formatMoney(price)}
           </span>
         </div>
-        <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-50 text-center">
-          <span className="block text-[8px] uppercase tracking-wider text-slate-400/85">Costo Est.</span>
-          <span className="text-slate-700 block mt-0.5 truncate text-xs font-extrabold">
+        <div className="bg-rose-50 rounded-xl p-2 text-center border-none">
+          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Costo</span>
+          <span className="text-rose-700 block mt-0.5 truncate text-sm font-bold">
             {displayCost === null ? "—" : `$${formatMoney(displayCost)}`}
           </span>
         </div>
-        <div className="bg-slate-50/50 rounded-xl p-2 border border-slate-50 text-center">
-          <span className="block text-[8px] uppercase tracking-wider text-slate-400/85">Ganancia Est.</span>
-          <span className={cn("block mt-0.5 truncate text-xs font-extrabold", displayMargin !== null && displayMargin >= 0 ? "text-emerald-600" : "text-rose-600")}>
+        <div className="bg-blue-50 rounded-xl p-2 text-center border-none">
+          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Ganancia</span>
+          <span className="text-blue-700 block mt-0.5 truncate text-sm font-bold">
             {displayMargin === null ? "—" : `$${formatMoney(displayMargin)}`}
           </span>
         </div>
@@ -551,11 +551,10 @@ export function ExpandableRecipeCard({
                       title={showDetails ? "Ocultar detalles de insumos" : "Ver detalles de insumos"}
                       aria-label={showDetails ? "Ocultar detalles de insumos" : "Ver detalles de insumos"}
                       aria-pressed={showDetails}
-                      className={`grid h-6 w-6 place-items-center rounded-full transition active:scale-95 ${
-                        showDetails ? "bg-neutral-900 text-white" : "bg-slate-100 text-slate-500"
-                      }`}
+                      className={`grid h-6 w-6 place-items-center rounded-full transition active:scale-95 ${showDetails ? "bg-neutral-900 text-white" : "bg-slate-100 text-slate-500"
+                        }`}
                     >
-                      <Info className="h-3.5 w-3.5" />
+                      {showDetails ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                     </button>
 
                     {/* Agregar ingrediente */}
@@ -632,7 +631,7 @@ export function ExpandableRecipeCard({
                     return (
                       <div
                         key={`${line.ingredientId}-${idx}`}
-                        className="rounded-2xl border border-slate-100 bg-white p-3 shadow-2xs space-y-2.5"
+                        className="rounded-2xl border-y border-r border-l-4 border-l-amber-400 border-slate-100 bg-neutral-50 p-3 pl-4 shadow-2xs space-y-2.5"
                       >
                         {/* Fila siempre visible: nombre + badge + papelera */}
                         <div className="flex items-center justify-between gap-2">
@@ -665,9 +664,14 @@ export function ExpandableRecipeCard({
                               </select>
                             </div>
                           ) : (
-                            <h4 className="truncate text-xs font-bold text-slate-800">
-                              {getIngredientName(line.ingredientId)}
-                            </h4>
+                            <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                              <h4 className="truncate text-neutral-800 text-sm font-medium">
+                                {getIngredientName(line.ingredientId)}
+                              </h4>
+                              <div className="text-neutral-500 text-xs font-mono bg-neutral-100 px-2 py-0.5 rounded-md shrink-0">
+                                {displayQuantity} {unitLabel}
+                              </div>
+                            </div>
                           )}
 
                           {!isSimple && (

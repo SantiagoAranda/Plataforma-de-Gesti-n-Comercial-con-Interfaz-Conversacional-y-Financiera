@@ -63,6 +63,7 @@ function MiNegocioPageContent() {
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
   const submitInFlightRef = useRef(false);
+  const isScrollingToBottomRef = useRef(false);
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<
@@ -332,18 +333,25 @@ function MiNegocioPageContent() {
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    // Bloquear handleScroll durante la animación para evitar que re-muestre la flecha
+    isScrollingToBottomRef.current = true;
+    setIsAtBottom(true);
+    setShowScrollBottom(false);
+
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior });
     } else {
       const el = scrollRef.current;
       if (!el) return;
       window.requestAnimationFrame(() => {
-        el.scrollTo({
-          top: el.scrollHeight,
-          behavior,
-        });
+        el.scrollTo({ top: el.scrollHeight, behavior });
       });
     }
+
+    // Desbloquear después de que termine la animación smooth (~600ms)
+    setTimeout(() => {
+      isScrollingToBottomRef.current = false;
+    }, 600);
   }, []);
 
   useEffect(() => {
@@ -443,14 +451,14 @@ function MiNegocioPageContent() {
       const schedule =
         type === "SERVICE"
           ? week.flatMap((day, dayIndex) =>
-              day.active
-                ? day.ranges.map((r) => ({
-                    weekday: WEEKDAY_ENUM[dayIndex],
-                    startMinute: timeToMinutes(r.start),
-                    endMinute: timeToMinutes(r.end),
-                  }))
-                : [],
-            )
+            day.active
+              ? day.ranges.map((r) => ({
+                weekday: WEEKDAY_ENUM[dayIndex],
+                startMinute: timeToMinutes(r.start),
+                endMinute: timeToMinutes(r.end),
+              }))
+              : [],
+          )
           : [];
 
       const cleanedBadgeText1 = badgeText1.trim();
@@ -478,8 +486,8 @@ function MiNegocioPageContent() {
         appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
         impoconsumoRate:
           type === "PRODUCT" &&
-          appliesImpoconsumo &&
-          parsedImpoconsumoRate !== null
+            appliesImpoconsumo &&
+            parsedImpoconsumoRate !== null
             ? parsedImpoconsumoRate / 100
             : null,
         description: description.trim() || null,
@@ -630,14 +638,29 @@ function MiNegocioPageContent() {
   };
 
   const handleScroll = useCallback(() => {
+    // Si estamos en medio de una animación de scroll programado, ignorar el evento
+    if (isScrollingToBottomRef.current) return;
+
     const el = scrollRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const nearBottom = distanceFromBottom < 120;
+
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+
+    // Tolerancia estricta de 15px para absorber decimales del navegador
+    const nearBottom = distanceFromBottom <= 15;
+
     shouldStickToBottomRef.current = nearBottom;
     setIsAtBottom(nearBottom);
     setShowScrollBottom(!nearBottom);
   }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
 
   const groupedItems = useMemo(() => {
     const groups: { dateLabel: string; items: Item[] }[] = [];
@@ -679,15 +702,15 @@ function MiNegocioPageContent() {
   });
 
   return (
-    <div className="flex flex-col min-h-screen bg-white lg:h-[100dvh] lg:overflow-hidden">
+    <div className="flex flex-col h-[100dvh] overflow-hidden bg-white">
       <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
 
       <main
         ref={scrollRef}
-        onScroll={handleScroll}
         className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-32 lg:pb-[140px]"
       >
         <div ref={messagesEndRef} className="h-px" />
+
 
         {groupedItems.map((group) => (
           <div key={group.dateLabel} className="space-y-4">
@@ -860,10 +883,11 @@ function MiNegocioPageContent() {
         </div>
       )}
 
+
       {showScrollBottom && (
         <button
           onClick={() => scrollToBottom("smooth")}
-          className="fixed bottom-24 right-6 z-40 bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
+          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
           aria-label="Ir al final"
         >
           <ArrowDown size={20} strokeWidth={2.5} />
