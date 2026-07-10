@@ -47,6 +47,44 @@ type IncludedSale = {
   status: string;
 };
 
+type SimpleTaxGroupResolution =
+  | {
+      status: 'RESOLVED';
+      groupCode: string;
+      groupName: string | null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+    }
+  | {
+      status: 'NO_RUT_ACTIVITY' | 'NOT_FOUND';
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string | null;
+      ciiuDescription: string | null;
+      source: null;
+    }
+  | {
+      status: 'AMBIGUOUS';
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+      candidates: Array<{ groupCode: string; groupName: string | null }>;
+    };
+
+type SimpleTaxActivityGroupMappingRow = {
+  id: string;
+  taxYear: number;
+  ciiuCode: string;
+  groupCode: string;
+  groupName: string | null;
+  source: string;
+  active: boolean;
+  createdAt: Date;
+};
+
 @Injectable()
 export class SimpleTaxService {
   constructor(private readonly prisma: PrismaService) {}
@@ -56,7 +94,7 @@ export class SimpleTaxService {
       where: { businessId },
     });
 
-    return existing ?? {
+    const baseConfig = existing ?? {
       id: null,
       businessId,
       enabled: false,
@@ -67,6 +105,18 @@ export class SimpleTaxService {
       filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
       createdAt: null,
       updatedAt: null,
+    };
+
+    const rutContext = await this.getSimpleTaxRutContext(
+      businessId,
+      baseConfig.taxYear,
+    );
+
+    return {
+      ...baseConfig,
+      rutActivity: rutContext.rutActivity,
+      hasSimpleTaxResponsibility: rutContext.hasSimpleTaxResponsibility,
+      groupResolution: rutContext.groupResolution,
     };
   }
 
@@ -212,6 +262,12 @@ export class SimpleTaxService {
       });
       if (!period) throw new NotFoundException('Periodo RST no encontrado');
 
+      await this.assertResolvedSimpleTaxGroup(
+        businessId,
+        period.taxYear,
+        'presentar',
+      );
+
       if (
         period.status === SimpleTaxPeriodStatus.POSTED ||
         period.status === SimpleTaxPeriodStatus.PAID
@@ -302,6 +358,12 @@ export class SimpleTaxService {
   }
 
   async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
+    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    if (!hasSimpleResponsibility) {
+      throw new BadRequestException(
+        'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
+      );
+    }
     await this.assertBimonthlyFilingMode(businessId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -309,6 +371,12 @@ export class SimpleTaxService {
         where: { id, businessId },
       });
       if (!period) throw new NotFoundException('Periodo RST no encontrado');
+
+      await this.assertResolvedSimpleTaxGroup(
+        businessId,
+        period.taxYear,
+        'pagar',
+      );
 
       if (period.status === SimpleTaxPeriodStatus.CALCULATED) {
         throw new BadRequestException('El periodo RST debe estar presentado antes de pagar.');
@@ -433,9 +501,24 @@ export class SimpleTaxService {
     const config = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
     });
-    if (!config?.enabled || !config.groupCode) {
-      throw new BadRequestException('Configura el grupo del Regimen Simple antes de calcular.');
+    if (!config?.enabled) {
+      throw new BadRequestException(
+        'Activa la responsabilidad 47 - Regimen Simple en el RUT antes de calcular.',
+      );
     }
+
+    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    if (!hasSimpleResponsibility) {
+      throw new BadRequestException(
+        'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
+      );
+    }
+
+    const groupResolution = await this.assertResolvedSimpleTaxGroup(
+      businessId,
+      input.taxYear,
+      'calcular',
+    );
 
     const globalParams = await this.prisma.taxGlobalParameter.findUnique({
       where: { year: input.taxYear },
@@ -474,7 +557,7 @@ export class SimpleTaxService {
     const taxableGrossIncomeUvt = taxableGrossIncome.div(globalParams.uvt);
     const bracket = await this.findBracket(
       input.taxYear,
-      config.groupCode,
+      groupResolution.groupCode,
       taxableGrossIncomeUvt,
     );
     const grossSimpleTax = taxableGrossIncome.mul(bracket.rate);
@@ -486,11 +569,8 @@ export class SimpleTaxService {
       grossSimpleTax.sub(totalDiscounts),
       new Prisma.Decimal(0),
     );
-    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     const filingMode = config.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE;
-    const warnings = hasSimpleResponsibility
-      ? []
-      : ['El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.'];
+    const warnings: string[] = [];
     if (filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION) {
       warnings.push(
         'Este negocio esta configurado con modalidad anual. El bimestre es informativo y no genera presentacion ni asiento contable.',
@@ -510,7 +590,7 @@ export class SimpleTaxService {
       excludedIncome,
       taxableGrossIncome,
       taxableGrossIncomeUvt,
-      groupCode: config.groupCode,
+      groupCode: groupResolution.groupCode,
       groupName: bracket.groupName,
       appliedRate: bracket.rate,
       grossSimpleTax,
@@ -530,6 +610,7 @@ export class SimpleTaxService {
       warnings,
       filingMode,
       informativeOnly,
+      groupResolution,
       notes: input.notes ?? null,
       response: this.serializeCalculation({
         taxYear: input.taxYear,
@@ -542,7 +623,7 @@ export class SimpleTaxService {
         excludedIncome,
         taxableGrossIncome,
         taxableGrossIncomeUvt,
-        groupCode: config.groupCode,
+        groupCode: groupResolution.groupCode,
         groupName: bracket.groupName,
         appliedRate: bracket.rate,
         grossSimpleTax,
@@ -561,7 +642,146 @@ export class SimpleTaxService {
         warnings,
         filingMode,
         informativeOnly,
+        groupResolution,
       }),
+    };
+  }
+
+  async resolveSimpleTaxGroupFromRut(
+    businessId: string,
+    taxYear: number,
+  ): Promise<SimpleTaxGroupResolution> {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      select: {
+        mainCiiuCode: true,
+        mainCiiuDescription: true,
+      },
+    });
+
+    const ciiuCode = profile?.mainCiiuCode?.trim() || null;
+    const ciiuDescription = await this.resolveCiiuDescription(
+      ciiuCode,
+      profile?.mainCiiuDescription,
+    );
+
+    if (!ciiuCode) {
+      return {
+        status: 'NO_RUT_ACTIVITY',
+        groupCode: null,
+        groupName: null,
+        ciiuCode: null,
+        ciiuDescription,
+        source: null,
+      };
+    }
+
+    const mappings = await this.prisma.$queryRaw<SimpleTaxActivityGroupMappingRow[]>(
+      Prisma.sql`
+        SELECT
+          "id",
+          "taxYear",
+          "ciiuCode",
+          "groupCode",
+          "groupName",
+          "source",
+          "active",
+          "createdAt"
+        FROM "SimpleTaxActivityGroupMapping"
+        WHERE "taxYear" = ${taxYear}
+          AND "ciiuCode" = ${ciiuCode}
+          AND "active" = true
+        ORDER BY "groupCode" ASC, "createdAt" ASC
+      `,
+    );
+
+    if (mappings.length === 0) {
+      return {
+        status: 'NOT_FOUND',
+        groupCode: null,
+        groupName: null,
+        ciiuCode,
+        ciiuDescription,
+        source: null,
+      };
+    }
+
+    const groups = new Map<string, string | null>();
+    for (const mapping of mappings) {
+      groups.set(mapping.groupCode, mapping.groupName);
+    }
+
+    if (groups.size > 1) {
+      return {
+        status: 'AMBIGUOUS',
+        groupCode: null,
+        groupName: null,
+        ciiuCode,
+        ciiuDescription,
+        source: mappings[0].source,
+        candidates: [...groups.entries()].map(([groupCode, groupName]) => ({
+          groupCode,
+          groupName,
+        })),
+      };
+    }
+
+    const [groupCode, groupName] = [...groups.entries()][0];
+    return {
+      status: 'RESOLVED',
+      groupCode,
+      groupName,
+      ciiuCode,
+      ciiuDescription,
+      source: mappings[0].source,
+    };
+  }
+
+  private async resolveCiiuDescription(
+    ciiuCode: string | null,
+    rutDescription?: string | null,
+  ) {
+    const trimmedRutDescription = rutDescription?.trim();
+    if (trimmedRutDescription) return trimmedRutDescription;
+    if (!ciiuCode) return null;
+
+    const catalogActivity = await this.prisma.economicActivityCiiu.findUnique({
+      where: { code: ciiuCode },
+      select: { description: true },
+    });
+
+    return catalogActivity?.description ?? null;
+  }
+
+  private async getSimpleTaxRutContext(businessId: string, taxYear: number) {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      include: {
+        responsibilities: {
+          include: {
+            responsibility: true,
+          },
+        },
+      },
+    });
+
+    const hasSimpleTaxResponsibility = Boolean(
+      profile?.responsibilities.some((item) => item.responsibility.code === '47'),
+    );
+    const groupResolution = await this.resolveSimpleTaxGroupFromRut(businessId, taxYear);
+
+    const ciiuCode = profile?.mainCiiuCode ?? null;
+
+    return {
+      rutActivity: {
+        ciiuCode,
+        ciiuDescription: await this.resolveCiiuDescription(
+          ciiuCode,
+          profile?.mainCiiuDescription,
+        ),
+      },
+      hasSimpleTaxResponsibility,
+      groupResolution,
     };
   }
 
@@ -682,6 +902,45 @@ export class SimpleTaxService {
     }
   }
 
+  private async assertResolvedSimpleTaxGroup(
+    businessId: string,
+    taxYear: number,
+    action: 'calcular' | 'presentar' | 'pagar',
+  ) {
+    const groupResolution = await this.resolveSimpleTaxGroupFromRut(
+      businessId,
+      taxYear,
+    );
+
+    if (groupResolution.status === 'RESOLVED') return groupResolution;
+
+    if (groupResolution.status === 'NO_RUT_ACTIVITY') {
+      throw new BadRequestException('No hay actividad economica configurada en el RUT.');
+    }
+
+    if (action === 'presentar') {
+      throw new BadRequestException(
+        'No se puede presentar el impuesto porque el grupo RST no esta resuelto para la actividad economica actual.',
+      );
+    }
+
+    if (action === 'pagar') {
+      throw new BadRequestException(
+        'No se puede pagar el impuesto porque el grupo RST no esta resuelto para la actividad economica actual.',
+      );
+    }
+
+    if (groupResolution.status === 'NOT_FOUND') {
+      throw new BadRequestException(
+        'No se pudo determinar el grupo RST para la actividad economica del RUT.',
+      );
+    }
+
+    throw new BadRequestException(
+      'La actividad economica tiene mas de un grupo RST posible. Requiere revision.',
+    );
+  }
+
   private async assertSimpleTaxPucAccounts(
     tx: Prisma.TransactionClient,
     codes: string[],
@@ -762,6 +1021,7 @@ export class SimpleTaxService {
       warnings: value.warnings ?? [],
       filingMode: value.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
       informativeOnly: Boolean(value.informativeOnly),
+      groupResolution: value.groupResolution ?? null,
     };
   }
 

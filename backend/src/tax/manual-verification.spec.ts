@@ -655,4 +655,64 @@ describe('Manual Verification of Colombian Tax Module', () => {
     console.log('Juridica ReteICA total:', resultJuridica.reteIcaTotal.toNumber());
     expect(resultJuridica.reteIcaTotal.toNumber()).toBe(9660);
   });
+
+  it('13. Caso Fiscal 3.1 - Venta a Gran Contribuyente con ReteFuente, ReteIVA y ReteICA', async () => {
+    prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
+      id: 'profile-1',
+      personType: PersonType.JURIDICA,
+      responsibilities: [{ responsibility: { code: '48' } }], // 48 IVA activo, 47/49 inactive
+    });
+    prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
+      uvt: new Prisma.Decimal(52374),
+      defaultVatRate: new Prisma.Decimal(0.19),
+      defaultImpoconsumoRate: new Prisma.Decimal(0.08),
+    });
+    prismaMock.item.findMany.mockResolvedValue([
+      { id: 'item-goods', price: new Prisma.Decimal(80000), appliesImpoconsumo: false, saleConcept: SaleConcept.GOODS },
+    ]);
+    prismaMock.salesTaxRule.findMany.mockResolvedValue([
+      {
+        taxType: TaxType.RETEFUENTE,
+        direction: TaxDirection.WITHHOLD,
+        rate: new Prisma.Decimal(0.025),
+        minBaseUvt: new Prisma.Decimal(0),
+        active: true,
+        pucAccountCode: '236540',
+      },
+      {
+        taxType: TaxType.RETEIVA,
+        direction: TaxDirection.WITHHOLD,
+        rate: new Prisma.Decimal(0.15),
+        minBaseUvt: new Prisma.Decimal(0),
+        active: true,
+        pucAccountCode: '236701',
+      },
+    ]);
+
+    const dto: TaxPreviewDto = {
+      buyerIsIvaResponsable: true,
+      buyerIsRetenedor: true,
+      buyerIsGranContribuyente: true,
+      buyerIsAutorretenedor: false,
+      buyerIsRegimenSimple: false,
+      icaRateOverride: 10, // 10 por mil
+      cartItems: [{ itemId: 'item-goods', quantity: 13 }],
+    };
+
+    const result = await service.calculateTaxPreview('business-1', dto);
+    console.log('--- TEST 13: Caso Fiscal 3.1 ---');
+    console.log('subtotal:', result.subtotal.toString());
+    console.log('vatTotal:', result.vatTotal.toString());
+    console.log('reteFuenteTotal:', result.reteFuenteTotal.toString());
+    console.log('reteIcaTotal:', result.reteIcaTotal.toString());
+    console.log('reteIvaTotal:', result.reteIvaTotal.toString());
+    console.log('netReceived:', result.netReceived.toString());
+
+    expect(result.subtotal.toNumber()).toBe(1040000);
+    expect(result.vatTotal.toNumber()).toBe(197600);
+    expect(result.reteFuenteTotal.toNumber()).toBe(26000);
+    expect(result.reteIcaTotal.toNumber()).toBe(10400);
+    expect(result.reteIvaTotal.toNumber()).toBe(29640);
+    expect(result.netReceived.toNumber()).toBe(1171560);
+  });
 });

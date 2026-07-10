@@ -17,11 +17,15 @@ describe('SimpleTaxService', () => {
 
   const prisma = {
     $transaction: mockFn(),
+    $queryRaw: mockFn(),
     businessSimpleTaxConfig: {
       findUnique: mockFn(),
       upsert: mockFn(),
     },
     taxGlobalParameter: {
+      findUnique: mockFn(),
+    },
+    economicActivityCiiu: {
       findUnique: mockFn(),
     },
     order: {
@@ -115,6 +119,22 @@ describe('SimpleTaxService', () => {
     );
   }
 
+  function mockActivityGroupMapping(groupCode = '2') {
+    const group = groups[groupCode as keyof typeof groups];
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: `mapping-${groupCode}`,
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode,
+        groupName: group.name,
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+  }
+
   function mockSales(amount: number) {
     prisma.order.findMany.mockResolvedValue([
       {
@@ -147,10 +167,16 @@ describe('SimpleTaxService', () => {
       year: 2026,
       uvt: new Prisma.Decimal(52374),
     });
+    prisma.economicActivityCiiu.findUnique.mockResolvedValue({
+      description: 'Comercio al por menor en establecimientos no especializados',
+    });
     prisma.businessTaxProfile.findUnique.mockResolvedValue({
+      mainCiiuCode: '4711',
+      mainCiiuDescription: 'Comercio al por menor',
       responsibilities: [{ responsibility: { code: '47' } }],
     });
     mockConfig('2');
+    mockActivityGroupMapping('2');
     mockRates('2');
     mockSales(0);
   });
@@ -188,7 +214,7 @@ describe('SimpleTaxService', () => {
   });
 
   it('calculates group 1 at 1.2% for 50,000,000', async () => {
-    mockConfig('1');
+    mockActivityGroupMapping('1');
     mockRates('1');
     mockSales(50000000);
 
@@ -202,7 +228,7 @@ describe('SimpleTaxService', () => {
   });
 
   it('calculates group 3 at 5.9% for 50,000,000', async () => {
-    mockConfig('3');
+    mockActivityGroupMapping('3');
     mockRates('3');
     mockSales(50000000);
 
@@ -287,6 +313,207 @@ describe('SimpleTaxService', () => {
         status: 'COMPLETED',
       }),
     ]);
+  });
+
+  it('detects RST group from the RUT CIIU mapping', async () => {
+    mockActivityGroupMapping('1');
+    mockRates('1');
+    mockSales(1000000);
+
+    const result = await service.calculate(businessId, {
+      taxYear: 2026,
+      periodNumber: 1,
+    });
+
+    expect(result.response.groupCode).toBe('1');
+    expect(result.response.groupResolution).toEqual(
+      expect.objectContaining({
+        status: 'RESOLVED',
+        ciiuCode: '4711',
+        groupCode: '1',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+      }),
+    );
+  });
+
+  it('does not require manual groupCode in the backend config when mapping exists', async () => {
+    mockConfig(null as any);
+    mockActivityGroupMapping('2');
+    mockRates('2');
+
+    const result = await service.calculate(businessId, {
+      taxYear: 2026,
+      periodNumber: 1,
+    });
+
+    expect(result.response.groupCode).toBe('2');
+  });
+
+  it('uses the CIIU catalog description instead of the RST mapping description', async () => {
+    prisma.businessTaxProfile.findUnique.mockResolvedValue({
+      mainCiiuCode: '4711',
+      mainCiiuDescription: null,
+      responsibilities: [{ responsibility: { code: '47' } }],
+    });
+    prisma.economicActivityCiiu.findUnique.mockResolvedValue({
+      description: 'Descripcion oficial del catalogo CIIU',
+    });
+    mockActivityGroupMapping('2');
+    mockRates('2');
+
+    const result = await service.calculate(businessId, {
+      taxYear: 2026,
+      periodNumber: 1,
+    });
+
+    expect(result.response.groupResolution).toEqual(
+      expect.objectContaining({
+        ciiuCode: '4711',
+        ciiuDescription: 'Descripcion oficial del catalogo CIIU',
+        groupCode: '2',
+      }),
+    );
+  });
+
+  it('blocks bimonthly calculation when the RUT CIIU has no mapping', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await expect(
+      service.calculate(businessId, {
+        taxYear: 2026,
+        periodNumber: 1,
+      }),
+    ).rejects.toThrow('No se pudo determinar el grupo RST');
+  });
+
+  it('blocks bimonthly calculation when the RUT CIIU mapping is ambiguous', async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'mapping-1',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '1',
+        groupName: 'Grupo 1',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'mapping-2',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    await expect(
+      service.calculate(businessId, {
+        taxYear: 2026,
+        periodNumber: 1,
+      }),
+    ).rejects.toThrow('mas de un grupo RST posible');
+  });
+
+  it('returns AMBIGUOUS in config when the RUT CIIU has multiple mappings', async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'mapping-1',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '1',
+        groupName: 'Grupo 1',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'mapping-2',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+
+    const result = await service.getConfig(businessId);
+
+    expect(result.groupResolution).toEqual(
+      expect.objectContaining({
+        status: 'AMBIGUOUS',
+        ciiuCode: '4711',
+        candidates: [
+          { groupCode: '1', groupName: 'Grupo 1' },
+          { groupCode: '2', groupName: 'Grupo 2' },
+        ],
+      }),
+    );
+  });
+
+  it('blocks posting an old calculated period when the current CIIU has no resolved group', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.CALCULATED,
+      taxYear: 2026,
+      periodNumber: 1,
+      periodEnd: new Date('2026-02-28T23:59:59.999Z'),
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+
+    await expect(service.postPeriod(businessId, 'period-1')).rejects.toThrow(
+      'grupo RST no esta resuelto',
+    );
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('blocks paying a posted period when the current CIIU is ambiguous', async () => {
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'mapping-1',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '1',
+        groupName: 'Grupo 1',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+      {
+        id: 'mapping-2',
+        taxYear: 2026,
+        ciiuCode: '4711',
+        groupCode: '2',
+        groupName: 'Grupo 2',
+        source: 'NOMINA_SIMULADOR_VENTAS',
+        active: true,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ]);
+    prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      businessId,
+      status: SimpleTaxPeriodStatus.POSTED,
+      taxYear: 2026,
+      periodNumber: 1,
+      netSimpleTax: new Prisma.Decimal(800000),
+    });
+
+    await expect(
+      service.payPeriod(businessId, 'period-1', {
+        paymentDate: '2026-03-15',
+        paymentMethod: 'BANK' as any,
+        paidAmount: 800000,
+      }),
+    ).rejects.toThrow('grupo RST no esta resuelto');
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
   });
 
   it('rejects electronic payments above taxable income', async () => {

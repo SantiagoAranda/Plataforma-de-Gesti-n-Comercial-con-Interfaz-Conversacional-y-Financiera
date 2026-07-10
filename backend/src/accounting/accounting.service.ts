@@ -49,6 +49,44 @@ const MANUAL_PAID_OUTFLOW_DEFAULTS = {
 const SIMPLE_TAX_RESPONSIBILITY_CODE = '47';
 const SIMPLE_TAX_EXPENSE_PUC_CODE = '519595';
 
+type SimpleTaxDashboardGroupResolution =
+  | {
+      status: 'RESOLVED';
+      groupCode: string;
+      groupName: string | null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+    }
+  | {
+      status: 'NO_RUT_ACTIVITY' | 'NOT_FOUND';
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string | null;
+      ciiuDescription: string | null;
+      source: null;
+    }
+  | {
+      status: 'AMBIGUOUS';
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+      candidates: Array<{ groupCode: string; groupName: string | null }>;
+    };
+
+type SimpleTaxActivityGroupMappingRow = {
+  id: string;
+  taxYear: number;
+  ciiuCode: string;
+  groupCode: string;
+  groupName: string | null;
+  source: string;
+  active: boolean;
+  createdAt: Date;
+};
+
 type ExpenseGroupDefinition = {
   id: string;
   label: string;
@@ -1544,6 +1582,7 @@ export class AccountingService {
     let returns = 0;
     let costs = 0;
     let operatingExpenses = 0;
+    let includedSimpleTaxExpense = 0;
     let nonOperatingIncome = 0;
     let nonOperatingExpenses = 0;
 
@@ -1573,6 +1612,9 @@ export class AccountingService {
         costs += signedValue;
       } else if (code.startsWith('51') || code.startsWith('52')) {
         operatingExpenses += signedValue;
+        if (code === SIMPLE_TAX_EXPENSE_PUC_CODE) {
+          includedSimpleTaxExpense += signedValue;
+        }
       } else if (code.startsWith('53')) {
         nonOperatingExpenses += signedValue;
       }
@@ -1587,6 +1629,7 @@ export class AccountingService {
       businessId,
       q,
       Math.round(profitBeforeTax),
+      Math.round(includedSimpleTaxExpense),
     );
     const isOpenSimpleTaxEstimate =
       simpleTaxProjection?.enabled &&
@@ -1609,11 +1652,6 @@ export class AccountingService {
         ? netIncome * 0.10
         : 0;
     const netProfit = netIncome - legalReserve;
-    if (simpleTaxProjection?.source === 'POSTED_ACTUAL') {
-      simpleTaxProjection.netProfitBeforeSimpleTax = Math.round(netProfit);
-      simpleTaxProjection.netProfitAfterSimpleTax = Math.round(netProfit);
-    }
-
     return {
       balanceTotal: Math.round(netProfit),
       eficiencia: 85,
@@ -1643,6 +1681,7 @@ export class AccountingService {
     businessId: string,
     q: AccountingMovementsQueryDto,
     netProfitBeforeSimpleTax: number,
+    includedSimpleTaxExpense = 0,
   ) {
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) return undefined;
@@ -1670,6 +1709,7 @@ export class AccountingService {
       groupName: undefined as string | undefined,
       filingMode: config?.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
       informativeOnly: config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+      groupResolution: undefined as SimpleTaxDashboardGroupResolution | undefined,
       estimatedRate: 0,
       grossIncomeBase: 0,
       estimatedSimpleTax: 0,
@@ -1679,13 +1719,6 @@ export class AccountingService {
       periodStatus: undefined as SimpleTaxPeriodStatus | undefined,
       message: undefined as string | undefined,
     };
-
-    if (!config?.enabled || !config.groupCode) {
-      return {
-        ...base,
-        message: 'Configura el grupo del Regimen Simple para estimar el impuesto.',
-      };
-    }
 
     const existingPeriod = await this.prisma.simpleTaxPeriod.findUnique({
       where: {
@@ -1702,21 +1735,47 @@ export class AccountingService {
         existingPeriod?.status === SimpleTaxPeriodStatus.PAID)
     ) {
       const actualTax = Number(existingPeriod.netSimpleTax ?? 0);
+      const periodAllocation = await this.allocateSimpleTaxPeriodToMonth(
+        businessId,
+        periodRange.start,
+        periodRange.endExclusive,
+        projectionRange.start,
+        projectionRange.endExclusive,
+        actualTax,
+      );
+      const extraTaxToDiscount = Math.max(
+        periodAllocation.allocatedTax - Math.max(includedSimpleTaxExpense, 0),
+        0,
+      );
       return {
         ...base,
         configured: true,
-        groupCode: existingPeriod.groupCode || config.groupCode,
+        groupCode: existingPeriod.groupCode || config?.groupCode || '',
         groupName: existingPeriod.groupName ?? undefined,
         estimatedRate: Number(existingPeriod.appliedRate ?? 0),
-        grossIncomeBase: Number(existingPeriod.taxableGrossIncome ?? 0),
-        estimatedSimpleTax: Math.round(actualTax),
-        netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
+        grossIncomeBase: Math.round(Number(periodAllocation.monthGrossIncome)),
+        estimatedSimpleTax: Math.round(periodAllocation.allocatedTax),
+        netProfitAfterSimpleTax: netProfitBeforeSimpleTax - Math.round(extraTaxToDiscount),
         source: 'POSTED_ACTUAL' as const,
         periodStatus: existingPeriod.status,
         message:
           existingPeriod.status === SimpleTaxPeriodStatus.PAID
-            ? 'Periodo pagado. El gasto ya esta reflejado en Contabilidad.'
-            : 'Periodo cerrado. El gasto ya esta reflejado en Contabilidad.',
+            ? 'Periodo pagado. Impuesto real asignado al mes segun ventas del bimestre.'
+            : 'Periodo presentado. Impuesto real asignado al mes segun ventas del bimestre.',
+      };
+    }
+
+    const groupResolution = await this.resolveSimpleTaxGroupFromRut(
+      businessId,
+      projectionRange.taxYear,
+    );
+
+    if (groupResolution.status !== 'RESOLVED') {
+      return {
+        ...base,
+        configured: false,
+        groupResolution,
+        message: this.simpleTaxGroupResolutionMessage(groupResolution.status),
       };
     }
 
@@ -1726,7 +1785,9 @@ export class AccountingService {
       return {
         ...base,
         configured: true,
-        groupCode: config.groupCode,
+        groupCode: groupResolution.groupCode,
+        groupName: groupResolution.groupName ?? undefined,
+        groupResolution,
         estimatedSimpleTax: postedMovementTaxNumber,
         netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
         source: 'POSTED_ACTUAL' as const,
@@ -1738,7 +1799,7 @@ export class AccountingService {
       where: {
         taxYear: projectionRange.taxYear,
         periodType: SimpleTaxPeriodType.BIMONTHLY,
-        groupCode: config.groupCode,
+        groupCode: groupResolution.groupCode,
         active: true,
       },
       orderBy: { lowerUvt: 'asc' },
@@ -1748,7 +1809,9 @@ export class AccountingService {
       return {
         ...base,
         configured: false,
-        groupCode: config.groupCode,
+        groupCode: groupResolution.groupCode,
+        groupName: groupResolution.groupName ?? undefined,
+        groupResolution,
         message: 'No hay tarifas del Regimen Simple configuradas para este grupo y ano.',
       };
     }
@@ -1765,8 +1828,9 @@ export class AccountingService {
     return {
       ...base,
       configured: true,
-      groupCode: config.groupCode,
+      groupCode: groupResolution.groupCode,
       groupName: bracket.groupName,
+      groupResolution,
       estimatedRate,
       grossIncomeBase: Math.round(Number(grossIncomeBase)),
       estimatedSimpleTax: estimatedSimpleTaxNumber,
@@ -1774,7 +1838,7 @@ export class AccountingService {
       source: 'MONTHLY_MIN_RATE' as const,
       periodStatus: existingPeriod?.status,
       message:
-        config.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION
+        config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION
           ? 'Estimacion informativa Regimen Simple. El cierre contable se realizara en la declaracion anual.'
           : 'Estimacion usando tarifa minima del grupo. No genera asiento contable hasta presentar el bimestre.',
     };
@@ -1827,6 +1891,160 @@ export class AccountingService {
       (total, order) => total.add(order.fiscalContext?.subtotal ?? order.total),
       new Prisma.Decimal(0),
     );
+  }
+
+  private async allocateSimpleTaxPeriodToMonth(
+    businessId: string,
+    periodStart: Date,
+    periodEndExclusive: Date,
+    monthStart: Date,
+    monthEndExclusive: Date,
+    periodTax: number,
+  ) {
+    const [periodGrossIncome, monthGrossIncome] = await Promise.all([
+      this.calculateSimpleTaxProjectionGrossIncome(
+        businessId,
+        periodStart,
+        periodEndExclusive,
+      ),
+      this.calculateSimpleTaxProjectionGrossIncome(
+        businessId,
+        monthStart,
+        monthEndExclusive,
+      ),
+    ]);
+
+    if (periodGrossIncome.lte(0) || periodTax <= 0) {
+      return {
+        periodGrossIncome,
+        monthGrossIncome,
+        allocatedTax: 0,
+      };
+    }
+
+    return {
+      periodGrossIncome,
+      monthGrossIncome,
+      allocatedTax: Number(monthGrossIncome.div(periodGrossIncome).mul(periodTax)),
+    };
+  }
+
+  private async resolveSimpleTaxGroupFromRut(
+    businessId: string,
+    taxYear: number,
+  ): Promise<SimpleTaxDashboardGroupResolution> {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      select: {
+        mainCiiuCode: true,
+        mainCiiuDescription: true,
+      },
+    });
+
+    const ciiuCode = profile?.mainCiiuCode?.trim() || null;
+    const ciiuDescription = await this.resolveCiiuDescription(
+      ciiuCode,
+      profile?.mainCiiuDescription,
+    );
+
+    if (!ciiuCode) {
+      return {
+        status: 'NO_RUT_ACTIVITY',
+        groupCode: null,
+        groupName: null,
+        ciiuCode: null,
+        ciiuDescription,
+        source: null,
+      };
+    }
+
+    const mappings = await this.prisma.$queryRaw<SimpleTaxActivityGroupMappingRow[]>(
+      Prisma.sql`
+        SELECT
+          "id",
+          "taxYear",
+          "ciiuCode",
+          "groupCode",
+          "groupName",
+          "source",
+          "active",
+          "createdAt"
+        FROM "SimpleTaxActivityGroupMapping"
+        WHERE "taxYear" = ${taxYear}
+          AND "ciiuCode" = ${ciiuCode}
+          AND "active" = true
+        ORDER BY "groupCode" ASC, "createdAt" ASC
+      `,
+    );
+
+    if (mappings.length === 0) {
+      return {
+        status: 'NOT_FOUND',
+        groupCode: null,
+        groupName: null,
+        ciiuCode,
+        ciiuDescription,
+        source: null,
+      };
+    }
+
+    const groups = new Map<string, string | null>();
+    for (const mapping of mappings) {
+      groups.set(mapping.groupCode, mapping.groupName);
+    }
+
+    if (groups.size > 1) {
+      return {
+        status: 'AMBIGUOUS',
+        groupCode: null,
+        groupName: null,
+        ciiuCode,
+        ciiuDescription,
+        source: mappings[0].source,
+        candidates: [...groups.entries()].map(([groupCode, groupName]) => ({
+          groupCode,
+          groupName,
+        })),
+      };
+    }
+
+    const [groupCode, groupName] = [...groups.entries()][0];
+    return {
+      status: 'RESOLVED',
+      groupCode,
+      groupName,
+      ciiuCode,
+      ciiuDescription,
+      source: mappings[0].source,
+    };
+  }
+
+  private async resolveCiiuDescription(
+    ciiuCode: string | null,
+    rutDescription?: string | null,
+  ) {
+    const trimmedRutDescription = rutDescription?.trim();
+    if (trimmedRutDescription) return trimmedRutDescription;
+    if (!ciiuCode) return null;
+
+    const catalogActivity = await this.prisma.economicActivityCiiu.findUnique({
+      where: { code: ciiuCode },
+      select: { description: true },
+    });
+
+    return catalogActivity?.description ?? null;
+  }
+
+  private simpleTaxGroupResolutionMessage(
+    status: SimpleTaxDashboardGroupResolution['status'],
+  ) {
+    if (status === 'NO_RUT_ACTIVITY') {
+      return 'No hay actividad economica configurada en el RUT.';
+    }
+    if (status === 'AMBIGUOUS') {
+      return 'La actividad economica tiene mas de un grupo RST posible. Requiere revision.';
+    }
+    return 'No se pudo determinar automaticamente el grupo RST para esta actividad economica.';
   }
 
   private async sumPostedSimpleTaxMovements(

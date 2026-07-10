@@ -90,6 +90,15 @@ export type AccountingSummary = {
     netProfitAfterSimpleTax: number;
     source: "MONTHLY_MIN_RATE" | "POSTED_ACTUAL";
     periodStatus?: "DRAFT" | "CALCULATED" | "POSTED" | "PAID";
+    groupResolution?: {
+      status: "RESOLVED" | "NO_RUT_ACTIVITY" | "NOT_FOUND" | "AMBIGUOUS";
+      groupCode: string | null;
+      groupName: string | null;
+      ciiuCode: string | null;
+      ciiuDescription: string | null;
+      source: string | null;
+      candidates?: Array<{ groupCode: string; groupName: string | null }>;
+    };
     message?: string;
   };
 };

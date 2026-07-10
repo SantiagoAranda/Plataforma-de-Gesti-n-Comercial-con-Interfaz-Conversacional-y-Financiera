@@ -66,7 +66,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const provisionesImpuesto = isOpenSimpleTaxEstimate
     ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
     : hasConfiguredSimpleTax
-      ? 0
+      ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
       : iva + retenciones;
 
   const utilidadLiquida = hasConfiguredSimpleTax
@@ -112,6 +112,13 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const rawPctUtilidadAntesDeImpuestos  = ventasBrutas > 0 ? Math.round((utilidadAntesDeImpuestos  / ventasBrutas) * 100) : 0;
   const rawPctUtilidadLiquida           = ventasBrutas > 0 ? Math.round((utilidadLiquida           / ventasBrutas) * 100) : 0;
   const rawPctUtilidadDelEjercicio      = ventasBrutas > 0 ? Math.round((utilidadDelEjercicio      / ventasBrutas) * 100) : 0;
+  const simpleTaxLabel = isOpenSimpleTaxEstimate
+    ? "Régimen Simple estimado"
+    : simpleTaxProjection?.source === "POSTED_ACTUAL" && simpleTaxProjection.periodStatus === "PAID"
+      ? "Régimen Simple pagado"
+      : simpleTaxProjection?.source === "POSTED_ACTUAL"
+        ? "Régimen Simple presentado"
+        : "Provisiones Impuesto de Renta";
 
   // ─── Sub-componente de fila reutilizable ─────────────────────────────────
   function ProfitRow({
@@ -280,7 +287,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
 
         {/* 2. ÍTEMS NORMALES Y DE FLUJO INTERMEDIO */}
         <div className="space-y-4">
-          <ProfitRow label={isOpenSimpleTaxEstimate ? "Régimen Simple estimado" : hasConfiguredSimpleTax ? "RST ya reflejado en contabilidad" : "Provisiones Impuesto de Renta"} value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
+          <ProfitRow label={simpleTaxLabel} value={provisionesImpuesto} pct={pctProvisionesImpuesto} isDeduction={true} />
           <ProfitRow label={isOpenSimpleTaxEstimate ? "Utilidad después de RST" : hasConfiguredSimpleTax ? "Utilidad contable" : "Utilidad Líquida"}              value={utilidadLiquida}       pct={rawPctUtilidadLiquida}        isDeduction={false} />
           {!hasConfiguredSimpleTax && (
             <ProfitRow label="Reserva Legal"                 value={reservaLegal}            pct={pctReservaLegal}           isDeduction={true} />

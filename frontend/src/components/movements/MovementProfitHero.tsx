@@ -58,7 +58,7 @@ export function MovementProfitHero({
   const provisionesImpuesto = isOpenSimpleTaxEstimate
     ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
     : hasConfiguredSimpleTax
-      ? 0
+      ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
       : iva + retenciones;
 
   const utilidadLiquida = hasConfiguredSimpleTax

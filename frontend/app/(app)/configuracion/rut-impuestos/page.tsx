@@ -429,6 +429,8 @@ export default function RutImpuestosPage() {
           : "BIMONTHLY_ADVANCE";
       }
       await updateSimpleTaxConfig(simpleTaxPayload);
+      window.dispatchEvent(new Event("tax-profile-updated"));
+      router.refresh();
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
       toast.error(err.message || "Verifique los datos ingresados.");
@@ -729,10 +731,10 @@ export default function RutImpuestosPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h3 className="text-sm font-black text-emerald-950">
-                      Regimen Simple
+                      Régimen Simple activo según RUT
                     </h3>
                     <p className="mt-1 text-[11px] font-medium text-emerald-800">
-                      Configuracion para liquidacion bimestral. No afecta el calculo fiscal de ventas.
+                      La liquidación se gestiona desde el módulo Régimen Simple.
                     </p>
                   </div>
                   <button
@@ -740,89 +742,21 @@ export default function RutImpuestosPage() {
                     onClick={() => router.push("/contabilidad/regimen-simple")}
                     className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
                   >
-                    Liquidar
+                    Ir a liquidar
                   </button>
                 </div>
-
-                <div className="mt-3 grid gap-3 sm:grid-cols-[112px_minmax(0,1fr)]">
-                  <label className="space-y-1.5">
-                    <span className={labelClassName}>Ano fiscal</span>
-                    <input
-                      type="number"
-                      min="2026"
-                      value={simpleTaxYear}
-                      onChange={(event) => setSimpleTaxYear(event.target.value)}
-                      className={inputClassName}
-                    />
-                  </label>
-
-                  <label className="space-y-1.5">
-                    <span className={labelClassName}>Grupo RST</span>
-                    <select
-                      value={simpleTaxGroupCode}
-                      onChange={(event) => setSimpleTaxGroupCode(event.target.value)}
-                      className={inputClassName}
+                {simpleTaxConfigLoaded && simpleTaxFilingMode === "ANNUAL_EXCEPTION" && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-medium text-amber-800">
+                    <span className="font-bold">Advertencia:</span> Tienes activa la modalidad Excepción Anual de pruebas. Te sugerimos cambiar a la modalidad estándar de <strong>Anticipos bimestrales</strong> para habilitar las liquidaciones normales.
+                    <button
+                      type="button"
+                      onClick={() => setSimpleTaxFilingMode("BIMONTHLY_ADVANCE")}
+                      className="mt-2 block font-black text-amber-900 underline hover:text-amber-950"
                     >
-                      <option value="">Seleccionar grupo</option>
-                      {SIMPLE_TAX_GROUPS.map((group) => (
-                        <option key={group.code} value={group.code}>
-                          {group.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-
-                <label className="mt-3 block space-y-1.5">
-                  <span className={labelClassName}>Actividad RST</span>
-                  <input
-                    type="text"
-                    value={simpleTaxActivityLabel}
-                    onChange={(event) => setSimpleTaxActivityLabel(event.target.value)}
-                    placeholder="Descripcion de actividad para Regimen Simple"
-                    className={inputClassName}
-                  />
-                </label>
-
-                <div className="mt-3 space-y-2">
-                  <span className={labelClassName}>Modalidad Regimen Simple</span>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {[
-                      {
-                        value: "BIMONTHLY_ADVANCE" as const,
-                        title: "Anticipos bimestrales",
-                        description: "Calcula, presenta y paga anticipos por bimestre.",
-                      },
-                      {
-                        value: "ANNUAL_EXCEPTION" as const,
-                        title: "Excepcion anual",
-                        description: "No genera cierre bimestral. Controla estimaciones hasta la declaracion anual.",
-                      },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        disabled={!simpleTaxConfigLoaded}
-                        onClick={() => setSimpleTaxFilingMode(option.value)}
-                        className={`rounded-xl border px-3 py-2 text-left transition ${
-                          simpleTaxFilingMode === option.value
-                            ? "border-emerald-400 bg-white text-emerald-950"
-                            : "border-emerald-100 bg-emerald-50/40 text-emerald-900 hover:bg-white"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        <span className="block text-xs font-black">{option.title}</span>
-                        <span className="mt-1 block text-[11px] font-medium leading-snug text-emerald-700">
-                          {option.description}
-                        </span>
-                      </button>
-                    ))}
+                      Volver a Anticipos Bimestrales
+                    </button>
                   </div>
-                  <p className="rounded-xl bg-white/70 px-3 py-2 text-[11px] font-medium leading-snug text-emerald-800 ring-1 ring-emerald-100">
-                    {simpleTaxConfigLoaded
-                      ? "Usa esta opcion solo si corresponde al perfil tributario del negocio. Esta configuracion afecta cuando se generan asientos contables del Regimen Simple."
-                      : "No se pudo cargar la modalidad actual. Recarga antes de cambiar esta configuracion."}
-                  </p>
-                </div>
+                )}
               </div>
             )}
 

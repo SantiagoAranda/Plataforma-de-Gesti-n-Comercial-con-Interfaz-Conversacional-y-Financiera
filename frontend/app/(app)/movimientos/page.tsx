@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
@@ -190,28 +190,35 @@ export default function MovimientosPage() {
 
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        setError(null);
-        const data = await getAccountingSummary({
-          from: dateRange.from,
-          to: dateRange.to,
-        });
-        setSummary(data);
-      } catch (e: unknown) {
-        setSummary(null);
-        const message =
-          e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
-            ? (e as { message: string }).message
-            : "No se pudieron cargar los movimientos";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    try {
+      setError(null);
+      const data = await getAccountingSummary({
+        from: dateRange.from,
+        to: dateRange.to,
+      });
+      setSummary(data);
+    } catch (e: unknown) {
+      setSummary(null);
+      const message =
+        e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
+          ? (e as { message: string }).message
+          : "No se pudieron cargar los movimientos";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }, [dateRange]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    window.addEventListener("tax-profile-updated", loadSummary);
+    return () => window.removeEventListener("tax-profile-updated", loadSummary);
+  }, [loadSummary]);
 
   // ── hasData ───────────────────────────────────────────────────────────────
   const hasData = useMemo(() => {

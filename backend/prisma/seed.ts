@@ -1,6 +1,7 @@
-import { PrismaClient, PayrollWithholdingStatus, UnitKind } from "@prisma/client";
+import { Prisma, PrismaClient, PayrollWithholdingStatus, UnitKind } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import * as bcrypt from "bcrypt";
 import { parse } from "csv-parse/sync";
 
@@ -870,6 +871,62 @@ async function seedSimpleTaxRateBrackets() {
     console.log("Simple tax RST bimonthly brackets seed OK for 2026");
 }
 
+async function seedSimpleTaxActivityGroupMappings() {
+    const csvPath = path.join(process.cwd(), "prisma", "seed-data", "simple_tax_activity_group_mapping.csv");
+
+    if (!fs.existsSync(csvPath)) {
+        console.log(
+            "Simple tax CIIU -> RST group mapping seed skipped: normalized CSV is not available. No mappings were invented.",
+        );
+        return;
+    }
+
+    const rows = parseCSV(csvPath);
+    let inserted = 0;
+
+    for (const row of rows) {
+        const taxYear = Number(row.taxYear);
+        const ciiuCode = row.ciiuCode?.trim();
+        const groupCode = row.groupCode?.trim();
+
+        if (!Number.isInteger(taxYear) || !ciiuCode || !groupCode) {
+            throw new Error(`Invalid simple tax activity group mapping row: ${JSON.stringify(row)}`);
+        }
+
+        inserted += await prisma.$executeRaw(
+            Prisma.sql`
+                INSERT INTO "SimpleTaxActivityGroupMapping" (
+                    "id",
+                    "taxYear",
+                    "ciiuCode",
+                    "groupCode",
+                    "groupName",
+                    "source",
+                    "active",
+                    "createdAt",
+                    "updatedAt"
+                )
+                VALUES (
+                    ${randomUUID()},
+                    ${taxYear},
+                    ${ciiuCode},
+                    ${groupCode},
+                    ${row.groupName?.trim() || null},
+                    ${row.source?.trim() || "NOMINA_SIMULADOR_VENTAS"},
+                    ${toBool(row.active)},
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT ("taxYear", "ciiuCode", "groupCode") DO NOTHING
+            `,
+        );
+    }
+
+    console.log(
+        `Simple tax CIIU -> RST group mapping seed OK: rows=${rows.length}, inserted=${inserted}, skipped=${rows.length - inserted}`,
+    );
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
@@ -889,6 +946,7 @@ async function main() {
     await seedTaxResponsibilities();
     await seedTaxGlobalParameters();
     await seedSimpleTaxRateBrackets();
+    await seedSimpleTaxActivityGroupMappings();
 }
 
 main()

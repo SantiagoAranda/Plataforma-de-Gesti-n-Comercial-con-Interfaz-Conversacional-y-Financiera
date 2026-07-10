@@ -9,7 +9,40 @@ export type SimpleTaxConfig = {
   activityLabel: string | null;
   ciiuCode: string | null;
   filingMode: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
+  rutActivity?: {
+    ciiuCode: string | null;
+    ciiuDescription: string | null;
+  };
+  hasSimpleTaxResponsibility?: boolean;
+  groupResolution?: SimpleTaxGroupResolution | null;
 };
+
+export type SimpleTaxGroupResolution =
+  | {
+      status: "RESOLVED";
+      groupCode: string;
+      groupName: string | null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+    }
+  | {
+      status: "NO_RUT_ACTIVITY" | "NOT_FOUND";
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string | null;
+      ciiuDescription: string | null;
+      source: null;
+    }
+  | {
+      status: "AMBIGUOUS";
+      groupCode: null;
+      groupName: null;
+      ciiuCode: string;
+      ciiuDescription: string | null;
+      source: string;
+      candidates: Array<{ groupCode: string; groupName: string | null }>;
+    };
 
 export type SimpleTaxRateBracket = {
   id: string;
@@ -75,6 +108,7 @@ export type SimpleTaxCalculation = {
   warnings?: string[];
   filingMode?: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
   informativeOnly?: boolean;
+  groupResolution?: SimpleTaxGroupResolution | null;
 };
 
 export type SimpleTaxPeriod = SimpleTaxCalculation & {
