@@ -465,36 +465,21 @@ export default function RutImpuestosPage() {
           <p className="mt-0.5 text-xs font-bold text-blue-700">
             Validado con Casillas DIAN
           </p>
+          <div className="mt-1.5 flex justify-center">
+            {taxSettingsEnabled ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/10">
+                Impuestos activos
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/10">
+                Impuestos desactivados
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-xl px-4">
-        {/* Global Tax Toggle Card */}
-        <div className="mb-4 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/50 via-white to-blue-50/30 p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">RUT e Impuestos Colombianos</h3>
-              <p className="text-xs font-bold text-slate-500 mt-0.5">
-                Activa los cálculos de impuestos (IVA, retenciones), facturación electrónica y Régimen Simple.
-              </p>
-            </div>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input
-                type="checkbox"
-                checked={taxSettingsEnabled}
-                onChange={(e) => setTaxSettingsEnabled(e.target.checked)}
-                className="peer sr-only"
-              />
-              <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none"></div>
-            </label>
-          </div>
-          
-          {!taxSettingsEnabled && (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] font-medium text-amber-800 leading-relaxed">
-              <span className="font-bold">⚠️ Complejidad Fiscal Ocultada:</span> El sistema no calculará impuestos en nuevas ventas ni permitirá operaciones del Régimen Simple. Los datos de tu perfil fiscal se conservarán, pero no se aplicarán hasta que actives el switch.
-            </div>
-          )}
-        </div>
 
         <form onSubmit={handleSave} className="space-y-3">
           <section className={`${cardClassName} space-y-3`}>
