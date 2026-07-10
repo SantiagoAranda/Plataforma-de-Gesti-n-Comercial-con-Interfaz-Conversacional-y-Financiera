@@ -220,6 +220,7 @@ export default function SaleTaxPanel({
   className = "",
   previewOnly = false,
   onPreviewChange,
+  taxSettingsEnabled = false,
 }: {
   mode: "create" | "edit" | "readonly";
   value: SaleFiscalFormState;
@@ -232,6 +233,7 @@ export default function SaleTaxPanel({
   className?: string;
   previewOnly?: boolean;
   onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
+  taxSettingsEnabled?: boolean;
 }) {
   const readonly = mode === "readonly";
   const [livePreview, setLivePreview] = useState<TaxPreviewResponse | null>(null);
@@ -331,6 +333,8 @@ export default function SaleTaxPanel({
     : 0;
 
   const missingReadonlyFiscal = readonly && !fiscalSummary;
+  if (!taxSettingsEnabled && !fiscalSummary) return null;
+
   return (
     <section className={`space-y-3 ${className}`}>
       {!previewOnly && (

@@ -170,6 +170,7 @@ export class SimpleTaxService {
   }
 
   async calculateAndPersist(businessId: string, dto: SimpleTaxCalculateDto) {
+    await this.assertTaxSettingsEnabled(businessId);
     const calculation = await this.calculate(businessId, dto);
     const existing = await this.prisma.simpleTaxPeriod.findUnique({
       where: {
@@ -215,6 +216,7 @@ export class SimpleTaxService {
   }
 
   async updatePeriod(businessId: string, id: string, dto: SimpleTaxUpdatePeriodDto) {
+    await this.assertTaxSettingsEnabled(businessId);
     const existing = await this.getPeriod(businessId, id);
     if (
       existing.status === SimpleTaxPeriodStatus.POSTED ||
@@ -248,6 +250,7 @@ export class SimpleTaxService {
   }
 
   async postPeriod(businessId: string, id: string) {
+    await this.assertTaxSettingsEnabled(businessId);
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
@@ -358,6 +361,7 @@ export class SimpleTaxService {
   }
 
   async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
+    await this.assertTaxSettingsEnabled(businessId);
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
@@ -1058,6 +1062,7 @@ export class SimpleTaxService {
   }
 
   async calculateAnnualReturn(businessId: string, taxYear: number, payload: CalculateSimpleTaxAnnualReturnDto) {
+    await this.assertTaxSettingsEnabled(businessId);
     const config = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
     });
@@ -1235,6 +1240,7 @@ export class SimpleTaxService {
   }
 
   async postAnnualReturn(businessId: string, id: string) {
+    await this.assertTaxSettingsEnabled(businessId);
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
@@ -1304,6 +1310,7 @@ export class SimpleTaxService {
   }
 
   async payAnnualReturn(businessId: string, id: string, dto: PaySimpleTaxAnnualReturnDto) {
+    await this.assertTaxSettingsEnabled(businessId);
     return this.prisma.$transaction(async (tx) => {
       const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
         where: { id, businessId },
@@ -1424,5 +1431,17 @@ export class SimpleTaxService {
 
   private formatDateOnly(date: Date) {
     return date.toISOString().slice(0, 10);
+  }
+
+  private async assertTaxSettingsEnabled(businessId: string) {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      select: { taxSettingsEnabled: true },
+    });
+    if (!profile?.taxSettingsEnabled) {
+      throw new BadRequestException(
+        'La configuración fiscal está desactivada. Active "RUT e Impuestos" para usar el Régimen Simple.',
+      );
+    }
   }
 }

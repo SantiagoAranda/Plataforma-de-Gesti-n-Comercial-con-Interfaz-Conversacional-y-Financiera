@@ -45,6 +45,10 @@ export class UpsertTaxProfileDto {
   @IsBoolean()
   isIncomeTaxDeclarant?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  taxSettingsEnabled?: boolean;
+
   @IsArray()
   @IsString({ each: true })
   responsibilityCodes!: string[];

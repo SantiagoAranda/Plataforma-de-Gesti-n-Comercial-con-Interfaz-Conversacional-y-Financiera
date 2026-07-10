@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
@@ -149,6 +150,7 @@ function MonthPickerPopover({
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosPage() {
+  const { taxSettingsEnabled } = useTaxSettings();
   // Modo de vista: MONTH (mes completo) | DAILY (día individual)
   // Arranca en MONTH para que el primer fetch cargue el mes actual completo
   const [viewMode, setViewMode] = useState<ViewMode>("MONTH");
@@ -307,7 +309,7 @@ export default function MovimientosPage() {
           <>
             {summary && <MovementProfitHero metrics={summary} />}
 
-            {summary?.simpleTaxProjection?.enabled && (
+            {taxSettingsEnabled && summary?.simpleTaxProjection?.enabled && (
               <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>

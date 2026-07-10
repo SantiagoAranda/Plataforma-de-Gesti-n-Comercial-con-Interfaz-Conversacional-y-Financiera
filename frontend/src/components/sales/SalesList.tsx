@@ -11,6 +11,7 @@ type Props = {
   onDetails?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
+  taxSettingsEnabled?: boolean;
 };
 
 function groupSalesByDate(sales: Sale[]) {
@@ -44,6 +45,7 @@ export default function SalesList({
   onDetails,
   onReceipt,
   onSendWhatsApp,
+  taxSettingsEnabled = false,
 }: Props) {
   const groups = groupSalesByDate(sales);
 
@@ -60,6 +62,7 @@ export default function SalesList({
               onDetails={onDetails}
               onReceipt={onReceipt}
               onSendWhatsApp={onSendWhatsApp}
+              taxSettingsEnabled={taxSettingsEnabled}
             />
           ))}
         </div>

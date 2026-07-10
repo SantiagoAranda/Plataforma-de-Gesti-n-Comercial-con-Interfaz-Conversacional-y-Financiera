@@ -617,6 +617,7 @@ describe('AccountingService simple tax dashboard projection', () => {
               : {
                   mainCiiuCode: overrides.mainCiiuCode ?? '4711',
                   mainCiiuDescription: overrides.mainCiiuDescription ?? 'Comercio al por menor',
+                  taxSettingsEnabled: overrides.taxSettingsEnabled !== false,
                   responsibilities: [
                     { responsibility: { code: '47' } },
                   ],

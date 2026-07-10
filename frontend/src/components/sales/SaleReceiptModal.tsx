@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useRef, useState, type RefObject } from "react";
 import { AlertTriangle, Download, Loader2, Printer, ReceiptText, Share2, X } from "lucide-react";
@@ -26,6 +26,7 @@ type ReceiptViewProps = {
   onPrint: () => void;
   onDownload: () => void;
   onShare: () => void;
+  taxSettingsEnabled?: boolean;
 };
 
 function formatMoney(value: number) {
@@ -151,12 +152,24 @@ function SaleReceiptView({
   onPrint,
   onDownload,
   onShare,
+  taxSettingsEnabled = false,
 }: ReceiptViewProps) {
   const business = readReceiptBusinessProfile();
+  const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
+    taxSettingsEnabled || 
+    Number(sale.fiscalSummary?.iva ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.impoconsumo ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteFuente ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteIva ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteIca ?? 0) > 0
+  );
   const total = calcTotal(sale);
-  const subtotal = total;
+  const subtotal = hasFiscalSummary && sale.fiscalSummary ? Number(sale.fiscalSummary.subtotal) : total;
   const discounts = 0;
-  const taxes = 0;
+  const taxes = hasFiscalSummary && sale.fiscalSummary
+    ? Number(sale.fiscalSummary.iva ?? 0) + Number(sale.fiscalSummary.impoconsumo ?? 0)
+    : 0;
+  const displayTotal = hasFiscalSummary ? (subtotal + taxes) : total;
   const statusStyles = getStatusStyles(sale.status);
 
   return (
@@ -328,7 +341,7 @@ function SaleReceiptView({
                 Total
               </span>
               <span className="text-2xl font-semibold text-slate-900 tabular-nums">
-                ${formatMoney(total)}
+                ${formatMoney(displayTotal)}
               </span>
             </div>
           </div>
@@ -417,10 +430,12 @@ export default function SaleReceiptModal({
   open,
   sale,
   onClose,
+  taxSettingsEnabled = false,
 }: {
   open: boolean;
   sale: Sale | null;
   onClose: () => void;
+  taxSettingsEnabled?: boolean;
 }) {
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -551,6 +566,7 @@ export default function SaleReceiptModal({
           onPrint={handlePrint}
           onDownload={handleDownload}
           onShare={handleShare}
+          taxSettingsEnabled={taxSettingsEnabled}
         />
       </div>
     </div>

@@ -1683,6 +1683,12 @@ export class AccountingService {
     netProfitBeforeSimpleTax: number,
     includedSimpleTaxExpense = 0,
   ) {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      select: { taxSettingsEnabled: true },
+    });
+    if (!profile?.taxSettingsEnabled) return undefined;
+
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) return undefined;
 
@@ -1759,9 +1765,11 @@ export class AccountingService {
         source: 'POSTED_ACTUAL' as const,
         periodStatus: existingPeriod.status,
         message:
-          existingPeriod.status === SimpleTaxPeriodStatus.PAID
-            ? 'Periodo pagado. Impuesto real asignado al mes segun ventas del bimestre.'
-            : 'Periodo presentado. Impuesto real asignado al mes segun ventas del bimestre.',
+          config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION
+            ? 'Impuesto historico Regimen Simple ya reflejado en Contabilidad.'
+            : existingPeriod.status === SimpleTaxPeriodStatus.PAID
+              ? 'Periodo pagado. Impuesto real asignado al mes segun ventas del bimestre.'
+              : 'Periodo presentado. Impuesto real asignado al mes segun ventas del bimestre.',
       };
     }
 

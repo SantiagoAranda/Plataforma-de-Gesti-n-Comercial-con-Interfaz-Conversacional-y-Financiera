@@ -174,6 +174,7 @@ describe('SimpleTaxService', () => {
       mainCiiuCode: '4711',
       mainCiiuDescription: 'Comercio al por menor',
       responsibilities: [{ responsibility: { code: '47' } }],
+      taxSettingsEnabled: true,
     });
     mockConfig('2');
     mockActivityGroupMapping('2');
@@ -354,6 +355,7 @@ describe('SimpleTaxService', () => {
       mainCiiuCode: '4711',
       mainCiiuDescription: null,
       responsibilities: [{ responsibility: { code: '47' } }],
+      taxSettingsEnabled: true,
     });
     prisma.economicActivityCiiu.findUnique.mockResolvedValue({
       description: 'Descripcion oficial del catalogo CIIU',
@@ -1106,6 +1108,7 @@ describe('SimpleTaxService', () => {
     it('throws error if the business does not have simple tax responsibility 47', async () => {
       prisma.businessTaxProfile.findUnique.mockResolvedValue({
         responsibilities: [{ responsibility: { code: '10' } }],
+        taxSettingsEnabled: true,
       });
       await expect(
         service.calculateAnnualReturn(businessId, 2026, { taxYear: 2026 }),

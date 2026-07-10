@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import Link from "next/link";
 import AppHeader from "@/src/components/layout/AppHeader";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 import {
   createMovement,
@@ -211,6 +212,7 @@ function parseAmountQuery(query: string) {
 }
 
 export default function ContabilidadPage() {
+  const { taxSettingsEnabled } = useTaxSettings();
   const [movements, setMovements] = useState<AccountingMovement[]>([]);
   const [selectedMovement, setSelectedMovement] =
     useState<AccountingMovement | null>(null);
@@ -593,12 +595,14 @@ export default function ContabilidadPage() {
             <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
               Resumen del balance
             </div>
-            <Link
-              href="/contabilidad/regimen-simple"
-              className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
-            >
-              Regimen Simple
-            </Link>
+            {taxSettingsEnabled && (
+              <Link
+                href="/contabilidad/regimen-simple"
+                className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
+              >
+                Regimen Simple
+              </Link>
+            )}
 
             <div className="mt-3 grid grid-cols-3 gap-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
               <div>Debito</div>

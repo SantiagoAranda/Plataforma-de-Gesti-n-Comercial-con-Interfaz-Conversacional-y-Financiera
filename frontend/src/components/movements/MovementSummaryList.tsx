@@ -3,6 +3,7 @@
 import { ArrowUpRight, ArrowDownRight, Briefcase, Building2, Scale } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { AccountingSummary } from "@/src/services/accounting";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 function formatARS(v: number) {
   return v.toLocaleString("es-AR", {
@@ -17,6 +18,7 @@ type MovementSummaryListProps = {
 };
 
 export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
+  const { taxSettingsEnabled } = useTaxSettings();
   // 1. Pre-procesamiento de Valores Redondeados en Cadena
   const operacion = metrics?.operacionComercial || {
     ventasNetas: 0,
@@ -61,8 +63,8 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
   const simpleTaxProjection = metrics.simpleTaxProjection;
   const hasConfiguredSimpleTax =
-    Boolean(simpleTaxProjection?.enabled && simpleTaxProjection.configured);
-  const isOpenSimpleTaxEstimate = simpleTaxProjection?.source === "MONTHLY_MIN_RATE";
+    Boolean(taxSettingsEnabled && simpleTaxProjection?.enabled && simpleTaxProjection.configured);
+  const isOpenSimpleTaxEstimate = Boolean(taxSettingsEnabled && simpleTaxProjection?.source === "MONTHLY_MIN_RATE");
   const provisionesImpuesto = isOpenSimpleTaxEstimate
     ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
     : hasConfiguredSimpleTax
@@ -73,9 +75,9 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
     ? Math.round(simpleTaxProjection?.netProfitAfterSimpleTax ?? utilidadAntesDeImpuestos - provisionesImpuesto)
     : utilidadAntesDeImpuestos - provisionesImpuesto;
 
-  const reservaLegal = hasConfiguredSimpleTax
-    ? 0
-    : Math.abs(Math.round(impuestos.fondosReserva || 0));
+  const reservaLegal = !hasConfiguredSimpleTax
+    ? Math.abs(Math.round(impuestos.fondosReserva || 0))
+    : 0;
 
   // ¡AQUÍ SE CLAVA EL CIERRE CONSTANTE!
   const utilidadDelEjercicio = utilidadLiquida - reservaLegal;
@@ -112,13 +114,15 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const rawPctUtilidadAntesDeImpuestos  = ventasBrutas > 0 ? Math.round((utilidadAntesDeImpuestos  / ventasBrutas) * 100) : 0;
   const rawPctUtilidadLiquida           = ventasBrutas > 0 ? Math.round((utilidadLiquida           / ventasBrutas) * 100) : 0;
   const rawPctUtilidadDelEjercicio      = ventasBrutas > 0 ? Math.round((utilidadDelEjercicio      / ventasBrutas) * 100) : 0;
-  const simpleTaxLabel = isOpenSimpleTaxEstimate
-    ? "Régimen Simple estimado"
-    : simpleTaxProjection?.source === "POSTED_ACTUAL" && simpleTaxProjection.periodStatus === "PAID"
-      ? "Régimen Simple pagado"
-      : simpleTaxProjection?.source === "POSTED_ACTUAL"
-        ? "Régimen Simple presentado"
-        : "Provisiones Impuesto de Renta";
+  const simpleTaxLabel = taxSettingsEnabled
+    ? (isOpenSimpleTaxEstimate
+      ? "Régimen Simple estimado"
+      : simpleTaxProjection?.source === "POSTED_ACTUAL" && simpleTaxProjection.periodStatus === "PAID"
+        ? "Régimen Simple pagado"
+        : simpleTaxProjection?.source === "POSTED_ACTUAL"
+          ? "Régimen Simple presentado"
+          : "Provisiones Impuesto de Renta")
+    : "Provisiones Impuesto de Renta";
 
   // ─── Sub-componente de fila reutilizable ─────────────────────────────────
   function ProfitRow({

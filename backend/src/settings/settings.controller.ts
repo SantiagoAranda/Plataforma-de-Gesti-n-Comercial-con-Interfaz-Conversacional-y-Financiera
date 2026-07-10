@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { UpsertTaxProfileDto } from './dto/upsert-tax-profile.dto';
+import { ToggleTaxSettingsDto } from './dto/toggle-tax-settings.dto';
 import { CreateIcaRateDto } from './dto/create-ica-rate.dto';
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -31,6 +32,11 @@ export class SettingsController {
   @Put('tax-profile')
   upsertTaxProfile(@Req() req: any, @Body() dto: UpsertTaxProfileDto) {
     return this.settingsService.upsertTaxProfile(req.user.businessId, dto);
+  }
+
+  @Patch('tax-profile/toggle')
+  toggleTaxSettings(@Req() req: any, @Body() dto: ToggleTaxSettingsDto) {
+    return this.settingsService.toggleTaxSettings(req.user.businessId, dto);
   }
 
   @Get('tax-responsibilities')

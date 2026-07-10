@@ -1919,6 +1919,7 @@ model BusinessTaxProfile {
   id                   String                      @id @default(uuid())
   businessId           String                      @unique
   business             Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxSettingsEnabled   Boolean                     @default(false)
   personType           PersonType                  @default(NATURAL)
   documentType         DocumentType                @default(NIT)
   nit                  String

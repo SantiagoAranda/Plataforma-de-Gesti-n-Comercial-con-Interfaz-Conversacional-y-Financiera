@@ -78,6 +78,7 @@ describe('TaxService', () => {
       personType: PersonType.JURIDICA,
       mainCiiuCode: '4711',
       isIncomeTaxDeclarant: true,
+      taxSettingsEnabled: true,
       responsibilities: codes.map((code) => ({ responsibility: { code } })),
       ...overrides,
     });

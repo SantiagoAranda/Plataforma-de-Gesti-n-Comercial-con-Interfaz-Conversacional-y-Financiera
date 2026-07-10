@@ -65,6 +65,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -102,6 +103,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '49' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -136,6 +138,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -190,6 +193,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
     prismaMock.businessTaxProfile.findUnique.mockResolvedValue({
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -233,6 +237,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       mainCiiuCode: '5611',
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -286,6 +291,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       mainCiiuCode: '5611',
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -537,6 +543,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       responsibilities: [{ responsibility: { code: '48' } }],
       isIncomeTaxDeclarant: true,
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -577,6 +584,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       personType: PersonType.JURIDICA,
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),
@@ -627,6 +635,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       personType: PersonType.NATURAL,
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
 
     const dtoNatural: TaxPreviewDto = {
@@ -649,6 +658,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       personType: PersonType.JURIDICA,
       responsibilities: [{ responsibility: { code: '48' } }],
+      taxSettingsEnabled: true,
     });
 
     const resultJuridica = await service.calculateTaxPreview('business-1', dtoNatural);
@@ -661,6 +671,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       id: 'profile-1',
       personType: PersonType.JURIDICA,
       responsibilities: [{ responsibility: { code: '48' } }], // 48 IVA activo, 47/49 inactive
+      taxSettingsEnabled: true,
     });
     prismaMock.taxGlobalParameter.findFirst.mockResolvedValue({
       uvt: new Prisma.Decimal(52374),

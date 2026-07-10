@@ -3,6 +3,7 @@ import { api } from "@/src/lib/api";
 export type TaxProfile = {
   id: string;
   businessId: string;
+  taxSettingsEnabled: boolean;
   personType: "NATURAL" | "JURIDICA";
   documentType: "CC" | "NIT" | "CE" | "PASAPORTE" | "TI";
   nit: string;
@@ -78,6 +79,13 @@ export function updateTaxProfile(data: any) {
   return api<TaxProfile>("/settings/tax-profile", {
     method: "PUT",
     body: JSON.stringify(data),
+  });
+}
+
+export function toggleTaxSettings(enabled: boolean) {
+  return api<TaxProfile>("/settings/tax-profile/toggle", {
+    method: "PATCH",
+    body: JSON.stringify({ taxSettingsEnabled: enabled }),
   });
 }
 
