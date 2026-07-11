@@ -18,7 +18,6 @@ function statusBadge(product: SimpleItemInventorySummary) {
     return {
       label: "Sin inv. inicial",
       badgeClass: "bg-rose-50 text-rose-700 border border-rose-100",
-      borderClass: "border-l-rose-500",
       icon: AlertCircle,
       iconClass: "text-rose-500",
     };
@@ -27,7 +26,6 @@ function statusBadge(product: SimpleItemInventorySummary) {
     return {
       label: "Sin stock",
       badgeClass: "bg-rose-50 text-rose-700 border border-rose-100",
-      borderClass: "border-l-rose-500",
       icon: AlertCircle,
       iconClass: "text-rose-500",
     };
@@ -36,7 +34,6 @@ function statusBadge(product: SimpleItemInventorySummary) {
     return {
       label: "Stock bajo",
       badgeClass: "bg-amber-50 text-amber-700 border border-amber-100",
-      borderClass: "border-l-amber-500",
       icon: AlertTriangle,
       iconClass: "text-amber-500",
     };
@@ -44,7 +41,6 @@ function statusBadge(product: SimpleItemInventorySummary) {
   return {
     label: "Listo para vender",
     badgeClass: "bg-emerald-50 text-emerald-700 border border-emerald-100",
-    borderClass: "border-l-emerald-500",
     icon: CheckCircle,
     iconClass: "text-emerald-500",
   };
@@ -78,10 +74,7 @@ export function SimpleProductList({ products, onSelect }: Props) {
         return (
           <article
             key={product.id}
-            className={cn(
-              "w-full rounded-2xl border-t-4 border-t-blue-500 border-l-[5px] border-b border-r border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
-              badge.borderClass
-            )}
+            className="w-full rounded-2xl border-t-4 border-t-blue-500 border-b border-r border-l border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans"
           >
             <button
               type="button"

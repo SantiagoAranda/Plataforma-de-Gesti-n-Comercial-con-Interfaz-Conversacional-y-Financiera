@@ -57,7 +57,7 @@ export function IngredientList({
         let statusConfig = {
           label: "OK",
           badgeClass: "bg-emerald-50 text-emerald-700 border border-emerald-100",
-          borderClass: "border-l-emerald-500",
+          borderClass: "border-t-emerald-500",
           icon: CheckCircle,
           iconClass: "text-emerald-500",
         };
@@ -66,7 +66,7 @@ export function IngredientList({
           statusConfig = {
             label: "Inactivo",
             badgeClass: "bg-slate-100 text-slate-500 border border-slate-200",
-            borderClass: "border-l-slate-300",
+            borderClass: "border-t-slate-300",
             icon: HelpCircle,
             iconClass: "text-slate-400",
           };
@@ -74,7 +74,7 @@ export function IngredientList({
           statusConfig = {
             label: "Sin stock",
             badgeClass: "bg-rose-50 text-rose-700 border border-rose-150",
-            borderClass: "border-l-rose-500",
+            borderClass: "border-t-rose-500",
             icon: AlertCircle,
             iconClass: "text-rose-500",
           };
@@ -82,7 +82,7 @@ export function IngredientList({
           statusConfig = {
             label: "Stock bajo",
             badgeClass: "bg-amber-50 text-amber-700 border border-amber-150",
-            borderClass: "border-l-amber-500",
+            borderClass: "border-t-amber-500",
             icon: AlertTriangle,
             iconClass: "text-amber-500",
           };
@@ -96,7 +96,7 @@ export function IngredientList({
           <article
             key={it.id}
             className={cn(
-              "w-full rounded-2xl border-t-4 border-t-blue-500 border-l-[5px] border-b border-r border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
+              "w-full rounded-2xl border-t-4 border-b border-r border-l border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
               statusConfig.borderClass
             )}
           >
