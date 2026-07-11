@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "SimpleTaxRateBracket_taxYear_periodType_groupCode_lowerUvt_uppe" RENAME TO "SimpleTaxRateBracket_taxYear_periodType_groupCode_lowerUvt__key";

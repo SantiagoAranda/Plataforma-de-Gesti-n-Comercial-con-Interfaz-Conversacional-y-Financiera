@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/src/lib/api";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import { BusinessChatItem } from "./BusinessChatItem";
 import AppHeader from "@/src/components/layout/AppHeader";
 import ContextMenu from "@/src/components/common/ContextMenu";
@@ -24,7 +24,6 @@ type Props = {
 
 export function AdminBusinessThread({ type }: Props) {
   const router = useRouter();
-  const { notify } = useNotification();
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,17 +59,15 @@ export function AdminBusinessThread({ type }: Props) {
 
     try {
       await api(patchUrl, { method: "PATCH" });
-      
-      notify({
-        type: "success",
-        message: business.status === "ACTIVE" ? "Negocio inhabilitado correctamente" : "Negocio reactivado correctamente"
-      });
+      toast.success(
+        business.status === "ACTIVE" ? "Negocio inhabilitado correctamente" : "Negocio reactivado correctamente"
+      );
       
       // Remove from current list
       setBusinesses(prev => prev.filter(b => b.id !== business.id));
     } catch (err) {
       console.error(err);
-      notify({ type: "error", message: "No se pudo actualizar el estado del negocio" });
+      toast.error("No se pudo actualizar el estado del negocio");
     }
   };
 

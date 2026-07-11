@@ -119,12 +119,14 @@ enum InventoryReferenceType {
 enum AccountingMovementOriginType {
   MANUAL
   ORDER
+  SIMPLE_TAX_PERIOD
   PAYROLL_RUN
   PAYROLL_SETTLEMENT
   PAYROLL_PAYMENT
   PAYROLL_BENEFIT_PAYMENT
   PAYROLL_INITIAL_BALANCE
   PAYROLL_COMPLEMENTARY_RUN
+  SIMPLE_TAX_ANNUAL_RETURN
 }
 
 enum PaymentMethod {
@@ -156,9 +158,32 @@ enum TaxType {
 }
 
 enum TaxDirection {
-  CHARGE    // El vendedor cobra al comprador
-  WITHHOLD  // El comprador retiene al vendedor
-  SELF      // Autorretención del vendedor
+  CHARGE // El vendedor cobra al comprador
+  WITHHOLD // El comprador retiene al vendedor
+  SELF // Autorretención del vendedor
+}
+
+enum SimpleTaxPeriodType {
+  BIMONTHLY
+  ANNUAL
+}
+
+enum SimpleTaxPeriodStatus {
+  DRAFT
+  CALCULATED
+  POSTED
+  PAID
+}
+
+enum SimpleTaxAnnualReturnStatus {
+  CALCULATED
+  POSTED
+  PAID
+}
+
+enum SimpleTaxFilingMode {
+  BIMONTHLY_ADVANCE
+  ANNUAL_EXCEPTION
 }
 
 enum SaleConcept {
@@ -273,9 +298,12 @@ model Business {
   // Tenant-scoped Kardex entries for ingredient stock.
   inventoryMovements              InventoryMovement[]
 
-  taxProfile                      BusinessTaxProfile?
-  municipalityIcaRates            MunicipalityIcaRate[]
-  salesTaxRules                   SalesTaxRule[]
+  taxProfile             BusinessTaxProfile?
+  municipalityIcaRates   MunicipalityIcaRate[]
+  salesTaxRules          SalesTaxRule[]
+  simpleTaxConfig        BusinessSimpleTaxConfig?
+  simpleTaxPeriods       SimpleTaxPeriod[]
+  simpleTaxAnnualReturns SimpleTaxAnnualReturn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -330,8 +358,9 @@ model Item {
   // Materialized weighted average cost for SIMPLE inventory products.
   averageCost Decimal @default(0) @db.Decimal(20, 6)
 
-  appliesImpoconsumo Boolean  @default(false)
-  impoconsumoRate    Decimal? @db.Decimal(6, 4)
+  appliesImpoconsumo Boolean     @default(false)
+  impoconsumoRate    Decimal?    @db.Decimal(6, 4)
+  saleConcept        SaleConcept @default(GOODS)
 
   images             ItemImage[]
   scheduleWindows    ServiceScheduleWindow[]
@@ -709,10 +738,10 @@ model InventoryMovement {
   purchasePresentationId String?
   purchasePresentation   IngredientPurchasePresentation? @relation(fields: [purchasePresentationId], references: [id], onDelete: SetNull)
 
-  purchaseQuantity  Decimal? @db.Decimal(20, 6)
-  purchaseUnitLabel String?
+  purchaseQuantity         Decimal? @db.Decimal(20, 6)
+  purchaseUnitLabel        String?
   factorToBaseUnitSnapshot Decimal? @db.Decimal(20, 6)
-  conversionDetail  String?
+  conversionDetail         String?
 
   // Sale order that generated this movement, nullable for purchases and manual adjustments.
   orderId String?
@@ -1788,37 +1817,125 @@ model PayrollAccountingMapping {
 // ===============================
 
 model TaxGlobalParameter {
-  id                     String    @id @default(uuid())
-  year                   Int       @unique
-  uvt                    Decimal   @db.Decimal(10, 2)
-  defaultVatRate         Decimal   @db.Decimal(5, 4)
-  defaultImpoconsumoRate Decimal?  @db.Decimal(5, 4)
+  id                     String   @id @default(uuid())
+  year                   Int      @unique
+  uvt                    Decimal  @db.Decimal(10, 2)
+  defaultVatRate         Decimal  @db.Decimal(5, 4)
+  defaultImpoconsumoRate Decimal? @db.Decimal(5, 4)
   validFrom              DateTime
   validTo                DateTime
-  active                 Boolean   @default(true)
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model SimpleTaxRateBracket {
+  id         String              @id @default(uuid())
+  taxYear    Int
+  periodType SimpleTaxPeriodType
+  groupCode  String
+  groupName  String
+  lowerUvt   Decimal             @db.Decimal(14, 2)
+  upperUvt   Decimal?            @db.Decimal(14, 2)
+  rate       Decimal             @db.Decimal(8, 6)
+  active     Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([taxYear, periodType, groupCode, lowerUvt, upperUvt])
+  @@index([taxYear, periodType, groupCode, active])
+}
+
+model SimpleTaxActivityGroupMapping {
+  id        String   @id @default(uuid())
+  taxYear   Int
+  ciiuCode  String
+  groupCode String
+  groupName String?
+  source    String   @default("NOMINA_SIMULADOR_VENTAS")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taxYear, ciiuCode, groupCode])
+  @@index([taxYear, ciiuCode])
+  @@index([taxYear, groupCode])
+}
+
+model BusinessSimpleTaxConfig {
+  id            String              @id @default(uuid())
+  businessId    String              @unique
+  business      Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  enabled       Boolean             @default(false)
+  taxYear       Int
+  groupCode     String?
+  activityLabel String?
+  ciiuCode      String?
+  filingMode    SimpleTaxFilingMode @default(BIMONTHLY_ADVANCE)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+model SimpleTaxPeriod {
+  id                           String                @id @default(uuid())
+  businessId                   String
+  business                     Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxYear                      Int
+  periodNumber                 Int
+  periodStart                  DateTime
+  periodEnd                    DateTime
+  status                       SimpleTaxPeriodStatus @default(DRAFT)
+  salesGrossIncome             Decimal               @default(0) @db.Decimal(14, 2)
+  manualGrossIncome            Decimal               @default(0) @db.Decimal(14, 2)
+  excludedIncome               Decimal               @default(0) @db.Decimal(14, 2)
+  taxableGrossIncome           Decimal               @default(0) @db.Decimal(14, 2)
+  taxableGrossIncomeUvt        Decimal               @default(0) @db.Decimal(14, 4)
+  groupCode                    String
+  groupName                    String?
+  appliedRate                  Decimal               @default(0) @db.Decimal(8, 6)
+  grossSimpleTax               Decimal               @default(0) @db.Decimal(14, 2)
+  electronicPaymentsIncome     Decimal               @default(0) @db.Decimal(14, 2)
+  electronicPaymentsDiscount   Decimal               @default(0) @db.Decimal(14, 2)
+  pensionContributionsDiscount Decimal               @default(0) @db.Decimal(14, 2)
+  totalDiscounts               Decimal               @default(0) @db.Decimal(14, 2)
+  netSimpleTax                 Decimal               @default(0) @db.Decimal(14, 2)
+  calculationSnapshot          Json?
+  notes                        String?
+  accountingEntryId            String?
+  paidAccountingEntryId        String?
+  postedAt                     DateTime?
+  paidAt                       DateTime?
+  paidAmount                   Decimal?              @db.Decimal(14, 2)
+  paymentAccountCode           String?
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+
+  @@unique([businessId, taxYear, periodNumber])
+  @@index([businessId, taxYear])
+  @@index([businessId, status])
 }
 
 model BusinessTaxProfile {
-  id                     String                     @id @default(uuid())
-  businessId             String                     @unique
-  business               Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  personType             PersonType                 @default(NATURAL)
-  documentType           DocumentType               @default(NIT)
-  nit                    String
-  dv                     String?
-  tradeName              String                     // Razón Social / Nombre Comercial
-  email                  String
-  phone                  String
-  departmentCode         String
-  municipalityCode       String
-  address                String
-  mainCiiuCode           String?                    // Código CIIU opcional
-  mainCiiuDescription    String?                    // Descripción manual del CIIU
-  responsibilities       BusinessTaxResponsibility[]
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  id                   String                      @id @default(uuid())
+  businessId           String                      @unique
+  business             Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxSettingsEnabled   Boolean                     @default(false)
+  personType           PersonType                  @default(NATURAL)
+  documentType         DocumentType                @default(NIT)
+  nit                  String
+  dv                   String?
+  tradeName            String // Razón Social / Nombre Comercial
+  email                String
+  phone                String
+  departmentCode       String
+  municipalityCode     String
+  address              String
+  mainCiiuCode         String? // Código CIIU opcional
+  mainCiiuDescription  String? // Descripción manual del CIIU
+  isIncomeTaxDeclarant Boolean                     @default(true)
+  responsibilities     BusinessTaxResponsibility[]
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
 
   @@unique([businessId, nit])
 }
@@ -1845,9 +1962,9 @@ model MunicipalityIcaRate {
   id               String   @id @default(uuid())
   businessId       String
   business         Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  municipalityCode String   // Código DIVIPOLA (5 dígitos)
+  municipalityCode String // Código DIVIPOLA (5 dígitos)
   ciiuCode         String
-  activityName     String?  // Nombre / descripción manual de la actividad para ICA
+  activityName     String? // Nombre / descripción manual de la actividad para ICA
   icaRate          Decimal  @db.Decimal(10, 6) // Ej: 0.009660 (9.66 por mil)
   reteIcaRate      Decimal  @db.Decimal(10, 6) // Default simulador: 0.009660 (9.66 por mil)
   minBaseUvt       Decimal  @default(0) @db.Decimal(10, 2)
@@ -1864,11 +1981,11 @@ model SalesTaxRule {
   business         Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
   taxType          TaxType
   direction        TaxDirection
-  ciiuCode         String?      // Opcional para autorretenciones por CIIU en el futuro
+  ciiuCode         String? // Opcional para autorretenciones por CIIU en el futuro
   saleConcept      SaleConcept? // Concepto aplicable
   rate             Decimal      @db.Decimal(6, 4)
   minBaseUvt       Decimal      @default(0) @db.Decimal(10, 2)
-  pucAccountCode   String       // Cuenta PUC de contrapartida
+  pucAccountCode   String // Cuenta PUC de contrapartida
   postToAccounting Boolean      @default(false) // Indica si se contabiliza automáticamente (autorretención)
   active           Boolean      @default(true)
   createdAt        DateTime     @default(now())
@@ -1876,41 +1993,53 @@ model SalesTaxRule {
 }
 
 model OrderFiscalContext {
-  id                       String       @id @default(uuid())
-  orderId                  String       @unique
-  order                    Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  buyerType                PersonType?
-  buyerName                String?
-  buyerDocumentType        DocumentType?
-  buyerDocumentNumber      String?
-  buyerEmail               String?
-  buyerIsIvaResponsable    Boolean      @default(false)
-  buyerIsRetenedor         Boolean      @default(false)
-  buyerIsGranContribuyente Boolean      @default(false)
-  buyerIsAutorretenedor    Boolean      @default(false)
-  buyerIsRegimenSimple     Boolean      @default(false)
-  fiscalMunicipalityCode   String?
-  saleConcept              SaleConcept?
-  subtotal                 Decimal      @db.Decimal(14, 2)
-  chargedTaxTotal          Decimal      @default(0) @db.Decimal(14, 2) // IVA + impoconsumo
-  withheldTaxTotal         Decimal      @default(0) @db.Decimal(14, 2) // retefuente + reteiva + reteica
-  netReceived              Decimal      @db.Decimal(14, 2)
-  createdAt                DateTime     @default(now())
+  id                             String        @id @default(uuid())
+  orderId                        String        @unique
+  order                          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buyerType                      PersonType?
+  buyerName                      String?
+  buyerDocumentType              DocumentType?
+  buyerDocumentNumber            String?
+  buyerEmail                     String?
+  buyerIsIvaResponsable          Boolean       @default(false)
+  buyerIsRetenedor               Boolean       @default(false)
+  buyerIsGranContribuyente       Boolean       @default(false)
+  buyerIsAutorretenedor          Boolean       @default(false)
+  buyerIsRegimenSimple           Boolean       @default(false)
+  buyerRequiresElectronicInvoice Boolean       @default(false)
+  fiscalMunicipalityCode         String?
+  saleConcept                    SaleConcept?
+  subtotal                       Decimal       @db.Decimal(14, 2)
+  chargedTaxTotal                Decimal       @default(0) @db.Decimal(14, 2) // IVA + impoconsumo
+  withheldTaxTotal               Decimal       @default(0) @db.Decimal(14, 2) // retefuente + reteiva + reteica
+  netReceived                    Decimal       @db.Decimal(14, 2)
+  sellerPersonType               PersonType?
+  sellerIsSimpleRegime           Boolean?
+  sellerIsIncomeTaxDeclarant     Boolean?
+  icaRateUsed                    Decimal?      @db.Decimal(6, 4)
+  reteIcaRateUsed                Decimal?      @db.Decimal(6, 4)
+  reteIcaRateOverride            Decimal?      @db.Decimal(6, 4)
+  hasMixedConcepts               Boolean       @default(false)
+  mixedConceptsWarning           String?
+  impoconsumoRateUsed            Decimal?      @db.Decimal(6, 4)
+  taxYear                        Int?
+  uvtValue                       Decimal?      @db.Decimal(10, 2)
+  createdAt                      DateTime      @default(now())
 }
 
 model SaleTaxLine {
-  id          String   @id @default(uuid())
+  id          String       @id @default(uuid())
   orderId     String
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   taxType     TaxType
   direction   TaxDirection
-  baseAmount  Decimal  @db.Decimal(14, 2)
-  rate        Decimal  @db.Decimal(6, 4)
-  taxAmount   Decimal  @db.Decimal(14, 2)
-  accountCode String   // Cuenta PUC registrada
-  applied     Boolean  @default(true)
+  baseAmount  Decimal      @db.Decimal(14, 2)
+  rate        Decimal      @db.Decimal(6, 4)
+  taxAmount   Decimal      @db.Decimal(14, 2)
+  accountCode String // Cuenta PUC registrada
+  applied     Boolean      @default(true)
   reason      String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime     @default(now())
 }
 
 model TaxCalculationSnapshot {
@@ -1918,8 +2047,45 @@ model TaxCalculationSnapshot {
   orderId        String   @unique
   order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   uvtValue       Decimal  @db.Decimal(10, 2)
-  sellerFiscal   Json     // Snapshot JSON del BusinessTaxProfile del vendedor
-  buyerFiscal    Json     // Snapshot JSON del contexto fiscal del comprador
-  rawCalculation Json     // Log/Detalle de las fórmulas aplicadas
+  sellerFiscal   Json // Snapshot JSON del BusinessTaxProfile del vendedor
+  buyerFiscal    Json // Snapshot JSON del contexto fiscal del comprador
+  rawCalculation Json // Log/Detalle de las fórmulas aplicadas
   createdAt      DateTime @default(now())
+}
+
+model SimpleTaxAnnualReturn {
+  id                           String                      @id @default(uuid())
+  businessId                   String
+  business                     Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  taxYear                      Int
+  status                       SimpleTaxAnnualReturnStatus @default(CALCULATED)
+  filingMode                   SimpleTaxFilingMode
+  groupCode                    String?
+  groupName                    String?
+  grossIncome                  Decimal                     @default(0) @db.Decimal(14, 2)
+  manualGrossIncome            Decimal                     @default(0) @db.Decimal(14, 2)
+  excludedIncome               Decimal                     @default(0) @db.Decimal(14, 2)
+  taxableGrossIncome           Decimal                     @default(0) @db.Decimal(14, 2)
+  taxableGrossIncomeUvt        Decimal                     @default(0) @db.Decimal(14, 4)
+  grossSimpleTax               Decimal                     @default(0) @db.Decimal(14, 2)
+  electronicPaymentsIncome     Decimal                     @default(0) @db.Decimal(14, 2)
+  electronicPaymentsDiscount   Decimal                     @default(0) @db.Decimal(14, 2)
+  pensionContributionsDiscount Decimal                     @default(0) @db.Decimal(14, 2)
+  totalDiscounts               Decimal                     @default(0) @db.Decimal(14, 2)
+  bimonthlyAdvancesTotal       Decimal                     @default(0) @db.Decimal(14, 2)
+  netAnnualTax                 Decimal                     @default(0) @db.Decimal(14, 2)
+  balanceDue                   Decimal                     @default(0) @db.Decimal(14, 2)
+  balanceInFavor               Decimal                     @default(0) @db.Decimal(14, 2)
+  calculationSnapshot          Json?
+  postedAt                     DateTime?
+  paidAt                       DateTime?
+  paidAmount                   Decimal?                    @db.Decimal(14, 2)
+  paymentAccountCode           String?
+  accountingEntryId            String?
+  paidAccountingEntryId        String?
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
+
+  @@unique([businessId, taxYear])
+  @@index([businessId, status])
 }

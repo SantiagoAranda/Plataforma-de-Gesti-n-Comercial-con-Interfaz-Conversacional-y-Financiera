@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Search } from "lucide-react";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 
@@ -22,7 +22,6 @@ type Item = {
 
 export default function PublicStorePage() {
   const { token } = useParams<{ token: string }>();
-  const { notify } = useNotification();
 
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState("");
@@ -50,17 +49,14 @@ export default function PublicStorePage() {
           }))
         );
       } catch {
-        notify({
-          type: "error",
-          message: "No se pudieron cargar los productos",
-        });
+        toast.error("No se pudieron cargar los productos");
       } finally {
         setLoading(false);
       }
     };
 
     fetchItems();
-  }, [token, notify]);
+  }, [token]);
 
   const filtered = useMemo(
     () =>
@@ -84,10 +80,7 @@ export default function PublicStorePage() {
       const data = await res.json();
       setAvailableSlots(Array.isArray(data) ? data : []);
     } catch {
-      notify({
-        type: "error",
-        message: "No se pudo obtener disponibilidad",
-      });
+      toast.error("No se pudo obtener disponibilidad");
       setAvailableSlots([]);
     }
   };
@@ -106,10 +99,7 @@ export default function PublicStorePage() {
       const data = await res.json();
       setAvailableDates(Array.isArray(data) ? data : []);
     } catch {
-      notify({
-        type: "error",
-        message: "No se pudo obtener disponibilidad del calendario",
-      });
+      toast.error("No se pudo obtener disponibilidad del calendario");
       setAvailableDates([]);
     }
   };
@@ -141,20 +131,14 @@ export default function PublicStorePage() {
 
       if (!res.ok) throw new Error();
 
-      notify({
-        type: "success",
-        message: "Reserva creada correctamente",
-      });
+      toast.success("Reserva creada correctamente");
 
       setSelectedService(null);
       setAvailableSlots([]);
       setAvailableDates([]);
       setSelectedDate(null);
     } catch {
-      notify({
-        type: "error",
-        message: "No se pudo crear la reserva",
-      });
+      toast.error("No se pudo crear la reserva");
     }
   };
 

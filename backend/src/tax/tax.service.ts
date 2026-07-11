@@ -27,11 +27,23 @@ export class TaxService {
       },
     });
 
+    if (sellerProfile && sellerProfile.taxSettingsEnabled === false) {
+      return await this.emptyTaxPreview(businessId, dto, {
+        profileMissing: false,
+        taxSettingsEnabled: false,
+        taxDisabledReason: 'TAX_SETTINGS_DISABLED',
+      });
+    }
+
     if (!sellerProfile) {
       this.logger.warn(
         `No tax profile configured for business ${businessId}. Returning zero tax.`,
       );
-      return await this.emptyTaxPreview(businessId, dto);
+      return await this.emptyTaxPreview(businessId, dto, {
+        profileMissing: true,
+        taxSettingsEnabled: false,
+        taxDisabledReason: 'PROFILE_MISSING',
+      });
     }
 
     const globalParams = await this.prisma.taxGlobalParameter.findFirst({
@@ -66,11 +78,50 @@ export class TaxService {
     const sellerIsGranContribuyente = sellerResponsibilityCodes.includes('13');
     const sellerIsPersonaNaturalNoResponsable =
       sellerProfile.personType === PersonType.NATURAL && sellerIsNoResponsableIva;
-    const withholdingSubjectIsDeclarante =
-      dto.withholdingSubjectIsDeclarante ?? true;
+    const sellerIsIncomeTaxDeclarant = sellerProfile.isIncomeTaxDeclarant ?? true;
+    const reteIcaRateOverridePerThousand =
+      dto.reteIcaRateOverride ?? dto.icaRateOverride;
+
+    // Derivación de saleConcept con control de conceptos mixtos
+    const cartConcepts = Array.from(
+      new Set(
+        dto.cartItems
+          .map((i) => {
+            const dbItem = itemsMap.get(i.itemId);
+            return dbItem?.saleConcept;
+          })
+          .filter((c): c is SaleConcept => !!c),
+      ),
+    );
+
+    let hasMixedConcepts = false;
+    let mixedConceptsWarning: string | null = null;
+    let derivedSaleConcept: SaleConcept = dto.saleConcept ?? SaleConcept.GOODS;
+
+    if (cartConcepts.length > 0) {
+      if (cartConcepts.length > 1) {
+        hasMixedConcepts = true;
+        mixedConceptsWarning = `Se detectaron múltiples conceptos fiscales en la venta (${cartConcepts.join(', ')}). Se aplicará prioridad: SERVICES > HONORARIOS > ARRENDAMIENTOS > FOOD_BEVERAGES > GOODS > OTHER.`;
+        
+        const priorityOrder = [
+          SaleConcept.SERVICES,
+          SaleConcept.HONORARIOS,
+          SaleConcept.ARRENDAMIENTOS,
+          SaleConcept.FOOD_BEVERAGES,
+          SaleConcept.GOODS,
+          SaleConcept.OTHER,
+        ];
+        derivedSaleConcept = priorityOrder.find(c => cartConcepts.includes(c)) || SaleConcept.GOODS;
+      } else {
+        derivedSaleConcept = cartConcepts[0];
+      }
+    }
+
     const buyerIsPersonaNatural = dto.buyerType === PersonType.NATURAL;
     const buyerIsRetenedorOrGran =
       dto.buyerIsRetenedor || dto.buyerIsGranContribuyente;
+    let impoconsumoRateUsed: Prisma.Decimal | null = null;
+    const impoconsumoRatesUsed = new Set<string>();
 
     for (const cartItem of dto.cartItems) {
       const item = itemsMap.get(cartItem.itemId);
@@ -88,6 +139,9 @@ export class TaxService {
       if (item.appliesImpoconsumo) {
         const rate =
           item.impoconsumoRate ?? defaultImpoconsumo ?? new Prisma.Decimal(0.08);
+        impoconsumoRatesUsed.add(new Prisma.Decimal(rate).toFixed(4));
+        impoconsumoRateUsed =
+          impoconsumoRatesUsed.size === 1 ? new Prisma.Decimal(rate) : null;
         impoconsumoBase = impoconsumoBase.add(itemSubtotal);
         impoconsumoTotal = impoconsumoTotal.add(itemSubtotal.mul(rate));
         continue;
@@ -130,7 +184,7 @@ export class TaxService {
         taxType: TaxType.IMPOCONSUMO,
         direction: TaxDirection.CHARGE,
         baseAmount: impoconsumoBase,
-        rate: defaultImpoconsumo ?? new Prisma.Decimal(0.08),
+        rate: impoconsumoRateUsed ?? defaultImpoconsumo ?? new Prisma.Decimal(0.08),
         taxAmount: impoconsumoTotal,
         accountCode: '519595',
         applied: true,
@@ -147,7 +201,7 @@ export class TaxService {
         (r) =>
           r.taxType === taxType &&
           r.direction === direction &&
-          r.saleConcept === dto.saleConcept,
+          r.saleConcept === derivedSaleConcept,
       );
       if (specificRule) return specificRule;
       return rules.find(
@@ -163,16 +217,16 @@ export class TaxService {
     );
 
     const getReteFuenteDefaults = () => {
-      switch (dto.saleConcept) {
+      switch (derivedSaleConcept) {
         case SaleConcept.SERVICES:
           return {
             minBaseUvt: new Prisma.Decimal(15),
-            rate: new Prisma.Decimal(withholdingSubjectIsDeclarante ? 0.04 : 0.06),
+            rate: new Prisma.Decimal(sellerIsIncomeTaxDeclarant ? 0.04 : 0.06),
           };
         case SaleConcept.HONORARIOS:
           return {
             minBaseUvt: new Prisma.Decimal(0),
-            rate: new Prisma.Decimal(withholdingSubjectIsDeclarante ? 0.11 : 0.1),
+            rate: new Prisma.Decimal(sellerIsIncomeTaxDeclarant ? 0.11 : 0.1),
           };
         case SaleConcept.ARRENDAMIENTOS:
           return {
@@ -184,7 +238,7 @@ export class TaxService {
           return {
             minBaseUvt: new Prisma.Decimal(10),
             rate: new Prisma.Decimal(
-              withholdingSubjectIsDeclarante ? 0.025 : 0.035,
+              sellerIsIncomeTaxDeclarant ? 0.025 : 0.035,
             ),
           };
       }
@@ -283,38 +337,84 @@ export class TaxService {
       });
     }
 
-    if (
-      buyerIsRetenedorOrGran &&
-      !buyerIsPersonaNatural &&
-      !sellerIsRegimenSimple &&
-      !sellerIsGranContribuyente &&
-      dto.fiscalMunicipalityCode
-    ) {
-      const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
-      let icaRateObj = null;
-      if (sellerCiiuCode) {
-        icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
-          where: {
-            businessId,
-            municipalityCode: dto.fiscalMunicipalityCode,
-            ciiuCode: sellerCiiuCode,
-            active: true,
-          },
-        });
+    let reteIcaRate = new Prisma.Decimal(0);
+    let useReteIca = false;
+
+    // Determinar la tarifa de ReteICA y si aplica
+    if (reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null) {
+      reteIcaRate = new Prisma.Decimal(reteIcaRateOverridePerThousand).div(1000);
+      if (reteIcaRate.gt(0) && !dto.buyerIsRegimenSimple) {
+        useReteIca = true;
       }
-      if (!icaRateObj) {
-        icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
-          where: {
-            businessId,
-            municipalityCode: dto.fiscalMunicipalityCode,
-            active: true,
-          },
-        });
+    } else {
+      if (sellerProfile.personType === PersonType.NATURAL) {
+        reteIcaRate = new Prisma.Decimal(0);
+      } else {
+        const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
+        let icaRateObj = null;
+        if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
+          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+            where: {
+              businessId,
+              municipalityCode: dto.fiscalMunicipalityCode,
+              ciiuCode: sellerCiiuCode,
+              active: true,
+            },
+          });
+        }
+        if (!icaRateObj && dto.fiscalMunicipalityCode) {
+          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+            where: {
+              businessId,
+              municipalityCode: dto.fiscalMunicipalityCode,
+              active: true,
+            },
+          });
+        }
+        reteIcaRate = icaRateObj?.reteIcaRate ?? new Prisma.Decimal(0.00966);
       }
 
-      const reteIcaRate = icaRateObj?.reteIcaRate ?? new Prisma.Decimal(0.00966);
-      const reteIcaMinBaseUvt = icaRateObj?.minBaseUvt ?? new Prisma.Decimal(0);
-      const minBaseCop = reteIcaMinBaseUvt.mul(uvtValue);
+      if (
+        buyerIsRetenedorOrGran &&
+        !buyerIsPersonaNatural &&
+        !dto.buyerIsRegimenSimple &&
+        !sellerIsRegimenSimple &&
+        !sellerIsGranContribuyente &&
+        dto.fiscalMunicipalityCode
+      ) {
+        useReteIca = true;
+      }
+    }
+
+    if (useReteIca) {
+      let minBaseUvt = new Prisma.Decimal(0);
+      let icaRateObj = null;
+
+      if (reteIcaRateOverridePerThousand === undefined || reteIcaRateOverridePerThousand === null) {
+        const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
+        if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
+          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+            where: {
+              businessId,
+              municipalityCode: dto.fiscalMunicipalityCode,
+              ciiuCode: sellerCiiuCode,
+              active: true,
+            },
+          });
+        }
+        if (!icaRateObj && dto.fiscalMunicipalityCode) {
+          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+            where: {
+              businessId,
+              municipalityCode: dto.fiscalMunicipalityCode,
+              active: true,
+            },
+          });
+        }
+        minBaseUvt = icaRateObj?.minBaseUvt ?? new Prisma.Decimal(0);
+      }
+
+      const minBaseCop = minBaseUvt.mul(uvtValue);
       if (subtotalTotal.gte(minBaseCop)) {
         reteIcaTotal = subtotalTotal.mul(reteIcaRate);
         taxLines.push({
@@ -325,9 +425,11 @@ export class TaxService {
           taxAmount: reteIcaTotal,
           accountCode: '135518',
           applied: true,
-          reason: icaRateObj
-            ? `Comprador retiene ICA para el municipio ${dto.fiscalMunicipalityCode} y la base supera ${reteIcaMinBaseUvt} UVT.`
-            : `Fallback funcional Simulador_Ventas: ReteICA 9.66 por mil para el municipio ${dto.fiscalMunicipalityCode}.`,
+          reason: reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null
+            ? `Tarifa ReteICA modificada manualmente a ${reteIcaRateOverridePerThousand} por mil.`
+            : icaRateObj
+              ? `Comprador retiene ICA para el municipio ${dto.fiscalMunicipalityCode} y la base supera ${minBaseUvt} UVT.`
+              : `Fallback funcional Simulador_Ventas: ReteICA 9.66 por mil para el municipio ${dto.fiscalMunicipalityCode ?? 'N/A'}.`,
         });
       } else {
         taxLines.push({
@@ -338,7 +440,7 @@ export class TaxService {
           taxAmount: new Prisma.Decimal(0),
           accountCode: '135518',
           applied: false,
-          reason: `Venta no alcanza la base minima de ICA de ${reteIcaMinBaseUvt} UVT para este municipio.`,
+          reason: `Venta no alcanza la base minima de ICA de ${minBaseUvt} UVT para este municipio.`,
         });
       }
     } else {
@@ -346,17 +448,21 @@ export class TaxService {
         taxType: TaxType.RETEICA,
         direction: TaxDirection.WITHHOLD,
         baseAmount: subtotalTotal,
-        rate: new Prisma.Decimal(0),
+        rate: reteIcaRate,
         taxAmount: new Prisma.Decimal(0),
         accountCode: '135518',
         applied: false,
-        reason: sellerIsGranContribuyente
-          ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
-          : sellerIsRegimenSimple
-            ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
-            : buyerIsPersonaNatural
-              ? 'El comprador es Persona Natural; no practica ReteICA.'
-              : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
+        reason: reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null
+          ? 'Tarifa ReteICA configurada en 0 por mil.'
+          : sellerIsGranContribuyente
+            ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
+            : sellerIsRegimenSimple
+              ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
+              : dto.buyerIsRegimenSimple
+                ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteICA.'
+                : buyerIsPersonaNatural
+                  ? 'El comprador es Persona Natural; no practica ReteICA.'
+                  : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
       });
     }
 
@@ -402,7 +508,21 @@ export class TaxService {
       netReceived,
       taxLines,
       uvtValue,
+      taxYear: globalParams?.year ?? new Date().getFullYear(),
+      saleConceptUsed: derivedSaleConcept,
+      reteIcaRateUsed: reteIcaRate,
+      reteIcaRateOverrideUsed:
+        reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null
+          ? new Prisma.Decimal(reteIcaRateOverridePerThousand).div(1000)
+          : null,
+      impoconsumoRateUsed,
+      sellerIsSimpleRegime: sellerIsRegimenSimple,
+      sellerIsIncomeTaxDeclarant,
+      hasMixedConcepts,
+      mixedConceptsWarning,
       profileMissing: false,
+      taxSettingsEnabled: true,
+      taxDisabledReason: null,
     };
   }
 
@@ -434,6 +554,12 @@ export class TaxService {
     if (!order) throw new NotFoundException('Orden no encontrada');
 
     const sellerProfile = order.business.taxProfile;
+    const sellerPersonType = sellerProfile?.personType || null;
+    const sellerIsSimpleRegime = sellerProfile
+      ? sellerProfile.responsibilities.some((r) => r.responsibility.code === '47')
+      : false;
+    const sellerIsIncomeTaxDeclarant = sellerProfile?.isIncomeTaxDeclarant ?? true;
+
     const sellerFiscalSnapshot = sellerProfile
       ? {
           tradeName: sellerProfile.tradeName,
@@ -441,6 +567,8 @@ export class TaxService {
           dv: sellerProfile.dv,
           address: sellerProfile.address,
           municipalityCode: sellerProfile.municipalityCode,
+          isIncomeTaxDeclarant: sellerProfile.isIncomeTaxDeclarant,
+          personType: sellerProfile.personType,
           responsibilities: sellerProfile.responsibilities.map(
             (r) => r.responsibility.code,
           ),
@@ -467,12 +595,25 @@ export class TaxService {
         buyerIsGranContribuyente: buyerData.buyerIsGranContribuyente ?? false,
         buyerIsAutorretenedor: buyerData.buyerIsAutorretenedor ?? false,
         buyerIsRegimenSimple: buyerData.buyerIsRegimenSimple ?? false,
+        buyerRequiresElectronicInvoice:
+          buyerData.buyerRequiresElectronicInvoice ?? false,
         fiscalMunicipalityCode: buyerData.fiscalMunicipalityCode,
-        saleConcept: buyerData.saleConcept,
+        saleConcept: preview.saleConceptUsed,
         subtotal: preview.subtotal,
         chargedTaxTotal,
         withheldTaxTotal,
         netReceived: preview.netReceived,
+        sellerPersonType,
+        sellerIsSimpleRegime,
+        sellerIsIncomeTaxDeclarant,
+        icaRateUsed: null,
+        reteIcaRateUsed: preview.reteIcaRateUsed,
+        reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
+        hasMixedConcepts: preview.hasMixedConcepts ?? false,
+        mixedConceptsWarning: preview.mixedConceptsWarning,
+        impoconsumoRateUsed: preview.impoconsumoRateUsed,
+        taxYear: preview.taxYear,
+        uvtValue: preview.uvtValue,
       },
       create: {
         orderId,
@@ -486,12 +627,25 @@ export class TaxService {
         buyerIsGranContribuyente: buyerData.buyerIsGranContribuyente ?? false,
         buyerIsAutorretenedor: buyerData.buyerIsAutorretenedor ?? false,
         buyerIsRegimenSimple: buyerData.buyerIsRegimenSimple ?? false,
+        buyerRequiresElectronicInvoice:
+          buyerData.buyerRequiresElectronicInvoice ?? false,
         fiscalMunicipalityCode: buyerData.fiscalMunicipalityCode,
-        saleConcept: buyerData.saleConcept,
+        saleConcept: preview.saleConceptUsed,
         subtotal: preview.subtotal,
         chargedTaxTotal,
         withheldTaxTotal,
         netReceived: preview.netReceived,
+        sellerPersonType,
+        sellerIsSimpleRegime,
+        sellerIsIncomeTaxDeclarant,
+        icaRateUsed: null,
+        reteIcaRateUsed: preview.reteIcaRateUsed,
+        reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
+        hasMixedConcepts: preview.hasMixedConcepts ?? false,
+        mixedConceptsWarning: preview.mixedConceptsWarning,
+        impoconsumoRateUsed: preview.impoconsumoRateUsed,
+        taxYear: preview.taxYear,
+        uvtValue: preview.uvtValue,
       },
     });
 
@@ -531,6 +685,17 @@ export class TaxService {
           autoRetencionTotal: preview.autoRetencionTotal,
           netReceived: preview.netReceived,
           allLines: preview.taxLines,
+          saleConceptUsed: preview.saleConceptUsed,
+          hasMixedConcepts: preview.hasMixedConcepts ?? false,
+          mixedConceptsWarning: preview.mixedConceptsWarning,
+          sellerPersonType,
+          sellerIsSimpleRegime,
+          sellerIsIncomeTaxDeclarant,
+          icaRateUsed: null,
+          reteIcaRateUsed: preview.reteIcaRateUsed,
+          reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
+          impoconsumoRateUsed: preview.impoconsumoRateUsed,
+          taxYear: preview.taxYear,
         },
       },
       create: {
@@ -548,6 +713,17 @@ export class TaxService {
           autoRetencionTotal: preview.autoRetencionTotal,
           netReceived: preview.netReceived,
           allLines: preview.taxLines,
+          saleConceptUsed: preview.saleConceptUsed,
+          hasMixedConcepts: preview.hasMixedConcepts ?? false,
+          mixedConceptsWarning: preview.mixedConceptsWarning,
+          sellerPersonType,
+          sellerIsSimpleRegime,
+          sellerIsIncomeTaxDeclarant,
+          icaRateUsed: null,
+          reteIcaRateUsed: preview.reteIcaRateUsed,
+          reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
+          impoconsumoRateUsed: preview.impoconsumoRateUsed,
+          taxYear: preview.taxYear,
         },
       },
     });
@@ -557,9 +733,13 @@ export class TaxService {
     });
   }
 
-  private async emptyTaxPreview(businessId: string, dto: TaxPreviewDto) {
+  private async emptyTaxPreview(
+    businessId: string,
+    dto: TaxPreviewDto,
+    options?: { profileMissing?: boolean; taxSettingsEnabled?: boolean; taxDisabledReason?: string },
+  ) {
     let subtotalTotal = new Prisma.Decimal(0);
-    const profileMissing = true;
+    const profileMissing = options?.profileMissing ?? true;
 
     try {
       const itemIds = dto?.cartItems?.map((i) => i.itemId) || [];
@@ -593,7 +773,18 @@ export class TaxService {
       netReceived: subtotalTotal,
       taxLines: [],
       uvtValue: new Prisma.Decimal(52374),
+      taxYear: new Date().getFullYear(),
+      saleConceptUsed: dto.saleConcept ?? SaleConcept.GOODS,
+      reteIcaRateUsed: new Prisma.Decimal(0),
+      reteIcaRateOverrideUsed: null,
+      impoconsumoRateUsed: null,
+      sellerIsSimpleRegime: false,
+      sellerIsIncomeTaxDeclarant: true,
+      hasMixedConcepts: false,
+      mixedConceptsWarning: null,
       profileMissing,
+      taxSettingsEnabled: options?.taxSettingsEnabled ?? false,
+      taxDisabledReason: options?.taxDisabledReason ?? null,
     };
   }
 }

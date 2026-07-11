@@ -13,7 +13,7 @@ import {
 } from 'class-validator';
 
 import { Type } from 'class-transformer';
-import { InventoryMode, ItemType, Weekday } from '@prisma/client';
+import { InventoryMode, ItemType, Weekday, SaleConcept } from '@prisma/client';
 
 class BadgeInput {
   @IsString()
@@ -44,6 +44,10 @@ export class CreateItemDto {
 
   @IsEnum(ItemType)
   type!: ItemType;
+
+  @IsOptional()
+  @IsEnum(SaleConcept)
+  saleConcept?: SaleConcept;
 
   @IsOptional()
   @IsEnum(InventoryMode)

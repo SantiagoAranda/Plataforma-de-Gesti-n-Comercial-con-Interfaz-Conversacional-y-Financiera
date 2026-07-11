@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { X } from "lucide-react";
 
@@ -49,7 +49,7 @@ export function ItemPanelLayout({
         </div>
 
         {/* CONTENT (SCROLLABLE) */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-6 bg-neutral-50/10">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 bg-neutral-50/10 flex flex-col gap-6">
           {children}
         </div>
 

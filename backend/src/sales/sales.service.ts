@@ -227,6 +227,10 @@ export class SalesService {
         snapshotBuyerFiscal.buyerIsRegimenSimple ??
         order.fiscalContext?.buyerIsRegimenSimple ??
         false,
+      buyerRequiresElectronicInvoice:
+        snapshotBuyerFiscal.buyerRequiresElectronicInvoice ??
+        order.fiscalContext?.buyerRequiresElectronicInvoice ??
+        false,
       withholdingSubjectIsDeclarante:
         snapshotBuyerFiscal.withholdingSubjectIsDeclarante ?? true,
       fiscalMunicipalityCode:
@@ -235,7 +239,29 @@ export class SalesService {
         null,
       saleConcept:
         snapshotBuyerFiscal.saleConcept ?? order.fiscalContext?.saleConcept ?? null,
+      reteIcaRateOverride:
+        snapshotBuyerFiscal.reteIcaRateOverride ??
+        snapshotBuyerFiscal.icaRateOverride ??
+        order.fiscalContext?.reteIcaRateOverride ??
+        null,
+      icaRateOverride:
+        snapshotBuyerFiscal.icaRateOverride ??
+        snapshotBuyerFiscal.reteIcaRateOverride ??
+        order.fiscalContext?.reteIcaRateOverride ??
+        null,
     };
+  }
+
+  private assertBuyerFiscalContextAllowed(buyerFiscalContext: any) {
+    if (
+      buyerFiscalContext?.buyerType === 'JURIDICA' &&
+      buyerFiscalContext?.buyerIsGranContribuyente === true &&
+      buyerFiscalContext?.buyerIsAutorretenedor === true
+    ) {
+      throw new BadRequestException(
+        'Gran Contribuyente y Autorretenedor no pueden estar activos al mismo tiempo para el comprador de la venta.',
+      );
+    }
   }
 
   private async persistOrderFiscalPreview(
@@ -245,6 +271,7 @@ export class SalesService {
     buyerFiscalContext: any,
     cartItems: Array<{ itemId: string; quantity: number }>,
   ) {
+    this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (!buyerFiscalContext || cartItems.length === 0) return;
 
     const preview = await this.taxService.calculateTaxPreview(businessId, {
@@ -259,10 +286,13 @@ export class SalesService {
         buyerFiscalContext.buyerIsGranContribuyente || false,
       buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
       buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-      withholdingSubjectIsDeclarante:
-        buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+      buyerRequiresElectronicInvoice:
+        buyerFiscalContext.buyerRequiresElectronicInvoice || false,
       fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
       saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+      reteIcaRateOverride:
+        buyerFiscalContext.reteIcaRateOverride ??
+        buyerFiscalContext.icaRateOverride,
       cartItems,
     });
 
@@ -607,6 +637,8 @@ export class SalesService {
   }
 
   async create(businessId: string, dto: CreateOrderDto) {
+    this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
+
     if (!dto.items.length) {
       throw new BadRequestException('Order must contain at least one item');
     }
@@ -1110,6 +1142,7 @@ export class SalesService {
       sourceType = buyerFiscalContext as UnifiedSourceType;
       buyerFiscalContext = undefined;
     }
+    this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
 
     if (sourceType === 'RESERVATION') {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
@@ -1204,10 +1237,13 @@ export class SalesService {
           buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
           buyerIsAutorretenedor: fiscalContextToUse.buyerIsAutorretenedor || false,
           buyerIsRegimenSimple: fiscalContextToUse.buyerIsRegimenSimple || false,
-          withholdingSubjectIsDeclarante:
-            fiscalContextToUse.withholdingSubjectIsDeclarante ?? true,
+          buyerRequiresElectronicInvoice:
+            fiscalContextToUse.buyerRequiresElectronicInvoice || false,
           fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
           saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
+          reteIcaRateOverride:
+            fiscalContextToUse.reteIcaRateOverride ??
+            fiscalContextToUse.icaRateOverride,
           cartItems,
         });
 
@@ -1304,6 +1340,7 @@ export class SalesService {
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
 
       if (buyerFiscalContext) {
+        this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
         const cartItems = [
           {
             itemId: res.itemId,
@@ -1322,10 +1359,13 @@ export class SalesService {
           buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
           buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
           buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-          withholdingSubjectIsDeclarante:
-            buyerFiscalContext.withholdingSubjectIsDeclarante ?? true,
+          buyerRequiresElectronicInvoice:
+            buyerFiscalContext.buyerRequiresElectronicInvoice || false,
           fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
           saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+          reteIcaRateOverride:
+            buyerFiscalContext.reteIcaRateOverride ??
+            buyerFiscalContext.icaRateOverride,
           cartItems,
         });
 
@@ -1973,6 +2013,8 @@ export class SalesService {
     dto: UpdateOrderDto,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
+    this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
+
     if (sourceType === 'RESERVATION') {
       return this.updateReservation(businessId, orderId, dto);
     }

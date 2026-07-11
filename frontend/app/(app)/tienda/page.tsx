@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,7 +22,7 @@ import BottomNav from "@/src/components/layout/BottomNav";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getBusinessProfile } from "@/src/lib/businessLogo";
-import { getItemBadges } from "@/src/lib/itemBadges";
+import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { cn } from "@/src/lib/utils";
 import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
 
@@ -106,7 +106,6 @@ function normalizeFooterSocials(value: unknown): FooterSocial[] {
 }
 
 export default function MiTiendaPage() {
-  const { notify } = useNotification();
   const router = useRouter();
 
   const [items, setItems] = useState<Item[]>([]);
@@ -177,10 +176,7 @@ export default function MiTiendaPage() {
     const businessName = localStorage.getItem("businessName") || "Mi Tienda";
 
     if (!slug) {
-      notify({
-        type: "error",
-        message: "No se encontró el identificador de la tienda. Intentá re-ingresar.",
-      });
+      toast.error("No se encontró el identificador de la tienda. Intentá re-ingresar.");
       return;
     }
 
@@ -199,44 +195,29 @@ export default function MiTiendaPage() {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
 
-        notify({
-          type: "success",
-          message: "Link de tu tienda copiado",
-        });
+        toast.success("Link de tu tienda copiado");
         return;
       }
 
       if (copyWithExecCommand(url)) {
-        notify({
-          type: "success",
-          message: "Link de tu tienda copiado",
-        });
+        toast.success("Link de tu tienda copiado");
         return;
       }
 
       window.prompt("Copiá el link de tu tienda:", url);
-      notify({
-        type: "info",
-        message: "Copiá el link manualmente",
-      });
+      toast("Copiá el link manualmente");
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         return;
       }
 
       if (copyWithExecCommand(url)) {
-        notify({
-          type: "success",
-          message: "Link de tu tienda copiado",
-        });
+        toast.success("Link de tu tienda copiado");
         return;
       }
 
       window.prompt("Copiá el link de tu tienda:", url);
-      notify({
-        type: "info",
-        message: "No se pudo copiar automáticamente. Copialo manualmente.",
-      });
+      toast("No se pudo copiar automáticamente. Copialo manualmente.");
     }
   };
 
@@ -248,10 +229,7 @@ export default function MiTiendaPage() {
         const token = localStorage.getItem("accessToken");
 
         if (!token) {
-          notify({
-            type: "error",
-            message: "Sesión expirada. Volvé a iniciar sesión.",
-          });
+          toast.error("Sesión expirada. Volvé a iniciar sesión.");
           return;
         }
 
@@ -295,17 +273,14 @@ export default function MiTiendaPage() {
           }
         }
       } catch {
-        notify({
-          type: "error",
-          message: "No se pudieron cargar tus productos",
-        });
+        toast.error("No se pudieron cargar tus productos");
       } finally {
         setLoading(false);
       }
     };
 
     fetchMyItems();
-  }, [notify]);
+  }, []);
 
   useEffect(() => {
     try {
@@ -559,7 +534,6 @@ function AdminProductCard({
   onOpenDetail: () => void;
   onDelete: (id: string) => void;
 }) {
-  const { notify } = useNotification();
   const router = useRouter();
   const images = item.images ?? [];
   const showCarousel = images.length > 1;
@@ -603,17 +577,11 @@ function AdminProductCard({
 
       if (!res.ok) throw new Error();
 
-      notify({
-        type: "success",
-        message: "Producto eliminado",
-      });
+      toast.success("Producto eliminado");
 
       onDelete(item.id);
     } catch {
-      notify({
-        type: "error",
-        message: "No se pudo eliminar el producto",
-      });
+      toast.error("No se pudo eliminar el producto");
     }
   };
 
@@ -650,8 +618,8 @@ function AdminProductCard({
               {badges.map((badge) => (
                 <div
                   key={`${badge.text}-${badge.color}`}
-                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase text-white"
-                  style={{ background: badge.color }}
+                  className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                  style={{ background: badge.color, color: getContrastColor(badge.color) }}
                 >
                   {badge.text}
                 </div>

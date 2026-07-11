@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsArray, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsArray, IsEmail, IsBoolean } from 'class-validator';
 import { PersonType, DocumentType } from '@prisma/client';
 
 export class UpsertTaxProfileDto {
@@ -40,6 +40,14 @@ export class UpsertTaxProfileDto {
   @IsOptional()
   @IsString()
   mainCiiuDescription?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isIncomeTaxDeclarant?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  taxSettingsEnabled?: boolean;
 
   @IsArray()
   @IsString({ each: true })

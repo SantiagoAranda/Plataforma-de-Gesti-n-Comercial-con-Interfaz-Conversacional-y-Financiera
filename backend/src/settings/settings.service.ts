@@ -9,6 +9,28 @@ import { Prisma } from '@prisma/client';
 export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private deriveIncomeTaxDeclarant(
+    codes: string[],
+    requestedValue: boolean | undefined,
+    currentValue: boolean | undefined,
+  ) {
+    const normalized = [...new Set(codes)].sort();
+    const only49 = normalized.length === 1 && normalized[0] === '49';
+
+    if (
+      normalized.includes('47') ||
+      normalized.includes('13') ||
+      normalized.includes('15') ||
+      (normalized.includes('05') && normalized.includes('48'))
+    ) {
+      return true;
+    }
+
+    if (only49) return false;
+
+    return requestedValue ?? currentValue ?? true;
+  }
+
   async getTaxProfile(businessId: string) {
     const profile = await this.prisma.businessTaxProfile.findUnique({
       where: { businessId },
@@ -25,7 +47,7 @@ export class SettingsService {
 
   async upsertTaxProfile(businessId: string, dto: UpsertTaxProfileDto) {
     // Validación de exclusión mutua 48 (Responsable de IVA) vs 49 (No responsable de IVA)
-    const codes = dto.responsibilityCodes;
+    const codes = [...new Set(dto.responsibilityCodes)];
     if (codes.includes('48') && codes.includes('49')) {
       throw new BadRequestException('Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.');
     }
@@ -37,9 +59,15 @@ export class SettingsService {
       });
 
       if (!profile) {
+        const isIncomeTaxDeclarant = this.deriveIncomeTaxDeclarant(
+          codes,
+          dto.isIncomeTaxDeclarant,
+          undefined,
+        );
         profile = await tx.businessTaxProfile.create({
           data: {
             businessId,
+            taxSettingsEnabled: dto.taxSettingsEnabled ?? false,
             personType: dto.personType,
             documentType: dto.documentType,
             nit: dto.nit,
@@ -52,12 +80,19 @@ export class SettingsService {
             address: dto.address,
             mainCiiuCode: dto.mainCiiuCode,
             mainCiiuDescription: dto.mainCiiuDescription,
+            isIncomeTaxDeclarant,
           },
         });
       } else {
+        const isIncomeTaxDeclarant = this.deriveIncomeTaxDeclarant(
+          codes,
+          dto.isIncomeTaxDeclarant,
+          profile.isIncomeTaxDeclarant,
+        );
         profile = await tx.businessTaxProfile.update({
           where: { businessId },
           data: {
+            taxSettingsEnabled: dto.taxSettingsEnabled !== undefined ? dto.taxSettingsEnabled : undefined,
             personType: dto.personType,
             documentType: dto.documentType,
             nit: dto.nit,
@@ -70,6 +105,7 @@ export class SettingsService {
             address: dto.address,
             mainCiiuCode: dto.mainCiiuCode,
             mainCiiuDescription: dto.mainCiiuDescription,
+            isIncomeTaxDeclarant,
           },
         });
       }
@@ -265,5 +301,39 @@ export class SettingsService {
       orderBy: { code: 'asc' },
       take: 50,
     });
+  }
+
+  async toggleTaxSettings(businessId: string, dto: { taxSettingsEnabled: boolean }) {
+    let profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+    });
+
+    if (!profile) {
+      profile = await this.prisma.businessTaxProfile.create({
+        data: {
+          businessId,
+          taxSettingsEnabled: dto.taxSettingsEnabled,
+          personType: 'NATURAL',
+          documentType: 'NIT',
+          nit: '',
+          tradeName: '',
+          email: '',
+          phone: '',
+          departmentCode: '',
+          municipalityCode: '',
+          address: '',
+          isIncomeTaxDeclarant: false,
+        },
+      });
+    } else {
+      profile = await this.prisma.businessTaxProfile.update({
+        where: { businessId },
+        data: {
+          taxSettingsEnabled: dto.taxSettingsEnabled,
+        },
+      });
+    }
+
+    return profile;
   }
 }

@@ -19,7 +19,7 @@ import { useRouter } from "next/navigation";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
-import { useNotification } from "@/src/components/ui/NotificationProvider";
+import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
 import { api } from "@/src/lib/api";
 import {
@@ -208,7 +208,6 @@ function CardHeader({
 
 export default function PerfilPage() {
   const router = useRouter();
-  const { notify } = useNotification();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [name, setName] = useState("");
@@ -310,7 +309,7 @@ export default function PerfilPage() {
       })
       .catch((error) => {
         console.error("Error cargando perfil", error);
-        notify({ type: "error", message: "No se pudo cargar el perfil" });
+        toast.error("No se pudo cargar el perfil");
       })
       .finally(() => {
         if (!cancelled) setLoadingFooter(false);
@@ -319,7 +318,7 @@ export default function PerfilPage() {
     return () => {
       cancelled = true;
     };
-  }, [notify]);
+  }, []);
 
   const registrationPhone =
     phoneNumber.trim().length > 0 ? `${countryCode}${phoneNumber}` : "";
@@ -505,10 +504,10 @@ export default function PerfilPage() {
 
       setSaved(true);
       window.setTimeout(() => setSaved(false), 1500);
-      notify({ type: "success", message: "Perfil guardado" });
+      toast.success("Perfil guardado");
     } catch (error) {
       console.error(error);
-      notify({ type: "error", message: "No se pudo guardar el perfil" });
+      toast.error("No se pudo guardar el perfil");
     } finally {
       setSaving(false);
     }
@@ -522,7 +521,7 @@ export default function PerfilPage() {
     const fileError = readBusinessLogoFileError(file);
     if (fileError) {
       setLogoError(fileError);
-      notify({ type: "error", message: fileError });
+      toast.error(fileError);
       return;
     }
 
@@ -532,12 +531,12 @@ export default function PerfilPage() {
     try {
       const updated = await uploadBusinessLogo(file);
       setBusiness(updated);
-      notify({ type: "success", message: "Logo actualizado" });
+      toast.success("Logo actualizado");
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "No se pudo subir el logo";
       setLogoError(message);
-      notify({ type: "error", message });
+      toast.error(message);
     } finally {
       setLogoBusy(false);
     }
@@ -550,12 +549,12 @@ export default function PerfilPage() {
     try {
       const updated = await deleteBusinessLogo();
       setBusiness(updated);
-      notify({ type: "success", message: "Logo eliminado" });
+      toast.success("Logo eliminado");
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "No se pudo eliminar el logo";
       setLogoError(message);
-      notify({ type: "error", message });
+      toast.error(message);
     } finally {
       setLogoBusy(false);
     }

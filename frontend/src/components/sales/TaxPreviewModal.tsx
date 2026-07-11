@@ -54,6 +54,7 @@ export default function TaxPreviewModal({
   const [buyerDocumentNumber, setBuyerDocumentNumber] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
+  const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   
   // Fiscal responsibilities of the buyer
   const [buyerIsIvaResponsable, setBuyerIsIvaResponsable] = useState(false);
@@ -61,6 +62,7 @@ export default function TaxPreviewModal({
   const [buyerIsGranContribuyente, setBuyerIsGranContribuyente] = useState(false);
   const [buyerIsAutorretenedor, setBuyerIsAutorretenedor] = useState(false);
   const [buyerIsRegimenSimple, setBuyerIsRegimenSimple] = useState(false);
+  const [buyerRequiresElectronicInvoice, setBuyerRequiresElectronicInvoice] = useState(false);
 
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
@@ -73,6 +75,9 @@ export default function TaxPreviewModal({
   useEffect(() => {
     if (!sale) return;
     setBuyerName(initialContext?.buyerName || sale.customerName || "");
+    setReteIcaRateOverride(
+      initialContext?.reteIcaRateOverride ?? initialContext?.icaRateOverride ?? undefined,
+    );
     setBuyerDocumentNumber(initialContext?.buyerDocumentNumber || "");
     setBuyerEmail(initialContext?.buyerEmail || "");
     
@@ -89,7 +94,7 @@ export default function TaxPreviewModal({
     }
 
     // Set default concept based on sale type
-    if (initialContext) {
+    if (initialContext?.saleConcept) {
       setSaleConcept(initialContext.saleConcept);
     } else if (sale.type === "SERVICIO") {
       setSaleConcept("SERVICES");
@@ -99,9 +104,11 @@ export default function TaxPreviewModal({
 
     setBuyerIsIvaResponsable(initialContext?.buyerIsIvaResponsable ?? false);
     setBuyerIsRetenedor(initialContext?.buyerIsRetenedor ?? false);
-    setBuyerIsGranContribuyente(initialContext?.buyerIsGranContribuyente ?? false);
-    setBuyerIsAutorretenedor(initialContext?.buyerIsAutorretenedor ?? false);
+    const initialGran = initialContext?.buyerIsGranContribuyente ?? false;
+    setBuyerIsGranContribuyente(initialGran);
+    setBuyerIsAutorretenedor(initialGran ? false : initialContext?.buyerIsAutorretenedor ?? false);
     setBuyerIsRegimenSimple(initialContext?.buyerIsRegimenSimple ?? false);
+    setBuyerRequiresElectronicInvoice(initialContext?.buyerRequiresElectronicInvoice ?? false);
     setFiscalMunicipalityCode(initialContext?.fiscalMunicipalityCode || "");
     setPreview(null);
   }, [sale, initialContext]);
@@ -136,7 +143,9 @@ export default function TaxPreviewModal({
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
           buyerIsRegimenSimple,
+          buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
+          reteIcaRateOverride,
           saleConcept,
           cartItems,
         });
@@ -168,7 +177,9 @@ export default function TaxPreviewModal({
     buyerIsGranContribuyente,
     buyerIsAutorretenedor,
     buyerIsRegimenSimple,
+    buyerRequiresElectronicInvoice,
     fiscalMunicipalityCode,
+    reteIcaRateOverride,
     saleConcept,
   ]);
 
@@ -187,7 +198,9 @@ export default function TaxPreviewModal({
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
       buyerIsRegimenSimple,
+      buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
+      reteIcaRateOverride,
       saleConcept,
     };
     onConfirm(context);
@@ -237,7 +250,7 @@ export default function TaxPreviewModal({
           
           {/* Column 1: Buyer Fiscal Form */}
           <div className="flex-1 p-6 space-y-6 md:border-r border-slate-100 md:max-w-md overflow-y-auto">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Contexto Fiscal del Comprador
             </h3>
 
@@ -252,8 +265,15 @@ export default function TaxPreviewModal({
                     setBuyerType(val);
                     if (val === "JURIDICA") {
                       setBuyerDocumentType("NIT");
+                      setBuyerIsIvaResponsable(true);
                     } else {
                       setBuyerDocumentType("CC");
+                      setBuyerIsIvaResponsable(false);
+                      setBuyerIsRetenedor(false);
+                      setBuyerIsGranContribuyente(false);
+                      setBuyerIsAutorretenedor(false);
+                      setBuyerIsRegimenSimple(false);
+                      setBuyerRequiresElectronicInvoice(false);
                     }
                   }}
                   className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
@@ -320,24 +340,8 @@ export default function TaxPreviewModal({
               </div>
             </div>
 
-            {/* Concepto y Municipio */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-slate-500 uppercase">Concepto Venta</label>
-                <select
-                  value={saleConcept}
-                  onChange={(e) => setSaleConcept(e.target.value as any)}
-                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
-                >
-                  <option value="GOODS">Bienes / Productos</option>
-                  <option value="SERVICES">Servicios Generales</option>
-                  <option value="HONORARIOS">Honorarios</option>
-                  <option value="ARRENDAMIENTOS">Arrendamientos</option>
-                  <option value="FOOD_BEVERAGES">Consumo (Comidas)</option>
-                  <option value="OTHER">Otros Conceptos</option>
-                </select>
-              </div>
-
+            {/* Municipio */}
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-slate-500 uppercase">Municipio Fiscal (ICA)</label>
                 <select
@@ -355,24 +359,67 @@ export default function TaxPreviewModal({
               </div>
             </div>
 
+            {/* Tarifa ReteICA y Régimen Simple */}
+            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-500 uppercase">ReteICA / ICA retenido (por mil)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Defecto (RUT)"
+                  value={reteIcaRateOverride !== undefined ? reteIcaRateOverride : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                    setReteIcaRateOverride(val);
+                  }}
+                  className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-500 uppercase">Régimen Simple (Vendedor)</label>
+                <div className={`h-10 rounded-xl border flex items-center justify-center text-xs font-medium ${
+                  preview?.sellerIsSimpleRegime 
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
+                    : "border-slate-200 bg-slate-100 text-slate-600"
+                }`}>
+                  {preview?.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                </div>
+              </div>
+            </div>
+
             {/* Checkboxes Tributarios */}
             <div className="space-y-3 pt-3 border-t border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
-                Responsabilidades del Comprador
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block mb-2">
+                Contexto fiscal del comprador
               </span>
 
               <div className="space-y-2">
                 <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
-                    checked={buyerIsIvaResponsable}
-                    onChange={(e) => setBuyerIsIvaResponsable(e.target.checked)}
+                    checked={buyerType === "JURIDICA"}
+                    onChange={(e) => {
+                      const juridica = e.target.checked;
+                      setBuyerType(juridica ? "JURIDICA" : "NATURAL");
+                      setBuyerDocumentType(juridica ? "NIT" : "CC");
+                      if (!juridica) {
+                        setBuyerIsIvaResponsable(false);
+                        setBuyerIsRetenedor(false);
+                        setBuyerIsGranContribuyente(false);
+                        setBuyerIsAutorretenedor(false);
+                        setBuyerIsRegimenSimple(false);
+                        setBuyerRequiresElectronicInvoice(false);
+                      } else {
+                        setBuyerIsIvaResponsable(true);
+                      }
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
-                  <span>Responsable de IVA (48)</span>
+                  <span>Jurídica</span>
                 </label>
-
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
                     checked={buyerIsRetenedor}
@@ -382,21 +429,40 @@ export default function TaxPreviewModal({
                   <span>Agente de Retención (07)</span>
                 </label>
 
+                {buyerType === "JURIDICA" && (
+                  <>
                 <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
                     checked={buyerIsGranContribuyente}
-                    onChange={(e) => setBuyerIsGranContribuyente(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setBuyerIsGranContribuyente(checked);
+                      if (checked) {
+                        setBuyerIsAutorretenedor(false);
+                      }
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Gran Contribuyente (13)</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                <label
+                  className={`flex items-center gap-2.5 text-xs font-medium transition ${
+                    buyerIsGranContribuyente
+                      ? "cursor-not-allowed text-slate-400 opacity-45"
+                      : "cursor-pointer text-slate-600 hover:text-slate-800"
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={buyerIsAutorretenedor}
-                    onChange={(e) => setBuyerIsAutorretenedor(e.target.checked)}
+                    checked={buyerIsAutorretenedor && !buyerIsGranContribuyente}
+                    disabled={buyerIsGranContribuyente}
+                    aria-disabled={buyerIsGranContribuyente}
+                    onChange={(e) => {
+                      if (buyerIsGranContribuyente) return;
+                      setBuyerIsAutorretenedor(e.target.checked);
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Autorretenedor (15)</span>
@@ -411,13 +477,25 @@ export default function TaxPreviewModal({
                   />
                   <span>Régimen Simple (RST - 47)</span>
                 </label>
+                  </>
+                )}
+
+                <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                  <input
+                    type="checkbox"
+                    checked={buyerRequiresElectronicInvoice}
+                    onChange={(e) => setBuyerRequiresElectronicInvoice(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
+                  />
+                  <span>Facturación Electrónica</span>
+                </label>
               </div>
             </div>
           </div>
 
           {/* Column 2: Live calculation breakdown */}
           <div className="flex-1 p-6 flex flex-col overflow-y-auto">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
               Liquidación Detallada en Tiempo Real
             </h3>
 
@@ -500,16 +578,23 @@ export default function TaxPreviewModal({
 
                   <div className="pt-3 border-t border-white/10 flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Neto a Recibir</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">Neto a Recibir</span>
                       <p className="text-[9px] text-slate-400 leading-tight">Valor a cobrar al cliente final</p>
                     </div>
-                    <span className="text-2xl font-bold text-emerald-400 tabular-nums">
+                    <span className="text-2xl font-semibold text-emerald-400 tabular-nums">
                       {formatMoney(preview.netReceived)}
                     </span>
                   </div>
                 </div>
 
                 {/* Warnings / Alerts */}
+                {preview.mixedConceptsWarning && (
+                  <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-700">
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5 text-amber-600" />
+                    <span>{preview.mixedConceptsWarning}</span>
+                  </div>
+                )}
+
                 {buyerIsRetenedor &&
                   fiscalMunicipalityCode &&
                   !withholdLines.some(l => l.taxType === "RETEICA") && (
@@ -523,7 +608,7 @@ export default function TaxPreviewModal({
 
                 {/* Tax Lines Explanations */}
                 <div className="space-y-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block">
                     Detalle de Fórmulas y Reglas Aplicadas
                   </span>
 
@@ -540,7 +625,7 @@ export default function TaxPreviewModal({
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-slate-700 flex items-center gap-1.5">
                             {line.taxType} 
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider ${
                               line.direction === "CHARGE"
                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
                                 : line.direction === "WITHHOLD"
@@ -551,7 +636,7 @@ export default function TaxPreviewModal({
                             </span>
                           </span>
                           {line.applied ? (
-                            <span className="font-bold text-slate-800 tabular-nums">
+                            <span className="font-medium text-slate-800 tabular-nums">
                               {formatMoney(line.taxAmount)}
                             </span>
                           ) : (
@@ -592,7 +677,7 @@ export default function TaxPreviewModal({
             <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest leading-none mb-1">
               Valor Final
             </span>
-            <span className="text-lg font-bold text-slate-800 tabular-nums leading-none">
+            <span className="text-lg font-semibold text-slate-800 tabular-nums leading-none">
               {preview ? formatMoney(preview.netReceived) : formatMoney(sale.total ?? 0)}
             </span>
           </div>

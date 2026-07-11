@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   Facebook,
   Globe,
@@ -219,14 +219,14 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
             </a>
             &nbsp;| Desarrollado por{' '}
             <a 
-              href="https://instagram.com/savik.ar" 
+              href="https://portfolioempresa.pages.dev/" 
               target="_blank"
               rel="noopener noreferrer"
-              className={`transition-colors font-medium hover:underline underline-offset-2 ${
-                hasCustomColors ? "hover:opacity-80" : "text-neutral-500 hover:text-[#064e3b]"
+              className={`transition-colors font-medium hover:underline underline-offset-2 duration-200 ${
+                hasCustomColors ? "hover:opacity-80" : "text-emerald-600 hover:text-[#064e3b]"
               }`}
             >
-              Savik
+              SAVIK
             </a>
           </div>
         </div>

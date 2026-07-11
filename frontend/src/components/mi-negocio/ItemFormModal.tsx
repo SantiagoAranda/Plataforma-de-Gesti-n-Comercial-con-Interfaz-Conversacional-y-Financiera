@@ -59,6 +59,7 @@ export default function ItemFormModal({
   const [impoconsumoRatePercent, setImpoconsumoRatePercent] = useState("");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
+  const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
   const [newImages, setNewImages] = useState<PendingImage[]>([]);
   const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -104,6 +105,7 @@ export default function ItemFormModal({
           : String(Number(editingItem.impoconsumoRate) * 100),
       );
       setDescription(editingItem.description ?? "");
+      setSaleConcept(editingItem.saleConcept || (editingItem.type === "SERVICE" ? "SERVICES" : "GOODS"));
       setExistingImages(editingItem.images ?? []);
       setNewImages([]);
       setRemovedImageIds([]);
@@ -161,6 +163,7 @@ export default function ItemFormModal({
     setDurationInput("1");
     setDurationAdjustmentMessage(null);
     setInventoryMode("NONE");
+    setSaleConcept("GOODS");
     setWeek(createInitialWeek());
     setCurrentDayIndex(0);
     setFormErrors({});
@@ -325,6 +328,7 @@ export default function ItemFormModal({
         type,
         name,
         price: parseFloat(price),
+        saleConcept,
         appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
         impoconsumoRate:
           type === "PRODUCT" &&
@@ -505,6 +509,8 @@ export default function ItemFormModal({
         setFormErrors={setFormErrors}
         imageError={imageError}
         editingItem={!!editingItem}
+        saleConcept={saleConcept}
+        setSaleConcept={setSaleConcept}
       />
 
       {/* DESCRIPCION (Sólo visible en el Modal por ahora, se moverá al ChatComposer) */}

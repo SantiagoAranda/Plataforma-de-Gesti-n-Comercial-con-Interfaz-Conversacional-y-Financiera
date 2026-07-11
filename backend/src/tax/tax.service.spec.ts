@@ -77,6 +77,8 @@ describe('TaxService', () => {
       id: 'profile-1',
       personType: PersonType.JURIDICA,
       mainCiiuCode: '4711',
+      isIncomeTaxDeclarant: true,
+      taxSettingsEnabled: true,
       responsibilities: codes.map((code) => ({ responsibility: { code } })),
       ...overrides,
     });
@@ -88,6 +90,7 @@ describe('TaxService', () => {
       price: number;
       appliesImpoconsumo?: boolean;
       impoconsumoRate?: Prisma.Decimal | null;
+      saleConcept?: SaleConcept;
     }>,
   ) => {
     mockPrismaService.item.findMany.mockResolvedValue(
@@ -96,6 +99,7 @@ describe('TaxService', () => {
         price: new Prisma.Decimal(item.price),
         appliesImpoconsumo: item.appliesImpoconsumo ?? false,
         impoconsumoRate: item.impoconsumoRate ?? null,
+        saleConcept: item.saleConcept,
       })),
     );
   };
@@ -209,7 +213,7 @@ describe('TaxService', () => {
   });
 
   it('applies ReteFuente servicios: 15 UVT and 6% for no declarante', async () => {
-    mockSeller(['48']);
+    mockSeller(['48'], { isIncomeTaxDeclarant: false });
     mockItems([{ price: 1000000 }]);
 
     const result = await service.calculateTaxPreview(
@@ -217,11 +221,42 @@ describe('TaxService', () => {
       baseDto({
         buyerIsRetenedor: true,
         saleConcept: SaleConcept.SERVICES,
-        withholdingSubjectIsDeclarante: false,
       }),
     );
 
     expect(result.reteFuenteTotal.toNumber()).toBe(60000);
+  });
+
+  it('uses seller tax profile as source of truth for declarante and ignores frontend legacy override', async () => {
+    mockSeller(['48'], { isIncomeTaxDeclarant: true });
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        withholdingSubjectIsDeclarante: false,
+      }),
+    );
+
+    expect(result.reteFuenteTotal.toNumber()).toBe(25000);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE)?.rate.toString()).toBe('0.025');
+  });
+
+  it('derives saleConcept from items instead of frontend manual concept', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 1000000, saleConcept: SaleConcept.SERVICES }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        saleConcept: SaleConcept.GOODS,
+      }),
+    );
+
+    expect(result.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(result.reteFuenteTotal.toNumber()).toBe(40000);
   });
 
   it('applies ReteFuente honorarios declarante at 11%', async () => {
@@ -280,6 +315,76 @@ describe('TaxService', () => {
 
     expect(result.reteIcaTotal.toNumber()).toBe(9660);
     expect(result.taxLines.find((line) => line.taxType === TaxType.RETEICA)?.rate.toString()).toBe('0.00966');
+  });
+
+  it('applies ReteICA override in per-thousand format and exposes the frozen decimal rate', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: false,
+        fiscalMunicipalityCode: undefined,
+        reteIcaRateOverride: 9.66,
+      } as any),
+    );
+
+    const reteIcaLine = result.taxLines.find((line) => line.taxType === TaxType.RETEICA);
+    expect(result.reteIcaTotal.toNumber()).toBe(9660);
+    expect(result.reteIcaRateUsed.toString()).toBe('0.00966');
+    expect(result.reteIcaRateOverrideUsed?.toString()).toBe('0.00966');
+    expect(reteIcaLine?.applied).toBe(true);
+    expect(reteIcaLine?.rate.toString()).toBe('0.00966');
+  });
+
+  it('does not apply ReteFuente or ReteICA when buyer belongs to RST', async () => {
+    mockSeller(['05', '07', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        buyerIsGranContribuyente: false,
+        buyerIsRegimenSimple: true,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 10,
+      }),
+    );
+
+    expect(result.vatTotal.toNumber()).toBe(190000);
+    expect(result.reteFuenteTotal.toNumber()).toBe(0);
+    expect(result.reteIcaTotal.toNumber()).toBe(0);
+    expect(result.reteIvaTotal.toNumber()).toBe(0);
+    expect(result.subtotal.add(result.vatTotal).toNumber()).toBe(1190000);
+    expect(
+      result.reteFuenteTotal
+        .add(result.reteIcaTotal)
+        .add(result.reteIvaTotal)
+        .toNumber(),
+    ).toBe(0);
+    expect(result.netReceived.toNumber()).toBe(1190000);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEICA)?.applied).toBe(false);
+  });
+
+  it('keeps calculating ReteICA when buyer is not RST and rate is 10 per thousand', async () => {
+    mockSeller(['05', '07', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        buyerIsGranContribuyente: false,
+        buyerIsRegimenSimple: false,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 10,
+      }),
+    );
+
+    expect(result.reteIcaTotal.toNumber()).toBe(10000);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEICA)?.applied).toBe(true);
   });
 
   it('does not apply ReteICA for buyer Persona Natural', async () => {

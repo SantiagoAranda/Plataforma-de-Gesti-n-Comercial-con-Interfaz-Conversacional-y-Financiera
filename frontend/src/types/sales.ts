@@ -19,6 +19,7 @@ export type SaleFiscalContext = {
   buyerIsGranContribuyente?: boolean | null;
   buyerIsAutorretenedor?: boolean | null;
   buyerIsRegimenSimple?: boolean | null;
+  buyerRequiresElectronicInvoice?: boolean | null;
   withholdingSubjectIsDeclarante?: boolean | null;
   fiscalMunicipalityCode?: string | null;
   saleConcept?:
@@ -29,6 +30,9 @@ export type SaleFiscalContext = {
     | "FOOD_BEVERAGES"
     | "OTHER"
     | null;
+  reteIcaRateOverride?: number | null;
+  /** @deprecated Use reteIcaRateOverride. */
+  icaRateOverride?: number | null;
 };
 
 export type SaleFiscalSummary = {

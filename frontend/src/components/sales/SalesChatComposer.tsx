@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Trash2, Plus, X } from "lucide-react";
+import { Building2, FileText, ShoppingBag, Trash2, Plus, User, X } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -13,18 +13,22 @@ import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import SaleTaxPanel, {
   buildBuyerFiscalContext,
   DEFAULT_SALE_FISCAL_FORM,
+  normalizeBuyerFiscalExclusion,
   saleFiscalStateFromSale,
   type SaleFiscalFormState,
 } from "@/src/components/sales/SaleTaxPanel";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 import { api } from "@/src/lib/api";
 import { formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+
 
 type EditableItem = {
   itemId: string;
   qty: number;
   name: string;
   price: number;
+  saleConcept?: SaleFiscalFormState["saleConcept"] | null;
   durationMin?: number | null;
   optionSelections?: OptionSelection[];
   optionNames?: string[];
@@ -41,6 +45,7 @@ type BusinessItem = {
   inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | string | null;
   currentStock?: number | string | null;
   durationMinutes?: number | null;
+  saleConcept?: SaleFiscalFormState["saleConcept"] | null;
   optionGroups?: PublicItemOptionGroup[];
 };
 
@@ -76,6 +81,43 @@ function ItemThumbnail() {
   );
 }
 
+function panelInputClass() {
+  return "h-11 w-full rounded-xl border border-slate-100 bg-slate-50 px-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-500/10 disabled:bg-slate-50 disabled:text-slate-500";
+}
+
+function segmentClass(active: boolean) {
+  return active
+    ? "border-white bg-white text-slate-950 shadow-sm"
+    : "border-transparent text-slate-500 hover:text-slate-800";
+}
+
+function chipClass(active: boolean) {
+  return active
+    ? "border-emerald-600 bg-emerald-50 text-emerald-800"
+    : "border-emerald-200 bg-white text-slate-700 hover:border-emerald-400";
+}
+
+const SALE_CONCEPT_PRIORITY: NonNullable<SaleFiscalFormState["saleConcept"]>[] = [
+  "SERVICES",
+  "HONORARIOS",
+  "ARRENDAMIENTOS",
+  "FOOD_BEVERAGES",
+  "GOODS",
+  "OTHER",
+];
+
+function fallbackConceptForType(type: BusinessItem["type"]): SaleFiscalFormState["saleConcept"] {
+  return type === "SERVICE" ? "SERVICES" : "GOODS";
+}
+
+function deriveSaleConceptFromItems(items: EditableItem[], saleType: Sale["type"]) {
+  const concepts = items
+    .map((item) => item.saleConcept)
+    .filter(Boolean) as NonNullable<SaleFiscalFormState["saleConcept"]>[];
+  if (concepts.length === 0) return saleType === "SERVICIO" ? "SERVICES" : "GOODS";
+  return SALE_CONCEPT_PRIORITY.find((concept) => concepts.includes(concept)) ?? concepts[0];
+}
+
 export default function SalesChatComposer({
   mode = "create",
   sale = null,
@@ -85,6 +127,7 @@ export default function SalesChatComposer({
   searchValue = "",
   onSearchChange = () => {},
   onSave,
+  taxSettingsEnabled: propEnabled,
 }: {
   mode?: "create" | "edit" | "readonly";
   sale?: Sale | null;
@@ -94,7 +137,10 @@ export default function SalesChatComposer({
   searchValue?: string;
   onSearchChange?: (val: string) => void;
   onSave: (data: any) => Promise<void> | void;
+  taxSettingsEnabled?: boolean;
 }) {
+  const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
+  const taxSettingsEnabled = propEnabled ?? hookEnabled;
   const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
   const [taxPreview, setTaxPreview] = useState<any>(null);
   const [countryCode, setCountryCode] = useState("57");
@@ -166,6 +212,7 @@ export default function SalesChatComposer({
           qty: it.qty,
           name: it.name,
           price: it.unitPrice ?? (it.price / it.qty),
+          saleConcept: sale.fiscalContext?.saleConcept ?? null,
           durationMin: it.durationMin,
           optionSelections: (it.options ?? [])
             .filter((option) => option.groupId && option.optionId && option.action)
@@ -217,9 +264,17 @@ export default function SalesChatComposer({
     
     setFiscalForm(prev => ({
       ...prev,
-      saleConcept: selectedBi.type === "SERVICE" ? "SERVICES" : "GOODS"
+      saleConcept: selectedBi.saleConcept ?? fallbackConceptForType(selectedBi.type)
     }));
   }, [newItem.itemId, businessItems]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const derivedConcept = deriveSaleConceptFromItems(items, type);
+    setFiscalForm(prev =>
+      prev.saleConcept === derivedConcept ? prev : { ...prev, saleConcept: derivedConcept }
+    );
+  }, [items, type]);
 
   const total = useMemo(() => {
     return items.reduce((acc, it) => acc + (it.price * it.qty), 0);
@@ -241,22 +296,87 @@ export default function SalesChatComposer({
   }, [taxPreview]);
 
   const responsibilities = [
-    { key: "withholdingSubjectIsDeclarante", label: "Declarante de renta" },
-    { key: "buyerIsIvaResponsable", label: "Responsable IVA (48)" },
-    { key: "buyerIsRetenedor", label: "Agente Retención (07)" },
-    { key: "buyerIsGranContribuyente", label: "Gran Contrib. (13)" },
-    { key: "buyerIsAutorretenedor", label: "Autorretenedor (15)" },
-    { key: "buyerIsRegimenSimple", label: "Régimen Simple (47)" },
+    { key: "buyerType", label: "Jurídica" },
+    { key: "buyerIsRetenedor", label: "Agente Retención" },
+    { key: "buyerIsGranContribuyente", label: "Gran Contrib." },
+    { key: "buyerIsAutorretenedor", label: "Autorretenedor" },
+    { key: "buyerIsRegimenSimple", label: "Régimen Simple" },
+    { key: "buyerRequiresElectronicInvoice", label: "Facturación Electrónica" },
   ] as const;
 
-  const buyerFiscalContext = useMemo<BuyerFiscalContext>(
-    () => buildBuyerFiscalContext(fiscalForm),
-    [fiscalForm],
+  const visibleResponsibilities = responsibilities.filter(
+    ({ key }) => key !== "buyerIsRetenedor" && key !== "buyerRequiresElectronicInvoice"
   );
 
+  const buyerFiscalContext = useMemo<BuyerFiscalContext>(
+    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
+    [fiscalForm, taxSettingsEnabled],
+  );
+
+  const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {
+    setFiscalForm((prev) => {
+      const next = updater(prev);
+      return taxSettingsEnabled ? normalizeBuyerFiscalExclusion(next) : next;
+    });
+  };
+
+  const toggleBuyerFiscalFlag = (key: (typeof visibleResponsibilities)[number]["key"], active: boolean) => {
+    updateFiscalForm((prev) => {
+      if (key === "buyerType") {
+        return {
+          ...prev,
+          buyerType: active ? "NATURAL" : "JURIDICA",
+          buyerDocumentType: active ? "CC" : "NIT",
+          buyerIsIvaResponsable: !active,
+          buyerIsRetenedor: active ? false : prev.buyerIsRetenedor,
+          buyerIsGranContribuyente: active ? false : prev.buyerIsGranContribuyente,
+          buyerIsAutorretenedor: active ? false : prev.buyerIsAutorretenedor,
+          buyerIsRegimenSimple: active ? false : prev.buyerIsRegimenSimple,
+          buyerRequiresElectronicInvoice: active ? false : prev.buyerRequiresElectronicInvoice,
+        };
+      }
+
+      const nextActive = !active;
+      if (
+        key === "buyerIsAutorretenedor" &&
+        nextActive &&
+        prev.buyerType === "JURIDICA" &&
+        prev.buyerIsGranContribuyente
+      ) {
+        return prev;
+      }
+
+      const next = {
+        ...prev,
+        [key]: nextActive,
+      };
+
+      if (key === "buyerIsGranContribuyente" && nextActive && prev.buyerType === "JURIDICA") {
+        next.buyerIsAutorretenedor = false;
+      }
+
+      return next;
+    });
+  };
+
   const updateItemQty = (idx: number, qty: number) => {
+    const current = items[idx];
+    if (!current) return;
+    const nextQty = normalizeQty(type, qty);
+    const businessItem = businessItems.find((item) => item.id === current.itemId);
+    if (type === "PRODUCTO" && businessItem?.inventoryMode === "SIMPLE") {
+      const available = Number(businessItem.currentStock ?? 0);
+      const otherQty = items.reduce(
+        (acc, item, itemIdx) => acc + (itemIdx !== idx && item.itemId === current.itemId ? item.qty : 0),
+        0
+      );
+      if (otherQty + nextQty > available) {
+        toast.error(`Stock insuficiente para ${current.name}. Disponible: ${available}.`);
+        return;
+      }
+    }
     setItems((prev) =>
-      prev.map((it, i) => (i === idx ? { ...it, qty: normalizeQty(type, qty) } : it))
+      prev.map((it, i) => (i === idx ? { ...it, qty: nextQty } : it))
     );
   };
 
@@ -326,6 +446,7 @@ export default function SalesChatComposer({
           qty: addedQty,
           name: bi.name,
           price: bi.price,
+          saleConcept: bi.saleConcept ?? fallbackConceptForType(bi.type),
           durationMin: bi.durationMinutes,
         },
       ];
@@ -419,133 +540,161 @@ export default function SalesChatComposer({
     return (
       <>
         {/* 2. Switch Persona / Empresa */}
-        <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
-          <button
-            type="button"
-            disabled={isReadonly}
-            onClick={() => {
-              setFiscalForm(prev => ({
-                ...prev,
-                buyerType: "NATURAL" as const,
-                buyerDocumentType: "CC" as const,
-                buyerIsIvaResponsable: false,
-                buyerIsRetenedor: false,
-                buyerIsGranContribuyente: false,
-                buyerIsAutorretenedor: false,
-                buyerIsRegimenSimple: false,
-              }));
-            }}
-            className={`h-9 rounded-xl text-xs font-semibold transition ${
-              fiscalForm.buyerType === "NATURAL" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Persona
-          </button>
-          <button
-            type="button"
-            disabled={isReadonly}
-            onClick={() => {
-              setFiscalForm(prev => ({
-                ...prev,
-                buyerType: "JURIDICA" as const,
-                buyerDocumentType: "NIT" as const,
-                buyerIsIvaResponsable: true,
-                buyerIsRetenedor: true,
-              }));
-            }}
-            className={`h-9 rounded-xl text-xs font-semibold transition ${
-              fiscalForm.buyerType === "JURIDICA" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Empresa
-          </button>
-        </div>
+        {taxSettingsEnabled && (
+          <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
+            <button
+              type="button"
+              disabled={isReadonly}
+              onClick={() => {
+                setFiscalForm(prev => ({
+                  ...prev,
+                  buyerType: "NATURAL" as const,
+                  buyerDocumentType: "CC" as const,
+                  buyerIsIvaResponsable: false,
+                  buyerIsRetenedor: false,
+                  buyerIsGranContribuyente: false,
+                  buyerIsAutorretenedor: false,
+                  buyerIsRegimenSimple: false,
+                  buyerRequiresElectronicInvoice: false,
+                }));
+              }}
+              className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "NATURAL")}`}
+            >
+              <User className="h-3.5 w-3.5" />
+              Persona
+            </button>
+            <button
+              type="button"
+              disabled={isReadonly}
+              onClick={() => {
+                setFiscalForm(prev => ({
+                  ...prev,
+                  buyerType: "JURIDICA" as const,
+                  buyerDocumentType: "NIT" as const,
+                  buyerIsIvaResponsable: true,
+                  buyerIsRetenedor: false,
+                  buyerRequiresElectronicInvoice: false,
+                }));
+              }}
+              className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "JURIDICA")}`}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              Empresa
+            </button>
+          </div>
+        )}
 
         <div className="space-y-3">
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Datos del cliente
-            </span>
             <input
               value={fiscalForm.buyerName}
               disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
               placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
-              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+              className={panelInputClass()}
             />
           </div>
 
-          <div className="grid grid-cols-[110px_1fr] gap-2 w-full min-w-0">
-            <div className="min-w-0">
-              <select
-                value={fiscalForm.buyerDocumentType}
-                disabled={isReadonly}
-                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
-              >
-                {fiscalForm.buyerType === "JURIDICA" ? (
-                  <option value="NIT">NIT / RUT</option>
-                ) : (
-                  <>
-                    <option value="CC">Cédula</option>
-                    <option value="CE">Cédula Extr.</option>
-                    <option value="PASAPORTE">Pasaporte</option>
-                    <option value="TI">T. Identidad</option>
-                  </>
-                )}
-              </select>
-            </div>
-            <div className="min-w-0">
+          <PhoneSelector
+            countryCode={countryCode}
+            onCountryCodeChange={setCountryCode}
+            phoneNumber={phoneNumber}
+            onPhoneNumberChange={setPhoneNumber}
+            disabled={isReadonly}
+          />
+
+          {taxSettingsEnabled && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                <FileText className="h-4 w-4" />
+                {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
+              </div>
+              <div className="grid grid-cols-2 gap-2 w-full min-w-0">
+                <div className="hidden min-w-0">
+                <select
+                  value={fiscalForm.buyerDocumentType}
+                  disabled={isReadonly}
+                  onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
+                  className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  {fiscalForm.buyerType === "JURIDICA" ? (
+                    <option value="NIT">NIT / RUT</option>
+                  ) : (
+                    <>
+                      <option value="CC">Cédula</option>
+                      <option value="CE">Cédula Extr.</option>
+                      <option value="PASAPORTE">Pasaporte</option>
+                      <option value="TI">T. Identidad</option>
+                    </>
+                  )}
+                </select>
+                </div>
+                <div className="min-w-0">
+                <input
+                  value={fiscalForm.buyerDocumentNumber}
+                  disabled={isReadonly}
+                  onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
+                  placeholder={fiscalForm.buyerType === "JURIDICA" ? "NIT" : "Cédula"}
+                  className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                />
+                </div>
+              <div className="min-w-0">
               <input
-                value={fiscalForm.buyerDocumentNumber}
+                type="email"
+                value={fiscalForm.buyerEmail}
                 disabled={isReadonly}
-                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
-                placeholder="Número documento"
-                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
+                placeholder="Correo"
+                className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
               />
+              </div>
+              </div>
+              {fiscalForm.buyerType === "JURIDICA" && (
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  {visibleResponsibilities.map(({ key, label }) => {
+                    const autorretenedorDisabled =
+                      key === "buyerIsAutorretenedor" &&
+                      fiscalForm.buyerType === "JURIDICA" &&
+                      fiscalForm.buyerIsGranContribuyente;
+                    const active =
+                      key === "buyerType"
+                        ? fiscalForm.buyerType === "JURIDICA"
+                        : autorretenedorDisabled
+                          ? false
+                          : Boolean(fiscalForm[key]);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        disabled={isReadonly || autorretenedorDisabled}
+                        aria-disabled={isReadonly || autorretenedorDisabled}
+                        onClick={() => {
+                          if (autorretenedorDisabled) return;
+                          toggleBuyerFiscalFlag(key, active);
+                        }}
+                        className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
+                          active
+                            ? "border-emerald-600 bg-white text-emerald-800 shadow-sm"
+                            : "border-emerald-300 bg-white/70 text-emerald-900 hover:border-emerald-500"
+                        } ${autorretenedorDisabled ? "cursor-not-allowed opacity-45 hover:border-emerald-300" : ""}`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <PhoneSelector
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              phoneNumber={phoneNumber}
-              onPhoneNumberChange={setPhoneNumber}
-              disabled={isReadonly}
-              flat
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <input
-              type="email"
-              value={fiscalForm.buyerEmail}
-              disabled={isReadonly}
-              onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
-              placeholder="Correo (opcional)"
-              className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
-            />
-          </div>
+          )}
         </div>
 
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        {taxSettingsEnabled && fiscalForm.buyerType === "JURIDICA" && (
+        <>
+        <div className="space-y-1.5 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+          <span className="sr-only">
             Datos fiscales de la venta
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <select
-              value={fiscalForm.saleConcept}
-              disabled={isReadonly}
-              onChange={(e) => setFiscalForm(prev => ({ ...prev, saleConcept: e.target.value as any }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
-            >
-              <option value="GOODS">Bienes / Productos</option>
-              <option value="SERVICES">Servicios</option>
-              <option value="HONORARIOS">Honorarios</option>
-              <option value="ARRENDAMIENTOS">Arrendamientos</option>
-            </select>
-
             <select
               value={fiscalForm.fiscalMunicipalityCode}
               disabled={isReadonly}
@@ -560,30 +709,68 @@ export default function SalesChatComposer({
               ))}
             </select>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Defecto (RUT)"
+                value={fiscalForm.reteIcaRateOverride !== undefined ? fiscalForm.reteIcaRateOverride : ""}
+                disabled={isReadonly}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                  setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
+                }}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+              />
+            </div>
+
+            {taxPreview && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
+                <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${
+                  taxPreview.sellerIsSimpleRegime 
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
+                    : "border-slate-200 bg-slate-50 text-slate-600"
+                }`}>
+                  {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="space-y-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            Responsabilidades del comprador
+        <div className="hidden">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            Contexto fiscal del comprador
           </span>
           <div className="grid grid-cols-2 gap-2">
-            {responsibilities.map(({ key, label }) => {
-              const active = Boolean(fiscalForm[key]);
+            {visibleResponsibilities.map(({ key, label }) => {
+              const autorretenedorDisabled =
+                key === "buyerIsAutorretenedor" &&
+                fiscalForm.buyerType === "JURIDICA" &&
+                fiscalForm.buyerIsGranContribuyente;
+              const active =
+                key === "buyerType"
+                  ? fiscalForm.buyerType === "JURIDICA"
+                  : autorretenedorDisabled
+                    ? false
+                    : Boolean(fiscalForm[key]);
               return (
                 <button
                   key={key}
                   type="button"
-                  disabled={isReadonly}
+                  disabled={isReadonly || autorretenedorDisabled}
+                  aria-disabled={isReadonly || autorretenedorDisabled}
                   onClick={() => {
-                    setFiscalForm(prev => ({
-                      ...prev,
-                      [key]: !active
-                    }));
+                    if (autorretenedorDisabled) return;
+                    toggleBuyerFiscalFlag(key, active);
                   }}
-                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
-                    active
-                      ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${
+                    autorretenedorDisabled ? "cursor-not-allowed opacity-45" : ""
                   }`}
                 >
                   {label}
@@ -592,21 +779,23 @@ export default function SalesChatComposer({
             })}
           </div>
         </div>
+        </>
+        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full min-w-0">
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)] gap-2 w-full min-w-0">
+          <div>
+            <span className="sr-only">
               Estado de venta
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid h-11 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
               <button
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("PENDIENTE")}
-                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
                   status === "PENDIENTE"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
+                    : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
                 Pendiente
@@ -615,10 +804,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("CERRADO")}
-                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
                   status === "CERRADO"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
+                    : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
                 Confirmado
@@ -626,19 +815,19 @@ export default function SalesChatComposer({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <div>
+            <span className="sr-only">
               Medio de pago
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid h-11 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
               <button
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("CASH")}
-                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
                   paymentMethod === "CASH"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
+                    : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
                 Efectivo
@@ -647,10 +836,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                className={`min-h-9 rounded-xl border px-2 py-1.5 text-[10px] font-bold transition-all text-center flex items-center justify-center ${
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
                   paymentMethod === "BANK_TRANSFER"
-                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm disabled:opacity-90"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
+                    : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
                 Transf.
@@ -660,62 +849,34 @@ export default function SalesChatComposer({
         </div>
 
         <div className="space-y-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Ítems de venta
           </span>
 
           {!isReadonly && (
-            <div className="space-y-3 p-4 bg-slate-50 rounded-2xl border border-slate-100 w-full min-w-0">
+            <div className="space-y-2 w-full min-w-0">
               <div className="flex items-center gap-2 w-full min-w-0">
-                <div className="flex-1 bg-white rounded-xl relative min-w-0">
+                <div className="flex-1 rounded-xl border border-slate-100 bg-slate-50 relative min-w-0">
                   <ItemSelector
                     value={newItem.itemId}
                     onChange={(val) => setNewItem(prev => ({ ...prev, itemId: val }))}
                     options={businessItems.filter(bi =>
                       items.length === 0 ? true : bi.type === (type === "PRODUCTO" ? "PRODUCT" : "SERVICE")
                     )}
-                    placeholder={businessItems.length === 0 ? "Sin productos o servicios disponibles." : "Seleccionar producto / servicio..."}
+                    placeholder={businessItems.length === 0 ? "Sin ítems disponibles." : "Buscar ítem..."}
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleAddItem}
                   disabled={!newItem.itemId}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm hover:bg-emerald-600 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
                   title="Agregar ítem"
                 >
                   <Plus className="h-5 w-5" />
                 </button>
               </div>
 
-              {(!newItem.itemId || businessItems.find(i => i.id === newItem.itemId)?.type === "PRODUCT") && (
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-medium text-slate-500 px-1">Cantidad</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newItem.qty}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === "") {
-                        setNewItem(prev => ({ ...prev, qty: "" }));
-                        return;
-                      }
-                      const num = parseInt(val, 10);
-                      if (!isNaN(num)) {
-                        setNewItem(prev => ({ ...prev, qty: num }));
-                      }
-                    }}
-                    onFocus={(e) => e.target.select()}
-                    onBlur={() => {
-                      if (newItem.qty === "" || newItem.qty <= 0) {
-                        setNewItem(prev => ({ ...prev, qty: 1 }));
-                      }
-                    }}
-                    className="w-full h-11 bg-white border border-slate-200 rounded-xl px-4 text-sm font-semibold outline-none focus:border-emerald-500 transition"
-                  />
-                </div>
-              )}
             </div>
           )}
 
@@ -727,11 +888,10 @@ export default function SalesChatComposer({
 
           <div className="space-y-2">
             {items.map((it, idx) => (
-              <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
-                <ItemThumbnail />
+              <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-slate-800 text-sm truncate">{it.name}</div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-400 mt-0.5">
+                  <div className="font-medium text-slate-800 text-sm truncate">{it.name}</div>
+                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
                     {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
                   </div>
                   {it.optionNames?.map((name) => (
@@ -757,17 +917,36 @@ export default function SalesChatComposer({
                   </button>
                 )}
 
-                {type === "PRODUCTO" && !isReadonly && (
-                  <div className="flex items-center gap-1.5 bg-slate-50 px-1.5 py-1 rounded-md border border-slate-200">
-                    <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">-</button>
-                    <span className="text-[11px] font-semibold text-slate-700 w-3 text-center">{it.qty}</span>
-                    <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 flex justify-center font-medium text-[13px]">+</button>
+                {!isReadonly ? (
+                  <div className="flex items-center gap-2 px-1 py-1">
+                    <button
+                      type="button"
+                      onClick={() => updateItemQty(idx, it.qty - 1)}
+                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                      aria-label={`Restar ${it.name}`}
+                    >
+                      -
+                    </button>
+                    <span className="w-5 text-center text-sm font-medium tabular-nums text-slate-800">{it.qty}</span>
+                    <button
+                      type="button"
+                      onClick={() => updateItemQty(idx, it.qty + 1)}
+                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                      aria-label={`Sumar ${it.name}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-right text-xs text-slate-500">
+                    <div>Cant. {it.qty}</div>
+                    <div className="mt-0.5 text-slate-700">${formatMoney(it.price * it.qty)}</div>
                   </div>
                 )}
 
                 {!isReadonly && (
-                  <button onClick={() => removeItem(idx)} className="p-1.5 text-neutral-300 hover:text-rose-500 transition">
-                    <Trash2 size={16} />
+                  <button onClick={() => removeItem(idx)} className="p-1.5 text-rose-300 hover:text-rose-500 transition">
+                    <Trash2 size={14} />
                   </button>
                 )}
               </div>
@@ -831,20 +1010,22 @@ export default function SalesChatComposer({
           </div>
         )}
 
-        <SaleTaxPanel
-          mode={isReadonly ? "readonly" : "create"}
-          value={fiscalForm}
-          onChange={setFiscalForm}
-          saleType={type}
-          items={items.map((item) => ({
-            itemId: item.itemId,
-            quantity: normalizeQty(type, item.qty),
-          }))}
-          previewOnly={true}
-          onPreviewChange={setTaxPreview}
-          fiscalSummary={sale?.fiscalSummary}
-          taxLines={sale?.taxLines}
-        />
+        {(taxSettingsEnabled || Boolean(sale?.fiscalSummary)) && (
+          <SaleTaxPanel
+            mode={isReadonly ? "readonly" : "create"}
+            value={fiscalForm}
+            onChange={(next) => setFiscalForm(taxSettingsEnabled ? normalizeBuyerFiscalExclusion(next) : next)}
+            saleType={type}
+            items={items.map((item) => ({
+              itemId: item.itemId,
+              quantity: normalizeQty(type, item.qty),
+            }))}
+            previewOnly={true}
+            onPreviewChange={setTaxPreview}
+            fiscalSummary={sale?.fiscalSummary}
+            taxLines={sale?.taxLines}
+          />
+        )}
 
         <div className="h-4" />
       </>
@@ -853,7 +1034,7 @@ export default function SalesChatComposer({
 
   if (mode === "readonly") {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 rounded-[28px] bg-slate-50 p-4">
         {renderFormBody()}
       </div>
     );
@@ -862,11 +1043,11 @@ export default function SalesChatComposer({
   if (mode === "edit") {
     if (!expanded) return null;
     return (
-      <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
-        <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] sm:rounded-2xl shadow-2xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+      <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-50 px-4 py-6">
+        <div className="w-full max-w-[344px] flex max-h-[92vh] flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl relative animate-in slide-in-from-bottom-full duration-300">
+          <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
             <div className="flex flex-col">
-              <h2 className="font-semibold text-slate-900 text-base">Editar Venta</h2>
+              <h2 className="font-semibold text-slate-950 text-xl">Editar Venta</h2>
               <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">EDICIÓN MANUAL</span>
             </div>
             <button
@@ -879,35 +1060,33 @@ export default function SalesChatComposer({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+          <div className="flex-1 overflow-y-auto bg-white px-5 py-5 space-y-4">
             {renderFormBody()}
           </div>
 
           {/* Bottom Bar for Modal */}
-          <div className="p-4 bg-white border-t border-slate-100 shrink-0">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{totalLabel}</span>
-                <span className="text-sm font-semibold text-slate-800">${formatMoney(totalToDisplay)}</span>
+          <div className="flex h-[76px] shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-5">
+              <button
+                type="button"
+                onClick={onCancelComposer}
+                className="flex h-9 w-7 shrink-0 items-center justify-center text-slate-400 hover:text-slate-600"
+                aria-label="Cancelar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
+                <span className="text-lg font-semibold text-slate-950">${formatMoney(totalToDisplay)}</span>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={onCancelComposer}
-                  className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-xs transition active:scale-95"
-                >
-                  Cancelar
-                </button>
                 <button
                   type="button"
                   onClick={handleSave}
                   disabled={items.length === 0 || isSubmitting}
-                  className="h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition active:scale-95 disabled:opacity-50"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 active:scale-95 disabled:opacity-50"
+                  aria-label="Guardar cambios"
                 >
-                  {isSubmitting ? "Guardando..." : "Guardar cambios"}
+                  <ShoppingBag className="h-5 w-5" />
                 </button>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -934,6 +1113,7 @@ export default function SalesChatComposer({
                     qty: customizing.quantity,
                     name: customizing.item.name,
                     price: unitPrice,
+                    saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
                     durationMin: customizing.item.durationMinutes,
                     optionSelections,
                     optionNames,
@@ -951,16 +1131,16 @@ export default function SalesChatComposer({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pt-2 lg:left-[408px] lg:right-0"
-      style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 12px))" }}
+      className={expanded ? "fixed inset-0 z-30 flex items-center justify-center bg-slate-50 px-4 py-6" : "fixed inset-x-0 bottom-0 z-30 bg-white px-4 pt-2 lg:left-[408px] lg:right-0"}
+      style={expanded ? undefined : { paddingBottom: "calc(8px + env(safe-area-inset-bottom, 12px))" }}
     >
-      <div className="mx-auto w-full max-w-3xl">
+      <div className={expanded ? "mx-auto w-full max-w-[344px]" : "mx-auto w-full max-w-3xl"}>
         <div className="relative">
           {expanded && (
-            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 mx-auto w-full max-w-[480px] z-10 flex flex-col bg-white rounded-[28px] border border-slate-100 shadow-2xl overflow-hidden max-h-[75vh]">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div className="pointer-events-auto mx-auto flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl">
+              <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                 <div className="flex flex-col">
-                  <h2 className="font-semibold text-slate-900 text-base">Nueva Venta</h2>
+                  <h2 className="font-semibold text-slate-950 text-xl">Nueva Venta</h2>
                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">CREACIÓN MANUAL</span>
                 </div>
                 <button
@@ -973,13 +1153,37 @@ export default function SalesChatComposer({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
+              <div className="flex-1 overflow-y-auto bg-white px-5 py-5 space-y-4">
                 {renderFormBody()}
+              </div>
+              <div className="flex h-[76px] shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-5">
+                <button
+                  type="button"
+                  onClick={onCancelComposer}
+                  className="flex h-9 w-7 shrink-0 items-center justify-center text-slate-400 hover:text-slate-600"
+                  aria-label="Cancelar venta"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
+                  <div className="text-lg font-semibold leading-tight text-slate-950">${formatMoney(totalToDisplay)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={items.length === 0 || isSubmitting}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 active:scale-95 disabled:opacity-50"
+                  aria-label="Guardar venta"
+                >
+                  <ShoppingBag className="h-5 w-5" />
+                </button>
               </div>
             </div>
           )}
 
           {/* Bottom Bar */}
+          {!expanded && (
           <WhatsappComposer
             value={searchValue}
             onChange={onSearchChange}
@@ -1001,6 +1205,7 @@ export default function SalesChatComposer({
             plusAriaLabel={expanded ? "Cancelar venta" : "Nueva venta"}
             submitAriaLabel={expanded ? "Guardar venta" : "Buscar ventas"}
           />
+          )}
         </div>
       </div>
       {customizing && (
@@ -1026,6 +1231,7 @@ export default function SalesChatComposer({
                   qty: customizing.quantity,
                   name: customizing.item.name,
                   price: unitPrice,
+                  saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
                   durationMin: customizing.item.durationMinutes,
                   optionSelections,
                   optionNames,

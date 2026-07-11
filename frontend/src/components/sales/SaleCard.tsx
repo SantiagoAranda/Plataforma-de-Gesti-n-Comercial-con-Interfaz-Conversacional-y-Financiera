@@ -1,9 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 import { CheckCheck, ExternalLink, MessageCircle, MoreVertical, ShieldCheck, User } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
-import { useLongPress } from "@/src/components/shared/selection/useLongPress";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
 import SaleFiscalSummary from "./SaleFiscalSummary";
@@ -51,6 +50,7 @@ type Props = {
   onDetails?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
+  taxSettingsEnabled?: boolean;
 };
 
 export default function SaleCard({
@@ -60,24 +60,15 @@ export default function SaleCard({
   onDetails,
   onReceipt,
   onSendWhatsApp,
+  taxSettingsEnabled = false,
 }: Props) {
   const router = useRouter();
-
-  const { handlers, consumeLongPress } = useLongPress({
-    onLongPress: () => {
-      if (!selected) {
-        onSelect?.();
-      }
-    },
-    delay: 450,
-  });
 
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
   const validationLabel = sale.status === "CERRADO" ? "Validado" : styles.label;
 
   const handleDetails = () => {
-    if (consumeLongPress()) return;
     if (selected) {
       onSelect?.();
       return;
@@ -88,16 +79,10 @@ export default function SaleCard({
 
   return (
     <div
-      {...handlers}
       onClick={handleDetails}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        if (consumeLongPress()) return;
-        onSelect?.();
-      }}
-      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none transition-all cursor-pointer ${
+      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none cursor-pointer ${
         selected 
-          ? "border-emerald-300 ring-2 ring-emerald-500/30 shadow-md" 
+          ? "border-emerald-500 bg-emerald-50/10 shadow-md" 
           : "border-slate-100 hover:shadow-md"
       }`}
     >
@@ -180,7 +165,10 @@ export default function SaleCard({
         </div>
 
         <div className="mb-3">
-          <SaleFiscalSummary summary={sale.fiscalSummary} />
+          <SaleFiscalSummary
+            summary={sale.fiscalSummary}
+            taxSettingsEnabled={taxSettingsEnabled}
+          />
         </div>
 
         <div className="flex items-center gap-2">

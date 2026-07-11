@@ -13,7 +13,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { Transform, Type } from "class-transformer";
-import { InventoryMode, ItemType } from "@prisma/client";
+import { InventoryMode, ItemType, SaleConcept } from "@prisma/client";
 import { ScheduleInput } from "./create-item.dto";
 
 class BadgeInput {
@@ -29,6 +29,10 @@ export class UpdateItemDto {
   @IsOptional()
   @IsEnum(ItemType)
   type?: ItemType;
+
+  @IsOptional()
+  @IsEnum(SaleConcept)
+  saleConcept?: SaleConcept;
 
   @IsOptional()
   @IsEnum(InventoryMode)

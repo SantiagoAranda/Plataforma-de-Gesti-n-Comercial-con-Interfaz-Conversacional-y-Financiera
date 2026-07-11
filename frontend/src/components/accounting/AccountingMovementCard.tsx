@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 
 import {
   Banknote,
   Landmark,
+  MoreVertical,
   PiggyBank,
   Wallet,
   WalletCards,
@@ -10,7 +11,6 @@ import {
 import type {
   AccountingMovement,
 } from "@/src/services/accounting";
-import { SelectableCard } from "@/src/components/shared/selection/SelectableCard";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
 
 type MovementKind =
@@ -207,37 +207,50 @@ export function AccountingMovementCard({
   movement,
   selected = false,
   onSelect,
-  onOpen,
 }: Props) {
   const kind = categoryFromPuc(movement.pucCode);
   const kindStyle = categoryStyles[kind];
   const amount = Number(movement.amount);
 
   return (
-    <SelectableCard
-      selected={selected}
-      onSelect={onSelect}
-      onOpen={onOpen}
-      className="px-4 py-3"
+    <div
+      className={`rounded-3xl border px-4 py-3 select-none transition-all ${
+        selected
+          ? "bg-emerald-50 border-emerald-300 shadow-md"
+          : "bg-white border-black/5 shadow-sm"
+      }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
             {iconForCategory(kind)}
           </div>
  
           <div className="min-w-0 space-y-1">
-            <div className="text-sm font-semibold text-neutral-900">
+            <div className="text-sm font-semibold text-neutral-900 truncate">
               {movement.pucCode} - {movement.pucName}
             </div>
-            <div className="text-sm text-neutral-600">
+            <div className="text-xs text-neutral-500 leading-normal line-clamp-2">
               {getReadableDetail(movement.detail, movement.originType)}
             </div>
           </div>
         </div>
 
-        <div className={`shrink-0 text-base font-medium ${kindStyle.amount}`}>
-          {formatCurrency(amount)}
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={`text-base font-semibold ${kindStyle.amount}`}>
+            {formatCurrency(amount)}
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect();
+            }}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition duration-150"
+            aria-label="Opciones de movimiento"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </button>
         </div>
       </div>
 
@@ -268,6 +281,6 @@ export function AccountingMovementCard({
           </span>
         </div>
       </div>
-    </SelectableCard>
+    </div>
   );
 }

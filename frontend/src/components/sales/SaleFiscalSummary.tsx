@@ -14,10 +14,24 @@ function formatMoney(value: number) {
 export default function SaleFiscalSummary({
   summary,
   detailed = false,
+  taxSettingsEnabled = false,
 }: {
   summary?: FiscalSummary | null;
   detailed?: boolean;
+  taxSettingsEnabled?: boolean;
 }) {
+  const hasHistoricalTaxes = summary && (
+    Number(summary.iva ?? 0) > 0 ||
+    Number(summary.impoconsumo ?? 0) > 0 ||
+    Number(summary.reteFuente ?? 0) > 0 ||
+    Number(summary.reteIva ?? 0) > 0 ||
+    Number(summary.reteIca ?? 0) > 0
+  );
+
+  if (!taxSettingsEnabled && !hasHistoricalTaxes) {
+    return null;
+  }
+
   if (!summary) {
     return (
       <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/50 p-4 text-center text-xs font-medium text-neutral-400">
