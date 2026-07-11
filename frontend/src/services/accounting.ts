@@ -1,6 +1,15 @@
 import { api } from "@/src/lib/api";
 
-export type AccountingMovementOriginType = "MANUAL" | "ORDER";
+export type AccountingMovementOriginType =
+  | "MANUAL"
+  | "ORDER"
+  | "SIMPLE_TAX_PERIOD"
+  | "PAYROLL_RUN"
+  | "PAYROLL_SETTLEMENT"
+  | "PAYROLL_PAYMENT"
+  | "PAYROLL_BENEFIT_PAYMENT"
+  | "PAYROLL_INITIAL_BALANCE"
+  | "PAYROLL_COMPLEMENTARY_RUN";
 
 export type AccountingMovement = {
   id: string;
@@ -59,6 +68,38 @@ export type AccountingSummary = {
     iva: number;
     retenciones: number;
     fondosReserva: number;
+  };
+  simpleTaxProjection?: {
+    enabled: boolean;
+    configured: boolean;
+    taxYear: number;
+    periodNumber: number;
+    month: number;
+    periodStart: string;
+    periodEnd: string;
+    projectionStart: string;
+    projectionEnd: string;
+    groupCode: string;
+    groupName?: string;
+    filingMode?: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION";
+    informativeOnly?: boolean;
+    estimatedRate: number;
+    grossIncomeBase: number;
+    estimatedSimpleTax: number;
+    netProfitBeforeSimpleTax: number;
+    netProfitAfterSimpleTax: number;
+    source: "MONTHLY_MIN_RATE" | "POSTED_ACTUAL";
+    periodStatus?: "DRAFT" | "CALCULATED" | "POSTED" | "PAID";
+    groupResolution?: {
+      status: "RESOLVED" | "NO_RUT_ACTIVITY" | "NOT_FOUND" | "AMBIGUOUS";
+      groupCode: string | null;
+      groupName: string | null;
+      ciiuCode: string | null;
+      ciiuDescription: string | null;
+      source: string | null;
+      candidates?: Array<{ groupCode: string; groupName: string | null }>;
+    };
+    message?: string;
   };
 };
 

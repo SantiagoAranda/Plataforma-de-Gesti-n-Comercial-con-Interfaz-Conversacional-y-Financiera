@@ -67,6 +67,7 @@ export class SettingsService {
         profile = await tx.businessTaxProfile.create({
           data: {
             businessId,
+            taxSettingsEnabled: dto.taxSettingsEnabled ?? false,
             personType: dto.personType,
             documentType: dto.documentType,
             nit: dto.nit,
@@ -91,6 +92,7 @@ export class SettingsService {
         profile = await tx.businessTaxProfile.update({
           where: { businessId },
           data: {
+            taxSettingsEnabled: dto.taxSettingsEnabled !== undefined ? dto.taxSettingsEnabled : undefined,
             personType: dto.personType,
             documentType: dto.documentType,
             nit: dto.nit,
@@ -299,5 +301,39 @@ export class SettingsService {
       orderBy: { code: 'asc' },
       take: 50,
     });
+  }
+
+  async toggleTaxSettings(businessId: string, dto: { taxSettingsEnabled: boolean }) {
+    let profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+    });
+
+    if (!profile) {
+      profile = await this.prisma.businessTaxProfile.create({
+        data: {
+          businessId,
+          taxSettingsEnabled: dto.taxSettingsEnabled,
+          personType: 'NATURAL',
+          documentType: 'NIT',
+          nit: '',
+          tradeName: '',
+          email: '',
+          phone: '',
+          departmentCode: '',
+          municipalityCode: '',
+          address: '',
+          isIncomeTaxDeclarant: false,
+        },
+      });
+    } else {
+      profile = await this.prisma.businessTaxProfile.update({
+        where: { businessId },
+        data: {
+          taxSettingsEnabled: dto.taxSettingsEnabled,
+        },
+      });
+    }
+
+    return profile;
   }
 }

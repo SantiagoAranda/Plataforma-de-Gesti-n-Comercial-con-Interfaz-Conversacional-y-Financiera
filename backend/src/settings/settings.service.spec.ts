@@ -162,6 +162,19 @@ describe('SettingsService tax profile normalization', () => {
     ).rejects.toThrow('Responsable de IVA');
   });
 
+  it('allows RUT profiles with both Gran Contribuyente (13) and Autorretenedor (15) codes', async () => {
+    const { service, tx } = makeService();
+
+    await service.upsertTaxProfile('business-1', baseDto(['13', '15']) as any);
+
+    expect(tx.businessTaxResponsibility.createMany).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({ taxResponsibilityId: 'tax-responsibility-13' }),
+        expect.objectContaining({ taxResponsibilityId: 'tax-responsibility-15' }),
+      ]),
+    });
+  });
+
   it('preserves advanced-mode declarant value when responsibilities have no clear rule', async () => {
     const { service, tx } = makeService({ id: 'profile-1', isIncomeTaxDeclarant: true });
 

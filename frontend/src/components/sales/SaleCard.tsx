@@ -50,6 +50,7 @@ type Props = {
   onDetails?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
+  taxSettingsEnabled?: boolean;
 };
 
 export default function SaleCard({
@@ -59,6 +60,7 @@ export default function SaleCard({
   onDetails,
   onReceipt,
   onSendWhatsApp,
+  taxSettingsEnabled = false,
 }: Props) {
   const router = useRouter();
 
@@ -163,7 +165,10 @@ export default function SaleCard({
         </div>
 
         <div className="mb-3">
-          <SaleFiscalSummary summary={sale.fiscalSummary} />
+          <SaleFiscalSummary
+            summary={sale.fiscalSummary}
+            taxSettingsEnabled={taxSettingsEnabled}
+          />
         </div>
 
         <div className="flex items-center gap-2">

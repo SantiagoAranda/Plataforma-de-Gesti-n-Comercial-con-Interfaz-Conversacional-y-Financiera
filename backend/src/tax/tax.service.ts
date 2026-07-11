@@ -27,11 +27,23 @@ export class TaxService {
       },
     });
 
+    if (sellerProfile && sellerProfile.taxSettingsEnabled === false) {
+      return await this.emptyTaxPreview(businessId, dto, {
+        profileMissing: false,
+        taxSettingsEnabled: false,
+        taxDisabledReason: 'TAX_SETTINGS_DISABLED',
+      });
+    }
+
     if (!sellerProfile) {
       this.logger.warn(
         `No tax profile configured for business ${businessId}. Returning zero tax.`,
       );
-      return await this.emptyTaxPreview(businessId, dto);
+      return await this.emptyTaxPreview(businessId, dto, {
+        profileMissing: true,
+        taxSettingsEnabled: false,
+        taxDisabledReason: 'PROFILE_MISSING',
+      });
     }
 
     const globalParams = await this.prisma.taxGlobalParameter.findFirst({
@@ -509,6 +521,8 @@ export class TaxService {
       hasMixedConcepts,
       mixedConceptsWarning,
       profileMissing: false,
+      taxSettingsEnabled: true,
+      taxDisabledReason: null,
     };
   }
 
@@ -719,9 +733,13 @@ export class TaxService {
     });
   }
 
-  private async emptyTaxPreview(businessId: string, dto: TaxPreviewDto) {
+  private async emptyTaxPreview(
+    businessId: string,
+    dto: TaxPreviewDto,
+    options?: { profileMissing?: boolean; taxSettingsEnabled?: boolean; taxDisabledReason?: string },
+  ) {
     let subtotalTotal = new Prisma.Decimal(0);
-    const profileMissing = true;
+    const profileMissing = options?.profileMissing ?? true;
 
     try {
       const itemIds = dto?.cartItems?.map((i) => i.itemId) || [];
@@ -765,6 +783,8 @@ export class TaxService {
       hasMixedConcepts: false,
       mixedConceptsWarning: null,
       profileMissing,
+      taxSettingsEnabled: options?.taxSettingsEnabled ?? false,
+      taxDisabledReason: options?.taxDisabledReason ?? null,
     };
   }
 }

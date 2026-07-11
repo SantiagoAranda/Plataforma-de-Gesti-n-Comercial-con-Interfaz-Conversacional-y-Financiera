@@ -1,6 +1,7 @@
-import { PrismaClient, PayrollWithholdingStatus, UnitKind } from "@prisma/client";
+import { Prisma, PrismaClient, PayrollWithholdingStatus, UnitKind } from "@prisma/client";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import * as bcrypt from "bcrypt";
 import { parse } from "csv-parse/sync";
 
@@ -93,6 +94,49 @@ async function seedPuc(base: string) {
     console.log(
         `PUC seed OK: clases=${clases.length}, grupos=${grupos.length}, cuentas=${cuentas.length}, subcuentas=${subcuentas.length}`,
     );
+}
+
+async function seedSimpleTaxPucAccounts() {
+    const accounts = [
+        {
+            code: "519595",
+            name: "Otros",
+            cuentaCode: "5195",
+        },
+        {
+            code: "219595",
+            name: "Otras",
+            cuentaCode: "2195",
+        },
+    ];
+
+    for (const account of accounts) {
+        const existing = await prisma.pucSubcuenta.findUnique({
+            where: { code: account.code },
+        });
+
+        if (!existing) {
+            await prisma.pucSubcuenta.create({
+                data: {
+                    code: account.code,
+                    name: account.name,
+                    cuentaCode: account.cuentaCode,
+                    active: true,
+                },
+            });
+        }
+    }
+
+    const [cashAccount, bankAccount] = await Promise.all([
+        prisma.pucSubcuenta.findUnique({ where: { code: "110505" } }),
+        prisma.pucSubcuenta.findUnique({ where: { code: "111005" } }),
+    ]);
+
+    if (!cashAccount || !bankAccount) {
+        throw new Error("Simple tax payment accounts 110505 and 111005 must exist in PUC seed data");
+    }
+
+    console.log("Simple tax PUC accounts seed OK");
 }
 
 async function seedInventoryUnits() {
@@ -764,10 +808,130 @@ async function seedTaxGlobalParameters() {
     console.log("Tax global parameters seed OK for 2026");
 }
 
+async function seedSimpleTaxRateBrackets() {
+    const brackets = [
+        {
+            groupCode: "1",
+            groupName: "Tiendas pequeñas, minimercados, micromercados y peluquerías",
+            rows: [
+                ["0", "1000", "0.012000"],
+                ["1000", "2500", "0.028000"],
+                ["2500", "5000", "0.044000"],
+                ["5000", "16666.67", "0.056000"],
+            ],
+        },
+        {
+            groupCode: "2",
+            groupName: "Comercio, industria, servicios técnicos, construcción, telecomunicaciones y demás actividades",
+            rows: [
+                ["0", "1000", "0.016000"],
+                ["1000", "2500", "0.020000"],
+                ["2500", "5000", "0.035000"],
+                ["5000", "16666.67", "0.045000"],
+            ],
+        },
+        {
+            groupCode: "3",
+            groupName: "Servicios profesionales, consultoría, científicos y profesiones liberales",
+            rows: [
+                ["0", "1000", "0.059000"],
+                ["1000", "2500", "0.073000"],
+                ["2500", "5000", "0.120000"],
+                ["5000", "16666.67", "0.145000"],
+            ],
+        },
+        {
+            groupCode: "4",
+            groupName: "Expendio de comidas y bebidas / hoteles",
+            rows: [
+                ["0", "1000", "0.044000"],
+            ],
+        },
+    ];
+
+    await prisma.simpleTaxRateBracket.deleteMany({
+        where: { taxYear: 2026, periodType: "BIMONTHLY" },
+    });
+
+    await prisma.simpleTaxRateBracket.createMany({
+        data: brackets.flatMap((group) =>
+            group.rows.map(([lowerUvt, upperUvt, rate]) => ({
+                taxYear: 2026,
+                periodType: "BIMONTHLY" as const,
+                groupCode: group.groupCode,
+                groupName: group.groupName,
+                lowerUvt,
+                upperUvt,
+                rate,
+                active: true,
+            })),
+        ),
+    });
+
+    console.log("Simple tax RST bimonthly brackets seed OK for 2026");
+}
+
+async function seedSimpleTaxActivityGroupMappings() {
+    const csvPath = path.join(process.cwd(), "prisma", "seed-data", "simple_tax_activity_group_mapping.csv");
+
+    if (!fs.existsSync(csvPath)) {
+        console.log(
+            "Simple tax CIIU -> RST group mapping seed skipped: normalized CSV is not available. No mappings were invented.",
+        );
+        return;
+    }
+
+    const rows = parseCSV(csvPath);
+    let inserted = 0;
+
+    for (const row of rows) {
+        const taxYear = Number(row.taxYear);
+        const ciiuCode = row.ciiuCode?.trim();
+        const groupCode = row.groupCode?.trim();
+
+        if (!Number.isInteger(taxYear) || !ciiuCode || !groupCode) {
+            throw new Error(`Invalid simple tax activity group mapping row: ${JSON.stringify(row)}`);
+        }
+
+        inserted += await prisma.$executeRaw(
+            Prisma.sql`
+                INSERT INTO "SimpleTaxActivityGroupMapping" (
+                    "id",
+                    "taxYear",
+                    "ciiuCode",
+                    "groupCode",
+                    "groupName",
+                    "source",
+                    "active",
+                    "createdAt",
+                    "updatedAt"
+                )
+                VALUES (
+                    ${randomUUID()},
+                    ${taxYear},
+                    ${ciiuCode},
+                    ${groupCode},
+                    ${row.groupName?.trim() || null},
+                    ${row.source?.trim() || "NOMINA_SIMULADOR_VENTAS"},
+                    ${toBool(row.active)},
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT ("taxYear", "ciiuCode", "groupCode") DO NOTHING
+            `,
+        );
+    }
+
+    console.log(
+        `Simple tax CIIU -> RST group mapping seed OK: rows=${rows.length}, inserted=${inserted}, skipped=${rows.length - inserted}`,
+    );
+}
+
 async function main() {
     const base = path.join(process.cwd(), "prisma", "seed-data");
 
     await seedPuc(base);
+    await seedSimpleTaxPucAccounts();
     await seedAdmin();
     await seedInventoryUnits();
 
@@ -781,6 +945,8 @@ async function main() {
 
     await seedTaxResponsibilities();
     await seedTaxGlobalParameters();
+    await seedSimpleTaxRateBrackets();
+    await seedSimpleTaxActivityGroupMappings();
 }
 
 main()

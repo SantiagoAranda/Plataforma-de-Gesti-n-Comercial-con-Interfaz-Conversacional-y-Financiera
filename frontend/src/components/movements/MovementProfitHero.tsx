@@ -1,6 +1,7 @@
-﻿import { TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import type { AccountingSummary } from "@/src/services/accounting";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 export function MovementProfitHero({
   metrics,
@@ -11,6 +12,7 @@ export function MovementProfitHero({
   description?: string;
   title?: string;
 }) {
+  const { taxSettingsEnabled } = useTaxSettings();
   // 1. Unificación de Valores Base (Copia fiel de la Cascada Inferior)
   const operacion = metrics?.operacionComercial || {
     ventasNetas: 0,
@@ -51,10 +53,22 @@ export function MovementProfitHero({
 
   const iva = Math.abs(Math.round(impuestos.iva || 0));
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
-  const provisionesImpuesto = iva + retenciones;
+  const simpleTaxProjection = metrics.simpleTaxProjection;
+  const hasConfiguredSimpleTax =
+    Boolean(taxSettingsEnabled && simpleTaxProjection?.enabled && simpleTaxProjection.configured);
+  const isOpenSimpleTaxEstimate = Boolean(taxSettingsEnabled && simpleTaxProjection?.source === "MONTHLY_MIN_RATE");
+  const provisionesImpuesto = isOpenSimpleTaxEstimate
+    ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
+    : hasConfiguredSimpleTax
+      ? Math.abs(Math.round(simpleTaxProjection?.estimatedSimpleTax || 0))
+      : iva + retenciones;
 
-  const utilidadLiquida = utilidadAntesDeImpuestos - provisionesImpuesto;
-  const reservaLegal = Math.abs(Math.round(impuestos.fondosReserva || 0));
+  const utilidadLiquida = hasConfiguredSimpleTax
+    ? Math.round(simpleTaxProjection?.netProfitAfterSimpleTax ?? utilidadAntesDeImpuestos - provisionesImpuesto)
+    : utilidadAntesDeImpuestos - provisionesImpuesto;
+  const reservaLegal = hasConfiguredSimpleTax
+    ? 0
+    : Math.abs(Math.round(impuestos.fondosReserva || 0));
 
   // MONTO PRINCIPAL DESTACADO EN LA TARJETA
   const utilidadDelEjercicioFinal = utilidadLiquida - reservaLegal;

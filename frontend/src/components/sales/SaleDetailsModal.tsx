@@ -22,6 +22,7 @@ export default function SaleDetailsModal({
   onCancel,
   onSaveOptionalIngredients, // kept for TS signature compatibility
   confirming = false,
+  taxSettingsEnabled = false,
 }: {
   open: boolean;
   sale: Sale | null;
@@ -35,6 +36,7 @@ export default function SaleDetailsModal({
     excludedOptionalIngredientIds: string[],
   ) => Promise<void>;
   confirming?: boolean;
+  taxSettingsEnabled?: boolean;
 }) {
   if (!open || !sale) return null;
 
@@ -47,7 +49,14 @@ export default function SaleDetailsModal({
     !sale.accountingPostedAt;
 
   const total = sale.total ?? sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
-  const hasFiscalSummary = Boolean(sale.fiscalSummary);
+  const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
+    taxSettingsEnabled || 
+    Number(sale.fiscalSummary?.iva ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.impoconsumo ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteFuente ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteIva ?? 0) > 0 ||
+    Number(sale.fiscalSummary?.reteIca ?? 0) > 0
+  );
   const footerLabel = hasFiscalSummary ? "TOTAL COBRADO" : "SUBTOTAL";
   const footerValue = hasFiscalSummary
     ? Number(sale.fiscalSummary?.subtotal ?? total) +
@@ -139,6 +148,7 @@ export default function SaleDetailsModal({
             expanded={true}
             onCancelComposer={onClose}
             onSave={() => {}}
+            taxSettingsEnabled={taxSettingsEnabled}
           />
         </div>
 

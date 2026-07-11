@@ -21,6 +21,8 @@ import {
   getDepartmentCodeFromMunicipality,
   getMunicipalityName,
 } from "@/src/constants/colombianMunicipalities";
+import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "47", "48", "49", "52"];
 const SIMULATOR_RETEICA_PER_THOUSAND = "9.66";
@@ -36,6 +38,25 @@ const RESPONSIBILITY_LABELS: Record<string, string> = {
   "49": "No Responsable IVA",
   "52": "Facturador Electrónico",
 };
+
+const SIMPLE_TAX_GROUPS = [
+  {
+    code: "1",
+    label: "Grupo 1 - Tiendas pequenas, minimercados, micromercados y peluquerias",
+  },
+  {
+    code: "2",
+    label: "Grupo 2 - Comercio, industria, servicios tecnicos y demas actividades",
+  },
+  {
+    code: "3",
+    label: "Grupo 3 - Servicios profesionales y consultoria",
+  },
+  {
+    code: "4",
+    label: "Grupo 4 - Comidas, bebidas y hoteles",
+  },
+];
 
 type TaxBusinessProfileKey =
   | "PN_NO_RESPONSABLE"
@@ -154,6 +175,7 @@ function parsePerThousand(value: string) {
 
 export default function RutImpuestosPage() {
   const router = useRouter();
+  const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -183,18 +205,115 @@ export default function RutImpuestosPage() {
   const [useSameReteIcaRate, setUseSameReteIcaRate] = useState(true);
   const [reteIcaRatePerMil, setReteIcaRatePerMil] = useState(SIMULATOR_RETEICA_PER_THOUSAND);
   const [minBaseUvt, setMinBaseUvt] = useState("0");
+  const [simpleTaxYear, setSimpleTaxYear] = useState("2026");
+  const [simpleTaxGroupCode, setSimpleTaxGroupCode] = useState("");
+  const [simpleTaxActivityLabel, setSimpleTaxActivityLabel] = useState("");
+  const [simpleTaxFilingMode, setSimpleTaxFilingMode] = useState<"BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION">("BIMONTHLY_ADVANCE");
+  const [simpleTaxConfigLoaded, setSimpleTaxConfigLoaded] = useState(false);
+
+  const [initialSnapshot, setInitialSnapshot] = useState<any>(null);
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const currentSnapshot = useMemo(() => {
+    return {
+      personType,
+      documentType,
+      nit: nit.trim(),
+      dv: dv.trim(),
+      tradeName: tradeName.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      departmentCode: departmentCode.trim(),
+      municipalityCode: municipalityCode.trim(),
+      address: address.trim(),
+      mainCiiuCode: mainCiiuCode.trim(),
+      mainCiiuDescription: mainCiiuDescription.trim(),
+      isIncomeTaxDeclarant,
+      selectedRespCodes: [...selectedRespCodes].sort(),
+      icaRatePerMil: icaRatePerMil.trim(),
+      reteIcaRatePerMil: reteIcaRatePerMil.trim(),
+      useSameReteIcaRate,
+      minBaseUvt: minBaseUvt.trim(),
+      simpleTaxYear: simpleTaxYear.trim(),
+      simpleTaxGroupCode: simpleTaxGroupCode.trim(),
+      simpleTaxActivityLabel: simpleTaxActivityLabel.trim(),
+      simpleTaxFilingMode,
+    };
+  }, [
+    personType,
+    documentType,
+    nit,
+    dv,
+    tradeName,
+    email,
+    phone,
+    departmentCode,
+    municipalityCode,
+    address,
+    mainCiiuCode,
+    mainCiiuDescription,
+    isIncomeTaxDeclarant,
+    selectedRespCodes,
+    icaRatePerMil,
+    reteIcaRatePerMil,
+    useSameReteIcaRate,
+    minBaseUvt,
+    simpleTaxYear,
+    simpleTaxGroupCode,
+    simpleTaxActivityLabel,
+    simpleTaxFilingMode,
+  ]);
+
+  const isDirty = useMemo(() => {
+    if (!initialSnapshot) return false;
+    return JSON.stringify(initialSnapshot) !== JSON.stringify(currentSnapshot);
+  }, [initialSnapshot, currentSnapshot]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Hay cambios en el RUT que todavía no guardaste. Si sales ahora, se perderán.";
+      return e.returnValue;
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
+
+  const handleBack = () => {
+    if (isDirty) {
+      setShowExitModal(true);
+    } else {
+      router.push("/configuracion");
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [profile, catalog, rates] = await Promise.all([
+        const [profile, catalog, rates, simpleTaxConfig] = await Promise.all([
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
+          getSimpleTaxConfig()
+            .then((data) => ({ loaded: true, data }))
+            .catch(() => ({ loaded: false, data: null })),
         ]);
 
         setResponsibilitiesCatalog(catalog);
         setIcaRates(rates);
+
+        setSimpleTaxConfigLoaded(simpleTaxConfig.loaded);
+        if (simpleTaxConfig.data) {
+          setSimpleTaxYear(String(simpleTaxConfig.data.taxYear || 2026));
+          setSimpleTaxGroupCode(simpleTaxConfig.data.groupCode || "");
+          setSimpleTaxActivityLabel(simpleTaxConfig.data.activityLabel || "");
+          setSimpleTaxFilingMode(simpleTaxConfig.data.filingMode || "BIMONTHLY_ADVANCE");
+        }
 
         if (profile) {
           setPersonType(profile.personType);
@@ -230,6 +349,90 @@ export default function RutImpuestosPage() {
             setMinBaseUvt(String(configuredRate.minBaseUvt ?? "0"));
           }
         }
+
+        let profileSnapshot = {
+          personType: "NATURAL" as "NATURAL" | "JURIDICA",
+          documentType: "NIT" as "RC" | "CC" | "TE" | "NIT" | "CE" | "PASAPORTE" | "TI",
+          nit: "",
+          dv: "",
+          tradeName: "",
+          email: "",
+          phone: "",
+          departmentCode: "",
+          municipalityCode: "",
+          address: "",
+          mainCiiuCode: "",
+          mainCiiuDescription: "",
+          isIncomeTaxDeclarant: true,
+          selectedRespCodes: [] as string[],
+          icaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
+          reteIcaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
+          useSameReteIcaRate: true,
+          minBaseUvt: "0",
+          simpleTaxYear: "2026",
+          simpleTaxGroupCode: "",
+          simpleTaxActivityLabel: "",
+          simpleTaxFilingMode: "BIMONTHLY_ADVANCE" as "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION",
+        };
+
+        if (profile) {
+          const loadedCodes = profile.responsibilities.map((r) => r.responsibility.code);
+          const configuredRate = rates.find(
+            (rate) =>
+              rate.municipalityCode === profile.municipalityCode &&
+              rate.ciiuCode === profile.mainCiiuCode,
+          );
+          let ratePerMil = SIMULATOR_RETEICA_PER_THOUSAND;
+          let reteRatePerMil = SIMULATOR_RETEICA_PER_THOUSAND;
+          let sameRate = true;
+          let baseUvt = "0";
+
+          if (configuredRate) {
+            ratePerMil = decimalToPerThousand(configuredRate.icaRate);
+            reteRatePerMil = decimalToPerThousand(configuredRate.reteIcaRate);
+            sameRate = ratePerMil === reteRatePerMil;
+            baseUvt = String(configuredRate.minBaseUvt ?? "0");
+          }
+
+          let sYear = "2026";
+          let sGroup = "";
+          let sActivity = "";
+          let sFilingMode: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION" = "BIMONTHLY_ADVANCE";
+
+          if (simpleTaxConfig.data) {
+            sYear = String(simpleTaxConfig.data.taxYear || 2026);
+            sGroup = simpleTaxConfig.data.groupCode || "";
+            sActivity = simpleTaxConfig.data.activityLabel || "";
+            sFilingMode = simpleTaxConfig.data.filingMode || "BIMONTHLY_ADVANCE";
+          }
+
+          profileSnapshot = {
+            personType: profile.personType,
+            documentType: profile.documentType,
+            nit: profile.nit,
+            dv: profile.dv || "",
+            tradeName: profile.tradeName,
+            email: profile.email,
+            phone: profile.phone,
+            departmentCode: profile.departmentCode,
+            municipalityCode: profile.municipalityCode,
+            address: profile.address,
+            mainCiiuCode: profile.mainCiiuCode || "",
+            mainCiiuDescription: profile.mainCiiuDescription || "",
+            isIncomeTaxDeclarant: profile.isIncomeTaxDeclarant ?? true,
+            selectedRespCodes: [...loadedCodes].sort(),
+            icaRatePerMil: ratePerMil,
+            reteIcaRatePerMil: reteRatePerMil,
+            useSameReteIcaRate: sameRate,
+            minBaseUvt: baseUvt,
+            simpleTaxYear: sYear,
+            simpleTaxGroupCode: sGroup,
+            simpleTaxActivityLabel: sActivity,
+            simpleTaxFilingMode: sFilingMode,
+          };
+        }
+
+        setInitialSnapshot(profileSnapshot);
       } catch (err: any) {
         toast.error(err.message || "No se pudieron obtener los datos fiscales.");
       } finally {
@@ -378,6 +581,50 @@ export default function RutImpuestosPage() {
       });
 
       await saveIcaRate();
+
+      const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
+      const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
+        enabled: hasSimpleTaxResponsibility,
+        taxYear: Number(simpleTaxYear) || 2026,
+        groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
+        activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
+        ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
+      };
+      if (simpleTaxConfigLoaded) {
+        simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
+          ? simpleTaxFilingMode
+          : "BIMONTHLY_ADVANCE";
+      }
+      await updateSimpleTaxConfig(simpleTaxPayload);
+      window.dispatchEvent(new Event("tax-profile-updated"));
+
+      const savedSnapshot = {
+        personType,
+        documentType,
+        nit: nit.trim(),
+        dv: dv.trim(),
+        tradeName: tradeName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        departmentCode: departmentCode.trim(),
+        municipalityCode: municipalityCode.trim(),
+        address: address.trim(),
+        mainCiiuCode: mainCiiuCode.trim(),
+        mainCiiuDescription: mainCiiuDescription.trim(),
+        isIncomeTaxDeclarant,
+        selectedRespCodes: [...selectedRespCodes].sort(),
+        icaRatePerMil: icaRatePerMil.trim(),
+        reteIcaRatePerMil: reteIcaRatePerMil.trim(),
+        useSameReteIcaRate,
+        minBaseUvt: minBaseUvt.trim(),
+        simpleTaxYear: simpleTaxYear.trim(),
+        simpleTaxGroupCode: simpleTaxGroupCode.trim(),
+        simpleTaxActivityLabel: simpleTaxActivityLabel.trim(),
+        simpleTaxFilingMode,
+      };
+      setInitialSnapshot(savedSnapshot);
+
+      router.refresh();
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
       toast.error(err.message || "Verifique los datos ingresados.");
@@ -399,7 +646,7 @@ export default function RutImpuestosPage() {
       <header className="mx-auto flex max-w-xl items-center px-4 pb-4 pt-5">
         <button
           type="button"
-          onClick={() => router.push("/configuracion")}
+          onClick={handleBack}
           aria-label="Volver a configuración"
           className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-700 transition hover:bg-white"
         >
@@ -410,10 +657,22 @@ export default function RutImpuestosPage() {
           <p className="mt-0.5 text-xs font-bold text-blue-700">
             Validado con Casillas DIAN
           </p>
+          <div className="mt-1.5 flex justify-center">
+            {taxSettingsEnabled ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-600/10">
+                Impuestos activos
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-600/10">
+                Impuestos desactivados
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-xl px-4">
+
         <form onSubmit={handleSave} className="space-y-3">
           <section className={`${cardClassName} space-y-3`}>
             <h2 className="text-sm font-black text-slate-900">
@@ -673,6 +932,40 @@ export default function RutImpuestosPage() {
               </div>
             </div>
 
+            {selectedRespCodes.includes("47") && (
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-emerald-950">
+                      Régimen Simple activo según RUT
+                    </h3>
+                    <p className="mt-1 text-[11px] font-medium text-emerald-800">
+                      La liquidación se gestiona desde el módulo Régimen Simple.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/contabilidad/regimen-simple")}
+                    className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
+                  >
+                    Ir a liquidar
+                  </button>
+                </div>
+                {simpleTaxConfigLoaded && simpleTaxFilingMode === "ANNUAL_EXCEPTION" && (
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-medium text-amber-800">
+                    <span className="font-bold">Advertencia:</span> Tienes activa la modalidad Excepción Anual de pruebas. Te sugerimos cambiar a la modalidad estándar de <strong>Anticipos bimestrales</strong> para habilitar las liquidaciones normales.
+                    <button
+                      type="button"
+                      onClick={() => setSimpleTaxFilingMode("BIMONTHLY_ADVANCE")}
+                      className="mt-2 block font-black text-amber-900 underline hover:text-amber-950"
+                    >
+                      Volver a Anticipos Bimestrales
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-slate-700">
                 ICA / ReteICA
@@ -753,6 +1046,38 @@ export default function RutImpuestosPage() {
           </button>
         </form>
       </main>
+
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-base font-black text-slate-900">
+              Cambios sin guardar
+            </h3>
+            <p className="mt-2 text-xs font-bold text-slate-500 leading-relaxed">
+              Hay cambios en el RUT que todavía no guardaste. Si sales ahora, se perderán.
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowExitModal(false)}
+                className="h-11 w-full rounded-2xl bg-blue-700 text-sm font-black text-white shadow-sm transition hover:bg-blue-800"
+              >
+                Seguir editando
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitModal(false);
+                  router.push("/configuracion");
+                }}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                Salir sin guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

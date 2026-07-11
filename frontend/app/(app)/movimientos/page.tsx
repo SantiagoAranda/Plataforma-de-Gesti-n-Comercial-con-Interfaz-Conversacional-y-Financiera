@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
@@ -40,6 +42,20 @@ function isTodayLocal(d: Date): boolean {
     d.getMonth() === now.getMonth() &&
     d.getFullYear() === now.getFullYear()
   );
+}
+
+function formatCop(value: number) {
+  return Math.round(Number(value || 0)).toLocaleString("es-CO", {
+    style: "currency",
+    currency: "COP",
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatRate(value: number) {
+  return `${(Number(value || 0) * 100).toLocaleString("es-CO", {
+    maximumFractionDigits: 2,
+  })}%`;
 }
 
 // ─── Componente: MonthPickerPopover (clonado de Nómina / HeaderCalendar) ──── ─
@@ -134,6 +150,7 @@ function MonthPickerPopover({
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MovimientosPage() {
+  const { taxSettingsEnabled } = useTaxSettings();
   // Modo de vista: MONTH (mes completo) | DAILY (día individual)
   // Arranca en MONTH para que el primer fetch cargue el mes actual completo
   const [viewMode, setViewMode] = useState<ViewMode>("MONTH");
@@ -175,28 +192,35 @@ export default function MovimientosPage() {
 
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        setError(null);
-        const data = await getAccountingSummary({
-          from: dateRange.from,
-          to: dateRange.to,
-        });
-        setSummary(data);
-      } catch (e: unknown) {
-        setSummary(null);
-        const message =
-          e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
-            ? (e as { message: string }).message
-            : "No se pudieron cargar los movimientos";
-        setError(message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const loadSummary = useCallback(async () => {
+    setLoading(true);
+    try {
+      setError(null);
+      const data = await getAccountingSummary({
+        from: dateRange.from,
+        to: dateRange.to,
+      });
+      setSummary(data);
+    } catch (e: unknown) {
+      setSummary(null);
+      const message =
+        e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
+          ? (e as { message: string }).message
+          : "No se pudieron cargar los movimientos";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
   }, [dateRange]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
+
+  useEffect(() => {
+    window.addEventListener("tax-profile-updated", loadSummary);
+    return () => window.removeEventListener("tax-profile-updated", loadSummary);
+  }, [loadSummary]);
 
   // ── hasData ───────────────────────────────────────────────────────────────
   const hasData = useMemo(() => {
@@ -284,6 +308,98 @@ export default function MovimientosPage() {
         {!loading && !error && (
           <>
             {summary && <MovementProfitHero metrics={summary} />}
+
+            {taxSettingsEnabled && summary?.simpleTaxProjection?.enabled && (
+              <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
+                      Régimen Simple
+                    </p>
+                    <h2 className="mt-1 text-base font-semibold text-slate-900">
+                      {summary.simpleTaxProjection.configured
+                        ? summary.simpleTaxProjection.source === "POSTED_ACTUAL"
+                          ? summary.simpleTaxProjection.periodStatus === "PAID"
+                            ? "Periodo pagado"
+                            : "Periodo cerrado"
+                          : summary.simpleTaxProjection.informativeOnly
+                          ? "Estimación informativa"
+                          : "Estimación mensual"
+                        : "Configuración pendiente"}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {summary.simpleTaxProjection.message ??
+                        "No genera asiento contable hasta presentar el bimestre."}
+                    </p>
+                  </div>
+                  <Link
+                    href="/contabilidad/regimen-simple"
+                    className="shrink-0 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                  >
+                    Ver detalle
+                  </Link>
+                </div>
+
+                {summary.simpleTaxProjection.configured ? (
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Bimestre
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {summary.simpleTaxProjection.periodNumber} / {summary.simpleTaxProjection.taxYear}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Base RST
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {formatCop(summary.simpleTaxProjection.grossIncomeBase)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Tarifa
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {formatRate(summary.simpleTaxProjection.estimatedRate)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        {summary.simpleTaxProjection.source === "POSTED_ACTUAL"
+                          ? summary.simpleTaxProjection.periodStatus === "PAID"
+                            ? "Impuesto pagado"
+                            : "Impuesto cerrado"
+                          : "Impuesto estimado"}
+                      </p>
+                      <p className="font-semibold text-slate-900">
+                        {formatCop(summary.simpleTaxProjection.estimatedSimpleTax)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Antes RST
+                      </p>
+                      <p className="font-medium text-slate-700">
+                        {formatCop(summary.simpleTaxProjection.netProfitBeforeSimpleTax)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        {summary.simpleTaxProjection.source === "POSTED_ACTUAL"
+                          ? "Utilidad contable"
+                          : "Después RST"}
+                      </p>
+                      <p className="font-semibold text-emerald-700">
+                        {formatCop(summary.simpleTaxProjection.netProfitAfterSimpleTax)}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
 
             {/* ── Barra de filtro de fecha unificada ── */}
             <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm transition-all duration-300">

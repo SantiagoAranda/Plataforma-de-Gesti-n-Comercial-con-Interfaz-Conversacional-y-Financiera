@@ -23,6 +23,7 @@ import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
 // ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
 function MonthPickerPopover({
@@ -163,6 +164,7 @@ function getCalendarBusinessDayKey(date: Date) {
 }
 
 export default function VentaPage() {
+  const { taxSettingsEnabled } = useTaxSettings();
   const [q, setQ] = useState("");
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
@@ -396,7 +398,7 @@ export default function VentaPage() {
   };
 
   const handleConfirmSale = useCallback(async (sale: Sale) => {
-    if (!sale.fiscalContext) {
+    if (taxSettingsEnabled && !sale.fiscalContext) {
       toast.error("Faltan datos fiscales para liquidar esta venta. Editala antes de confirmar.");
       return;
     }
@@ -440,7 +442,7 @@ export default function VentaPage() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders]);
+  }, [loadOrders, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -793,6 +795,7 @@ export default function VentaPage() {
               onDetails={(sale) => setDetailsSale(sale)}
               onReceipt={(sale) => setReceiptSale(sale)}
               onSendWhatsApp={handleSendWhatsApp}
+              taxSettingsEnabled={taxSettingsEnabled}
             />
           )}
           <div ref={bottomRef} className="h-px w-full" />
@@ -806,6 +809,7 @@ export default function VentaPage() {
           expanded={true}
           onCancelComposer={() => setEditingSale(null)}
           onSave={handleSaveEditedSale}
+          taxSettingsEnabled={taxSettingsEnabled}
         />
       )}
 
@@ -826,12 +830,14 @@ export default function VentaPage() {
           setDetailsSale(null);
         }}
         confirming={confirmingSaleId === detailsSale?.id}
+        taxSettingsEnabled={taxSettingsEnabled}
       />
 
       <SaleReceiptModal
         open={!!receiptSale}
         sale={receiptSale}
         onClose={() => setReceiptSale(null)}
+        taxSettingsEnabled={taxSettingsEnabled}
       />
 
       <SalesFilterModal
@@ -848,6 +854,7 @@ export default function VentaPage() {
         searchValue={q}
         onSearchChange={setQ}
         onSave={handleCreateSale}
+        taxSettingsEnabled={taxSettingsEnabled}
       />
     </div>
   );

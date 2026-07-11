@@ -1,0 +1,9 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'SimpleTaxFilingMode') THEN
+    CREATE TYPE "SimpleTaxFilingMode" AS ENUM ('BIMONTHLY_ADVANCE', 'ANNUAL_EXCEPTION');
+  END IF;
+END $$;
+
+ALTER TABLE "BusinessSimpleTaxConfig"
+ADD COLUMN IF NOT EXISTS "filingMode" "SimpleTaxFilingMode" NOT NULL DEFAULT 'BIMONTHLY_ADVANCE';
