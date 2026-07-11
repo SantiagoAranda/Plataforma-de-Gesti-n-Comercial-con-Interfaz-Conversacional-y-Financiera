@@ -13,6 +13,7 @@ import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import SaleTaxPanel, {
   buildBuyerFiscalContext,
   DEFAULT_SALE_FISCAL_FORM,
+  normalizeBuyerFiscalExclusion,
   saleFiscalStateFromSale,
   type SaleFiscalFormState,
 } from "@/src/components/sales/SaleTaxPanel";
@@ -308,9 +309,55 @@ export default function SalesChatComposer({
   );
 
   const buyerFiscalContext = useMemo<BuyerFiscalContext>(
-    () => buildBuyerFiscalContext(fiscalForm),
-    [fiscalForm],
+    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
+    [fiscalForm, taxSettingsEnabled],
   );
+
+  const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {
+    setFiscalForm((prev) => {
+      const next = updater(prev);
+      return taxSettingsEnabled ? normalizeBuyerFiscalExclusion(next) : next;
+    });
+  };
+
+  const toggleBuyerFiscalFlag = (key: (typeof visibleResponsibilities)[number]["key"], active: boolean) => {
+    updateFiscalForm((prev) => {
+      if (key === "buyerType") {
+        return {
+          ...prev,
+          buyerType: active ? "NATURAL" : "JURIDICA",
+          buyerDocumentType: active ? "CC" : "NIT",
+          buyerIsIvaResponsable: !active,
+          buyerIsRetenedor: active ? false : prev.buyerIsRetenedor,
+          buyerIsGranContribuyente: active ? false : prev.buyerIsGranContribuyente,
+          buyerIsAutorretenedor: active ? false : prev.buyerIsAutorretenedor,
+          buyerIsRegimenSimple: active ? false : prev.buyerIsRegimenSimple,
+          buyerRequiresElectronicInvoice: active ? false : prev.buyerRequiresElectronicInvoice,
+        };
+      }
+
+      const nextActive = !active;
+      if (
+        key === "buyerIsAutorretenedor" &&
+        nextActive &&
+        prev.buyerType === "JURIDICA" &&
+        prev.buyerIsGranContribuyente
+      ) {
+        return prev;
+      }
+
+      const next = {
+        ...prev,
+        [key]: nextActive,
+      };
+
+      if (key === "buyerIsGranContribuyente" && nextActive && prev.buyerType === "JURIDICA") {
+        next.buyerIsAutorretenedor = false;
+      }
+
+      return next;
+    });
+  };
 
   const updateItemQty = (idx: number, qty: number) => {
     const current = items[idx];
@@ -605,40 +652,31 @@ export default function SalesChatComposer({
               {fiscalForm.buyerType === "JURIDICA" && (
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   {visibleResponsibilities.map(({ key, label }) => {
+                    const autorretenedorDisabled =
+                      key === "buyerIsAutorretenedor" &&
+                      fiscalForm.buyerType === "JURIDICA" &&
+                      fiscalForm.buyerIsGranContribuyente;
                     const active =
                       key === "buyerType"
                         ? fiscalForm.buyerType === "JURIDICA"
-                        : Boolean(fiscalForm[key]);
+                        : autorretenedorDisabled
+                          ? false
+                          : Boolean(fiscalForm[key]);
                     return (
                       <button
                         key={key}
                         type="button"
-                        disabled={isReadonly}
+                        disabled={isReadonly || autorretenedorDisabled}
+                        aria-disabled={isReadonly || autorretenedorDisabled}
                         onClick={() => {
-                          if (key === "buyerType") {
-                            setFiscalForm(prev => ({
-                              ...prev,
-                              buyerType: active ? "NATURAL" : "JURIDICA",
-                              buyerDocumentType: active ? "CC" : "NIT",
-                              buyerIsIvaResponsable: active ? false : true,
-                              buyerIsRetenedor: active ? false : prev.buyerIsRetenedor,
-                              buyerIsGranContribuyente: active ? false : prev.buyerIsGranContribuyente,
-                              buyerIsAutorretenedor: active ? false : prev.buyerIsAutorretenedor,
-                              buyerIsRegimenSimple: active ? false : prev.buyerIsRegimenSimple,
-                              buyerRequiresElectronicInvoice: active ? false : prev.buyerRequiresElectronicInvoice,
-                            }));
-                            return;
-                          }
-                          setFiscalForm(prev => ({
-                            ...prev,
-                            [key]: !active
-                          }));
+                          if (autorretenedorDisabled) return;
+                          toggleBuyerFiscalFlag(key, active);
                         }}
                         className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
                           active
                             ? "border-emerald-600 bg-white text-emerald-800 shadow-sm"
                             : "border-emerald-300 bg-white/70 text-emerald-900 hover:border-emerald-500"
-                        }`}
+                        } ${autorretenedorDisabled ? "cursor-not-allowed opacity-45 hover:border-emerald-300" : ""}`}
                       >
                         {label}
                       </button>
@@ -711,36 +749,29 @@ export default function SalesChatComposer({
           </span>
           <div className="grid grid-cols-2 gap-2">
             {visibleResponsibilities.map(({ key, label }) => {
+              const autorretenedorDisabled =
+                key === "buyerIsAutorretenedor" &&
+                fiscalForm.buyerType === "JURIDICA" &&
+                fiscalForm.buyerIsGranContribuyente;
               const active =
                 key === "buyerType"
                   ? fiscalForm.buyerType === "JURIDICA"
-                  : Boolean(fiscalForm[key]);
+                  : autorretenedorDisabled
+                    ? false
+                    : Boolean(fiscalForm[key]);
               return (
                 <button
                   key={key}
                   type="button"
-                  disabled={isReadonly}
+                  disabled={isReadonly || autorretenedorDisabled}
+                  aria-disabled={isReadonly || autorretenedorDisabled}
                   onClick={() => {
-                    if (key === "buyerType") {
-                      setFiscalForm(prev => ({
-                        ...prev,
-                        buyerType: active ? "NATURAL" : "JURIDICA",
-                        buyerDocumentType: active ? "CC" : "NIT",
-                        buyerIsIvaResponsable: active ? false : true,
-                        buyerIsRetenedor: active ? false : prev.buyerIsRetenedor,
-                        buyerIsGranContribuyente: active ? false : prev.buyerIsGranContribuyente,
-                        buyerIsAutorretenedor: active ? false : prev.buyerIsAutorretenedor,
-                        buyerIsRegimenSimple: active ? false : prev.buyerIsRegimenSimple,
-                        buyerRequiresElectronicInvoice: active ? false : prev.buyerRequiresElectronicInvoice,
-                      }));
-                      return;
-                    }
-                    setFiscalForm(prev => ({
-                      ...prev,
-                      [key]: !active
-                    }));
+                    if (autorretenedorDisabled) return;
+                    toggleBuyerFiscalFlag(key, active);
                   }}
-                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)}`}
+                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${
+                    autorretenedorDisabled ? "cursor-not-allowed opacity-45" : ""
+                  }`}
                 >
                   {label}
                 </button>
@@ -983,7 +1014,7 @@ export default function SalesChatComposer({
           <SaleTaxPanel
             mode={isReadonly ? "readonly" : "create"}
             value={fiscalForm}
-            onChange={setFiscalForm}
+            onChange={(next) => setFiscalForm(taxSettingsEnabled ? normalizeBuyerFiscalExclusion(next) : next)}
             saleType={type}
             items={items.map((item) => ({
               itemId: item.itemId,

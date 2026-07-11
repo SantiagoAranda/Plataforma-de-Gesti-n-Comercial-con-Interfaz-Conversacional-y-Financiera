@@ -45,22 +45,37 @@ export const DEFAULT_SALE_FISCAL_FORM: SaleFiscalFormState = {
   reteIcaRateOverride: undefined,
 };
 
-export function buildBuyerFiscalContext(state: SaleFiscalFormState): BuyerFiscalContext {
+export function normalizeBuyerFiscalExclusion(state: SaleFiscalFormState): SaleFiscalFormState {
+  if (
+    state.buyerType === "JURIDICA" &&
+    state.buyerIsGranContribuyente &&
+    state.buyerIsAutorretenedor
+  ) {
+    return { ...state, buyerIsAutorretenedor: false };
+  }
+  return state;
+}
+
+export function buildBuyerFiscalContext(
+  state: SaleFiscalFormState,
+  applyBuyerExclusion = true,
+): BuyerFiscalContext {
+  const normalized = applyBuyerExclusion ? normalizeBuyerFiscalExclusion(state) : state;
   return {
-    buyerType: state.buyerType,
-    buyerName: state.buyerName.trim() || null,
-    buyerDocumentType: state.buyerDocumentType,
-    buyerDocumentNumber: state.buyerDocumentNumber.trim() || null,
-    buyerEmail: state.buyerEmail.trim() || null,
-    buyerIsIvaResponsable: state.buyerIsIvaResponsable,
-    buyerIsRetenedor: state.buyerIsRetenedor,
-    buyerIsGranContribuyente: state.buyerIsGranContribuyente,
-    buyerIsAutorretenedor: state.buyerIsAutorretenedor,
-    buyerIsRegimenSimple: state.buyerIsRegimenSimple,
-    buyerRequiresElectronicInvoice: state.buyerRequiresElectronicInvoice,
-    fiscalMunicipalityCode: state.fiscalMunicipalityCode || null,
-    saleConcept: state.saleConcept,
-    reteIcaRateOverride: state.reteIcaRateOverride,
+    buyerType: normalized.buyerType,
+    buyerName: normalized.buyerName.trim() || null,
+    buyerDocumentType: normalized.buyerDocumentType,
+    buyerDocumentNumber: normalized.buyerDocumentNumber.trim() || null,
+    buyerEmail: normalized.buyerEmail.trim() || null,
+    buyerIsIvaResponsable: normalized.buyerIsIvaResponsable,
+    buyerIsRetenedor: normalized.buyerIsRetenedor,
+    buyerIsGranContribuyente: normalized.buyerIsGranContribuyente,
+    buyerIsAutorretenedor: normalized.buyerIsAutorretenedor,
+    buyerIsRegimenSimple: normalized.buyerIsRegimenSimple,
+    buyerRequiresElectronicInvoice: normalized.buyerRequiresElectronicInvoice,
+    fiscalMunicipalityCode: normalized.fiscalMunicipalityCode || null,
+    saleConcept: normalized.saleConcept,
+    reteIcaRateOverride: normalized.reteIcaRateOverride,
   };
 }
 
@@ -270,7 +285,11 @@ export default function SaleTaxPanel({
       next.buyerIsRetenedor = false;
       next.buyerRequiresElectronicInvoice = false;
     }
-    onChange(next);
+    if (patch.buyerIsAutorretenedor === true && next.buyerType === "JURIDICA" && next.buyerIsGranContribuyente) return;
+    if (patch.buyerIsGranContribuyente === true && next.buyerType === "JURIDICA") {
+      next.buyerIsAutorretenedor = false;
+    }
+    onChange(normalizeBuyerFiscalExclusion(next));
   };
 
   const context = useMemo(() => buildBuyerFiscalContext(value), [value]);
@@ -489,23 +508,33 @@ export default function SaleTaxPanel({
                 ["buyerIsAutorretenedor", "Autorretenedor"],
                 ["buyerIsGranContribuyente", "Gran Contrib."],
               ].map(([key, label]) => {
+                const autorretenedorDisabled =
+                  key === "buyerIsAutorretenedor" &&
+                  value.buyerType === "JURIDICA" &&
+                  value.buyerIsGranContribuyente;
                 const active =
                   key === "buyerType"
                     ? value.buyerType === "JURIDICA"
-                    : Boolean(value[key as keyof SaleFiscalFormState]);
+                    : autorretenedorDisabled
+                      ? false
+                      : Boolean(value[key as keyof SaleFiscalFormState]);
                 return (
                   <button
                     key={key}
                     type="button"
-                    disabled={readonly}
+                    disabled={readonly || autorretenedorDisabled}
+                    aria-disabled={readonly || autorretenedorDisabled}
                     onClick={() => {
+                      if (autorretenedorDisabled) return;
                       if (key === "buyerType") {
                         update({ buyerType: active ? "NATURAL" : "JURIDICA" });
                         return;
                       }
                       update({ [key]: !active } as Partial<SaleFiscalFormState>);
                     }}
-                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-semibold transition ${fiscalChipClass(active, readonly)}`}
+                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-semibold transition ${fiscalChipClass(active, readonly)} ${
+                      autorretenedorDisabled ? "cursor-not-allowed opacity-45" : ""
+                    }`}
                   >
                     {label}
                   </button>

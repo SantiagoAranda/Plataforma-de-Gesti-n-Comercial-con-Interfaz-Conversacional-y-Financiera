@@ -211,6 +211,87 @@ export default function RutImpuestosPage() {
   const [simpleTaxFilingMode, setSimpleTaxFilingMode] = useState<"BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION">("BIMONTHLY_ADVANCE");
   const [simpleTaxConfigLoaded, setSimpleTaxConfigLoaded] = useState(false);
 
+  const [initialSnapshot, setInitialSnapshot] = useState<any>(null);
+  const [showExitModal, setShowExitModal] = useState(false);
+
+  const currentSnapshot = useMemo(() => {
+    return {
+      personType,
+      documentType,
+      nit: nit.trim(),
+      dv: dv.trim(),
+      tradeName: tradeName.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      departmentCode: departmentCode.trim(),
+      municipalityCode: municipalityCode.trim(),
+      address: address.trim(),
+      mainCiiuCode: mainCiiuCode.trim(),
+      mainCiiuDescription: mainCiiuDescription.trim(),
+      isIncomeTaxDeclarant,
+      selectedRespCodes: [...selectedRespCodes].sort(),
+      icaRatePerMil: icaRatePerMil.trim(),
+      reteIcaRatePerMil: reteIcaRatePerMil.trim(),
+      useSameReteIcaRate,
+      minBaseUvt: minBaseUvt.trim(),
+      simpleTaxYear: simpleTaxYear.trim(),
+      simpleTaxGroupCode: simpleTaxGroupCode.trim(),
+      simpleTaxActivityLabel: simpleTaxActivityLabel.trim(),
+      simpleTaxFilingMode,
+    };
+  }, [
+    personType,
+    documentType,
+    nit,
+    dv,
+    tradeName,
+    email,
+    phone,
+    departmentCode,
+    municipalityCode,
+    address,
+    mainCiiuCode,
+    mainCiiuDescription,
+    isIncomeTaxDeclarant,
+    selectedRespCodes,
+    icaRatePerMil,
+    reteIcaRatePerMil,
+    useSameReteIcaRate,
+    minBaseUvt,
+    simpleTaxYear,
+    simpleTaxGroupCode,
+    simpleTaxActivityLabel,
+    simpleTaxFilingMode,
+  ]);
+
+  const isDirty = useMemo(() => {
+    if (!initialSnapshot) return false;
+    return JSON.stringify(initialSnapshot) !== JSON.stringify(currentSnapshot);
+  }, [initialSnapshot, currentSnapshot]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Hay cambios en el RUT que todavía no guardaste. Si sales ahora, se perderán.";
+      return e.returnValue;
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
+
+  const handleBack = () => {
+    if (isDirty) {
+      setShowExitModal(true);
+    } else {
+      router.push("/configuracion");
+    }
+  };
+
   useEffect(() => {
     async function loadData() {
       try {
@@ -268,6 +349,90 @@ export default function RutImpuestosPage() {
             setMinBaseUvt(String(configuredRate.minBaseUvt ?? "0"));
           }
         }
+
+        let profileSnapshot = {
+          personType: "NATURAL" as "NATURAL" | "JURIDICA",
+          documentType: "NIT" as "RC" | "CC" | "TE" | "NIT" | "CE" | "PASAPORTE" | "TI",
+          nit: "",
+          dv: "",
+          tradeName: "",
+          email: "",
+          phone: "",
+          departmentCode: "",
+          municipalityCode: "",
+          address: "",
+          mainCiiuCode: "",
+          mainCiiuDescription: "",
+          isIncomeTaxDeclarant: true,
+          selectedRespCodes: [] as string[],
+          icaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
+          reteIcaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
+          useSameReteIcaRate: true,
+          minBaseUvt: "0",
+          simpleTaxYear: "2026",
+          simpleTaxGroupCode: "",
+          simpleTaxActivityLabel: "",
+          simpleTaxFilingMode: "BIMONTHLY_ADVANCE" as "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION",
+        };
+
+        if (profile) {
+          const loadedCodes = profile.responsibilities.map((r) => r.responsibility.code);
+          const configuredRate = rates.find(
+            (rate) =>
+              rate.municipalityCode === profile.municipalityCode &&
+              rate.ciiuCode === profile.mainCiiuCode,
+          );
+          let ratePerMil = SIMULATOR_RETEICA_PER_THOUSAND;
+          let reteRatePerMil = SIMULATOR_RETEICA_PER_THOUSAND;
+          let sameRate = true;
+          let baseUvt = "0";
+
+          if (configuredRate) {
+            ratePerMil = decimalToPerThousand(configuredRate.icaRate);
+            reteRatePerMil = decimalToPerThousand(configuredRate.reteIcaRate);
+            sameRate = ratePerMil === reteRatePerMil;
+            baseUvt = String(configuredRate.minBaseUvt ?? "0");
+          }
+
+          let sYear = "2026";
+          let sGroup = "";
+          let sActivity = "";
+          let sFilingMode: "BIMONTHLY_ADVANCE" | "ANNUAL_EXCEPTION" = "BIMONTHLY_ADVANCE";
+
+          if (simpleTaxConfig.data) {
+            sYear = String(simpleTaxConfig.data.taxYear || 2026);
+            sGroup = simpleTaxConfig.data.groupCode || "";
+            sActivity = simpleTaxConfig.data.activityLabel || "";
+            sFilingMode = simpleTaxConfig.data.filingMode || "BIMONTHLY_ADVANCE";
+          }
+
+          profileSnapshot = {
+            personType: profile.personType,
+            documentType: profile.documentType,
+            nit: profile.nit,
+            dv: profile.dv || "",
+            tradeName: profile.tradeName,
+            email: profile.email,
+            phone: profile.phone,
+            departmentCode: profile.departmentCode,
+            municipalityCode: profile.municipalityCode,
+            address: profile.address,
+            mainCiiuCode: profile.mainCiiuCode || "",
+            mainCiiuDescription: profile.mainCiiuDescription || "",
+            isIncomeTaxDeclarant: profile.isIncomeTaxDeclarant ?? true,
+            selectedRespCodes: [...loadedCodes].sort(),
+            icaRatePerMil: ratePerMil,
+            reteIcaRatePerMil: reteRatePerMil,
+            useSameReteIcaRate: sameRate,
+            minBaseUvt: baseUvt,
+            simpleTaxYear: sYear,
+            simpleTaxGroupCode: sGroup,
+            simpleTaxActivityLabel: sActivity,
+            simpleTaxFilingMode: sFilingMode,
+          };
+        }
+
+        setInitialSnapshot(profileSnapshot);
       } catch (err: any) {
         toast.error(err.message || "No se pudieron obtener los datos fiscales.");
       } finally {
@@ -432,6 +597,33 @@ export default function RutImpuestosPage() {
       }
       await updateSimpleTaxConfig(simpleTaxPayload);
       window.dispatchEvent(new Event("tax-profile-updated"));
+
+      const savedSnapshot = {
+        personType,
+        documentType,
+        nit: nit.trim(),
+        dv: dv.trim(),
+        tradeName: tradeName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        departmentCode: departmentCode.trim(),
+        municipalityCode: municipalityCode.trim(),
+        address: address.trim(),
+        mainCiiuCode: mainCiiuCode.trim(),
+        mainCiiuDescription: mainCiiuDescription.trim(),
+        isIncomeTaxDeclarant,
+        selectedRespCodes: [...selectedRespCodes].sort(),
+        icaRatePerMil: icaRatePerMil.trim(),
+        reteIcaRatePerMil: reteIcaRatePerMil.trim(),
+        useSameReteIcaRate,
+        minBaseUvt: minBaseUvt.trim(),
+        simpleTaxYear: simpleTaxYear.trim(),
+        simpleTaxGroupCode: simpleTaxGroupCode.trim(),
+        simpleTaxActivityLabel: simpleTaxActivityLabel.trim(),
+        simpleTaxFilingMode,
+      };
+      setInitialSnapshot(savedSnapshot);
+
       router.refresh();
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
@@ -454,7 +646,7 @@ export default function RutImpuestosPage() {
       <header className="mx-auto flex max-w-xl items-center px-4 pb-4 pt-5">
         <button
           type="button"
-          onClick={() => router.push("/configuracion")}
+          onClick={handleBack}
           aria-label="Volver a configuración"
           className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-slate-700 transition hover:bg-white"
         >
@@ -854,6 +1046,38 @@ export default function RutImpuestosPage() {
           </button>
         </form>
       </main>
+
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl border border-slate-100 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-base font-black text-slate-900">
+              Cambios sin guardar
+            </h3>
+            <p className="mt-2 text-xs font-bold text-slate-500 leading-relaxed">
+              Hay cambios en el RUT que todavía no guardaste. Si sales ahora, se perderán.
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowExitModal(false)}
+                className="h-11 w-full rounded-2xl bg-blue-700 text-sm font-black text-white shadow-sm transition hover:bg-blue-800"
+              >
+                Seguir editando
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExitModal(false);
+                  router.push("/configuracion");
+                }}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+              >
+                Salir sin guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -598,6 +598,27 @@ describe('SalesService personalized order lines', () => {
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.orderItem.deleteMany).not.toHaveBeenCalled();
   });
+
+  it('rejects buyer fiscal context with Gran Contribuyente and Autorretenedor enabled', async () => {
+    const { service, prisma } = createService();
+
+    await expect(
+      service.create(businessId, {
+        type: 'PRODUCTO',
+        status: 'PENDIENTE',
+        origin: 'MANUAL',
+        items: [{ itemId: item.id, quantity: 1 }],
+        buyerFiscalContext: {
+          buyerType: 'JURIDICA',
+          buyerIsGranContribuyente: true,
+          buyerIsAutorretenedor: true,
+        },
+      }),
+    ).rejects.toThrow(
+      'Gran Contribuyente y Autorretenedor no pueden estar activos al mismo tiempo para el comprador de la venta.',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('SalesService.reverseConfirmedOrder', () => {

@@ -104,8 +104,9 @@ export default function TaxPreviewModal({
 
     setBuyerIsIvaResponsable(initialContext?.buyerIsIvaResponsable ?? false);
     setBuyerIsRetenedor(initialContext?.buyerIsRetenedor ?? false);
-    setBuyerIsGranContribuyente(initialContext?.buyerIsGranContribuyente ?? false);
-    setBuyerIsAutorretenedor(initialContext?.buyerIsAutorretenedor ?? false);
+    const initialGran = initialContext?.buyerIsGranContribuyente ?? false;
+    setBuyerIsGranContribuyente(initialGran);
+    setBuyerIsAutorretenedor(initialGran ? false : initialContext?.buyerIsAutorretenedor ?? false);
     setBuyerIsRegimenSimple(initialContext?.buyerIsRegimenSimple ?? false);
     setBuyerRequiresElectronicInvoice(initialContext?.buyerRequiresElectronicInvoice ?? false);
     setFiscalMunicipalityCode(initialContext?.fiscalMunicipalityCode || "");
@@ -264,8 +265,15 @@ export default function TaxPreviewModal({
                     setBuyerType(val);
                     if (val === "JURIDICA") {
                       setBuyerDocumentType("NIT");
+                      setBuyerIsIvaResponsable(true);
                     } else {
                       setBuyerDocumentType("CC");
+                      setBuyerIsIvaResponsable(false);
+                      setBuyerIsRetenedor(false);
+                      setBuyerIsGranContribuyente(false);
+                      setBuyerIsAutorretenedor(false);
+                      setBuyerIsRegimenSimple(false);
+                      setBuyerRequiresElectronicInvoice(false);
                     }
                   }}
                   className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
@@ -411,7 +419,6 @@ export default function TaxPreviewModal({
                   />
                   <span>Jurídica</span>
                 </label>
-
                 <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
@@ -422,21 +429,40 @@ export default function TaxPreviewModal({
                   <span>Agente de Retención (07)</span>
                 </label>
 
+                {buyerType === "JURIDICA" && (
+                  <>
                 <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
                     type="checkbox"
                     checked={buyerIsGranContribuyente}
-                    onChange={(e) => setBuyerIsGranContribuyente(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setBuyerIsGranContribuyente(checked);
+                      if (checked) {
+                        setBuyerIsAutorretenedor(false);
+                      }
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Gran Contribuyente (13)</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                <label
+                  className={`flex items-center gap-2.5 text-xs font-medium transition ${
+                    buyerIsGranContribuyente
+                      ? "cursor-not-allowed text-slate-400 opacity-45"
+                      : "cursor-pointer text-slate-600 hover:text-slate-800"
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={buyerIsAutorretenedor}
-                    onChange={(e) => setBuyerIsAutorretenedor(e.target.checked)}
+                    checked={buyerIsAutorretenedor && !buyerIsGranContribuyente}
+                    disabled={buyerIsGranContribuyente}
+                    aria-disabled={buyerIsGranContribuyente}
+                    onChange={(e) => {
+                      if (buyerIsGranContribuyente) return;
+                      setBuyerIsAutorretenedor(e.target.checked);
+                    }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Autorretenedor (15)</span>
@@ -451,6 +477,8 @@ export default function TaxPreviewModal({
                   />
                   <span>Régimen Simple (RST - 47)</span>
                 </label>
+                  </>
+                )}
 
                 <label className="hidden items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
                   <input
