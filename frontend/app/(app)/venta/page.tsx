@@ -48,7 +48,7 @@ function MonthPickerPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
   return (
     <div className="relative" ref={ref}>
@@ -56,7 +56,7 @@ function MonthPickerPopover({
         onClick={() => { setNavYear(selectedYear); setOpen((o) => !o); }}
         className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
       >
-        <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
+        <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
         {MONTHS[selectedMonth - 1]} {selectedYear}
       </button>
 
@@ -80,11 +80,10 @@ function MonthPickerPopover({
                 <button
                   key={m}
                   onClick={() => { onSelect(navYear, i + 1); setOpen(false); }}
-                  className={`rounded-xl py-1.5 text-xs font-medium transition ${
-                    isSelected
+                  className={`rounded-xl py-1.5 text-xs font-medium transition ${isSelected
                       ? "bg-slate-800 text-white"
                       : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                    }`}
                 >
                   {m}
                 </button>
@@ -169,13 +168,13 @@ export default function VentaPage() {
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
-  const [filterYear, setFilterYear]     = useState<number>(() => new Date().getFullYear());
-  const [filterMonth, setFilterMonth]   = useState<number>(() => new Date().getMonth() + 1);
-  const [viewMode, setViewMode]         = useState<"MONTH" | "DAILY">("DAILY");
+  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [viewMode, setViewMode] = useState<"MONTH" | "DAILY">("DAILY");
 
   // today como referencia estable (sin useMemo para evitar desajustes)
   const todayRef = useRef(new Date());
-  const today    = todayRef.current;
+  const today = todayRef.current;
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -729,10 +728,10 @@ export default function VentaPage() {
             <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
               <div className="grid grid-cols-2 gap-3 mb-6">
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-emerald-50 rounded-lg mb-3">
-                    <WalletCards className="h-4 w-4 text-emerald-500" />
+                  <div className="p-2 bg-[#E0E7FF] rounded-lg mb-3">
+                    <WalletCards className="h-4 w-4 text-[#0B3F64]" />
                   </div>
-                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-medium text-[#0B3F64] uppercase tracking-wider mb-1">
                     Total ventas
                   </span>
                   <span className="text-lg font-semibold text-slate-900 tabular-nums">
@@ -741,10 +740,10 @@ export default function VentaPage() {
                 </div>
 
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-indigo-50 rounded-lg mb-3">
-                    <ShoppingBag className="h-4 w-4 text-indigo-500" />
+                  <div className="p-2 bg-[#E0E7FF] rounded-lg mb-3">
+                    <ShoppingBag className="h-4 w-4 text-[#0B3F64]" />
                   </div>
-                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-medium text-[#0B3F64] uppercase tracking-wider mb-1">
                     Transacciones
                   </span>
                   <span className="text-lg font-semibold text-slate-900">
@@ -771,7 +770,7 @@ export default function VentaPage() {
                         setFilterYear(now.getFullYear());
                         setFilterMonth(now.getMonth() + 1);
                       }}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                      className="rounded-full bg-[#E0E7FF] px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#0B3F64] hover:bg-[#E0E7FF]/85"
                     >
                       Limpiar
                     </button>

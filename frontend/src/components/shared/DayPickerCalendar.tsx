@@ -194,7 +194,7 @@ export default function DayPickerCalendar({
           aria-controls={id}
           type="button"
         >
-          <Calendar className="h-4 w-4 text-slate-400" />
+          <Calendar className="h-4 w-4 text-[#0B3F64]" style={{ color: "#0B3F64" }} />
           <span className="capitalize">{pillLabel}</span>
         </button>
 

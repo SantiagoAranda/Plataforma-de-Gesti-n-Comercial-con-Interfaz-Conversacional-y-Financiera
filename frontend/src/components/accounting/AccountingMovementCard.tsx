@@ -35,32 +35,32 @@ const categoryStyles: Record<
   TODOS: {
     label: "General",
     amount: "text-neutral-900",
-    badge: "bg-neutral-100 text-neutral-700",
+    badge: "bg-neutral-100 text-neutral-700 border border-neutral-200",
   },
   INGRESOS: {
     label: "Ingreso",
     amount: "text-emerald-700",
-    badge: "bg-emerald-50 text-emerald-700",
+    badge: "bg-emerald-50 text-[#047857] border border-emerald-200",
   },
   GASTOS: {
     label: "Gasto/Costo",
-    amount: "text-rose-600",
-    badge: "bg-rose-50 text-rose-700",
+    amount: "text-[#C80237]",
+    badge: "bg-[#C80237]/12 text-[#C80237] border border-[#C80237]/20",
   },
   ACTIVOS: {
     label: "Activo",
     amount: "text-emerald-700",
-    badge: "bg-emerald-50 text-emerald-700",
+    badge: "bg-emerald-50 text-[#047857] border border-emerald-200",
   },
   PASIVOS: {
     label: "Pasivo",
-    amount: "text-rose-600",
-    badge: "bg-rose-50 text-rose-700",
+    amount: "text-[#C80237]",
+    badge: "bg-[#C80237]/12 text-[#C80237] border border-[#C80237]/20",
   },
   PATRIMONIO: {
     label: "Patrimonio",
     amount: "text-emerald-700",
-    badge: "bg-emerald-50 text-emerald-700",
+    badge: "bg-emerald-50 text-[#047857] border border-emerald-200",
   },
 };
 
@@ -85,37 +85,57 @@ function formatCurrency(n: number) {
   });
 }
 
-function iconForCategory(kind: MovementKind) {
+function getIconStyles(kind: MovementKind) {
   if (kind === "INGRESOS") {
-    return <Banknote className="h-5 w-5 text-emerald-600" />;
+    return {
+      bgClass: "bg-emerald-50",
+      iconClass: "text-[#047857]",
+    };
   }
   if (kind === "GASTOS") {
-    return <Wallet className="h-5 w-5 text-rose-500" />;
+    return {
+      bgClass: "bg-[#C80237]/12",
+      iconClass: "text-[#C80237]",
+    };
+  }
+  return {
+    bgClass: "bg-[#E6EFF5]",
+    iconClass: "text-[#0B3F64]",
+  };
+}
+
+function iconForCategory(kind: MovementKind, colorClass: string) {
+  const cn = `h-5 w-5 ${colorClass}`;
+  if (kind === "INGRESOS") {
+    return <Banknote className={cn} />;
+  }
+  if (kind === "GASTOS") {
+    return <Wallet className={cn} />;
   }
   if (kind === "ACTIVOS") {
-    return <WalletCards className="h-5 w-5 text-sky-600" />;
+    return <WalletCards className={cn} />;
   }
   if (kind === "PASIVOS") {
-    return <Landmark className="h-5 w-5 text-amber-600" />;
+    return <Landmark className={cn} />;
   }
   if (kind === "PATRIMONIO") {
-    return <PiggyBank className="h-5 w-5 text-indigo-600" />;
+    return <PiggyBank className={cn} />;
   }
 
-  return <Banknote className="h-5 w-5 text-neutral-500" />;
+  return <Banknote className={cn} />;
 }
 
 function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   if (nature === "DEBIT") {
     return (
-      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-medium leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px]">
         Débito
       </span>
     );
   }
   if (nature === "CREDIT") {
     return (
-      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-neutral-100 px-2 text-[10px] font-medium leading-none text-neutral-600 sm:px-3 sm:text-[11px]">
+      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-medium leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px]">
         Crédito
       </span>
     );
@@ -211,6 +231,7 @@ export function AccountingMovementCard({
   const kind = categoryFromPuc(movement.pucCode);
   const kindStyle = categoryStyles[kind];
   const amount = Number(movement.amount);
+  const iconStyle = getIconStyles(kind);
 
   return (
     <div
@@ -222,8 +243,8 @@ export function AccountingMovementCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0 flex-1">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
-            {iconForCategory(kind)}
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${iconStyle.bgClass}`}>
+            {iconForCategory(kind, iconStyle.iconClass)}
           </div>
  
           <div className="min-w-0 space-y-1">
@@ -265,7 +286,7 @@ export function AccountingMovementCard({
             </div>
             <div className="min-w-0 overflow-visible">
               <span
-                className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none uppercase tracking-wide sm:text-[11px] ${kindStyle.badge}`}
+                className={`inline-flex h-6 w-fit shrink-0 items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none uppercase tracking-wide sm:px-3 sm:text-[11px] ${kindStyle.badge}`}
                 title={kindStyle.label}
               >
                 {kindStyle.label}

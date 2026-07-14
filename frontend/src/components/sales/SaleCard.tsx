@@ -80,11 +80,10 @@ export default function SaleCard({
   return (
     <div
       onClick={handleDetails}
-      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none cursor-pointer ${
-        selected 
-          ? "border-emerald-500 bg-emerald-50/10 shadow-md" 
+      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none cursor-pointer ${selected
+          ? "border-emerald-500 bg-emerald-50/10 shadow-md"
           : "border-slate-100 hover:shadow-md"
-      }`}
+        }`}
     >
       <div className="p-4">
         <div className="flex justify-between items-start mb-3 gap-3">
@@ -158,7 +157,7 @@ export default function SaleCard({
           </div>
 
           {sale.type === "SERVICIO" && sale.scheduledAt && (
-            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-100">
+            <div className="mt-2 rounded-lg bg-[#E0E7FF] px-3 py-2 text-[11px] font-medium text-[#0B3F64] border border-[#0B3F64]">
               Turno: {formatAppointment(sale.scheduledAt)}
             </div>
           )}

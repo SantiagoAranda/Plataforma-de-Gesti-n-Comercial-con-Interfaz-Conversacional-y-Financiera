@@ -598,9 +598,9 @@ export default function ContabilidadPage() {
             {taxSettingsEnabled && (
               <Link
                 href="/contabilidad/regimen-simple"
-                className="mt-2 inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
+                className="mt-2 inline-flex h-6 items-center justify-center rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-semibold leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px] transition hover:bg-[#CEE0EC]"
               >
-                Regimen Simple
+                Régimen Simple
               </Link>
             )}
 
@@ -620,7 +620,7 @@ export default function ContabilidadPage() {
               <div
                 className={
                   balanceSummary.isBalanced
-                    ? "text-emerald-700"
+                    ? "text-[#0B3F64]"
                     : "text-amber-700"
                 }
               >
