@@ -399,8 +399,8 @@ export function ExpandableRecipeCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full text-left flex items-start gap-4 select-none font-sans"
       >
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 shadow-inner">
-          <BookOpen className="h-5 w-5" />
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E0E7FF] text-[#0B3F64] shadow-inner">
+          <BookOpen className="h-5 w-5 text-[#0B3F64]" />
         </div>
 
         <div className="min-w-0 flex-1 space-y-1.5 font-sans">

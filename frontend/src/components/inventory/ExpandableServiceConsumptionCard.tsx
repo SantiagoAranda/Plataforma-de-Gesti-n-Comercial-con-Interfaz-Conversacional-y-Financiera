@@ -287,8 +287,8 @@ export function ExpandableServiceConsumptionCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full text-left flex items-start gap-4 select-none font-sans"
       >
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#EEF2F6] text-[#475569] border border-slate-200/60 shadow-inner">
-          <BookOpen className="h-5 w-5 text-indigo-500" />
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E0E7FF] text-[#0B3F64] shadow-inner">
+          <BookOpen className="h-5 w-5 text-[#0B3F64]" />
         </div>
 
         <div className="min-w-0 flex-1 space-y-1.5 font-sans">
