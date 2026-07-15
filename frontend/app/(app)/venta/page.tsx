@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
+import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -727,26 +727,26 @@ export default function VentaPage() {
           {!loading && !error && (
             <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
               <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-[#E0E7FF] rounded-lg mb-3">
-                    <WalletCards className="h-4 w-4 text-[#0B3F64]" />
+                <div className="bg-white p-5 rounded-[24px] border border-slate-200/80 flex flex-col items-start shadow-sm">
+                  <div className="p-2.5 bg-[#E6EFF5] rounded-xl mb-4">
+                    <LineChart className="h-5 w-5 text-[#0B3F64]" />
                   </div>
-                  <span className="text-[11px] font-medium text-[#0B3F64] uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-bold text-[#0B3F64] uppercase tracking-wider mb-2">
                     Total ventas
                   </span>
-                  <span className="text-lg font-semibold text-slate-900 tabular-nums">
+                  <span className="text-xl font-bold text-slate-900 tabular-nums">
                     ${formatDisplayMoney(todayMetrics.total)}
                   </span>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-[#E0E7FF] rounded-lg mb-3">
-                    <ShoppingBag className="h-4 w-4 text-[#0B3F64]" />
+                <div className="bg-white p-5 rounded-[24px] border border-slate-200/80 flex flex-col items-start shadow-sm">
+                  <div className="p-2.5 bg-[#E6EFF5] rounded-xl mb-4">
+                    <ClipboardCheck className="h-5 w-5 text-[#0B3F64]" />
                   </div>
-                  <span className="text-[11px] font-medium text-[#0B3F64] uppercase tracking-wider mb-1">
+                  <span className="text-[11px] font-bold text-[#0B3F64] uppercase tracking-wider mb-2">
                     Transacciones
                   </span>
-                  <span className="text-lg font-semibold text-slate-900">
+                  <span className="text-xl font-bold text-slate-900">
                     {todayMetrics.transactions} realizadas
                   </span>
                 </div>
@@ -770,7 +770,7 @@ export default function VentaPage() {
                         setFilterYear(now.getFullYear());
                         setFilterMonth(now.getMonth() + 1);
                       }}
-                      className="rounded-full bg-[#E0E7FF] px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-[#0B3F64] hover:bg-[#E0E7FF]/85"
+                      className="rounded-full bg-[#E6EFF5] px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0B3F64] hover:bg-[#E6EFF5]/80 transition-colors shadow-sm"
                     >
                       Limpiar
                     </button>

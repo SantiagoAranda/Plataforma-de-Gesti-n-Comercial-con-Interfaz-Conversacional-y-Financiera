@@ -804,7 +804,7 @@ export default function PublicStoreClient() {
                 </div>
               )}
               <div
-                className="truncate text-[13px] font-medium text-slate-500"
+                className="truncate text-[13px] font-semibold text-[#0B3F64]"
                 style={headerSubtitle ? { display: "none" } : undefined}
               >
                 Catálogo
@@ -822,18 +822,18 @@ export default function PublicStoreClient() {
                 aria-label={headerLocationLabel}
                 title="Cómo llegar"
               >
-                <MapPin className="h-4 w-4 text-emerald-600" />
+                <MapPin className="h-4 w-4 text-[#0B3F64]" />
               </a>
             )}
             <button
               type="button"
               onClick={() => setShowCartModal(true)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[#0B3F64] hover:text-[#0B3F64]/80 shadow-none ring-0 transition hover:bg-[#0B3F64]/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]/30"
               aria-label="Carrito"
             >
               <ShoppingBag className="h-5 w-5" />
               {cartCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-semibold text-white shadow-sm">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
                   {cartCount}
                 </span>
               )}
@@ -859,7 +859,7 @@ export default function PublicStoreClient() {
                 key={type}
                 onClick={() => setCategory(type)}
                 className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
-                  ? "bg-emerald-100 text-emerald-800"
+                  ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                   }`}
               >

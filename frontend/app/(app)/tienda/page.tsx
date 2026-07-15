@@ -390,7 +390,7 @@ export default function MiTiendaPage() {
                 </div>
               )}
               <div
-                className="truncate text-[13px] font-medium text-slate-500"
+                className="truncate text-[13px] font-semibold text-[#0B3F64]"
                 style={businessSubtitle?.trim() ? { display: "none" } : undefined}
               >
                 Catálogo
@@ -408,7 +408,7 @@ export default function MiTiendaPage() {
                 aria-label="Cómo llegar"
                 title="Cómo llegar"
               >
-                <MapPin className="h-4 w-4 text-emerald-600" />
+                <MapPin className="h-4 w-4 text-[#0B3F64]" />
               </a>
             )}
             <button
@@ -417,7 +417,7 @@ export default function MiTiendaPage() {
               className="flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-slate-700 shadow-none ring-0 transition hover:bg-black/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
               aria-label="Compartir tienda"
             >
-              <Share2 className="h-5 w-5" />
+              <Share2 className="h-5 w-5 text-[#0B3F64]" />
             </button>
           </div>
         </div>
@@ -461,7 +461,7 @@ export default function MiTiendaPage() {
                     className={cn(
                       "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
                       active
-                        ? "bg-emerald-100 text-emerald-800"
+                        ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                     )}
                     type="button"
