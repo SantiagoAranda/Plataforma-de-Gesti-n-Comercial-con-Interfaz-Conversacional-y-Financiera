@@ -307,7 +307,7 @@ export default function HomeAgenda({
             {/* FAB */}
             <button
               onClick={() => setIsSupplierModalOpen(true)}
-              className="fixed bottom-24 right-6 h-12 w-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg hover:bg-emerald-700 active:scale-95 transition-all z-20"
+              className="fixed bottom-24 right-6 h-12 w-12 rounded-full bg-[#0B3F64] text-white flex items-center justify-center shadow-lg hover:bg-[#0B3F64]/90 active:scale-95 transition-all z-20"
               aria-label="Registrar proveedor"
               type="button"
             >
@@ -572,7 +572,7 @@ export default function HomeAgenda({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-medium transition"
+                  className="flex-1 py-2.5 rounded-full bg-[#0B3F64] hover:bg-[#0B3F64]/90 text-white text-[14px] font-medium transition"
                 >
                   Guardar
                 </button>

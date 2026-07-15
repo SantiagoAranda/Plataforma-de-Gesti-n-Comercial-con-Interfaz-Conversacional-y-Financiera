@@ -727,28 +727,46 @@ export default function VentaPage() {
           {!loading && !error && (
             <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
               <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-white p-5 rounded-[24px] border border-slate-200/80 flex flex-col items-start shadow-sm">
-                  <div className="p-2.5 bg-[#E6EFF5] rounded-xl mb-4">
-                    <LineChart className="h-5 w-5 text-[#0B3F64]" />
+                <div
+                  className="relative overflow-hidden p-5 rounded-[24px] flex flex-col items-start shadow-sm text-white"
+                  style={{
+                    background: "#121A28",
+                    backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+                  <div className="relative z-10 flex flex-col items-start w-full">
+                    <div className="p-2.5 bg-white/10 rounded-xl mb-4 border border-white/10">
+                      <LineChart className="h-5 w-5" color="#ffffff" strokeWidth={2.5} />
+                    </div>
+                    <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
+                      Total ventas
+                    </span>
+                    <span className="text-xl font-bold text-white tabular-nums">
+                      ${formatDisplayMoney(todayMetrics.total)}
+                    </span>
                   </div>
-                  <span className="text-[11px] font-bold text-[#0B3F64] uppercase tracking-wider mb-2">
-                    Total ventas
-                  </span>
-                  <span className="text-xl font-bold text-slate-900 tabular-nums">
-                    ${formatDisplayMoney(todayMetrics.total)}
-                  </span>
                 </div>
 
-                <div className="bg-white p-5 rounded-[24px] border border-slate-200/80 flex flex-col items-start shadow-sm">
-                  <div className="p-2.5 bg-[#E6EFF5] rounded-xl mb-4">
-                    <ClipboardCheck className="h-5 w-5 text-[#0B3F64]" />
+                <div
+                  className="relative overflow-hidden p-5 rounded-[24px] flex flex-col items-start shadow-sm text-white"
+                  style={{
+                    background: "#121A28",
+                    backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+                  <div className="relative z-10 flex flex-col items-start w-full">
+                    <div className="p-2.5 bg-white/10 rounded-xl mb-4 border border-white/10">
+                      <ClipboardCheck className="h-5 w-5" color="#ffffff" strokeWidth={2.5} />
+                    </div>
+                    <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
+                      Transacciones
+                    </span>
+                    <span className="text-xl font-bold text-white">
+                      {todayMetrics.transactions} realizadas
+                    </span>
                   </div>
-                  <span className="text-[11px] font-bold text-[#0B3F64] uppercase tracking-wider mb-2">
-                    Transacciones
-                  </span>
-                  <span className="text-xl font-bold text-slate-900">
-                    {todayMetrics.transactions} realizadas
-                  </span>
                 </div>
               </div>
 

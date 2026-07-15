@@ -226,7 +226,7 @@ export function InventoryChatActionBar({
 
               <button
                 type="submit"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white transition hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400/35 active:scale-95"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white transition hover:bg-[#0B3F64]/90 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95"
                 aria-label="Buscar"
               >
                 <RightIcon className="h-4 w-4" />
