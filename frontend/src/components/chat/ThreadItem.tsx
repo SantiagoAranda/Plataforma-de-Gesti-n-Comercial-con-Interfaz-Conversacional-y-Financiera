@@ -16,9 +16,9 @@ type Props = {
 };
 
 const accentStyles: Record<NonNullable<Props["accent"]>, string> = {
-  blue: "bg-sky-100 text-sky-700",
-  green: "bg-emerald-100 text-emerald-700",
-  amber: "bg-amber-100 text-amber-700",
+  blue: "bg-[#E6EFF5] text-[#0B3F64]",
+  green: "bg-[#E6EFF5] text-[#0B3F64]",
+  amber: "bg-[#C80237]/12 text-[#C80237]",
 };
 
 function ThreadItem({

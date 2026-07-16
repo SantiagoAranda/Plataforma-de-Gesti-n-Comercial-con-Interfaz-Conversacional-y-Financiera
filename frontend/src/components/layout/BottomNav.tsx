@@ -14,7 +14,7 @@ export default function BottomNav({ active }: BottomNavProps) {
 
   const baseItem =
     "flex flex-col items-center text-xs cursor-pointer transition-colors select-none";
-  const activeItem = "text-green-600 font-medium";
+  const activeItem = "text-[#0B3F64] font-medium";
   const inactiveItem = "text-neutral-400";
 
   return (

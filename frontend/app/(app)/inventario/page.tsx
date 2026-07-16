@@ -61,7 +61,7 @@ function recipeStatus(item: Item, lines: RecipeLine[]) {
 function InventarioPageContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<UITab>("recipes");
-  
+
   // Sync tab state from search params once on mount / update
   useEffect(() => {
     const tabParam = searchParams?.get("tab");
@@ -280,7 +280,7 @@ function InventarioPageContent() {
           onRightClick={() => setAlertsOpen(true)}
           rightIcon={
             <div className="relative">
-              <Bell className="h-5 w-5" />
+              <Bell className="h-5 w-5 text-[#0B3F64]" />
               {alertGroups.count > 0 ? (
                 <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold leading-none text-white">
                   {alertGroups.count > 99 ? "99+" : String(alertGroups.count)}
@@ -293,21 +293,27 @@ function InventarioPageContent() {
 
       <main className="min-h-0 flex-1 overflow-y-auto pb-40">
         <div className="mx-auto w-full max-w-md space-y-3 px-4 py-4">
-          <section className="relative overflow-hidden rounded-2xl bg-[#0B1220] p-4 shadow-sm ring-1 ring-black/10">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.12)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+          <section
+            className="relative overflow-hidden rounded-2xl p-5 shadow-sm"
+            style={{
+              background: "#121A28",
+              backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+            }}
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
             <div className="relative flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/60">INVENTARIO TOTAL</p>
-                <p className="mt-1 truncate text-2xl font-semibold text-white">${formatMoney(inventoryTotalValue)} COP</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/80">INVENTARIO TOTAL</p>
+                <p className="mt-1 truncate text-2xl font-bold text-white">${formatMoney(inventoryTotalValue)} COP</p>
               </div>
-              <div className="space-y-1 border-l border-white/10 pl-4">
-                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
-                  <span>Recetas</span>
-                  <span className="font-semibold text-white">{formatMoney(recipeItems.length)}</span>
+              <div className="space-y-1.5 border-l border-white/20 pl-4 min-w-[120px]">
+                <div className="flex items-center justify-between gap-6 text-xs">
+                  <span className="font-medium text-white/90">Recetas</span>
+                  <span className="font-bold text-white">{formatMoney(recipeItems.length)}</span>
                 </div>
-                <div className="flex items-baseline justify-between gap-6 text-xs font-medium text-white/70">
-                  <span>Alertas</span>
-                  <span className="font-semibold text-rose-300">{formatMoney(alertGroups.count)}</span>
+                <div className="flex items-center justify-between gap-6 text-xs">
+                  <span className="font-medium text-white/90">Alertas</span>
+                  <span className="font-bold text-white">{formatMoney(alertGroups.count)}</span>
                 </div>
               </div>
             </div>
@@ -322,7 +328,9 @@ function InventarioPageContent() {
                   onClick={() => setTab(nextTab)}
                   className={cn(
                     "h-9 rounded-full text-[10px] sm:text-xs font-bold transition-all active:scale-[0.98]",
-                    activeTab === nextTab ? "bg-slate-900 text-white shadow-md" : "bg-transparent text-slate-500 hover:text-slate-800",
+                    activeTab === nextTab 
+                      ? "bg-[#0B3F64] text-white shadow-sm" 
+                      : "bg-transparent text-[#0B3F64] hover:bg-[#0B3F64]/5",
                   )}
                 >
                   {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : nextTab === "products" ? "Productos" : "Servicios"}
@@ -396,7 +404,7 @@ function InventarioPageContent() {
                 ? "Buscar servicio..."
                 : "Buscar receta..."
         }
-        onSubmit={() => {}}
+        onSubmit={() => { }}
         onCreateIngredient={toggleIngredientSheetFromBar}
         createIngredientActive={ingredientSheetOpen}
         isCreatingIngredient={ingredientSheetOpen}
@@ -468,7 +476,7 @@ function InventarioPageContent() {
           {/* Unified Bottom Sheet Panel containing Title, Form, & Composer */}
           <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md px-2 pointer-events-none">
             <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl border-x border-t border-slate-200/60 pointer-events-auto animate-in slide-in-from-bottom-6 fade-in duration-200">
-              
+
               {/* Sticky/Fixed Title Header */}
               <div className="shrink-0 bg-white px-5 pt-5 pb-3">
                 <h2 className="text-base font-semibold text-slate-900">
@@ -494,7 +502,7 @@ function InventarioPageContent() {
                     try {
                       setCreatingIngredient(true);
                       toast.loading("Creando ingrediente...", { id: loadingId });
-                      
+
                       const payload: any = {
                         name: values.name,
                         stockUnitId: values.stockUnitId,

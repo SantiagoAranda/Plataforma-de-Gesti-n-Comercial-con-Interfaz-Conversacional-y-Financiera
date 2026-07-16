@@ -131,7 +131,7 @@ export function AccountingChatComposer({
               leftIconVariant="x"
               rightIconVariant="send"
               className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-              rightButtonClassName="h-12 w-12 shrink-0 flex items-center justify-center bg-emerald-500 text-white rounded-2xl shadow-sm hover:bg-emerald-600 active:scale-95 transition"
+              rightButtonClassName="h-12 w-12 shrink-0 flex items-center justify-center bg-[#0B3F64] text-white rounded-2xl shadow-sm hover:bg-[#0B3F64]/90 active:scale-95 transition"
               rightIcon={<Save className="h-5 w-5" />}
               plusAriaLabel={isEditing ? "Cancelar edicion" : "Cancelar creacion"}
               submitAriaLabel="Confirmar movimiento"
@@ -142,7 +142,7 @@ export function AccountingChatComposer({
                 <button
                   type="button"
                   onClick={onOpenComposer}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 active:scale-95"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95"
                   aria-label="Crear asiento contable"
                 >
                   <Plus className="h-5 w-5" />
@@ -192,7 +192,7 @@ export function AccountingChatComposer({
 
                 <button
                   type="submit"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white transition hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400/35 active:scale-95"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white transition hover:bg-[#0B3F64]/90 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95"
                   aria-label="Buscar"
                 >
                   <Search className="h-4 w-4" />

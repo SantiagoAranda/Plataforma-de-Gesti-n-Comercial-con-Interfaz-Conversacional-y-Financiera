@@ -228,7 +228,7 @@ export default function ManualPaidOutflowSheet() {
         type="button"
         aria-label="Registrar gasto"
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-100 bg-white text-emerald-700 shadow-[0_12px_30px_rgba(0,0,0,0.16)] transition active:scale-95 lg:hidden"
+        className="fixed bottom-24 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0B3F64] text-white shadow-[0_12px_30px_rgba(11,63,100,0.25)] transition active:scale-95 lg:hidden"
       >
         <FileText className="h-6 w-6" />
       </button>

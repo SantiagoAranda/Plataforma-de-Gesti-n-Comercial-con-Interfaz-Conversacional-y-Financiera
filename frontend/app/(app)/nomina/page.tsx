@@ -420,10 +420,16 @@ function SummaryCard({
   else if (period?.status === "CLOSED") statusText = "Cerrado";
 
   return (
-    <section className={cn(
-      "relative overflow-hidden rounded-[28px] bg-[#0fb18f] bg-[linear-gradient(135deg,#0fb18f_0%,#26c7a6_48%,#80dcc7_100%)] text-white shadow-[0_18px_42px_rgba(15,177,143,0.28)] transition-all duration-300 ease-in-out",
-      isMinimized ? "px-4 py-3" : "px-4 py-3.5 lg:px-4 lg:py-3"
-    )}>
+    <section
+      className={cn(
+        "relative overflow-hidden rounded-[28px] text-white shadow-[0_18px_42px_rgba(18,26,40,0.28)] transition-all duration-300 ease-in-out",
+        isMinimized ? "px-4 py-3" : "px-4 py-3.5 lg:px-4 lg:py-3"
+      )}
+      style={{
+        background: "#121A28",
+        backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+      }}
+    >
       {isMinimized ? (
         <div className="flex items-center justify-between w-full">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
@@ -679,7 +685,7 @@ function HeaderCalendar({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50"
       >
-        <CalendarDays className="h-4 w-4" />
+        <CalendarDays className="h-4 w-4 text-[#0B3F64]" />
         <span>
           {selectedPeriod ? `${monthNames[selectedPeriod.month - 1].substring(0, 3)} ${selectedPeriod.year}` : "Mes"}
         </span>
@@ -2280,8 +2286,8 @@ function PayrollSummaryPanel({
           <MoneyLine
             label={viewModel.allowanceLabel}
             value={toNumber(viewModel.allowanceValue) * f}
-            color="text-[#43856f]"
-            valueColor="text-[#43856f]"
+            color="text-[#0fb18f]"
+            valueColor="text-[#0fb18f]"
             sign="+"
           />
           <MoneyLine

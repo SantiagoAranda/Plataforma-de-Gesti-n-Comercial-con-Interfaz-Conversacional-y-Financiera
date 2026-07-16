@@ -12,7 +12,10 @@ export function PayrollChatActionBar({
   onCreateEmployee,
 }: Props) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-[#f7f3ed] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+    <div
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] backdrop-blur lg:left-[408px] lg:right-0"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           <WhatsappComposer
@@ -22,8 +25,7 @@ export function PayrollChatActionBar({
             placeholder="Buscar empleado..."
             leftIconVariant="plus"
             rightIconVariant="search"
-            rightButtonVariant="plain"
-            submitDisabled
+            rightButtonVariant="primary"
             plusAriaLabel="Crear empleado"
             submitAriaLabel="Buscar empleado"
           />

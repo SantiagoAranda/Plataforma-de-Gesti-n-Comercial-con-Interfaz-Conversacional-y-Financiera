@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Filter, ShoppingBag, WalletCards } from "lucide-react";
+import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
@@ -48,7 +48,7 @@ function MonthPickerPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
   return (
     <div className="relative" ref={ref}>
@@ -56,7 +56,7 @@ function MonthPickerPopover({
         onClick={() => { setNavYear(selectedYear); setOpen((o) => !o); }}
         className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
       >
-        <CalendarDays className="h-3.5 w-3.5 text-slate-500" />
+        <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
         {MONTHS[selectedMonth - 1]} {selectedYear}
       </button>
 
@@ -80,11 +80,10 @@ function MonthPickerPopover({
                 <button
                   key={m}
                   onClick={() => { onSelect(navYear, i + 1); setOpen(false); }}
-                  className={`rounded-xl py-1.5 text-xs font-medium transition ${
-                    isSelected
+                  className={`rounded-xl py-1.5 text-xs font-medium transition ${isSelected
                       ? "bg-slate-800 text-white"
                       : "text-slate-600 hover:bg-slate-100"
-                  }`}
+                    }`}
                 >
                   {m}
                 </button>
@@ -169,13 +168,13 @@ export default function VentaPage() {
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
-  const [filterYear, setFilterYear]     = useState<number>(() => new Date().getFullYear());
-  const [filterMonth, setFilterMonth]   = useState<number>(() => new Date().getMonth() + 1);
-  const [viewMode, setViewMode]         = useState<"MONTH" | "DAILY">("DAILY");
+  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [viewMode, setViewMode] = useState<"MONTH" | "DAILY">("DAILY");
 
   // today como referencia estable (sin useMemo para evitar desajustes)
   const todayRef = useRef(new Date());
-  const today    = todayRef.current;
+  const today = todayRef.current;
 
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -728,28 +727,46 @@ export default function VentaPage() {
           {!loading && !error && (
             <section className="mx-auto w-full max-w-md px-3 pt-4 sm:max-w-3xl sm:px-4">
               <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-emerald-50 rounded-lg mb-3">
-                    <WalletCards className="h-4 w-4 text-emerald-500" />
+                <div
+                  className="relative overflow-hidden p-5 rounded-[24px] flex flex-col items-start shadow-sm text-white"
+                  style={{
+                    background: "#121A28",
+                    backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+                  <div className="relative z-10 flex flex-col items-start w-full">
+                    <div className="p-2.5 bg-white/10 rounded-xl mb-4 border border-white/10">
+                      <LineChart className="h-5 w-5" color="#ffffff" strokeWidth={2.5} />
+                    </div>
+                    <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
+                      Total ventas
+                    </span>
+                    <span className="text-xl font-bold text-white tabular-nums">
+                      ${formatDisplayMoney(todayMetrics.total)}
+                    </span>
                   </div>
-                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
-                    Total ventas
-                  </span>
-                  <span className="text-lg font-semibold text-slate-900 tabular-nums">
-                    ${formatDisplayMoney(todayMetrics.total)}
-                  </span>
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-start">
-                  <div className="p-2 bg-indigo-50 rounded-lg mb-3">
-                    <ShoppingBag className="h-4 w-4 text-indigo-500" />
+                <div
+                  className="relative overflow-hidden p-5 rounded-[24px] flex flex-col items-start shadow-sm text-white"
+                  style={{
+                    background: "#121A28",
+                    backgroundImage: "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)"
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
+                  <div className="relative z-10 flex flex-col items-start w-full">
+                    <div className="p-2.5 bg-white/10 rounded-xl mb-4 border border-white/10">
+                      <ClipboardCheck className="h-5 w-5" color="#ffffff" strokeWidth={2.5} />
+                    </div>
+                    <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
+                      Transacciones
+                    </span>
+                    <span className="text-xl font-bold text-white">
+                      {todayMetrics.transactions} realizadas
+                    </span>
                   </div>
-                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-1">
-                    Transacciones
-                  </span>
-                  <span className="text-lg font-semibold text-slate-900">
-                    {todayMetrics.transactions} realizadas
-                  </span>
                 </div>
               </div>
 
@@ -771,7 +788,7 @@ export default function VentaPage() {
                         setFilterYear(now.getFullYear());
                         setFilterMonth(now.getMonth() + 1);
                       }}
-                      className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700 hover:bg-emerald-100"
+                      className="rounded-full bg-[#E6EFF5] px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-[#0B3F64] hover:bg-[#E6EFF5]/80 transition-colors shadow-sm"
                     >
                       Limpiar
                     </button>

@@ -34,13 +34,19 @@ function formatAppointment(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  
+  let hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'p. m.' : 'a. m.';
+  hours = hours % 12;
+  hours = hours ? hours : 12; // the hour '0' should be '12'
+  const hoursStr = String(hours).padStart(2, '0');
+  
+  return `${day}/${month}/${year}, ${hoursStr}:${minutes} ${ampm}`;
 }
 
 type Props = {
@@ -80,11 +86,10 @@ export default function SaleCard({
   return (
     <div
       onClick={handleDetails}
-      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none cursor-pointer ${
-        selected 
-          ? "border-emerald-500 bg-emerald-50/10 shadow-md" 
+      className={`bg-white rounded-xl shadow-sm border overflow-hidden select-none cursor-pointer ${selected
+          ? "border-emerald-500 bg-emerald-50/10 shadow-md"
           : "border-slate-100 hover:shadow-md"
-      }`}
+        }`}
     >
       <div className="p-4">
         <div className="flex justify-between items-start mb-3 gap-3">
@@ -158,7 +163,7 @@ export default function SaleCard({
           </div>
 
           {sale.type === "SERVICIO" && sale.scheduledAt && (
-            <div className="mt-2 rounded-lg bg-white px-3 py-2 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-100">
+            <div className="mt-2 rounded-full border border-[#0B3F64] bg-white px-4 py-1.5 text-[11px] font-semibold text-[#0B3F64]">
               Turno: {formatAppointment(sale.scheduledAt)}
             </div>
           )}
@@ -195,9 +200,9 @@ export default function SaleCard({
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
             }}
-            className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl font-medium text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-tight"
+            className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-[#0B3F64] py-2.5 rounded-full font-bold text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-wider shadow-sm"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className="h-3.5 w-3.5 text-[#0B3F64]" />
             Ver factura
           </button>
         </div>

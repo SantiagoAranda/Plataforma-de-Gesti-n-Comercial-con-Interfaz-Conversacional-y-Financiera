@@ -128,9 +128,9 @@ export function WhatsappComposer({
           onClick={resolvedLeftAction}
           disabled={disabled || isSubmitting}
           className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full bg-transparent transition focus:outline-none focus:ring-2 focus:ring-emerald-400/30 active:scale-95 disabled:pointer-events-none disabled:opacity-50",
+            "flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full bg-transparent transition focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95 disabled:pointer-events-none disabled:opacity-50",
             leftButtonVariant === "primary"
-              ? "bg-[#25D366] text-white hover:bg-emerald-600"
+              ? "bg-[#0B3F64] text-white hover:bg-[#0B3F64]/90"
               : "text-slate-500 hover:bg-slate-100/70 hover:text-slate-700",
           )}
           aria-label={plusAriaLabel}
@@ -141,7 +141,7 @@ export function WhatsappComposer({
         <div
           className={cn(
             "min-h-11 min-w-0 flex-1 rounded-[24px] bg-transparent px-3 py-3 ring-1 ring-transparent transition-colors",
-            hasError ? "ring-red-300" : "focus-within:ring-emerald-300/70",
+            hasError ? "ring-red-300" : "focus-within:ring-[#0B3F64]/30",
           )}
         >
           {centerContent ?? (
@@ -188,15 +188,15 @@ export function WhatsappComposer({
             onClick={resolvedRightAction}
             disabled={isSubmitDisabled}
             className={rightButtonClassName || cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-emerald-400/35 active:scale-95",
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95",
               isSubmitting
                 ? (rightButtonVariant === "primary"
-                    ? "bg-[#25D366] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    ? "bg-[#0B3F64] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     : "bg-transparent text-slate-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed")
                 : (isSubmitDisabled
                     ? "cursor-not-allowed bg-slate-200 text-slate-400"
                     : (rightButtonVariant === "primary"
-                        ? "bg-[#25D366] text-white hover:bg-emerald-600"
+                        ? "bg-[#0B3F64] text-white hover:bg-[#0B3F64]/90"
                         : "bg-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700")
                   )
             )}

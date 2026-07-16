@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useRef, useState } from "react";
 import {
@@ -307,7 +307,7 @@ export default function HomeAgenda({
             {/* FAB */}
             <button
               onClick={() => setIsSupplierModalOpen(true)}
-              className="fixed bottom-24 right-6 h-12 w-12 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-lg hover:bg-emerald-700 active:scale-95 transition-all z-20"
+              className="fixed bottom-24 right-6 h-12 w-12 rounded-full bg-[#0B3F64] text-white flex items-center justify-center shadow-lg hover:bg-[#0B3F64]/90 active:scale-95 transition-all z-20"
               aria-label="Registrar proveedor"
               type="button"
             >
@@ -441,7 +441,7 @@ export default function HomeAgenda({
                   className={cn(
                     "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
                     active
-                      ? "bg-emerald-100 text-emerald-800"
+                      ? "bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
                     isDisabled && "opacity-50 cursor-not-allowed bg-slate-100/70 text-slate-400"
                   )}
@@ -453,7 +453,7 @@ export default function HomeAgenda({
                     <span
                       className={cn(
                         "w-4 h-4 flex items-center justify-center rounded-full text-[10px] font-medium ml-1.5 shrink-0 leading-none",
-                        active ? "bg-emerald-600 text-white" : "bg-slate-500 text-white"
+                        active ? "bg-[#0B3F64] text-white" : "bg-slate-500 text-white"
                       )}
                     >
                       {pendingEventsCount}
@@ -572,7 +572,7 @@ export default function HomeAgenda({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[14px] font-medium transition"
+                  className="flex-1 py-2.5 rounded-full bg-[#0B3F64] hover:bg-[#0B3F64]/90 text-white text-[14px] font-medium transition"
                 >
                   Guardar
                 </button>

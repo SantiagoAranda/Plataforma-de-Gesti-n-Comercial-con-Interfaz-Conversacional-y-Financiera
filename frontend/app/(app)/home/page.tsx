@@ -24,11 +24,11 @@ import HomeAgenda from "../../../src/components/home/HomeAgenda";
 import ManualPaidOutflowSheet from "../../../src/components/home/ManualPaidOutflowSheet";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
-  BUSINESS: <Building2 className="h-5 w-5" />,
-  SALES: <ShoppingBag className="h-5 w-5" />,
-  ACCOUNTING: <Calculator className="h-5 w-5" />,
-  INVENTORY: <PackageSearch className="h-5 w-5" />,
-  PAYROLL: <WalletCards className="h-5 w-5" />,
+  BUSINESS: <Building2 className="h-5 w-5" style={{ color: "#0B3F64" }} />,
+  SALES: <ShoppingBag className="h-5 w-5" style={{ color: "#0B3F64" }} />,
+  ACCOUNTING: <Calculator className="h-5 w-5" style={{ color: "#C80237" }} />,
+  INVENTORY: <PackageSearch className="h-5 w-5" style={{ color: "#0B3F64" }} />,
+  PAYROLL: <WalletCards className="h-5 w-5" style={{ color: "#0B3F64" }} />,
 };
 
 export default function HomePage() {
