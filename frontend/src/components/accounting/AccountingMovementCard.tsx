@@ -128,14 +128,14 @@ function iconForCategory(kind: MovementKind, colorClass: string) {
 function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   if (nature === "DEBIT") {
     return (
-      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-medium leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px]">
+      <span className="inline-flex h-6 w-[64px] items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] text-[10px] font-semibold leading-none text-[#0B3F64] border border-[#CEE0EC]">
         Débito
       </span>
     );
   }
   if (nature === "CREDIT") {
     return (
-      <span className="inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-medium leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px]">
+      <span className="inline-flex h-6 w-[68px] items-center justify-center whitespace-nowrap rounded-full bg-[#E6EFF5] text-[10px] font-semibold leading-none text-[#0B3F64] border border-[#CEE0EC]">
         Crédito
       </span>
     );
@@ -277,11 +277,11 @@ export function AccountingMovementCard({
 
       <div className="mt-3 border-t border-neutral-100 pt-3">
         <div className="flex flex-col gap-1 text-xs text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
-          <div className="grid min-w-0 grid-cols-[56px_60px_auto] items-center gap-1 sm:grid-cols-[88px_88px_auto] sm:gap-2">
-            <div className="w-[56px] sm:w-[88px]">
+          <div className="grid min-w-0 grid-cols-[64px_68px_auto] items-center gap-2">
+            <div className="w-[64px]">
               {movement.nature === "DEBIT" ? badgeForNature(movement.nature) : null}
             </div>
-            <div className="w-[60px] sm:w-[88px]">
+            <div className="w-[68px]">
               {movement.nature === "CREDIT" ? badgeForNature(movement.nature) : null}
             </div>
             <div className="min-w-0 overflow-visible">

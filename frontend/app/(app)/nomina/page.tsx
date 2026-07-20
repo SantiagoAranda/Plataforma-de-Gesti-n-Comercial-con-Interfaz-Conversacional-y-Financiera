@@ -491,7 +491,7 @@ function SummaryCard({
               <div className="rounded-2xl bg-white/14 p-2.5 lg:p-2 backdrop-blur">
                 <p className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-white/78">Deducciones, cargas y provisiones</p>
                 <div className="flex flex-col gap-1 lg:gap-0.5">
-                  <p className="text-base lg:text-sm font-medium tabular-nums">{money(diff)}</p>
+                  <p className="text-base lg:text-sm font-medium tabular-nums text-[#ff9100]">{money(diff)}</p>
                   <span className="self-start rounded-full bg-white/20 px-2 py-0.5 text-[9px] font-medium text-white">
                     {percent.toFixed(1)}% sobre neto
                   </span>
@@ -683,9 +683,9 @@ function HeaderCalendar({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50"
+        className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
       >
-        <CalendarDays className="h-4 w-4 text-[#0B3F64]" />
+        <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
         <span>
           {selectedPeriod ? `${monthNames[selectedPeriod.month - 1].substring(0, 3)} ${selectedPeriod.year}` : "Mes"}
         </span>
@@ -694,11 +694,15 @@ function HeaderCalendar({
       {open && (
         <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
           <div className="mb-3 flex items-center justify-between">
-            <button onClick={() => setViewYear(y => y - 1)} className="p-1 text-neutral-500 hover:text-neutral-900"><ChevronLeft className="h-5 w-5"/></button>
-            <span className="font-semibold text-neutral-800">{viewYear}</span>
-            <button onClick={() => setViewYear(y => y + 1)} className="p-1 text-neutral-500 hover:text-neutral-900"><ChevronRight className="h-5 w-5"/></button>
+            <button onClick={() => setViewYear(y => y - 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronLeft className="h-4 w-4 text-slate-500"/>
+            </button>
+            <span className="text-sm font-semibold text-slate-800">{viewYear}</span>
+            <button onClick={() => setViewYear(y => y + 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronRight className="h-4 w-4 text-slate-500"/>
+            </button>
           </div>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {monthNames.map((name, i) => {
               const month = i + 1;
               const periodExists = choosePrimaryMonthlyPeriod(monthlyPeriods, viewYear, month);
@@ -716,10 +720,10 @@ function HeaderCalendar({
                     setOpen(false);
                   }}
                   className={cn(
-                    "rounded-xl py-2 text-[13px] font-medium transition-colors",
+                    "rounded-xl py-1.5 text-xs font-medium transition",
                     isSelected 
-                      ? "bg-[#0fb18f] text-white" 
-                      : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
+                      ? "bg-slate-800 text-white" 
+                      : "text-slate-600 hover:bg-slate-100"
                   )}
                 >
                   {name.substring(0, 3)}

@@ -582,7 +582,6 @@ export default function ContabilidadPage() {
         ) : (
           <AppHeader
             title="Contabilidad"
-            subtitle="Movimientos y registros"
             showBack
           />
         )}
@@ -591,42 +590,55 @@ export default function ContabilidadPage() {
       {/* Resumen del Balance */}
       <div className="shrink-0 bg-white">
         <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-3 sm:px-4">
-          <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              Resumen del balance
-            </div>
-            {taxSettingsEnabled && (
-              <Link
-                href="/contabilidad/regimen-simple"
-                className="mt-2 inline-flex h-6 items-center justify-center rounded-full bg-[#E6EFF5] px-2.5 text-[10px] font-semibold leading-none text-[#0B3F64] border border-[#CEE0EC] sm:px-3 sm:text-[11px] transition hover:bg-[#CEE0EC]"
-              >
-                Régimen Simple
-              </Link>
-            )}
+          <section
+            className="relative overflow-hidden rounded-[24px] p-5 text-white shadow-md"
+            style={{
+              background: "#121A28",
+              backgroundImage:
+                "linear-gradient(135deg, rgba(18, 26, 40, 1) 0%, rgba(106, 14, 47, 1) 50%, rgba(200, 2, 55, 1) 100%)",
+            }}
+          >
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.08)_1px,transparent_0)] bg-[size:18px_18px] opacity-35" />
 
-            <div className="mt-3 grid grid-cols-3 gap-3 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-              <div>Debito</div>
-              <div>Credito</div>
-              <div>Diferencia</div>
-            </div>
+            <div className="relative z-10">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-bold uppercase tracking-wider text-white">
+                  Resumen del balance
+                </div>
+                {taxSettingsEnabled && (
+                  <Link
+                    href="/contabilidad/regimen-simple"
+                    className="inline-flex h-6 items-center justify-center rounded-full bg-white/15 px-2.5 text-[10px] font-semibold leading-none text-white border border-white/20 sm:px-3 sm:text-[11px] transition hover:bg-white/25"
+                  >
+                    Régimen Simple
+                  </Link>
+                )}
+              </div>
 
-            <div className="mt-1 grid grid-cols-3 gap-3 text-sm font-medium">
-              <div className="text-neutral-900">
-                {formatCurrency(balanceSummary.totalDebit)}
+              <div className="mt-4 grid grid-cols-3 gap-3 text-[11px] font-semibold uppercase tracking-wider text-white/80">
+                <div>Debito</div>
+                <div>Credito</div>
+                <div>Diferencia</div>
               </div>
-              <div className="text-neutral-900">
-                {formatCurrency(balanceSummary.totalCredit)}
-              </div>
-              <div
-                className={
-                  balanceSummary.isBalanced
-                    ? "text-[#0B3F64]"
-                    : "text-amber-700"
-                }
-              >
-                {balanceSummary.isBalanced
-                  ? "Balanceado"
-                  : formatCurrency(Math.abs(balanceSummary.difference))}
+
+              <div className="mt-1 grid grid-cols-3 gap-3 text-base sm:text-lg font-bold">
+                <div className="text-white">
+                  {formatCurrency(balanceSummary.totalDebit)}
+                </div>
+                <div className="text-white">
+                  {formatCurrency(balanceSummary.totalCredit)}
+                </div>
+                <div
+                  className={
+                    balanceSummary.isBalanced
+                      ? "text-emerald-400"
+                      : "text-[#FF9D00]"
+                  }
+                >
+                  {balanceSummary.isBalanced
+                    ? "Balanceado"
+                    : formatCurrency(Math.abs(balanceSummary.difference))}
+                </div>
               </div>
             </div>
           </section>

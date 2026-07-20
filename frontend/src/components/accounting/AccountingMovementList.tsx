@@ -65,10 +65,10 @@ export function AccountingMovementList({
     <div className="space-y-4">
       {sortedDates.map((dateISO) => (
         <section key={dateISO} className="space-y-3">
-          <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-700">
-            <span className="h-px flex-1 rounded-full bg-emerald-200" />
+          <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#0B3F64]">
+            <span className="h-px flex-1 rounded-full bg-[#CEE0EC]" />
             {groupLabel(dateISO)}
-            <span className="h-px flex-1 rounded-full bg-emerald-200" />
+            <span className="h-px flex-1 rounded-full bg-[#CEE0EC]" />
           </div>
 
           <div className="space-y-3">
