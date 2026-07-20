@@ -64,9 +64,9 @@ type PhoneSource = "registration" | "manual" | "hidden";
 type EmailSource = "manual" | "hidden";
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition focus:border-[#0B3F64] focus:ring-2 focus:ring-[#E6EFF5]";
 const inputClassName =
-  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition placeholder:text-neutral-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#E6EFF5]";
 const colorInputClassName =
   "h-11 w-14 shrink-0 cursor-pointer rounded-2xl border border-neutral-200 bg-white p-1 shadow-sm";
 const FOOTER_BACKGROUND_FALLBACK = "#064e3b";
@@ -187,8 +187,8 @@ function CardHeader({
   tone?: "emerald" | "sky" | "violet" | "amber";
 }) {
   const toneClass = {
-    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    sky: "bg-sky-50 text-sky-700 ring-sky-200",
+    emerald: "bg-[#E6EFF5] text-[#0B3F64] ring-[#CEE0EC]",
+    sky: "bg-[#E6EFF5] text-[#0B3F64] ring-[#CEE0EC]",
     violet: "bg-violet-50 text-violet-700 ring-violet-200",
     amber: "bg-amber-50 text-amber-700 ring-amber-200",
   }[tone];
@@ -196,7 +196,7 @@ function CardHeader({
   return (
     <div className="flex min-w-0 items-start gap-3">
       {icon && (
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ring-1 ${toneClass}`}>
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ring-1 ${toneClass}`}>
           {icon}
         </div>
       )}

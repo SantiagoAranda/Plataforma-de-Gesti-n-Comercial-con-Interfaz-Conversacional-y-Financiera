@@ -48,15 +48,15 @@ export default function PhoneSelector({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  let buttonClasses = "flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-[13px] font-medium text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-emerald-500";
-  let inputClasses = "h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-medium text-emerald-700 outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500";
+  let buttonClasses = "flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-2 text-[13px] font-medium text-neutral-800 transition hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-[#0B3F64]";
+  let inputClasses = "h-11 w-full min-w-0 max-w-full box-border rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-[14px] font-medium text-[#0B3F64] outline-none transition placeholder:font-medium placeholder:text-neutral-400 focus:border-[#0B3F64] focus:bg-white focus:ring-1 focus:ring-[#0B3F64]";
 
   if (dark) {
     buttonClasses = "flex h-10 w-full items-center justify-center gap-1.5 transition focus:outline-none bg-transparent border-0 text-white px-1 text-sm font-normal";
     inputClasses = "h-10 w-full min-w-0 max-w-full box-border px-1 text-sm outline-none transition placeholder:text-neutral-500 focus:ring-0 border-0 border-b border-slate-800/60 rounded-none bg-transparent text-white placeholder:text-slate-500";
   } else if (flat) {
-    buttonClasses = "flex h-10 w-full items-center justify-center gap-1.5 transition focus:outline-none bg-transparent border-0 border-b border-slate-100 rounded-none text-slate-800 px-0 text-sm font-normal focus:border-emerald-500 focus:ring-0";
-    inputClasses = "h-10 w-full min-w-0 max-w-full box-border px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none focus:ring-0 border-0 border-b border-slate-100 rounded-none bg-transparent focus:border-emerald-500 transition-colors";
+    buttonClasses = "flex h-10 w-full items-center justify-center gap-1.5 transition focus:outline-none bg-transparent border-0 border-b border-slate-100 rounded-none text-slate-800 px-0 text-sm font-normal focus:border-[#0B3F64] focus:ring-0";
+    inputClasses = "h-10 w-full min-w-0 max-w-full box-border px-0 py-2 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none focus:ring-0 border-0 border-b border-slate-100 rounded-none bg-transparent focus:border-[#0B3F64] transition-colors";
   }
 
   return (
@@ -89,7 +89,7 @@ export default function PhoneSelector({
                     setOpen(false);
                   }}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] font-medium transition hover:bg-neutral-50 ${
-                    countryCode === c.code ? "bg-emerald-50/50 text-emerald-700" : "text-neutral-700"
+                    countryCode === c.code ? "bg-[#E6EFF5] text-[#0B3F64]" : "text-neutral-700"
                   }`}
                 >
                   <span className="flex items-center gap-2">
@@ -100,7 +100,7 @@ export default function PhoneSelector({
                     />
                     <span>+{c.code}</span>
                   </span>
-                  {countryCode === c.code && <Check size={14} className="text-emerald-500" />}
+                  {countryCode === c.code && <Check size={14} className="text-[#0B3F64]" />}
                 </button>
               ))}
             </div>

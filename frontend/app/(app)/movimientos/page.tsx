@@ -58,7 +58,7 @@ function formatRate(value: number) {
   })}%`;
 }
 
-// ─── Componente: MonthPickerPopover (clonado de Nómina / HeaderCalendar) ──── ─
+// ─── Componente: MonthPickerPopover (replicado de Ventas) ─────────────────
 
 function MonthPickerPopover({
   selectedYear,
@@ -88,36 +88,39 @@ function MonthPickerPopover({
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50 active:scale-95"
+        onClick={() => {
+          setViewYear(selectedYear);
+          setOpen((v) => !v);
+        }}
+        className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
       >
-        <CalendarDays className="h-4 w-4 text-slate-400" />
+        <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
         <span>{MONTH_NAMES[selectedMonth - 1].substring(0, 3)} {selectedYear}</span>
       </button>
 
       {open && (
         <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
           {/* Navegador de año */}
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex items-center justify-between px-1">
             <button
               type="button"
               onClick={() => setViewYear((y) => y - 1)}
-              className="p-1 text-neutral-500 hover:text-neutral-900 transition"
+              className="p-1 text-neutral-500 hover:text-neutral-900 transition rounded-lg hover:bg-neutral-100"
             >
-              <ChevronLeft className="h-5 w-5" />
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="font-semibold text-neutral-800">{viewYear}</span>
+            <span className="text-sm font-semibold text-neutral-800">{viewYear}</span>
             <button
               type="button"
               onClick={() => setViewYear((y) => y + 1)}
-              className="p-1 text-neutral-500 hover:text-neutral-900 transition"
+              className="p-1 text-neutral-500 hover:text-neutral-900 transition rounded-lg hover:bg-neutral-100"
             >
-              <ChevronRight className="h-5 w-5" />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Grid de meses */}
-          <div className="grid grid-cols-3 gap-1">
+          {/* Grid de meses 3x4 */}
+          <div className="grid grid-cols-3 gap-1.5">
             {MONTH_NAMES.map((name, i) => {
               const month = i + 1;
               const isSelected = selectedYear === viewYear && selectedMonth === month;
@@ -130,9 +133,9 @@ function MonthPickerPopover({
                     setOpen(false);
                   }}
                   className={cn(
-                    "rounded-xl py-2 text-[13px] font-medium transition-colors",
+                    "rounded-xl py-1.5 text-xs font-medium transition-colors",
                     isSelected
-                      ? "bg-emerald-500 text-white"
+                      ? "bg-[#0B3F64] text-white shadow-sm"
                       : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
                   )}
                 >
@@ -151,35 +154,24 @@ function MonthPickerPopover({
 
 export default function MovimientosPage() {
   const { taxSettingsEnabled } = useTaxSettings();
-  // Modo de vista: MONTH (mes completo) | DAILY (día individual)
-  // Arranca en MONTH para que el primer fetch cargue el mes actual completo
-  const [viewMode, setViewMode] = useState<ViewMode>("MONTH");
-
-  // Estado del filtro mensual — inicializado con el mes en curso de forma lazy
-  // (lazy initializer: se ejecuta sincrónicamente en el primer render, no después)
-  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
-  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1); // 1-indexed
-
-  // Estado del filtro diario — también lazy para consistencia
+  const [viewMode, setViewMode] = useState<ViewMode>("DAILY");
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
 
-  // Datos
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   // ── Rango de fechas para la API ────────────────────────────────────────────
-  // dateRange se recalcula solo cuando cambian los deps → sin renders infinitos
   const dateRange = useMemo(() => {
     let start: Date;
     let end: Date;
 
     if (viewMode === "MONTH") {
-      // Primer y último día del mes seleccionado, en hora local
       start = new Date(filterYear, filterMonth - 1, 1, 0, 0, 0, 0);
       end = new Date(filterYear, filterMonth, 0, 23, 59, 59, 999);
     } else {
-      // Día individual completo, en hora local
       start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 0, 0, 0, 0);
       end = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate(), 23, 59, 59, 999);
     }
@@ -190,39 +182,42 @@ export default function MovimientosPage() {
     };
   }, [viewMode, filterYear, filterMonth, selectedDate]);
 
+  // ── Fetch de resúmenes contables ──────────────────────────────────────────
+  useEffect(() => {
+    let active = true;
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
-  const loadSummary = useCallback(async () => {
-    setLoading(true);
-    try {
+    async function run() {
+      setLoading(true);
       setError(null);
-      const data = await getAccountingSummary({
-        from: dateRange.from,
-        to: dateRange.to,
-      });
-      setSummary(data);
-    } catch (e: unknown) {
-      setSummary(null);
-      const message =
-        e && typeof e === "object" && "message" in e && typeof (e as { message?: unknown }).message === "string"
-          ? (e as { message: string }).message
-          : "No se pudieron cargar los movimientos";
-      setError(message);
-    } finally {
-      setLoading(false);
+
+      try {
+        const data = await getAccountingSummary({
+          from: dateRange.from,
+          to: dateRange.to,
+        });
+        if (active) {
+          setSummary(data);
+        }
+      } catch (err: unknown) {
+        if (active) {
+          const message = err instanceof Error ? err.message : "Error al cargar movimientos";
+          setError(message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
     }
+
+    run();
+
+    return () => {
+      active = false;
+    };
   }, [dateRange]);
 
-  useEffect(() => {
-    loadSummary();
-  }, [loadSummary]);
-
-  useEffect(() => {
-    window.addEventListener("tax-profile-updated", loadSummary);
-    return () => window.removeEventListener("tax-profile-updated", loadSummary);
-  }, [loadSummary]);
-
-  // ── hasData ───────────────────────────────────────────────────────────────
+  // ── Determinar si hay datos significativos ────────────────────────────────
   const hasData = useMemo(() => {
     if (!summary) return false;
     const op = summary.operacionComercial;
@@ -244,21 +239,24 @@ export default function MovimientosPage() {
 
   // ── Badge LIMPIAR: visible cuando el filtro no es "hoy en modo diario" ────
   const showClearBadge = useMemo(() => {
-    if (viewMode === "MONTH") return true; // siempre visible en modo mes
-    return !isTodayLocal(selectedDate);   // en modo diario, solo si no es hoy
+    if (viewMode === "MONTH") return true;
+    return !isTodayLocal(selectedDate);
   }, [viewMode, selectedDate]);
 
-  // ── Handler del selector de mes (clonado de Nómina) ──────────────────────
+  // ── Handler del selector de mes (sincronizado exactamente como Ventas) ──
   const handleMonthSelect = (year: number, month: number) => {
     setFilterYear(year);
     setFilterMonth(month);
     setViewMode("MONTH");
+    setSelectedDate(new Date(year, month - 1, 1));
   };
 
-  // ── Handler al usar las flechas del DayPickerCalendar → modo DAILY ────────
+  // ── Handler del DayPickerCalendar (sincronizado exactamente como Ventas) ─
   const handleDaySelect = (date: Date) => {
     setSelectedDate(date);
     setViewMode("DAILY");
+    setFilterYear(date.getFullYear());
+    setFilterMonth(date.getMonth() + 1);
   };
 
   // ── Reset: vuelve a hoy en modo diario ────────────────────────────────────
@@ -266,6 +264,8 @@ export default function MovimientosPage() {
     const today = new Date();
     setSelectedDate(today);
     setViewMode("DAILY");
+    setFilterYear(today.getFullYear());
+    setFilterMonth(today.getMonth() + 1);
   };
 
   // ── Label descriptivo del filtro activo ──────────────────────────────────
@@ -323,8 +323,8 @@ export default function MovimientosPage() {
                             ? "Periodo pagado"
                             : "Periodo cerrado"
                           : summary.simpleTaxProjection.informativeOnly
-                          ? "Estimación informativa"
-                          : "Estimación mensual"
+                            ? "Estimación informativa"
+                            : "Estimación mensual"
                         : "Configuración pendiente"}
                     </h2>
                     <p className="mt-1 text-xs text-slate-500">

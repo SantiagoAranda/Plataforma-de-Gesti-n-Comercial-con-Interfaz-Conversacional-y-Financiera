@@ -348,10 +348,18 @@ function MiNegocioPageContent() {
       });
     }
 
-    // Desbloquear después de que termine la animación smooth (~600ms)
+    // Desbloquear después de que termine la animación smooth (~800ms) y verificar la posición final
     setTimeout(() => {
       isScrollingToBottomRef.current = false;
-    }, 600);
+      const el = scrollRef.current;
+      if (el) {
+        const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+        const nearBottom = distanceFromBottom <= 25;
+        shouldStickToBottomRef.current = nearBottom;
+        setIsAtBottom(nearBottom);
+        setShowScrollBottom(!nearBottom);
+      }
+    }, 800);
   }, []);
 
   useEffect(() => {
@@ -638,16 +646,24 @@ function MiNegocioPageContent() {
   };
 
   const handleScroll = useCallback(() => {
-    // Si estamos en medio de una animación de scroll programado, ignorar el evento
-    if (isScrollingToBottomRef.current) return;
-
     const el = scrollRef.current;
     if (!el) return;
 
     const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    const nearBottom = distanceFromBottom <= 25;
 
-    // Tolerancia estricta de 15px para absorber decimales del navegador
-    const nearBottom = distanceFromBottom <= 15;
+    // Si estamos en medio de una animación de scroll programado hacia abajo
+    if (isScrollingToBottomRef.current) {
+      if (nearBottom) {
+        isScrollingToBottomRef.current = false;
+        shouldStickToBottomRef.current = true;
+        setIsAtBottom(true);
+        setShowScrollBottom(false);
+      } else {
+        setShowScrollBottom(false);
+      }
+      return;
+    }
 
     shouldStickToBottomRef.current = nearBottom;
     setIsAtBottom(nearBottom);
@@ -887,7 +903,7 @@ function MiNegocioPageContent() {
       {showScrollBottom && (
         <button
           onClick={() => scrollToBottom("smooth")}
-          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgb(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95"
+          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgba(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95 hover:bg-emerald-700 transition-colors"
           aria-label="Ir al final"
         >
           <ArrowDown size={20} strokeWidth={2.5} />
