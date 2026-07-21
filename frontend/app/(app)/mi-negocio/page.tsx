@@ -68,7 +68,6 @@ function MiNegocioPageContent() {
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
   const submitInFlightRef = useRef(false);
-  const isScrollingToBottomRef = useRef(false);
 
   // Composer / Form states
   const [composerMode, setComposerMode] = useState<
@@ -338,13 +337,11 @@ function MiNegocioPageContent() {
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    // Bloquear handleScroll durante la animación para evitar que re-muestre la flecha
-    isScrollingToBottomRef.current = true;
     setIsAtBottom(true);
     setShowScrollBottom(false);
 
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior });
+      messagesEndRef.current.scrollIntoView({ behavior, block: "end" });
     } else {
       const el = scrollRef.current;
       if (!el) return;
@@ -352,19 +349,6 @@ function MiNegocioPageContent() {
         el.scrollTo({ top: el.scrollHeight, behavior });
       });
     }
-
-    // Desbloquear después de que termine la animación smooth (~800ms) y verificar la posición final
-    setTimeout(() => {
-      isScrollingToBottomRef.current = false;
-      const el = scrollRef.current;
-      if (el) {
-        const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-        const nearBottom = distanceFromBottom <= 25;
-        shouldStickToBottomRef.current = nearBottom;
-        setIsAtBottom(nearBottom);
-        setShowScrollBottom(!nearBottom);
-      }
-    }, 800);
   }, []);
 
   useEffect(() => {
@@ -650,38 +634,30 @@ function MiNegocioPageContent() {
     }
   };
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-    const nearBottom = distanceFromBottom <= 25;
-
-    // Si estamos en medio de una animación de scroll programado hacia abajo
-    if (isScrollingToBottomRef.current) {
-      if (nearBottom) {
-        isScrollingToBottomRef.current = false;
-        shouldStickToBottomRef.current = true;
-        setIsAtBottom(true);
-        setShowScrollBottom(false);
-      } else {
-        setShowScrollBottom(false);
-      }
-      return;
-    }
-
-    shouldStickToBottomRef.current = nearBottom;
-    setIsAtBottom(nearBottom);
-    setShowScrollBottom(!nearBottom);
-  }, []);
-
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
+    const target = messagesEndRef.current;
+    const container = scrollRef.current;
+    if (!target || !container) return;
 
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry) {
+          const atBottom = entry.isIntersecting;
+          shouldStickToBottomRef.current = atBottom;
+          setIsAtBottom(atBottom);
+          setShowScrollBottom(!atBottom);
+        }
+      },
+      {
+        root: container,
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
 
   const groupedItems = useMemo(() => {
     const groups: { dateLabel: string; items: Item[] }[] = [];
@@ -732,9 +708,9 @@ function MiNegocioPageContent() {
 
       <main
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-32 lg:pb-[140px]"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col-reverse gap-8 pb-4"
       >
-        <div ref={messagesEndRef} className="h-px" />
+        <div ref={messagesEndRef} className="h-12 w-full shrink-0" />
 
 
         {groupedItems.map((group) => (
