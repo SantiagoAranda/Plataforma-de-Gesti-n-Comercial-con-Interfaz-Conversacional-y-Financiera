@@ -478,6 +478,14 @@ export default function ContabilidadPage() {
       }
 
       if (searchFilters.mode === "PUC") {
+        const rawQuery = searchFilters.query.trim();
+        const isNumeric = /^\d+$/.test(rawQuery);
+
+        if (isNumeric) {
+          const code = (movement.pucCode ?? "").trim();
+          return code.startsWith(rawQuery);
+        }
+
         const extraFields = movement as AccountingMovement & {
           accountCode?: string | null;
           accountName?: string | null;
@@ -646,8 +654,8 @@ export default function ContabilidadPage() {
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-3 pb-24 pt-1 sm:px-4">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-3 pt-1 sm:px-4">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-32">
           {error && (
             <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
