@@ -34,7 +34,9 @@ function groupLabel(dateISO: string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+  })
+    .replace(/\./g, "")
+    .toUpperCase();
 }
 
 export function AccountingMovementList({

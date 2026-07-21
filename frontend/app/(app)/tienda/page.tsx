@@ -484,7 +484,7 @@ export default function MiTiendaPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-32 pt-4">
+      <main className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-32 pt-0">
         {loading ? (
           <p className="text-center text-neutral-400 mt-6">
             Cargando productos...
@@ -494,7 +494,7 @@ export default function MiTiendaPage() {
             No hay productos cargados
           </p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
             {filtered.map((item) => (
               <AdminProductCard
                 key={item.id}

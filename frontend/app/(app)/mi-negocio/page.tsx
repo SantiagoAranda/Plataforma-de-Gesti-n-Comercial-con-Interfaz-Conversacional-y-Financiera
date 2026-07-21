@@ -39,6 +39,11 @@ import {
   MAX_ITEM_IMAGES,
   MAX_ITEM_IMAGE_SIZE_BYTES,
 } from "@/src/lib/itemImages";
+import { DateSeparator } from "@/src/components/shared/DateSeparator";
+import {
+  formatBusinessDateTime,
+  getRelativeBusinessDayLabel,
+} from "@/src/lib/businessDate";
 
 function MiNegocioPageContent() {
   const router = useRouter();
@@ -684,16 +689,20 @@ function MiNegocioPageContent() {
 
     itemsToGroup.forEach((item) => {
       const date = new Date(item.createdAt || Date.now());
-      const now = new Date();
-      const yesterday = new Date(now);
-      yesterday.setDate(now.getDate() - 1);
+      const relativeLabel = getRelativeBusinessDayLabel(date, "es-AR");
 
-      let label = date.toLocaleDateString("es-ES", {
-        day: "numeric",
-        month: "long",
-      });
-      if (date.toDateString() === now.toDateString()) label = "HOY";
-      else if (date.toDateString() === yesterday.toDateString()) label = "AYER";
+      let label =
+        relativeLabel === "Hoy"
+          ? "HOY"
+          : relativeLabel === "Ayer"
+          ? "AYER"
+          : formatBusinessDateTime(date, "es-AR", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+              .replace(/\./g, "")
+              .toUpperCase();
 
       const lastGroup = groups[groups.length - 1];
       if (lastGroup && lastGroup.dateLabel === label) {
@@ -730,13 +739,7 @@ function MiNegocioPageContent() {
 
         {groupedItems.map((group) => (
           <div key={group.dateLabel} className="space-y-4">
-            <div className="flex items-center gap-4 py-2">
-              <div className="h-[1px] flex-1 bg-neutral-200" />
-              <span className="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em]">
-                {group.dateLabel}
-              </span>
-              <div className="h-[1px] flex-1 bg-neutral-200" />
-            </div>
+            <DateSeparator labelOverride={group.dateLabel} />
 
             <div className="flex flex-col-reverse gap-4">
               {group.items.map((item) => (
@@ -903,7 +906,7 @@ function MiNegocioPageContent() {
       {showScrollBottom && (
         <button
           onClick={() => scrollToBottom("smooth")}
-          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-emerald-600 border border-emerald-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgba(16,185,129,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95 hover:bg-emerald-700 transition-colors"
+          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-[#0B3F64] border border-[#0B3F64] text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgba(11,63,100,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95 hover:bg-[#072D49] transition-colors"
           aria-label="Ir al final"
         >
           <ArrowDown size={20} strokeWidth={2.5} />
