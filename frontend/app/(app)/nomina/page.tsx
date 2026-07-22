@@ -531,7 +531,7 @@ function PayrollConfirmDialog({
   if (!open) return null;
 
   const intentClasses: Record<PayrollConfirmIntent, string> = {
-    payroll: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+    payroll: "border-[#0B3F64] bg-[#0B3F64] text-white hover:bg-[#093352]",
     settlement: "border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100",
     visual: "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200",
   };
@@ -2297,15 +2297,15 @@ function PayrollSummaryPanel({
           <MoneyLine
             label="Deducción salud"
             value={viewModel.employeeHealth * f}
-            color="text-[#e5a5ba]"
-            valueColor="text-[#d985a1]"
+            color="text-[#C80237]"
+            valueColor="text-[#C80237]"
             sign="-"
           />
           <MoneyLine
             label="Deducción pensión"
             value={viewModel.employeePension * f}
-            color="text-[#e5a5ba]"
-            valueColor="text-[#d985a1]"
+            color="text-[#C80237]"
+            valueColor="text-[#C80237]"
             sign="-"
           />
 
@@ -4132,7 +4132,7 @@ function PayrollNewsSheet({
             <span className="mb-2 block text-[10px] font-medium uppercase tracking-widest text-emerald-600">Vista previa de nomina</span>
             <div className="space-y-1.5">
               <MoneyLine label="Devengados" value={preview.grossIncome} color="text-slate-600" />
-              <MoneyLine label="Deducciones" value={preview.totalEmployeeDeductions} color="text-rose-500" sign="-" />
+              <MoneyLine label="Deducciones" value={preview.totalEmployeeDeductions} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
               <MoneyLine label="Prestaciones" value={preview.totalBenefits} color="text-violet-600" />
               <MoneyLine label="Neto" value={preview.netPay} color="text-slate-900" medium />
               <MoneyLine label="Costo empresa" value={preview.realEmployerCost} color="text-[#0fb18f]" medium />
@@ -5177,13 +5177,13 @@ export default function PayrollPage() {
                     onClick={() => setConfirmAction({ type: "post-period" })}
                     disabled={!canLiquidatePayroll}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium transition disabled:cursor-not-allowed",
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold transition disabled:cursor-not-allowed",
                       periodAlreadyPosted
-                        ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                        : "border-emerald-100 bg-white text-emerald-700 shadow-sm hover:bg-emerald-50 disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
+                        ? "border-[#0B3F64]/20 bg-[#E6EFF5] text-[#0B3F64]"
+                        : "border-[#0B3F64]/40 bg-white text-[#0B3F64] shadow-sm hover:bg-[#E6EFF5] disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
                     )}
                   >
-                    <ListChecks className="h-3.5 w-3.5" />
+                    <ListChecks className="h-3.5 w-3.5 text-[#0B3F64]" />
                     {periodAlreadyPosted ? "Pagada" : "Pagar nomina"}
                   </button>
                 </div>
