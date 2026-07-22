@@ -81,9 +81,7 @@ function paymentMethodLabel(paymentMethod?: Sale["paymentMethod"]) {
 }
 
 function statusBadgeClass(status: Sale["status"]) {
-  if (status === "CERRADO") return "bg-emerald-50 text-emerald-700";
-  if (status === "CANCELADO") return "bg-red-50 text-red-700";
-  return "bg-amber-50 text-amber-700";
+  return getStatusStyles(status).badge;
 }
 
 function readReceiptBusinessProfile(): BusinessReceiptProfile {

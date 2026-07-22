@@ -168,6 +168,7 @@ export function mapSalesActivity(orders: Sale[]): ModuleActivitySummary {
       PENDIENTE: "Venta pendiente",
       CERRADO: "Venta completada",
       CANCELADO: "Venta cancelada",
+      CONFIRMADO: "Venta confirmada",
     };
 
     const base = statusLabel[latest.status] ?? "Venta registrada";

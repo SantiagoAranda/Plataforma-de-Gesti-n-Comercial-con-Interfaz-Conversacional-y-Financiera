@@ -49,6 +49,12 @@ function formatAppointment(iso?: string) {
   return `${day}/${month}/${year}, ${hoursStr}:${minutes} ${ampm}`;
 }
 
+function getInitial(name?: string | null) {
+  const trimmed = (name ?? "").trim();
+  if (!trimmed) return "C";
+  return trimmed.charAt(0).toUpperCase();
+}
+
 type Props = {
   sale: Sale;
   selected?: boolean;
@@ -94,8 +100,8 @@ export default function SaleCard({
       <div className="p-4">
         <div className="flex justify-between items-start mb-3 gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 shrink-0">
-              <User className="w-5 h-5 text-slate-300" />
+            <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 font-bold text-sm flex items-center justify-center border border-emerald-200/60 shrink-0 shadow-sm">
+              {getInitial(sale.customerName)}
             </div>
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-slate-800 leading-tight truncate">
@@ -108,7 +114,10 @@ export default function SaleCard({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 uppercase">
+            <span
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${styles.badge}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${styles.dotColor}`} />
               {styles.label}
             </span>
             <button

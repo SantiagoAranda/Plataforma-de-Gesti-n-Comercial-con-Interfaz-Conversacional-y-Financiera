@@ -2,7 +2,8 @@ export type SaleStatus =
   | "PENDIENTE DE CIERRE"
   | "CERRADO"
   | "PENDIENTE"
-  | "CANCELADO";
+  | "CANCELADO"
+  | "CONFIRMADO";
 
 export type SaleType = "PRODUCTO" | "SERVICIO";
 export type SourceType = "ORDER" | "RESERVATION";
