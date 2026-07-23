@@ -1051,7 +1051,7 @@ export default function SalesChatComposer({
           {/* OVERLAY BACKDROP */}
           {expanded && (
             <div
-              className="fixed inset-0 -z-10 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
+              className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
               onClick={onCancelComposer}
             />
           )}

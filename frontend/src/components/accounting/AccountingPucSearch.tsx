@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { SearchSelect, type SearchSelectOption } from "@/src/components/shared/SearchSelect";
 import { searchPuc, type PucSearchResult } from "@/src/services/puc";
@@ -56,6 +56,7 @@ export function AccountingPucSearch({ value, onChange, error }: Props) {
       value={selectedValue}
       error={error}
       variant="encapsulated"
+      buttonColorClassName="bg-[#0B3F64] hover:bg-[#0B3F64]/90"
       labelClassName="text-[10px] font-medium text-slate-400/90 uppercase tracking-wider mb-1.5 block px-1"
       placeholder={value.pucCode ? "Buscar otro PUC..." : "Ej. 4235, 423595 o Servicios"}
       emptyText="No se encontraron cuentas o subcuentas para esa busqueda."

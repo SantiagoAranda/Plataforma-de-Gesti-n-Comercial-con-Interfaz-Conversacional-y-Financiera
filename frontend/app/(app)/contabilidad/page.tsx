@@ -573,7 +573,7 @@ export default function ContabilidadPage() {
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       {/* Header Fijo */}
-      <div className="sticky top-0 z-50 bg-white shrink-0 border-b border-black/5">
+      <div className="sticky top-0 z-30 bg-white shrink-0 border-b border-black/5">
         {selectedMovement ? (
           <SelectionActionBar
             visible
