@@ -8,7 +8,7 @@ import { Bell, BookOpen, Package, TriangleAlert } from "lucide-react";
 import { api } from "@/src/lib/api";
 import { cn } from "@/src/lib/utils";
 import { getErrorMessage } from "@/src/lib/errors";
-import { formatMoney } from "@/src/lib/formatters";
+import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
@@ -39,6 +39,13 @@ import {
 import type { Item } from "@/src/types/item";
 
 type UITab = "recipes" | "ingredients" | "products" | "services";
+type SaveBarContext = {
+  message: string;
+  saveLabel: string;
+  isSaving: boolean;
+  onSave: () => void | Promise<void>;
+  onDiscard: () => void;
+} | null;
 
 function recipeStatus(item: Item, lines: RecipeLine[]) {
   const mandatory = lines.filter((line) => !line.isOptional);
@@ -111,6 +118,7 @@ function InventarioPageContent() {
   const [creatingIngredient, setCreatingIngredient] = useState(false);
   const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [saveBarContext, setSaveBarContext] = useState<SaveBarContext>(null);
 
   // Sync selectedIngredientId with searchParams if present
   useEffect(() => {
@@ -319,25 +327,23 @@ function InventarioPageContent() {
             </div>
           </section>
 
-          <section className="rounded-full bg-slate-100 p-1 shadow-sm ring-1 ring-black/5">
-            <div className="grid grid-cols-4 gap-1">
+          <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {(["recipes", "ingredients", "products", "services"] as const).map((nextTab) => (
                 <button
                   key={nextTab}
                   type="button"
                   onClick={() => setTab(nextTab)}
                   className={cn(
-                    "h-9 rounded-full text-[10px] sm:text-xs font-bold transition-all active:scale-[0.98]",
+                    "shrink-0 rounded-full px-4 py-1.5 text-[13px] font-medium transition flex items-center gap-1.5 active:scale-[0.98]",
                     activeTab === nextTab 
-                      ? "bg-[#0B3F64] text-white shadow-sm" 
-                      : "bg-transparent text-[#0B3F64] hover:bg-[#0B3F64]/5",
+                      ? "bg-[#E6EFF5] text-[#0B3F64] font-semibold"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200/80",
                   )}
                 >
                   {nextTab === "recipes" ? "Recetas" : nextTab === "ingredients" ? "Insumos" : nextTab === "products" ? "Productos" : "Servicios"}
                 </button>
               ))}
-            </div>
-          </section>
+          </div>
 
           {loading ? (
             <div className="rounded-2xl bg-white p-4 text-center text-sm font-medium text-neutral-400 shadow-sm ring-1 ring-black/5">Cargando...</div>
@@ -384,6 +390,7 @@ function InventarioPageContent() {
                     allIngredients={summary}
                     onSaveSuccess={load}
                     initiallyExpanded={expandedItemId === item.id}
+                    onSaveContextChange={setSaveBarContext}
                   />
                 ))
               )}
@@ -393,6 +400,7 @@ function InventarioPageContent() {
       </main>
 
       <InventoryChatActionBar
+        mode={saveBarContext ? { type: "SAVE", ...saveBarContext } : { type: "SEARCH" }}
         value={searchQuery}
         onChange={setSearchQuery}
         placeholder={
@@ -448,7 +456,7 @@ function InventarioPageContent() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-neutral-900">{item.name}</p>
                     <p className="mt-0.5 text-[11px] font-medium text-neutral-500">
-                      {out ? "Acción recomendada: cargar stock" : "Acción recomendada: revisar mínimo"} · Stock {formatMoney(parseNumber(item.currentStock))} {unitLabel}
+                      {out ? "Acción recomendada: cargar stock" : "Acción recomendada: revisar mínimo"} · Stock {formatQuantityCompact(item.currentStock)} {unitLabel}
                     </p>
                   </div>
                   <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider", out ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-700")}>

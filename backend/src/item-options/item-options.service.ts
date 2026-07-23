@@ -8,6 +8,7 @@ import {
   ItemOptionQuantityMode,
   ItemOptionTargetType,
   OrderItemOptionAction,
+  ItemStatus,
   ItemType,
   Prisma,
 } from '@prisma/client';
@@ -225,8 +226,13 @@ export class ItemOptionsService {
     itemId: string,
     dto: CreateOptionGroupDto,
   ) {
-    await this.assertItem(businessId, itemId);
-    await this.validateGroupDto(dto);
+    const item = await this.assertItem(businessId, itemId);
+    if (item.inventoryMode !== InventoryMode.RECIPE_BASED) {
+      throw new BadRequestException(
+        'Los grupos de opciones solo pertenecen a productos con receta.',
+      );
+    }
+    await this.validateGroupDto(dto, false);
 
     const group = await this.prisma.itemOptionGroup.create({
       data: {
@@ -278,7 +284,26 @@ export class ItemOptionsService {
           : dto.totalQuantityUnitId,
     };
 
-    await this.validateGroupDto(merged);
+    const quantityModeChanged =
+      dto.quantityMode !== undefined && dto.quantityMode !== existing.quantityMode;
+    if (
+      quantityModeChanged &&
+      dto.quantityMode === ItemOptionQuantityMode.NO_QUANTITY
+    ) {
+      throw new BadRequestException(
+        'Los grupos nuevos deben controlar consumo de inventario.',
+      );
+    }
+
+    await this.validateGroupDto(merged, existing.quantityMode === ItemOptionQuantityMode.NO_QUANTITY);
+    if (quantityModeChanged) {
+      await this.validateExistingOptionsForQuantityMode(
+        businessId,
+        existing.options,
+        merged.quantityMode,
+        merged.totalQuantityUnitId,
+      );
+    }
 
     const group = await this.prisma.itemOptionGroup.update({
       where: { id: groupId },
@@ -313,7 +338,12 @@ export class ItemOptionsService {
   async deleteGroup(businessId: string, itemId: string, groupId: string) {
     await this.assertGroup(businessId, itemId, groupId);
     const used = await this.prisma.orderItemOption.count({
-      where: { groupId },
+      where: {
+        OR: [
+          { groupId },
+          { option: { groupId } },
+        ],
+      },
     });
 
     if (used > 0) {
@@ -335,6 +365,11 @@ export class ItemOptionsService {
     dto: CreateItemOptionDto,
   ) {
     const group = await this.assertGroup(businessId, itemId, groupId);
+    if (group.quantityMode === ItemOptionQuantityMode.NO_QUANTITY) {
+      throw new BadRequestException(
+        'Las configuraciones históricas no admiten opciones nuevas.',
+      );
+    }
     const normalized = await this.validateOptionDto(businessId, group, dto);
 
     const option = await this.prisma.itemOption.create({
@@ -387,7 +422,19 @@ export class ItemOptionsService {
       quantity: dto.quantity === undefined ? existing.quantity : dto.quantity,
       unitId: dto.unitId === undefined ? existing.unitId : dto.unitId,
     };
-    const normalized = await this.validateOptionDto(businessId, group, merged, optionId);
+    const structuralChange = this.hasStructuralOptionChange(dto, existing);
+    if (!structuralChange && dto.isActive === true && !existing.isActive) {
+      await this.validateResourceDuplicate(group.id, existing, optionId);
+    }
+    const normalized = structuralChange
+      ? await this.validateOptionDto(businessId, group, merged, optionId)
+      : {
+          targetType: existing.targetType,
+          ingredientId: existing.ingredientId,
+          itemId: existing.itemId,
+          quantity: existing.quantity,
+          unitId: existing.unitId,
+        };
 
     const option = await this.prisma.itemOption.update({
       where: { id: optionId },
@@ -477,7 +524,7 @@ export class ItemOptionsService {
     quantityMode?: ItemOptionQuantityMode;
     totalQuantityLimit?: string | number | Prisma.Decimal | null;
     totalQuantityUnitId?: string | null;
-  }) {
+  }, allowHistoricalNoQuantity = false) {
     if (input.title !== undefined && input.title.trim().length === 0) {
       throw new BadRequestException('title is required');
     }
@@ -510,6 +557,11 @@ export class ItemOptionsService {
     }
 
     if (input.quantityMode === ItemOptionQuantityMode.NO_QUANTITY) {
+      if (!allowHistoricalNoQuantity) {
+        throw new BadRequestException(
+          'Los grupos nuevos deben controlar consumo de inventario.',
+        );
+      }
       if (input.totalQuantityLimit != null || input.totalQuantityUnitId) {
         throw new BadRequestException('NO_QUANTITY cannot have total quantity fields');
       }
@@ -547,9 +599,9 @@ export class ItemOptionsService {
     let unitId: string | null = null;
 
     if (targetType === ItemOptionTargetType.NONE) {
-      if (input.ingredientId || input.itemId) {
-        throw new BadRequestException('NONE options cannot target inventory');
-      }
+      throw new BadRequestException(
+        'Las opciones nuevas deben asociarse a un insumo o producto simple.',
+      );
     }
 
     if (targetType === ItemOptionTargetType.INGREDIENT) {
@@ -566,30 +618,43 @@ export class ItemOptionsService {
         throw new BadRequestException('ITEM options require itemId only');
       }
       const targetItem = await this.assertTargetItem(businessId, input.itemId);
+      if (targetItem.type === ItemType.SERVICE) {
+        throw new BadRequestException(
+          'No se permiten servicios ni productos sin inventario.',
+        );
+      }
+      if (targetItem.inventoryMode === InventoryMode.NONE) {
+        throw new BadRequestException(
+          'No se permiten servicios ni productos sin inventario.',
+        );
+      }
+      if (targetItem.inventoryMode === InventoryMode.RECIPE_BASED) {
+        throw new BadRequestException(
+          'No se permiten productos con receta dentro de otra receta.',
+        );
+      }
       if (
         targetItem.type !== ItemType.PRODUCT ||
-        targetItem.inventoryMode === InventoryMode.NONE
+        targetItem.inventoryMode !== InventoryMode.SIMPLE ||
+        targetItem.status !== ItemStatus.ACTIVE
       ) {
         throw new BadRequestException(
-          'ITEM options must target PRODUCT items with inventory in this MVP',
+          'Solo se permiten productos simples como opción.',
         );
       }
       itemId = targetItem.id;
-      unitId = input.unitId ?? null;
+      unitId = null;
     }
 
     if (group.quantityMode === ItemOptionQuantityMode.NO_QUANTITY) {
-      if (targetType !== ItemOptionTargetType.NONE) {
-        throw new BadRequestException('NO_QUANTITY options must use targetType NONE');
-      }
-      if (input.quantity != null || input.unitId) {
-        throw new BadRequestException('NO_QUANTITY options cannot have quantity or unitId');
-      }
+      throw new BadRequestException(
+        'Las configuraciones históricas no admiten opciones nuevas.',
+      );
     }
 
     if (group.quantityMode === ItemOptionQuantityMode.SHARED_TOTAL) {
       if (targetType !== ItemOptionTargetType.INGREDIENT) {
-        throw new BadRequestException('SHARED_TOTAL options must target INGREDIENT');
+        throw new BadRequestException('Este grupo solo admite insumos.');
       }
       await this.assertIngredientCompatibleWithUnit(
         businessId,
@@ -601,23 +666,12 @@ export class ItemOptionsService {
     }
 
     if (group.quantityMode === ItemOptionQuantityMode.FIXED_PER_OPTION) {
-      if (targetType !== ItemOptionTargetType.NONE) {
-        if (input.quantity == null) {
-          throw new BadRequestException(
-            'FIXED_PER_OPTION inventory options require quantity',
-          );
-        }
-        quantity = this.positiveDecimal(input.quantity, 'quantity');
-        
-        if (targetType === ItemOptionTargetType.ITEM) {
-          if (!unitId) {
-            throw new BadRequestException(
-              'FIXED_PER_OPTION ITEM options require unitId',
-            );
-          }
-          await this.assertUnit(unitId);
-        }
+      if (input.quantity == null) {
+        throw new BadRequestException(
+          'FIXED_PER_OPTION inventory options require quantity',
+        );
       }
+      quantity = this.positiveDecimal(input.quantity, 'quantity');
     }
 
     const isActive = input.isActive ?? true;
@@ -656,7 +710,7 @@ export class ItemOptionsService {
         }
       }
 
-      if (targetType === ItemOptionTargetType.NONE && input.name) {
+      if ((targetType as ItemOptionTargetType) === ItemOptionTargetType.NONE && input.name) {
         const options = await this.prisma.itemOption.findMany({
           where: {
             groupId: group.id,
@@ -787,6 +841,54 @@ export class ItemOptionsService {
     });
     if (!item) throw new BadRequestException('Target item is invalid');
     return item;
+  }
+
+  private hasStructuralOptionChange(dto: UpdateItemOptionDto, existing: any) {
+    return (
+      (dto.targetType !== undefined && dto.targetType !== existing.targetType) ||
+      (dto.ingredientId !== undefined && dto.ingredientId !== existing.ingredientId) ||
+      (dto.itemId !== undefined && dto.itemId !== existing.itemId) ||
+      (dto.quantity !== undefined && String(dto.quantity) !== String(existing.quantity)) ||
+      (dto.unitId !== undefined && dto.unitId !== existing.unitId)
+    );
+  }
+
+  private async validateExistingOptionsForQuantityMode(
+    businessId: string,
+    options: any[],
+    quantityMode: ItemOptionQuantityMode,
+    totalQuantityUnitId: string | null,
+  ) {
+    for (const option of options) {
+      await this.validateOptionDto(
+        businessId,
+        { id: option.groupId, quantityMode, totalQuantityUnitId },
+        option,
+        option.id,
+      );
+    }
+  }
+
+  private async validateResourceDuplicate(groupId: string, option: any, optionId: string) {
+    if (option.targetType === ItemOptionTargetType.NONE) return;
+    const duplicate = await this.prisma.itemOption.findFirst({
+      where: {
+        groupId,
+        targetType: option.targetType,
+        ...(option.targetType === ItemOptionTargetType.INGREDIENT
+          ? { ingredientId: option.ingredientId }
+          : { itemId: option.itemId }),
+        isActive: true,
+        id: { not: optionId },
+      },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        option.targetType === ItemOptionTargetType.INGREDIENT
+          ? 'Este insumo ya existe como opción activa dentro de este grupo.'
+          : 'Este producto ya existe como opción activa dentro de este grupo.',
+      );
+    }
   }
 
   private async assertIngredientCompatibleWithUnit(

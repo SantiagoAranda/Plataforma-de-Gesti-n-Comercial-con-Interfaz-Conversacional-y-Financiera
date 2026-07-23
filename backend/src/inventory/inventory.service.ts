@@ -2773,8 +2773,15 @@ export class InventoryService {
   async getRecipeConsumptionHistory(
     businessId: string,
     itemId: string,
-    query: { from?: string; to?: string },
+    query: { from?: string; to?: string; limit?: string },
   ) {
+    const item = await this.prisma.item.findFirst({
+      where: { id: itemId, businessId },
+    });
+    if (!item) {
+      throw new NotFoundException('Item not found');
+    }
+
     const where: Prisma.InventoryMovementWhereInput = {
       businessId,
       type: { in: ['SALE', 'SALE_RETURN'] },
@@ -2792,8 +2799,26 @@ export class InventoryService {
       where.occurredAt = occurredAtFilter;
     }
 
-    const movements = await this.prisma.inventoryMovement.findMany({
+    const requestedLimit = Number(query.limit ?? 2);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 20)
+      : 2;
+
+    const recentSales = await this.prisma.inventoryMovement.findMany({
       where,
+      select: { orderItemId: true },
+      distinct: ['orderItemId'],
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
+    });
+    const orderItemIds = recentSales
+      .map((movement) => movement.orderItemId)
+      .filter((orderItemId): orderItemId is string => Boolean(orderItemId));
+
+    if (orderItemIds.length === 0) return [];
+
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: { ...where, orderItemId: { in: orderItemIds } },
       include: {
         ingredient: {
           select: {
@@ -2851,6 +2876,13 @@ export class InventoryService {
     serviceItemId: string,
     query: { from?: string; to?: string },
   ) {
+    const item = await this.prisma.item.findFirst({
+      where: { id: serviceItemId, businessId, type: 'SERVICE' },
+    });
+    if (!item) {
+      throw new NotFoundException('Service not found');
+    }
+
     const where: Prisma.InventoryMovementWhereInput = {
       businessId,
       type: { in: ['SALE', 'SALE_RETURN'] },

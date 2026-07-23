@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { ChevronDown, ChevronUp, Plus, Trash2, BookOpen, AlertTriangle } from "lucide-react";
+import { ChevronUp, Plus, Trash2, AlertTriangle, History, Layers3 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { formatMoney } from "@/src/lib/formatters";
+import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 import {
   replaceServiceConsumption,
   type ServiceConsumptionItem,
@@ -14,6 +14,7 @@ import {
 import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { getErrorMessage } from "@/src/lib/errors";
 import { ConsumptionHistoryTab } from "./ConsumptionHistoryTab";
+import { ProfitSimulator } from "./ProfitSimulator";
 
 type Props = {
   service: ServiceConsumptionItem;
@@ -39,8 +40,7 @@ function roundQuantity(value: number): number {
 }
 
 function formatQuantity(value: number): string {
-  if (!Number.isFinite(value)) return "";
-  return String(roundQuantity(value));
+  return formatQuantityCompact(value);
 }
 
 export function ExpandableServiceConsumptionCard({
@@ -273,101 +273,93 @@ export function ExpandableServiceConsumptionCard({
   const displayCost = isExpanded ? draftCost : originalCost;
   const displayMargin = isExpanded ? draftMargin : originalMargin;
   const displayStatus = isExpanded ? currentStatus : status;
+  const serviceInitial = service.name?.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() ?? "S";
 
   return (
-    <article
-      className={cn(
-        "rounded-2xl bg-white border border-neutral-200/80 border-t-4 border-t-blue-500 p-4 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans",
-        isExpanded && "bg-slate-50/10"
-      )}
-    >
+    <article className="overflow-hidden rounded-2xl border border-slate-200 border-t-4 border-t-[#0b3f64] bg-white shadow-xs transition hover:shadow-sm">
       {/* CARD HEADER */}
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full text-left flex items-start gap-4 select-none font-sans"
+        className="flex w-full items-center gap-3 bg-gradient-to-b from-slate-50/80 to-white p-4 text-left select-none"
       >
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#E0E7FF] text-[#0B3F64] shadow-inner">
-          <BookOpen className="h-5 w-5 text-[#0B3F64]" />
+        <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
+          {serviceInitial}
         </div>
 
-        <div className="min-w-0 flex-1 space-y-1.5 font-sans">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="truncate text-sm font-semibold text-black tracking-tight leading-tight">
-              {service.name}
-            </h3>
-            <div className="text-slate-400 shrink-0">
-              {isExpanded ? <ChevronUp className="h-4.5 w-4.5" /> : <ChevronDown className="h-4.5 w-4.5" />}
-            </div>
-          </div>
-          <div>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide",
-                displayStatus.tone
-              )}
-            >
-              {displayStatus.label}
-            </span>
-          </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-slate-800">
+            {service.name}
+          </h3>
+          <span className={cn("inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-medium text-black sm:text-[10px]", displayStatus.tone)}>
+            {displayStatus.label}
+          </span>
+          <span className="shrink-0 rounded-lg p-1.5 text-black transition-colors">
+            <ChevronUp className={cn("w-5 h-5 transition-transform duration-200", !isExpanded && "rotate-180")} />
+          </span>
         </div>
       </button>
 
       {/* METRICS GRID */}
-      <div className="mt-3.5 grid grid-cols-3 gap-2 border-t border-slate-100/80 pt-3">
-        <div className="bg-emerald-50 rounded-xl p-2 text-center border-none">
-          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Venta</span>
-          <span className="text-emerald-700 block mt-0.5 truncate text-sm font-bold">
+      <section className="border-t border-slate-100 px-4 py-3">
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-[#0b3f64]/30 bg-[rgba(11,63,100,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+          <span className="block truncate text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black">Venta</span>
+          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
             ${formatMoney(price)}
           </span>
         </div>
-        <div className="bg-rose-50 rounded-xl p-2 text-center border-none">
-          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Costo</span>
-          <span className="text-rose-700 block mt-0.5 truncate text-sm font-bold">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-[#ff0041]/30 bg-[rgba(255,0,65,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+          <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Costo base</span>
+          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
             {displayCost === null ? "—" : `$${formatMoney(displayCost)}`}
           </span>
         </div>
-        <div className="bg-blue-50 rounded-xl p-2 text-center border-none">
-          <span className="block text-[10px] uppercase tracking-wider text-neutral-500 font-medium">Ganancia</span>
-          <span className="text-blue-700 block mt-0.5 truncate text-sm font-bold">
+        <div className="min-w-0 overflow-hidden rounded-xl border border-[#00963d]/30 bg-[rgba(0,150,61,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+          <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Ganancia base</span>
+          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
             {displayMargin === null ? "—" : `$${formatMoney(displayMargin)}`}
           </span>
         </div>
-      </div>
+        </div>
+      </section>
 
       {/* EXPANDED CONTENT */}
       {isExpanded && (
-        <div className="mt-4 border-t border-slate-100/80 pt-3.5 space-y-4">
+        <div className="space-y-4 border-t border-slate-100 p-4">
+          <ProfitSimulator cost={displayCost} />
           {/* Sub-tabs header */}
-          <div className="flex border-b border-slate-100 pb-2 mb-2 gap-1 select-none">
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 pb-2 select-none">
             <button
               type="button"
               onClick={() => setActiveSubTab("config")}
               className={cn(
-                "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
                 activeSubTab === "config"
-                  ? "border-slate-800 text-slate-800"
-                  : "border-transparent text-slate-450 hover:text-slate-600"
+                  ? "bg-[#0b3f64] text-white shadow-xs"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
               )}
             >
+              <Layers3 className="h-3.5 w-3.5 shrink-0" />
               Insumos usados
             </button>
             <button
               type="button"
               onClick={() => setActiveSubTab("history")}
               className={cn(
-                "pb-1.5 px-3 text-xs font-bold transition-all border-b-2 -mb-2.5",
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
                 activeSubTab === "history"
-                  ? "border-slate-800 text-slate-800"
-                  : "border-transparent text-slate-450 hover:text-slate-600"
+                  ? "bg-[#0b3f64] text-white shadow-xs"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
               )}
             >
+              <History className="h-3.5 w-3.5 shrink-0" />
               Historial de Consumo
             </button>
           </div>
 
           {activeSubTab === "history" ? (
-            <ConsumptionHistoryTab itemId={service.id} type="service" />
+            <ConsumptionHistoryTab itemId={service.id} itemName={service.name} type="service" />
           ) : (
             <>
               <div className="space-y-2.5">

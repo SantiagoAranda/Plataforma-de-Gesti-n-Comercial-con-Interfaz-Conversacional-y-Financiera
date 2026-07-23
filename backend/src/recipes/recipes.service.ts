@@ -117,6 +117,13 @@ export class RecipesService {
       return;
     }
 
+    if (item.inventoryMode === 'SIMPLE') {
+      if (lines.length > 0) {
+        throw new BadRequestException('SIMPLE items cannot have recipes');
+      }
+      return;
+    }
+
     const ingredientIds = lines.map((line) => line.ingredientId);
     const uniqueIngredientIds = new Set(ingredientIds);
     if (uniqueIngredientIds.size !== ingredientIds.length) {
@@ -142,13 +149,6 @@ export class RecipesService {
     }
 
     const mandatoryCount = lines.filter((line) => !(line.isOptional ?? false)).length;
-
-    if (item.inventoryMode === 'SIMPLE') {
-      if (lines.length > 0) {
-        throw new BadRequestException('SIMPLE items cannot have recipes');
-      }
-      return;
-    }
 
     if (item.inventoryMode === 'RECIPE_BASED' && mandatoryCount < 1) {
       throw new BadRequestException(

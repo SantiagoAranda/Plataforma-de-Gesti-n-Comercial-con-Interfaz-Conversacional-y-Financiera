@@ -5,9 +5,18 @@
 export function formatMoney(value: number): string {
   return new Intl.NumberFormat("es-AR", {
     style: "decimal",
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+export function formatQuantityCompact(value: number | string | null | undefined, maximumFractionDigits = 6): string {
+  const numericValue = Number(value ?? 0);
+  if (!Number.isFinite(numericValue)) return "0";
+  return new Intl.NumberFormat("es-CO", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  }).format(numericValue);
 }
 
 /**

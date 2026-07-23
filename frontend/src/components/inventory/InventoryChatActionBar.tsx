@@ -8,6 +8,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Save,
   Send,
   SlidersHorizontal,
   TrendingUp,
@@ -27,6 +28,16 @@ export type InventoryChatMenuAction =
   | "RECETAS";
 
 export type InventoryChatActionBarProps = {
+  mode?:
+    | { type?: "SEARCH" }
+    | {
+        type: "SAVE";
+        message: string;
+        saveLabel: string;
+        isSaving: boolean;
+        onSave: () => void | Promise<void>;
+        onDiscard: () => void;
+      };
   value?: string;
   onChange?: (value: string) => void;
   onSubmit?: () => void;
@@ -71,6 +82,7 @@ const MENU: Array<{
 ];
 
 export function InventoryChatActionBar({
+  mode = { type: "SEARCH" },
   value,
   onChange,
   onSubmit,
@@ -135,6 +147,8 @@ export function InventoryChatActionBar({
     return null;
   }
 
+  const isSaveMode = mode.type === "SAVE";
+
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] backdrop-blur lg:left-[408px] lg:right-0"
@@ -181,6 +195,13 @@ export function InventoryChatActionBar({
           )}
 
           <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            {isSaveMode ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <button type="button" disabled={mode.isSaving} onClick={mode.onDiscard} aria-label="Descartar cambios" title="Descartar cambios" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 disabled:opacity-50"><X className="h-5 w-5" /></button>
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{mode.message}</span>
+                <button type="button" disabled={mode.isSaving} onClick={() => void mode.onSave()} aria-label={mode.saveLabel} title={mode.saveLabel} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white disabled:opacity-60">{mode.isSaving ? <span className="text-[10px]">...</span> : <Save className="h-4 w-4" />}</button>
+              </div>
+            ) : (
             <form
               className="flex min-w-0 items-center gap-2"
               onSubmit={(e) => {
@@ -232,6 +253,7 @@ export function InventoryChatActionBar({
                 <RightIcon className="h-4 w-4" />
               </button>
             </form>
+            )}
           </div>
 
           {helperText ? (

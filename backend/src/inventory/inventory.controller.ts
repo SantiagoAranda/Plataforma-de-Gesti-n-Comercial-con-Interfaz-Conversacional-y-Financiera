@@ -174,7 +174,7 @@ export class InventoryController {
   getRecipeConsumptionHistory(
     @Req() req: any,
     @Param('itemId') itemId: string,
-    @Query() query: { from?: string; to?: string },
+    @Query() query: { from?: string; to?: string; limit?: string },
   ) {
     return this.inventoryService.getRecipeConsumptionHistory(
       req.user.businessId,

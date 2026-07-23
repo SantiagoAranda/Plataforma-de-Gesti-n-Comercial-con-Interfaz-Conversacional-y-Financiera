@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Plus, Trash2, HelpCircle, Edit2, Check, X, AlertTriangle, Eye, EyeOff, Search } from "lucide-react";
+import { Plus, Trash2, HelpCircle, Pencil, Check, X, AlertTriangle, Eye, EyeOff, Search, ChevronDown, Layers } from "lucide-react";
 
+import { QuantityStepper, getStepAndPrecisionForUnit } from "@/src/components/inventory/QuantityStepper";
 import { api } from "@/src/lib/api";
 import { cn } from "@/src/lib/utils";
-import { formatMoney } from "@/src/lib/formatters";
+import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 import type {
   Item,
   PublicItemOptionGroup as OptionGroup,
@@ -16,21 +17,53 @@ import type {
 } from "@/src/types/item";
 
 type UnitOption = { id: string; name: string; symbol: string; kind: string };
-type IngredientOption = { id: string; name: string; currentStock?: string | number; stockUnitId?: string | null };
-type ItemOptionTarget = { id: string; name: string; inventoryMode?: string | null; type?: string };
+type IngredientOption = {
+  id: string;
+  name: string;
+  currentStock?: string | number;
+  averageCost?: string | number;
+  stockUnitId?: string | null;
+};
+type ItemOptionTarget = {
+  id: string;
+  name: string;
+  inventoryMode?: string | null;
+  type?: string;
+  currentStock?: string | number | null;
+  averageCost?: string | number | null;
+  status?: string;
+};
 
 interface ProductCustomizationManagerProps {
   item: Item;
   allIngredients: IngredientOption[];
+  hideHeader?: boolean;
+  onSaveContextChange?: (context: {
+    message: string;
+    saveLabel: string;
+    isSaving: boolean;
+    onSave: () => void | Promise<void>;
+    onDiscard: () => void;
+  } | null) => void;
 }
 
-export function ProductCustomizationManager({ item, allIngredients }: ProductCustomizationManagerProps) {
+function formatQuantity(value: number | string | null | undefined) {
+  return formatQuantityCompact(value);
+}
+
+export function ProductCustomizationManager({ item, allIngredients, hideHeader = false, onSaveContextChange }: ProductCustomizationManagerProps) {
   const [groups, setGroups] = useState<any[]>([]);
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [items, setItems] = useState<ItemOptionTarget[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingOptionId, setEditingOptionId] = useState<string | null>(null);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Record<string, boolean>>({});
+  const [creatingOptionForGroupId, setCreatingOptionForGroupId] = useState<string | null>(null);
+  const [savingGroup, setSavingGroup] = useState(false);
+  const [savingOption, setSavingOption] = useState(false);
+  const destructiveInFlightRef = useRef(false);
 
   // Group Form
   const [groupForm, setGroupForm] = useState({
@@ -39,7 +72,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
     required: false,
     minSelections: "0",
     maxSelections: "",
-    quantityMode: "NO_QUANTITY" as QuantityMode,
+    quantityMode: "FIXED_PER_OPTION" as QuantityMode,
     totalQuantityLimit: "",
     totalQuantityUnitId: "",
   });
@@ -73,7 +106,10 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       ]);
       setGroups(groupData);
       setUnits(unitData.filter((unit) => unit.kind !== "COMMERCIAL"));
-      setItems(itemData.filter((target) => target.id !== item.id && target.type === "PRODUCT"));
+      setItems(itemData.filter((target) =>
+        target.id !== item.id && target.type === "PRODUCT" &&
+        target.inventoryMode === "SIMPLE" && target.status === "ACTIVE"
+      ));
     } catch (error) {
       console.error(error);
       toast.error("No se pudieron cargar los datos de personalización.");
@@ -90,19 +126,25 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
 
   const resetGroupForm = () => {
     setEditingGroupId(null);
+    setShowGroupForm(false);
     setGroupForm({
       title: "",
       description: "",
       required: false,
       minSelections: "0",
       maxSelections: "",
-      quantityMode: "NO_QUANTITY",
+      quantityMode: "FIXED_PER_OPTION",
       totalQuantityLimit: "",
       totalQuantityUnitId: "",
     });
   };
 
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroupIds((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
   const saveGroup = async () => {
+    if (savingGroup) return;
     if (!groupForm.title.trim()) {
       toast.error("El título del grupo es obligatorio.");
       return;
@@ -110,6 +152,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
 
     const minSelections = Number(groupForm.minSelections || 0);
     const maxSelections = groupForm.maxSelections ? Number(groupForm.maxSelections) : null;
+    const totalQuantityLimit = Number(groupForm.totalQuantityLimit.replace(",", "."));
 
     if (groupForm.required && minSelections < 1) {
       toast.error("Un grupo obligatorio requiere al menos 1 selección mínima.");
@@ -118,6 +161,10 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
 
     if (maxSelections !== null && minSelections > maxSelections) {
       toast.error("La selección mínima no puede superar la máxima.");
+      return;
+    }
+    if (groupForm.quantityMode === "SHARED_TOTAL" && (!Number.isFinite(totalQuantityLimit) || totalQuantityLimit <= 0 || !groupForm.totalQuantityUnitId)) {
+      toast.error("Indica una cantidad total mayor que cero y su unidad.");
       return;
     }
 
@@ -129,12 +176,13 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       maxSelections,
       quantityMode: groupForm.quantityMode,
       totalQuantityLimit:
-        groupForm.quantityMode === "SHARED_TOTAL" ? Number(groupForm.totalQuantityLimit) : null,
+        groupForm.quantityMode === "SHARED_TOTAL" ? totalQuantityLimit : null,
       totalQuantityUnitId:
         groupForm.quantityMode === "SHARED_TOTAL" ? groupForm.totalQuantityUnitId : null,
     };
 
     try {
+      setSavingGroup(true);
       if (editingGroupId) {
         await api(`/items/${item.id}/option-groups/${editingGroupId}`, {
           method: "PATCH",
@@ -149,15 +197,20 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
         toast.success("Grupo de opciones creado");
       }
       resetGroupForm();
+      setShowGroupForm(false);
       await load();
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Error al guardar el grupo");
+    } finally {
+      setSavingGroup(false);
     }
   };
 
   const editGroup = (group: any) => {
     setEditingGroupId(group.id);
+    setShowGroupForm(true);
+    setExpandedGroupIds((prev) => ({ ...prev, [group.id]: true }));
     setGroupForm({
       title: group.title,
       description: group.description ?? "",
@@ -171,17 +224,48 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
     });
   };
 
-  const toggleGroup = async (group: any) => {
+  const showTemporarySuccess = (message: string, duration = 1800) => {
+    const resultToastId = toast.success(message, { duration: Infinity });
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => toast.remove(resultToastId), duration);
+    }
+  };
+
+  const confirmDestructiveAction = (input: {
+    title: string;
+    description: string;
+    onConfirm: () => Promise<void>;
+  }) => {
+    const confirmationToastId = toast.custom((toastInstance) => (
+      <div className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+        <p className="text-sm font-medium text-black">{input.title}</p>
+        <p className="mt-1 text-xs text-slate-600">{input.description}</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={() => toast.remove(confirmationToastId)} className="rounded-lg px-3 py-2 text-xs text-slate-700">Cancelar</button>
+          <button type="button" onClick={() => {
+            if (destructiveInFlightRef.current) return;
+            destructiveInFlightRef.current = true;
+            toast.remove(confirmationToastId);
+            void input.onConfirm().finally(() => { destructiveInFlightRef.current = false; });
+          }} className="rounded-lg bg-[#c80237] px-3 py-2 text-xs font-medium text-white">Quitar</button>
+        </div>
+      </div>
+    ), { duration: Infinity });
+  };
+
+  const performDeleteGroup = async (group: any) => {
     try {
-      await api(`/items/${item.id}/option-groups/${group.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ isActive: !group.isActive }),
+      const result: any = await api(`/items/${item.id}/option-groups/${group.id}`, {
+        method: "DELETE",
       });
-      toast.success(group.isActive ? "Grupo desactivado" : "Grupo activado");
+      showTemporarySuccess(
+        result?.deactivated ? "Grupo deshabilitado para conservar el historial" : "Grupo eliminado",
+        result?.deactivated ? 2500 : 1800,
+      );
       await load();
     } catch (error) {
       console.error(error);
-      toast.error("No se pudo cambiar el estado del grupo");
+      toast.error("No se pudo cambiar el estado del grupo", { duration: 5000 });
     }
   };
 
@@ -190,9 +274,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       name: "",
       priceDelta: "0",
       targetType:
-        group.quantityMode === "SHARED_TOTAL"
-          ? "INGREDIENT"
-          : "NONE",
+        "INGREDIENT",
       ingredientId: "",
       itemId: "",
       quantity: "",
@@ -206,6 +288,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
   };
 
   const saveOption = async (group: any) => {
+    if (savingOption) return;
     const form = optionFormFor(group);
     if (!form.name.trim()) {
       toast.error("El nombre de la opción es obligatorio.");
@@ -278,16 +361,19 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       ingredientId: form.targetType === "INGREDIENT" ? form.ingredientId : null,
       itemId: form.targetType === "ITEM" ? form.itemId : null,
       quantity:
-        group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE"
+        group.quantityMode === "FIXED_PER_OPTION"
           ? Number(form.quantity || 1)
           : null,
-      unitId: form.targetType === "NONE" ? null : resolvedUnitId,
+      unitId: editingOptionId
+        ? (form.unitId || null)
+        : form.targetType === "ITEM" ? null : resolvedUnitId,
       priceDelta: Number(form.priceDelta || 0),
       selectedByDefault: form.selectedByDefault,
       removable: form.removable,
     };
 
     try {
+      setSavingOption(true);
       if (editingOptionId) {
         await api(`/items/${item.id}/option-groups/${group.id}/options/${editingOptionId}`, {
           method: "PATCH",
@@ -307,7 +393,7 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       setOptionForm(group.id, {
         name: "",
         priceDelta: "0",
-        targetType: group.quantityMode === "SHARED_TOTAL" ? "INGREDIENT" : "NONE",
+        targetType: "INGREDIENT",
         ingredientId: "",
         itemId: "",
         quantity: "",
@@ -318,15 +404,20 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
       // Clear searches
       setIngredientSearch((prev) => ({ ...prev, [group.id]: "" }));
       setItemSearch((prev) => ({ ...prev, [group.id]: "" }));
+      setCreatingOptionForGroupId(null);
       await load();
     } catch (error: any) {
       console.error(error);
       toast.error(error?.message || "Error al guardar la opción");
+    } finally {
+      setSavingOption(false);
     }
   };
 
   const editOption = (group: any, option: any) => {
     setEditingOptionId(option.id);
+    setCreatingOptionForGroupId(group.id);
+    setExpandedGroupIds((prev) => ({ ...prev, [group.id]: true }));
     setOptionForm(group.id, {
       name: option.name,
       priceDelta: String(option.priceDelta),
@@ -355,10 +446,11 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
 
   const cancelEditOption = (group: any) => {
     setEditingOptionId(null);
+    setCreatingOptionForGroupId(null);
     setOptionForm(group.id, {
       name: "",
       priceDelta: "0",
-      targetType: group.quantityMode === "SHARED_TOTAL" ? "INGREDIENT" : "NONE",
+        targetType: "INGREDIENT",
       ingredientId: "",
       itemId: "",
       quantity: "",
@@ -370,87 +462,63 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
     setItemSearch((prev) => ({ ...prev, [group.id]: "" }));
   };
 
-  const toggleOptionActive = async (group: any, option: any) => {
-    if (!option.isActive) {
-      if (option.targetType === "INGREDIENT" && option.ingredientId) {
-        const dup = group.options.some((o: any) =>
-          o.isActive &&
-          o.targetType === "INGREDIENT" &&
-          o.ingredientId === option.ingredientId &&
-          o.id !== option.id
-        );
-        if (dup) {
-          toast.error("Este insumo ya está agregado en este grupo.");
-          return;
-        }
-      }
+  const deleteGroup = (group: any) => confirmDestructiveAction({
+    title: "¿Quitar este grupo?",
+    description: "Si ya fue utilizado, se deshabilitará para conservar el historial.",
+    onConfirm: () => performDeleteGroup(group),
+  });
 
-      if (option.targetType === "ITEM" && option.itemId) {
-        const dup = group.options.some((o: any) =>
-          o.isActive &&
-          o.targetType === "ITEM" &&
-          o.itemId === option.itemId &&
-          o.id !== option.id
-        );
-        if (dup) {
-          toast.error("Este producto ya está agregado en este grupo.");
-          return;
-        }
-      }
+  const requestDiscard = (discard: () => void) => discard();
 
-      if (option.targetType === "NONE" && option.name) {
-        const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
-        const normalizedInput = normalizeName(option.name);
-        const dup = group.options.some((o: any) =>
-          o.isActive &&
-          o.targetType === "NONE" &&
-          normalizeName(o.name) === normalizedInput &&
-          o.id !== option.id
-        );
-        if (dup) {
-          toast.error("Ya existe una opción con ese nombre en este grupo.");
-          return;
-        }
-      }
-    }
-
-    try {
-      await api(`/items/${item.id}/option-groups/${group.id}/options/${option.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ isActive: !option.isActive }),
+  useEffect(() => {
+    if (showGroupForm) {
+      onSaveContextChange?.({
+        message: `Cambios en “${groupForm.title || "grupo nuevo"}”`,
+        saveLabel: "Guardar grupo",
+        isSaving: savingGroup,
+        onSave: saveGroup,
+        onDiscard: () => requestDiscard(resetGroupForm),
       });
-      toast.success(option.isActive ? "Opción desactivada" : "Opción activada");
-      await load();
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error?.message || "No se pudo cambiar el estado de la opción");
+      return;
     }
-  };
+    const optionGroup = groups.find((group) => group.id === creatingOptionForGroupId);
+    if (optionGroup) {
+      const form = optionFormFor(optionGroup);
+      onSaveContextChange?.({
+        message: `Cambios en “${form.name || "opción nueva"}”`,
+        saveLabel: "Guardar opción",
+        isSaving: savingOption,
+        onSave: () => saveOption(optionGroup),
+        onDiscard: () => requestDiscard(() => cancelEditOption(optionGroup)),
+      });
+      return;
+    }
+    onSaveContextChange?.(null);
+  }, [showGroupForm, groupForm, savingGroup, creatingOptionForGroupId, optionForms, savingOption, groups, item.id]);
 
-  const deleteOption = async (group: any, optionId: string) => {
+  const performDeleteOption = async (group: any, optionId: string) => {
     try {
       const res: any = await api(`/items/${item.id}/option-groups/${group.id}/options/${optionId}`, {
         method: "DELETE",
       });
-      if (res?.deactivated) {
-        toast((t) => (
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-xs text-slate-800">Opción en uso</p>
-              <p className="text-[11px] text-slate-500 mt-0.5">La opción está en órdenes previas. Fue desactivada en lugar de eliminarse por completo.</p>
-            </div>
-          </div>
-        ), { duration: 5000 });
-      } else {
-        toast.success("Opción eliminada");
-      }
+      showTemporarySuccess(
+        res?.deactivated
+          ? "Opción deshabilitada para conservar el historial"
+          : "Opción eliminada",
+        res?.deactivated ? 2500 : 1800,
+      );
       await load();
     } catch (error) {
       console.error(error);
-      toast.error("No se pudo eliminar la opción");
+      toast.error("No se pudo eliminar la opción", { duration: 5000 });
     }
   };
+
+  const deleteOption = (group: any, optionId: string) => confirmDestructiveAction({
+    title: "¿Quitar esta opción?",
+    description: "Si ya fue utilizada, se deshabilitará para conservar el historial.",
+    onConfirm: () => performDeleteOption(group, optionId),
+  });
 
   // Helpers
   const areUnitsCompatible = (unitIdA: string, unitIdB: string) => {
@@ -479,171 +547,373 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
   const translateQuantityMode = (mode: QuantityMode) => {
     switch (mode) {
       case "NO_QUANTITY":
-        return "Sin cantidad (solo selección)";
+        return "Solo selección";
       case "FIXED_PER_OPTION":
-        return "Cantidad fija por opción";
+        return "Cantidad por opción";
       case "SHARED_TOTAL":
-        return "Cantidad compartida entre opciones";
+        return "Cantidad total compartida";
       default:
         return mode;
+    }
+  };
+
+  const quantityModeHelp = (mode: QuantityMode) => {
+    switch (mode) {
+      case "NO_QUANTITY":
+        return "La opción no descuenta cantidades propias.";
+      case "FIXED_PER_OPTION":
+        return "Cada opción descuenta su propia cantidad.";
+      case "SHARED_TOTAL":
+        return "El grupo reparte una cantidad total entre las opciones elegidas.";
+      default:
+        return "";
     }
   };
 
   const translateTargetType = (type: TargetType) => {
     switch (type) {
       case "NONE":
-        return "Sin impacto en inventario";
+        return "Sin recurso asociado";
       case "INGREDIENT":
-        return "Insumo de inventario";
+        return "Ingrediente o insumo";
       case "ITEM":
-        return "Producto de venta";
+        return "Producto del catálogo";
       default:
         return type;
     }
   };
 
-  return (
-    <div className="space-y-4 pt-4 border-t border-slate-100/80">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Personalización del Producto
-          </h4>
-          <p className="mt-1 text-[11px] text-slate-500 font-semibold leading-relaxed">
-            Configura las preguntas, ingredientes o productos que el cliente puede elegir al ordenar este producto.
-          </p>
-        </div>
-      </div>
+  const toNumber = (value: number | string | null | undefined) => {
+    const number = Number(value ?? 0);
+    return Number.isFinite(number) ? number : 0;
+  };
 
-      {/* CREATE / EDIT GROUP PANEL */}
-      <div className="rounded-2xl border border-slate-200/60 bg-white p-3.5 space-y-3.5 shadow-2xs">
+  const unitLabel = (unitId?: string | null) => {
+    if (!unitId) return "";
+    const unit = units.find((candidate) => candidate.id === unitId);
+    return unit?.symbol || unit?.name || "";
+  };
+
+  const unitObjectLabel = (unit?: any | null) =>
+    unit?.symbol || unit?.abbreviation || unit?.label || unit?.name || "";
+
+  const quantityWithUnit = (quantity: number | string | null | undefined, unit: string) =>
+    `${formatQuantity(quantity)}${unit ? ` ${unit}` : ""}`;
+
+  const optionQuantity = (group: any, option: any) => {
+    if (option.targetType === "NONE" || group.quantityMode === "NO_QUANTITY") return 0;
+    if (group.quantityMode === "SHARED_TOTAL") return toNumber(group.totalQuantityLimit);
+    return toNumber(option.quantity || 1);
+  };
+
+  const inventoryEffectLabel = (targetType: TargetType) => {
+    switch (targetType) {
+      case "NONE":
+        return "No afecta inventario";
+      case "INGREDIENT":
+        return "Descuenta insumo";
+      case "ITEM":
+        return "Descuenta producto";
+      default:
+        return "";
+    }
+  };
+
+  const optionResourceName = (option: any) => {
+    if (option.targetType === "INGREDIENT") {
+      return option.ingredient?.name || allIngredients.find((ing) => ing.id === option.ingredientId)?.name || "";
+    }
+    if (option.targetType === "ITEM") {
+      return option.item?.name || items.find((target) => target.id === option.itemId)?.name || "";
+    }
+    return "";
+  };
+
+  const optionQuantityLabel = (group: any, option: any) => {
+    if (option.targetType === "NONE" || group.quantityMode === "NO_QUANTITY") return "Sin consumo directo";
+    if (group.quantityMode === "SHARED_TOTAL") return "Total compartido";
+    const quantity = optionQuantity(group, option);
+    if (option.targetType === "ITEM") {
+      return quantityWithUnit(quantity, unitObjectLabel(option.unit));
+    }
+    const unit =
+      unitObjectLabel(option.unit) ||
+      unitObjectLabel(group.totalQuantityUnit) ||
+      unitLabel(option.unitId || group.totalQuantityUnitId);
+    return quantityWithUnit(quantity, unit);
+  };
+
+  const optionCostLabel = (group: any, option: any) => {
+    const quantity = optionQuantity(group, option);
+
+    if (option.targetType === "NONE") return `$${formatMoney(0)}`;
+
+    if (option.targetType === "INGREDIENT") {
+      const ingredient = allIngredients.find((ing) => ing.id === option.ingredientId);
+      return `$${formatMoney(quantity * toNumber(ingredient?.averageCost))}`;
+    }
+
+    if (option.targetType === "ITEM") {
+      const target = items.find((candidate) => candidate.id === option.itemId);
+      const inventoryMode = option.item?.inventoryMode || target?.inventoryMode;
+      if (inventoryMode === "RECIPE_BASED") return "Costo calculado al vender";
+      return `$${formatMoney(quantity * toNumber(target?.averageCost))}`;
+    }
+
+    return `$${formatMoney(0)}`;
+  };
+
+  const optionStockLabel = (group: any, option: any) => {
+    if (option.targetType === "NONE") return "No aplica";
+    if (option.targetType === "INGREDIENT") {
+      const ingredient = allIngredients.find((ing) => ing.id === option.ingredientId);
+      const unit = unitLabel(ingredient?.stockUnitId) || unitLabel(option.unitId || group.totalQuantityUnitId);
+      return ingredient ? `${formatQuantity(ingredient.currentStock)}${unit ? ` ${unit}` : ""}` : "Sin dato";
+    }
+    if (option.targetType === "ITEM") {
+      const target = items.find((candidate) => candidate.id === option.itemId);
+      const inventoryMode = option.item?.inventoryMode || target?.inventoryMode;
+      if (inventoryMode === "RECIPE_BASED") return "Según receta asociada";
+      return target?.currentStock == null ? "Sin dato" : quantityWithUnit(target.currentStock, unitObjectLabel(option.unit));
+    }
+    return "Sin dato";
+  };
+
+  const optionUsesLabel = (group: any, option: any) => {
+    const quantity = optionQuantity(group, option);
+    if (option.targetType === "NONE") return "Sin consumo";
+    if (option.targetType === "ITEM") {
+      const target = items.find((candidate) => candidate.id === option.itemId);
+      const inventoryMode = option.item?.inventoryMode || target?.inventoryMode;
+      if (inventoryMode === "RECIPE_BASED") return "Según receta asociada";
+      return quantity > 0 ? formatQuantity(Math.floor(toNumber(target?.currentStock) / quantity)) : "0";
+    }
+    if (option.targetType === "INGREDIENT") {
+      const ingredient = allIngredients.find((ing) => ing.id === option.ingredientId);
+      return quantity > 0 ? formatQuantity(Math.floor(toNumber(ingredient?.currentStock) / quantity)) : "0";
+    }
+    return "0";
+  };
+
+  const GroupForm = ({ mode }: { mode: "create" | "edit" }) => (
+    <div className={cn("rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs", mode === "create" && "order-last")}>
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+        <span className="text-[10px] font-medium text-black uppercase tracking-wide">
+          {mode === "edit" ? "EDITAR GRUPO" : "+ NUEVO GRUPO DE PERSONALIZACIÓN"}
+        </span>
+        {!onSaveContextChange && <button type="button" onClick={resetGroupForm} className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity">Cancelar</button>}
+      </div>
+      <div className="space-y-1">
+        <label className="block text-[9px] uppercase font-normal text-black">Título del grupo</label>
+        <input value={groupForm.title} onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))} placeholder="Ej: Proteínas, Toppings extra" className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40" />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className="block text-[9px] uppercase font-normal text-black">Modo de consumo</label>
+          {groupForm.quantityMode === "NO_QUANTITY" ? <div className="w-full px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs font-normal text-amber-800 bg-amber-50">Configuración histórica</div> : <select value={groupForm.quantityMode} onChange={(e) => setGroupForm((p) => ({ ...p, quantityMode: e.target.value as QuantityMode }))} className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"><option value="FIXED_PER_OPTION">{translateQuantityMode("FIXED_PER_OPTION")}</option><option value="SHARED_TOTAL">{translateQuantityMode("SHARED_TOTAL")}</option></select>}
+        </div>
+        <div className="flex items-end"><label className="flex w-full h-[34px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-normal text-black cursor-pointer select-none"><input type="checkbox" checked={groupForm.required} onChange={(e) => setGroupForm((p) => ({ ...p, required: e.target.checked, minSelections: e.target.checked && p.minSelections === "0" ? "1" : p.minSelections }))} className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer" />Obligatorio</label></div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1"><label className="block text-[9px] uppercase font-normal text-black">Selecciones mínimas</label><QuantityStepper value={Number(groupForm.minSelections || 0)} onChange={(value) => setGroupForm((p) => ({ ...p, minSelections: String(value) }))} min={0} step={1} precision={0} ariaLabel="Selecciones mínimas" /></div>
+        <div className="space-y-1"><label className="block text-[9px] uppercase font-normal text-black">Selecciones máximas</label><QuantityStepper value={Number(groupForm.maxSelections || 0)} onChange={(value) => setGroupForm((p) => ({ ...p, maxSelections: value === 0 ? "" : String(value) }))} min={0} step={1} precision={0} ariaLabel="Selecciones máximas" /></div>
+      </div>
+      {groupForm.quantityMode === "SHARED_TOTAL" && <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200"><div className="space-y-1"><label className="block text-[9px] uppercase font-normal text-black">Cantidad total compartida</label><QuantityStepper value={Number(groupForm.totalQuantityLimit.replace(",", ".")) || 0} onChange={(value) => setGroupForm((p) => ({ ...p, totalQuantityLimit: String(value) }))} min={0.000001} step={0.1} precision={6} ariaLabel="Cantidad total compartida" /></div><div className="space-y-1"><label className="block text-[9px] uppercase font-normal text-black">Unidad de medida</label><select value={groupForm.totalQuantityUnitId} onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityUnitId: e.target.value }))} className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"><option value="">Seleccionar unidad...</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol || unit.name} ({unit.name})</option>)}</select></div></div>}
+      <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}><button type="button" onClick={resetGroupForm} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button><button type="button" onClick={saveGroup} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">{savingGroup ? "Guardando..." : "Guardar grupo"}</button></div>
+    </div>
+  );
+
+  const OptionForm = ({ group, mode }: { group: any; mode: "create" | "edit" }) => {
+    const form = optionFormFor(group);
+    const query = (ingredientSearch[group.id] || "").toLowerCase();
+    const filteredIngredients = allIngredients.filter((ingredient) => ingredient.name.toLowerCase().includes(query));
+    const filteredItems = items.filter((target) => target.name.toLowerCase().includes(query));
+    const selectedIngredient = form.targetType === "INGREDIENT" ? allIngredients.find((ingredient) => ingredient.id === form.ingredientId) : null;
+    const hasIncompatibleUnit = Boolean(group.quantityMode === "SHARED_TOTAL" && selectedIngredient?.stockUnitId && group.totalQuantityUnitId && !areUnitsCompatible(selectedIngredient.stockUnitId, group.totalQuantityUnitId));
+    const duplicateError = group.options.some((option: any) => option.isActive && option.id !== editingOptionId && ((form.targetType === "INGREDIENT" && option.targetType === "INGREDIENT" && option.ingredientId === form.ingredientId) || (form.targetType === "ITEM" && option.targetType === "ITEM" && option.itemId === form.itemId))) ? "Este recurso ya está agregado en este grupo." : null;
+    const unitForIngredient = () => {
+      const unit = selectedIngredient ? units.find((candidate) => candidate.id === selectedIngredient.stockUnitId) : null;
+      return unit?.symbol || unit?.name || "—";
+    };
+    return <div className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 mt-2.5 shadow-xs">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2"><span className="text-[10px] font-normal uppercase tracking-wide text-black block">{mode === "edit" ? "EDITAR OPCIÓN" : "+ AÑADIR OPCIÓN"}</span>{!onSaveContextChange && <button type="button" onClick={() => cancelEditOption(group)} className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity">Cancelar</button>}</div>
+      <div className="relative space-y-1"><label className="block text-[9px] uppercase font-normal text-black">{group.quantityMode === "SHARED_TOTAL" ? "INSUMO" : "RECURSO"}</label><div className="relative"><input type="text" value={ingredientSearch[group.id] || ""} onFocus={() => setIngredientDropdownOpen((previous) => ({ ...previous, [group.id]: true }))} onChange={(event) => { setIngredientSearch((previous) => ({ ...previous, [group.id]: event.target.value })); setIngredientDropdownOpen((previous) => ({ ...previous, [group.id]: true })); }} placeholder={group.quantityMode === "SHARED_TOTAL" ? "Buscar insumo..." : "Buscar insumo o producto simple..."} className="w-full pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40" /><Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-black/50" /></div>
+        {ingredientDropdownOpen[group.id] && <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">{filteredIngredients.map((ingredient) => <button key={`INGREDIENT:${ingredient.id}`} type="button" onClick={() => { setOptionForm(group.id, { ...form, targetType: "INGREDIENT", ingredientId: ingredient.id, itemId: "", name: ingredient.name, unitId: ingredient.stockUnitId || "", quantity: form.quantity || "1" }); setIngredientSearch((previous) => ({ ...previous, [group.id]: ingredient.name })); setIngredientDropdownOpen((previous) => ({ ...previous, [group.id]: false })); }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50"><span>{ingredient.name}<span className="ml-1 text-[10px] text-black/60">Insumo</span></span><span className="text-[10px] text-black/60">Stock: {formatQuantity(ingredient.currentStock)} {unitLabel(ingredient.stockUnitId)}</span></button>)}{group.quantityMode === "FIXED_PER_OPTION" && filteredItems.map((target) => <button key={`ITEM:${target.id}`} type="button" onClick={() => { setOptionForm(group.id, { ...form, targetType: "ITEM", ingredientId: "", itemId: target.id, name: target.name, unitId: "", quantity: form.quantity || "1" }); setIngredientSearch((previous) => ({ ...previous, [group.id]: target.name })); setIngredientDropdownOpen((previous) => ({ ...previous, [group.id]: false })); }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50"><span>{target.name}<span className="ml-1 text-[10px] text-black/60">Producto</span></span><span className="text-[10px] text-black/60">Stock: {formatQuantity(target.currentStock)} unidad</span></button>)}{filteredIngredients.length === 0 && (group.quantityMode !== "FIXED_PER_OPTION" || filteredItems.length === 0) && <div className="p-2 text-xs text-black/60 font-normal">No se encontraron resultados</div>}</div>}</div>
+      <div className="space-y-1"><label className="block text-[9px] uppercase font-normal text-black">PRECIO DE ESTA OPCIÓN</label><input type="text" inputMode="decimal" value={form.priceDelta} onChange={(event) => setOptionForm(group.id, { ...form, priceDelta: event.target.value })} placeholder="0" className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none" /></div>
+      <p className="text-[11px] font-normal text-black">{!form.priceDelta || Number(form.priceDelta) === 0 ? "Incluido en el precio base." : "Este valor se suma al precio base."}</p>
+      {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && <div className="flex gap-3 pt-1"><div className="flex-1"><label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">CANTIDAD QUE<br />CONSUME</label><QuantityStepper value={Number(form.quantity || 1)} onChange={(value) => setOptionForm(group.id, { ...form, quantity: String(value) })} min={form.targetType === "ITEM" ? 1 : 0.000001} step={form.targetType === "ITEM" ? 1 : getStepAndPrecisionForUnit(unitForIngredient()).step} precision={form.targetType === "ITEM" ? 0 : getStepAndPrecisionForUnit(unitForIngredient()).precision} ariaLabel="Cantidad que consume" /></div><div className="flex-1"><label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">UNIDAD BASE<br />(INSUMO)</label><div className="flex items-center px-2.5 border border-slate-200 rounded-lg h-7.5 bg-white text-xs font-normal text-black">{form.targetType === "INGREDIENT" ? unitForIngredient() : "unidad"}</div></div></div>}
+      {hasIncompatibleUnit && <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black"><AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" /><span>Este insumo usa una unidad incompatible con la del grupo.</span></div>}
+      {duplicateError && <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black"><AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" /><span>{duplicateError}</span></div>}
+      <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}><button type="button" onClick={() => cancelEditOption(group)} disabled={savingOption} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button><button type="button" disabled={savingOption || hasIncompatibleUnit || !!duplicateError} onClick={() => saveOption(group)} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">{savingOption ? "Guardando..." : "Guardar opción"}</button></div>
+    </div>;
+  };
+
+  return (
+    <div className="flex flex-col gap-4 pt-4 border-t border-slate-100">
+      {!hideHeader && (
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-            {editingGroupId ? "Editar Grupo de Opciones" : "Nuevo Grupo de Opciones"}
-          </span>
-          {editingGroupId && (
-            <button
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-[#0b3f64]" />
+            <h4 className="text-xs font-medium text-black uppercase tracking-wide">
+              Grupos de personalización
+            </h4>
+          </div>
+          <span className="text-[11px] text-black/60 font-normal">Opciones del cliente</span>
+        </div>
+      )}
+
+      {/* Shared create form. Edits render this same component in the group's position. */}
+      {showGroupForm && !editingGroupId && <GroupForm mode="create" />}
+      {false && (
+        <div className="order-last rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <span className="text-[10px] font-medium text-black uppercase tracking-wide">
+              {editingGroupId ? "EDITAR GRUPO" : "+ NUEVO GRUPO DE PERSONALIZACIÓN"}
+            </span>
+            {!onSaveContextChange && <button
               type="button"
               onClick={resetGroupForm}
-              className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+              className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity"
             >
-              Cancelar Edición
-            </button>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <input
-            value={groupForm.title}
-            onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))}
-            placeholder="Título del grupo (ej: Elige tu salsa, Toppings extra)"
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-          />
-          <input
-            value={groupForm.description}
-            onChange={(e) => setGroupForm((p) => ({ ...p, description: e.target.value }))}
-            placeholder="Descripción o ayuda (ej: Elige hasta 3 ingredientes)"
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 outline-none focus:border-slate-400 transition"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Modo de consumo</span>
-            <select
-              value={groupForm.quantityMode}
-              onChange={(e) => setGroupForm((p) => ({ ...p, quantityMode: e.target.value as QuantityMode }))}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-            >
-              <option value="NO_QUANTITY">{translateQuantityMode("NO_QUANTITY")}</option>
-              <option value="FIXED_PER_OPTION">{translateQuantityMode("FIXED_PER_OPTION")}</option>
-              <option value="SHARED_TOTAL">{translateQuantityMode("SHARED_TOTAL")}</option>
-            </select>
+              Cancelar
+            </button>}
           </div>
 
-          <div className="flex items-end">
-            <label className="flex w-full h-[38px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 cursor-pointer select-none hover:bg-slate-50 transition">
-              <input
-                type="checkbox"
-                checked={groupForm.required}
-                onChange={(e) =>
-                  setGroupForm((p) => ({
-                    ...p,
-                    required: e.target.checked,
-                    minSelections: e.target.checked && p.minSelections === "0" ? "1" : p.minSelections,
-                  }))
-                }
-                className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
-              />
-              ¿Es Obligatorio?
-            </label>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Selecciones Mínimas</span>
-            <input
-              value={groupForm.minSelections}
-              onChange={(e) => setGroupForm((p) => ({ ...p, minSelections: e.target.value }))}
-              inputMode="numeric"
-              placeholder="0"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-            />
-          </div>
-          <div className="space-y-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Selecciones Máximas</span>
-            <input
-              value={groupForm.maxSelections}
-              onChange={(e) => setGroupForm((p) => ({ ...p, maxSelections: e.target.value }))}
-              inputMode="numeric"
-              placeholder="Sin límite"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-            />
-          </div>
-        </div>
-
-        {groupForm.quantityMode === "SHARED_TOTAL" && (
-          <div className="grid grid-cols-2 gap-2 bg-slate-50/50 p-2.5 rounded-xl border border-slate-100">
+          <div className="space-y-2">
             <div className="space-y-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Cantidad Total Compartida</span>
+              <label className="block text-[9px] uppercase font-normal text-black">Título del grupo</label>
               <input
-                value={groupForm.totalQuantityLimit}
-                onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityLimit: e.target.value }))}
-                inputMode="decimal"
-                placeholder="100"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-755 outline-none focus:border-slate-400 transition"
+                value={groupForm.title}
+                onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Ej: Proteínas, Toppings extra"
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40"
               />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Unidad de medida</span>
+              <label className="block text-[9px] uppercase font-normal text-black">Modo de consumo</label>
+              {groupForm.quantityMode === "NO_QUANTITY" ? (
+                <div className="w-full px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs font-normal text-amber-800 bg-amber-50">
+                  Configuración histórica
+                </div>
+              ) : (
               <select
-                value={groupForm.totalQuantityUnitId}
-                onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityUnitId: e.target.value }))}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
+                value={groupForm.quantityMode}
+                onChange={(e) => setGroupForm((p) => ({ ...p, quantityMode: e.target.value as QuantityMode }))}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"
               >
-                <option value="">Seleccionar unidad...</option>
-                {units.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.symbol || unit.name} ({unit.name})
-                  </option>
-                ))}
+                <option value="FIXED_PER_OPTION">{translateQuantityMode("FIXED_PER_OPTION")}</option>
+                <option value="SHARED_TOTAL">{translateQuantityMode("SHARED_TOTAL")}</option>
               </select>
+              )}
             </div>
+
+            <div className="flex items-end">
+              <label className="flex w-full h-[34px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-normal text-black cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={groupForm.required}
+                  onChange={(e) =>
+                    setGroupForm((p) => ({
+                      ...p,
+                      required: e.target.checked,
+                      minSelections: e.target.checked && p.minSelections === "0" ? "1" : p.minSelections,
+                    }))
+                  }
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
+                />
+                Obligatorio
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="block text-[9px] uppercase font-normal text-black">Selecciones Mínimas</label>
+              <QuantityStepper
+                value={Number(groupForm.minSelections || 0)}
+                onChange={(val) => setGroupForm((p) => ({ ...p, minSelections: String(val) }))}
+                min={0}
+                step={1}
+                precision={0}
+                ariaLabel="Selecciones Mínimas"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[9px] uppercase font-normal text-black">Selecciones Máximas</label>
+              <QuantityStepper
+                value={Number(groupForm.maxSelections || 0)}
+                onChange={(val) => setGroupForm((p) => ({ ...p, maxSelections: val === 0 ? "" : String(val) }))}
+                min={0}
+                step={1}
+                precision={0}
+                ariaLabel="Selecciones Máximas"
+              />
+            </div>
+          </div>
+
+          {groupForm.quantityMode === "SHARED_TOTAL" && (
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+              <div className="space-y-1">
+                <label className="block text-[9px] uppercase font-normal text-black">Cantidad Total Compartida</label>
+                <QuantityStepper
+                  value={Number(groupForm.totalQuantityLimit.replace(",", ".")) || 0}
+                  onChange={(value) => setGroupForm((p) => ({ ...p, totalQuantityLimit: String(value) }))}
+                  min={0.000001}
+                  step={0.1}
+                  precision={6}
+                  ariaLabel="Cantidad total compartida"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-[9px] uppercase font-normal text-black">Unidad de medida</label>
+                <select
+                  value={groupForm.totalQuantityUnitId}
+                  onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityUnitId: e.target.value }))}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"
+                >
+                  <option value="">Seleccionar unidad...</option>
+                  {units.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.symbol || unit.name} ({unit.name})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}>
+            <button type="button" onClick={resetGroupForm} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button>
+            <button type="button" onClick={saveGroup} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">
+              {savingGroup ? "Guardando..." : editingGroupId ? "Guardar grupo" : "Guardar grupo"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* GROUPS LIST */}
+      <div className="space-y-3">
+        {!loading && groups.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-4 text-center">
+            <h5 className="text-xs font-normal text-black">Sin grupos de personalización</h5>
+            <p className="mt-0.5 text-[11px] font-normal text-black/60">
+              Agregá opciones como tamaños, proteínas o toppings.
+            </p>
+            {!showGroupForm && (
+              <button
+                type="button"
+                onClick={() => setShowGroupForm(true)}
+                className="mt-2.5 inline-flex min-h-9 items-center justify-center rounded-lg bg-[#0b3f64] px-3.5 text-xs font-normal text-white transition hover:opacity-90 active:scale-[0.98]"
+              >
+                + Crear primer grupo
+              </button>
+            )}
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={saveGroup}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-[0.98]"
-        >
-          <Plus className="h-4 w-4" /> {editingGroupId ? "Guardar cambios de grupo" : "Crear grupo de opciones"}
-        </button>
-      </div>
-
-      {/* GROUPS LIST */}
-      <div className="space-y-4">
         {groups.map((group) => {
           const form = optionFormFor(group);
           const targetChoices: TargetType[] =
@@ -661,7 +931,6 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
             it.name.toLowerCase().includes((itemSearch[group.id] || "").toLowerCase())
           );
 
-          // Front-end preventive check for SHARED_TOTAL unit compatibility
           const selectedIngredient = form.targetType === "INGREDIENT" && form.ingredientId
             ? allIngredients.find((i) => i.id === form.ingredientId)
             : null;
@@ -704,482 +973,398 @@ export function ProductCustomizationManager({ item, allIngredients }: ProductCus
             }
             return null;
           })();
+          const isExpanded = !!expandedGroupIds[group.id];
+          const isOptionFormOpen = creatingOptionForGroupId === group.id;
+
+          if (editingGroupId === group.id) {
+            return <GroupForm key={group.id} mode="edit" />;
+            return (
+              <div key={group.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar grupo</span>
+                <input value={groupForm.title} onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black" placeholder="Nombre del grupo" />
+                {groupForm.quantityMode !== "NO_QUANTITY" && <select value={groupForm.quantityMode} onChange={(e) => setGroupForm((p) => ({ ...p, quantityMode: e.target.value as QuantityMode }))} className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black"><option value="FIXED_PER_OPTION">Cantidad por opción</option><option value="SHARED_TOTAL">Cantidad total compartida</option></select>}
+                <div className="grid grid-cols-2 gap-2">
+                  <QuantityStepper value={Number(groupForm.minSelections || 0)} onChange={(value) => setGroupForm((p) => ({ ...p, minSelections: String(value) }))} min={0} step={1} precision={0} ariaLabel="Mínimo" />
+                  <QuantityStepper value={Number(groupForm.maxSelections || 0)} onChange={(value) => setGroupForm((p) => ({ ...p, maxSelections: value ? String(value) : "" }))} min={0} step={1} precision={0} ariaLabel="Máximo" />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-black"><input type="checkbox" checked={groupForm.required} onChange={(e) => setGroupForm((p) => ({ ...p, required: e.target.checked }))} /> Obligatorio</label>
+                {groupForm.quantityMode === "SHARED_TOTAL" && <div className="grid grid-cols-2 gap-2"><QuantityStepper value={Number(groupForm.totalQuantityLimit.replace(",", ".")) || 0} onChange={(value) => setGroupForm((p) => ({ ...p, totalQuantityLimit: String(value) }))} min={0.000001} step={0.1} precision={6} ariaLabel="Cantidad total" /><select value={groupForm.totalQuantityUnitId} onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityUnitId: e.target.value }))} className="rounded-lg border border-slate-200 px-2 text-xs"><option value="">Unidad</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol || unit.name}</option>)}</select></div>}
+              </div>
+            );
+          }
 
           return (
             <div
               key={group.id}
               className={cn(
-                "rounded-2xl border border-slate-100 bg-slate-50/20 p-3.5 space-y-3 transition shadow-2xs",
+                "bg-slate-50/60 border border-slate-200 border-l-4 border-l-[#ff9100] rounded-xl overflow-hidden transition shadow-2xs",
                 !group.isActive && "opacity-75 bg-slate-50/5 border-dashed border-slate-200"
               )}
             >
-              {/* GROUP HEADER */}
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-extrabold text-slate-800 leading-tight">
-                      {group.title}
-                    </span>
-                    {!group.isActive && (
-                      <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[8px] font-bold text-slate-500 uppercase tracking-wide">
-                        Inactivo
-                      </span>
-                    )}
-                  </div>
-                  {group.description && (
-                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                      {group.description}
-                    </p>
-                  )}
-                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-wider mt-1">
-                    {translateQuantityMode(group.quantityMode)} · {group.required ? "Obligatorio" : "Opcional"} (mín {group.minSelections} / máx {group.maxSelections || "unl"})
-                  </p>
+              <div className="px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <h4 className="min-w-0 flex-1 truncate text-xs font-medium text-black sm:text-sm">{group.title}</h4>
+                  <button type="button" onClick={() => editGroup(group)} aria-label="Editar grupo" title="Editar grupo" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#0b3f64] hover:bg-blue-50"><Pencil className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => deleteGroup(group)} aria-label="Quitar grupo" title="Quitar grupo" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#c80237] hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => toggleGroupExpanded(group.id)} aria-label={isExpanded ? "Contraer grupo" : "Expandir grupo"} title={isExpanded ? "Contraer grupo" : "Expandir grupo"} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-black hover:bg-slate-100"><ChevronDown className={cn("h-4 w-4 transition-transform duration-200", isExpanded && "rotate-180")} /></button>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => editGroup(group)}
-                    className="grid h-7 px-2.5 place-items-center rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-800 active:scale-95"
-                  >
-                    <Edit2 className="h-3 w-3 inline mr-1" /> Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group)}
-                    className={cn(
-                      "grid h-7 px-2.5 place-items-center rounded-lg border text-[10px] font-bold transition active:scale-95",
-                      group.isActive
-                        ? "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
-                        : "bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                    )}
-                  >
-                    {group.isActive ? "Desactivar" : "Activar"}
-                  </button>
+                <div className="mt-1 flex min-w-0 flex-wrap gap-1.5">
+                  {group.minSelections > 0 && <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[9px] font-normal text-black">Mín. {group.minSelections}</span>}
+                  {group.maxSelections !== null && <span className="rounded-full border border-orange-100 bg-[rgba(255,145,0,0.08)] px-2 py-0.5 text-[9px] font-normal text-black">Máx. {group.maxSelections}</span>}
+                  <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-normal text-black", group.required ? "border-red-100 bg-[rgba(255,0,65,0.08)]" : "border-slate-200 bg-slate-100")}>{group.required ? "Obligatorio" : "Opcional"}</span>
+                  {!group.isActive && <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[9px] font-normal text-black">Inactivo</span>}
+                  {group.quantityMode === "NO_QUANTITY" && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-normal text-amber-800">Configuración histórica</span>}
+                  {group.quantityMode === "FIXED_PER_OPTION" && <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-normal text-[#0b3f64]">Cantidad por opción</span>}
+                  {group.quantityMode === "SHARED_TOTAL" && <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-normal text-[#0b3f64]">{group.totalQuantityLimit != null && (unitObjectLabel(group.totalQuantityUnit) || unitLabel(group.totalQuantityUnitId)) ? `Total compartido · ${formatQuantity(group.totalQuantityLimit)} ${unitObjectLabel(group.totalQuantityUnit) || unitLabel(group.totalQuantityUnitId)}` : "Total compartido · Incompleto"}</span>}
                 </div>
               </div>
 
-              {/* OPTIONS LIST */}
-              {group.options.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
-                    Opciones configuradas:
-                  </span>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {group.options.map((option: any) => {
-                      const consumesStock = option.targetType !== "NONE";
-                      let stockText = "";
-                      let lowStock = false;
+              {isExpanded && (
+                <div className="p-3 border-t border-slate-200 space-y-3 bg-white">
+                  {/* OPTIONS LIST */}
+                  {group.options.length > 0 && (
+                    <div className="space-y-2">
+                      {group.options.map((option: any) => {
+                        let lowStock = false;
+                        const costLabel = optionCostLabel(group, option);
+                        const stockLabel = optionStockLabel(group, option);
+                        const usesLabel = optionUsesLabel(group, option);
+                        const priceDelta = toNumber(option.priceDelta);
 
-                      if (option.targetType === "INGREDIENT") {
-                        const ing = allIngredients.find((i) => i.id === option.ingredientId);
-                        if (ing) {
-                          const stockNum = Number(ing.currentStock || 0);
-                          stockText = `Stock: ${formatMoney(stockNum)}`;
-
-                          // Determine required stock limit
-                          let limit = 1;
-                          if (group.quantityMode === "SHARED_TOTAL") {
-                            limit = group.totalQuantityLimit ? Number(group.totalQuantityLimit) : 1;
-                          } else if (group.quantityMode === "FIXED_PER_OPTION") {
-                            limit = option.quantity ? Number(option.quantity) : 1;
+                        if (option.targetType === "INGREDIENT") {
+                          const ing = allIngredients.find((i) => i.id === option.ingredientId);
+                          if (ing) {
+                            const stockNum = Number(ing.currentStock || 0);
+                            let limit = 1;
+                            if (group.quantityMode === "SHARED_TOTAL") {
+                              limit = group.totalQuantityLimit ? Number(group.totalQuantityLimit) : 1;
+                            } else if (group.quantityMode === "FIXED_PER_OPTION") {
+                              limit = option.quantity ? Number(option.quantity) : 1;
+                            }
+                            lowStock = stockNum < limit;
                           }
-                          lowStock = stockNum < limit;
                         }
-                      }
 
-                      const duplicateNames = group.options.filter(
-                        (o: any) => o.name.trim().toLowerCase() === option.name.trim().toLowerCase()
-                      );
-                      const hasDuplicates = duplicateNames.length > 1;
+                        if (editingOptionId === option.id) {
+                          return <OptionForm key={option.id} group={group} mode="edit" />;
+                          return (
+                            <div key={option.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar opción</span>
+                              <p className="truncate text-sm text-black">{form.name || option.name}</p>
+                              <label className="block text-[10px] text-black">Precio adicional<input type="text" inputMode="decimal" value={form.priceDelta} onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })} className="mt-1 w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs" /></label>
+                              {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && <QuantityStepper value={Number(form.quantity || 1)} onChange={(value) => setOptionForm(group.id, { ...form, quantity: String(value) })} min={form.targetType === "ITEM" ? 1 : 0.000001} step={form.targetType === "ITEM" ? 1 : 0.1} precision={form.targetType === "ITEM" ? 0 : 6} ariaLabel="Cantidad que consume" />}
+                            </div>
+                          );
+                        }
 
-                      return (
-                        <div
-                          key={option.id}
-                          className={cn(
-                            "flex items-center justify-between gap-2.5 rounded-xl border border-slate-100 bg-white p-2.5 text-xs shadow-2xs transition",
-                            !option.isActive && "opacity-60 bg-slate-50/30 border-dashed border-slate-200",
-                            lowStock && option.isActive && "border-amber-200 bg-amber-50/20"
-                          )}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className={cn("font-bold text-slate-800 truncate", !option.isActive && "line-through text-slate-400")}>
-                                {option.name}
-                              </span>
-                              {hasDuplicates && (
-                                <span
-                                  className={cn(
-                                    "rounded px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide border",
-                                    option.isActive
-                                      ? "bg-emerald-50 border-emerald-100 text-emerald-700"
-                                      : "bg-slate-100 border-slate-200 text-slate-500"
-                                  )}
-                                >
-                                  {option.isActive ? "Activa" : "Inactiva"}
-                                </span>
-                              )}
-                              {option.selectedByDefault && (
-                                <span className="rounded bg-slate-900 px-1 text-[8px] font-bold text-white uppercase tracking-wider">
-                                  Def
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[9px] text-slate-400 font-semibold mt-0.5 space-y-0.5">
-                              <div>
-                                {translateTargetType(option.targetType)}
-                                {option.targetType === "INGREDIENT" && option.ingredient && ` (${option.ingredient.name})`}
-                                {option.targetType === "ITEM" && option.item && ` (${option.item.name})`}
-                                {option.targetType === "INGREDIENT" && option.quantity && ` · ${option.quantity} ${option.unit?.symbol || ""}`}
-                              </div>
-                              {stockText && (
-                                <div className={cn("font-bold", lowStock ? "text-amber-600" : "text-slate-500")}>
-                                  {stockText} {lowStock ? " (Sin stock suficiente)" : ""}
-                                </div>
-                              )}
-                              {isOptionUnitIncompatible(option, group) && (
-                                <div className="mt-1 flex items-center gap-1 text-[9px] font-bold text-rose-600 uppercase tracking-wide">
-                                  <AlertTriangle className="h-3 w-3 shrink-0 text-rose-500" />
-                                  <span>Unidad incompatible</span>
-                                </div>
-                              )}
-                            </div>
-                            {option.priceDelta > 0 && (
-                              <span className="mt-1 block text-[10px] font-extrabold text-orange-600">
-                                +${formatMoney(option.priceDelta)}
-                              </span>
+                        return (
+                          <div
+                            key={option.id}
+                            className={cn(
+                              "bg-slate-50/50 border border-slate-200 rounded-xl p-3 text-xs font-normal transition",
+                              !option.isActive && "opacity-60 bg-slate-50/30 border-dashed border-slate-200",
+                              lowStock && option.isActive && "border-amber-200 bg-amber-50/20"
                             )}
-                          </div>
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={cn("font-medium text-xs sm:text-sm text-black truncate", !option.isActive && "line-through text-black/50")}>
+                                    {option.name}
+                                  </span>
+                                  <span className={cn(
+                                    "text-[10px] font-normal px-1.5 py-0.5 rounded border text-black",
+                                    option.targetType === "INGREDIENT"
+                                      ? "bg-[rgba(0,150,61,0.08)] border-green-100"
+                                      : option.targetType === "ITEM"
+                                        ? "bg-[rgba(11,63,100,0.08)] border-blue-100"
+                                        : "bg-slate-100 border-slate-200"
+                                  )}>
+                                    {option.targetType === "INGREDIENT" ? "Ingrediente" : option.targetType === "ITEM" ? "Producto" : "Sin recurso"}
+                                  </span>
+                                  {option.selectedByDefault && (
+                                    <span className="rounded bg-[#0b3f64] px-1.5 py-0.5 text-[8px] font-normal text-white uppercase tracking-wider">
+                                      Default
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => editOption(group, option)}
+                                  className="p-1 text-black hover:opacity-70 transition-opacity"
+                                  aria-label="Editar opción"
+                                  title="Editar opción"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-black" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteOption(group, option.id)}
+                                  className="p-1 text-black hover:text-[#ff0041] transition-colors"
+                                  aria-label="Quitar opción"
+                                  title="Quitar opción"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-[#ff0041]" />
+                                </button>
+                              </div>
+                            </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            {/* Edit Option */}
-                            <button
-                              type="button"
-                              onClick={() => editOption(group, option)}
-                              className="grid h-6 w-6 place-items-center rounded-lg bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100 transition active:scale-90"
-                              title="Editar opción"
-                            >
-                              <Edit2 className="h-3 w-3" />
-                            </button>
-                            {/* Toggle Active Status */}
-                            <button
-                              type="button"
-                              onClick={() => toggleOptionActive(group, option)}
-                              className={cn(
-                                "grid h-6 w-6 place-items-center rounded-lg border transition active:scale-90",
-                                option.isActive
-                                  ? "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-                                  : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100"
-                              )}
-                              title={option.isActive ? "Desactivar opción" : "Activar opción"}
-                            >
-                              {option.isActive ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            </button>
-                            {/* Delete Option */}
-                            <button
-                              type="button"
-                              onClick={() => deleteOption(group, option.id)}
-                              className="grid h-6 w-6 place-items-center rounded-lg bg-rose-50 border border-rose-100 text-rose-600 transition hover:bg-rose-100 active:scale-90"
-                              title="Eliminar opción"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60 text-[11px] text-black font-normal">
+                              <div>
+                                <span className="text-black/60 block text-[10px]">Costo selección</span>
+                                <span className="text-black font-normal">{costLabel}</span>
+                              </div>
+                              <div>
+                                <span className="text-black/60 block text-[10px]">Precio extra</span>
+                                <span className="text-black font-normal">
+                                  {priceDelta > 0 ? `+$${formatMoney(priceDelta)}` : "$0"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-black/60 block text-[10px]">Stock</span>
+                                {stockLabel}
+                              </div>
+                              <div>
+                                <span className="text-black/60 block text-[10px]">Producciones</span>
+                                <span className="font-normal text-black">{usesLabel} disp.</span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                        );
+                      })}
+                    </div>
+                  )}
 
-              {/* CREATE OPTION PANEL FOR THIS GROUP */}
-              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3 mt-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 block">
-                    {editingOptionId ? "Editar opción" : "Agregar opción"}
-                  </span>
-                  {editingOptionId && (
+                  {group.options.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/40 p-3 text-center">
+                      <p className="text-xs font-normal text-black">Este grupo todavía no tiene opciones.</p>
+                    </div>
+                  )}
+
+                  {group.quantityMode !== "NO_QUANTITY" && !isOptionFormOpen && (
                     <button
                       type="button"
-                      onClick={() => cancelEditOption(group)}
-                      className="text-[9px] font-bold text-slate-400 hover:text-slate-655"
+                      onClick={() => {
+                        setCreatingOptionForGroupId(group.id);
+                        setEditingOptionId(null);
+                      }}
+                      className="w-full py-2.5 border border-dashed border-[#0b3f64] bg-[rgba(11,63,100,0.05)] hover:bg-blue-50 text-[#0b3f64] font-normal text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
                     >
-                      Cancelar
+                      <Plus className="w-3.5 h-3.5 text-[#0b3f64]" />
+                      <span>{group.options.length === 0 ? "+ Añadir primera opción" : "+ AÑADIR OPCIÓN"}</span>
                     </button>
                   )}
-                </div>
 
-                {/* Tipo de impacto - full width */}
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Tipo de impacto</span>
-                  <select
-                    value={form.targetType}
-                    onChange={(e) =>
-                      setOptionForm(group.id, {
-                        ...form,
-                        targetType: e.target.value as TargetType,
-                        ingredientId: "",
-                        itemId: "",
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                  >
-                    {targetChoices.map((target) => (
-                      <option key={target} value={target}>
-                        {translateTargetType(target)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {/* The same form is used for create and the inline edit above. */}
+                  {isOptionFormOpen && !editingOptionId && <OptionForm group={group} mode="create" />}
+                  {false && isOptionFormOpen && !editingOptionId && (
+                    <div className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 mt-2.5 shadow-xs">
+                      {/* Header */}
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <span className="text-[10px] font-normal uppercase tracking-wide text-black block">
+                          {editingOptionId ? "EDITAR OPCIÓN" : "+ AÑADIR OPCIÓN"}
+                        </span>
+                        {!onSaveContextChange && <button
+                          type="button"
+                          onClick={() => cancelEditOption(group)}
+                          className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity"
+                        >
+                          Cancelar
+                        </button>}
+                      </div>
 
-                {/* Ingredient / Item search - full width */}
-                {form.targetType === "INGREDIENT" ? (
-                  <div className="relative space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Insumo (Buscar primero)
-                    </span>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={ingredientSearch[group.id] || ""}
-                        onFocus={() => setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
-                        onChange={(e) => {
-                          setIngredientSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
-                          setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
-                        }}
-                        placeholder="Buscar insumo..."
-                        className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                      />
-                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    </div>
-                    {ingredientDropdownOpen[group.id] && (
-                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-                        {filteredIngredients.length === 0 ? (
-                          <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron insumos</div>
-                        ) : (
-                          filteredIngredients.map((ing) => (
-                            <button
-                              key={ing.id}
-                              type="button"
-                              onClick={() => {
-                                setOptionForm(group.id, {
-                                  ...form,
-                                  ingredientId: ing.id,
-                                  name: ing.name,
-                                  unitId: ing.stockUnitId || "",
-                                });
+                      <div className="relative space-y-1">
+                        <label className="block text-[9px] uppercase font-normal text-black">
+                          {group.quantityMode === "SHARED_TOTAL" ? "INSUMO" : "RECURSO"}
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={ingredientSearch[group.id] || ""}
+                            onFocus={() => setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
+                            onChange={(e) => {
+                              setIngredientSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
+                              setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
+                            }}
+                            placeholder={group.quantityMode === "SHARED_TOTAL" ? "Buscar insumo..." : "Buscar insumo o producto simple..."}
+                            className="w-full pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40"
+                          />
+                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-black/50" />
+                        </div>
+                        {ingredientDropdownOpen[group.id] && (
+                          <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                            {filteredIngredients.map((ing) => (
+                              <button key={`INGREDIENT:${ing.id}`} type="button" onClick={() => {
+                                setOptionForm(group.id, { ...form, targetType: "INGREDIENT", ingredientId: ing.id, itemId: "", name: ing.name, unitId: ing.stockUnitId || "", quantity: form.quantity || "1" });
                                 setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
                                 setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                              }}
-                              className={cn(
-                                "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50",
-                                form.ingredientId === ing.id && "bg-slate-100 text-slate-900"
-                              )}
-                            >
-                              <span>{ing.name}</span>
-                              {ing.currentStock !== undefined && (
-                                <span className="text-[10px] text-slate-400 font-semibold">
-                                  Stock: {formatMoney(Number(ing.currentStock))}
-                                </span>
-                              )}
-                            </button>
-                          ))
+                              }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50">
+                                <span>{ing.name}<span className="ml-1 text-[10px] text-black/60">Insumo</span></span>
+                                <span className="text-[10px] text-black/60">Stock: {formatQuantity(ing.currentStock)} {unitLabel(ing.stockUnitId)}</span>
+                              </button>
+                            ))}
+                            {group.quantityMode === "FIXED_PER_OPTION" && filteredItems.map((it) => (
+                              <button key={`ITEM:${it.id}`} type="button" onClick={() => {
+                                setOptionForm(group.id, { ...form, targetType: "ITEM", ingredientId: "", itemId: it.id, name: it.name, unitId: "", quantity: form.quantity || "1" });
+                                setIngredientSearch((prev) => ({ ...prev, [group.id]: it.name }));
+                                setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
+                              }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50">
+                                <span>{it.name}<span className="ml-1 text-[10px] text-black/60">Producto</span></span>
+                                <span className="text-[10px] text-black/60">Stock: {formatQuantity(it.currentStock)} unidad</span>
+                              </button>
+                            ))}
+                            {filteredIngredients.length === 0 && (group.quantityMode !== "FIXED_PER_OPTION" || filteredItems.length === 0) && <div className="p-2 text-xs text-black/60 font-normal">No se encontraron resultados</div>}
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                ) : form.targetType === "ITEM" ? (
-                  <div className="relative space-y-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Producto (Buscar primero)
-                    </span>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={itemSearch[group.id] || ""}
-                        onFocus={() => setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
-                        onChange={(e) => {
-                          setItemSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
-                          setItemDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
-                        }}
-                        placeholder="Buscar producto..."
-                        className="w-full rounded-xl border border-slate-200 pl-8 pr-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                      />
-                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    </div>
-                    {itemDropdownOpen[group.id] && (
-                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
-                        {filteredItems.length === 0 ? (
-                          <div className="p-2 text-xs text-slate-500 font-semibold">No se encontraron productos</div>
-                        ) : (
-                          filteredItems.map((it) => (
-                            <button
-                              key={it.id}
-                              type="button"
-                              onClick={() => {
-                                setOptionForm(group.id, {
-                                  ...form,
-                                  itemId: it.id,
-                                  name: it.name,
-                                });
-                                setItemSearch((prev) => ({ ...prev, [group.id]: it.name }));
-                                setItemDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                              }}
-                              className={cn(
-                                "flex w-full items-center justify-between p-2 text-left text-xs font-bold text-slate-750 hover:bg-slate-50",
-                                form.itemId === it.id && "bg-slate-100 text-slate-900"
-                              )}
-                            >
-                              <span>{it.name}</span>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
 
-                {/* Nombre visible - full width */}
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Nombre visible al cliente</span>
-                  <input
-                    value={form.name}
-                    onChange={(e) => setOptionForm(group.id, { ...form, name: e.target.value })}
-                    placeholder="Queso Cheddar, Con hielo"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                  />
-                </div>
-
-                {/* Precio adicional - full width */}
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Precio adicional para el cliente</span>
-                  <input
-                    value={form.priceDelta}
-                    onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
-                    inputMode="decimal"
-                    placeholder="0 si no suma al precio"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                  />
-                  <p className="text-xs text-slate-500 leading-relaxed mt-1">
-                    Este valor se suma al precio base del producto cuando el cliente elige esta opción. No cambia el costo ni el precio del insumo.
-                  </p>
-                </div>
-
-                {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && (
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50/30 p-2 rounded-xl border border-slate-100">
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cantidad que consume</span>
-                      <input
-                        value={form.quantity}
-                        onChange={(e) => setOptionForm(group.id, { ...form, quantity: e.target.value })}
-                        inputMode="decimal"
-                        placeholder="1"
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                      />
-                    </div>
-                    {form.targetType === "INGREDIENT" ? (
-                      <div className="space-y-1 flex flex-col justify-end pb-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Unidad base (Insumo)</span>
-                        <span className="text-xs font-bold text-slate-600 bg-slate-100/70 border border-slate-200/50 rounded-xl px-3 py-2 select-none">
-                          {(() => {
-                            const ing = allIngredients.find((i) => i.id === form.ingredientId);
-                            const unit = ing ? units.find((u) => u.id === ing.stockUnitId) : null;
-                            return unit ? `${unit.symbol || unit.name} (${unit.name})` : "—";
-                          })()}
-                        </span>
-                      </div>
-                    ) : (
+                      {/* 4. Precio de esta opción */}
                       <div className="space-y-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Unidad</span>
-                        <select
-                          value={form.unitId}
-                          onChange={(e) => setOptionForm(group.id, { ...form, unitId: e.target.value })}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-750 outline-none focus:border-slate-400 transition"
-                        >
-                          <option value="">Seleccionar unidad...</option>
-                          {units.map((unit) => (
-                            <option key={unit.id} value={unit.id}>
-                              {unit.symbol || unit.name}
-                            </option>
-                          ))}
-                        </select>
+                        <label className="block text-[9px] uppercase font-normal text-black">
+                          PRECIO DE ESTA OPCIÓN
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={form.priceDelta}
+                          onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
+                          placeholder="0"
+                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none"
+                        />
                       </div>
-                    )}
-                  </div>
-                )}
 
-                {/* Informative text for SHARED_TOTAL ingredient base stock unit */}
-                {group.quantityMode === "SHARED_TOTAL" && form.targetType === "INGREDIENT" && form.ingredientId && (
-                  <div className="bg-slate-50/30 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-450">Unidad base del insumo</span>
-                    <span className="font-bold text-slate-700">
-                      {(() => {
-                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
-                        const unit = ing ? units.find((u) => u.id === ing.stockUnitId) : null;
-                        return unit ? `${unit.symbol || unit.name} (${unit.name})` : "—";
-                      })()}
-                    </span>
-                  </div>
-                )}
+                      {/* 5. Texto informativo del precio */}
+                      <p className="text-[11px] font-normal text-black">
+                        {(!form.priceDelta || Number(form.priceDelta) === 0)
+                          ? "Incluido en el precio base."
+                          : "Este valor se suma al precio base."}
+                      </p>
 
-                {/* SHARED_TOTAL unit compatibility error */}
-                {hasIncompatibleUnit && (
-                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-xs font-bold text-rose-700">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                    <span>Este insumo usa una unidad incompatible con la unidad del grupo.</span>
-                  </div>
-                )}
+                      {/* 6 & 7. Cantidad que consume + Unidad Base */}
+                      {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && (
+                        <div className="flex gap-3 pt-1">
+                          {/* Cantidad que consume */}
+                          <div className="flex-1">
+                            <label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">
+                              CANTIDAD QUE<br />CONSUME
+                            </label>
+                            <QuantityStepper
+                              value={Number(form.quantity || 1)}
+                              onChange={(val) => setOptionForm(group.id, { ...form, quantity: String(val) })}
+                              min={form.targetType === "ITEM" ? 1 : 0.000001}
+                              step={
+                                form.targetType === "ITEM" ? 1 : getStepAndPrecisionForUnit(
+                                  form.targetType === "INGREDIENT"
+                                    ? (() => {
+                                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
+                                        const unit = units.find((u) => u.id === ing?.stockUnitId);
+                                        return unit?.symbol || unit?.name || "";
+                                      })()
+                                    : unitLabel(form.unitId)
+                                ).step
+                              }
+                              precision={
+                                form.targetType === "ITEM" ? 0 : getStepAndPrecisionForUnit(
+                                  form.targetType === "INGREDIENT"
+                                    ? (() => {
+                                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
+                                        const unit = units.find((u) => u.id === ing?.stockUnitId);
+                                        return unit?.symbol || unit?.name || "";
+                                      })()
+                                    : unitLabel(form.unitId)
+                                ).precision
+                              }
+                              ariaLabel="Cantidad que consume"
+                            />
+                          </div>
 
-                {/* Duplicate option integrity error */}
-                {duplicateError && (
-                  <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-xs font-bold text-rose-700">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
-                    <span>{duplicateError}</span>
-                  </div>
-                )}
+                          {/* Unidad Base */}
+                          <div className="flex-1">
+                            <label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">
+                              UNIDAD BASE<br />(INSUMO)
+                            </label>
+                            {form.targetType === "INGREDIENT" ? (
+                              <div className="flex items-center px-2.5 border border-slate-200 rounded-lg h-7.5 bg-white text-xs font-normal text-black">
+                                {(() => {
+                                  const ing = allIngredients.find((i) => i.id === form.ingredientId);
+                                  const unit = units.find((u) => u.id === ing?.stockUnitId)!;
+                                  return unit ? (unit.symbol || unit.name) : "—";
+                                })()}
+                              </div>
+                            ) : (
+                              <div className="flex items-center px-2.5 border border-slate-200 rounded-lg h-7.5 bg-white text-xs font-normal text-black">unidad</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
-                <div className="space-y-2.5 pt-2">
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={form.selectedByDefault}
-                        onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                      />
-                      Preselección
-                    </label>
-                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={form.removable}
-                        onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                      />
-                      Removible
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-1 text-[9px] text-slate-400 font-semibold">
-                    <HelpCircle className="h-3 w-3 shrink-0 text-slate-350" />
-                    <span>Los cambios aplican solo a pedidos nuevos.</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={hasIncompatibleUnit || !!duplicateError}
-                    onClick={() => saveOption(group)}
-                    className={cn(
-                      "flex w-full items-center justify-center gap-2 rounded-xl py-2.5 px-4 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm transition active:scale-[0.98]",
-                      (hasIncompatibleUnit || duplicateError)
-                        ? "bg-slate-300 cursor-not-allowed opacity-50"
-                        : "bg-orange-500 hover:bg-orange-600"
-                    )}
-                  >
-                    {editingOptionId ? "Guardar opción" : "Crear opción"}
-                  </button>
+                      {/* Error checks */}
+                      {hasIncompatibleUnit && (
+                        <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black">
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" />
+                          <span>Este insumo usa una unidad incompatible con la del grupo.</span>
+                        </div>
+                      )}
+
+                      {duplicateError && (
+                        <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black">
+                          <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" />
+                          <span>{duplicateError}</span>
+                        </div>
+                      )}
+
+                      {/* 8 & 9. Checkboxes row */}
+                      <div className="hidden" aria-hidden="true">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.selectedByDefault}
+                            onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
+                          />
+                          <span className="text-[11px] font-normal text-black select-none">
+                            Preselección
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={form.removable}
+                            onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
+                          />
+                          <span className="text-[11px] font-normal text-black select-none">
+                            Removible
+                          </span>
+                        </label>
+                      </div>
+
+                      {/* 10. Botón Guardar opción */}
+                      <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}>
+                        <button type="button" onClick={() => cancelEditOption(group)} disabled={savingOption} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button>
+                        <button type="button" disabled={savingOption || hasIncompatibleUnit || !!duplicateError} onClick={() => saveOption(group)} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">
+                          {savingOption ? "Guardando..." : "Guardar opción"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
             </div>
           );
         })}
+        {!showGroupForm && groups.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowGroupForm(true)}
+            className="w-full py-2.5 bg-white hover:bg-slate-50 border border-dashed border-[#0b3f64] text-[#0b3f64] font-normal text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
+          >
+            <Plus className="w-4 h-4 text-[#0b3f64]" />
+            <span>+ Añadir nuevo grupo de personalización</span>
+          </button>
+        )}
       </div>
     </div>
   );

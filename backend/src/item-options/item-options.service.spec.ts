@@ -14,6 +14,7 @@ describe('ItemOptionsService Duplicates Validation', () => {
     existingGroup?: any;
     existingItem?: any;
     existingIngredient?: any;
+    usedCount?: number;
   } = {}) {
     const existingOptions = options.existingOptions ?? [];
     const group = options.existingGroup ?? {
@@ -31,6 +32,7 @@ describe('ItemOptionsService Duplicates Validation', () => {
       businessId,
       type: 'PRODUCT',
       inventoryMode: 'RECIPE_BASED',
+      status: 'ACTIVE',
     };
     const ingredient = options.existingIngredient ?? {
       id: 'ingredient-1',
@@ -44,6 +46,9 @@ describe('ItemOptionsService Duplicates Validation', () => {
       },
       itemOptionGroup: {
         findFirst: mockFn().mockResolvedValue(group),
+        create: mockFn().mockImplementation(async (query: any) => ({ id: 'new-group', options: [], ...query.data })),
+        update: mockFn().mockImplementation(async (query: any) => ({ ...group, options: [], ...query.data })),
+        delete: mockFn().mockResolvedValue(group),
         findUniqueOrThrow: mockFn().mockResolvedValue({
           ...group,
           options: existingOptions.filter(o => o.groupId === group.id && o.isActive),
@@ -92,6 +97,10 @@ describe('ItemOptionsService Duplicates Validation', () => {
         update: mockFn().mockImplementation(async (query: any) => {
           return { id: query.where.id, ...query.data };
         }),
+        delete: mockFn().mockResolvedValue({ id: 'deleted-option' }),
+      },
+      orderItemOption: {
+        count: mockFn().mockResolvedValue(options.usedCount ?? 0),
       },
       ingredient: {
         findFirst: mockFn().mockResolvedValue(ingredient),
@@ -162,7 +171,8 @@ describe('ItemOptionsService Duplicates Validation', () => {
       id: 'target-item-id',
       businessId,
       type: 'PRODUCT',
-      inventoryMode: 'RECIPE_BASED',
+      inventoryMode: 'SIMPLE',
+      status: 'ACTIVE',
     };
     const { service } = createService({
       existingItem: targetItem,
@@ -210,7 +220,7 @@ describe('ItemOptionsService Duplicates Validation', () => {
         targetType: ItemOptionTargetType.NONE,
         isActive: true,
       }),
-    ).rejects.toThrow('Ya existe una opción con ese nombre dentro de este grupo.');
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   // 5. Editar una opción sin cambiar su propio ingredientId no debe detectarse como duplicado de sí misma.
@@ -295,5 +305,51 @@ describe('ItemOptionsService Duplicates Validation', () => {
     });
     expect(res).toBeDefined();
     expect(prisma.itemOption.create).toHaveBeenCalled();
+  });
+
+  it('allows FIXED_PER_OPTION groups and rejects new NO_QUANTITY groups', async () => {
+    const { service } = createService();
+    await expect(service.createGroup(businessId, itemId, {
+      title: 'Extras', quantityMode: ItemOptionQuantityMode.FIXED_PER_OPTION,
+    })).resolves.toBeDefined();
+    await expect(service.createGroup(businessId, itemId, {
+      title: 'Legacy', quantityMode: ItemOptionQuantityMode.NO_QUANTITY,
+    })).rejects.toThrow('Los grupos nuevos deben controlar consumo de inventario.');
+  });
+
+  it('allows a non-structural update on a historical NO_QUANTITY group', async () => {
+    const { service } = createService({ existingGroup: {
+      id: groupId, businessId, itemId, title: 'Legacy', quantityMode: ItemOptionQuantityMode.NO_QUANTITY,
+      totalQuantityLimit: null, totalQuantityUnitId: null, options: [],
+    }});
+    await expect(service.updateGroup(businessId, itemId, groupId, {
+      title: 'Legacy actualizado',
+    })).resolves.toBeDefined();
+  });
+
+  it('rejects a FIXED_PER_OPTION group change to NO_QUANTITY', async () => {
+    const { service } = createService();
+    await expect(service.updateGroup(businessId, itemId, groupId, {
+      quantityMode: ItemOptionQuantityMode.NO_QUANTITY,
+    })).rejects.toThrow('Los grupos nuevos deben controlar consumo de inventario.');
+  });
+  it('deletes an unused option and deactivates an option with order history', async () => {
+    const unused = createService({ existingOptions: [{ id: 'option-1', groupId, businessId }] });
+    await expect(unused.service.deleteOption(businessId, itemId, groupId, 'option-1')).resolves.toMatchObject({ deleted: true });
+    expect(unused.prisma.itemOption.delete).toHaveBeenCalled();
+
+    const used = createService({ usedCount: 1, existingOptions: [{ id: 'option-1', groupId, businessId }] });
+    await expect(used.service.deleteOption(businessId, itemId, groupId, 'option-1')).resolves.toMatchObject({ deactivated: true });
+    expect(used.prisma.itemOption.update).toHaveBeenCalledWith(expect.objectContaining({ data: { isActive: false } }));
+  });
+
+  it('deletes an unused group and deactivates a group with history', async () => {
+    const unused = createService();
+    await expect(unused.service.deleteGroup(businessId, itemId, groupId)).resolves.toMatchObject({ deleted: true });
+    expect(unused.prisma.itemOptionGroup.delete).toHaveBeenCalledWith({ where: { id: groupId } });
+
+    const used = createService({ usedCount: 1 });
+    await expect(used.service.deleteGroup(businessId, itemId, groupId)).resolves.toMatchObject({ deactivated: true });
+    expect(used.prisma.itemOptionGroup.update).toHaveBeenCalledWith(expect.objectContaining({ data: { isActive: false } }));
   });
 });

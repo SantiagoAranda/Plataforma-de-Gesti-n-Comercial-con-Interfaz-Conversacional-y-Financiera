@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Configuración de Receta e Inventario</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    
+    :root {
+      --color-brand-dark: #121a28;
+      --color-red-primary: #ff0041;
+      --color-red-dark: #c80237;
+      --color-blue-primary: #0b3f64;
+      --color-green-dark: #0c6312;
+      --color-green-medium: #00963d;
+      --color-orange-amber: #ff9100;
+      --color-orange-red: #ff4800;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f3f4f6;
+      color: #121a28;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+
+    /* Animaciones para colapsables */
+    .expandable-content {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.3s ease-out;
+    }
+    .expandable-content.open {
+      grid-template-rows: 1fr;
+    }
+    .expandable-inner {
+      overflow: hidden;
+    }
+
+    /* Clases de utilidad para la paleta exacta del cliente */
+    .bg-brand-dark { background-color: var(--color-brand-dark); }
+    .text-brand-dark { color: var(--color-brand-dark); }
+    .border-brand-dark { border-color: var(--color-brand-dark); }
+
+    .bg-custom-blue-light { background-color: rgba(11, 63, 100, 0.08); }
+    .border-custom-blue { border-color: var(--color-blue-primary); }
+    .text-custom-blue { color: var(--color-blue-primary); }
+
+    .bg-custom-red-light { background-color: rgba(255, 0, 65, 0.08); }
+    .border-custom-red { border-color: var(--color-red-primary); }
+    .text-custom-red { color: var(--color-red-primary); }
+
+    .bg-custom-green-light { background-color: rgba(0, 150, 61, 0.08); }
+    .border-custom-green { border-color: var(--color-green-medium); }
+    .text-custom-green { color: var(--color-green-medium); }
+    .text-custom-green-dark { color: var(--color-green-dark); }
+
+    .text-custom-orange { color: var(--color-orange-amber); }
+    .border-custom-orange { border-color: var(--color-orange-amber); }
+    .bg-custom-orange-light { background-color: rgba(255, 145, 0, 0.08); }
+  </style>
+</head>
+<body class="min-h-screen pb-28">
+
+  <div class="bg-[#121a28] text-white text-xs py-2 px-4 sticky top-0 z-50 shadow-md">
+    <div class="max-w-xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <span class="font-semibold text-slate-300 flex items-center gap-1.5">
+        <i data-lucide="sliders" class="w-3.5 h-3.5 text-sky-400"></i>
+        Modo de prueba:
+      </span>
+      <div class="flex items-center gap-1 bg-slate-800 p-1 rounded-lg border border-slate-700">
+        <button onclick="switchProductType('RECIPE_CONFIGURED')" id="btnStateConfigured" class="px-2 py-1 rounded text-[11px] font-medium bg-[#0b3f64] text-white transition-all">
+          Receta Configurada
+        </button>
+        <button onclick="switchProductType('RECIPE_PENDING')" id="btnStatePending" class="px-2 py-1 rounded text-[11px] font-medium text-slate-300 hover:text-white transition-all">
+          Receta Pendiente
+        </button>
+        <button onclick="switchProductType('SIMPLE')" id="btnStateSimple" class="px-2 py-1 rounded text-[11px] font-medium text-slate-300 hover:text-white transition-all">
+          Producto SIMPLE
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor Principal Mobile-First -->
+  <main class="max-w-xl mx-auto p-3 sm:p-4 mt-1 space-y-4">
+
+    <div id="configTabContent" class="block">
+
+      <!-- Ficha Unificada de Almuerzo Ejecutivo -->
+      <article class="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden border-t-4 border-t-[#0b3f64]">
+        
+        <!-- Header del Producto -->
+        <header class="p-4 bg-gradient-to-b from-slate-50/80 to-white space-y-3">
+          
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h1 class="text-2xl font-black text-[#121a28] tracking-tight">Almuerzo Ejecutivo</h1>
+              
+              <!-- Badge de Estado Dinámico -->
+              <div class="mt-1">
+                <span id="productStatusBadge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-[#0c6312] border border-emerald-200">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#00963d]"></span>
+                  Receta configurada
+                </span>
+              </div>
+            </div>
+
+            <button onclick="toggleCardCollapse('cardMainBody', 'collapseIcon')" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors" title="Colapsar / Expandir">
+              <i id="collapseIcon" data-lucide="chevron-up" class="w-5 h-5 transition-transform duration-200"></i>
+            </button>
+          </div>
+
+          <!-- Navegación por Badges justo debajo de Almuerzo Ejecutivo -->
+          <nav class="flex items-center gap-2 pt-1 border-t border-slate-100">
+            <button onclick="switchTab('configTab')" id="tabBtnConfig" class="px-3.5 py-1.5 text-xs font-bold rounded-full bg-[#121a28] text-white shadow-sm transition-all flex items-center gap-1.5">
+              <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+              Configuración
+            </button>
+            <button onclick="switchTab('historyTab')" id="tabBtnHistory" class="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 transition-all flex items-center gap-1.5">
+              <i data-lucide="history" class="w-3.5 h-3.5"></i>
+              Historial de consumo
+            </button>
+          </nav>
+
+        </header>
+
+        <div id="cardMainBody" class="expandable-content open">
+          <div class="expandable-inner p-4 space-y-5 border-t border-slate-100">
+
+            <!-- Métricas con Colores Específicos -->
+            <section class="space-y-2">
+              <div class="grid grid-cols-3 gap-2">
+                <!-- VENTA: Color Azul (#0b3f64) -->
+                <div class="bg-custom-blue-light border border-custom-blue/30 p-2.5 rounded-xl text-center">
+                  <span class="block text-[10px] font-bold tracking-wider text-custom-blue uppercase">Venta</span>
+                  <span class="text-base sm:text-lg font-black text-custom-blue">$1.500</span>
+                </div>
+                <!-- COSTO BASE: Color Rojo (#ff0041 / #c80237) -->
+                <div class="bg-custom-red-light border border-custom-red/30 p-2.5 rounded-xl text-center">
+                  <span class="block text-[10px] font-bold tracking-wider text-custom-red uppercase">Costo base</span>
+                  <span class="text-base sm:text-lg font-black text-[#c80237]">$1.310</span>
+                </div>
+                <!-- GANANCIA BASE: Color Verde (#00963d / #0c6312) -->
+                <div class="bg-custom-green-light border border-custom-green/30 p-2.5 rounded-xl text-center">
+                  <span class="block text-[10px] font-bold tracking-wider text-custom-green-dark uppercase">Ganancia base</span>
+                  <span class="text-base sm:text-lg font-black text-[#0c6312]">$190</span>
+                </div>
+              </div>
+
+              <!-- Barra de Precio Sugerido y % Utilidad -->
+              <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                <div>
+                  <span class="block text-[10px] font-bold text-slate-500 uppercase">Precio sugerido</span>
+                  <span class="text-sm font-black text-[#121a28]">$2.015</span>
+                </div>
+                <div class="text-right">
+                  <span class="block text-[10px] font-bold text-slate-500 uppercase">% Utilidad actual</span>
+                  <span class="text-sm font-black text-custom-green-dark">12.6%</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Sección cuando es Producto SIMPLE -->
+            <section id="simpleStockSection" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+              <div class="flex items-center gap-2">
+                <i data-lucide="package" class="w-4 h-4 text-[#0b3f64]"></i>
+                <h2 class="text-xs font-bold text-[#121a28] uppercase tracking-wider">Stock Directo (Producto Simple)</h2>
+              </div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div class="bg-white p-2 rounded-lg border border-slate-200">
+                  <span class="text-[10px] text-slate-400 block">Stock actual</span><strong class="text-slate-800 text-sm">45 unid</strong>
+                </div>
+                <div class="bg-white p-2 rounded-lg border border-slate-200">
+                  <span class="text-[10px] text-slate-400 block">Costo prom.</span><strong class="text-[#ff4800] text-sm">$650</strong>
+                </div>
+              </div>
+              <div class="bg-blue-50/70 border border-blue-100 rounded-lg p-2 text-[11px] text-[#0b3f64] flex items-center gap-1.5">
+                <i data-lucide="info" class="w-3.5 h-3.5 text-[#0b3f64] shrink-0"></i>
+                <span>Este producto descuenta su propio stock al confirmar una venta.</span>
+              </div>
+            </section>
+
+            <!-- Estado Vacío: Receta pendiente -->
+            <section id="emptyRecipeNotice" class="hidden bg-amber-50/80 border border-amber-200 rounded-xl p-4 text-center space-y-3">
+              <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-100 text-[#ff4800]">
+                <i data-lucide="chef-hat" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-bold text-[#121a28]">Receta pendiente</h3>
+                <p class="text-xs text-slate-600 mt-0.5 max-w-sm mx-auto">Este producto utiliza ingredientes, pero todavía no tiene una receta configurada.</p>
+              </div>
+              <div class="inline-flex items-center gap-1.5 bg-amber-100/80 text-[#ff4800] text-[11px] font-medium px-2.5 py-1 rounded-md">
+                <i data-lucide="eye-off" class="w-3.5 h-3.5 text-[#ff4800] shrink-0"></i>
+                <span>No visible en la tienda pública sin receta base.</span>
+              </div>
+              <div class="pt-2">
+                <button class="bg-[#0b3f64] hover:bg-[#121a28] text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors shadow-sm inline-flex items-center gap-1.5">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                  <span>Agregar primer ingrediente</span>
+                </button>
+              </div>
+            </section>
+
+            <section id="recipeComponentsSection" class="space-y-3 pt-2 border-t border-slate-100">
+              
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="utensils" class="w-4 h-4 text-custom-blue"></i>
+                  <h2 class="text-xs font-bold text-[#121a28] uppercase tracking-wider">Ingredientes base</h2>
+                </div>
+                <span class="text-[11px] text-slate-400 font-medium">Receta predeterminada</span>
+              </div>
+
+              <!-- Contenedor desplegable de ingredientes -->
+              <div class="bg-slate-50/60 border border-slate-200 border-l-4 border-l-custom-blue rounded-xl overflow-hidden">
+                
+                <button onclick="toggleCardCollapse('baseIngredientsContent', 'baseIngredientsChevron')" class="w-full p-3 flex items-center justify-between hover:bg-slate-100/60 transition-colors text-left">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="font-bold text-xs sm:text-sm text-[#121a28]">Ingredientes de la receta base</span>
+                    <span class="bg-custom-blue-light text-custom-blue text-[10px] font-bold px-2 py-0.5 rounded-full">3 ingredientes</span>
+                  </div>
+                  <i id="baseIngredientsChevron" data-lucide="chevron-up" class="w-4 h-4 text-slate-500 transition-transform duration-200"></i>
+                </button>
+
+                <div id="baseIngredientsContent" class="expandable-content open">
+                  <div class="expandable-inner p-3 border-t border-slate-200 space-y-3 bg-white">
+                    
+                    <!-- Lista de Ingredientes -->
+                    <div class="space-y-2">
+                      
+                      <!-- Ingrediente 1 -->
+                      <div class="bg-slate-50/50 border border-slate-200 rounded-xl p-3">
+                        <div class="flex items-start justify-between gap-2">
+                          <div>
+                            <div class="flex items-center gap-2">
+                              <span class="font-bold text-xs sm:text-sm text-[#121a28]">Arroz blanco</span>
+                              <span class="bg-custom-blue-light text-custom-blue text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-100">Obligatorio</span>
+                            </div>
+                            <span class="text-xs text-slate-500 font-medium">Consumo: <strong class="text-slate-800">200 g</strong></span>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <button class="p-1 text-slate-400 hover:text-custom-blue"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                            <button class="p-1 text-slate-400 hover:text-custom-red"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                          </div>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60 text-[11px] text-slate-600">
+                          <div><span class="text-slate-400 block text-[10px]">Costo unidad</span> $4 / g</div>
+                          <div><span class="text-slate-400 block text-[10px]">Costo total</span> <strong class="text-custom-red">$800</strong></div>
+                          <div><span class="text-slate-400 block text-[10px]">Stock actual</span> 20.000 g</div>
+                          <div><span class="text-slate-400 block text-[10px]">Producciones</span> <span class="font-bold text-custom-green-dark">100 disp.</span></div>
+                        </div>
+                      </div>
+
+                      <!-- Ingrediente 2 -->
+                      <div class="bg-slate-50/50 border border-slate-200 rounded-xl p-3">
+                        <div class="flex items-start justify-between gap-2">
+                          <div>
+                            <div class="flex items-center gap-2">
+                              <span class="font-bold text-xs sm:text-sm text-[#121a28]">Ensalada Mix Fresca</span>
+                              <span class="bg-custom-blue-light text-custom-blue text-[10px] font-semibold px-1.5 py-0.5 rounded border border-blue-100">Obligatorio</span>
+                            </div>
+                            <span class="text-xs text-slate-500 font-medium">Consumo: <strong class="text-slate-800">120 g</strong></span>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <button class="p-1 text-slate-400 hover:text-custom-blue"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                            <button class="p-1 text-slate-400 hover:text-custom-red"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                          </div>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60 text-[11px] text-slate-600">
+                          <div><span class="text-slate-400 block text-[10px]">Costo unidad</span> $3 / g</div>
+                          <div><span class="text-slate-400 block text-[10px]">Costo total</span> <strong class="text-custom-red">$360</strong></div>
+                          <div><span class="text-slate-400 block text-[10px]">Stock actual</span> 6.000 g</div>
+                          <div><span class="text-slate-400 block text-[10px]">Producciones</span> <span class="font-bold text-custom-green-dark">50 disp.</span></div>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <!-- Botón Añadir Ingrediente -->
+                    <button class="w-full py-2 border border-dashed border-custom-blue/40 bg-custom-blue-light hover:bg-blue-100/60 text-custom-blue font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                      <span>+ AÑADIR INGREDIENTE</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="customizationGroupsSection" class="space-y-3 pt-2 border-t border-slate-100">
+              
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i data-lucide="layers" class="w-4 h-4 text-custom-orange"></i>
+                  <h2 class="text-xs font-bold text-[#121a28] uppercase tracking-wider">Grupos de personalización</h2>
+                </div>
+                <span class="text-[11px] text-slate-400 font-medium">Opciones del cliente</span>
+              </div>
+
+              <div class="space-y-3">
+                
+                <!-- Grupo 1: Proteínas -->
+                <div class="bg-slate-50/60 border border-slate-200 border-l-4 border-l-custom-orange rounded-xl overflow-hidden">
+                  <button onclick="toggleCardCollapse('groupProteinsContent', 'groupProteinsChevron')" class="w-full p-3 flex items-center justify-between hover:bg-slate-100/60 transition-colors text-left">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-bold text-xs sm:text-sm text-[#121a28]">Proteínas</span>
+                      <span class="bg-custom-orange-light text-[#ff4800] text-[10px] font-bold px-2 py-0.5 rounded-full">Máx. 1</span>
+                      <span class="bg-custom-red-light text-custom-red border border-red-100 text-[10px] font-bold px-2 py-0.5 rounded-full">Obligatorio</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[11px] font-bold text-slate-500">2 opciones</span>
+                      <i id="groupProteinsChevron" data-lucide="chevron-up" class="w-4 h-4 text-slate-500 transition-transform duration-200"></i>
+                    </div>
+                  </button>
+
+                  <div id="groupProteinsContent" class="expandable-content open">
+                    <div class="expandable-inner p-3 border-t border-slate-200 space-y-3 bg-white">
+                      
+                      <div class="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-2">
+                        <span>Selecciones: <strong>Mín 1 · Máx 1</strong></span>
+                        <span>Modo: <strong>Cantidad por opción</strong></span>
+                      </div>
+
+                      <div class="space-y-2">
+                        <!-- OPCIÓN 1: Ingrediente -->
+                        <div class="bg-slate-50/50 border border-slate-200 rounded-xl p-3">
+                          <div class="flex items-start justify-between gap-2">
+                            <div>
+                              <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-xs sm:text-sm text-[#121a28]">Pollo a la plancha</span>
+                                <span class="bg-custom-green-light text-custom-green-dark text-[10px] font-medium px-1.5 py-0.5 rounded border border-green-100">Ingrediente</span>
+                              </div>
+                              <span class="text-xs text-slate-500 font-medium">Recurso: Pechuga Pollo · Consumo: <strong>250 g</strong></span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <button class="p-1 text-slate-400 hover:text-custom-blue"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                              <button class="p-1 text-slate-400 hover:text-custom-red"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                          </div>
+                          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60 text-[11px] text-slate-600">
+                            <div><span class="text-slate-400 block text-[10px]">Costo selección</span> <strong class="text-custom-red">$650</strong></div>
+                            <div><span class="text-slate-400 block text-[10px]">Precio extra</span> <strong class="text-custom-blue">+$200</strong></div>
+                            <div><span class="text-slate-400 block text-[10px]">Stock</span> 5.000 g</div>
+                            <div><span class="text-slate-400 block text-[10px]">Producciones</span> <span class="font-bold text-custom-green-dark">20 disp.</span></div>
+                          </div>
+                        </div>
+
+                        <!-- OPCIÓN 2: Sin recurso -->
+                        <div class="bg-slate-50/50 border border-slate-200 rounded-xl p-3">
+                          <div class="flex items-start justify-between gap-2">
+                            <div>
+                              <div class="flex items-center gap-1.5">
+                                <span class="font-bold text-xs sm:text-sm text-[#121a28]">Opción Vegetariana</span>
+                                <span class="bg-slate-100 text-slate-600 text-[10px] font-medium px-1.5 py-0.5 rounded border border-slate-200">Sin recurso</span>
+                              </div>
+                              <span class="text-[11px] text-slate-400 font-medium">No descuenta inventario directo</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                              <button class="p-1 text-slate-400 hover:text-custom-blue"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                              <button class="p-1 text-slate-400 hover:text-custom-red"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button class="w-full py-2 border border-dashed border-custom-orange/40 bg-custom-orange-light hover:bg-amber-100/50 text-[#ff4800] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                        <span>+ AÑADIR OPCIÓN</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Botón de Añadir Grupo en la misma card -->
+                <button class="w-full py-3 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 text-slate-600 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                  <i data-lucide="folder-plus" class="w-4 h-4 text-custom-blue"></i>
+                  <span>+ Añadir nuevo grupo de personalización</span>
+                </button>
+
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </article>
+
+    </div><!-- Fin ConfigTab -->
+
+    <div id="historyTabContent" class="hidden space-y-4">
+      
+      <!-- Resumen rápido -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-sm text-center">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Platos producidos</span>
+          <span class="text-xl font-black text-[#121a28]">142</span>
+          <span class="text-[10px] text-custom-green-dark font-bold block mt-1">+12% vs sem ant.</span>
+        </div>
+        <div class="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-sm text-center">
+          <span class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Costo estimado total</span>
+          <span class="text-xl font-black text-custom-red">$186k</span>
+          <span class="text-[10px] text-slate-500 font-semibold block mt-1">Últimos 7 días</span>
+        </div>
+      </div>
+
+      <!-- Tarjeta Timeline -->
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div class="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+          <h2 class="text-xs font-bold text-[#121a28]">Registro de descuentos</h2>
+          <select class="text-[11px] font-medium border border-slate-200 rounded-md bg-white text-slate-600 px-2 py-1 outline-none">
+            <option>Últimos 7 días</option>
+            <option>Este mes</option>
+          </select>
+        </div>
+        
+        <div class="divide-y divide-slate-100">
+          
+          <!-- Consumo 1 -->
+          <div class="p-4 hover:bg-slate-50/50 transition-colors">
+            <div class="flex justify-between items-start mb-2">
+              <div class="flex items-center gap-2.5">
+                <div class="bg-custom-green-light text-custom-green-dark p-1.5 rounded-lg border border-green-200">
+                  <i data-lucide="check-circle" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <span class="text-xs font-bold text-[#121a28] block">Venta #1042 - App Delivery</span>
+                  <span class="text-[10px] font-medium text-slate-500">Hoy, 13:45 hs</span>
+                </div>
+              </div>
+              <span class="text-xs font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-md">- 1 porción</span>
+            </div>
+            <div class="pl-10">
+              <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Recursos descontados:</p>
+              <ul class="text-[11px] text-slate-600 space-y-1.5">
+                <li class="flex justify-between border-b border-slate-50 pb-1">
+                  <span>Arroz blanco <span class="text-slate-400">(Base)</span></span>
+                  <span class="font-medium">-200 g</span>
+                </li>
+                <li class="flex justify-between border-b border-slate-50 pb-1">
+                  <span>Ensalada Mix <span class="text-slate-400">(Base)</span></span>
+                  <span class="font-medium">-120 g</span>
+                </li>
+                <li class="flex justify-between">
+                  <span>Pollo a la plancha <span class="text-custom-orange font-medium">(Proteína)</span></span>
+                  <span class="font-medium">-250 g</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Consumo 2 -->
+          <div class="p-4 hover:bg-slate-50/50 transition-colors">
+            <div class="flex justify-between items-start mb-2">
+              <div class="flex items-center gap-2.5">
+                <div class="bg-custom-green-light text-custom-green-dark p-1.5 rounded-lg border border-green-200">
+                  <i data-lucide="check-circle" class="w-4 h-4"></i>
+                </div>
+                <div>
+                  <span class="text-xs font-bold text-[#121a28] block">Venta #1039 - Salón (Mesa 4)</span>
+                  <span class="text-[10px] font-medium text-slate-500">Hoy, 12:30 hs</span>
+                </div>
+              </div>
+              <span class="text-xs font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-md">- 2 porciones</span>
+            </div>
+            <div class="pl-10">
+              <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Recursos descontados:</p>
+              <ul class="text-[11px] text-slate-600 space-y-1.5">
+                <li class="flex justify-between border-b border-slate-50 pb-1">
+                  <span>Arroz blanco <span class="text-slate-400">(Base)</span></span>
+                  <span class="font-medium">-400 g</span>
+                </li>
+                <li class="flex justify-between border-b border-slate-50 pb-1">
+                  <span>Ensalada Mix <span class="text-slate-400">(Base)</span></span>
+                  <span class="font-medium">-240 g</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          
+        </div>
+        <div class="p-3 bg-slate-50 border-t border-slate-100 text-center">
+          <button class="text-[11px] font-bold text-custom-blue hover:underline">Ver historial completo</button>
+        </div>
+      </div>
+    </div><!-- Fin HistoryTab -->
+
+  </main>
+
+  <div id="stickyFooter" class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-40 block">
+    <div class="max-w-xl mx-auto flex items-center justify-end gap-3">
+      <button class="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+        Cancelar
+      </button>
+      <button class="px-5 py-2.5 rounded-xl bg-[#0b3f64] text-white text-xs font-bold hover:bg-[#121a28] transition-colors shadow-md shadow-blue-900/20">
+        Guardar receta
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Inicializar iconos de Lucide
+    lucide.createIcons();
+
+    // 1. Cambio de Pestañas Badges
+    function switchTab(tabId) {
+      const configTab = document.getElementById('configTabContent');
+      const historyTab = document.getElementById('historyTabContent');
+      const btnConfig = document.getElementById('tabBtnConfig');
+      const btnHistory = document.getElementById('tabBtnHistory');
+      const stickyFooter = document.getElementById('stickyFooter');
+
+      if (tabId === 'configTab') {
+        configTab.classList.remove('hidden');
+        historyTab.classList.add('hidden');
+        stickyFooter.classList.remove('hidden');
+        
+        btnConfig.className = 'px-3.5 py-1.5 text-xs font-bold rounded-full bg-[#121a28] text-white shadow-sm transition-all flex items-center gap-1.5';
+        btnHistory.className = 'px-3.5 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 transition-all flex items-center gap-1.5';
+      } else {
+        configTab.classList.add('hidden');
+        historyTab.classList.remove('hidden');
+        stickyFooter.classList.add('hidden');
+        
+        btnConfig.className = 'px-3.5 py-1.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 transition-all flex items-center gap-1.5';
+        btnHistory.className = 'px-3.5 py-1.5 text-xs font-bold rounded-full bg-[#121a28] text-white shadow-sm transition-all flex items-center gap-1.5';
+      }
+    }
+
+    // 2. Acordeones / Collapsables suaves
+    function toggleCardCollapse(contentId, iconId) {
+      const content = document.getElementById(contentId);
+      const icon = document.getElementById(iconId);
+      
+      if (content.classList.contains('open')) {
+        content.classList.remove('open');
+        icon.classList.remove('rotate-180');
+      } else {
+        content.classList.add('open');
+        icon.classList.add('rotate-180');
+      }
+    }
+
+    // 3. Conmutador de Modos de Prueba
+    function switchProductType(type) {
+      const btnConfigured = document.getElementById('btnStateConfigured');
+      const btnPending = document.getElementById('btnStatePending');
+      const btnSimple = document.getElementById('btnStateSimple');
+      
+      const badge = document.getElementById('productStatusBadge');
+      
+      const recipeSection = document.getElementById('recipeComponentsSection');
+      const groupsSection = document.getElementById('customizationGroupsSection');
+      const simpleSection = document.getElementById('simpleStockSection');
+      const emptyNotice = document.getElementById('emptyRecipeNotice');
+
+      [btnConfigured, btnPending, btnSimple].forEach(btn => {
+        btn.className = 'px-2 py-1 rounded text-[11px] font-medium text-slate-300 hover:text-white transition-all';
+      });
+
+      recipeSection.classList.add('hidden');
+      groupsSection.classList.add('hidden');
+      simpleSection.classList.add('hidden');
+      emptyNotice.classList.add('hidden');
+
+      if (type === 'RECIPE_CONFIGURED') {
+        btnConfigured.className = 'px-2 py-1 rounded text-[11px] font-medium bg-[#0b3f64] text-white transition-all';
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#00963d]"></span>Receta configurada';
+        badge.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-[#0c6312] border border-emerald-200';
+        
+        recipeSection.classList.remove('hidden');
+        groupsSection.classList.remove('hidden');
+      } 
+      else if (type === 'RECIPE_PENDING') {
+        btnPending.className = 'px-2 py-1 rounded text-[11px] font-medium bg-[#0b3f64] text-white transition-all';
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#ff4800]"></span>Receta pendiente';
+        badge.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-[#ff4800] border border-amber-200';
+        
+        emptyNotice.classList.remove('hidden');
+        groupsSection.classList.remove('hidden');
+      }
+      else if (type === 'SIMPLE') {
+        btnSimple.className = 'px-2 py-1 rounded text-[11px] font-medium bg-[#0b3f64] text-white transition-all';
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-[#0b3f64]"></span>Inventario directo';
+        badge.className = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-[#0b3f64] border border-blue-200';
+        
+        simpleSection.classList.remove('hidden');
+        groupsSection.classList.remove('hidden');
+      }
+    }
+  </script>
+</body>
+</html>

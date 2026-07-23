@@ -512,10 +512,11 @@ export function replaceServiceConsumption(serviceItemId: string, dto: ReplaceSer
   });
 }
 
-export function getRecipeConsumptionHistory(itemId: string, query: { from?: string; to?: string } = {}) {
+export function getRecipeConsumptionHistory(itemId: string, query: { from?: string; to?: string; limit?: number } = {}) {
   const qs = new URLSearchParams();
   if (query.from) qs.set("from", query.from);
   if (query.to) qs.set("to", query.to);
+  if (query.limit) qs.set("limit", String(query.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<ConsumptionHistoryLine[]>(`/inventory/recipes/${itemId}/consumption-history${suffix}`);
 }

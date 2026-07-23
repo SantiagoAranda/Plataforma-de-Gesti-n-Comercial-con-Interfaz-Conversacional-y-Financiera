@@ -1,142 +1,51 @@
 "use client";
 
-import { PackageSearch, AlertCircle, AlertTriangle, CheckCircle, Package } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle, PackageSearch } from "lucide-react";
 
-import { formatMoney } from "@/src/lib/formatters";
+import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import type { SimpleItemInventorySummary } from "@/src/services/inventory";
 import { cn } from "@/src/lib/utils";
 
-type Props = {
-  products: SimpleItemInventorySummary[];
-  onSelect: (itemId: string) => void;
-};
+type Props = { products: SimpleItemInventorySummary[]; onSelect: (itemId: string) => void; };
 
-function statusBadge(product: SimpleItemInventorySummary) {
+function stockIcon(product: SimpleItemInventorySummary) {
   const status = product.sellability?.status;
-  if (status === "MISSING_INITIAL_STOCK") {
-    return {
-      label: "Sin inv. inicial",
-      badgeClass: "bg-rose-50 text-rose-700 border border-rose-100",
-      icon: AlertCircle,
-      iconClass: "text-rose-500",
-    };
-  }
-  if (status === "NO_STOCK" || product.outOfStock) {
-    return {
-      label: "Sin stock",
-      badgeClass: "bg-rose-50 text-rose-700 border border-rose-100",
-      icon: AlertCircle,
-      iconClass: "text-rose-500",
-    };
-  }
-  if (status === "LOW_STOCK") {
-    return {
-      label: "Stock bajo",
-      badgeClass: "bg-amber-50 text-amber-700 border border-amber-100",
-      icon: AlertTriangle,
-      iconClass: "text-amber-500",
-    };
-  }
-  return {
-    label: "Listo para vender",
-    badgeClass: "bg-emerald-50 text-emerald-700 border border-emerald-100",
-    icon: CheckCircle,
-    iconClass: "text-emerald-500",
-  };
+  if (status === "MISSING_INITIAL_STOCK" || status === "NO_STOCK" || product.outOfStock) return { Icon: AlertCircle, tone: "text-rose-500", accent: "border-t-rose-500" };
+  if (status === "LOW_STOCK") return { Icon: AlertTriangle, tone: "text-amber-500", accent: "border-t-amber-500" };
+  return { Icon: CheckCircle, tone: "text-emerald-500", accent: "border-t-[#0b3f64]" };
 }
 
 export function SimpleProductList({ products, onSelect }: Props) {
   if (!products.length) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center">
-        <div className="grid h-16 w-16 place-items-center rounded-full bg-slate-50 text-slate-400">
-          <PackageSearch className="h-7 w-7" />
-        </div>
-        <h3 className="mt-4 text-sm font-bold text-slate-800">Sin productos simples</h3>
-        <p className="mt-1 max-w-xs text-xs font-semibold leading-relaxed text-slate-400">
-          Los productos con inventario simple aparecerán acá.
-        </p>
-      </div>
-    );
+    return <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center"><div className="grid h-16 w-16 place-items-center rounded-full bg-slate-50 text-slate-400"><PackageSearch className="h-7 w-7" /></div><h3 className="mt-4 text-sm font-medium text-slate-800">Sin productos simples</h3><p className="mt-1 max-w-xs text-xs font-normal leading-relaxed text-slate-400">Los productos con inventario simple aparecerán acá.</p></div>;
   }
 
-  return (
-    <div className="space-y-3.5">
-      {products.map((product) => {
-        const currentStock = parseNumber(product.currentStock);
-        const averageCost = parseNumber(product.averageCost);
-        const stockValue = parseNumber(product.stockValue);
-        const badge = statusBadge(product);
-        const avatar = (product.name ?? "P").trim().slice(0, 1).toUpperCase();
-        const StatusIcon = badge.icon;
+  return <div className="space-y-3.5">
+    {products.map((product) => {
+      const { Icon, tone, accent } = stockIcon(product);
+      const avatar = (product.name ?? "P").trim().slice(0, 1).toUpperCase();
+      return <article key={product.id} className={cn("w-full overflow-hidden rounded-xl border border-slate-200 border-t-4 bg-white shadow-xs transition hover:shadow-sm", accent)}>
+        <button type="button" onClick={() => onSelect(product.id)} className="w-full p-3 text-left transition active:scale-[0.99] sm:p-4">
+          <div className="flex gap-3">
+            <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
+              {avatar}
+              <div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5 shadow-sm"><Icon className={cn("h-3.5 w-3.5", tone)} /></div>
+            </div>
+            <div className="min-w-0 flex-1"><h3 className="truncate text-sm font-medium text-black">{product.name}</h3><div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2"><Metric tone="blue" label="Stock" value={`${formatQuantityCompact(product.currentStock)} u`} /><Metric tone="red" label="Costo prom." value={`$${formatMoney(parseNumber(product.averageCost))}`} /><Metric tone="green" label="Precio" value={`$${formatMoney(parseNumber(product.price))}`} /></div></div>
+          </div>
+        </button>
+      </article>;
+    })}
+  </div>;
+}
 
-        return (
-          <article
-            key={product.id}
-            className="w-full rounded-2xl border-t-4 border-t-blue-500 border-b border-r border-l border-slate-100 bg-white shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition duration-200 hover:shadow-md overflow-hidden font-sans"
-          >
-            <button
-              type="button"
-              onClick={() => onSelect(product.id)}
-              className="w-full text-left p-4 transition active:scale-[0.99] font-sans"
-            >
-              <div className="flex gap-4">
-                {/* Visual indicator / avatar */}
-                <div className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-50 text-sm font-extrabold text-slate-600 border border-slate-100 shadow-inner">
-                  {avatar}
-                  <div className="absolute -bottom-1 -right-1 rounded-full bg-white p-0.5 shadow-sm">
-                    <StatusIcon className={cn("h-3.5 w-3.5", badge.iconClass)} />
-                  </div>
-                </div>
+function Metric({ label, value, tone }: { label: string; value: string; tone: "blue" | "red" | "green" }) {
+  const toneClasses = {
+    blue: "border-[#0b3f64]/30 bg-[rgba(11,63,100,0.08)]",
+    red: "border-[#ff0041]/30 bg-[rgba(255,0,65,0.08)]",
+    green: "border-[#00963d]/30 bg-[rgba(0,150,61,0.08)]",
+  } as const;
 
-                {/* Information content */}
-                <div className="min-w-0 flex-1 space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="min-w-0 line-clamp-1 text-sm font-semibold text-black tracking-tight leading-tight">
-                      {product.name}
-                    </h3>
-                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wide", badge.badgeClass)}>
-                      {badge.label}
-                    </span>
-                  </div>
-
-                  {/* Metrics grid */}
-                  <div className="grid grid-cols-3 gap-2 text-[10px] font-bold text-slate-400">
-                    <div className="bg-slate-50/50 rounded-xl p-1.5 border border-slate-50 text-center">
-                      <span className="block text-[8px] uppercase tracking-wider text-slate-400/80">Stock</span>
-                      <span className="text-slate-700 block mt-0.5 truncate text-[11px]">
-                        {formatMoney(currentStock)} <span className="text-[9px] font-semibold text-slate-400">u</span>
-                      </span>
-                    </div>
-                    <div className="bg-slate-50/50 rounded-xl p-1.5 border border-slate-50 text-center">
-                      <span className="block text-[8px] uppercase tracking-wider text-slate-400/80">Costo Prom.</span>
-                      <span className="text-slate-700 block mt-0.5 truncate text-[11px]">
-                        ${formatMoney(averageCost)}
-                      </span>
-                    </div>
-                    <div className="bg-slate-50/50 rounded-xl p-1.5 border border-slate-50 text-center">
-                      <span className="block text-[8px] uppercase tracking-wider text-slate-400/80">Valorizado</span>
-                      <span className="text-slate-700 block mt-0.5 truncate text-[11px]">
-                        ${formatMoney(stockValue)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Footer metadata */}
-                  <div className="flex items-center justify-between gap-2 border-t border-slate-50/80 pt-2 text-xs font-medium text-neutral-500">
-                    <span className="flex items-center gap-1">
-                      <Package className="h-3 w-3 text-slate-350" />
-                      Producto Simple
-                    </span>
-                    <span>Registro directo</span>
-                  </div>
-                </div>
-              </div>
-            </button>
-          </article>
-        );
-      })}
-    </div>
-  );
+  return <div className={cn("min-w-0 overflow-hidden rounded-xl border px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5", toneClasses[tone])}><span className="block min-h-[1.25rem] truncate text-[8px] font-medium uppercase tracking-wider text-black leading-tight sm:text-[9px]">{label}</span><span className="mt-0.5 block truncate whitespace-nowrap text-xs font-medium tracking-tight text-black tabular-nums sm:text-sm">{value}</span></div>;
 }

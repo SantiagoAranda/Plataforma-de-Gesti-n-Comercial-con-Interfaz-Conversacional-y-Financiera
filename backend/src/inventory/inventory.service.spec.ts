@@ -3044,4 +3044,222 @@ describe('InventoryService', () => {
       });
     });
   });
+
+  describe('Audited inventory flow enhancements', () => {
+    const businessId = 'business-1';
+
+    it('aggregates multi-source ingredient consumption (base recipe + option) correctly into a single sum', async () => {
+      const { service, tx } = createService();
+
+      tx.recipe.findMany.mockResolvedValue([
+        {
+          ingredientId: 'ingredient-cheese',
+          quantityRequired: new Prisma.Decimal(100),
+          isOptional: false,
+        },
+      ]);
+
+      tx.item.findFirst.mockResolvedValue({
+        id: 'item-burger',
+        businessId,
+        name: 'Burger',
+        type: 'PRODUCT',
+        status: 'ACTIVE',
+        inventoryMode: 'RECIPE_BASED',
+      });
+
+      tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve({
+          id: where.id,
+          businessId,
+          name: where.id === 'ingredient-cheese' ? 'Cheese' : 'Other',
+          currentStock: new Prisma.Decimal(1000),
+          averageCost: new Prisma.Decimal(2),
+          stockUnitId: 'unit-g',
+        }),
+      );
+      tx.ingredient.findMany.mockResolvedValue([
+        { id: 'ingredient-cheese', currentStock: new Prisma.Decimal(1000), name: 'Cheese' },
+      ]);
+
+      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+      );
+      tx.ingredient.update.mockResolvedValue({});
+      tx.order.update.mockResolvedValue({});
+
+      const movements = await service.applyInventoryConsumptionForOrder(
+        tx as any,
+        businessId,
+        {
+          id: 'order-1',
+          items: [
+            {
+              id: 'order-item-1',
+              itemId: 'item-burger',
+              quantity: 1,
+              itemNameSnapshot: 'Burger',
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'RECIPE_BASED',
+              options: [
+                {
+                  targetTypeSnapshot: 'INGREDIENT',
+                  ingredientId: 'ingredient-cheese',
+                  quantityModeSnapshot: 'FIXED_PER_OPTION',
+                  totalQuantitySnapshot: new Prisma.Decimal(50),
+                  optionNameSnapshot: 'Extra Cheese',
+                  groupTitleSnapshot: 'Extras',
+                },
+              ],
+            },
+          ],
+        },
+      );
+
+      expect(movements).toHaveLength(1);
+      expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ingredientId: 'ingredient-cheese',
+            quantity: new Prisma.Decimal(150),
+          }),
+        }),
+      );
+    });
+
+    it('consumes default options only if they exist in the order snapshot', async () => {
+      const { service, tx } = createService();
+
+      tx.item.findFirst.mockResolvedValue({
+        id: 'item-1',
+        businessId,
+        name: 'Item 1',
+        type: 'PRODUCT',
+        status: 'ACTIVE',
+        inventoryMode: 'NONE',
+      });
+
+      tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve({
+          id: where.id,
+          businessId,
+          name: 'Extra ingredient',
+          currentStock: new Prisma.Decimal(1000),
+          averageCost: new Prisma.Decimal(1),
+          stockUnitId: 'unit-g',
+        }),
+      );
+      tx.ingredient.findMany.mockResolvedValue([
+        { id: 'ingredient-opt', currentStock: new Prisma.Decimal(1000), name: 'Extra ingredient' },
+      ]);
+
+      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+      );
+      tx.ingredient.update.mockResolvedValue({});
+      tx.order.update.mockResolvedValue({});
+
+      const movementsA = await service.applyInventoryConsumptionForOrder(
+        tx as any,
+        businessId,
+        {
+          id: 'order-1',
+          items: [
+            {
+              id: 'order-item-1',
+              itemId: 'item-1',
+              quantity: 1,
+              itemNameSnapshot: 'Item 1',
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'NONE',
+              options: [],
+            },
+          ],
+        },
+      );
+      expect(movementsA).toHaveLength(0);
+      expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+
+      const movementsB = await service.applyInventoryConsumptionForOrder(
+        tx as any,
+        businessId,
+        {
+          id: 'order-2',
+          items: [
+            {
+              id: 'order-item-2',
+              itemId: 'item-1',
+              quantity: 1,
+              itemNameSnapshot: 'Item 1',
+              itemTypeSnapshot: 'PRODUCT',
+              inventoryModeSnapshot: 'NONE',
+              options: [
+                {
+                  targetTypeSnapshot: 'INGREDIENT',
+                  ingredientId: 'ingredient-opt',
+                  quantityModeSnapshot: 'FIXED_PER_OPTION',
+                  totalQuantitySnapshot: new Prisma.Decimal(10),
+                  optionNameSnapshot: 'Default Option',
+                  groupTitleSnapshot: 'Options',
+                },
+              ],
+            },
+          ],
+        },
+      );
+      expect(movementsB).toHaveLength(1);
+      expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            ingredientId: 'ingredient-opt',
+            quantity: new Prisma.Decimal(10),
+          }),
+        }),
+      );
+    });
+
+    it('limits recipe consumption history to the most recent sales and keeps their movement details', async () => {
+      const { service, tx } = createService();
+      tx.item.findFirst.mockResolvedValue({ id: 'item-1', businessId });
+      tx.inventoryMovement.findMany
+        .mockResolvedValueOnce([
+          { orderItemId: 'order-item-2' },
+          { orderItemId: 'order-item-1' },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'movement-2', type: 'SALE', quantity: new Prisma.Decimal(2), unitCost: new Prisma.Decimal(3), totalValue: new Prisma.Decimal(6), occurredAt: new Date('2026-01-02'),
+            ingredient: { id: 'ingredient-1', name: 'Harina', consumptionUnit: 'g', customUnitLabel: null },
+            orderItem: { id: 'order-item-2', quantity: 1, order: { id: 'order-2', documentNumber: '1002', createdAt: new Date('2026-01-02') } },
+          },
+        ]);
+
+      const result = await service.getRecipeConsumptionHistory(businessId, 'item-1', { limit: '2' });
+
+      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        distinct: ['orderItemId'],
+        orderBy: { occurredAt: 'desc' },
+        take: 2,
+      }));
+      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        where: expect.objectContaining({ orderItemId: { in: ['order-item-2', 'order-item-1'] } }),
+      }));
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(expect.objectContaining({ id: 'movement-2', totalValue: 6 }));
+    });
+
+    it('enforces multitenant security isolation in history endpoints', async () => {
+      const { service, tx } = createService();
+
+      tx.item.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getRecipeConsumptionHistory(businessId, 'item-other', {}),
+      ).rejects.toThrow(NotFoundException);
+
+      await expect(
+        service.getServiceConsumptionHistory(businessId, 'service-other', {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });
