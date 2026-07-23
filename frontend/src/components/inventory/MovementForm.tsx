@@ -101,6 +101,7 @@ export function MovementForm({
   const [detail, setDetail] = useState("");
   const [referenceId, setReferenceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPurchaseWarning, setShowPurchaseWarning] = useState(false);
 
   const stockUnit = useMemo(
     () =>
@@ -289,6 +290,22 @@ export function MovementForm({
     detail,
   ]);
 
+  const purchaseTotal = useMemo(
+    () =>
+      Number(normalizeDecimalInput(purchaseQuantity || "0")) *
+      Number(normalizeDecimalInput(purchaseUnitCost || "0")),
+    [purchaseQuantity, purchaseUnitCost],
+  );
+  const purchaseReferenceCost = Number(ingredient.averageCost ?? 0);
+  const purchaseVariation =
+    purchaseReferenceCost > 0 && (preview.baseUnitCost ?? 0) > 0
+      ? Math.abs((preview.baseUnitCost ?? 0) - purchaseReferenceCost) /
+        purchaseReferenceCost
+      : 0;
+  const purchaseVariationPercent = Math.round(purchaseVariation * 100);
+  const hasPurchaseWarning =
+    action === "PURCHASE" && purchaseVariation + 1e-9 >= 0.5;
+
   useEffect(() => {
     onValidationChange?.(canSubmit);
   }, [canSubmit, onValidationChange]);
@@ -297,7 +314,12 @@ export function MovementForm({
     onSubmittingChange?.(submitting);
   }, [submitting, onSubmittingChange]);
 
-  const submit = async () => {
+  const submit = async (confirmedUnusualPurchase = false) => {
+    if (submitting) return;
+    if (hasPurchaseWarning && !confirmedUnusualPurchase) {
+      setShowPurchaseWarning(true);
+      return;
+    }
     const loadingId = "inventory-movement-loading";
     const successId = "inventory-movement-success";
     const errorId = "inventory-movement-error";
@@ -372,6 +394,7 @@ export function MovementForm({
   };
 
   return (
+    <>
     <form
       ref={formRef}
       onSubmit={(e) => {
@@ -485,6 +508,18 @@ export function MovementForm({
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-1 border-t border-emerald-200/40">
+                  <div>
+                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Cantidad comprada</p>
+                    <p className="text-base font-bold text-emerald-900">{purchaseQuantity || "0"} {purchaseUnitLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Costo por {purchaseUnitLabel || "unidad"}</p>
+                    <p className="text-base font-bold text-emerald-900">${formatMoney(Number(normalizeDecimalInput(purchaseUnitCost || "0")))}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Costo total</p>
+                    <p className="text-base font-bold text-emerald-900">${formatMoney(purchaseTotal)}</p>
+                  </div>
                   <div>
                     <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Ingreso a Stock</p>
                     <p className="text-base font-bold text-emerald-900">
@@ -604,5 +639,24 @@ export function MovementForm({
         </button>
       )}
     </form>
+    {showPurchaseWarning && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-labelledby="purchase-warning-title">
+        <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <h2 id="purchase-warning-title" className="text-base font-bold text-slate-900">Revisá los datos de la compra</h2>
+          <p className="mt-2 text-sm leading-relaxed text-slate-600">El costo ingresado presenta una diferencia importante respecto del costo promedio actual.</p>
+          <div className="mt-4 space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-slate-800">
+            <p><span className="font-semibold">Costo por unidad ingresado:</span> ${formatMoney(preview.baseUnitCost ?? 0)}</p>
+            <p><span className="font-semibold">Costo de referencia:</span> ${formatMoney(purchaseReferenceCost)}</p>
+            <p><span className="font-semibold">Diferencia:</span> {purchaseVariationPercent}%</p>
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">Verificá que no hayas ingresado el costo total en lugar del costo por unidad.</p>
+          <div className="mt-5 flex gap-3">
+            <button type="button" onClick={() => setShowPurchaseWarning(false)} disabled={submitting} className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700">Volver y revisar</button>
+            <button type="button" onClick={() => { setShowPurchaseWarning(false); void submit(true); }} disabled={submitting} className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Guardando..." : "Confirmar de todos modos"}</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
