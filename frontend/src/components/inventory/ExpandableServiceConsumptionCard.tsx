@@ -283,9 +283,9 @@ export function ExpandableServiceConsumptionCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex w-full items-center gap-3 bg-gradient-to-b from-slate-50/80 to-white p-4 text-left select-none"
       >
-        <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
-          {serviceInitial}
-        </div>
+<div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
+  {serviceInitial}
+</div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-slate-800">

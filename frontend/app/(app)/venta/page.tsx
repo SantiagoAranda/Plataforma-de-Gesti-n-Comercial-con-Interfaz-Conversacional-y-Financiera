@@ -81,8 +81,8 @@ function MonthPickerPopover({
                   key={m}
                   onClick={() => { onSelect(navYear, i + 1); setOpen(false); }}
                   className={`rounded-xl py-1.5 text-xs font-medium transition ${isSelected
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-600 hover:bg-slate-100"
+                    ? "bg-[#0B3F64] text-white shadow-sm"
+                    : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
                     }`}
                 >
                   {m}

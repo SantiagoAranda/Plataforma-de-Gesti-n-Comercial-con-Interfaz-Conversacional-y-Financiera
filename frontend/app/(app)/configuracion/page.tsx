@@ -25,7 +25,7 @@ export default function ConfiguracionPage() {
             className="flex min-w-0 items-center justify-between gap-4 rounded-3xl border border-black/5 bg-white p-5 shadow-sm transition duration-200 hover:bg-neutral-50/50"
           >
             <div className="flex min-w-0 items-center gap-4">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#E6EFF5] border border-[#CEE0EC] text-[#0B3F64]">
                 <Landmark className="h-6 w-6" />
               </div>
               <div className="min-w-0">
@@ -54,7 +54,7 @@ export default function ConfiguracionPage() {
                   }}
                   className="peer sr-only"
                 />
-                <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-emerald-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-disabled:opacity-50"></div>
+                <div className="peer h-6 w-11 rounded-full bg-slate-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-[#0B3F64] peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-disabled:opacity-50"></div>
               </label>
               <div className="text-sm font-semibold text-neutral-400">
                 {">"}

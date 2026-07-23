@@ -880,11 +880,11 @@ export default function PublicStoreClient() {
         </div>
       )}
 
-      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-4">
+      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
         {loading ? (
           <p className="text-center mt-6 text-neutral-400">Cargando...</p>
         ) : (
-          <div className="mt-6 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
             {filtered.map((item) => (
               <ProductCard
                 key={item.id}

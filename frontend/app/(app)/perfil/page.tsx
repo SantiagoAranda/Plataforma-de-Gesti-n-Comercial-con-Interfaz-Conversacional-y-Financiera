@@ -3,6 +3,7 @@
 import { ChangeEvent, ReactNode, useEffect, useRef, useState } from "react";
 import {
   Building2,
+  Camera,
   Eye,
   Globe2,
   ImageIcon,
@@ -19,6 +20,7 @@ import { useRouter } from "next/navigation";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
+import ColorPickerPopover from "@/src/components/shared/ColorPickerPopover";
 import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
 import { api } from "@/src/lib/api";
@@ -62,9 +64,9 @@ type PhoneSource = "registration" | "manual" | "hidden";
 type EmailSource = "manual" | "hidden";
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition focus:border-[#0B3F64] focus:ring-2 focus:ring-[#E6EFF5]";
 const inputClassName =
-  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition placeholder:text-neutral-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
+  "h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm text-neutral-800 shadow-sm outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#E6EFF5]";
 const colorInputClassName =
   "h-11 w-14 shrink-0 cursor-pointer rounded-2xl border border-neutral-200 bg-white p-1 shadow-sm";
 const FOOTER_BACKGROUND_FALLBACK = "#064e3b";
@@ -179,23 +181,25 @@ function CardHeader({
   description,
   tone = "emerald",
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
   description: string;
   tone?: "emerald" | "sky" | "violet" | "amber";
 }) {
   const toneClass = {
-    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    sky: "bg-sky-50 text-sky-700 ring-sky-200",
+    emerald: "bg-[#E6EFF5] text-[#0B3F64] ring-[#CEE0EC]",
+    sky: "bg-[#E6EFF5] text-[#0B3F64] ring-[#CEE0EC]",
     violet: "bg-violet-50 text-violet-700 ring-violet-200",
     amber: "bg-amber-50 text-amber-700 ring-amber-200",
   }[tone];
 
   return (
     <div className="flex min-w-0 items-start gap-3">
-      <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ring-1 ${toneClass}`}>
-        {icon}
-      </div>
+      {icon && (
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ring-1 ${toneClass}`}>
+          {icon}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-neutral-900">{title}</p>
         <p className="mt-0.5 text-xs font-medium leading-5 text-neutral-500">
@@ -568,14 +572,17 @@ export default function PerfilPage() {
         <div className="mx-auto w-full max-w-xl space-y-4 overflow-visible box-border">
           <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
-              icon={<ImageIcon className="h-5 w-5" />}
               title="Logo"
               description="Usa una imagen clara para tu tienda y recibos."
-              tone="violet"
             />
 
-            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 text-slate-500">
+            <div className="mt-5 flex flex-col items-center justify-center text-center space-y-4">
+              {/* WhatsApp-style large circular profile picture */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="group relative flex h-32 w-32 cursor-pointer items-center justify-center overflow-hidden rounded-full border-4 border-slate-100 bg-slate-100 shadow-md transition hover:scale-105 hover:shadow-lg active:scale-95"
+                title="Presiona para cambiar la imagen"
+              >
                 {business?.logoUrl ? (
                   <img
                     src={business.logoUrl}
@@ -583,24 +590,31 @@ export default function PerfilPage() {
                     className="h-full w-full object-cover"
                   />
                 ) : initials ? (
-                  <span className="text-xl font-medium text-slate-500">{initials}</span>
+                  <span className="text-2xl font-bold text-slate-500">{initials}</span>
                 ) : (
-                  <UserCircle2 className="h-8 w-8" />
+                  <UserCircle2 className="h-16 w-16 text-slate-400" />
                 )}
+
+                {/* Hover camera overlay (WhatsApp style) */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <Camera className="h-7 w-7 mb-0.5" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Cambiar</span>
+                </div>
               </div>
 
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium leading-5 text-slate-500">
+              <div className="max-w-xs text-center">
+                <p className="text-xs font-medium leading-5 text-neutral-500">
                   JPG, PNG o WEBP hasta 2 MB. Se optimiza antes de guardarlo.
                 </p>
                 {logoError && (
-                  <p className="mt-2 text-xs font-semibold text-red-500">
+                  <p className="mt-1 text-xs font-semibold text-red-500">
                     {logoError}
                   </p>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:justify-end">
+              {/* Side-by-side action buttons */}
+              <div className="flex w-full max-w-sm items-center gap-3 pt-1">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -612,7 +626,7 @@ export default function PerfilPage() {
                   type="button"
                   disabled={logoBusy}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-full bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {logoBusy ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -626,7 +640,7 @@ export default function PerfilPage() {
                     type="button"
                     disabled={logoBusy}
                     onClick={handleDeleteLogo}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Trash2 className="h-4 w-4" />
                     Eliminar
@@ -1032,55 +1046,27 @@ export default function PerfilPage() {
                 </span>
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block space-y-2">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">
                     Color de fondo
                   </span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={previewFooterBackgroundColor}
-                      onChange={(event) => setFooterBackgroundColor(event.target.value)}
-                      className={colorInputClassName}
-                    />
-                    <input
-                      value={footerBackgroundColor}
-                      onChange={(event) => setFooterBackgroundColor(event.target.value)}
-                      onBlur={() =>
-                        setFooterBackgroundColor((current) =>
-                          normalizeHexColor(current, FOOTER_BACKGROUND_FALLBACK),
-                        )
-                      }
-                      className={`${inputClassName} font-mono uppercase`}
-                      placeholder="#064e3b"
-                    />
-                  </div>
+                  <ColorPickerPopover
+                    color={footerBackgroundColor}
+                    onChange={(newColor) => setFooterBackgroundColor(newColor)}
+                    fallbackColor={FOOTER_BACKGROUND_FALLBACK}
+                  />
                 </label>
 
-                <label className="block space-y-2">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                <label className="block space-y-1.5">
+                  <span className="block text-[11px] font-medium uppercase tracking-wide text-neutral-500">
                     Color de letra
                   </span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={previewFooterTextColor}
-                      onChange={(event) => setFooterTextColor(event.target.value)}
-                      className={colorInputClassName}
-                    />
-                    <input
-                      value={footerTextColor}
-                      onChange={(event) => setFooterTextColor(event.target.value)}
-                      onBlur={() =>
-                        setFooterTextColor((current) =>
-                          normalizeHexColor(current, FOOTER_TEXT_FALLBACK),
-                        )
-                      }
-                      className={`${inputClassName} font-mono uppercase`}
-                      placeholder="#ffffff"
-                    />
-                  </div>
+                  <ColorPickerPopover
+                    color={footerTextColor}
+                    onChange={(newColor) => setFooterTextColor(newColor)}
+                    fallbackColor={FOOTER_TEXT_FALLBACK}
+                  />
                 </label>
               </div>
 

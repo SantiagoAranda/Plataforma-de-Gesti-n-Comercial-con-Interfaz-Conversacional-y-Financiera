@@ -604,9 +604,9 @@ export default function SalesChatComposer({
           />
 
           {taxSettingsEnabled && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-                <FileText className="h-4 w-4" />
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
+                <FileText className="h-4 w-4 text-[#0B3F64]" />
                 {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
               </div>
               <div className="grid grid-cols-2 gap-2 w-full min-w-0">
@@ -615,7 +615,7 @@ export default function SalesChatComposer({
                   value={fiscalForm.buyerDocumentType}
                   disabled={isReadonly}
                   onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                  className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                  className="h-11 w-full rounded-xl border border-sky-200 bg-white px-2.5 text-xs outline-none focus:border-[#0B3F64] transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
                 >
                   {fiscalForm.buyerType === "JURIDICA" ? (
                     <option value="NIT">NIT / RUT</option>
@@ -635,7 +635,7 @@ export default function SalesChatComposer({
                   disabled={isReadonly}
                   onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
                   placeholder={fiscalForm.buyerType === "JURIDICA" ? "NIT" : "Cédula"}
-                  className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                  className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
                 />
                 </div>
               <div className="min-w-0">
@@ -645,7 +645,7 @@ export default function SalesChatComposer({
                 disabled={isReadonly}
                 onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
                 placeholder="Correo"
-                className="h-11 w-full rounded-xl border border-emerald-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
               />
               </div>
               </div>
@@ -674,9 +674,9 @@ export default function SalesChatComposer({
                         }}
                         className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
                           active
-                            ? "border-emerald-600 bg-white text-emerald-800 shadow-sm"
-                            : "border-emerald-300 bg-white/70 text-emerald-900 hover:border-emerald-500"
-                        } ${autorretenedorDisabled ? "cursor-not-allowed opacity-45 hover:border-emerald-300" : ""}`}
+                            ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
+                            : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
+                        } ${autorretenedorDisabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
                       >
                         {label}
                       </button>
@@ -690,7 +690,7 @@ export default function SalesChatComposer({
 
         {taxSettingsEnabled && fiscalForm.buyerType === "JURIDICA" && (
         <>
-        <div className="space-y-1.5 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+        <div className="space-y-1.5 rounded-2xl border border-sky-100 bg-sky-50 p-3">
           <span className="sr-only">
             Datos fiscales de la venta
           </span>
@@ -699,7 +699,7 @@ export default function SalesChatComposer({
               value={fiscalForm.fiscalMunicipalityCode}
               disabled={isReadonly}
               onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-emerald-500 transition disabled:bg-slate-50 disabled:text-slate-400"
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64] transition disabled:bg-slate-50 disabled:text-slate-400"
             >
               <option value="">Municipio ICA</option>
               {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
@@ -724,7 +724,7 @@ export default function SalesChatComposer({
                   const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
                   setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
                 }}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-500 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
               />
             </div>
 
@@ -733,7 +733,7 @@ export default function SalesChatComposer({
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
                 <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${
                   taxPreview.sellerIsSimpleRegime 
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800" 
+                    ? "border-sky-200 bg-sky-50 text-[#0B3F64]" 
                     : "border-slate-200 bg-slate-50 text-slate-600"
                 }`}>
                   {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
@@ -826,7 +826,7 @@ export default function SalesChatComposer({
                 onClick={() => setPaymentMethod("CASH")}
                 className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
                   paymentMethod === "CASH"
-                    ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
+                    ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
@@ -838,7 +838,7 @@ export default function SalesChatComposer({
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
                 className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
                   paymentMethod === "BANK_TRANSFER"
-                    ? "border-transparent bg-emerald-500 text-white shadow-sm disabled:opacity-90"
+                    ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                 }`}
               >
@@ -870,7 +870,7 @@ export default function SalesChatComposer({
                   type="button"
                   onClick={handleAddItem}
                   disabled={!newItem.itemId}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm hover:bg-emerald-600 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0B3F64] text-white shadow-sm hover:bg-[#0B3F64]/90 transition active:scale-95 disabled:opacity-40 disabled:bg-neutral-200"
                   title="Agregar ítem"
                 >
                   <Plus className="h-5 w-5" />
@@ -1040,108 +1040,36 @@ export default function SalesChatComposer({
     );
   }
 
-  if (mode === "edit") {
-    if (!expanded) return null;
-    return (
-      <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-slate-50 px-4 py-6">
-        <div className="w-full max-w-[344px] flex max-h-[92vh] flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl relative animate-in slide-in-from-bottom-full duration-300">
-          <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-            <div className="flex flex-col">
-              <h2 className="font-semibold text-slate-950 text-xl">Editar Venta</h2>
-              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">EDICIÓN MANUAL</span>
-            </div>
-            <button
-              type="button"
-              onClick={onCancelComposer}
-              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition"
-              aria-label="Cerrar"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto bg-white px-5 py-5 space-y-4">
-            {renderFormBody()}
-          </div>
-
-          {/* Bottom Bar for Modal */}
-          <div className="flex h-[76px] shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-5">
-              <button
-                type="button"
-                onClick={onCancelComposer}
-                className="flex h-9 w-7 shrink-0 items-center justify-center text-slate-400 hover:text-slate-600"
-                aria-label="Cancelar"
-              >
-                <X className="h-5 w-5" />
-              </button>
-              <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
-                <span className="text-lg font-semibold text-slate-950">${formatMoney(totalToDisplay)}</span>
-              </div>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={items.length === 0 || isSubmitting}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 active:scale-95 disabled:opacity-50"
-                  aria-label="Guardar cambios"
-                >
-                  <ShoppingBag className="h-5 w-5" />
-                </button>
-          </div>
-        </div>
-
-        {customizing && (
-          <ProductOptionSelector
-            item={customizing.item}
-            quantity={customizing.quantity}
-            initialSelections={customizing.initialSelections}
-            onClose={() => setCustomizing(null)}
-            onConfirm={({ optionSelections, optionNames, unitPrice }) => {
-              if (customizing.editIdx !== undefined) {
-                setItems((current) =>
-                  current.map((line, idx) =>
-                    idx === customizing.editIdx
-                      ? { ...line, optionSelections, optionNames, price: unitPrice }
-                      : line
-                  )
-                );
-              } else {
-                setItems((current) => [
-                  ...current,
-                  {
-                    itemId: customizing.item.id,
-                    qty: customizing.quantity,
-                    name: customizing.item.name,
-                    price: unitPrice,
-                    saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
-                    durationMin: customizing.item.durationMinutes,
-                    optionSelections,
-                    optionNames,
-                  },
-                ]);
-              }
-              setNewItem({ itemId: "", qty: 1 });
-              setCustomizing(null);
-            }}
-          />
-        )}
-      </div>
-    );
+  if (mode === "edit" && !expanded) {
+    return null;
   }
 
   return (
-    <div
-      className={expanded ? "fixed inset-0 z-30 flex items-center justify-center bg-slate-50 px-4 py-6" : "fixed inset-x-0 bottom-0 z-30 bg-white px-4 pt-2 lg:left-[408px] lg:right-0"}
-      style={expanded ? undefined : { paddingBottom: "calc(8px + env(safe-area-inset-bottom, 12px))" }}
-    >
-      <div className={expanded ? "mx-auto w-full max-w-[344px]" : "mx-auto w-full max-w-3xl"}>
+    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+      <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
+          {/* OVERLAY BACKDROP */}
           {expanded && (
-            <div className="pointer-events-auto mx-auto flex max-h-[92vh] w-full flex-col overflow-hidden rounded-[24px] border border-slate-100 bg-white shadow-2xl">
-              <div className="px-6 pb-5 pt-6 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+            <div
+              className="fixed inset-0 -z-10 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
+              onClick={onCancelComposer}
+            />
+          )}
+
+          {/* EXPANDABLE MODAL CONTENT */}
+          {expanded && (
+            <div
+              className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 w-full rounded-[28px] overflow-hidden border border-slate-100 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 pb-4 pt-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
                 <div className="flex flex-col">
-                  <h2 className="font-semibold text-slate-950 text-xl">Nueva Venta</h2>
-                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">CREACIÓN MANUAL</span>
+                  <h2 className="font-semibold text-slate-950 text-xl">
+                    {mode === "edit" ? "Editar Venta" : "Nueva Venta"}
+                  </h2>
+                  <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                    {mode === "edit" ? "EDICIÓN MANUAL" : "CREACIÓN MANUAL"}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -1153,61 +1081,42 @@ export default function SalesChatComposer({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto bg-white px-5 py-5 space-y-4">
+              <div className="max-h-[min(65vh,520px)] overflow-y-auto pt-4 pb-5 px-5 custom-scrollbar scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent space-y-4">
                 {renderFormBody()}
-              </div>
-              <div className="flex h-[76px] shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/70 px-5">
-                <button
-                  type="button"
-                  onClick={onCancelComposer}
-                  className="flex h-9 w-7 shrink-0 items-center justify-center text-slate-400 hover:text-slate-600"
-                  aria-label="Cancelar venta"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TOTAL VENTA</span>
-                  <div className="text-lg font-semibold leading-tight text-slate-950">${formatMoney(totalToDisplay)}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={items.length === 0 || isSubmitting}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 transition hover:bg-emerald-600 active:scale-95 disabled:opacity-50"
-                  aria-label="Guardar venta"
-                >
-                  <ShoppingBag className="h-5 w-5" />
-                </button>
               </div>
             </div>
           )}
 
-          {/* Bottom Bar */}
-          {!expanded && (
+          {/* CHAT BAR */}
           <WhatsappComposer
-            value={searchValue}
-            onChange={onSearchChange}
+            value={expanded ? "" : searchValue}
+            onChange={expanded ? () => {} : onSearchChange}
             leftAction={expanded ? onCancelComposer : onOpenComposer}
             rightAction={expanded ? handleSave : undefined}
+            onSubmit={expanded ? handleSave : undefined}
             placeholder="Buscar por cliente o ID..."
             leftIconVariant={expanded ? "x" : "plus"}
             rightIconVariant={expanded ? "send" : "search"}
-            submitDisabled={expanded && items.length === 0}
+            submitDisabled={expanded && (items.length === 0 || isSubmitting)}
             isSubmitting={isSubmitting}
             centerContent={
               expanded ? (
-                <div className="flex h-full w-full items-center justify-between pt-0.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{totalLabel}</span>
-                  <span className="text-sm font-medium text-slate-800">${formatMoney(totalToDisplay)}</span>
+                <div className="flex h-full w-full items-center justify-between px-2 pt-0.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {totalLabel}
+                  </span>
+                  <span className="text-base font-semibold text-slate-950">
+                    ${formatMoney(totalToDisplay)}
+                  </span>
                 </div>
               ) : undefined
             }
             plusAriaLabel={expanded ? "Cancelar venta" : "Nueva venta"}
-            submitAriaLabel={expanded ? "Guardar venta" : "Buscar ventas"}
+            submitAriaLabel={expanded ? (mode === "edit" ? "Guardar cambios" : "Guardar venta") : "Buscar ventas"}
           />
-          )}
         </div>
       </div>
+
       {customizing && (
         <ProductOptionSelector
           item={customizing.item}

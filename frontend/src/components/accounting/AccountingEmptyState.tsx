@@ -9,8 +9,8 @@ type Props = {
 export function AccountingEmptyState({ onCreate }: Props) {
   return (
     <div className="rounded-[32px] bg-white px-6 py-10 text-center shadow-sm ring-1 ring-black/5">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
-        <PlusCircle className="h-7 w-7 text-emerald-600" />
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#E6EFF5]">
+        <PlusCircle className="h-7 w-7 text-[#0B3F64]" />
       </div>
 
       <h2 className="mt-4 text-xl font-semibold text-neutral-900">
@@ -24,7 +24,7 @@ export function AccountingEmptyState({ onCreate }: Props) {
       <button
         type="button"
         onClick={onCreate}
-        className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600"
+        className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#0B3F64] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#0B3F64]/90 active:scale-95 shadow-sm"
       >
         <PlusCircle className="h-4 w-4" />
         Crear movimiento

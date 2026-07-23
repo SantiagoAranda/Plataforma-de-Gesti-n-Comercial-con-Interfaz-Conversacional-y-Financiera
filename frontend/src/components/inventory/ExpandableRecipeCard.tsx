@@ -18,7 +18,10 @@ import {
 } from "lucide-react";
 
 import { ProductCustomizationManager } from "@/src/components/inventory/ProductCustomizationManager";
-import { QuantityStepper, getStepAndPrecisionForUnit } from "@/src/components/inventory/QuantityStepper";
+import {
+  QuantityStepper,
+  getStepAndPrecisionForUnit,
+} from "@/src/components/inventory/QuantityStepper";
 import { cn } from "@/src/lib/utils";
 import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 import {
@@ -38,13 +41,15 @@ type Props = {
   allIngredients: InventorySummaryIngredient[];
   onSaveSuccess: () => Promise<void>;
   initiallyExpanded?: boolean;
-  onSaveContextChange?: (context: {
-    message: string;
-    saveLabel: string;
-    isSaving: boolean;
-    onSave: () => void | Promise<void>;
-    onDiscard: () => void;
-  } | null) => void;
+  onSaveContextChange?: (
+    context: {
+      message: string;
+      saveLabel: string;
+      isSaving: boolean;
+      onSave: () => void | Promise<void>;
+      onDiscard: () => void;
+    } | null,
+  ) => void;
 };
 
 type DraftRecipeLine = RecipeLine & {
@@ -110,14 +115,19 @@ export function ExpandableRecipeCard({
   const getIngredientName = (ingredientId: string) =>
     getIngredientDetails(ingredientId)?.name ?? "Selecciona un insumo";
 
-  const normalizeLine = (line: RecipeLine, previous?: DraftRecipeLine): DraftRecipeLine => {
+  const normalizeLine = (
+    line: RecipeLine,
+    previous?: DraftRecipeLine,
+  ): DraftRecipeLine => {
     const quantity = roundQuantity(toNumber(line.quantityRequired, 1));
-    const step = previous?.stepQuantity && previous.stepQuantity > 0
-      ? previous.stepQuantity
-      : inferInitialStep(quantity);
-    const base = previous?.baseQuantityRequired && previous.baseQuantityRequired > 0
-      ? previous.baseQuantityRequired
-      : step;
+    const step =
+      previous?.stepQuantity && previous.stepQuantity > 0
+        ? previous.stepQuantity
+        : inferInitialStep(quantity);
+    const base =
+      previous?.baseQuantityRequired && previous.baseQuantityRequired > 0
+        ? previous.baseQuantityRequired
+        : step;
 
     return {
       ingredientId: line.ingredientId,
@@ -134,7 +144,9 @@ export function ExpandableRecipeCard({
       recipeLines.map((line) =>
         normalizeLine(
           line,
-          current.find((draftLine) => draftLine.ingredientId === line.ingredientId),
+          current.find(
+            (draftLine) => draftLine.ingredientId === line.ingredientId,
+          ),
         ),
       ),
     );
@@ -185,7 +197,9 @@ export function ExpandableRecipeCard({
   const displayCost = isExpanded ? draftCost : originalCost;
   const displayProfit = displayCost === null ? null : price - displayCost;
 
-  const getRecipeStatus = (linesToCheck: Array<RecipeLine | DraftRecipeLine>) => {
+  const getRecipeStatus = (
+    linesToCheck: Array<RecipeLine | DraftRecipeLine>,
+  ) => {
     if (isSimple) {
       return {
         label: "Inventario directo",
@@ -226,7 +240,9 @@ export function ExpandableRecipeCard({
   const status = getRecipeStatus(recipeLines);
   const currentStatus = getRecipeStatus(draftLines);
   const displayStatus = isExpanded ? currentStatus : status;
-  const recipeImageUrl = [...(item.images ?? [])].sort((left, right) => left.order - right.order)[0]?.url;
+  const recipeImageUrl = [...(item.images ?? [])].sort(
+    (left, right) => left.order - right.order,
+  )[0]?.url;
   const recipeAvatar = (item.name ?? "R").trim().slice(0, 1).toUpperCase();
 
   const isDirty = useMemo(() => {
@@ -238,7 +254,8 @@ export function ExpandableRecipeCard({
       const draft = draftLines[i];
       if (!draft) return true;
       if (original.ingredientId !== draft.ingredientId) return true;
-      if (toNumber(original.quantityRequired) !== draft.quantityRequired) return true;
+      if (toNumber(original.quantityRequired) !== draft.quantityRequired)
+        return true;
       if (!!original.isOptional !== !!draft.isOptional) return true;
     }
 
@@ -246,7 +263,9 @@ export function ExpandableRecipeCard({
   }, [isSimple, recipeLines, draftLines]);
 
   const availableIngredients = useMemo(() => {
-    const usedIds = new Set(draftLines.map((line) => line.ingredientId).filter(Boolean));
+    const usedIds = new Set(
+      draftLines.map((line) => line.ingredientId).filter(Boolean),
+    );
     return allIngredients.filter(
       (ing) => ing.status !== "INACTIVE" && !usedIds.has(ing.id),
     );
@@ -312,9 +331,11 @@ export function ExpandableRecipeCard({
   const validate = () => {
     if (isSimple) return null;
 
-    if (draftLines.length < 1) return "La receta debe tener al menos un insumo.";
+    if (draftLines.length < 1)
+      return "La receta debe tener al menos un insumo.";
     const mandatory = draftLines.filter((line) => !line.isOptional);
-    if (mandatory.length < 1) return "La receta debe tener al menos un insumo obligatorio.";
+    if (mandatory.length < 1)
+      return "La receta debe tener al menos un insumo obligatorio.";
 
     for (const line of draftLines) {
       if (!line.ingredientId) return "Cada línea debe tener un insumo válido.";
@@ -389,7 +410,15 @@ export function ExpandableRecipeCard({
       onSave: handleSave,
       onDiscard: requestDiscardRecipe,
     });
-  }, [isExpanded, isRecipeBased, isDirty, submitting, draftLines, item.id, item.name]);
+  }, [
+    isExpanded,
+    isRecipeBased,
+    isDirty,
+    submitting,
+    draftLines,
+    item.id,
+    item.name,
+  ]);
 
   const renderSellabilityMessage = () => {
     if (!item.sellability || item.sellability.sellable) return null;
@@ -410,7 +439,10 @@ export function ExpandableRecipeCard({
       return "Este producto no aparece en la tienda porque falta stock en insumos obligatorios.";
     }
 
-    return item.sellability.message ?? "Este producto no está disponible para la tienda pública.";
+    return (
+      item.sellability.message ??
+      "Este producto no está disponible para la tienda pública."
+    );
   };
 
   const sellabilityMessage = renderSellabilityMessage();
@@ -432,7 +464,6 @@ export function ExpandableRecipeCard({
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#E0E7FF] text-[#0B3F64]">
             <BookOpen className="h-5 w-5" />
           </div>
-
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -440,29 +471,58 @@ export function ExpandableRecipeCard({
                   {item.name}
                 </h3>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide", displayStatus.tone)}>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                      displayStatus.tone,
+                    )}
+                  >
                     {displayStatus.label}
                   </span>
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">Venta</p>
-                <p className="mt-0.5 text-sm font-semibold text-slate-950">${formatMoney(price)}</p>
+                <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
+                  Venta
+                </p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-950">
+                  ${formatMoney(price)}
+                </p>
               </div>
             </div>
           </div>
 
           <span className="mt-1 shrink-0 text-slate-400">
-            {isExpanded ? <ChevronUp className="h-4.5 w-4.5" /> : <ChevronDown className="h-4.5 w-4.5" />}
+            {isExpanded ? (
+              <ChevronUp className="h-4.5 w-4.5" />
+            ) : (
+              <ChevronDown className="h-4.5 w-4.5" />
+            )}
           </span>
         </button>
 
         <div className="grid grid-cols-3 gap-2 border-t border-slate-100 px-4 py-2.5">
-          <MetricCard label="Venta" value={`$${formatMoney(price)}`} tone="neutral" />
-          <MetricCard label="Costo base" value={displayCost === null ? "Sin datos" : `$${formatMoney(displayCost)}`} tone="emerald" />
+          <MetricCard
+            label="Venta"
+            value={`$${formatMoney(price)}`}
+            tone="neutral"
+          />
+          <MetricCard
+            label="Costo base"
+            value={
+              displayCost === null
+                ? "Sin datos"
+                : `$${formatMoney(displayCost)}`
+            }
+            tone="emerald"
+          />
           <MetricCard
             label="Ganancia base"
-            value={displayProfit === null ? "Sin datos" : `${displayProfit < 0 ? "-" : ""}$${formatMoney(Math.abs(displayProfit))}`}
+            value={
+              displayProfit === null
+                ? "Sin datos"
+                : `${displayProfit < 0 ? "-" : ""}$${formatMoney(Math.abs(displayProfit))}`
+            }
             tone={displayProfit !== null && displayProfit < 0 ? "rose" : "blue"}
           />
         </div>
@@ -470,26 +530,44 @@ export function ExpandableRecipeCard({
         {isExpanded && (
           <div className="space-y-3 border-t border-slate-100 px-4 pb-4 pt-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-              <h4 className="text-sm font-medium text-slate-950">Stock directo</h4>
+              <h4 className="text-sm font-medium text-slate-950">
+                Stock directo
+              </h4>
               <p className="mt-1 text-xs leading-relaxed text-slate-500">
                 Este producto descuenta su propio stock al confirmar una venta.
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <InfoCell label="Stock actual" value={formatQuantity(item.currentStock)} />
-                <InfoCell label="Costo promedio" value={`$${formatMoney(toNumber(item.averageCost, 0))}`} />
-                <InfoCell label="Stock mínimo" value={formatQuantity(item.minStock)} />
+                <InfoCell
+                  label="Stock actual"
+                  value={formatQuantity(item.currentStock)}
+                />
+                <InfoCell
+                  label="Costo promedio"
+                  value={`$${formatMoney(toNumber(item.averageCost, 0))}`}
+                />
+                <InfoCell
+                  label="Stock mínimo"
+                  value={formatQuantity(item.minStock)}
+                />
                 <InfoCell label="Unidad" value="unidades" />
               </div>
             </div>
             {item.type === "PRODUCT" && (
               <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3">
                 <div>
-                  <h4 className="text-sm font-medium text-slate-950">Grupos de personalización</h4>
+                  <h4 className="text-sm font-medium text-slate-950">
+                    Grupos de personalización
+                  </h4>
                   <p className="mt-1 text-xs leading-relaxed text-slate-500">
                     Configurá opciones como proteínas, tamaños o toppings.
                   </p>
                 </div>
-                <ProductCustomizationManager item={item} allIngredients={allIngredients} hideHeader onSaveContextChange={onSaveContextChange} />
+                <ProductCustomizationManager
+                  item={item}
+                  allIngredients={allIngredients}
+                  hideHeader
+                  onSaveContextChange={onSaveContextChange}
+                />
               </section>
             )}
           </div>
@@ -505,15 +583,33 @@ export function ExpandableRecipeCard({
       <header className="p-4 bg-gradient-to-b from-slate-50/80 to-white space-y-3">
         <div className="flex items-center gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
-            {recipeImageUrl ? <img src={recipeImageUrl} alt="" className="h-full w-full object-cover" /> : recipeAvatar}
+            {recipeImageUrl ? (
+              <img
+                src={recipeImageUrl}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              recipeAvatar
+            )}
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <h3 className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-slate-800">
               {item.name}
             </h3>
 
-            <span className={cn("inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-medium text-black sm:text-[10px]", displayStatus.tone)}>
-              <span className={cn("w-1.5 h-1.5 rounded-full", displayStatus.dotColor)} />
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-medium text-black sm:text-[10px]",
+                displayStatus.tone,
+              )}
+            >
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  displayStatus.dotColor,
+                )}
+              />
               {displayStatus.label}
             </span>
 
@@ -523,26 +619,42 @@ export function ExpandableRecipeCard({
               className="shrink-0 rounded-lg p-1.5 text-black transition-colors hover:bg-slate-100 hover:opacity-70"
               title={isExpanded ? "Colapsar" : "Expandir"}
             >
-              <ChevronUp className={cn("w-5 h-5 transition-transform duration-200", !isExpanded && "rotate-180")} />
+              <ChevronUp
+                className={cn(
+                  "w-5 h-5 transition-transform duration-200",
+                  !isExpanded && "rotate-180",
+                )}
+              />
             </button>
           </div>
         </div>
-
       </header>
 
       <section className="border-t border-slate-100 px-4 py-3">
         <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
           <div className="min-w-0 overflow-hidden rounded-xl border border-[#0b3f64]/30 bg-[rgba(11,63,100,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-            <span className="block truncate text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black">Venta</span>
-            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">${formatMoney(price)}</span>
+            <span className="block truncate text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black">
+              Venta
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              ${formatMoney(price)}
+            </span>
           </div>
           <div className="min-w-0 overflow-hidden rounded-xl border border-[#ff0041]/30 bg-[rgba(255,0,65,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Costo base</span>
-            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">{displayCost === null ? "—" : `$${formatMoney(displayCost)}`}</span>
+            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">
+              Costo base
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              {displayCost === null ? "—" : `$${formatMoney(displayCost)}`}
+            </span>
           </div>
           <div className="min-w-0 overflow-hidden rounded-xl border border-[#00963d]/30 bg-[rgba(0,150,61,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Ganancia base</span>
-            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">{displayProfit === null ? "—" : `$${formatMoney(displayProfit)}`}</span>
+            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">
+              Ganancia base
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              {displayProfit === null ? "—" : `$${formatMoney(displayProfit)}`}
+            </span>
           </div>
         </div>
       </section>
@@ -558,7 +670,7 @@ export function ExpandableRecipeCard({
                 "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all sm:px-3 sm:py-1.5 sm:text-xs",
                 activeSubTab === "history"
                   ? "bg-[#0b3f64] text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
               )}
             >
               <History className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -571,7 +683,7 @@ export function ExpandableRecipeCard({
                 "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all sm:px-3 sm:py-1.5 sm:text-xs",
                 activeSubTab === "config"
                   ? "bg-[#0b3f64] text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
               )}
             >
               <Settings className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -579,7 +691,11 @@ export function ExpandableRecipeCard({
             </button>
           </nav>
           {activeSubTab === "history" ? (
-            <ConsumptionHistoryTab itemId={item.id} itemName={item.name} type="recipe" />
+            <ConsumptionHistoryTab
+              itemId={item.id}
+              itemName={item.name}
+              type="recipe"
+            />
           ) : (
             <>
               {/* Estado Vacío: Receta pendiente */}
@@ -589,14 +705,19 @@ export function ExpandableRecipeCard({
                     <ChefHat className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-xs sm:text-sm font-medium text-black">Receta pendiente</h4>
+                    <h4 className="text-xs sm:text-sm font-medium text-black">
+                      Receta pendiente
+                    </h4>
                     <p className="text-xs font-normal text-black/70 mt-0.5 max-w-sm mx-auto">
-                      Este producto utiliza ingredientes, pero todavía no tiene una receta configurada.
+                      Este producto utiliza ingredientes, pero todavía no tiene
+                      una receta configurada.
                     </p>
                   </div>
                   <div className="inline-flex items-center gap-1.5 bg-amber-100/80 text-black text-[11px] font-normal px-2.5 py-1 rounded-md">
                     <EyeOff className="w-3.5 h-3.5 text-[#ff4800] shrink-0" />
-                    <span>No visible en la tienda pública sin receta base.</span>
+                    <span>
+                      No visible en la tienda pública sin receta base.
+                    </span>
                   </div>
                   <div className="pt-2">
                     <button
@@ -618,9 +739,13 @@ export function ExpandableRecipeCard({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Utensils className="w-4 h-4 text-[#0b3f64]" />
-                      <h4 className="text-xs font-medium text-black uppercase tracking-wide">Ingredientes base</h4>
+                      <h4 className="text-xs font-medium text-black uppercase tracking-wide">
+                        Ingredientes base
+                      </h4>
                     </div>
-                    <span className="text-[11px] text-black/60 font-normal">Receta predeterminada</span>
+                    <span className="text-[11px] text-black/60 font-normal">
+                      Receta predeterminada
+                    </span>
                   </div>
 
                   <div className="bg-slate-50/60 border border-slate-200 border-l-4 border-l-[#0b3f64] rounded-xl overflow-hidden">
@@ -630,29 +755,51 @@ export function ExpandableRecipeCard({
                       className="w-full p-3 flex items-center justify-between hover:bg-slate-100/60 transition-colors text-left"
                     >
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-xs sm:text-sm text-black">Ingredientes de la receta base</span>
+                        <span className="font-medium text-xs sm:text-sm text-black">
+                          Ingredientes de la receta base
+                        </span>
                         <span className="bg-[rgba(11,63,100,0.08)] text-black text-[10px] font-normal px-2 py-0.5 rounded-full border border-blue-100">
-                          {draftLines.length} {draftLines.length === 1 ? "ingrediente" : "ingredientes"}
+                          {draftLines.length}{" "}
+                          {draftLines.length === 1
+                            ? "ingrediente"
+                            : "ingredientes"}
                         </span>
                       </div>
-                      <ChevronUp className={cn("w-4 h-4 text-black transition-transform duration-200", !baseIngredientsOpen && "rotate-180")} />
+                      <ChevronUp
+                        className={cn(
+                          "w-4 h-4 text-black transition-transform duration-200",
+                          !baseIngredientsOpen && "rotate-180",
+                        )}
+                      />
                     </button>
 
                     {baseIngredientsOpen && (
                       <div className="p-3 border-t border-slate-200 space-y-3 bg-white">
                         <div className="space-y-2">
                           {draftLines.map((line, idx) => {
-                            const ingredient = getIngredientDetails(line.ingredientId);
+                            const ingredient = getIngredientDetails(
+                              line.ingredientId,
+                            );
                             const unit = getIngredientUnit(line.ingredientId);
                             const quantity = getLineQuantity(line);
-                            const averageCost = toNumber(ingredient?.averageCost, 0);
+                            const averageCost = toNumber(
+                              ingredient?.averageCost,
+                              0,
+                            );
                             const stock = toNumber(ingredient?.currentStock, 0);
-                            const uses = Number.isFinite(quantity) && quantity > 0 ? Math.floor(stock / quantity) : 0;
+                            const uses =
+                              Number.isFinite(quantity) && quantity > 0
+                                ? Math.floor(stock / quantity)
+                                : 0;
                             const totalCost = lineCost(line);
-                            const { step, precision } = getStepAndPrecisionForUnit(unit);
+                            const { step, precision } =
+                              getStepAndPrecisionForUnit(unit);
 
                             return (
-                              <div key={`${line.ingredientId}-${idx}`} className="bg-slate-50/50 border border-slate-200 rounded-xl p-3">
+                              <div
+                                key={`${line.ingredientId}-${idx}`}
+                                className="bg-slate-50/50 border border-slate-200 rounded-xl p-3"
+                              >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -663,28 +810,43 @@ export function ExpandableRecipeCard({
                                         type="button"
                                         onClick={() =>
                                           setDraftLines((prev) =>
-                                            prev.map((l, i) => (i === idx ? { ...l, isOptional: !l.isOptional } : l))
+                                            prev.map((l, i) =>
+                                              i === idx
+                                                ? {
+                                                    ...l,
+                                                    isOptional: !l.isOptional,
+                                                  }
+                                                : l,
+                                            ),
                                           )
                                         }
                                         className={cn(
                                           "text-[10px] font-normal px-1.5 py-0.5 rounded border transition text-black",
                                           line.isOptional
                                             ? "bg-amber-50 border-amber-200"
-                                            : "bg-blue-50 border-blue-100"
+                                            : "bg-blue-50 border-blue-100",
                                         )}
                                       >
-                                        {line.isOptional ? "Opcional" : "Obligatorio"}
+                                        {line.isOptional
+                                          ? "Opcional"
+                                          : "Obligatorio"}
                                       </button>
                                     </div>
                                     <div className="mt-2 flex items-center gap-2">
-                                      <span className="text-xs text-black font-normal">Consumo:</span>
+                                      <span className="text-xs text-black font-normal">
+                                        Consumo:
+                                      </span>
                                       <QuantityStepper
                                         value={quantity}
-                                        onChange={(val) => updateQuantity(idx, val)}
+                                        onChange={(val) =>
+                                          updateQuantity(idx, val)
+                                        }
                                         step={step}
                                         precision={precision}
                                         unitLabel={unit}
-                                        ariaLabel={getIngredientName(line.ingredientId)}
+                                        ariaLabel={getIngredientName(
+                                          line.ingredientId,
+                                        )}
                                       />
                                     </div>
                                   </div>
@@ -702,20 +864,33 @@ export function ExpandableRecipeCard({
 
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 mt-2 border-t border-slate-200/60 text-[11px] text-black font-normal">
                                   <div>
-                                    <span className="text-black/60 block text-[10px]">Costo unidad</span>
-                                    ${formatMoney(averageCost)} {unit ? `/ ${unit}` : ""}
+                                    <span className="text-black/60 block text-[10px]">
+                                      Costo unidad
+                                    </span>
+                                    ${formatMoney(averageCost)}{" "}
+                                    {unit ? `/ ${unit}` : ""}
                                   </div>
                                   <div>
-                                    <span className="text-black/60 block text-[10px]">Costo total</span>
-                                    <span className="text-black font-normal">${formatMoney(totalCost)}</span>
+                                    <span className="text-black/60 block text-[10px]">
+                                      Costo total
+                                    </span>
+                                    <span className="text-black font-normal">
+                                      ${formatMoney(totalCost)}
+                                    </span>
                                   </div>
                                   <div>
-                                    <span className="text-black/60 block text-[10px]">Stock actual</span>
+                                    <span className="text-black/60 block text-[10px]">
+                                      Stock actual
+                                    </span>
                                     {formatQuantity(stock)} {unit}
                                   </div>
                                   <div>
-                                    <span className="text-black/60 block text-[10px]">Producciones</span>
-                                    <span className="font-normal text-black">{formatQuantity(uses)} disp.</span>
+                                    <span className="text-black/60 block text-[10px]">
+                                      Producciones
+                                    </span>
+                                    <span className="font-normal text-black">
+                                      {formatQuantity(uses)} disp.
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -726,7 +901,9 @@ export function ExpandableRecipeCard({
                         {showAddSelector ? (
                           <div className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
                             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                              <span className="text-[10px] font-normal uppercase tracking-wide text-black">+ AÑADIR INGREDIENTE</span>
+                              <span className="text-[10px] font-normal uppercase tracking-wide text-black">
+                                + AÑADIR INGREDIENTE
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => setShowAddSelector(false)}
@@ -741,7 +918,9 @@ export function ExpandableRecipeCard({
                               </label>
                               <select
                                 value=""
-                                onChange={(e) => handleAddIngredient(e.target.value)}
+                                onChange={(e) =>
+                                  handleAddIngredient(e.target.value)
+                                }
                                 className="w-full px-2.5 py-1.5 border border-[#0b3f64] rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"
                               >
                                 <option value="">Seleccionar insumo...</option>
@@ -772,7 +951,12 @@ export function ExpandableRecipeCard({
               {/* Grupos de Personalización */}
               {item.type === "PRODUCT" && (
                 <section className="space-y-3 pt-2 border-t border-slate-100">
-                <ProductCustomizationManager item={item} allIngredients={allIngredients} hideHeader={false} onSaveContextChange={onSaveContextChange} />
+                  <ProductCustomizationManager
+                    item={item}
+                    allIngredients={allIngredients}
+                    hideHeader={false}
+                    onSaveContextChange={onSaveContextChange}
+                  />
                 </section>
               )}
 
@@ -794,7 +978,9 @@ export function ExpandableRecipeCard({
                     className="px-5 py-2 rounded-xl bg-[#0b3f64] text-white text-xs font-medium hover:bg-[#121a28] transition-colors shadow-md disabled:opacity-50 flex items-center gap-1.5"
                   >
                     <Save className="w-3.5 h-3.5 text-white" />
-                    <span>{submitting ? "Guardando..." : "Guardar receta"}</span>
+                    <span>
+                      {submitting ? "Guardando..." : "Guardar receta"}
+                    </span>
                   </button>
                 </div>
               )}
@@ -823,8 +1009,15 @@ function MetricCard({
   }[tone];
 
   return (
-    <div className={cn("min-w-0 rounded-xl border px-2.5 py-2 text-center", toneClass)}>
-      <p className="truncate text-[9px] font-medium uppercase tracking-wider opacity-70">{label}</p>
+    <div
+      className={cn(
+        "min-w-0 rounded-xl border px-2.5 py-2 text-center",
+        toneClass,
+      )}
+    >
+      <p className="truncate text-[9px] font-medium uppercase tracking-wider opacity-70">
+        {label}
+      </p>
       <p className="mt-0.5 truncate text-sm font-semibold">{value}</p>
     </div>
   );
@@ -833,7 +1026,9 @@ function MetricCard({
 function InfoCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-100">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+        {label}
+      </p>
       <p className="mt-1 text-sm font-medium text-slate-900">{value}</p>
     </div>
   );

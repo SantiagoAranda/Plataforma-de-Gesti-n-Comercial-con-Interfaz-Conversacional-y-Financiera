@@ -182,7 +182,7 @@ export function AccountingChatComposer({
                         >
                           <span>{mode.label}</span>
                           {searchMode === mode.value && (
-                            <Check className="h-4 w-4 text-emerald-600" />
+                            <Check className="h-4 w-4 text-[#0B3F64]" />
                           )}
                         </button>
                       ))}
@@ -205,7 +205,7 @@ export function AccountingChatComposer({
                   onClick={() => toggleNatureFilter("DEBIT")}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     natureFilter === "DEBIT"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
@@ -216,7 +216,7 @@ export function AccountingChatComposer({
                   onClick={() => toggleNatureFilter("CREDIT")}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     natureFilter === "CREDIT"
-                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >

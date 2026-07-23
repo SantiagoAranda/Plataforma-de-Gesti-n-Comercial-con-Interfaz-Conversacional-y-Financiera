@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { Nature } from "@/src/types/accounting-form";
 import { cn } from "@/src/lib/utils";
@@ -36,7 +36,7 @@ export function AccountingNatureToggle({
             className={cn(
               "rounded-xl px-2 py-2 transition sm:px-3 text-xs font-semibold",
               value === "DEBIT"
-                ? "bg-emerald-500 text-white shadow-sm"
+                ? "bg-[#0B3F64] text-white shadow-sm"
                 : "bg-transparent text-slate-500 font-semibold text-xs",
               disabled && "cursor-not-allowed opacity-60"
             )}
@@ -51,7 +51,7 @@ export function AccountingNatureToggle({
             className={cn(
               "rounded-xl px-2 py-2 transition sm:px-3 text-xs font-semibold",
               value === "CREDIT"
-                ? "bg-emerald-500 text-white shadow-sm"
+                ? "bg-[#0B3F64] text-white shadow-sm"
                 : "bg-transparent text-slate-500 font-semibold text-xs",
               disabled && "cursor-not-allowed opacity-60"
             )}

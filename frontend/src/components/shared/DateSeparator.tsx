@@ -1,39 +1,40 @@
 "use client";
 
-import { formatBusinessDateTime } from "@/src/lib/businessDate";
+import {
+  formatBusinessDateTime,
+  getRelativeBusinessDayLabel,
+} from "@/src/lib/businessDate";
 
 type Props = {
-  dateISO: string;
+  dateISO?: string;
   labelOverride?: string;
 };
 
 export function DateSeparator({ dateISO, labelOverride }: Props) {
-  const label = labelOverride || groupLabel(dateISO);
+  const label = labelOverride || (dateISO ? groupLabel(dateISO) : "");
 
   return (
-    <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-700 my-4">
-      <span className="h-px flex-1 rounded-full bg-emerald-200" />
+    <div className="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#0B3F64] py-2">
+      <span className="h-px flex-1 rounded-full bg-[#CEE0EC]" />
       {label}
-      <span className="h-px flex-1 rounded-full bg-emerald-200" />
+      <span className="h-px flex-1 rounded-full bg-[#CEE0EC]" />
     </div>
   );
 }
 
 function groupLabel(dateISO: string) {
-  // Use a fixed time at noon to avoid timezone shift issues when parsing ISO dates
-  const d = new Date(`${dateISO}T12:00:00`); 
-  const now = new Date();
-  
-  // Calculate difference in calendar days
-  const diffTime = Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / 86400000) - 
-                   Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000);
+  const dateStr = dateISO.includes("T") ? dateISO : `${dateISO}T12:00:00Z`;
+  const d = new Date(dateStr);
+  const relativeLabel = getRelativeBusinessDayLabel(d, "es-AR");
 
-  if (diffTime === 0) return "HOY";
-  if (diffTime === 1) return "AYER";
+  if (relativeLabel === "Hoy") return "HOY";
+  if (relativeLabel === "Ayer") return "AYER";
 
   return formatBusinessDateTime(d, "es-AR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+  })
+    .replace(/\./g, "")
+    .toUpperCase();
 }
