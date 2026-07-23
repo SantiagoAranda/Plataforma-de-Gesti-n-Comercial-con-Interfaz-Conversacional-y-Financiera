@@ -3990,7 +3990,7 @@ function PayrollNewsSheet({
 
   const save = async () => {
     if (!employeeId || !selectedPeriod) return setError("Selecciona un periodo con empleado activo.");
-    if (!editable) return setError("Este per�odo ya fue liquidado. No se pueden modificar novedades.");
+    if (!editable) return setError("Este período ya fue liquidado. No se pueden modificar novedades.");
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
@@ -4042,7 +4042,7 @@ function PayrollNewsSheet({
       <div className="space-y-3">
         {!editable && (
           <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-            Este per�odo ya fue liquidado. No se pueden modificar novedades. Vista previa, no modifica el período posteado.
+            Este período ya fue liquidado. No se pueden modificar novedades. Vista previa, no modifica el período posteado.
           </p>
         )}
         <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
