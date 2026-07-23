@@ -695,7 +695,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
     return "0";
   };
 
-  const GroupForm = ({ mode }: { mode: "create" | "edit" }) => (
+  const renderGroupForm = ({ mode }: { mode: "create" | "edit" }) => (
     <div className={cn("rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs", mode === "create" && "order-last")}>
       <div className="flex items-center justify-between border-b border-slate-200 pb-2">
         <span className="text-[10px] font-medium text-black uppercase tracking-wide">
@@ -705,7 +705,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
       </div>
       <div className="space-y-1">
         <label className="block text-[9px] uppercase font-normal text-black">Título del grupo</label>
-        <input value={groupForm.title} onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))} placeholder="Ej: Proteínas, Toppings extra" className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40" />
+        <input value={groupForm.title} onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))} placeholder="Ej.: Proteínas, toppings extra" className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40" />
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
@@ -723,7 +723,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
     </div>
   );
 
-  const OptionForm = ({ group, mode }: { group: any; mode: "create" | "edit" }) => {
+  const renderOptionForm = ({ group, mode }: { group: any; mode: "create" | "edit" }) => {
     const form = optionFormFor(group);
     const query = (ingredientSearch[group.id] || "").toLowerCase();
     const filteredIngredients = allIngredients.filter((ingredient) => ingredient.name.toLowerCase().includes(query));
@@ -763,137 +763,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
       )}
 
       {/* Shared create form. Edits render this same component in the group's position. */}
-      {showGroupForm && !editingGroupId && <GroupForm mode="create" />}
-      {false && (
-        <div className="order-last rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-            <span className="text-[10px] font-medium text-black uppercase tracking-wide">
-              {editingGroupId ? "EDITAR GRUPO" : "+ NUEVO GRUPO DE PERSONALIZACIÓN"}
-            </span>
-            {!onSaveContextChange && <button
-              type="button"
-              onClick={resetGroupForm}
-              className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity"
-            >
-              Cancelar
-            </button>}
-          </div>
-
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <label className="block text-[9px] uppercase font-normal text-black">Título del grupo</label>
-              <input
-                value={groupForm.title}
-                onChange={(e) => setGroupForm((p) => ({ ...p, title: e.target.value }))}
-                placeholder="Ej: Proteínas, Toppings extra"
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="block text-[9px] uppercase font-normal text-black">Modo de consumo</label>
-              {groupForm.quantityMode === "NO_QUANTITY" ? (
-                <div className="w-full px-2.5 py-1.5 border border-amber-200 rounded-lg text-xs font-normal text-amber-800 bg-amber-50">
-                  Configuración histórica
-                </div>
-              ) : (
-              <select
-                value={groupForm.quantityMode}
-                onChange={(e) => setGroupForm((p) => ({ ...p, quantityMode: e.target.value as QuantityMode }))}
-                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"
-              >
-                <option value="FIXED_PER_OPTION">{translateQuantityMode("FIXED_PER_OPTION")}</option>
-                <option value="SHARED_TOTAL">{translateQuantityMode("SHARED_TOTAL")}</option>
-              </select>
-              )}
-            </div>
-
-            <div className="flex items-end">
-              <label className="flex w-full h-[34px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-normal text-black cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={groupForm.required}
-                  onChange={(e) =>
-                    setGroupForm((p) => ({
-                      ...p,
-                      required: e.target.checked,
-                      minSelections: e.target.checked && p.minSelections === "0" ? "1" : p.minSelections,
-                    }))
-                  }
-                  className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
-                />
-                Obligatorio
-              </label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="block text-[9px] uppercase font-normal text-black">Selecciones Mínimas</label>
-              <QuantityStepper
-                value={Number(groupForm.minSelections || 0)}
-                onChange={(val) => setGroupForm((p) => ({ ...p, minSelections: String(val) }))}
-                min={0}
-                step={1}
-                precision={0}
-                ariaLabel="Selecciones Mínimas"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="block text-[9px] uppercase font-normal text-black">Selecciones Máximas</label>
-              <QuantityStepper
-                value={Number(groupForm.maxSelections || 0)}
-                onChange={(val) => setGroupForm((p) => ({ ...p, maxSelections: val === 0 ? "" : String(val) }))}
-                min={0}
-                step={1}
-                precision={0}
-                ariaLabel="Selecciones Máximas"
-              />
-            </div>
-          </div>
-
-          {groupForm.quantityMode === "SHARED_TOTAL" && (
-            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-              <div className="space-y-1">
-                <label className="block text-[9px] uppercase font-normal text-black">Cantidad Total Compartida</label>
-                <QuantityStepper
-                  value={Number(groupForm.totalQuantityLimit.replace(",", ".")) || 0}
-                  onChange={(value) => setGroupForm((p) => ({ ...p, totalQuantityLimit: String(value) }))}
-                  min={0.000001}
-                  step={0.1}
-                  precision={6}
-                  ariaLabel="Cantidad total compartida"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[9px] uppercase font-normal text-black">Unidad de medida</label>
-                <select
-                  value={groupForm.totalQuantityUnitId}
-                  onChange={(e) => setGroupForm((p) => ({ ...p, totalQuantityUnitId: e.target.value }))}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none cursor-pointer"
-                >
-                  <option value="">Seleccionar unidad...</option>
-                  {units.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.symbol || unit.name} ({unit.name})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-
-          <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}>
-            <button type="button" onClick={resetGroupForm} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button>
-            <button type="button" onClick={saveGroup} disabled={savingGroup} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">
-              {savingGroup ? "Guardando..." : editingGroupId ? "Guardar grupo" : "Guardar grupo"}
-            </button>
-          </div>
-        </div>
-      )}
-
+      {showGroupForm && !editingGroupId && renderGroupForm({ mode: "create" })}
       {/* GROUPS LIST */}
       <div className="space-y-3">
         {!loading && groups.length === 0 && (
@@ -977,7 +847,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
           const isOptionFormOpen = creatingOptionForGroupId === group.id;
 
           if (editingGroupId === group.id) {
-            return <GroupForm key={group.id} mode="edit" />;
+            return renderGroupForm({ mode: "edit" });
             return (
               <div key={group.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar grupo</span>
@@ -1046,7 +916,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                         }
 
                         if (editingOptionId === option.id) {
-                          return <OptionForm key={option.id} group={group} mode="edit" />;
+                          return renderOptionForm({ group, mode: "edit" });
                           return (
                             <div key={option.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
                               <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar opción</span>
@@ -1158,198 +1028,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                   )}
 
                   {/* The same form is used for create and the inline edit above. */}
-                  {isOptionFormOpen && !editingOptionId && <OptionForm group={group} mode="create" />}
-                  {false && isOptionFormOpen && !editingOptionId && (
-                    <div className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 mt-2.5 shadow-xs">
-                      {/* Header */}
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                        <span className="text-[10px] font-normal uppercase tracking-wide text-black block">
-                          {editingOptionId ? "EDITAR OPCIÓN" : "+ AÑADIR OPCIÓN"}
-                        </span>
-                        {!onSaveContextChange && <button
-                          type="button"
-                          onClick={() => cancelEditOption(group)}
-                          className="text-[10px] font-normal text-black hover:opacity-80 transition-opacity"
-                        >
-                          Cancelar
-                        </button>}
-                      </div>
-
-                      <div className="relative space-y-1">
-                        <label className="block text-[9px] uppercase font-normal text-black">
-                          {group.quantityMode === "SHARED_TOTAL" ? "INSUMO" : "RECURSO"}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={ingredientSearch[group.id] || ""}
-                            onFocus={() => setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }))}
-                            onChange={(e) => {
-                              setIngredientSearch((prev) => ({ ...prev, [group.id]: e.target.value }));
-                              setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: true }));
-                            }}
-                            placeholder={group.quantityMode === "SHARED_TOTAL" ? "Buscar insumo..." : "Buscar insumo o producto simple..."}
-                            className="w-full pl-8 pr-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none placeholder:text-black/40"
-                          />
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-black/50" />
-                        </div>
-                        {ingredientDropdownOpen[group.id] && (
-                          <div className="absolute left-0 right-0 z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                            {filteredIngredients.map((ing) => (
-                              <button key={`INGREDIENT:${ing.id}`} type="button" onClick={() => {
-                                setOptionForm(group.id, { ...form, targetType: "INGREDIENT", ingredientId: ing.id, itemId: "", name: ing.name, unitId: ing.stockUnitId || "", quantity: form.quantity || "1" });
-                                setIngredientSearch((prev) => ({ ...prev, [group.id]: ing.name }));
-                                setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                              }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50">
-                                <span>{ing.name}<span className="ml-1 text-[10px] text-black/60">Insumo</span></span>
-                                <span className="text-[10px] text-black/60">Stock: {formatQuantity(ing.currentStock)} {unitLabel(ing.stockUnitId)}</span>
-                              </button>
-                            ))}
-                            {group.quantityMode === "FIXED_PER_OPTION" && filteredItems.map((it) => (
-                              <button key={`ITEM:${it.id}`} type="button" onClick={() => {
-                                setOptionForm(group.id, { ...form, targetType: "ITEM", ingredientId: "", itemId: it.id, name: it.name, unitId: "", quantity: form.quantity || "1" });
-                                setIngredientSearch((prev) => ({ ...prev, [group.id]: it.name }));
-                                setIngredientDropdownOpen((prev) => ({ ...prev, [group.id]: false }));
-                              }} className="flex w-full items-center justify-between p-2 text-left text-xs font-normal text-black hover:bg-slate-50">
-                                <span>{it.name}<span className="ml-1 text-[10px] text-black/60">Producto</span></span>
-                                <span className="text-[10px] text-black/60">Stock: {formatQuantity(it.currentStock)} unidad</span>
-                              </button>
-                            ))}
-                            {filteredIngredients.length === 0 && (group.quantityMode !== "FIXED_PER_OPTION" || filteredItems.length === 0) && <div className="p-2 text-xs text-black/60 font-normal">No se encontraron resultados</div>}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 4. Precio de esta opción */}
-                      <div className="space-y-1">
-                        <label className="block text-[9px] uppercase font-normal text-black">
-                          PRECIO DE ESTA OPCIÓN
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={form.priceDelta}
-                          onChange={(e) => setOptionForm(group.id, { ...form, priceDelta: e.target.value })}
-                          placeholder="0"
-                          className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal text-black bg-white focus:outline-none"
-                        />
-                      </div>
-
-                      {/* 5. Texto informativo del precio */}
-                      <p className="text-[11px] font-normal text-black">
-                        {(!form.priceDelta || Number(form.priceDelta) === 0)
-                          ? "Incluido en el precio base."
-                          : "Este valor se suma al precio base."}
-                      </p>
-
-                      {/* 6 & 7. Cantidad que consume + Unidad Base */}
-                      {group.quantityMode === "FIXED_PER_OPTION" && form.targetType !== "NONE" && (
-                        <div className="flex gap-3 pt-1">
-                          {/* Cantidad que consume */}
-                          <div className="flex-1">
-                            <label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">
-                              CANTIDAD QUE<br />CONSUME
-                            </label>
-                            <QuantityStepper
-                              value={Number(form.quantity || 1)}
-                              onChange={(val) => setOptionForm(group.id, { ...form, quantity: String(val) })}
-                              min={form.targetType === "ITEM" ? 1 : 0.000001}
-                              step={
-                                form.targetType === "ITEM" ? 1 : getStepAndPrecisionForUnit(
-                                  form.targetType === "INGREDIENT"
-                                    ? (() => {
-                                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
-                                        const unit = units.find((u) => u.id === ing?.stockUnitId);
-                                        return unit?.symbol || unit?.name || "";
-                                      })()
-                                    : unitLabel(form.unitId)
-                                ).step
-                              }
-                              precision={
-                                form.targetType === "ITEM" ? 0 : getStepAndPrecisionForUnit(
-                                  form.targetType === "INGREDIENT"
-                                    ? (() => {
-                                        const ing = allIngredients.find((i) => i.id === form.ingredientId);
-                                        const unit = units.find((u) => u.id === ing?.stockUnitId);
-                                        return unit?.symbol || unit?.name || "";
-                                      })()
-                                    : unitLabel(form.unitId)
-                                ).precision
-                              }
-                              ariaLabel="Cantidad que consume"
-                            />
-                          </div>
-
-                          {/* Unidad Base */}
-                          <div className="flex-1">
-                            <label className="block text-[8px] uppercase font-normal text-black mb-1 leading-tight">
-                              UNIDAD BASE<br />(INSUMO)
-                            </label>
-                            {form.targetType === "INGREDIENT" ? (
-                              <div className="flex items-center px-2.5 border border-slate-200 rounded-lg h-7.5 bg-white text-xs font-normal text-black">
-                                {(() => {
-                                  const ing = allIngredients.find((i) => i.id === form.ingredientId);
-                                  const unit = units.find((u) => u.id === ing?.stockUnitId)!;
-                                  return unit ? (unit.symbol || unit.name) : "—";
-                                })()}
-                              </div>
-                            ) : (
-                              <div className="flex items-center px-2.5 border border-slate-200 rounded-lg h-7.5 bg-white text-xs font-normal text-black">unidad</div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Error checks */}
-                      {hasIncompatibleUnit && (
-                        <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black">
-                          <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" />
-                          <span>Este insumo usa una unidad incompatible con la del grupo.</span>
-                        </div>
-                      )}
-
-                      {duplicateError && (
-                        <div className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50/50 p-2.5 text-xs font-normal text-black">
-                          <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff0041]" />
-                          <span>{duplicateError}</span>
-                        </div>
-                      )}
-
-                      {/* 8 & 9. Checkboxes row */}
-                      <div className="hidden" aria-hidden="true">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={form.selectedByDefault}
-                            onChange={(e) => setOptionForm(group.id, { ...form, selectedByDefault: e.target.checked })}
-                            className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
-                          />
-                          <span className="text-[11px] font-normal text-black select-none">
-                            Preselección
-                          </span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={form.removable}
-                            onChange={(e) => setOptionForm(group.id, { ...form, removable: e.target.checked })}
-                            className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0b3f64] cursor-pointer"
-                          />
-                          <span className="text-[11px] font-normal text-black select-none">
-                            Removible
-                          </span>
-                        </label>
-                      </div>
-
-                      {/* 10. Botón Guardar opción */}
-                      <div className={cn("sticky bottom-0 -mx-3.5 mt-4 gap-2 border-t border-slate-200 bg-white px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:mx-0 md:p-0 md:border-0", onSaveContextChange ? "hidden" : "flex")}>
-                        <button type="button" onClick={() => cancelEditOption(group)} disabled={savingOption} className="min-h-10 flex-1 rounded-lg border border-slate-200 text-xs font-medium text-black">Cancelar</button>
-                        <button type="button" disabled={savingOption || hasIncompatibleUnit || !!duplicateError} onClick={() => saveOption(group)} className="min-h-10 flex-1 rounded-lg bg-[#0B3F64] text-xs font-medium text-white disabled:opacity-60">
-                          {savingOption ? "Guardando..." : "Guardar opción"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {isOptionFormOpen && !editingOptionId && renderOptionForm({ group, mode: "create" })}
                 </div>
               )}
             </div>

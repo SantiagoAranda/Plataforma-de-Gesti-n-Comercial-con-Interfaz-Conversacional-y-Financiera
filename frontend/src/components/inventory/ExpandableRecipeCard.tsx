@@ -319,15 +319,6 @@ export function ExpandableRecipeCard({
     setShowAddSelector(false);
   };
 
-  const addFirstIngredient = () => {
-    const firstIngredient = availableIngredients[0];
-    if (!firstIngredient) {
-      toast.error("No hay insumos disponibles para agregar.");
-      return;
-    }
-    handleAddIngredient(firstIngredient.id);
-  };
-
   const validate = () => {
     if (isSimple) return null;
 
@@ -665,19 +656,6 @@ export function ExpandableRecipeCard({
           <nav className="flex items-center gap-2 border-b border-slate-100 pb-2">
             <button
               type="button"
-              onClick={() => setActiveSubTab("history")}
-              className={cn(
-                "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all sm:px-3 sm:py-1.5 sm:text-xs",
-                activeSubTab === "history"
-                  ? "bg-[#0b3f64] text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
-              )}
-            >
-              <History className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
-              Historial de consumo
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveSubTab("config")}
               className={cn(
                 "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all sm:px-3 sm:py-1.5 sm:text-xs",
@@ -688,6 +666,19 @@ export function ExpandableRecipeCard({
             >
               <Settings className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
               Configuración
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab("history")}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-medium transition-all sm:px-3 sm:py-1.5 sm:text-xs",
+                activeSubTab === "history"
+                  ? "bg-[#0b3f64] text-white shadow-xs"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
+              )}
+            >
+              <History className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+              Historial de consumo
             </button>
           </nav>
           {activeSubTab === "history" ? (
@@ -722,8 +713,7 @@ export function ExpandableRecipeCard({
                   <div className="pt-2">
                     <button
                       type="button"
-                      onClick={addFirstIngredient}
-                      disabled={availableIngredients.length === 0}
+                      onClick={() => setShowAddSelector(true)}
                       className="bg-[#0b3f64] hover:bg-[#121a28] text-white font-normal text-xs px-4 py-2 rounded-lg transition-colors shadow-xs inline-flex items-center gap-1.5 active:scale-[0.98] disabled:opacity-50"
                     >
                       <Plus className="w-4 h-4 text-white" />
@@ -734,7 +724,7 @@ export function ExpandableRecipeCard({
               )}
 
               {/* Ingredientes base (Receta configurada) */}
-              {draftLines.length > 0 && (
+              {(draftLines.length > 0 || showAddSelector) && (
                 <section className="space-y-3 pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -902,7 +892,7 @@ export function ExpandableRecipeCard({
                           <div className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
                             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                               <span className="text-[10px] font-normal uppercase tracking-wide text-black">
-                                + AÑADIR INGREDIENTE
+                                AÑADIR INGREDIENTE
                               </span>
                               <button
                                 type="button"
@@ -939,7 +929,7 @@ export function ExpandableRecipeCard({
                             className="w-full py-2.5 border border-dashed border-[#0b3f64] bg-[rgba(11,63,100,0.05)] hover:bg-blue-50 text-[#0b3f64] font-normal text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
                           >
                             <Plus className="w-3.5 h-3.5 text-[#0b3f64]" />
-                            <span>+ AÑADIR INGREDIENTE</span>
+                            <span>AÑADIR INGREDIENTE</span>
                           </button>
                         )}
                       </div>
