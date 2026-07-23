@@ -24,6 +24,7 @@ import {
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { PayrollChatActionBar } from "@/src/components/payroll/PayrollChatActionBar";
+import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import { SearchSelect, type SearchSelectOption } from "@/src/components/shared/SearchSelect";
 import { AppApiError } from "@/src/lib/api";
 import {
@@ -76,7 +77,7 @@ function SheetShell({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:p-4">
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 p-0 sm:p-4">
       <div className={cn(
         "relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:rounded-[32px]",
         maxWidth,
@@ -141,7 +142,7 @@ function BigInput(props: InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-function SegmentedOption<T extends string>({
+function SegmentedOption<T extends string | boolean>({
   value,
   current,
   onChange,
@@ -161,10 +162,8 @@ function SegmentedOption<T extends string>({
       disabled={disabled}
       onClick={() => onChange(value)}
       className={cn(
-        "h-10 rounded-xl px-3 text-xs font-medium transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45",
-        selected
-          ? "bg-[#0fb18f] text-white shadow-sm"
-          : "border border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100",
+        "h-10 flex-1 rounded-xl text-xs font-medium transition disabled:opacity-50",
+        selected ? "bg-[#0B3F64] text-white shadow-sm" : "text-slate-600 hover:text-slate-900",
       )}
     >
       {children}
@@ -537,7 +536,7 @@ function PayrollConfirmDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="w-full max-w-md rounded-t-[28px] border border-white/60 bg-white p-5 shadow-2xl sm:rounded-[28px]">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -853,25 +852,23 @@ function PayrollSheetFooter({
   onPrimary: () => void;
 }) {
   return (
-    <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)]">
-      {error && <p className="mb-3 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>}
-      <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="h-12 rounded-2xl bg-neutral-100 text-sm font-medium text-neutral-600 hover:bg-neutral-200"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={onPrimary}
-          disabled={submitting || primaryDisabled}
-          className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-medium text-white shadow-lg shadow-emerald-100 hover:opacity-90 disabled:opacity-60"
-        >
-          {submitting ? "Guardando..." : primaryLabel}
-        </button>
-      </div>
+    <div className="w-full">
+      {error && (
+        <div className="mb-2 px-1">
+          <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
+        </div>
+      )}
+      <WhatsappComposer
+        onPlusClick={onCancel}
+        onSubmit={onPrimary}
+        isSubmitting={submitting}
+        submitDisabled={primaryDisabled}
+        placeholder={primaryLabel ? `${primaryLabel}...` : "Escribe una observación..."}
+        leftIconVariant="x"
+        rightIconVariant="send"
+        plusAriaLabel="Cancelar"
+        submitAriaLabel={primaryLabel}
+      />
     </div>
   );
 }
@@ -910,28 +907,37 @@ function PayrollEmployeeSheetShell<T extends string>({
   };
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-      <div className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex h-[88dvh] max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl transition-transform animate-in slide-in-from-bottom sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[720px] sm:max-h-[calc(100dvh-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]">
-        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
-          <PayrollEmployeeHeader
-            title={title}
-            subtitle={subtitle}
-            documentNumber={documentNumber}
-            role={role}
-            onClose={onClose}
+    <div className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="relative">
+          {/* OVERLAY BACKDROP */}
+          <div
+            className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+            onClick={onClose}
           />
-          <PayrollEmployeeTabs tabs={tabs} activeTab={activeTab} onChange={changeTab} />
+
+          {/* EXPANDABLE MODAL CONTENT */}
+          <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 mx-auto flex max-h-[min(78vh,640px)] w-full flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300">
+            <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
+              <PayrollEmployeeHeader
+                title={title}
+                subtitle={subtitle}
+                documentNumber={documentNumber}
+                role={role}
+                onClose={onClose}
+              />
+              <PayrollEmployeeTabs tabs={tabs} activeTab={activeTab} onChange={changeTab} />
+            </div>
+            <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
+              {children}
+            </div>
+          </div>
+
+          {/* CHAT COMPOSER AT BOTTOM */}
+          {footer}
         </div>
-        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 pb-28 overscroll-contain">
-          {children}
-        </div>
-        {footer}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1019,7 +1025,7 @@ function ContractFormSection({
                 onClick={() => risk && update({ arlRiskClassId: risk.id })}
                 className={cn(
                   "h-10 rounded-xl text-[11px] font-medium transition disabled:opacity-40",
-                  selected ? "bg-blue-500 text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
+                  selected ? "bg-[#0B3F64] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
                 )}
               >
                 Riesgo {level}
@@ -1032,10 +1038,10 @@ function ContractFormSection({
       <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
         <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => update({ isRemote: !value.isRemote })} className={cn("h-11 rounded-xl text-xs font-medium", value.isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+          <button type="button" onClick={() => update({ isRemote: !value.isRemote })} className={cn("h-11 rounded-xl text-xs font-medium transition", value.isRemote ? "bg-[#0B3F64] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
             Trabajo remoto
           </button>
-          <button type="button" onClick={() => update({ applyLaw1819: !value.applyLaw1819 })} className={cn("h-11 rounded-xl text-xs font-medium", value.applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
+          <button type="button" onClick={() => update({ applyLaw1819: !value.applyLaw1819 })} className={cn("h-11 rounded-xl text-xs font-medium transition", value.applyLaw1819 ? "bg-[#0B3F64] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
             Exonerado Ley 1819
           </button>
         </div>
@@ -1460,6 +1466,7 @@ function PayrollQuickEmployeeSheet({
               value={selectedEmployeeOption}
               placeholder="Buscar por nombre, apellido o documento"
               emptyText="No se encontraron empleados para esa busqueda."
+              buttonColorClassName="bg-[#0B3F64] hover:bg-[#0B3F64]/90"
               selectedLabel="Empleado seleccionado"
               search={searchEmployees}
               onSelect={(option) => {
@@ -1539,7 +1546,7 @@ function PayrollQuickEmployeeSheet({
                   }}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-[22px] bg-white p-3 text-left shadow-sm ring-1 ring-black/5 transition",
-                    selected && "ring-2 ring-[#0fb18f]",
+                    selected && "ring-2 ring-[#0B3F64]",
                   )}
                 >
                   <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#0fb18f]/12 text-sm font-medium text-[#0f8f76]">
@@ -1878,307 +1885,287 @@ function EmployeePayrollEditorSheet({
   };
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-[60] bg-black/20 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-      <div className="fixed inset-x-0 bottom-0 z-[70] mx-auto flex h-[88dvh] max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl transition-transform animate-in slide-in-from-bottom sm:left-1/2 sm:right-auto sm:top-1/2 sm:bottom-auto sm:h-[720px] sm:max-h-[calc(100dvh-2rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-[28px]">
-        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
-          {/* Header */}
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-medium text-slate-900">{employeeName(run.employee)}</h2>
-              <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
-                {run.employee.documentNumber ?? "Sin doc."} • {employeeRole(run.employee, run.contract)}
-              </p>
+    <div className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="relative">
+          {/* OVERLAY BACKDROP */}
+          <div
+            className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+            onClick={onClose}
+          />
+
+          {/* EXPANDABLE MODAL CONTENT */}
+          <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 mx-auto flex max-h-[min(78vh,640px)] w-full flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300">
+            <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
+              {/* Header */}
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg font-medium text-slate-900">{employeeName(run.employee)}</h2>
+                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
+                    {run.employee.documentNumber ?? "Sin doc."} • {employeeRole(run.employee, run.contract)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (run.contract && run.contract.isActive !== false) {
+                        toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
+                        return;
+                      }
+                      onClose();
+                      onInactivateEmployee?.(run.employee);
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                    aria-label="Inactivar"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentSnapshot = JSON.stringify({
+                        workedDays, commissions, nonSalaryBonus, loans, otherDeductions,
+                        salaryMonthly, startDate, endDate, contractType, arlRiskClassId, applyLaw1819, isRemote, paymentCycle,
+                        firstName, lastName, documentNumber, position, email, phone, active
+                      });
+                      if (currentSnapshot !== initialSnapshot) {
+                        toast((t) => (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-xs font-medium text-slate-800">Tienes cambios sin guardar. ¿Deseas descartar o continuar editando?</p>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  toast.dismiss(t.id);
+                                  onClose();
+                                }}
+                                className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-600"
+                              >
+                                Descartar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toast.dismiss(t.id)}
+                                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                              >
+                                Continuar
+                              </button>
+                            </div>
+                          </div>
+                        ), { duration: 5000 });
+                      } else {
+                        onClose();
+                      }
+                    }}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    aria-label="Cerrar"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => changeTab("horas")}
+                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                >
+                  Novedades
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeTab("contrato")}
+                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                >
+                  Contrato
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeTab("empleado")}
+                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+                >
+                  Empleado
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (run.contract && run.contract.isActive !== false) {
-                    toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
-                    return;
-                  }
-                  onClose();
-                  onInactivateEmployee?.(run.employee);
-                }}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                aria-label="Inactivar"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const currentSnapshot = JSON.stringify({
-                    workedDays, commissions, nonSalaryBonus, loans, otherDeductions,
-                    salaryMonthly, startDate, endDate, contractType, arlRiskClassId, applyLaw1819, isRemote, paymentCycle,
-                    firstName, lastName, documentNumber, position, email, phone, active
-                  });
-                  if (currentSnapshot !== initialSnapshot) {
-                    toast((t) => (
-                      <div className="flex flex-col gap-2">
-                        <p className="text-sm font-medium text-slate-900">Hay cambios sin guardar.</p>
-                        <div className="flex gap-2">
-                          <button onClick={() => toast.dismiss(t.id)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200">Seguir editando</button>
-                          <button onClick={() => { toast.dismiss(t.id); onClose(); }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Descartar</button>
+
+            {/* Form Body */}
+            <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
+              {activeTab === "horas" && (
+                <div className="space-y-3">
+                  {!editable && (
+                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                      Este periodo ya fue liquidado. No se pueden modificar novedades.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Dias trabajados">
+                      <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" disabled={!editable} />
+                    </FieldBlock>
+                    <FieldBlock label="Prestamos">
+                      <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" disabled={!editable} />
+                    </FieldBlock>
+                    <FieldBlock label="Comisiones salariales">
+                      <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" disabled={!editable} />
+                    </FieldBlock>
+                    <FieldBlock label="Bonos no salariales">
+                      <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" disabled={!editable} />
+                    </FieldBlock>
+                    <FieldBlock label="Otras deducciones">
+                      <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" disabled={!editable} />
+                    </FieldBlock>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "contrato" && (
+                <div className="space-y-3">
+                  {run.contract ? (
+                    <div className="rounded-[22px] border border-neutral-100 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Contrato actual</p>
+                          <p className="mt-0.5 text-sm font-semibold text-slate-900">{run.employee.position || "Sin cargo definido"}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            {run.contract.contractType === "INDEFINITE" ? "Término indefinido" : run.contract.contractType === "FIXED_TERM" ? "Término fijo" : "Obra o labor"} · Salario: ${Number(run.contract.salaryMonthly || 0).toLocaleString("es-CO")}
+                          </p>
                         </div>
+                        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", run.contract.isActive !== false ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
+                          {run.contract.isActive !== false ? "Activo" : "Inactivo"}
+                        </span>
                       </div>
-                    ), { duration: Infinity });
-                  } else {
-                    onClose();
-                  }
-                }}
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
-                aria-label="Cerrar"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                      Este empleado no tiene contrato registrado. Completa la información a continuación para crearlo.
+                    </p>
+                  )}
 
-          {/* Tab switcher */}
-          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => changeTab("horas")}
-              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-            >
-              Horas/Ajustes
-            </button>
-            <button
-              type="button"
-              onClick={() => changeTab("contrato")}
-              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-            >
-              Contrato
-            </button>
-            <button
-              type="button"
-              onClick={() => changeTab("empleado")}
-              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-            >
-              Empleado
-            </button>
-          </div>
-        </div>
-
-        {/* Form Body */}
-        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 pb-28 overscroll-contain">
-          {activeTab === "horas" && (
-            <div className="space-y-3">
-              {!editable && (
-                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                  Este perodo ya fue liquidado. No se pueden modificar novedades.
-                </p>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <FieldBlock label="Dias trabajados">
-                  <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" disabled={!editable} />
-                </FieldBlock>
-                <FieldBlock label="Prestamos">
-                  <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" disabled={!editable} />
-                </FieldBlock>
-                <FieldBlock label="Comisiones salariales">
-                  <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" disabled={!editable} />
-                </FieldBlock>
-                <FieldBlock label="Bonos no salariales">
-                  <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" disabled={!editable} />
-                </FieldBlock>
-                <FieldBlock label="Otras deducciones">
-                  <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" disabled={!editable} />
-                </FieldBlock>
-                <FieldBlock label="Fecha salida simulada">
-                  <BigInput value={simulatedEndDate} onChange={(event) => setSimulatedEndDate(event.target.value)} type="date" />
-                </FieldBlock>
-              </div>
-
-              {/* Extras hours */}
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Trabajo suplementario</span>
-                  <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-medium text-neutral-500">{totalOvertimeHours} h</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {overtimeInputs.map((item) => (
-                    <label key={item.type} className="rounded-2xl border border-neutral-100 bg-neutral-50 p-2">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate text-[11px] font-medium text-neutral-700">{item.label}</span>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-[#0fb18f]">{item.hint}</span>
-                      </span>
-                      <input
-                        value={overtimeHours[item.type]}
-                        onChange={(event) =>
-                          setOvertimeHours((current) => ({
-                            ...current,
-                            [item.type]: event.target.value,
-                          }))
-                        }
-                        type="number"
-                        min="0"
-                        disabled={!editable}
-                        className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-right text-sm font-semibold outline-none focus:border-emerald-400"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "contrato" && (
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={Boolean(run.contract && run.contract.isActive !== false)}
-                  onClick={() => { onClose(); onCreateContract?.(run.employee); }}
-                  className="flex-1 rounded-xl border border-neutral-200 bg-white py-2.5 text-xs font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Nuevo contrato
-                </button>
-                <button
-                  type="button"
-                  disabled={!run.contract || run.contract.isActive === false}
-                  onClick={() => { onClose(); if (run.contract) onInactivateContract?.(run.contract); }}
-                  className="flex-1 rounded-xl border border-amber-200 bg-amber-50/80 py-2.5 text-xs font-medium text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
-                >
-                  Inactivar contrato
-                </button>
-              </div>
-              {Boolean(run.contract && run.contract.isActive !== false) && (
-                <p className="mt-1 text-[11px] font-medium text-slate-500">
-                  Contrato activo vigente. Para crear uno nuevo, primero debes inactivar o liquidar el contrato actual.
-                </p>
-              )}
-
-              {hasPostedHistoryError && (
-                <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
-                  Este contrato tiene nómina liquidada. Los cambios críticos requieren una nueva versión de contrato.
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <FieldBlock label="Fecha ingreso">
-                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
-                </FieldBlock>
-                <FieldBlock label="Fecha salida">
-                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
-                </FieldBlock>
-              </div>
-
-              <FieldBlock label="Salario mensual">
-                <BigInput
-                  value={salaryMonthly ? Number(String(salaryMonthly).replace(/\D/g, "")).toLocaleString("es-CO") : ""}
-                  onChange={(event) => {
-                    const val = event.target.value.replace(/\D/g, "");
-                    setSalaryMonthly(val);
-                  }}
-                  placeholder="3.000.000"
-                  type="text"
-                  inputMode="numeric"
-                  disabled={hasPostedHistoryError}
-                />
-              </FieldBlock>
-
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">ARL</span>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {[1, 2, 3, 4, 5].map((level) => {
-                    const risk = arlRisks.find((item) => item.level === level);
-                    const selected = arlRiskClassId === risk?.id;
-                    return (
-                      <button
-                        key={level}
-                        type="button"
-                        disabled={!risk || hasPostedHistoryError}
-                        onClick={() => risk && setArlRiskClassId(risk.id)}
-                        className={cn(
-                          "h-10 rounded-xl text-[11px] font-medium transition disabled:opacity-40",
-                          selected ? "bg-blue-500 text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700",
-                        )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Tipo de contrato">
+                      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1">
+                        <SegmentedOption value="INDEFINITE" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Indefinido</SegmentedOption>
+                        <SegmentedOption value="FIXED_TERM" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Fijo</SegmentedOption>
+                        <SegmentedOption value="TASK" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Obra/Labor</SegmentedOption>
+                      </div>
+                    </FieldBlock>
+                    <FieldBlock label="Riesgo ARL">
+                      <select
+                        value={arlRiskClassId}
+                        onChange={(event) => setArlRiskClassId(event.target.value)}
+                        disabled={hasPostedHistoryError}
+                        className="h-12 w-full rounded-2xl border border-transparent bg-slate-100 px-3 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-slate-200"
                       >
-                        Riesgo {level}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                        {arlRisks.map((item: ArlRiskClass) => (
+                          <option key={item.id} value={item.id}>
+                            Riesgo {item.level} ({Number(item.rate ?? 0) * 100}%)
+                          </option>
+                        ))}
+                      </select>
+                    </FieldBlock>
+                  </div>
 
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">Configuracion adicional</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" disabled={hasPostedHistoryError} onClick={() => setIsRemote((value) => !value)} className={cn("h-11 rounded-xl text-xs font-medium disabled:opacity-50", isRemote ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
-                    Trabajo remoto
-                  </button>
-                  <button type="button" disabled={hasPostedHistoryError} onClick={() => setApplyLaw1819((value) => !value)} className={cn("h-11 rounded-xl text-xs font-medium disabled:opacity-50", applyLaw1819 ? "bg-[#0fb18f] text-white" : "border border-neutral-200 bg-neutral-50 text-neutral-700")}>
-                    Exonerado Ley 1819
-                  </button>
-                </div>
-              </div>
+                  {Boolean(run.contract && run.contract.isActive !== false) && (
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                      Contrato activo vigente. Para crear uno nuevo, primero debes inactivar o liquidar el contrato actual.
+                    </p>
+                  )}
 
-              <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
-                <span className="mb-2 block px-1 text-[10px] font-medium uppercase tracking-widest text-neutral-400">Ciclo de pago</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Mensual</SegmentedOption>
-                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Quincenal</SegmentedOption>
+                  {hasPostedHistoryError && (
+                    <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                      Este contrato tiene nómina liquidada. Los cambios críticos requieren una nueva versión de contrato.
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Fecha ingreso">
+                      <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
+                    </FieldBlock>
+                    <FieldBlock label="Fecha salida">
+                      <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
+                    </FieldBlock>
+                  </div>
+
+                  <FieldBlock label="Salario mensual">
+                    <BigInput
+                      value={salaryMonthly ? Number(String(salaryMonthly).replace(/\D/g, "")).toLocaleString("es-CO") : ""}
+                      onChange={(event) => {
+                        const raw = event.target.value.replace(/\D/g, "");
+                        setSalaryMonthly(raw);
+                      }}
+                      placeholder="0"
+                      disabled={hasPostedHistoryError}
+                    />
+                  </FieldBlock>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Exención Ley 1819">
+                      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                        <SegmentedOption value={true} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
+                        <SegmentedOption value={false} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>No</SegmentedOption>
+                      </div>
+                    </FieldBlock>
+                    <FieldBlock label="Trabajo remoto">
+                      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                        <SegmentedOption value={true} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
+                        <SegmentedOption value={false} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>No</SegmentedOption>
+                      </div>
+                    </FieldBlock>
+                  </div>
+
+                  <FieldBlock label="Frecuencia de pago">
+                    <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                      <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Mensual</SegmentedOption>
+                      <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Quincenal</SegmentedOption>
+                    </div>
+                  </FieldBlock>
                 </div>
-              </div>
+              )}
+
+              {activeTab === "empleado" && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Nombre">
+                      <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
+                    </FieldBlock>
+                    <FieldBlock label="Apellido">
+                      <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
+                    </FieldBlock>
+                    <FieldBlock label="Documento">
+                      <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
+                    </FieldBlock>
+                    <FieldBlock label="Cargo">
+                      <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
+                    </FieldBlock>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldBlock label="Telefono">
+                      <BigInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="3001234567" />
+                    </FieldBlock>
+                    <FieldBlock label="Correo opcional">
+                      <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
+                    </FieldBlock>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
 
-          {activeTab === "empleado" && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <FieldBlock label="Nombre">
-                  <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
-                </FieldBlock>
-                <FieldBlock label="Apellido">
-                  <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
-                </FieldBlock>
-                <FieldBlock label="Documento">
-                  <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
-                </FieldBlock>
-                <FieldBlock label="Cargo">
-                  <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
-                </FieldBlock>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <FieldBlock label="Telefono">
-                  <BigInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="3001234567" />
-                </FieldBlock>
-                <FieldBlock label="Correo opcional">
-                  <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
-                </FieldBlock>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 shadow-[0_-12px_28px_rgba(15,23,42,0.08)]">
-          {error && <p className="mb-3 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>}
-          <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-12 rounded-2xl bg-neutral-100 text-sm font-medium text-neutral-600 hover:bg-neutral-200"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={submitting || (activeTab === "horas" && !editable)}
-              className="h-12 rounded-2xl bg-[#0fb18f] text-sm font-medium text-white shadow-lg shadow-emerald-100 hover:opacity-90 disabled:opacity-60"
-            >
-              {submitting ? "Guardando..." : "Guardar"}
-            </button>
+            {/* CHAT COMPOSER AT BOTTOM */}
+            <PayrollSheetFooter
+              error={error}
+              primaryLabel="Guardar"
+              submitting={submitting}
+              primaryDisabled={activeTab === "horas" && !editable}
+              onCancel={onClose}
+              onPrimary={handleSave}
+            />
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -3163,7 +3150,7 @@ function EmployeeManagementSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[80] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -3454,7 +3441,7 @@ function ContractManagementSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[80] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -3701,7 +3688,7 @@ function PayrollRecordWizardSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[80] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -4316,7 +4303,7 @@ function SettlementSimulationSheet({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end bg-black/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
+    <div className="fixed inset-0 z-[80] flex items-end bg-black/40 p-0 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[28px]">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>

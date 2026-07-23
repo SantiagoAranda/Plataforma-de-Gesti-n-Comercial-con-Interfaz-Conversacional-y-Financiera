@@ -205,7 +205,7 @@ export default function SaleCreateModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-end sm:p-0 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-end sm:p-0">
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] shadow-2xl overflow-hidden h-[90vh] sm:h-[85vh] relative animate-in slide-in-from-bottom-full duration-300 pb-safe">
         {/* Drag handle hint */}
         <div className="w-full flex justify-center pt-3 pb-1 bg-white absolute top-0 z-30 pointer-events-none">

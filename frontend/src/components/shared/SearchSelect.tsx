@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Search } from "lucide-react";
@@ -18,6 +18,7 @@ type Props<T extends SearchSelectOption> = {
   placeholder: string;
   emptyText: string;
   buttonLabel?: string;
+  buttonColorClassName?: string;
   selectedLabel?: ReactNode;
   search: (query: string) => Promise<T[]> | T[];
   onSelect: (option: T) => void;
@@ -35,6 +36,7 @@ export function SearchSelect<T extends SearchSelectOption>({
   placeholder,
   emptyText,
   buttonLabel = "Elegir",
+  buttonColorClassName,
   selectedLabel,
   search,
   onSelect,
@@ -185,7 +187,10 @@ export function SearchSelect<T extends SearchSelectOption>({
                 setIsInteracting(true);
               }
             }}
-            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-emerald-500 px-3 text-xs font-semibold text-white transition hover:bg-emerald-600"
+            className={cn(
+              "inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-semibold text-white transition",
+              buttonColorClassName || "bg-emerald-500 hover:bg-emerald-600"
+            )}
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{loading ? "Buscando" : buttonLabel}</span>

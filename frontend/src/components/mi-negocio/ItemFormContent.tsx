@@ -1,6 +1,6 @@
 "use client";
 
-import { X, Clock } from "lucide-react";
+import { X, Clock, ChevronDown, Check } from "lucide-react";
 import { useState } from "react";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import {
@@ -21,17 +21,120 @@ import {
 } from "@/src/lib/itemImages";
 
 const BADGE_PRESET_COLORS = [
-  "#EF4444", // Rojo
-  "#10B981", // Verde
-  "#3B82F6", // Azul
-  "#FBBF24", // Amarillo
-  "#F97316", // Naranja
-  "#000000", // Negro
-  "#6B7280", // Gris
-  "#8B5CF6", // Violeta
-  "#EC4899", // Rosa
-  "#34D399", // Esmeralda
+  { hex: "#EF4444", name: "Rojo" },
+  { hex: "#10B981", name: "Verde" },
+  { hex: "#3B82F6", name: "Azul" },
+  { hex: "#FBBF24", name: "Amarillo" },
+  { hex: "#F97316", name: "Naranja" },
+  { hex: "#EC4899", name: "Rosa" },
 ];
+
+function BadgeColorSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const matchedPreset = BADGE_PRESET_COLORS.find(
+    (c) => c.hex.toLowerCase() === value.toLowerCase()
+  );
+
+  return (
+    <div className="relative">
+      {/* TRIGGER BUTTON */}
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-11 w-full items-center justify-between gap-2 rounded-2xl border border-neutral-100 bg-white px-3 text-xs font-semibold text-neutral-800 shadow-sm transition outline-none focus:border-[#0B3F64]"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="h-4 w-4 shrink-0 rounded-full border border-black/10 shadow-xs"
+            style={{ backgroundColor: value || "#EF4444" }}
+          />
+          <span className="truncate">
+            {matchedPreset ? matchedPreset.name : (value ? value.toUpperCase() : "Color")}
+          </span>
+        </div>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {/* DROPDOWN MENU */}
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 bottom-full mb-1.5 z-30 w-52 rounded-2xl border border-neutral-200 bg-white p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="space-y-0.5 max-h-48 overflow-y-auto">
+              {BADGE_PRESET_COLORS.map((preset) => {
+                const isSelected = value.toLowerCase() === preset.hex.toLowerCase();
+                return (
+                  <button
+                    key={preset.hex}
+                    type="button"
+                    onClick={() => {
+                      onChange(preset.hex);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition text-left ${
+                      isSelected ? "bg-slate-100 font-semibold text-slate-900" : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span
+                      className="h-4 w-4 shrink-0 rounded-full border border-black/10"
+                      style={{ backgroundColor: preset.hex }}
+                    />
+                    <span className="flex-1 truncate">{preset.name}</span>
+                    {isSelected && <Check className="h-3.5 w-3.5 text-[#0B3F64] shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="my-1.5 border-t border-neutral-100" />
+
+            {/* CUSTOM HEX / COLOR PICKER */}
+            <div className="p-1">
+              <span className="block px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-neutral-400">
+                Personalizado
+              </span>
+              <div className="flex items-center gap-2">
+                <label
+                  className="relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-neutral-200 shadow-xs transition hover:scale-105"
+                  style={{ backgroundColor: value || "#EF4444" }}
+                  title="Abrir selector de color"
+                >
+                  <input
+                    type="color"
+                    value={value.startsWith("#") && value.length === 7 ? value : "#EF4444"}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+                  />
+                </label>
+                <input
+                  type="text"
+                  placeholder="#FF5733"
+                  maxLength={7}
+                  value={value}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (val && !val.startsWith("#")) {
+                      val = `#${val}`;
+                    }
+                    const cleaned = val.replace(/[^#0-9a-fA-F]/g, "").slice(0, 7);
+                    onChange(cleaned);
+                  }}
+                  className="h-8 min-w-0 flex-1 rounded-xl border border-neutral-200 bg-neutral-50 px-2.5 text-xs font-mono font-medium text-neutral-800 outline-none focus:bg-white focus:border-[#0B3F64]"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Selector de hora en formato 12h AM/PM (Colombia).
@@ -62,7 +165,7 @@ function TimeSelectAMPM({
   return (
     <div className={`flex items-center ${className ?? ""}`}>
       {/* Contenedor interno integrado */}
-      <div className="flex items-center bg-gray-50 border border-gray-300 rounded-md px-1.5 py-1 focus-within:border-green-500">
+      <div className="flex items-center bg-gray-50 border border-gray-300 rounded-md px-1.5 py-1 focus-within:border-[#0B3F64]">
         <select
           value={h12}
           onChange={(e) => emit(Number(e.target.value), min, isPM)}
@@ -92,7 +195,7 @@ function TimeSelectAMPM({
         onClick={() => emit(h12, min, !isPM)}
         className={`ml-1.5 px-1 py-1 text-xs font-bold rounded border transition-all w-12 text-center cursor-pointer select-none active:scale-95
           ${isPM
-            ? "bg-green-50 border-green-300 text-green-700 font-bold"
+            ? "bg-[#0B3F64]/10 border-[#0B3F64]/30 text-[#0B3F64] font-bold"
             : "bg-gray-100 border-gray-300 text-gray-500 font-bold"
           }`}
       >
@@ -224,6 +327,18 @@ export function ItemFormContent(props: ItemFormContentProps) {
 
   return (
     <div className="space-y-6">
+      {/* HEADER DEL MODAL */}
+      <div className="flex flex-col gap-0.5 mb-2 px-1">
+        <h2 className="font-medium text-slate-900 text-lg">
+          {editingItem
+            ? (type === "PRODUCT" ? "Editar Producto" : "Editar Servicio")
+            : (type === "PRODUCT" ? "Nuevo Producto" : "Nuevo Servicio")}
+        </h2>
+        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
+          CATÁLOGO DE MI NEGOCIO
+        </span>
+      </div>
+
       {/* TOGGLE PRODUCTO / SERVICIO */}
       {!editingItem && (
         <div className="flex bg-neutral-100 rounded-full p-1">
@@ -253,7 +368,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
       <div className="space-y-3">
         <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Fotos</label>
         <div className="flex flex-wrap gap-3">
-          <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl ${totalImages >= MAX_ITEM_IMAGES ? "border-neutral-200 text-neutral-200 cursor-not-allowed" : "border-green-500 text-green-600 bg-green-50/50"}`}>
+          <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl transition ${totalImages >= MAX_ITEM_IMAGES ? "border-neutral-200 text-neutral-200 cursor-not-allowed" : "border-[#0B3F64] text-[#0B3F64] bg-[#0B3F64]/5 hover:bg-[#0B3F64]/10"}`}>
             +
             <input type="file" accept="image/*" multiple className="hidden" disabled={totalImages >= MAX_ITEM_IMAGES} onChange={(e) => { handleAddImages(e.target.files); e.target.value = ""; }} />
           </label>
@@ -284,7 +399,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
           placeholder={type === "PRODUCT" ? "Ej: Hamburguesa Simple" : "Ej: Corte de Cabello"}
           value={name}
           onChange={(e) => { setName(e.target.value); setFormErrors(p => ({ ...p, name: undefined })); }}
-          className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-green-500"}`}
+          className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-[#0B3F64]"}`}
         />
         {formErrors.name && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.name}</p>}
       </div>
@@ -340,7 +455,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
                     setDurationInput(String(rounded));
                   }
                 }}
-                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-green-500"
+                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-[#0B3F64]"
                   }`}
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-medium uppercase">horas</span>
@@ -378,7 +493,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
               <select
                 value={saleConcept}
                 onChange={(e) => setSaleConcept(e.target.value as any)}
-                className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-green-500 transition text-slate-700 font-medium"
+                className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#0B3F64] transition text-slate-700 font-medium"
               >
                 <option value="GOODS">Bienes / Productos</option>
                 <option value="SERVICES">Servicios Generales</option>
@@ -413,7 +528,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
                         }));
                       }
                     }}
-                    className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                    className="h-5 w-5 rounded border-neutral-300 text-[#0B3F64] focus:ring-[#0B3F64]"
                   />
                 </label>
 
@@ -478,7 +593,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
               }}
               className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
                 inventoryMode === "NONE"
-                  ? "bg-green-600 text-white shadow-sm"
+                  ? "bg-[#0B3F64] text-white shadow-sm"
                   : "text-neutral-500 hover:text-neutral-700"
               }`}
             >
@@ -492,7 +607,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
               }}
               className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
                 inventoryMode === "SIMPLE"
-                  ? "bg-green-600 text-white shadow-sm"
+                  ? "bg-[#0B3F64] text-white shadow-sm"
                   : "text-neutral-500 hover:text-neutral-700"
               }`}
             >
@@ -506,7 +621,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
               }}
               className={`flex-1 py-2.5 text-center text-xs font-semibold rounded-lg transition active:scale-95 duration-150 ${
                 inventoryMode === "RECIPE_BASED"
-                  ? "bg-green-600 text-white shadow-sm"
+                  ? "bg-[#0B3F64] text-white shadow-sm"
                   : "text-neutral-500 hover:text-neutral-700"
               }`}
             >
@@ -544,7 +659,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
                   }
                   setFormErrors(p => ({ ...p, schedule: undefined }));
                 }}
-                className={`flex-1 h-9 rounded-xl text-[10px] font-medium transition ${day.active ? "bg-green-600 text-white shadow-md shadow-green-100" : "bg-neutral-100 text-neutral-500"}`}
+                className={`flex-1 h-9 rounded-xl text-[10px] font-medium transition ${day.active ? "bg-[#0B3F64] text-white shadow-md shadow-[#0B3F64]/20" : "bg-neutral-100 text-neutral-500"}`}
               >
                 {day.day.slice(0, 2).toUpperCase()}
               </button>
@@ -671,7 +786,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
                       });
                       setWeek(copy);
                     }} 
-                    className="w-full py-2 text-[10px] font-medium text-green-600 uppercase tracking-widest hover:bg-green-50 rounded-xl transition"
+                    className="w-full py-2 text-[10px] font-medium text-[#0B3F64] uppercase tracking-widest hover:bg-[#0B3F64]/5 rounded-xl transition"
                   >
                     + Agregar horario
                   </button>
@@ -713,45 +828,23 @@ export function ItemFormContent(props: ItemFormContentProps) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          <div className="space-y-2">
+        <div className="grid grid-cols-12 gap-3 items-end">
+          <div className="col-span-7 space-y-1.5">
             <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Texto</label>
             <input
               placeholder={currentPlaceholder}
               value={currentBadgeText}
               onChange={(e) => setCurrentBadgeText(e.target.value)}
-              className="w-full rounded-2xl border border-neutral-100 bg-white px-4 py-3 text-sm outline-none shadow-sm transition focus:border-green-500"
+              className="h-11 w-full rounded-2xl border border-neutral-100 bg-white px-4 text-sm outline-none shadow-sm transition focus:border-[#0B3F64]"
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="col-span-5 space-y-1.5">
             <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Color</label>
-            <div className="flex flex-col gap-3 rounded-2xl border border-neutral-100 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap gap-2.5">
-                {BADGE_PRESET_COLORS.map((c) => {
-                  const isSelected = currentBadgeColor.toLowerCase() === c.toLowerCase();
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setCurrentBadgeColor(c)}
-                      className={`w-8 h-8 rounded-full flex items-center justify-center transition active:scale-95 duration-150 border ${
-                        isSelected ? "ring-2 ring-green-500 border-white scale-110 shadow-sm" : "border-neutral-200 hover:scale-105"
-                      }`}
-                      style={{ backgroundColor: c }}
-                      aria-label={`Color ${c}`}
-                    >
-                      {isSelected && (
-                        <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} style={{ color: c === "#FBBF24" ? "#000000" : "#ffffff" }}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="text-xs font-semibold text-neutral-500">{currentBadgeColor.toUpperCase()}</div>
-            </div>
+            <BadgeColorSelect
+              value={currentBadgeColor}
+              onChange={setCurrentBadgeColor}
+            />
           </div>
         </div>
       </div>

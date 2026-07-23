@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Plus, Search, Save } from "lucide-react";
+import { Check, ChevronDown, Plus, Search } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -103,9 +103,17 @@ export function AccountingChatComposer({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] backdrop-blur lg:left-[408px] lg:right-0">
+    <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
+          {/* OVERLAY BACKDROP */}
+          {expanded && (
+            <div
+              className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+              onClick={onCancel}
+            />
+          )}
+
           {expanded && (
             <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10">
               <AccountingExpandableForm
@@ -131,8 +139,6 @@ export function AccountingChatComposer({
               leftIconVariant="x"
               rightIconVariant="send"
               className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-              rightButtonClassName="h-12 w-12 shrink-0 flex items-center justify-center bg-[#0B3F64] text-white rounded-2xl shadow-sm hover:bg-[#0B3F64]/90 active:scale-95 transition"
-              rightIcon={<Save className="h-5 w-5" />}
               plusAriaLabel={isEditing ? "Cancelar edicion" : "Cancelar creacion"}
               submitAriaLabel="Confirmar movimiento"
             />
