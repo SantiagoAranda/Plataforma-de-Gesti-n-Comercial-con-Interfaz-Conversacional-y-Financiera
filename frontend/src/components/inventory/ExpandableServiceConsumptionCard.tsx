@@ -2,7 +2,14 @@
 
 import { useMemo, useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { ChevronUp, Plus, Trash2, AlertTriangle, History, Layers3 } from "lucide-react";
+import {
+  ChevronUp,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  History,
+  Layers3,
+} from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 import {
@@ -50,7 +57,9 @@ export function ExpandableServiceConsumptionCard({
   initiallyExpanded = false,
 }: Props) {
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
-  const [activeSubTab, setActiveSubTab] = useState<"config" | "history">("config");
+  const [activeSubTab, setActiveSubTab] = useState<"config" | "history">(
+    "config",
+  );
   const [draftLines, setDraftLines] = useState<DraftServiceIngredient[]>([]);
   const [showAddSelector, setShowAddSelector] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -68,7 +77,9 @@ export function ExpandableServiceConsumptionCard({
     return getIngredientDetails(ingredientId)?.name ?? "Desconocido";
   };
 
-  const normalizeLine = (line: ServiceIngredientLine): DraftServiceIngredient => {
+  const normalizeLine = (
+    line: ServiceIngredientLine,
+  ): DraftServiceIngredient => {
     const qty = roundQuantity(toNumber(line.quantityRequired, 1));
     return {
       ingredientId: line.ingredientId,
@@ -95,40 +106,66 @@ export function ExpandableServiceConsumptionCard({
       if (!line.ingredientId || !Number.isFinite(qty) || qty <= 0 || !ing) {
         hasInvalid = true;
       }
-      return acc + (Number.isFinite(qty) && Number.isFinite(avgCost) ? qty * avgCost : 0);
+      return (
+        acc +
+        (Number.isFinite(qty) && Number.isFinite(avgCost) ? qty * avgCost : 0)
+      );
     }, 0);
 
     return hasInvalid ? null : cost;
   };
 
-  const price = typeof service.price === "number" ? service.price : Number(service.price ?? 0);
+  const price =
+    typeof service.price === "number"
+      ? service.price
+      : Number(service.price ?? 0);
 
   // Original state metrics
   const originalCost = useMemo(() => {
-    const originalDraft = service.ingredients.map((line) => normalizeLine(line));
+    const originalDraft = service.ingredients.map((line) =>
+      normalizeLine(line),
+    );
     return calculateCost(originalDraft);
   }, [service.ingredients, allIngredients]);
 
   const originalMargin = useMemo(() => {
-    return originalCost === null || !Number.isFinite(price) ? null : price - originalCost;
+    return originalCost === null || !Number.isFinite(price)
+      ? null
+      : price - originalCost;
   }, [originalCost, price]);
 
   // Current draft state metrics
-  const draftCost = useMemo(() => calculateCost(draftLines), [draftLines, allIngredients]);
+  const draftCost = useMemo(
+    () => calculateCost(draftLines),
+    [draftLines, allIngredients],
+  );
   const draftMargin = useMemo(() => {
-    return draftCost === null || !Number.isFinite(price) ? null : price - draftCost;
+    return draftCost === null || !Number.isFinite(price)
+      ? null
+      : price - draftCost;
   }, [draftCost, price]);
 
   // Status pill config
   const getStatus = (lines: DraftServiceIngredient[]) => {
     if (!lines.length) {
-      return { label: "SIN INSUMOS", tone: "bg-rose-50 text-rose-700 border border-rose-100" };
+      return {
+        label: "SIN INSUMOS",
+        tone: "bg-rose-50 text-rose-700 border border-rose-100",
+      };
     }
-    const hasInvalid = lines.some((l) => !l.ingredientId || l.quantityRequired <= 0);
+    const hasInvalid = lines.some(
+      (l) => !l.ingredientId || l.quantityRequired <= 0,
+    );
     if (hasInvalid) {
-      return { label: "INCOMPLETO", tone: "bg-amber-50 text-amber-700 border border-amber-100" };
+      return {
+        label: "INCOMPLETO",
+        tone: "bg-amber-50 text-amber-700 border border-amber-100",
+      };
     }
-    return { label: "CONSUMO CONFIGURADO", tone: "bg-emerald-50 text-emerald-700 border border-emerald-100" };
+    return {
+      label: "CONSUMO CONFIGURADO",
+      tone: "bg-emerald-50 text-emerald-700 border border-emerald-100",
+    };
   };
 
   const status = getStatus(service.ingredients.map((l) => normalizeLine(l)));
@@ -148,9 +185,11 @@ export function ExpandableServiceConsumptionCard({
   }, [service.ingredients, draftLines]);
 
   const availableIngredients = useMemo(() => {
-    const usedIds = new Set(draftLines.map((line) => line.ingredientId).filter(Boolean));
+    const usedIds = new Set(
+      draftLines.map((line) => line.ingredientId).filter(Boolean),
+    );
     return allIngredients.filter(
-      (ing) => ing.status !== "INACTIVE" && !usedIds.has(ing.id)
+      (ing) => ing.status !== "INACTIVE" && !usedIds.has(ing.id),
     );
   }, [allIngredients, draftLines]);
 
@@ -166,7 +205,7 @@ export function ExpandableServiceConsumptionCard({
           quantityRequired: cleanVal,
           quantityInput: formatQuantity(cleanVal),
         };
-      })
+      }),
     );
   };
 
@@ -178,7 +217,11 @@ export function ExpandableServiceConsumptionCard({
         const numericValue = toNumber(normalized, NaN);
 
         let baseQty = line.quantityRequired;
-        if (normalized.trim() !== "" && Number.isFinite(numericValue) && numericValue > 0) {
+        if (
+          normalized.trim() !== "" &&
+          Number.isFinite(numericValue) &&
+          numericValue > 0
+        ) {
           baseQty = roundQuantity(numericValue);
         }
 
@@ -187,7 +230,7 @@ export function ExpandableServiceConsumptionCard({
           quantityInput: value,
           quantityRequired: baseQty,
         };
-      })
+      }),
     );
   };
 
@@ -227,8 +270,10 @@ export function ExpandableServiceConsumptionCard({
   const validate = () => {
     if (draftLines.length > 0) {
       for (const line of draftLines) {
-        if (!line.ingredientId) return "Cada línea debe tener un insumo válido.";
-        if (line.quantityRequired <= 0) return "La cantidad de cada insumo debe ser mayor a 0.";
+        if (!line.ingredientId)
+          return "Cada línea debe tener un insumo válido.";
+        if (line.quantityRequired <= 0)
+          return "La cantidad de cada insumo debe ser mayor a 0.";
       }
     }
     return null;
@@ -259,7 +304,9 @@ export function ExpandableServiceConsumptionCard({
     } catch (error) {
       console.error(error);
       toast.dismiss(loadingId);
-      toast.error(getErrorMessage(error, "No se pudo guardar la configuración"));
+      toast.error(
+        getErrorMessage(error, "No se pudo guardar la configuración"),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -273,7 +320,8 @@ export function ExpandableServiceConsumptionCard({
   const displayCost = isExpanded ? draftCost : originalCost;
   const displayMargin = isExpanded ? draftMargin : originalMargin;
   const displayStatus = isExpanded ? currentStatus : status;
-  const serviceInitial = service.name?.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() ?? "S";
+  const serviceInitial =
+    service.name?.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() ?? "S";
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 border-t-4 border-t-[#0b3f64] bg-white shadow-xs transition hover:shadow-sm">
@@ -283,19 +331,29 @@ export function ExpandableServiceConsumptionCard({
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex w-full items-center gap-3 bg-gradient-to-b from-slate-50/80 to-white p-4 text-left select-none"
       >
-<div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
-  {serviceInitial}
-</div>
+        <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full border border-slate-100 bg-slate-50 text-sm font-medium text-slate-600 shadow-inner">
+          {serviceInitial}
+        </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-sm font-medium leading-tight text-slate-800">
             {service.name}
           </h3>
-          <span className={cn("inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-medium text-black sm:text-[10px]", displayStatus.tone)}>
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[9px] font-medium text-black sm:text-[10px]",
+              displayStatus.tone,
+            )}
+          >
             {displayStatus.label}
           </span>
           <span className="shrink-0 rounded-lg p-1.5 text-black transition-colors">
-            <ChevronUp className={cn("w-5 h-5 transition-transform duration-200", !isExpanded && "rotate-180")} />
+            <ChevronUp
+              className={cn(
+                "w-5 h-5 transition-transform duration-200",
+                !isExpanded && "rotate-180",
+              )}
+            />
           </span>
         </div>
       </button>
@@ -303,24 +361,30 @@ export function ExpandableServiceConsumptionCard({
       {/* METRICS GRID */}
       <section className="border-t border-slate-100 px-4 py-3">
         <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-        <div className="min-w-0 overflow-hidden rounded-xl border border-[#0b3f64]/30 bg-[rgba(11,63,100,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-          <span className="block truncate text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black">Venta</span>
-          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
-            ${formatMoney(price)}
-          </span>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-xl border border-[#ff0041]/30 bg-[rgba(255,0,65,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-          <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Costo base</span>
-          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
-            {displayCost === null ? "—" : `$${formatMoney(displayCost)}`}
-          </span>
-        </div>
-        <div className="min-w-0 overflow-hidden rounded-xl border border-[#00963d]/30 bg-[rgba(0,150,61,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
-          <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">Ganancia base</span>
-          <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
-            {displayMargin === null ? "—" : `$${formatMoney(displayMargin)}`}
-          </span>
-        </div>
+          <div className="min-w-0 overflow-hidden rounded-xl border border-[#0b3f64]/30 bg-[rgba(11,63,100,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+            <span className="block truncate text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black">
+              Venta
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              ${formatMoney(price)}
+            </span>
+          </div>
+          <div className="min-w-0 overflow-hidden rounded-xl border border-[#ff0041]/30 bg-[rgba(255,0,65,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">
+              Costo base
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              {displayCost === null ? "—" : `$${formatMoney(displayCost)}`}
+            </span>
+          </div>
+          <div className="min-w-0 overflow-hidden rounded-xl border border-[#00963d]/30 bg-[rgba(0,150,61,0.08)] px-1.5 py-2 text-center sm:px-2.5 sm:py-2.5">
+            <span className="block text-[8px] sm:text-[9px] font-medium uppercase tracking-wider text-black leading-tight">
+              Ganancia base
+            </span>
+            <span className="mt-0.5 block truncate text-sm sm:text-base font-medium text-black tabular-nums tracking-tight whitespace-nowrap">
+              {displayMargin === null ? "—" : `$${formatMoney(displayMargin)}`}
+            </span>
+          </div>
         </div>
       </section>
 
@@ -337,7 +401,7 @@ export function ExpandableServiceConsumptionCard({
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
                 activeSubTab === "config"
                   ? "bg-[#0b3f64] text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
               )}
             >
               <Layers3 className="h-3.5 w-3.5 shrink-0" />
@@ -350,7 +414,7 @@ export function ExpandableServiceConsumptionCard({
                 "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
                 activeSubTab === "history"
                   ? "bg-[#0b3f64] text-white shadow-xs"
-                  : "border border-slate-200 bg-white text-black hover:bg-slate-50"
+                  : "border border-slate-200 bg-white text-black hover:bg-slate-50",
               )}
             >
               <History className="h-3.5 w-3.5 shrink-0" />
@@ -359,7 +423,11 @@ export function ExpandableServiceConsumptionCard({
           </div>
 
           {activeSubTab === "history" ? (
-            <ConsumptionHistoryTab itemId={service.id} itemName={service.name} type="service" />
+            <ConsumptionHistoryTab
+              itemId={service.id}
+              itemName={service.name}
+              type="service"
+            />
           ) : (
             <>
               <div className="space-y-2.5">
@@ -411,7 +479,8 @@ export function ExpandableServiceConsumptionCard({
                           const currentStock = toNumber(ing.currentStock, 0);
                           return (
                             <option key={ing.id} value={ing.id}>
-                              {ing.name} (${formatMoney(avgCost)}/{unit}) - Stock: {formatMoney(currentStock)}
+                              {ing.name} (${formatMoney(avgCost)}/{unit}) -
+                              Stock: {formatMoney(currentStock)}
                             </option>
                           );
                         })}
@@ -454,7 +523,9 @@ export function ExpandableServiceConsumptionCard({
                             Costo prom.: ${formatMoney(costVal)} / {unitLabel}
                           </p>
                           <span className="text-[10px] font-bold text-slate-400">
-                            Stock: {ing ? formatMoney(Number(ing.currentStock)) : 0} {unitLabel}
+                            Stock:{" "}
+                            {ing ? formatMoney(Number(ing.currentStock)) : 0}{" "}
+                            {unitLabel}
                           </span>
                         </div>
 
@@ -476,7 +547,10 @@ export function ExpandableServiceConsumptionCard({
                               value={line.quantityInput}
                               onBlur={(e) => {
                                 const val = toNumber(e.target.value, NaN);
-                                updateQuantity(idx, !Number.isFinite(val) || val <= 0 ? 1 : val);
+                                updateQuantity(
+                                  idx,
+                                  !Number.isFinite(val) || val <= 0 ? 1 : val,
+                                );
                               }}
                               onChange={(e) => {
                                 updateQuantityInput(idx, e.target.value);
