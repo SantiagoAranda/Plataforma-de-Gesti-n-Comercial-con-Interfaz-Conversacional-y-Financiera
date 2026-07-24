@@ -14,6 +14,28 @@ body {
   margin: 0;
 }
 
+@keyframes login-entry {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-entry {
+  animation: login-entry 450ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-entry {
+    animation: none;
+  }
+}
+
 @keyframes slideUp {
   from {
     transform: translateY(100%);

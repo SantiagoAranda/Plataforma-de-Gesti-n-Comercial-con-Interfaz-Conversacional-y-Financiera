@@ -1,8 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "../../lib/api";
+import LoginStoreHint from "./LoginStoreHint";
+import NavigationTransitionBackdrop from "../shared/NavigationTransitionBackdrop";
+import { useInteractiveHorizontalNavigation } from "../../hooks/useInteractiveHorizontalNavigation";
+
+function getSettleDuration(velocity: number) {
+  const speed = Math.abs(velocity);
+  if (speed >= 1.2) return 140;
+  if (speed >= 0.8) return 190;
+  if (speed >= 0.45) return 240;
+  return 320;
+}
 
 // ── SVG Eye Icons ──────────────────────────────────────────────
 function EyeIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -83,6 +94,100 @@ export default function LoginForm() {
     email?: string;
     password?: string;
   }>({});
+  const transitionContainerRef = useRef<HTMLElement | null>(null);
+  const offsetRef = useRef(0);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const transitionLockedRef = useRef(false);
+  const pendingNavigationRef = useRef(false);
+  const hasNavigatedRef = useRef(false);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [isSettling, setIsSettling] = useState(false);
+  const [settleDuration, setSettleDuration] = useState(320);
+
+  useEffect(() => {
+    const node = transitionContainerRef.current;
+    if (!node) return;
+    const updateWidth = () => setViewportWidth(node.clientWidth || window.innerWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (fallbackTimerRef.current !== null) window.clearTimeout(fallbackTimerRef.current);
+    },
+    [],
+  );
+
+  const setVisualOffset = useCallback((nextOffset: number) => {
+    offsetRef.current = nextOffset;
+    setOffset(nextOffset);
+  }, []);
+
+  const navigateToStoreOnce = useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    router.push("/tienda/sactec?from=login");
+  }, [router]);
+
+  const startStoreTransition = useCallback(
+    (velocity?: number) => {
+      if (transitionLockedRef.current) return;
+      transitionLockedRef.current = true;
+      hasNavigatedRef.current = false;
+      pendingNavigationRef.current = true;
+
+      const width = transitionContainerRef.current?.clientWidth || viewportWidth || window.innerWidth;
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const duration = prefersReducedMotion ? 80 : velocity === undefined ? 220 : getSettleDuration(velocity);
+
+      setIsSettling(true);
+      setSettleDuration(duration);
+      setVisualOffset(-width);
+
+      if (fallbackTimerRef.current !== null) window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = window.setTimeout(navigateToStoreOnce, duration + 80);
+    },
+    [navigateToStoreOnce, setVisualOffset, viewportWidth],
+  );
+
+  const cancelStoreTransition = useCallback(() => {
+    pendingNavigationRef.current = false;
+    if (fallbackTimerRef.current !== null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
+    if (Math.abs(offsetRef.current) < 1) {
+      transitionLockedRef.current = false;
+      setIsSettling(false);
+      return;
+    }
+
+    transitionLockedRef.current = true;
+    setIsSettling(true);
+    setSettleDuration(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 320,
+    );
+    setVisualOffset(0);
+  }, [setVisualOffset]);
+
+  const {
+    isDragging,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  } = useInteractiveHorizontalNavigation({
+    direction: "left",
+    disabled: isSettling,
+    onOffsetChange: setVisualOffset,
+    onComplete: startStoreTransition,
+    onCancel: cancelStoreTransition,
+  });
 
   const validate = (): boolean => {
     const errors: { email?: string; password?: string } = {};
@@ -201,18 +306,48 @@ export default function LoginForm() {
 `;
 
   return (
-    // 🔥 FIX 1
-    <form
+    <main
+      ref={transitionContainerRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      className="fixed inset-0 min-h-dvh overflow-hidden touch-pan-y"
+    >
+      <NavigationTransitionBackdrop destination="store" />
+      <div
+        className={`relative z-10 flex min-h-dvh items-center justify-center bg-neutral-100 px-4 py-6 ${
+          isDragging ? "cursor-grabbing select-none" : ""
+        }`}
+        style={{
+          transform: `translate3d(${offset}px, 0, 0)`,
+          transition: isDragging
+            ? "none"
+            : `transform ${settleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+          willChange: "transform",
+          backfaceVisibility: "hidden",
+        }}
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
+          if (pendingNavigationRef.current) {
+            navigateToStoreOnce();
+            return;
+          }
+          transitionLockedRef.current = false;
+          setIsSettling(false);
+        }}
+      >
+      <form
       noValidate
       onSubmit={handleSubmit}
       className="
-    w-full
+    w-full max-w-md
     bg-white
     rounded-3xl
     px-8 py-8
     space-y-6
     shadow-lg
-    animate-[fadeIn_0.4s_ease-out]
+    login-entry
   "
     >
       <h1 className="text-2xl font-semibold text-center text-gray-900">
@@ -289,15 +424,19 @@ export default function LoginForm() {
         disabled={loading}
         className="
   w-full
-  bg-emerald-600
+  bg-[#0b3f64]
   text-white
   py-3.5
   rounded-xl
   font-medium
   shadow-md
-  hover:bg-emerald-700
+  hover:bg-[#092f4a]
   hover:shadow-lg
   active:scale-[0.97]
+  focus-visible:outline-none
+  focus-visible:ring-2
+  focus-visible:ring-[#0b3f64]
+  focus-visible:ring-offset-2
   transition-all
 "
       >
@@ -306,13 +445,17 @@ export default function LoginForm() {
 
       <p className="text-sm text-center text-gray-600">
         ¿No tenés cuenta?{" "}
-        <span
+        <button
+          type="button"
           onClick={() => router.push("/register")}
-          className="text-emerald-600 font-medium cursor-pointer hover:underline"
+          className="cursor-pointer font-medium text-[#0b3f64] hover:text-[#092f4a] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b3f64] focus-visible:ring-offset-2"
         >
           Registrarse
-        </span>
+        </button>
       </p>
     </form>
+      </div>
+      <LoginStoreHint onClick={() => startStoreTransition()} disabled={isSettling} />
+    </main>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -25,6 +25,17 @@ import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import CartSummary from "@/src/components/shared/CartSummary";
+import LoginReturnHint from "@/src/components/store/LoginReturnHint";
+import NavigationTransitionBackdrop from "@/src/components/shared/NavigationTransitionBackdrop";
+import { useInteractiveHorizontalNavigation } from "@/src/hooks/useInteractiveHorizontalNavigation";
+
+function getNavigationSettleDuration(velocity: number) {
+  const speed = Math.abs(velocity);
+  if (speed >= 1.2) return 140;
+  if (speed >= 0.8) return 190;
+  if (speed >= 0.45) return 240;
+  return 320;
+}
 
 const formatPrice = (value: number) => {
   return formatPriceInput(value.toFixed(2).replace(".", ","));
@@ -290,6 +301,9 @@ export default function PublicStoreClient() {
   const searchParams = useSearchParams();
   const preview = searchParams.get("preview") === "true";
   const router = useRouter();
+  const canReturnToLogin =
+    slug.trim().toLowerCase() === "sactec" &&
+    searchParams.get("from") === "login";
 
   const [items, setItems] = useState<Item[]>([]);
   const [businessName, setBusinessName] = useState("");
@@ -319,6 +333,114 @@ export default function PublicStoreClient() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollYRef = useRef(0);
+  const transitionContainerRef = useRef<HTMLDivElement | null>(null);
+  const offsetRef = useRef(0);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const transitionLockedRef = useRef(false);
+  const pendingNavigationRef = useRef(false);
+  const hasNavigatedRef = useRef(false);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [navigationOffset, setNavigationOffset] = useState(0);
+  const [isNavigationSettling, setIsNavigationSettling] = useState(false);
+  const [navigationSettleDuration, setNavigationSettleDuration] = useState(320);
+  const hasOpenOverlay = Boolean(
+    showCartModal || customizingProduct || selectedProduct || selectedService,
+  );
+
+  useEffect(() => {
+    const node = transitionContainerRef.current;
+    if (!node) return;
+    const updateWidth = () => setViewportWidth(node.clientWidth || window.innerWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (fallbackTimerRef.current !== null) window.clearTimeout(fallbackTimerRef.current);
+    },
+    [],
+  );
+
+  const setVisualNavigationOffset = useCallback((nextOffset: number) => {
+    offsetRef.current = nextOffset;
+    setNavigationOffset(nextOffset);
+  }, []);
+
+  const navigateToLoginOnce = useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    router.push("/login");
+  }, [router]);
+
+  const startLoginTransition = useCallback(
+    (velocity?: number) => {
+      if (!canReturnToLogin || hasOpenOverlay || transitionLockedRef.current) return;
+      transitionLockedRef.current = true;
+      hasNavigatedRef.current = false;
+      pendingNavigationRef.current = true;
+
+      const width = transitionContainerRef.current?.clientWidth || viewportWidth || window.innerWidth;
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const duration = prefersReducedMotion
+        ? 80
+        : velocity === undefined
+          ? 220
+          : getNavigationSettleDuration(velocity);
+
+      setIsNavigationSettling(true);
+      setNavigationSettleDuration(duration);
+      setVisualNavigationOffset(width);
+
+      if (fallbackTimerRef.current !== null) window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = window.setTimeout(navigateToLoginOnce, duration + 80);
+    },
+    [
+      canReturnToLogin,
+      hasOpenOverlay,
+      navigateToLoginOnce,
+      setVisualNavigationOffset,
+      viewportWidth,
+    ],
+  );
+
+  const cancelLoginTransition = useCallback(() => {
+    pendingNavigationRef.current = false;
+    if (fallbackTimerRef.current !== null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
+    if (Math.abs(offsetRef.current) < 1) {
+      transitionLockedRef.current = false;
+      setIsNavigationSettling(false);
+      return;
+    }
+
+    transitionLockedRef.current = true;
+    setIsNavigationSettling(true);
+    setNavigationSettleDuration(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 80 : 320,
+    );
+    setVisualNavigationOffset(0);
+  }, [setVisualNavigationOffset]);
+
+  const {
+    isDragging: isNavigationDragging,
+    onPointerDown: onNavigationPointerDown,
+    onPointerMove: onNavigationPointerMove,
+    onPointerUp: onNavigationPointerUp,
+    onPointerCancel: onNavigationPointerCancel,
+  } = useInteractiveHorizontalNavigation({
+    direction: "right",
+    edgeStart: 80,
+    disabled: !canReturnToLogin || hasOpenOverlay || isNavigationSettling,
+    onOffsetChange: setVisualNavigationOffset,
+    onComplete: startLoginTransition,
+    onCancel: cancelLoginTransition,
+  });
 
   useEffect(() => {
     const handleScroll = () => {
@@ -771,7 +893,42 @@ export default function PublicStoreClient() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-white">
+    <div
+      ref={transitionContainerRef}
+      onPointerDown={onNavigationPointerDown}
+      onPointerMove={onNavigationPointerMove}
+      onPointerUp={onNavigationPointerUp}
+      onPointerCancel={onNavigationPointerCancel}
+      className="relative min-h-dvh overflow-x-clip touch-pan-y"
+    >
+      {canReturnToLogin && <NavigationTransitionBackdrop destination="login" />}
+      <div
+        className={`relative z-10 flex min-h-screen flex-col bg-white ${
+          isNavigationDragging ? "cursor-grabbing select-none" : ""
+        }`}
+        style={
+          canReturnToLogin &&
+          (navigationOffset !== 0 || isNavigationDragging || isNavigationSettling)
+            ? {
+                transform: `translate3d(${navigationOffset}px, 0, 0)`,
+                transition: isNavigationDragging
+                  ? "none"
+                  : `transform ${navigationSettleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                willChange: "transform",
+                backfaceVisibility: "hidden",
+              }
+            : undefined
+        }
+        onTransitionEnd={(event) => {
+          if (event.target !== event.currentTarget || event.propertyName !== "transform") return;
+          if (pendingNavigationRef.current) {
+            navigateToLoginOnce();
+            return;
+          }
+          transitionLockedRef.current = false;
+          setIsNavigationSettling(false);
+        }}
+      >
       <header
         className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
         style={{
@@ -1104,6 +1261,13 @@ export default function PublicStoreClient() {
       />
 
       <Footer config={footerConfig} />
+      </div>
+      {canReturnToLogin && (
+        <LoginReturnHint
+          onClick={() => startLoginTransition()}
+          disabled={hasOpenOverlay || isNavigationSettling}
+        />
+      )}
     </div>
   );
 }
