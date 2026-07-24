@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, LogOut, MoreVertical, Settings, UserCircle } from "lucide-react";
+import { ArrowLeft, LogOut, MoreVertical, Settings, Store, UserCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -18,6 +18,8 @@ type Props = {
   onRightClick?: () => void;
   showLogout?: boolean;
   variant?: "default" | "flat";
+  showLogo?: boolean;
+  logoUrl?: string | null;
 };
 
 export default function AppHeader({
@@ -32,6 +34,8 @@ export default function AppHeader({
   onRightClick,
   showLogout = true,
   variant = "default",
+  showLogo = false,
+  logoUrl,
 }: Props) {
   const router = useRouter();
   const isMainView = !showBack;
@@ -83,10 +87,24 @@ export default function AppHeader({
             </button>
           )}
 
-          <div className="min-w-0 flex flex-row items-baseline leading-tight text-left">
-            <h1 className="truncate text-[20px] font-semibold text-neutral-900">{title}</h1>
+          {showLogo && (
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-700 border border-slate-100 shadow-xs">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={title}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Store className="h-5 w-5 text-slate-500" />
+              )}
+            </div>
+          )}
+
+          <div className="min-w-0 flex-1 leading-tight text-left">
+            <h1 className="truncate text-[19px] font-semibold text-neutral-900">{title}</h1>
             {subtitle && (
-              <p className="shrink-0 text-[13px] font-medium text-slate-500 ml-2">
+              <p className="truncate text-[13px] font-medium text-slate-500">
                 {subtitle}
               </p>
             )}

@@ -83,12 +83,12 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
   })();
 
   return (
-    <div className="relative group select-none">
+    <div className={`relative group select-none ${isOpen ? "z-30" : ""}`}>
       <SelectableCard
         onSelect={() => { }}
         disableOpenOnClick={true}
         disableLongPress={true}
-        className="relative select-none ml-auto max-w-[85%] lg:max-w-[460px] overflow-hidden flex flex-col min-h-[140px]"
+        className="relative select-none ml-auto max-w-[85%] lg:max-w-[460px] flex flex-col min-h-[140px]"
       >
         {/* Botón de 3 puntitos como nuevo gatillador */}
         <div className="absolute top-2 right-2 z-10">
@@ -183,7 +183,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
         </div>
 
         {(currentImages.length > 0) && (
-          <div className="aspect-[4/3] w-full overflow-hidden border-b border-neutral-100 bg-neutral-50 shrink-0 lg:aspect-auto lg:h-[220px]">
+          <div className="aspect-[4/3] w-full overflow-hidden rounded-t-3xl border-b border-neutral-100 bg-neutral-50 shrink-0 lg:aspect-auto lg:h-[220px]">
             <ItemImageViewer
               images={currentImages}
               imageCount={imageCount}

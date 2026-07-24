@@ -12,6 +12,8 @@ import {
 import AppHeader from "@/src/components/layout/AppHeader";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
+import { readBusinessProfile } from "@/src/lib/businessProfile";
+import { getBusinessProfile } from "@/src/lib/businessLogo";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
@@ -48,6 +50,21 @@ import {
 function MiNegocioPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [businessName, setBusinessName] = useState("Mi Negocio");
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const profile = readBusinessProfile();
+    if (profile.name) setBusinessName(profile.name);
+
+    getBusinessProfile()
+      .then((res) => {
+        if (res?.name) setBusinessName(res.name);
+        if (res?.logoUrl) setBusinessLogoUrl(res.logoUrl);
+      })
+      .catch(() => {});
+  }, []);
+
   const [items, setItems] = useState<Item[]>([]);
   const [recipeLineCounts, setRecipeLineCounts] = useState<
     Record<string, number>
@@ -704,7 +721,14 @@ function MiNegocioPageContent() {
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-white">
-      <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
+      <AppHeader
+        title={businessName}
+        subtitle="Catálogo"
+        showLogo={true}
+        logoUrl={businessLogoUrl}
+        showBack={true}
+        hrefBack="/home"
+      />
 
       <main
         ref={scrollRef}
@@ -906,7 +930,13 @@ export default function MiNegocioPage() {
     <Suspense
       fallback={
         <div className="flex flex-col min-h-screen bg-white">
-          <AppHeader title="Mi negocio" showBack={true} hrefBack="/home" />
+          <AppHeader
+            title="Mi negocio"
+            subtitle="Catálogo"
+            showLogo={true}
+            showBack={true}
+            hrefBack="/home"
+          />
           <main className="flex-1 flex items-center justify-center">
             <div className="text-neutral-400 font-medium text-[10px] uppercase tracking-widest animate-pulse">
               Cargando mi negocio...
