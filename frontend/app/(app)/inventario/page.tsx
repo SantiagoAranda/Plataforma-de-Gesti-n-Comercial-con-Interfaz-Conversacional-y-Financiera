@@ -12,7 +12,6 @@ import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
-import { InventoryChatActionBar } from "@/src/components/inventory/InventoryChatActionBar";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { IngredientList } from "@/src/components/inventory/IngredientList";
 import { IngredientDetailSheet } from "@/src/components/inventory/IngredientDetailSheet";
@@ -399,34 +398,6 @@ function InventarioPageContent() {
         </div>
       </main>
 
-      <InventoryChatActionBar
-        mode={saveBarContext ? { type: "SAVE", ...saveBarContext } : { type: "SEARCH" }}
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder={
-          activeTab === "ingredients"
-            ? "Buscar insumo..."
-            : activeTab === "products"
-              ? "Buscar producto..."
-              : activeTab === "services"
-                ? "Buscar servicio..."
-                : "Buscar receta..."
-        }
-        onSubmit={() => { }}
-        onCreateIngredient={toggleIngredientSheetFromBar}
-        createIngredientActive={ingredientSheetOpen}
-        isCreatingIngredient={ingredientSheetOpen}
-        isFormValid={isFormValid}
-        isSubmittingIngredient={creatingIngredient}
-        onCancelCreate={() => {
-          setIngredientSheetOpen(false);
-          setSearchQuery("");
-          setIsFormValid(false);
-        }}
-        onSaveCreate={() => {
-          formRef.current?.requestSubmit();
-        }}
-      />
 
       <ItemPanelLayout
         open={alertsOpen}
@@ -566,7 +537,7 @@ function InventarioPageContent() {
                 submitDisabled={!isFormValid}
                 isSubmitting={creatingIngredient}
                 rightIconVariant="send"
-                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-md"
+                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
                 centerContent={
                   <div className="flex h-full w-full items-center justify-center pt-0.5">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Nuevo insumo</span>
@@ -574,12 +545,24 @@ function InventarioPageContent() {
                 }
               />
             ) : (
-              <InventoryChatActionBar
+              <WhatsappComposer
                 value={searchQuery}
                 onChange={setSearchQuery}
-                onSubmit={() => {}}
-                onCreateIngredient={toggleIngredientSheetFromBar}
-                createIngredientActive={ingredientSheetOpen}
+                leftAction={toggleIngredientSheetFromBar}
+                leftIconVariant="plus"
+                rightIconVariant="search"
+                placeholder={
+                  activeTab === "ingredients"
+                    ? "Buscar insumo..."
+                    : activeTab === "products"
+                      ? "Buscar producto..."
+                      : activeTab === "services"
+                        ? "Buscar servicio..."
+                        : "Buscar receta..."
+                }
+                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
+                plusAriaLabel="Nuevo ingrediente"
+                submitAriaLabel="Buscar"
               />
             )}
           </div>

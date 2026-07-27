@@ -1045,8 +1045,11 @@ export default function SalesChatComposer({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
-      <div className="mx-auto w-full max-w-3xl">
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none"
+      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+    >
+      <div className="mx-auto w-full max-w-3xl pointer-events-auto">
         <div className="relative">
           {/* OVERLAY BACKDROP */}
           {expanded && (
@@ -1059,7 +1062,7 @@ export default function SalesChatComposer({
           {/* EXPANDABLE MODAL CONTENT */}
           {expanded && (
             <div
-              className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 w-full rounded-[28px] overflow-hidden border border-slate-100 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300"
+              className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-10 w-full rounded-[28px] overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-6 pb-4 pt-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
@@ -1099,6 +1102,7 @@ export default function SalesChatComposer({
             rightIconVariant={expanded ? "send" : "search"}
             submitDisabled={expanded && (items.length === 0 || isSubmitting)}
             isSubmitting={isSubmitting}
+            className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
             centerContent={
               expanded ? (
                 <div className="flex h-full w-full items-center justify-between px-2 pt-0.5">
