@@ -7,6 +7,7 @@ import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { formatMoney } from "@/src/lib/formatters";
 import { formatUnit, INGREDIENT_UNIT_OPTIONS } from "@/src/components/inventory/unitLabels";
 import { Lock, Info } from "lucide-react";
+import { CustomSelect } from "@/src/components/ui/CustomSelect";
 
 type SubmitValues = {
   name: string;
@@ -412,7 +413,7 @@ export function IngredientForm({
           onBlur={() => setNameTouched(true)}
           placeholder="Ej: Leche entera"
           className={cn(
-            "w-full rounded-2xl border bg-white px-4 py-3 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none shadow-sm focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20",
+            "w-full rounded-2xl border bg-white px-4 py-3 text-sm font-normal text-slate-800 placeholder:text-slate-400/70 outline-none shadow-sm focus:border-[#0B3F64] transition-colors focus:ring-1 focus:ring-[#0B3F64]/20",
             nameError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-500/20" : "border-slate-200"
           )}
         />
@@ -425,32 +426,26 @@ export function IngredientForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <label className="text-xs font-medium text-slate-500">Unidad base de stock</label>
-          <select
+          <CustomSelect
             value={consumptionUnit}
-            onChange={(e) => setConsumptionUnit(e.target.value as UnitCode)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none shadow-sm focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20"
-          >
-            {STOCK_UNIT_OPTIONS.map((unit) => (
-              <option key={unit.value} value={unit.value}>
-                {unit.label}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setConsumptionUnit(val as UnitCode)}
+            options={STOCK_UNIT_OPTIONS.map((unit) => ({
+              value: unit.value,
+              label: unit.label,
+            }))}
+          />
         </div>
 
         <div className="space-y-2">
           <label className="text-xs font-medium text-slate-500">Unidad normal de compra</label>
-          <select
+          <CustomSelect
             value={purchaseUnit}
-            onChange={(e) => setPurchaseUnit(e.target.value as UnitCode)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none shadow-sm focus:border-emerald-500 transition-colors focus:ring-1 focus:ring-emerald-500/20"
-          >
-            {purchaseUnitOptions.map((unit) => (
-              <option key={unit.code} value={unit.code}>
-                {unit.label}{unit.isLocked ? " (fija)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setPurchaseUnit(val as UnitCode)}
+            options={purchaseUnitOptions.map((unit) => ({
+              value: unit.code,
+              label: `${unit.label}${unit.isLocked ? " (fija)" : ""}`,
+            }))}
+          />
         </div>
       </div>
 
