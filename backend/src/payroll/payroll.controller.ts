@@ -27,6 +27,10 @@ import { CreatePayrollPeriodDto } from './dto/create-payroll-period.dto';
 import { UpdatePayrollPeriodStatusDto } from './dto/update-payroll-period-status.dto';
 import { CreatePayrollAdjustmentDto } from './dto/create-payroll-adjustment.dto';
 import { CalculatePayrollDto } from './dto/calculate-payroll.dto';
+import {
+  CreatePayrollEventDto,
+  UpdatePayrollEventDto,
+} from './dto/payroll-event.dto';
 import { CreateComplementaryPayrollRunDto } from './dto/create-complementary-payroll-run.dto';
 import { CreateContractSettlementDto } from './dto/create-contract-settlement.dto';
 import { SimulateContractSettlementDto } from './dto/simulate-contract-settlement.dto';
@@ -52,8 +56,11 @@ export class PayrollController {
 
   @Get('config/global/:year')
   @Roles('ADMIN')
-  getGlobalConfig(@Param('year') year: string) {
-    return this.payrollService.getGlobalConfig(year);
+  getGlobalConfig(
+    @Param('year') year: string,
+    @Query('referenceDate') referenceDate?: string,
+  ) {
+    return this.payrollService.getGlobalConfig(year, referenceDate);
   }
 
   @Patch('config/global/:year')
@@ -68,10 +75,15 @@ export class PayrollController {
 
   @Get('config/business/:year')
   @Roles('BUSINESS')
-  getBusinessConfig(@Req() req: any, @Param('year') year: string) {
+  getBusinessConfig(
+    @Req() req: any,
+    @Param('year') year: string,
+    @Query('referenceDate') referenceDate?: string,
+  ) {
     return this.payrollService.getBusinessConfig(
       this.getBusinessId(req),
       year,
+      referenceDate,
     );
   }
 
@@ -103,14 +115,20 @@ export class PayrollController {
 
   @Get('overtime-rates/:year')
   @Roles('ADMIN', 'BUSINESS')
-  listOvertimeRates(@Param('year') year: string) {
-    return this.payrollService.listOvertimeRates(year);
+  listOvertimeRates(
+    @Param('year') year: string,
+    @Query('referenceDate') referenceDate?: string,
+  ) {
+    return this.payrollService.listOvertimeRates(year, referenceDate);
   }
 
   @Get('solidarity-brackets/:year')
   @Roles('ADMIN', 'BUSINESS')
-  listSolidarityBrackets(@Param('year') year: string) {
-    return this.payrollService.listSolidarityBrackets(year);
+  listSolidarityBrackets(
+    @Param('year') year: string,
+    @Query('referenceDate') referenceDate?: string,
+  ) {
+    return this.payrollService.listSolidarityBrackets(year, referenceDate);
   }
 
   @Post('employees')
@@ -146,11 +164,7 @@ export class PayrollController {
     @Param('id') id: string,
     @Body() dto: UpdateEmployeeDto,
   ) {
-    return this.payrollService.updateEmployee(
-      this.getBusinessId(req),
-      id,
-      dto,
-    );
+    return this.payrollService.updateEmployee(this.getBusinessId(req), id, dto);
   }
 
   @Delete('employees/:id')
@@ -191,10 +205,7 @@ export class PayrollController {
   @Get('contracts/:contractId')
   @Roles('BUSINESS')
   getContract(@Req() req: any, @Param('contractId') contractId: string) {
-    return this.payrollService.getContract(
-      this.getBusinessId(req),
-      contractId,
-    );
+    return this.payrollService.getContract(this.getBusinessId(req), contractId);
   }
 
   @Patch('contracts/:contractId')
@@ -307,7 +318,10 @@ export class PayrollController {
   @Post('periods')
   @Roles('BUSINESS')
   createPayrollPeriod(@Req() req: any, @Body() dto: CreatePayrollPeriodDto) {
-    return this.payrollService.createPayrollPeriod(this.getBusinessId(req), dto);
+    return this.payrollService.createPayrollPeriod(
+      this.getBusinessId(req),
+      dto,
+    );
   }
 
   @Get('periods')
@@ -343,6 +357,40 @@ export class PayrollController {
       id,
       dto,
     );
+  }
+
+  @Get('periods/:periodId/events')
+  @Roles('BUSINESS')
+  listPayrollEvents(
+    @Req() req: any,
+    @Param('periodId') periodId: string,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    return this.payrollService.listPayrollEvents(
+      this.getBusinessId(req), periodId, employeeId,
+    );
+  }
+
+  @Post('periods/:periodId/events')
+  @Roles('BUSINESS')
+  createPayrollEvent(
+    @Req() req: any,
+    @Param('periodId') periodId: string,
+    @Body() dto: CreatePayrollEventDto,
+  ) {
+    return this.payrollService.createPayrollEvent(
+      this.getBusinessId(req), periodId, dto, req.user?.userId,
+    );
+  }
+
+  @Patch('events/:id')
+  @Roles('BUSINESS')
+  updatePayrollEvent(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdatePayrollEventDto,
+  ) {
+    return this.payrollService.updatePayrollEvent(this.getBusinessId(req), id, dto);
   }
 
   @Post('runs/:runId/adjustments')

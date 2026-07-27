@@ -33,6 +33,11 @@ enum LegalPersonType {
   NATURAL_PERSON
 }
 
+enum PayrollOvertimeCalculationMode {
+  SURCHARGE_ONLY
+  FULL_HOUR_FACTOR
+}
+
 enum ItemType {
   PRODUCT
   SERVICE
@@ -305,8 +310,9 @@ model Business {
   simpleTaxPeriods       SimpleTaxPeriod[]
   simpleTaxAnnualReturns SimpleTaxAnnualReturn[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  payrollEvents PayrollEvent[]
 
   @@index([businessCategory])
 }
@@ -1153,6 +1159,34 @@ enum PayrollAdjustmentType {
   SUNDAY_HOLIDAY_EXTRA_NIGHT
 }
 
+enum PayrollEventType {
+  OVERTIME
+  NIGHT_SURCHARGE
+  SUNDAY_HOLIDAY_SURCHARGE
+  SICK_LEAVE
+  PAID_LEAVE
+  UNPAID_LEAVE
+  VACATION
+  ABSENCE
+  COMMISSION
+  BONUS
+  OTHER_ACCRUAL
+  OTHER_DEDUCTION
+}
+
+enum PayrollEventStatus {
+  DRAFT
+  APPROVED
+  APPLIED
+  CANCELLED
+}
+
+enum PayrollEventUnit {
+  HOURS
+  DAYS
+  MONEY
+}
+
 enum PayrollSettlementType {
   REAL_TERMINATION
   SIMULATION_TO_DATE
@@ -1194,10 +1228,13 @@ enum PayrollBenefitPaymentType {
 // ===============================
 
 model PayrollGlobalParameter {
-  id       String  @id @default(uuid())
-  year     Int
-  version  Int     @default(1)
-  isActive Boolean @default(true)
+  id            String    @id @default(uuid())
+  legalCode     String    @unique
+  year          Int
+  version       Int       @default(1)
+  isActive      Boolean   @default(true)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
 
   smmlv              Decimal  @db.Decimal(20, 6)
   transportAllowance Decimal  @db.Decimal(20, 6)
@@ -1240,6 +1277,8 @@ model PayrollGlobalParameter {
 
   @@unique([year, version])
   @@index([year, isActive])
+  @@index([isActive, effectiveFrom])
+  @@index([isActive, effectiveTo])
 }
 
 // ===============================
@@ -1379,8 +1418,11 @@ model PayrollOvertimeRate {
   globalParameterId String
   code              String
   name              String
-  factor            Decimal @db.Decimal(10, 6)
-  isActive          Boolean @default(true)
+  legalPercentage   Decimal                        @db.Decimal(10, 2)
+  totalFactor       Decimal                        @db.Decimal(10, 6)
+  payableMultiplier Decimal                        @db.Decimal(10, 6)
+  calculationMode   PayrollOvertimeCalculationMode
+  isActive          Boolean                        @default(true)
 
   globalParameter PayrollGlobalParameter @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
 
@@ -1397,6 +1439,7 @@ model PayrollSolidarityBracket {
 
   globalParameter PayrollGlobalParameter @relation(fields: [globalParameterId], references: [id], onDelete: Cascade)
 
+  @@unique([globalParameterId, fromSmmlv])
   @@index([globalParameterId])
 }
 
@@ -1429,6 +1472,7 @@ model Employee {
   settlements     PayrollContractSettlement[]
   payrollPayments PayrollPayment[]
   benefitPayments PayrollBenefitPayment[]
+  payrollEvents   PayrollEvent[]
 
   @@unique([businessId, documentNumber])
   @@index([businessId, isActive])
@@ -1469,6 +1513,7 @@ model EmployeeContract {
   settlements     PayrollContractSettlement[]
   payrollPayments PayrollPayment[]
   benefitPayments PayrollBenefitPayment[]
+  payrollEvents   PayrollEvent[]
 
   @@index([businessId, employeeId])
   @@index([businessId, isActive])
@@ -1499,6 +1544,7 @@ model PayrollPeriod {
 
   runs            PayrollRun[]
   benefitPayments PayrollBenefitPayment[]
+  payrollEvents   PayrollEvent[]
 
   @@unique([businessId, year, month, paymentCycle, installmentNumber])
   @@index([businessId, status])
@@ -1570,6 +1616,7 @@ model PayrollRun {
   withholdingTaxResults PayrollWithholdingTaxResult[]
   payments              PayrollPayment[]
   benefitPayments       PayrollBenefitPayment[]
+  payrollEvents         PayrollEvent[]
 
   @@unique([payrollPeriodId, employeeId])
   @@index([businessId, calculatedAt])
@@ -1590,6 +1637,43 @@ model PayrollAdjustment {
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
 
   @@index([payrollRunId, type])
+}
+
+// Novedades fechadas. Solo OVERTIME se calcula en esta etapa; los demas
+// tipos quedan como estructura versionable para etapas posteriores.
+model PayrollEvent {
+  id              String  @id @default(uuid())
+  businessId      String
+  employeeId      String
+  payrollPeriodId String?
+  payrollRunId    String?
+
+  type   PayrollEventType
+  status PayrollEventStatus @default(DRAFT)
+
+  startDate DateTime
+  endDate   DateTime?
+  quantity  Decimal?          @db.Decimal(20, 6)
+  unit      PayrollEventUnit?
+
+  overtimeCode   String?
+  amountOverride Decimal? @db.Decimal(20, 6)
+  notes          String?
+  createdById    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  business           Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employee           Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollPeriod      PayrollPeriod?    @relation(fields: [payrollPeriodId], references: [id], onDelete: SetNull)
+  payrollRun         PayrollRun?       @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+  employeeContract   EmployeeContract? @relation(fields: [employeeContractId], references: [id])
+  employeeContractId String?
+
+  @@index([businessId, payrollPeriodId, employeeId])
+  @@index([payrollPeriodId, status, startDate])
+  @@index([employeeId, startDate])
 }
 
 model PayrollConceptResult {

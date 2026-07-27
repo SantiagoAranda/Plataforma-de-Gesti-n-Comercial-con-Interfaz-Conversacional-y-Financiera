@@ -1,8 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { PrismaClient, PayrollPaymentCycle, PayrollPeriodStatus, PayrollPaymentStatus, PayrollSettlementType } from '@prisma/client';
+import {
+  PrismaClient,
+  PayrollPaymentCycle,
+  PayrollPeriodStatus,
+  PayrollPaymentStatus,
+  PayrollSettlementType,
+} from '@prisma/client';
 import { AppModule } from './../src/app.module';
 import { PayrollService } from './../src/payroll/payroll.service';
+import { payrollRateFixtureData } from './payroll-legal-fixtures';
 
 const prisma = new PrismaClient();
 
@@ -18,7 +25,9 @@ describe('Payroll Advanced Audits (Integration)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
     await app.init();
 
     payrollService = moduleFixture.get<PayrollService>(PayrollService);
@@ -31,7 +40,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
         fiscalId: '900123456',
         phoneWhatsapp: '3001234567',
         status: 'ACTIVE',
-      }
+      },
     });
     businessId = business.id;
 
@@ -39,46 +48,98 @@ describe('Payroll Advanced Audits (Integration)', () => {
       where: { year_version: { year: 2025, version: 1 } },
       update: {},
       create: {
+        legalCode: 'CO-PAYROLL-2025-V1',
         year: 2025,
         version: 1,
+        effectiveFrom: new Date('2025-01-01T00:00:00.000Z'),
+        effectiveTo: new Date('2026-01-01T00:00:00.000Z'),
         smmlv: 1750905,
         transportAllowance: 249095,
         uvt: 52374,
         monthlyHours: 220,
         isActive: true,
-      }
+      },
     });
     globalParameterId = globalParam.id;
-    
-    await prisma.payrollGlobalParameter.upsert({
+
+    const globalParam2026 = await prisma.payrollGlobalParameter.upsert({
       where: { year_version: { year: 2026, version: 1 } },
       update: {},
       create: {
+        legalCode: 'CO-PAYROLL-2026-V1',
         year: 2026,
         version: 1,
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+        effectiveTo: new Date('2026-07-01T00:00:00.000Z'),
         smmlv: 1750905,
         transportAllowance: 249095,
         uvt: 52374,
         monthlyHours: 220,
         isActive: true,
-      }
+      },
     });
+    await prisma.payrollOvertimeRate.createMany({
+      data: payrollRateFixtureData(globalParam2026.id),
+      skipDuplicates: true,
+    });
+    for (const validity of [
+      {
+        legalCode: 'CO-PAYROLL-2026-V2',
+        version: 2,
+        effectiveFrom: new Date('2026-07-01T00:00:00.000Z'),
+        effectiveTo: new Date('2026-07-15T00:00:00.000Z'),
+        weeklyHours: 44,
+        monthlyHours: 220,
+      },
+      {
+        legalCode: 'CO-PAYROLL-2026-V3',
+        version: 3,
+        effectiveFrom: new Date('2026-07-15T00:00:00.000Z'),
+        effectiveTo: null,
+        weeklyHours: 42,
+        monthlyHours: 210,
+      },
+    ]) {
+      const parameter = await prisma.payrollGlobalParameter.upsert({
+        where: { legalCode: validity.legalCode },
+        update: {},
+        create: {
+          ...validity,
+          year: 2026,
+          smmlv: 1750905,
+          transportAllowance: 249095,
+          uvt: 52374,
+          severanceInterestRate: 0.12,
+          isActive: true,
+        },
+      });
+      await prisma.payrollOvertimeRate.createMany({
+        data: payrollRateFixtureData(parameter.id, true),
+        skipDuplicates: true,
+      });
+    }
 
     await prisma.payrollBusinessParameter.create({
-      data: { businessId, year: 2025 }
+      data: { businessId, year: 2025 },
     });
     await prisma.payrollBusinessParameter.create({
-      data: { businessId, year: 2026 }
+      data: { businessId, year: 2026 },
     });
   });
 
   afterAll(async () => {
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
     await prisma.payrollPayment.deleteMany({ where: { businessId } });
-    await prisma.payrollContractSettlementLine.deleteMany({ where: { settlement: { businessId } } });
-    await prisma.payrollContractSettlement.deleteMany({ where: { businessId } });
+    await prisma.payrollContractSettlementLine.deleteMany({
+      where: { settlement: { businessId } },
+    });
+    await prisma.payrollContractSettlement.deleteMany({
+      where: { businessId },
+    });
     await prisma.payrollBenefitPayment.deleteMany({ where: { businessId } });
-    await prisma.payrollConceptResult.deleteMany({ where: { payrollRun: { businessId } } });
+    await prisma.payrollConceptResult.deleteMany({
+      where: { payrollRun: { businessId } },
+    });
     await prisma.payrollRun.deleteMany({ where: { businessId } });
     await prisma.payrollPeriod.deleteMany({ where: { businessId } });
     await prisma.employeeContract.deleteMany({ where: { businessId } });
@@ -95,7 +156,12 @@ describe('Payroll Advanced Audits (Integration)', () => {
 
     beforeAll(async () => {
       const emp = await prisma.employee.create({
-        data: { businessId, firstName: 'Juan', lastName: 'Perez', documentNumber: '11111' }
+        data: {
+          businessId,
+          firstName: 'Juan',
+          lastName: 'Perez',
+          documentNumber: '11111',
+        },
       });
       employeeId = emp.id;
 
@@ -106,22 +172,32 @@ describe('Payroll Advanced Audits (Integration)', () => {
           contractType: 'INDEFINITE',
           salaryMonthly: 2000000,
           startDate: new Date('2026-01-01T00:00:00Z'),
-          paymentCycle: 'MONTHLY'
-        }
+          paymentCycle: 'MONTHLY',
+        },
       });
       contractId = contract.id;
     });
 
     it('Debe generar el periodo de junio y validar si se crea la Prima automáticamente', async () => {
       const periodJune = await prisma.payrollPeriod.create({
-        data: { businessId, year: 2026, month: 6, paymentCycle: 'MONTHLY', installmentNumber: 1 }
+        data: {
+          businessId,
+          year: 2026,
+          month: 6,
+          paymentCycle: 'MONTHLY',
+          installmentNumber: 1,
+        },
       });
-      
-      const run = await payrollService.calculateEmployeePayroll(businessId, periodJune.id, employeeId);
-      
+
+      const run = await payrollService.calculateEmployeePayroll(
+        businessId,
+        periodJune.id,
+        employeeId,
+      );
+
       // Chequear si se generó un PayrollBenefitPayment de tipo PRIMA
       const benefits = await prisma.payrollBenefitPayment.findMany({
-        where: { businessId, contractId, type: 'PRIMA' }
+        where: { businessId, contractId, type: 'PRIMA' },
       });
 
       // El test documenta el comportamiento actual (falla si esperamos que exista, pasa si confirmamos que no existe)
@@ -132,13 +208,28 @@ describe('Payroll Advanced Audits (Integration)', () => {
 
     it('Debe generar el periodo de diciembre y validar si se crea la Prima automáticamente', async () => {
       const periodDec = await prisma.payrollPeriod.create({
-        data: { businessId, year: 2026, month: 12, paymentCycle: 'MONTHLY', installmentNumber: 1 }
+        data: {
+          businessId,
+          year: 2026,
+          month: 12,
+          paymentCycle: 'MONTHLY',
+          installmentNumber: 1,
+        },
       });
-      
-      await payrollService.calculateEmployeePayroll(businessId, periodDec.id, employeeId);
-      
+
+      await payrollService.calculateEmployeePayroll(
+        businessId,
+        periodDec.id,
+        employeeId,
+      );
+
       const benefits = await prisma.payrollBenefitPayment.findMany({
-        where: { businessId, contractId, type: 'PRIMA', periodId: periodDec.id } // checking if linked to period
+        where: {
+          businessId,
+          contractId,
+          type: 'PRIMA',
+          periodId: periodDec.id,
+        }, // checking if linked to period
       });
 
       console.log('Prima Diciembre generada:', benefits.length > 0);
@@ -151,7 +242,12 @@ describe('Payroll Advanced Audits (Integration)', () => {
 
     beforeAll(async () => {
       const emp = await prisma.employee.create({
-        data: { businessId, firstName: 'Maria', lastName: 'Gomez', documentNumber: '22222' }
+        data: {
+          businessId,
+          firstName: 'Maria',
+          lastName: 'Gomez',
+          documentNumber: '22222',
+        },
       });
       employeeId = emp.id;
 
@@ -162,25 +258,33 @@ describe('Payroll Advanced Audits (Integration)', () => {
           contractType: 'INDEFINITE',
           salaryMonthly: 2000000,
           startDate: new Date('2025-01-01T00:00:00Z'),
-          paymentCycle: 'MONTHLY'
-        }
+          paymentCycle: 'MONTHLY',
+        },
       });
       contractId = contract.id;
     });
 
     it('Liquidación al 31/03/2026 (Contrato > 1 año)', async () => {
-      const settlement = await payrollService.createContractSettlement(businessId, contractId, {
-        endDate: '2026-03-31'
-      });
+      const settlement = await payrollService.createContractSettlement(
+        businessId,
+        contractId,
+        {
+          endDate: '2026-03-31',
+        },
+      );
 
       console.log('Líneas de liquidación > 1 año:');
-      settlement.lines.forEach(l => console.log(`- ${l.code}: ${l.amount}`));
+      settlement.lines.forEach((l) => console.log(`- ${l.code}: ${l.amount}`));
 
       // Validar qué hace con la prima de 2025
-      const primaI = settlement.lines.find(l => l.code === 'SERVICE_BONUS_SEMESTER_ONE');
-      const primaII = settlement.lines.find(l => l.code === 'SERVICE_BONUS_SEMESTER_TWO');
-      const cesantias = settlement.lines.find(l => l.code === 'SEVERANCE');
-      
+      const primaI = settlement.lines.find(
+        (l) => l.code === 'SERVICE_BONUS_SEMESTER_ONE',
+      );
+      const primaII = settlement.lines.find(
+        (l) => l.code === 'SERVICE_BONUS_SEMESTER_TWO',
+      );
+      const cesantias = settlement.lines.find((l) => l.code === 'SEVERANCE');
+
       // Esto fallará intencionalmente si el sistema no calcula las de 2025 o si las pierde.
       // Ojo: Sabemos que el backend actual sólo calcula basado en `year` (2026).
     });
@@ -192,7 +296,13 @@ describe('Payroll Advanced Audits (Integration)', () => {
 
     beforeAll(async () => {
       const emp = await prisma.employee.create({
-        data: { businessId, firstName: 'Carlos', lastName: 'Ruiz', documentNumber: '33333', position: 'Vendedor' }
+        data: {
+          businessId,
+          firstName: 'Carlos',
+          lastName: 'Ruiz',
+          documentNumber: '33333',
+          position: 'Vendedor',
+        },
       });
       employeeId = emp.id;
 
@@ -203,19 +313,29 @@ describe('Payroll Advanced Audits (Integration)', () => {
           contractType: 'INDEFINITE',
           salaryMonthly: 2500000,
           startDate: new Date('2026-01-01T00:00:00Z'),
-          paymentCycle: 'BIWEEKLY'
-        }
+          paymentCycle: 'BIWEEKLY',
+        },
       });
       contractId = contract.id;
     });
 
     it('Debe contener los usedParameters mínimos requeridos en el PayrollRun', async () => {
       const period = await prisma.payrollPeriod.create({
-        data: { businessId, year: 2026, month: 1, paymentCycle: 'BIWEEKLY', installmentNumber: 1 }
+        data: {
+          businessId,
+          year: 2026,
+          month: 1,
+          paymentCycle: 'BIWEEKLY',
+          installmentNumber: 1,
+        },
       });
-      
-      const run = await payrollService.calculateEmployeePayroll(businessId, period.id, employeeId);
-      
+
+      const run = await payrollService.calculateEmployeePayroll(
+        businessId,
+        period.id,
+        employeeId,
+      );
+
       const params = run.usedParameters as any;
       console.log('Snapshot usedParameters:', JSON.stringify(params, null, 2));
 
@@ -242,7 +362,12 @@ describe('Payroll Advanced Audits (Integration)', () => {
 
     beforeAll(async () => {
       const emp = await prisma.employee.create({
-        data: { businessId, firstName: 'Inactive', lastName: 'Test', documentNumber: '44444' }
+        data: {
+          businessId,
+          firstName: 'Inactive',
+          lastName: 'Test',
+          documentNumber: '44444',
+        },
       });
       employeeId = emp.id;
 
@@ -254,20 +379,32 @@ describe('Payroll Advanced Audits (Integration)', () => {
           salaryMonthly: 2000000,
           startDate: new Date('2026-01-01T00:00:00Z'),
           paymentCycle: 'MONTHLY',
-          isActive: false
-        }
+          isActive: false,
+        },
       });
       contractId = contract.id;
     });
 
     it('Debe rechazar el calculo de nomina para un contrato inactivo', async () => {
       const period = await prisma.payrollPeriod.create({
-        data: { businessId, year: 2026, month: 2, paymentCycle: 'MONTHLY', installmentNumber: 1 }
+        data: {
+          businessId,
+          year: 2026,
+          month: 2,
+          paymentCycle: 'MONTHLY',
+          installmentNumber: 1,
+        },
       });
 
-      await expect(payrollService.calculateEmployeePayroll(businessId, period.id, employeeId))
-        .rejects
-        .toThrow('Active contract not found');
+      await expect(
+        payrollService.calculateEmployeePayroll(
+          businessId,
+          period.id,
+          employeeId,
+        ),
+      ).rejects.toThrow(
+        'El empleado no tiene contrato activo para este periodo.',
+      );
     });
   });
 });

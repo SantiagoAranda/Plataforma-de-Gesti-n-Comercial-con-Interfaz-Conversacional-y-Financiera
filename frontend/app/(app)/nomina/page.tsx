@@ -1,6 +1,6 @@
 "use client";
 
-import { type InputHTMLAttributes, type ReactNode, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { createContext, type InputHTMLAttributes, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useRef } from "react";
 import toast from "react-hot-toast";
 import {
   AlertCircle,
@@ -35,6 +35,8 @@ import {
   type MoneyLike,
   type OvertimeType,
   type PayrollPeriod,
+  type PayrollEvent,
+  type PayrollLegalParameter,
   type PayrollPayment,
   type PayrollRun,
   type Settlement,
@@ -44,15 +46,71 @@ import {
 } from "@/src/lib/payroll/api";
 import { cn } from "@/src/lib/utils";
 
-const PAYROLL_OVERTIME_ITEMS: Array<{ type: OvertimeType; label: string; hint: string }> = [
-  { type: "HORA_EXTRA_DIURNA", label: "Extra diurna", hint: "+25%" },
-  { type: "HORA_EXTRA_NOCTURNO", label: "Extra nocturna", hint: "+75%" },
-  { type: "HORA_ORDINARIA_NOCTURNA", label: "Recargo nocturno", hint: "+35%" },
-  { type: "HORA_EXTRA_DOM_FESTIVO", label: "Extra dom/festiva diurna", hint: "+105%" },
-  { type: "HORA_EXTRA_NOCTURNO_DOM_FESTIVO", label: "Extra dom/festiva nocturna", hint: "+155%" },
-  { type: "HORA_DOMINICAL_FESTIVO", label: "Recargo dominical/festivo", hint: "+80%" },
+const PAYROLL_OVERTIME_ITEMS: Array<{ type: OvertimeType; label: string }> = [
+  { type: "HORA_EXTRA_DIURNA", label: "Extra diurna" },
+  { type: "HORA_EXTRA_NOCTURNO", label: "Extra nocturna" },
+  { type: "HORA_ORDINARIA_NOCTURNA", label: "Recargo nocturno" },
+  { type: "HORA_DOMINICAL_FESTIVO", label: "Dominical/festivo" },
+  { type: "HORA_DOM_FESTIVO_NOCTURNO", label: "Dominical/festiva nocturna" },
+  { type: "HORA_EXTRA_DOM_FESTIVO", label: "Extra dom/festiva diurna" },
+  { type: "HORA_EXTRA_NOCTURNO_DOM_FESTIVO", label: "Extra dom/festiva nocturna" },
 ];
-const overtimeInputs = PAYROLL_OVERTIME_ITEMS;
+
+const PayrollLegalParameterContext = createContext<PayrollLegalParameter | null>(null);
+
+function legalRateHint(rate?: PayrollLegalParameter["overtimeRates"][number]) {
+  if (!rate) return "Tasa legal no disponible";
+  return `${numberValue(rate.legalPercentage)} % adicional · factor ${numberValue(rate.totalFactor)} · paga ${numberValue(rate.payableMultiplier)} · ${rate.calculationMode}`;
+}
+
+function usePayrollOvertimeInputs() {
+  const legalParameter = useContext(PayrollLegalParameterContext);
+  return useMemo(
+    () =>
+      PAYROLL_OVERTIME_ITEMS.map((item) => ({
+        ...item,
+        hint: legalRateHint(
+          legalParameter?.overtimeRates.find((rate) => rate.code === item.type),
+        ),
+      })),
+    [legalParameter],
+  );
+}
+
+const PERIODIC_PAYROLL_MINIMUM = { year: 2026, month: 7 } as const;
+
+function payrollMonthIndex(year: number, month: number) {
+  return year * 12 + month - 1;
+}
+
+function canPreparePayrollPeriod(year: number, month: number, now = new Date()) {
+  const requested = payrollMonthIndex(year, month);
+  const minimum = payrollMonthIndex(
+    PERIODIC_PAYROLL_MINIMUM.year,
+    PERIODIC_PAYROLL_MINIMUM.month,
+  );
+  const current = payrollMonthIndex(now.getUTCFullYear(), now.getUTCMonth() + 1);
+  return requested >= minimum && requested <= current + 1;
+}
+
+function isPeriodicPayrollEnabled(period?: Pick<PayrollPeriod, "year" | "month">) {
+  return Boolean(
+    period &&
+      payrollMonthIndex(period.year, period.month) >=
+        payrollMonthIndex(
+          PERIODIC_PAYROLL_MINIMUM.year,
+          PERIODIC_PAYROLL_MINIMUM.month,
+        ),
+  );
+}
+
+function payrollPeriodReferenceDate(period: PayrollPeriod) {
+  const day =
+    period.paymentCycle === "BIWEEKLY" && period.installmentNumber === 1
+      ? 15
+      : new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
+  return `${period.year}-${String(period.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 type WizardStep = 0 | 1 | 2 | 3;
 
@@ -341,7 +399,11 @@ function findActiveContract(contracts?: Contract[], period?: PayrollPeriod) {
 }
 
 function isPeriodEditable(period?: PayrollPeriod) {
-  return Boolean(period && period.status !== "POSTED" && period.status !== "CLOSED");
+  return Boolean(
+    isPeriodicPayrollEnabled(period) &&
+      period?.status !== "POSTED" &&
+      period?.status !== "CLOSED",
+  );
 }
 
 function isoDate(value?: string | null) {
@@ -706,11 +768,16 @@ function HeaderCalendar({
               const month = i + 1;
               const periodExists = choosePrimaryMonthlyPeriod(monthlyPeriods, viewYear, month);
               const isSelected = selectedPeriod?.year === viewYear && selectedPeriod?.month === month;
+              const canCreate = canPreparePayrollPeriod(viewYear, month);
+              const disabled = !periodExists && !canCreate;
 
               return (
                 <button
                   key={month}
+                  disabled={disabled}
+                  title={disabled ? "Solo se permite preparar el mes actual o el siguiente, desde agosto de 2026." : undefined}
                   onClick={() => {
+                    if (disabled) return;
                     if (periodExists) {
                       onChange(periodExists.id);
                     } else {
@@ -719,7 +786,7 @@ function HeaderCalendar({
                     setOpen(false);
                   }}
                   className={cn(
-                    "rounded-xl py-1.5 text-xs font-medium transition",
+                    "rounded-xl py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300",
                     isSelected
                       ? "bg-[#0B3F64] text-white shadow-sm"
                       : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
@@ -1067,6 +1134,7 @@ function PayrollAdjustmentsSection({
   onChange: (value: AdjustmentsDraft) => void;
   disabled?: boolean;
 }) {
+  const overtimeInputs = usePayrollOvertimeInputs();
   const update = (patch: Partial<AdjustmentsDraft>) => onChange({ ...value, ...patch });
   const totalOvertimeHours = overtimeInputs.reduce(
     (sum, item) => sum + numberValue(value.overtimeHours[item.type]),
@@ -1639,6 +1707,7 @@ function EmployeePayrollEditorSheet({
   onInactivateEmployee?: (employee: Employee) => void;
   onHardDeleteEmployee?: (employee: Employee) => void;
 }) {
+  const overtimeInputs = usePayrollOvertimeInputs();
   const [activeTab, setActiveTab] = useState<"horas" | "contrato" | "empleado">("horas");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -3516,14 +3585,31 @@ function PayrollRecordWizardSheet({
   arlRisks: ArlRiskClass[];
   employees: Employee[];
 }) {
+  const overtimeInputs = usePayrollOvertimeInputs();
   const today = new Date();
+  const currentMonthIndex = payrollMonthIndex(
+    today.getUTCFullYear(),
+    today.getUTCMonth() + 1,
+  );
+  const minimumMonthIndex = payrollMonthIndex(
+    PERIODIC_PAYROLL_MINIMUM.year,
+    PERIODIC_PAYROLL_MINIMUM.month,
+  );
+  const initialYear =
+    currentMonthIndex < minimumMonthIndex
+      ? PERIODIC_PAYROLL_MINIMUM.year
+      : today.getUTCFullYear();
+  const initialMonth =
+    currentMonthIndex < minimumMonthIndex
+      ? PERIODIC_PAYROLL_MINIMUM.month
+      : today.getUTCMonth() + 1;
   const todayIso = today.toISOString().slice(0, 10);
   const [step, setStep] = useState<WizardStep>(0);
   const [employeeId, setEmployeeId] = useState("");
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [contractId, setContractId] = useState("");
-  const [year, setYear] = useState(String(today.getFullYear()));
-  const [month, setMonth] = useState(String(today.getMonth() + 1));
+  const [year, setYear] = useState(String(initialYear));
+  const [month, setMonth] = useState(String(initialMonth));
   const [workedDays, setWorkedDays] = useState("30");
   const [commissions, setCommissions] = useState("0");
   const [nonSalaryBonus, setNonSalaryBonus] = useState("0");
@@ -3560,8 +3646,8 @@ function PayrollRecordWizardSheet({
     setEmployeeId("");
     setContracts([]);
     setContractId("");
-    setYear(String(today.getFullYear()));
-    setMonth(String(today.getMonth() + 1));
+    setYear(String(initialYear));
+    setMonth(String(initialMonth));
     setWorkedDays("30");
     setCommissions("0");
     setNonSalaryBonus("0");
@@ -3592,11 +3678,17 @@ function PayrollRecordWizardSheet({
     if (step === 1) {
       if (!contractId) return "Selecciona un contrato activo.";
     }
-    if (step === 2) {
-      const parsedYear = Number(year);
-      const parsedMonth = Number(month);
-      if (!Number.isInteger(parsedYear) || parsedYear < 1900) return "El anio del periodo no es valido.";
-      if (!Number.isInteger(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) return "El mes del periodo no es valido.";
+      if (step === 2) {
+        const parsedYear = Number(year);
+        const parsedMonth = Number(month);
+        if (!Number.isInteger(parsedYear) || parsedYear < 1900) return "El anio del periodo no es valido.";
+        if (!Number.isInteger(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) return "El mes del periodo no es valido.";
+        if (!isPeriodicPayrollEnabled({ year: parsedYear, month: parsedMonth })) {
+          return "Las nominas anteriores a agosto de 2026 requieren calculo por vigencias diarias y todavia no estan habilitadas.";
+        }
+        if (!canPreparePayrollPeriod(parsedYear, parsedMonth, today)) {
+          return "Solo se permite preparar el mes actual o el mes inmediatamente siguiente.";
+        }
       const parsedWorkedDays = numberValue(workedDays);
       if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
         return "Los dias trabajados deben estar entre 1 y 30.";
@@ -3874,6 +3966,7 @@ function PayrollNewsSheet({
   onSettlementPreview?: (settlement: Settlement) => void;
   onFinished: (periodId: string) => void;
 }) {
+  const overtimeInputs = usePayrollOvertimeInputs();
   const [workedDays, setWorkedDays] = useState("30");
   const [commissions, setCommissions] = useState("0");
   const [nonSalaryBonus, setNonSalaryBonus] = useState("0");
@@ -3883,9 +3976,18 @@ function PayrollNewsSheet({
   const [preview, setPreview] = useState<PayrollRun | null>(null);
   const [settlementPreview, setSettlementPreview] = useState<Settlement | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  const [overtimeHours, setOvertimeHours] = useState<Record<OvertimeType, string>>(defaultOvertimeHours);
+  const [events, setEvents] = useState<PayrollEvent[]>([]);
+  const [eventDate, setEventDate] = useState("");
+  const [eventCode, setEventCode] = useState<OvertimeType>("HORA_EXTRA_DIURNA");
+  const [eventHours, setEventHours] = useState("1");
+  const [eventNotes, setEventNotes] = useState("");
+  const [eventStatus, setEventStatus] = useState<"DRAFT" | "APPROVED">("APPROVED");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const sheetEmployee = run?.employee ?? employee ?? null;
+  const employeeId = run?.employeeId ?? sheetEmployee?.id;
+  const sheetContract = run?.contract ?? contract ?? null;
+  const editable = isPeriodEditable(selectedPeriod);
 
   useEffect(() => {
     if (!open) return;
@@ -3897,44 +3999,38 @@ function PayrollNewsSheet({
     setSimulatedEndDate(settlementDefaultEndDate(contract ?? run?.contract, selectedPeriod));
     setPreview(run?.preview ? run : null);
     setSettlementPreview(null);
-    setOvertimeHours(defaultOvertimeHours());
+    setEvents([]);
+    setEventDate("");
+    setEventHours("1");
     setError(null);
-  }, [contract, open, run, selectedPeriod]);
+    if (selectedPeriod?.id) {
+      payrollApi.listEvents(selectedPeriod.id, employeeId).then(setEvents).catch(() => setEvents([]));
+    }
+  }, [contract, employeeId, open, run, selectedPeriod]);
 
-  const totalOvertimeHours = overtimeInputs.reduce(
-    (sum, item) => sum + numberValue(overtimeHours[item.type]),
-    0,
-  );
-
-  const sheetEmployee = run?.employee ?? employee ?? null;
-  const employeeId = run?.employeeId ?? sheetEmployee?.id;
-  const sheetContract = run?.contract ?? contract ?? null;
-  const editable = isPeriodEditable(selectedPeriod);
+  const totalOvertimeHours = events.reduce((sum, item) => sum + numberValue(item.quantity), 0);
 
   const buildPayload = useCallback((): CalculatePayrollPayload | null => {
     const parsedWorkedDays = numberValue(workedDays);
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return null;
     }
-    const overtimePayload = overtimeInputs
-      .map((item) => ({
-        type: item.type,
-        quantity: numberValue(overtimeHours[item.type]),
-      }))
-      .filter((item) => item.quantity > 0);
-
     return {
       workedDays: parsedWorkedDays,
       commissions: numberValue(commissions),
       nonSalaryBonus: numberValue(nonSalaryBonus),
       loanDeduction: numberValue(loans),
       otherDeductions: numberValue(otherDeductions),
-      overtimeHours: overtimePayload.length ? overtimePayload : undefined,
     };
-  }, [commissions, loans, nonSalaryBonus, otherDeductions, overtimeHours, workedDays]);
+  }, [commissions, loans, nonSalaryBonus, otherDeductions, workedDays]);
 
   useEffect(() => {
-    if (!open || !employeeId || !selectedPeriod) return;
+    if (
+      !open ||
+      !employeeId ||
+      !selectedPeriod ||
+      !isPeriodicPayrollEnabled(selectedPeriod)
+    ) return;
     const payload = buildPayload();
     if (!payload) return;
 
@@ -4002,6 +4098,18 @@ function PayrollNewsSheet({
     }
   };
 
+  const createOvertimeEvent = async () => {
+    if (!employeeId || !selectedPeriod || !editable || !eventDate || numberValue(eventHours) <= 0) {
+      return setError("Completa empleado, fecha y horas mayores que cero.");
+    }
+    setSubmitting(true);
+    try {
+      const created = await payrollApi.createEvent(selectedPeriod.id, { employeeId, type: "OVERTIME", startDate: eventDate, quantity: numberValue(eventHours), unit: "HOURS", overtimeCode: eventCode, notes: eventNotes || undefined, status: eventStatus });
+      setEvents((current) => [...current, created]); setEventHours("1"); setEventNotes("");
+    } catch (err) { setError(payrollErrorMessage(err, "No se pudo registrar la novedad.")); }
+    finally { setSubmitting(false); }
+  };
+
   return (
     <SheetShell
       open={open}
@@ -4066,31 +4174,28 @@ function PayrollNewsSheet({
 
         <div className="rounded-[24px] border border-neutral-100 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <span className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Trabajo suplementario</span>
+            <span className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Novedades del período</span>
             <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[10px] font-medium text-neutral-500">{totalOvertimeHours} h</span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            {overtimeInputs.map((item) => (
-              <label key={item.type} className="rounded-2xl border border-neutral-100 bg-neutral-50 p-2">
-                <span className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-[11px] font-medium text-neutral-700">{item.label}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-[#0fb18f]">{item.hint}</span>
-                </span>
-                <input
-                  value={overtimeHours[item.type]}
-                  onChange={(event) =>
-                    setOvertimeHours((current) => ({
-                      ...current,
-                      [item.type]: event.target.value,
-                    }))
-                  }
-                  type="number"
-                  min="0"
-                  disabled={!editable}
-                  className="mt-2 h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-right text-sm font-semibold outline-none focus:border-emerald-400"
-                />
-              </label>
-            ))}
+          {editable && <div className="grid grid-cols-2 gap-2">
+            <FieldBlock label="Fecha"><BigInput value={eventDate} onChange={(e) => setEventDate(e.target.value)} type="date" /></FieldBlock>
+            <FieldBlock label="Horas"><BigInput value={eventHours} onChange={(e) => setEventHours(e.target.value)} type="number" min="0.01" /></FieldBlock>
+            <label className="col-span-2 text-xs font-medium text-neutral-600">Concepto
+              <select value={eventCode} onChange={(e) => setEventCode(e.target.value as OvertimeType)} className="mt-1 h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm">
+                {overtimeInputs.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-neutral-600">Estado
+              <select value={eventStatus} onChange={(e) => setEventStatus(e.target.value as "DRAFT" | "APPROVED")} className="mt-1 h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm"><option value="APPROVED">Aprobada</option><option value="DRAFT">Borrador</option></select>
+            </label>
+            <FieldBlock label="Observación"><BigInput value={eventNotes} onChange={(e) => setEventNotes(e.target.value)} /></FieldBlock>
+            <button type="button" onClick={createOvertimeEvent} disabled={submitting} className="col-span-2 h-10 rounded-xl bg-emerald-600 text-sm font-medium text-white disabled:opacity-60">Agregar hora extra/recargo</button>
+          </div>}
+          <div className="mt-3 space-y-2">
+            {events.length === 0 ? <p className="text-xs text-neutral-400">No hay novedades fechadas.</p> : events.map((event) => {
+              const item = overtimeInputs.find((rate) => rate.type === event.overtimeCode);
+              return <div key={event.id} className="flex items-center justify-between rounded-xl bg-neutral-50 px-3 py-2 text-xs"><span>{event.startDate.slice(0, 10)} · {item?.label ?? "Hora extra"}</span><span>{numberValue(event.quantity)} h · {{ DRAFT: "Borrador", APPROVED: "Aprobada", APPLIED: "Aplicada", CANCELLED: "Cancelada" }[event.status] ?? event.status}</span></div>;
+            })}
           </div>
         </div>
 
@@ -4457,6 +4562,7 @@ export default function PayrollPage() {
   const [simulationByEmployee, setSimulationByEmployee] = useState<Record<string, PayrollRun>>({});
   const [settlementPreviewByContract, setSettlementPreviewByContract] = useState<Record<string, Settlement>>({});
   const [visualPaidRuns, setVisualPaidRuns] = useState<Record<string, boolean>>({});
+  const [legalParameter, setLegalParameter] = useState<PayrollLegalParameter | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: "visual-payment"; run: PayrollRun; paid: boolean }
     | { type: "post-period" }
@@ -4473,6 +4579,27 @@ export default function PayrollPage() {
     [periods, selectedPeriodId],
   );
 
+  useEffect(() => {
+    if (!selectedPeriod) {
+      setLegalParameter(null);
+      return;
+    }
+    let alive = true;
+    const referenceDate = payrollPeriodReferenceDate(selectedPeriod);
+    payrollApi
+      .getLegalConfig(selectedPeriod.year, referenceDate)
+      .then((response) => {
+        if (alive) setLegalParameter(response.globalFallback);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (alive) setLegalParameter(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedPeriod]);
+
   const loadPeriods = useCallback(async () => {
     setPeriodsLoading(true);
     setError(null);
@@ -4480,16 +4607,25 @@ export default function PayrollPage() {
       const data = await payrollApi.listPeriods();
       let nextPeriods = data;
       const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth() + 1;
+      const year = today.getUTCFullYear();
+      const month = today.getUTCMonth() + 1;
 
       let fallbackPeriod = choosePrimaryMonthlyPeriod(nextPeriods, year, month);
       if (!fallbackPeriod) {
-        fallbackPeriod = await payrollApi.createPeriod({ year, month, paymentCycle: "MONTHLY", installmentNumber: 1 })
+        const minimumIndex = payrollMonthIndex(
+          PERIODIC_PAYROLL_MINIMUM.year,
+          PERIODIC_PAYROLL_MINIMUM.month,
+        );
+        const currentIndex = payrollMonthIndex(year, month);
+        const preparationYear =
+          currentIndex < minimumIndex ? PERIODIC_PAYROLL_MINIMUM.year : year;
+        const preparationMonth =
+          currentIndex < minimumIndex ? PERIODIC_PAYROLL_MINIMUM.month : month;
+        fallbackPeriod = await payrollApi.createPeriod({ year: preparationYear, month: preparationMonth, paymentCycle: "MONTHLY", installmentNumber: 1 })
           .catch(async (err) => {
             if (err instanceof AppApiError && err.status === 409) {
-              const existingPeriods = await payrollApi.findPeriods(year, month);
-              return choosePrimaryMonthlyPeriod(existingPeriods, year, month);
+              const existingPeriods = await payrollApi.findPeriods(preparationYear, preparationMonth);
+              return choosePrimaryMonthlyPeriod(existingPeriods, preparationYear, preparationMonth);
             }
             throw err;
           });
@@ -4656,6 +4792,7 @@ export default function PayrollPage() {
   useEffect(() => {
     if (
       !selectedPeriod ||
+      !isPeriodicPayrollEnabled(selectedPeriod) ||
       employeesLoading ||
       runsLoading ||
       selectedPeriod.status === "POSTED" ||
@@ -4976,6 +5113,10 @@ export default function PayrollPage() {
       setSelectedPeriodId(newPeriod.id);
     } catch (err) {
       console.error(err);
+      const message = payrollErrorMessage(err, "No se pudo crear el periodo seleccionado.");
+      toast.error(message);
+      setNotice(message);
+      window.setTimeout(() => setNotice(null), 3500);
     }
   };
 
@@ -5103,6 +5244,7 @@ export default function PayrollPage() {
     hasLoadedPayrollData &&
     selectedPeriodId &&
     employees.length > 0 &&
+    isPeriodicPayrollEnabled(selectedPeriod) &&
     !periodAlreadyPosted,
   );
 
@@ -5127,6 +5269,7 @@ export default function PayrollPage() {
   }, [isPayrollLoading, filteredRows.length]);
 
   return (
+    <PayrollLegalParameterContext.Provider value={legalParameter}>
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
         <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar periods={periods} selectedId={selectedPeriodId} onChange={setSelectedPeriodId} onCreateOrSelect={handleCreateOrSelectPeriod} />} />
@@ -5151,6 +5294,11 @@ export default function PayrollPage() {
                   totalCost={totals.cost}
                   totalNet={totals.net}
                 />
+              )}
+              {selectedPeriod && !isPeriodicPayrollEnabled(selectedPeriod) && (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                  Las nóminas anteriores a agosto de 2026 requieren cálculo por vigencias diarias y todavía no están habilitadas. El histórico permanece disponible para consulta.
+                </div>
               )}
 
               <div className="mb-3 mt-5">
@@ -5401,6 +5549,7 @@ export default function PayrollPage() {
         onCancel={() => !confirmLoading && setConfirmAction(null)}
       />
     </div>
+    </PayrollLegalParameterContext.Provider>
   );
 }
 
