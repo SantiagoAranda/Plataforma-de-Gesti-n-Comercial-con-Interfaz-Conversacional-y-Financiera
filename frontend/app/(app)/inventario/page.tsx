@@ -469,111 +469,122 @@ function InventarioPageContent() {
         )}
       </ItemPanelLayout>
 
-      {ingredientSheetOpen && (
-        <>
-          {/* Overlay */}
-          <div
-            className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
-            onClick={() => {
-              setIngredientSheetOpen(false);
-              setIsFormValid(false);
-            }}
-            aria-hidden
-          />
-
-          {/* Unified Bottom Sheet Panel containing Title, Form, & Composer */}
-          <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md px-2 pointer-events-none">
-            <div className="flex max-h-[85vh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl border-x border-t border-slate-200/60 pointer-events-auto animate-in slide-in-from-bottom-6 fade-in duration-200">
-
-              {/* Sticky/Fixed Title Header */}
-              <div className="shrink-0 bg-white px-5 pt-5 pb-3">
-                <h2 className="text-base font-semibold text-slate-900">
-                  Nuevo ingrediente
-                </h2>
-              </div>
-
-              {/* Scrollable Form Body */}
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
-                <IngredientForm
-                  key={ingredientSheetOpen ? "create-ingredient-open" : "create-ingredient-closed"}
-                  mode="create"
-                  defaults={{ name: "" }}
-                  submitting={creatingIngredient}
-                  hideTitle={true}
-                  hideSubmitButton={true}
-                  onCancel={() => {
-                    setIngredientSheetOpen(false);
-                    setIsFormValid(false);
-                  }}
-                  onSubmit={async (values) => {
-                    const loadingId = "inventory-ingredient-create-loading";
-                    try {
-                      setCreatingIngredient(true);
-                      toast.loading("Creando ingrediente...", { id: loadingId });
-
-                      const payload: any = {
-                        name: values.name,
-                        stockUnitId: values.stockUnitId,
-                        defaultPurchaseUnitId: values.defaultPurchaseUnitId,
-                        consumptionUnit: values.consumptionUnit,
-                        purchaseUnit: values.purchaseUnit,
-                        minStock: values.minStock,
-                        purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
-                      };
-                      const created = await createIngredient(payload);
-                      if (values.purchasePresentationDraft) {
-                        await createPurchasePresentation(created.id, values.purchasePresentationDraft);
-                      }
-                      toast.dismiss(loadingId);
-                      toast.success("Ingrediente creado");
-                      setIngredientSheetOpen(false);
-                      setSearchQuery("");
-                      setIsFormValid(false);
-                      await load();
-                    } catch (err) {
-                      console.error(err);
-                      toast.dismiss(loadingId);
-                      toast.error(getErrorMessage(err, "No se pudo crear el ingrediente"));
-                    } finally {
-                      setCreatingIngredient(false);
-                    }
-                  }}
-                  onValidationChange={setIsFormValid}
-                  formRef={formRef}
-                />
-              </div>
-
-              {/* Composer Footer (Flush with bottom sheet) */}
+      {/* Floating Chat & Expandable Form Architecture (Identical to Sales / Accounting / Mi Negocio) */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 px-3 py-3 lg:left-[408px] lg:right-0"
+        style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto w-full max-w-md relative">
+          {ingredientSheetOpen && (
+            <>
+              {/* Overlay Backdrop - Dark without blur */}
               <div
-                className="shrink-0 border-t border-slate-100 bg-white px-3 py-2"
-                style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom))" }}
-              >
-                <WhatsappComposer
-                  leftAction={() => {
-                    setIngredientSheetOpen(false);
-                    setSearchQuery("");
-                    setIsFormValid(false);
-                  }}
-                  leftIconVariant="x"
-                  rightAction={() => {
-                    formRef.current?.requestSubmit();
-                  }}
-                  submitDisabled={!isFormValid}
-                  isSubmitting={creatingIngredient}
-                  rightIconVariant="send"
-                  className="border-none shadow-none bg-transparent rounded-none p-0"
-                  centerContent={
-                    <div className="flex h-full w-full items-center justify-center pt-0.5">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Nuevo insumo</span>
-                    </div>
-                  }
-                />
-              </div>
+                className="fixed inset-0 z-40 bg-black/40 transition-opacity"
+                onClick={() => {
+                  setIngredientSheetOpen(false);
+                  setIsFormValid(false);
+                }}
+                aria-hidden
+              />
 
-            </div>
+              {/* Expandable Form Panel Floating Above Chat Bar */}
+              <div className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 flex max-h-[min(70vh,580px)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+                {/* Header */}
+                <div className="shrink-0 bg-white px-5 pt-5 pb-3 border-b border-slate-100/60">
+                  <h2 className="text-base font-semibold text-slate-900">
+                    Nuevo ingrediente
+                  </h2>
+                </div>
+
+                {/* Form Body */}
+                <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 custom-scrollbar">
+                  <IngredientForm
+                    key={ingredientSheetOpen ? "create-ingredient-open" : "create-ingredient-closed"}
+                    mode="create"
+                    defaults={{ name: "" }}
+                    submitting={creatingIngredient}
+                    hideTitle={true}
+                    hideSubmitButton={true}
+                    onCancel={() => {
+                      setIngredientSheetOpen(false);
+                      setIsFormValid(false);
+                    }}
+                    onSubmit={async (values) => {
+                      const loadingId = "inventory-ingredient-create-loading";
+                      try {
+                        setCreatingIngredient(true);
+                        toast.loading("Creando ingrediente...", { id: loadingId });
+
+                        const payload: any = {
+                          name: values.name,
+                          stockUnitId: values.stockUnitId,
+                          defaultPurchaseUnitId: values.defaultPurchaseUnitId,
+                          consumptionUnit: values.consumptionUnit,
+                          purchaseUnit: values.purchaseUnit,
+                          minStock: values.minStock,
+                          purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
+                        };
+                        const created = await createIngredient(payload);
+                        if (values.purchasePresentationDraft) {
+                          await createPurchasePresentation(created.id, values.purchasePresentationDraft);
+                        }
+                        toast.dismiss(loadingId);
+                        toast.success("Ingrediente creado");
+                        setIngredientSheetOpen(false);
+                        setSearchQuery("");
+                        setIsFormValid(false);
+                        await load();
+                      } catch (err) {
+                        console.error(err);
+                        toast.dismiss(loadingId);
+                        toast.error(getErrorMessage(err, "No se pudo crear el ingrediente"));
+                      } finally {
+                        setCreatingIngredient(false);
+                      }
+                    }}
+                    onValidationChange={setIsFormValid}
+                    formRef={formRef}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Floating Action / Chat Composer Bar */}
+          <div className="relative z-50">
+            {ingredientSheetOpen ? (
+              <WhatsappComposer
+                leftAction={() => {
+                  setIngredientSheetOpen(false);
+                  setSearchQuery("");
+                  setIsFormValid(false);
+                }}
+                leftIconVariant="x"
+                rightAction={() => {
+                  formRef.current?.requestSubmit();
+                }}
+                submitDisabled={!isFormValid}
+                isSubmitting={creatingIngredient}
+                rightIconVariant="send"
+                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-md"
+                centerContent={
+                  <div className="flex h-full w-full items-center justify-center pt-0.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Nuevo insumo</span>
+                  </div>
+                }
+              />
+            ) : (
+              <InventoryChatActionBar
+                value={searchQuery}
+                onChange={setSearchQuery}
+                onSubmit={() => {}}
+                onCreateIngredient={toggleIngredientSheetFromBar}
+                createIngredientActive={ingredientSheetOpen}
+              />
+            )}
           </div>
-        </>
-      )}
+        </div>
+      </div>
 
       <IngredientDetailSheet
         ingredientId={selectedIngredientId}

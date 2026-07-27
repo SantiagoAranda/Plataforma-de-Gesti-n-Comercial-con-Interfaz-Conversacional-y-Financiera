@@ -638,13 +638,13 @@ export default function PublicStoreClient() {
         redesSociales: normalizeFooterSocials(footerSettings?.socials),
         ubicacion: showLocation
           ? {
-              label:
-                typeof footerSettings?.locationLabel === "string" &&
+            label:
+              typeof footerSettings?.locationLabel === "string" &&
                 hasRealFooterValue(footerSettings.locationLabel)
-                  ? footerSettings.locationLabel.trim()
-                  : "Como llegar",
-              value: googleMapsUrl,
-            }
+                ? footerSettings.locationLabel.trim()
+                : "Como llegar",
+            value: googleMapsUrl,
+          }
           : undefined,
       },
     };
@@ -778,9 +778,9 @@ export default function PublicStoreClient() {
     const optionSelections =
       (customizingProduct.optionGroups?.length ?? 0) > 0
         ? buildOptionSelectionsFromSelectedIds(
-            customizingProduct,
-            new Set(draftSelectedOptionIds),
-          )
+          customizingProduct,
+          new Set(draftSelectedOptionIds),
+        )
         : [];
     if (editingCartKey) {
       const previous = cart.find((line) => cartLineKey(line) === editingCartKey);
@@ -851,19 +851,19 @@ export default function PublicStoreClient() {
         };
       })
       .filter(Boolean) as (Item & {
-      quantity: number;
-      cartKey: string;
-      basePrice: number;
-      optionSelections: OptionSelection[];
-      selectedOptionNames: string[];
-      selectedOptionSummary: Array<{
-        groupTitle: string;
-        optionName: string;
-        priceDelta: number;
-      }>;
-      excludedOptionalIngredientIds: string[];
-      excludedOptionalIngredientNames: string[];
-    })[];
+        quantity: number;
+        cartKey: string;
+        basePrice: number;
+        optionSelections: OptionSelection[];
+        selectedOptionNames: string[];
+        selectedOptionSummary: Array<{
+          groupTitle: string;
+          optionName: string;
+          priceDelta: number;
+        }>;
+        excludedOptionalIngredientIds: string[];
+        excludedOptionalIngredientNames: string[];
+      })[];
   }, [cart, items]);
 
   const cartTotal = useMemo(() => {
@@ -957,20 +957,19 @@ export default function PublicStoreClient() {
     >
       {canReturnToLogin && <NavigationTransitionBackdrop destination="login" />}
       <div
-        className={`relative z-10 flex min-h-screen flex-col bg-white ${
-          isNavigationDragging ? "cursor-grabbing select-none" : ""
-        }`}
+        className={`relative z-10 flex min-h-screen flex-col bg-white ${isNavigationDragging ? "cursor-grabbing select-none" : ""
+          }`}
         style={
           canReturnToLogin &&
-          (navigationOffset !== 0 || isNavigationDragging || isNavigationSettling)
+            (navigationOffset !== 0 || isNavigationDragging || isNavigationSettling)
             ? {
-                transform: `translate3d(${navigationOffset}px, 0, 0)`,
-                transition: isNavigationDragging
-                  ? "none"
-                  : `transform ${navigationSettleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-              }
+              transform: `translate3d(${navigationOffset}px, 0, 0)`,
+              transition: isNavigationDragging
+                ? "none"
+                : `transform ${navigationSettleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+              willChange: "transform",
+              backfaceVisibility: "hidden",
+            }
             : undefined
         }
         onTransitionEnd={(event) => {
@@ -983,340 +982,340 @@ export default function PublicStoreClient() {
           setIsNavigationSettling(false);
         }}
       >
-      <header
-        className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
-        style={{
-          paddingTop: "env(safe-area-inset-top, 0px)",
-          transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
-        }}
-      >
-        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
-              {businessLogoUrl ? (
-                <Image
-                  src={businessLogoUrl}
-                  alt={`Logo de ${businessName || "Tienda"}`}
-                  width={40}
-                  height={40}
-                  className="h-full w-full object-contain rounded-full"
-                />
-              ) : (
-                <Store className="h-5 w-5" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1 leading-tight text-left">
-              <h1 className="truncate text-[20px] font-semibold text-neutral-900">
-                {businessName || "Tienda"}
-              </h1>
-              {headerSubtitle && (
-                <div className="truncate text-[13px] font-medium text-slate-500">
-                  {headerSubtitle}
+        <header
+          className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
+          style={{
+            paddingTop: "env(safe-area-inset-top, 0px)",
+            transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
+          }}
+        >
+          <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
+                {businessLogoUrl ? (
+                  <Image
+                    src={businessLogoUrl}
+                    alt={`Logo de ${businessName || "Tienda"}`}
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-contain rounded-full"
+                  />
+                ) : (
+                  <Store className="h-5 w-5" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1 leading-tight text-left">
+                <h1 className="truncate text-[20px] font-semibold text-neutral-900">
+                  {businessName || "Tienda"}
+                </h1>
+                {headerSubtitle && (
+                  <div className="truncate text-[13px] font-medium text-slate-500">
+                    {headerSubtitle}
+                  </div>
+                )}
+                <div
+                  className="truncate text-[13px] font-semibold text-[#0B3F64]"
+                  style={headerSubtitle ? { display: "none" } : undefined}
+                >
+                  Catálogo
                 </div>
-              )}
-              <div
-                className="truncate text-[13px] font-semibold text-[#0B3F64]"
-                style={headerSubtitle ? { display: "none" } : undefined}
-              >
-                Catálogo
               </div>
             </div>
-          </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {headerLocationUrl && (
-              <a
-                href={headerLocationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
-                aria-label={headerLocationLabel}
-                title="Cómo llegar"
-              >
-                <MapPin className="h-4 w-4 text-[#0B3F64]" />
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowCartModal(true)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[#0B3F64] hover:text-[#0B3F64]/80 shadow-none ring-0 transition hover:bg-[#0B3F64]/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]/30"
-              aria-label="Carrito"
-            >
-              <ShoppingBag className="h-5 w-5" />
-              {cartCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
-                  {cartCount}
-                </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {headerLocationUrl && (
+                <a
+                  href={headerLocationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+                  aria-label={headerLocationLabel}
+                  title="Cómo llegar"
+                >
+                  <MapPin className="h-4 w-4 text-[#0B3F64]" />
+                </a>
               )}
-            </button>
-          </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
-          <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              ref={searchInputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar..."
-              className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
-            />
-          </div>
-
-          <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {["", "PRODUCT", "SERVICE"].map((type) => (
               <button
-                key={type}
-                onClick={() => setCategory(type)}
-                className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
-                  ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
-                  }`}
+                type="button"
+                onClick={() => setShowCartModal(true)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[#0B3F64] hover:text-[#0B3F64]/80 shadow-none ring-0 transition hover:bg-[#0B3F64]/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]/30"
+                aria-label="Carrito"
               >
-                {type === ""
-                  ? "Todo"
-                  : type === "PRODUCT"
-                    ? "Productos"
-                    : "Servicios"}
+                <ShoppingBag className="h-5 w-5" />
+                {cartCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
+                    {cartCount}
+                  </span>
+                )}
               </button>
-            ))}
+            </div>
           </div>
-        </div>
-      </header>
 
-      {preview && (
-        <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
-          Modo administrador - vista previa de la tienda
-        </div>
-      )}
-
-      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
-        {loading ? (
-          <p className="text-center mt-6 text-neutral-400">Cargando...</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
-            {filtered.map((item) => (
-              <ProductCard
-                key={item.id}
-                item={item}
-                preview={preview}
-                onOpen={() =>
-                  item.type === "SERVICE"
-                    ? setSelectedProduct(item)
-                    : (item.optionGroups?.length ?? 0) > 0
-                      ? openCustomizationOrAdd(item)
-                      : setSelectedProduct(item)
-                }
-                onPlus={() =>
-                  item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
-                }
+          <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
+            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
               />
-            ))}
+            </div>
+
+            <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {["", "PRODUCT", "SERVICE"].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setCategory(type)}
+                  className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
+                    ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                    }`}
+                >
+                  {type === ""
+                    ? "Todo"
+                    : type === "PRODUCT"
+                      ? "Productos"
+                      : "Servicios"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        {preview && (
+          <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
+            Modo administrador - vista previa de la tienda
           </div>
         )}
-      </main>
 
-      {/* Cart entry now lives in the header */}
+        <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
+          {loading ? (
+            <p className="text-center mt-6 text-neutral-400">Cargando...</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
+              {filtered.map((item) => (
+                <ProductCard
+                  key={item.id}
+                  item={item}
+                  preview={preview}
+                  onOpen={() =>
+                    item.type === "SERVICE"
+                      ? setSelectedProduct(item)
+                      : (item.optionGroups?.length ?? 0) > 0
+                        ? openCustomizationOrAdd(item)
+                        : setSelectedProduct(item)
+                  }
+                  onPlus={() =>
+                    item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </main>
 
-      {showCartModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowCartModal(false)}
-          />
+        {/* Cart entry now lives in the header */}
 
-          <div className="relative z-10 w-full max-w-md">
-            <CartSummary
-              items={cartItems}
-              onIncreaseQty={increaseQty}
-              onDecreaseQty={decreaseQty}
-              onRemove={removeItem}
-              onEdit={(key) => {
-                const line = cart.find((entry) => cartLineKey(entry) === key);
-                const item = line && items.find((entry) => entry.id === line.itemId);
-                if (!line || !item) return;
-                setEditingCartKey(key);
-                setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
-                setDraftSelectedOptionIds(
-                  Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
-                );
-                setCustomizingProduct(item);
-                setShowCartModal(false);
-              }}
-              customerName={customerName}
-              onCustomerNameChange={setCustomerName}
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              phoneNumber={phoneNumber}
-              onPhoneNumberChange={setPhoneNumber}
-              onConfirm={(doc) => handleConfirmOrder(doc)}
-              onClose={() => setShowCartModal(false)}
+        {showCartModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setShowCartModal(false)}
             />
+
+            <div className="relative z-10 w-full max-w-md">
+              <CartSummary
+                items={cartItems}
+                onIncreaseQty={increaseQty}
+                onDecreaseQty={decreaseQty}
+                onRemove={removeItem}
+                onEdit={(key) => {
+                  const line = cart.find((entry) => cartLineKey(entry) === key);
+                  const item = line && items.find((entry) => entry.id === line.itemId);
+                  if (!line || !item) return;
+                  setEditingCartKey(key);
+                  setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
+                  setDraftSelectedOptionIds(
+                    Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
+                  );
+                  setCustomizingProduct(item);
+                  setShowCartModal(false);
+                }}
+                customerName={customerName}
+                onCustomerNameChange={setCustomerName}
+                countryCode={countryCode}
+                onCountryCodeChange={setCountryCode}
+                phoneNumber={phoneNumber}
+                onPhoneNumberChange={setPhoneNumber}
+                onConfirm={(doc) => handleConfirmOrder(doc)}
+                onClose={() => setShowCartModal(false)}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {customizingProduct && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => {
-              setCustomizingProduct(null);
-              setEditingCartKey(null);
-              setDraftExcludedOptionalIds([]);
-            }}
-          />
-
-          <div className="relative z-10 w-full max-w-md rounded-3xl border border-neutral-100 bg-white p-5 shadow-2xl">
-            <button
-              type="button"
+        {customizingProduct && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
+            <div
+              className="absolute inset-0 bg-black/40"
               onClick={() => {
                 setCustomizingProduct(null);
                 setEditingCartKey(null);
                 setDraftExcludedOptionalIds([]);
               }}
-              className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
-              aria-label="Cerrar personalizacion"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            />
 
-            {(customizingProduct.optionGroups?.length ?? 0) > 0 ? (
-              <ProductOptionsCustomizer
-                item={customizingProduct}
-                selectedOptionIds={draftSelectedOptionIds}
-                onSelectedOptionIdsChange={setDraftSelectedOptionIds}
-                onConfirm={confirmCustomizedProduct}
-              />
-            ) : (
-              <>
-            <div className="pr-10">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
-                Personalizar
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-neutral-900">
-                {customizingProduct.name}
-              </h2>
-              <p className="mt-1 text-xs font-semibold text-neutral-500">
-                Los opcionales vienen incluidos. Desmarca los que no quieras.
-              </p>
-            </div>
+            <div className="relative z-10 w-full max-w-md rounded-3xl border border-neutral-100 bg-white p-5 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomizingProduct(null);
+                  setEditingCartKey(null);
+                  setDraftExcludedOptionalIds([]);
+                }}
+                className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
+                aria-label="Cerrar personalizacion"
+              >
+                <X className="h-4 w-4" />
+              </button>
 
-            {getRequiredRecipeLines(customizingProduct).length > 0 ? (
-              <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
-                  Incluye siempre
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {getRequiredRecipeLines(customizingProduct).map((line) => (
-                    <span
-                      key={line.ingredientId}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-100"
-                    >
-                      {line.ingredient?.name ?? "Ingrediente"}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+              {(customizingProduct.optionGroups?.length ?? 0) > 0 ? (
+                <ProductOptionsCustomizer
+                  item={customizingProduct}
+                  selectedOptionIds={draftSelectedOptionIds}
+                  onSelectedOptionIdsChange={setDraftSelectedOptionIds}
+                  onConfirm={confirmCustomizedProduct}
+                />
+              ) : (
+                <>
+                  <div className="pr-10">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
+                      Personalizar
+                    </p>
+                    <h2 className="mt-1 text-lg font-semibold text-neutral-900">
+                      {customizingProduct.name}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold text-neutral-500">
+                      Los opcionales vienen incluidos. Desmarca los que no quieras.
+                    </p>
+                  </div>
 
-            <div className="mt-4 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
-                Opcionales
-              </p>
-              {getOptionalRecipeLines(customizingProduct).map((line) => {
-                const checked = !draftExcludedOptionalIds.includes(line.ingredientId);
-                return (
-                  <label
-                    key={line.ingredientId}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
+                  {getRequiredRecipeLines(customizingProduct).length > 0 ? (
+                    <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                        Incluye siempre
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {getRequiredRecipeLines(customizingProduct).map((line) => (
+                          <span
+                            key={line.ingredientId}
+                            className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-100"
+                          >
+                            {line.ingredient?.name ?? "Ingrediente"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 space-y-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                      Opcionales
+                    </p>
+                    {getOptionalRecipeLines(customizingProduct).map((line) => {
+                      const checked = !draftExcludedOptionalIds.includes(line.ingredientId);
+                      return (
+                        <label
+                          key={line.ingredientId}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
+                        >
+                          <span className="text-sm font-medium text-neutral-800">
+                            {line.ingredient?.name ?? "Ingrediente"}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              setDraftExcludedOptionalIds((prev) => {
+                                if (event.target.checked) {
+                                  return prev.filter((id) => id !== line.ingredientId);
+                                }
+                                return Array.from(new Set([...prev, line.ingredientId]));
+                              });
+                            }}
+                            className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {draftExcludedOptionalIds.length > 0 ? (
+                    <p className="mt-3 text-xs font-semibold text-neutral-500">
+                      Sin:{" "}
+                      {draftExcludedOptionalIds
+                        .map(
+                          (id) =>
+                            customizingProduct.recipes?.find((line) => line.ingredientId === id)
+                              ?.ingredient?.name,
+                        )
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={confirmCustomizedProduct}
+                    className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
                   >
-                    <span className="text-sm font-medium text-neutral-800">
-                      {line.ingredient?.name ?? "Ingrediente"}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        setDraftExcludedOptionalIds((prev) => {
-                          if (event.target.checked) {
-                            return prev.filter((id) => id !== line.ingredientId);
-                          }
-                          return Array.from(new Set([...prev, line.ingredientId]));
-                        });
-                      }}
-                      className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
-                    />
-                  </label>
-                );
-              })}
+                    <ShoppingBag className="h-4 w-4" />
+                    Agregar al carrito
+                  </button>
+                </>
+              )}
             </div>
-
-            {draftExcludedOptionalIds.length > 0 ? (
-              <p className="mt-3 text-xs font-semibold text-neutral-500">
-                Sin:{" "}
-                {draftExcludedOptionalIds
-                  .map(
-                    (id) =>
-                      customizingProduct.recipes?.find((line) => line.ingredientId === id)
-                        ?.ingredient?.name,
-                  )
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={confirmCustomizedProduct}
-              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
-            >
-              <ShoppingBag className="h-4 w-4" />
-              Agregar al carrito
-            </button>
-              </>
-            )}
           </div>
-        </div>
-      )}
+        )}
 
-      <ReservationDrawer
-        open={!!selectedService}
-        onClose={resetReservationUi}
-        itemId={selectedService?.id}
-        businessSlug={slug}
-        title={selectedService?.name}
-        selectedDateValue={selectedDateKey}
-        serviceDurationMinutes={selectedService?.durationMinutes}
-      />
+        <ReservationDrawer
+          open={!!selectedService}
+          onClose={resetReservationUi}
+          itemId={selectedService?.id}
+          businessSlug={slug}
+          title={selectedService?.name}
+          selectedDateValue={selectedDateKey}
+          serviceDurationMinutes={selectedService?.durationMinutes}
+        />
 
-      <ProductDetailOverlay
-        open={!!selectedProduct}
-        item={selectedProduct}
-        businessName={businessName}
-        businessLogoUrl={businessLogoUrl}
-        onShare={handleShareItem}
-        preview={preview}
-        onClose={closeProductDetail}
-        onPrimaryAction={() => {
-          if (!selectedProduct) return;
-          if (preview) {
-            toast("Modo administrador: las compras/reservas están deshabilitadas");
-            return;
-          }
-          if (selectedProduct.type === "SERVICE") {
-            const itemToReserve = selectedProduct;
-            closeProductDetail();
-            setSelectedService(itemToReserve);
-          } else {
-            openCustomizationOrAdd(selectedProduct);
-            closeProductDetail();
-          }
-        }}
-      />
+        <ProductDetailOverlay
+          open={!!selectedProduct}
+          item={selectedProduct}
+          businessName={businessName}
+          businessLogoUrl={businessLogoUrl}
+          onShare={handleShareItem}
+          preview={preview}
+          onClose={closeProductDetail}
+          onPrimaryAction={() => {
+            if (!selectedProduct) return;
+            if (preview) {
+              toast("Modo administrador: las compras/reservas están deshabilitadas");
+              return;
+            }
+            if (selectedProduct.type === "SERVICE") {
+              const itemToReserve = selectedProduct;
+              closeProductDetail();
+              setSelectedService(itemToReserve);
+            } else {
+              openCustomizationOrAdd(selectedProduct);
+              closeProductDetail();
+            }
+          }}
+        />
 
-      <Footer config={footerConfig} />
+        <Footer config={footerConfig} />
       </div>
       {canReturnToLogin && (
         <LoginReturnHint
@@ -1622,11 +1621,11 @@ function ProductCard({
                         style={
                           isActive
                             ? {
-                                animation: "storeCarouselProgress 3000ms linear forwards",
-                              }
+                              animation: "storeCarouselProgress 3000ms linear forwards",
+                            }
                             : isCompleted
-                            ? { width: "100%" }
-                            : { width: "0%" }
+                              ? { width: "100%" }
+                              : { width: "0%" }
                         }
                       />
                     </button>
@@ -1965,11 +1964,11 @@ function DesktopProductImage({
                       style={
                         isActive
                           ? {
-                              animation: "storeCarouselProgress 3000ms linear forwards",
-                            }
+                            animation: "storeCarouselProgress 3000ms linear forwards",
+                          }
                           : isCompleted
-                          ? { width: "100%" }
-                          : { width: "0%" }
+                            ? { width: "100%" }
+                            : { width: "0%" }
                       }
                     />
                   </button>
@@ -2135,11 +2134,11 @@ function ReelLikeProductView({
                       style={
                         isActive
                           ? {
-                              animation: "storeCarouselProgress 3000ms linear forwards",
-                            }
+                            animation: "storeCarouselProgress 3000ms linear forwards",
+                          }
                           : isCompleted
-                          ? { width: "100%" }
-                          : { width: "0%" }
+                            ? { width: "100%" }
+                            : { width: "0%" }
                       }
                     />
                   </button>
