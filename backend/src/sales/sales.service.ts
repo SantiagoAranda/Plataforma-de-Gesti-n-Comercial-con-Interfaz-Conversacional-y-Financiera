@@ -294,7 +294,7 @@ export class SalesService {
         buyerFiscalContext.reteIcaRateOverride ??
         buyerFiscalContext.icaRateOverride,
       cartItems,
-    });
+    }, tx);
 
     await this.taxService.freezeTaxCalculation(
       tx,
@@ -1245,7 +1245,7 @@ export class SalesService {
             fiscalContextToUse.reteIcaRateOverride ??
             fiscalContextToUse.icaRateOverride,
           cartItems,
-        });
+        }, tx);
 
         await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
       }
@@ -1367,7 +1367,7 @@ export class SalesService {
             buyerFiscalContext.reteIcaRateOverride ??
             buyerFiscalContext.icaRateOverride,
           cartItems,
-        });
+        }, tx);
 
         // Omitir congelamiento fiscal en reservas por ahora
         // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
