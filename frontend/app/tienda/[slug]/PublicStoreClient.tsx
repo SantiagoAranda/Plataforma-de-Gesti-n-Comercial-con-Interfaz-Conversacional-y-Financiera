@@ -1499,22 +1499,54 @@ function ProductCard({
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
   const badges = getItemBadges(item);
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isInCenterBand, setIsInCenterBand] = useState(false);
+
   useEffect(() => {
     setCurrentImageIndex(0);
   }, [item.id]);
 
   useEffect(() => {
     if (!showCarousel) return;
+    const node = cardRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
 
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInCenterBand(entry.isIntersecting);
+      },
+      {
+        rootMargin: "-25% 0px -25% 0px",
+        threshold: 0.3,
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [showCarousel]);
+
+  useEffect(() => {
+    if (!showCarousel || !isInCenterBand) {
+      setCurrentImageIndex(0);
+      return;
+    }
+
+    const DURATION = 3000;
     const id = window.setInterval(() => {
       setCurrentImageIndex((prev) => (prev + 1) % imageCount);
-    }, 3000);
+    }, DURATION);
 
     return () => window.clearInterval(id);
-  }, [showCarousel, imageCount]);
+  }, [showCarousel, isInCenterBand, imageCount]);
 
   return (
-    <div className="flex w-full max-w-[220px] flex-col">
+    <div ref={cardRef} className="flex w-full max-w-[220px] flex-col select-none">
+      <style>{`
+        @keyframes storeCarouselProgress {
+          from { width: 0%; }
+          to { width: 100%; }
+        }
+      `}</style>
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100">
         <div
           role="button"
@@ -1529,14 +1561,25 @@ function ProductCard({
           className="block w-full cursor-pointer"
           aria-label={`Ver ${item.name}`}
         >
-          <div className="relative aspect-[270/378] w-full">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={item.name}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
+          <div className="relative aspect-[270/378] w-full overflow-hidden">
+            {images.length > 0 ? (
+              <div
+                className="flex h-full w-full transition-transform duration-500 ease-out"
+                style={{
+                  transform: `translateX(-${currentImageIndex * 100}%)`,
+                }}
+              >
+                {images.map((img, idx) => (
+                  <div key={img.id ?? `${item.id}-img-${idx}`} className="h-full w-full shrink-0 relative">
+                    <img
+                      src={img.url}
+                      alt={`${item.name} ${idx + 1}`}
+                      className="h-full w-full object-cover select-none"
+                      loading={idx === 0 ? "eager" : "lazy"}
+                    />
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="h-full w-full bg-neutral-200" />
             )}
@@ -1546,7 +1589,7 @@ function ProductCard({
                 {badges.map((badge) => (
                   <div
                     key={`${badge.text}-${badge.color}`}
-                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase shadow-sm"
                     style={{ background: badge.color, color: getContrastColor(badge.color) }}
                   >
                     {badge.text}
@@ -1554,30 +1597,44 @@ function ProductCard({
                 ))}
               </div>
             ) : null}
-          </div>
 
-          {showCarousel && (
-            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setCurrentImageIndex(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white"
-                      : "bg-white/60",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
-            </div>
-          )}
+            {showCarousel && (
+              <div className="absolute left-3 right-3 top-3 z-20 flex gap-1.5 pointer-events-auto drop-shadow-sm">
+                {images.map((image, index) => {
+                  const isActive = index === currentImageIndex;
+                  const isCompleted = index < currentImageIndex;
+
+                  return (
+                    <button
+                      key={image.id ?? `${item.id}-seg-${index}`}
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setCurrentImageIndex(index);
+                      }}
+                      className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                      aria-label={`Imagen ${index + 1}`}
+                    >
+                      <div
+                        key={`${item.id}-${index}-${currentImageIndex}`}
+                        className="h-full rounded-full bg-white"
+                        style={
+                          isActive
+                            ? {
+                                animation: "storeCarouselProgress 3000ms linear forwards",
+                              }
+                            : isCompleted
+                            ? { width: "100%" }
+                            : { width: "0%" }
+                        }
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <button
@@ -1588,7 +1645,7 @@ function ProductCard({
             event.stopPropagation();
             onPlus();
           }}
-          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-none ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute bottom-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-md ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
         >
           <Plus className="h-5 w-5" />
@@ -1860,39 +1917,64 @@ function DesktopProductImage({
 
   return (
     <div className="h-full w-full overflow-hidden bg-neutral-100">
-      <div className="relative h-full w-full">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={item.name}
-            className="h-full w-full object-cover"
-            draggable={false}
-          />
+      <div className="relative h-full w-full overflow-hidden">
+        {images.length > 0 ? (
+          <div
+            className="flex h-full w-full transition-transform duration-500 ease-out"
+            style={{
+              transform: `translateX(-${currentImageIndex * 100}%)`,
+            }}
+          >
+            {images.map((img, idx) => (
+              <div key={img.id ?? `${item.id}-desktop-img-${idx}`} className="h-full w-full shrink-0 relative">
+                <img
+                  src={img.url}
+                  alt={`${item.name} ${idx + 1}`}
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="h-full w-full bg-neutral-200" />
         )}
 
         {showCarousel && (
           <>
-            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-detail-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSelectImage(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
+            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => {
+                const isActive = index === currentImageIndex;
+                const isCompleted = index < currentImageIndex;
+
+                return (
+                  <button
+                    key={image.id ?? `${item.id}-detail-seg-${index}`}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onSelectImage(index);
+                    }}
+                    className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                    aria-label={`Imagen ${index + 1}`}
+                  >
+                    <div
+                      key={`${item.id}-desktop-${index}-${currentImageIndex}`}
+                      className="h-full rounded-full bg-white"
+                      style={
+                        isActive
+                          ? {
+                              animation: "storeCarouselProgress 3000ms linear forwards",
+                            }
+                          : isCompleted
+                          ? { width: "100%" }
+                          : { width: "0%" }
+                      }
+                    />
+                  </button>
+                );
+              })}
             </div>
 
             <button
@@ -2003,15 +2085,26 @@ function ReelLikeProductView({
       </div>
 
       {/* IMAGE (full-bleed, no margins, no radius) */}
-      <div className="relative w-full bg-neutral-100">
-        <div className="h-[48vh] min-h-[300px] w-full bg-neutral-100">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={item.name}
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
+      <div className="relative w-full bg-neutral-100 overflow-hidden">
+        <div className="h-[48vh] min-h-[300px] w-full bg-neutral-100 overflow-hidden">
+          {images.length > 0 ? (
+            <div
+              className="flex h-full w-full transition-transform duration-500 ease-out"
+              style={{
+                transform: `translateX(-${currentImageIndex * 100}%)`,
+              }}
+            >
+              {images.map((img, idx) => (
+                <div key={img.id ?? `${item.id}-mobile-img-${idx}`} className="h-full w-full shrink-0 relative">
+                  <img
+                    src={img.url}
+                    alt={`${item.name} ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                    draggable={false}
+                  />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="h-full w-full bg-neutral-200" />
           )}
@@ -2019,25 +2112,39 @@ function ReelLikeProductView({
 
         {showCarousel && (
           <>
-            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-mobile-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSelectImage(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => {
+                const isActive = index === currentImageIndex;
+                const isCompleted = index < currentImageIndex;
+
+                return (
+                  <button
+                    key={image.id ?? `${item.id}-mobile-seg-${index}`}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onSelectImage(index);
+                    }}
+                    className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                    aria-label={`Imagen ${index + 1}`}
+                  >
+                    <div
+                      key={`${item.id}-mobile-${index}-${currentImageIndex}`}
+                      className="h-full rounded-full bg-white"
+                      style={
+                        isActive
+                          ? {
+                              animation: "storeCarouselProgress 3000ms linear forwards",
+                            }
+                          : isCompleted
+                          ? { width: "100%" }
+                          : { width: "0%" }
+                      }
+                    />
+                  </button>
+                );
+              })}
             </div>
 
             <button

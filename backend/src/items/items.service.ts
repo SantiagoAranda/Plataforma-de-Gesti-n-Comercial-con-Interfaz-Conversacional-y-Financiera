@@ -629,14 +629,25 @@ export class ItemsService {
       throw new BadRequestException('Archivo de imagen no enviado');
     }
 
-    if (file.size > 2 * 1024 * 1024) {
-      throw new BadRequestException('La imagen no puede superar los 2 MB');
+    if (file.size > 15 * 1024 * 1024) {
+      throw new BadRequestException('La imagen original no puede superar los 15 MB');
     }
 
-    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const mime = (file.mimetype || '').toLowerCase();
+    const allowedMimeTypes = new Set([
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/heic',
+      'image/heif',
+      'image/avif',
+      'application/octet-stream',
+    ]);
 
-    if (!allowedMimeTypes.has(file.mimetype)) {
-      throw new BadRequestException('La imagen debe ser JPG, PNG o WEBP');
+    if (!allowedMimeTypes.has(mime) && !mime.startsWith('image/')) {
+      throw new BadRequestException('El archivo debe ser una imagen (JPG, PNG, WEBP, HEIC)');
     }
 
     const optimized = await sharp(file.buffer)
