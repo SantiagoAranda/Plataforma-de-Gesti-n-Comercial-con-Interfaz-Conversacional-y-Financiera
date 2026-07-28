@@ -19,6 +19,24 @@ export type FooterPhone = {
   value: string;
 };
 
+export function formatFooterPhone(phone: string): string {
+  if (!phone) return "";
+  let clean = phone.trim();
+  if (!clean) return "";
+
+  const hasPlus = clean.startsWith("+");
+  if (hasPlus) {
+    clean = clean.slice(1).trim();
+  }
+
+  if (clean.startsWith("57")) {
+    const rest = clean.slice(2).trim();
+    return `+57 ${rest}`;
+  }
+
+  return `+57 ${clean}`;
+}
+
 export type FooterSocial = {
   type: string;
   label?: string;
@@ -141,7 +159,7 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
               {visiblePhones.map((telefono, index) => (
                 <div key={`${telefono.value}-${index}`} className="flex items-center space-x-1 group">
                   <Phone className={`w-3 h-3 md:w-3.5 md:h-3.5 ${hasCustomColors ? "" : "text-[#064e3b]"}`} style={iconStyle} strokeWidth={2} />
-                  <span className={`text-[10px] md:text-xs ${hasCustomColors ? "" : "text-neutral-700"}`}>{telefono.value}</span>
+                  <span className={`text-[10px] md:text-xs ${hasCustomColors ? "" : "text-neutral-700"}`}>{formatFooterPhone(telefono.value)}</span>
                 </div>
               ))}
               {visibleEmail && (

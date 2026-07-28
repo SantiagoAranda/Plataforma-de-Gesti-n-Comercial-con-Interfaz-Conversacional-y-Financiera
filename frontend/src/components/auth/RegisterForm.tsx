@@ -164,7 +164,22 @@ export default function RegisterForm() {
       // Redirigir a home privada
       router.push("/home");
     } catch (err: any) {
-      setError(translateError(err));
+      const msg = translateError(err);
+      const lower = msg.toLowerCase();
+
+      if (lower.includes("email") || lower.includes("ya existe") || lower.includes("registrado")) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          email: "Este email ya se encuentra registrado",
+        }));
+      } else if (lower.includes("negocio")) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          businessName: msg,
+        }));
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -176,174 +191,196 @@ export default function RegisterForm() {
     text-gray-800 placeholder-gray-400
     focus:outline-none focus:ring-2 transition
   `;
-  const inputOk = "border-neutral-300 focus:ring-[#0b3f64] focus:border-[#0b3f64] focus:shadow-[0_0_0_2px_rgba(11,63,100,0.15)]";
-  const inputErr = "border-red-400 focus:ring-red-400 focus:border-red-400";
+  const inputOk = `
+  border-neutral-300
+  focus:ring-[#0b3f64]
+  focus:border-[#0b3f64]
+  focus:shadow-[0_0_0_2px_rgba(11,63,100,0.15)]
+`;
+  const inputErr = `
+  border-red-400
+  focus:ring-red-400
+  focus:border-red-400
+  animate-[shake_0.2s_ease-in-out]
+  shadow-[0_0_0_2px_rgba(239,68,68,0.2)]
+`;
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="
-        w-full
-        bg-white
-        rounded-3xl
-        px-8 py-8
-        space-y-5
-        shadow-md
-      "
-    >
-      <h1 className="text-2xl font-semibold text-center text-gray-900">
-        Crear cuenta
-      </h1>
-
-      {error && (
-        <p className="text-sm text-red-500 text-center font-medium">
-          {error}
-        </p>
-      )}
-
-      {/* Nombre del negocio */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          Nombre del negocio
-        </label>
-        <input
-          value={businessName}
-          onChange={(e) => {
-            setBusinessName(e.target.value);
-            clearFieldError("businessName");
-          }}
-          className={`${inputBase} ${fieldErrors.businessName ? inputErr : inputOk}`}
-        />
-        {fieldErrors.businessName && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.businessName}</p>
-        )}
-      </div>
-
-      {/* Email */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          Email
-        </label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => {
-            setEmail(e.target.value);
-            clearFieldError("email");
-          }}
-          className={`${inputBase} ${fieldErrors.email ? inputErr : inputOk}`}
-        />
-        {fieldErrors.email && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>
-        )}
-      </div>
-
-      {/* Contraseña */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          Contraseña
-        </label>
-        <div className="relative">
-          <input
-            type={showPassword ? "text" : "password"}
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value);
-              clearFieldError("password");
-            }}
-            className={`${inputBase} pr-12 ${fieldErrors.password ? inputErr : inputOk}`}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-          >
-            {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
-          </button>
-        </div>
-        {fieldErrors.password && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
-        )}
-      </div>
-
-      {/* Confirmar contraseña */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          Confirmar contraseña
-        </label>
-        <div className="relative">
-          <input
-            type={showConfirmPassword ? "text" : "password"}
-            value={confirmPassword}
-            onChange={(e) => {
-              setConfirmPassword(e.target.value);
-              clearFieldError("confirmPassword");
-            }}
-            className={`${inputBase} pr-12 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
-          />
-          <button
-            type="button"
-            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-            aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-          >
-            {showConfirmPassword ? <EyeSlashIcon /> : <EyeIcon />}
-          </button>
-        </div>
-        {fieldErrors.confirmPassword && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.confirmPassword}</p>
-        )}
-      </div>
-
-      {/* WhatsApp */}
-      <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700">
-          WhatsApp
-        </label>
-        <input
-          value={whatsapp}
-          onChange={(e) => {
-            setWhatsapp(e.target.value);
-            clearFieldError("whatsapp");
-          }}
-          className={`${inputBase} ${fieldErrors.whatsapp ? inputErr : inputOk}`}
-        />
-        {fieldErrors.whatsapp && (
-          <p className="text-xs text-red-500 mt-1">{fieldErrors.whatsapp}</p>
-        )}
-      </div>
-
-      <button
-        type="submit"
-        disabled={loading}
+    <div className="flex min-h-dvh items-center justify-center bg-neutral-100 px-4 py-6 overflow-y-auto">
+      <form
+        noValidate
+        onSubmit={handleSubmit}
         className="
-          w-full
-          bg-[#0b3f64]
-          text-white
-          py-3.5
-          rounded-xl
-          font-medium
-          shadow-md
-          hover:bg-[#092f4a]
-          hover:shadow-lg
-          active:scale-[0.97]
-          disabled:opacity-50
-          transition-all
+          w-full max-w-md
+          bg-white
+          rounded-3xl
+          px-8 py-8
+          space-y-5
+          shadow-lg
+          login-entry
         "
       >
-        {loading ? "Creando cuenta..." : "Registrarse"}
-      </button>
+        <h1 className="text-2xl font-semibold text-center text-gray-900">
+          Crear cuenta
+        </h1>
 
-      <p className="text-sm text-center text-gray-600">
-        ¿Ya tenés cuenta?{" "}
-        <span
-          onClick={() => router.push("/login")}
-          className="text-[#0b3f64] font-medium cursor-pointer hover:underline"
+        {error && (
+          <p className="text-sm text-red-500 text-center font-medium">
+            {error}
+          </p>
+        )}
+
+        {/* Nombre del negocio */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Nombre del negocio
+          </label>
+          <input
+            type="text"
+            placeholder="Mi Negocio"
+            value={businessName}
+            onChange={(e) => {
+              setBusinessName(e.target.value);
+              clearFieldError("businessName");
+            }}
+            className={`${inputBase} ${fieldErrors.businessName ? inputErr : inputOk}`}
+          />
+          {fieldErrors.businessName && (
+            <p className="text-xs text-red-500 mt-1">{fieldErrors.businessName}</p>
+          )}
+        </div>
+
+        {/* Email */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Email
+          </label>
+          <input
+            type="text"
+            placeholder="correo@ejemplo.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearFieldError("email");
+            }}
+            className={`${inputBase} ${fieldErrors.email ? inputErr : inputOk}`}
+          />
+          {fieldErrors.email && (
+            <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>
+          )}
+        </div>
+
+        {/* Contraseña */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Contraseña
+          </label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="********"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clearFieldError("password");
+              }}
+              className={`${inputBase} pr-12 ${fieldErrors.password ? inputErr : inputOk}`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+            >
+              {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
+            </button>
+          </div>
+          {fieldErrors.password && (
+            <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
+          )}
+        </div>
+
+        {/* Confirmar contraseña */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            Confirmar contraseña
+          </label>
+          <div className="relative">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="********"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                clearFieldError("confirmPassword");
+              }}
+              className={`${inputBase} pr-12 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+            >
+              {showConfirmPassword ? <EyeSlashIcon /> : <EyeIcon />}
+            </button>
+          </div>
+          {fieldErrors.confirmPassword && (
+            <p className="text-xs text-red-500 mt-1">{fieldErrors.confirmPassword}</p>
+          )}
+        </div>
+
+        {/* WhatsApp */}
+        <div className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700">
+            WhatsApp
+          </label>
+          <input
+            type="text"
+            placeholder="11 1234 5678"
+            value={whatsapp}
+            onChange={(e) => {
+              setWhatsapp(e.target.value);
+              clearFieldError("whatsapp");
+            }}
+            className={`${inputBase} ${fieldErrors.whatsapp ? inputErr : inputOk}`}
+          />
+          {fieldErrors.whatsapp && (
+            <p className="text-xs text-red-500 mt-1">{fieldErrors.whatsapp}</p>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="
+            w-full
+            bg-[#0b3f64]
+            text-white
+            py-3.5
+            rounded-xl
+            font-medium
+            shadow-md
+            hover:bg-[#092f4a]
+            hover:shadow-lg
+            active:scale-[0.97]
+            disabled:opacity-50
+            transition-all
+          "
         >
-          Iniciar sesión
-        </span>
-      </p>
-    </form>
+          {loading ? "Creando cuenta..." : "Registrarse"}
+        </button>
+
+        <p className="text-sm text-center text-gray-600">
+          ¿Ya tenés cuenta?{" "}
+          <span
+            onClick={() => router.push("/login")}
+            className="text-[#0b3f64] font-medium cursor-pointer hover:underline"
+          >
+            Iniciar sesión
+          </span>
+        </p>
+      </form>
+    </div>
   );
 }

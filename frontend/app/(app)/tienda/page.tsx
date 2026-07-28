@@ -24,7 +24,7 @@ import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getBusinessProfile } from "@/src/lib/businessLogo";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { cn } from "@/src/lib/utils";
-import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
+import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -85,7 +85,7 @@ function normalizeFooterPhones(value: unknown): FooterPhone[] {
   return value.reduce<FooterPhone[]>((acc, phone) => {
     if (!phone || typeof phone !== "object") return acc;
     const record = phone as Record<string, unknown>;
-    const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+    const phoneValue = typeof record.value === "string" ? formatFooterPhone(record.value) : "";
     const label = typeof record.label === "string" ? record.label.trim() : "";
     if (phoneValue) acc.push({ label, value: phoneValue });
     return acc;

@@ -20,7 +20,7 @@ import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput } from "@/src/lib/itemHelpers";
-import { Footer, FooterConfig, FooterPhone, FooterSocial } from "@/src/components/layout/Footer";
+import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
@@ -213,7 +213,7 @@ function normalizeFooterPhones(value: unknown): FooterPhone[] {
   return value.reduce<FooterPhone[]>((acc, phone) => {
     if (!phone || typeof phone !== "object") return acc;
     const record = phone as Record<string, unknown>;
-    const phoneValue = typeof record.value === "string" ? record.value.trim() : "";
+    const phoneValue = typeof record.value === "string" ? formatFooterPhone(record.value) : "";
     const label = typeof record.label === "string" ? record.label.trim() : "";
     if (!hasRealFooterValue(phoneValue)) return acc;
     acc.push({ label, value: phoneValue });
