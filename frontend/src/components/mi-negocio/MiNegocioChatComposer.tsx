@@ -75,8 +75,11 @@ export function MiNegocioChatComposer({
   }, [description, isOpen]);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 bg-white px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
-      <div className="mx-auto w-full max-w-3xl">
+    <div
+      className="fixed inset-x-0 bottom-0 z-30 px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none"
+      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+    >
+      <div className="mx-auto w-full max-w-3xl pointer-events-auto">
         <div className="relative">
           {/* OVERLAY BACKDROP */}
           {isOpen && (
@@ -88,7 +91,7 @@ export function MiNegocioChatComposer({
 
           {/* EXPANDABLE CONTENT */}
           {isOpen && (
-            <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 rounded-[28px] overflow-hidden border border-neutral-400 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.14)] animate-in slide-in-from-bottom-4 duration-300">
+            <div className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-10 rounded-[28px] overflow-hidden border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
               <div className="max-h-[min(65vh,520px)] overflow-y-auto pt-4 pb-5 px-5 custom-scrollbar scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent">
                 {children}
               </div>
@@ -111,6 +114,7 @@ export function MiNegocioChatComposer({
             textareaProps={{ rows: 1, maxLength: 250 }}
             plusAriaLabel={isOpen ? "Cancelar" : "Nuevo item"}
             submitAriaLabel={label}
+            className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
             counter={
               isOpen && isExpanded ? (
                 <span className="absolute -top-7 z-10 whitespace-nowrap text-[10px] font-medium text-neutral-400">

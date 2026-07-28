@@ -709,14 +709,15 @@ export class BusinessesService {
       );
     }
 
-    if (!ALLOWED_LOGO_MIME_TYPES.has(file.mimetype)) {
+    const mime = (file.mimetype || '').toLowerCase();
+    if (!ALLOWED_LOGO_MIME_TYPES.has(mime) && !mime.startsWith('image/')) {
       throw new BadRequestException(
-        'El logo debe ser una imagen JPG, PNG o WEBP',
+        'El logo debe ser una imagen (JPG, PNG, WEBP, HEIC)',
       );
     }
 
-    if (file.size > MAX_LOGO_SIZE_BYTES) {
-      throw new BadRequestException('El logo no puede superar los 2 MB');
+    if (file.size > 15 * 1024 * 1024) {
+      throw new BadRequestException('El logo original no puede superar los 15 MB');
     }
 
     const previous = await this.prisma.business.findUnique({

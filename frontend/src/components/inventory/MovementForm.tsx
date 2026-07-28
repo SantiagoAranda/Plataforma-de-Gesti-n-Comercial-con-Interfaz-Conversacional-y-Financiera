@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { Scale, FileText, Hash } from "lucide-react";
 
 import type { Ingredient, IngredientPurchasePresentation, Unit } from "@/src/services/inventory";
+import { CustomSelect } from "@/src/components/ui/CustomSelect";
 import {
   listUnits,
   registerInitial,
@@ -444,28 +445,20 @@ export function MovementForm({
           <>
             {/* Purchase unit selector – shows only units convertible to stock unit */}
             <div className="col-span-2 space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Comprás por</label>
-              <div className="relative">
-                <select
-                  value={selectedPurchaseOption?.key ?? ""}
-                  onChange={(e) => setPurchaseOptionKey(e.target.value)}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-10 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
-                >
-                  <option value="">Seleccionar...</option>
-                  {purchaseOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label} ({option.unitLabel})
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
-                  <Scale className="h-4 w-4" />
-                </div>
-              </div>
+              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Comprás por</label>
+              <CustomSelect
+                value={selectedPurchaseOption?.key ?? ""}
+                onChange={(val) => setPurchaseOptionKey(val)}
+                placeholder="Seleccionar..."
+                options={purchaseOptions.map((option) => ({
+                  value: option.key,
+                  label: `${option.label} (${option.unitLabel})`,
+                }))}
+              />
             </div>
 
             <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Cant. comprada
               </label>
               <div className="relative flex items-center">
@@ -483,7 +476,7 @@ export function MovementForm({
             </div>
 
             <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Costo por {purchaseUnitLabel || "unidad"}
               </label>
               <div className="relative flex items-center">
@@ -504,30 +497,30 @@ export function MovementForm({
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-800">
                     <Scale className="h-4 w-4" />
                   </div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Conversión a stock</p>
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-800">Conversión a stock</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-1 border-t border-emerald-200/40">
                   <div>
-                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Cantidad comprada</p>
+                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Cantidad comprada</p>
                     <p className="text-base font-bold text-emerald-900">{purchaseQuantity || "0"} {purchaseUnitLabel}</p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Costo por {purchaseUnitLabel || "unidad"}</p>
+                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo por {purchaseUnitLabel || "unidad"}</p>
                     <p className="text-base font-bold text-emerald-900">${formatMoney(Number(normalizeDecimalInput(purchaseUnitCost || "0")))}</p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Costo total</p>
+                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo total</p>
                     <p className="text-base font-bold text-emerald-900">${formatMoney(purchaseTotal)}</p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Ingreso a Stock</p>
+                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Ingreso a Stock</p>
                     <p className="text-base font-bold text-emerald-900">
                       +{preview.stockQuantityAdded !== null ? formatMoney(preview.stockQuantityAdded) : "0"} {preview.stockUnitLabel}
                     </p>
                   </div>
                   <div>
-                    <p className="text-[9px] font-bold text-emerald-600/80 uppercase tracking-wide">Costo Kardex / {preview.stockUnitLabel}</p>
+                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo Kardex / {preview.stockUnitLabel}</p>
                     <p className="text-base font-bold text-emerald-900">
                       ${preview.baseUnitCost !== null ? formatMoney(preview.baseUnitCost) : "0"}
                     </p>
@@ -552,7 +545,7 @@ export function MovementForm({
         ) : (
           <>
             <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                 Cantidad
               </label>
               <div className="relative flex items-center">
@@ -570,7 +563,7 @@ export function MovementForm({
             </div>
 
             <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Costo unit.</label>
+              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Costo unit.</label>
               <div className="relative flex items-center">
                 <span className="absolute left-4 text-xs font-bold text-slate-400">$</span>
                 <input
@@ -594,7 +587,7 @@ export function MovementForm({
 
       {allowsReferenceId && (
         <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Nro factura</label>
+          <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Nro factura</label>
           <div className="relative flex items-center">
             <span className="absolute left-4 text-slate-400">
               <FileText className="h-4 w-4" />
@@ -610,7 +603,7 @@ export function MovementForm({
       )}
 
       <div className="space-y-2">
-        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
           Detalle {needsDetail ? "(requerido)" : "(opcional)"}
         </label>
         <div className="relative flex items-center">

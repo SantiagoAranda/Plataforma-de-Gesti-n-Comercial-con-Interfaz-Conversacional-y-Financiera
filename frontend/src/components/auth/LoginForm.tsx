@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { api } from "../../lib/api";
 import LoginStoreHint from "./LoginStoreHint";
 import NavigationTransitionBackdrop from "../shared/NavigationTransitionBackdrop";
@@ -286,6 +287,20 @@ export default function LoginForm() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const isExpiredQuery = searchParams.get("expired") === "true";
+      const isExpiredStorage = sessionStorage.getItem("session_expired_notice");
+
+      if (isExpiredQuery || isExpiredStorage) {
+        sessionStorage.removeItem("session_expired_notice");
+        toast.error("Tu sesión ha finalizado. Por favor, inicia sesión nuevamente.");
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, []);
+
   const inputBase = `
     w-full bg-neutral-50 border rounded-xl px-4 py-3
     text-gray-800 placeholder-gray-400
@@ -293,9 +308,9 @@ export default function LoginForm() {
   `;
   const inputOk = `
   border-neutral-300
-  focus:ring-emerald-500
-  focus:border-emerald-500
-  focus:shadow-[0_0_0_2px_rgba(16,185,129,0.15)]
+  focus:ring-[#0b3f64]
+  focus:border-[#0b3f64]
+  focus:shadow-[0_0_0_2px_rgba(11,63,100,0.15)]
 `;
   const inputErr = `
   border-red-400

@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   X,
   MapPin,
+  Share2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
@@ -38,15 +39,25 @@ function getNavigationSettleDuration(velocity: number) {
 }
 
 const formatPrice = (value: number) => {
-  return formatPriceInput(value.toFixed(2).replace(".", ","));
+  const safe = Number.isFinite(value) ? value : 0;
+  if (safe % 1 === 0) {
+    return formatPriceInput(safe.toFixed(0));
+  }
+  const formatted = safe.toFixed(2).replace(".", ",");
+  if (formatted.endsWith(",00") || formatted.endsWith(",0")) {
+    return formatPriceInput(formatted.split(",")[0]);
+  }
+  return formatPriceInput(formatted);
 };
 
 const formatCop = (value: number) => {
   const safeValue = Number.isFinite(value) ? value : 0;
+  const hasDecimals = safeValue % 1 !== 0;
   const formatted = new Intl.NumberFormat("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: hasDecimals ? 2 : 0,
+    minimumFractionDigits: hasDecimals ? 2 : 0,
   }).format(safeValue);
   return formatted.replace("COP", "$").replace(/\s+/g, "");
 };
@@ -347,6 +358,38 @@ export default function PublicStoreClient() {
     showCartModal || customizingProduct || selectedProduct || selectedService,
   );
 
+  const handleShareItem = useCallback(
+    async (itemToShare: Item) => {
+      const itemUrl = `${window.location.origin}/tienda/${slug}?producto=${itemToShare.id}`;
+      const shareData = {
+        title: itemToShare.name,
+        text: `Mira ${itemToShare.name} en ${businessName || "nuestra tienda"}`,
+        url: itemUrl,
+      };
+
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+          return;
+        }
+
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(itemUrl);
+          toast.success("Link del producto copiado al portapapeles");
+          return;
+        }
+
+        window.prompt("Copia el link del producto:", itemUrl);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        toast.error("No se pudo compartir el producto");
+      }
+    },
+    [slug, businessName],
+  );
+
   useEffect(() => {
     const node = transitionContainerRef.current;
     if (!node) return;
@@ -525,20 +568,31 @@ export default function PublicStoreClient() {
         setBusinessLogoUrl(data?.business?.logoUrl || null);
         setFooterSettings(data?.business?.storeFooterSettings ?? null);
 
-        setItems(
-          itemsList.map((item: any) => ({
-            ...item,
-            price: Number(item.price || 0),
-            previousPrice:
-              item.previousPrice != null
-                ? Number(item.previousPrice)
-                : item.compareAtPrice != null
-                  ? Number(item.compareAtPrice)
-                  : item.originalPrice != null
-                    ? Number(item.originalPrice)
-                    : null,
-          }))
-        );
+        const parsedItems = itemsList.map((item: any) => ({
+          ...item,
+          price: Number(item.price || 0),
+          previousPrice:
+            item.previousPrice != null
+              ? Number(item.previousPrice)
+              : item.compareAtPrice != null
+                ? Number(item.compareAtPrice)
+                : item.originalPrice != null
+                  ? Number(item.originalPrice)
+                  : null,
+        }));
+        setItems(parsedItems);
+
+        const targetItemId = searchParams.get("producto") || searchParams.get("item");
+        if (targetItemId) {
+          const targetItem = parsedItems.find((it: Item) => String(it.id) === String(targetItemId));
+          if (targetItem) {
+            if (targetItem.type === "SERVICE") {
+              setSelectedService(targetItem);
+            } else {
+              setSelectedProduct(targetItem);
+            }
+          }
+        }
       } catch (error) {
         console.error("Fetch items error:", error);
         toast.error("No se pudieron cargar los productos");
@@ -584,13 +638,13 @@ export default function PublicStoreClient() {
         redesSociales: normalizeFooterSocials(footerSettings?.socials),
         ubicacion: showLocation
           ? {
-              label:
-                typeof footerSettings?.locationLabel === "string" &&
+            label:
+              typeof footerSettings?.locationLabel === "string" &&
                 hasRealFooterValue(footerSettings.locationLabel)
-                  ? footerSettings.locationLabel.trim()
-                  : "Como llegar",
-              value: googleMapsUrl,
-            }
+                ? footerSettings.locationLabel.trim()
+                : "Como llegar",
+            value: googleMapsUrl,
+          }
           : undefined,
       },
     };
@@ -724,9 +778,9 @@ export default function PublicStoreClient() {
     const optionSelections =
       (customizingProduct.optionGroups?.length ?? 0) > 0
         ? buildOptionSelectionsFromSelectedIds(
-            customizingProduct,
-            new Set(draftSelectedOptionIds),
-          )
+          customizingProduct,
+          new Set(draftSelectedOptionIds),
+        )
         : [];
     if (editingCartKey) {
       const previous = cart.find((line) => cartLineKey(line) === editingCartKey);
@@ -797,19 +851,19 @@ export default function PublicStoreClient() {
         };
       })
       .filter(Boolean) as (Item & {
-      quantity: number;
-      cartKey: string;
-      basePrice: number;
-      optionSelections: OptionSelection[];
-      selectedOptionNames: string[];
-      selectedOptionSummary: Array<{
-        groupTitle: string;
-        optionName: string;
-        priceDelta: number;
-      }>;
-      excludedOptionalIngredientIds: string[];
-      excludedOptionalIngredientNames: string[];
-    })[];
+        quantity: number;
+        cartKey: string;
+        basePrice: number;
+        optionSelections: OptionSelection[];
+        selectedOptionNames: string[];
+        selectedOptionSummary: Array<{
+          groupTitle: string;
+          optionName: string;
+          priceDelta: number;
+        }>;
+        excludedOptionalIngredientIds: string[];
+        excludedOptionalIngredientNames: string[];
+      })[];
   }, [cart, items]);
 
   const cartTotal = useMemo(() => {
@@ -903,20 +957,19 @@ export default function PublicStoreClient() {
     >
       {canReturnToLogin && <NavigationTransitionBackdrop destination="login" />}
       <div
-        className={`relative z-10 flex min-h-screen flex-col bg-white ${
-          isNavigationDragging ? "cursor-grabbing select-none" : ""
-        }`}
+        className={`relative z-10 flex min-h-screen flex-col bg-white ${isNavigationDragging ? "cursor-grabbing select-none" : ""
+          }`}
         style={
           canReturnToLogin &&
-          (navigationOffset !== 0 || isNavigationDragging || isNavigationSettling)
+            (navigationOffset !== 0 || isNavigationDragging || isNavigationSettling)
             ? {
-                transform: `translate3d(${navigationOffset}px, 0, 0)`,
-                transition: isNavigationDragging
-                  ? "none"
-                  : `transform ${navigationSettleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                willChange: "transform",
-                backfaceVisibility: "hidden",
-              }
+              transform: `translate3d(${navigationOffset}px, 0, 0)`,
+              transition: isNavigationDragging
+                ? "none"
+                : `transform ${navigationSettleDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+              willChange: "transform",
+              backfaceVisibility: "hidden",
+            }
             : undefined
         }
         onTransitionEnd={(event) => {
@@ -929,338 +982,340 @@ export default function PublicStoreClient() {
           setIsNavigationSettling(false);
         }}
       >
-      <header
-        className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
-        style={{
-          paddingTop: "env(safe-area-inset-top, 0px)",
-          transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
-        }}
-      >
-        <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
-              {businessLogoUrl ? (
-                <Image
-                  src={businessLogoUrl}
-                  alt={`Logo de ${businessName || "Tienda"}`}
-                  width={40}
-                  height={40}
-                  className="h-full w-full object-contain rounded-full"
-                />
-              ) : (
-                <Store className="h-5 w-5" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1 leading-tight text-left">
-              <h1 className="truncate text-[20px] font-semibold text-neutral-900">
-                {businessName || "Tienda"}
-              </h1>
-              {headerSubtitle && (
-                <div className="truncate text-[13px] font-medium text-slate-500">
-                  {headerSubtitle}
+        <header
+          className="sticky top-0 z-40 bg-white/90 backdrop-blur transition-transform duration-300 ease-in-out"
+          style={{
+            paddingTop: "env(safe-area-inset-top, 0px)",
+            transform: isHeaderVisible ? "translateY(0)" : "translateY(-100%)",
+          }}
+        >
+          <div className="mx-auto flex min-h-[72px] py-3 w-full max-w-[420px] lg:max-w-6xl items-center justify-between gap-2 px-4 lg:px-6">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
+                {businessLogoUrl ? (
+                  <Image
+                    src={businessLogoUrl}
+                    alt={`Logo de ${businessName || "Tienda"}`}
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-contain rounded-full"
+                  />
+                ) : (
+                  <Store className="h-5 w-5" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1 leading-tight text-left">
+                <h1 className="truncate text-[20px] font-semibold text-neutral-900">
+                  {businessName || "Tienda"}
+                </h1>
+                {headerSubtitle && (
+                  <div className="truncate text-[13px] font-medium text-slate-500">
+                    {headerSubtitle}
+                  </div>
+                )}
+                <div
+                  className="truncate text-[13px] font-semibold text-[#0B3F64]"
+                  style={headerSubtitle ? { display: "none" } : undefined}
+                >
+                  Catálogo
                 </div>
-              )}
-              <div
-                className="truncate text-[13px] font-semibold text-[#0B3F64]"
-                style={headerSubtitle ? { display: "none" } : undefined}
-              >
-                Catálogo
               </div>
             </div>
-          </div>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {headerLocationUrl && (
-              <a
-                href={headerLocationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
-                aria-label={headerLocationLabel}
-                title="Cómo llegar"
-              >
-                <MapPin className="h-4 w-4 text-[#0B3F64]" />
-              </a>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowCartModal(true)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[#0B3F64] hover:text-[#0B3F64]/80 shadow-none ring-0 transition hover:bg-[#0B3F64]/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]/30"
-              aria-label="Carrito"
-            >
-              <ShoppingBag className="h-5 w-5" />
-              {cartCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
-                  {cartCount}
-                </span>
+            <div className="flex shrink-0 items-center gap-2">
+              {headerLocationUrl && (
+                <a
+                  href={headerLocationUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-50 border border-slate-200 text-slate-700 shadow-sm transition hover:bg-slate-100 active:scale-95"
+                  aria-label={headerLocationLabel}
+                  title="Cómo llegar"
+                >
+                  <MapPin className="h-4 w-4 text-[#0B3F64]" />
+                </a>
               )}
-            </button>
-          </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
-          <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
-            <Search className="h-4 w-4 text-slate-400" />
-            <input
-              ref={searchInputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar..."
-              className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
-            />
-          </div>
-
-          <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {["", "PRODUCT", "SERVICE"].map((type) => (
               <button
-                key={type}
-                onClick={() => setCategory(type)}
-                className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
-                  ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
-                  }`}
+                type="button"
+                onClick={() => setShowCartModal(true)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-full bg-transparent text-[#0B3F64] hover:text-[#0B3F64]/80 shadow-none ring-0 transition hover:bg-[#0B3F64]/5 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]/30"
+                aria-label="Carrito"
               >
-                {type === ""
-                  ? "Todo"
-                  : type === "PRODUCT"
-                    ? "Productos"
-                    : "Servicios"}
+                <ShoppingBag className="h-5 w-5" />
+                {cartCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
+                    {cartCount}
+                  </span>
+                )}
               </button>
-            ))}
+            </div>
           </div>
-        </div>
-      </header>
 
-      {preview && (
-        <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
-          Modo administrador - vista previa de la tienda
-        </div>
-      )}
-
-      <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
-        {loading ? (
-          <p className="text-center mt-6 text-neutral-400">Cargando...</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
-            {filtered.map((item) => (
-              <ProductCard
-                key={item.id}
-                item={item}
-                preview={preview}
-                onOpen={() =>
-                  item.type === "SERVICE"
-                    ? setSelectedProduct(item)
-                    : (item.optionGroups?.length ?? 0) > 0
-                      ? openCustomizationOrAdd(item)
-                      : setSelectedProduct(item)
-                }
-                onPlus={() =>
-                  item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
-                }
+          <div className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-3 space-y-3">
+            <div className="flex h-10 items-center gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
+              <Search className="h-4 w-4 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar..."
+                className="h-9 w-full bg-transparent text-sm outline-none text-[#0f172a] placeholder:text-slate-400"
               />
-            ))}
+            </div>
+
+            <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {["", "PRODUCT", "SERVICE"].map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setCategory(type)}
+                  className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
+                    ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                    }`}
+                >
+                  {type === ""
+                    ? "Todo"
+                    : type === "PRODUCT"
+                      ? "Productos"
+                      : "Servicios"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </header>
+
+        {preview && (
+          <div className="bg-amber-100 text-amber-800 text-sm text-center py-2 font-medium">
+            Modo administrador - vista previa de la tienda
           </div>
         )}
-      </main>
 
-      {/* Cart entry now lives in the header */}
+        <main className="flex-grow mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
+          {loading ? (
+            <p className="text-center mt-6 text-neutral-400">Cargando...</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 lg:gap-x-4 lg:gap-y-6 justify-items-center">
+              {filtered.map((item) => (
+                <ProductCard
+                  key={item.id}
+                  item={item}
+                  preview={preview}
+                  onOpen={() =>
+                    item.type === "SERVICE"
+                      ? setSelectedProduct(item)
+                      : (item.optionGroups?.length ?? 0) > 0
+                        ? openCustomizationOrAdd(item)
+                        : setSelectedProduct(item)
+                  }
+                  onPlus={() =>
+                    item.type === "SERVICE" ? setSelectedService(item) : openCustomizationOrAdd(item)
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </main>
 
-      {showCartModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setShowCartModal(false)}
-          />
+        {/* Cart entry now lives in the header */}
 
-          <div className="relative z-10 w-full max-w-md">
-            <CartSummary
-              items={cartItems}
-              onIncreaseQty={increaseQty}
-              onDecreaseQty={decreaseQty}
-              onRemove={removeItem}
-              onEdit={(key) => {
-                const line = cart.find((entry) => cartLineKey(entry) === key);
-                const item = line && items.find((entry) => entry.id === line.itemId);
-                if (!line || !item) return;
-                setEditingCartKey(key);
-                setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
-                setDraftSelectedOptionIds(
-                  Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
-                );
-                setCustomizingProduct(item);
-                setShowCartModal(false);
-              }}
-              customerName={customerName}
-              onCustomerNameChange={setCustomerName}
-              countryCode={countryCode}
-              onCountryCodeChange={setCountryCode}
-              phoneNumber={phoneNumber}
-              onPhoneNumberChange={setPhoneNumber}
-              onConfirm={(doc) => handleConfirmOrder(doc)}
-              onClose={() => setShowCartModal(false)}
+        {showCartModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setShowCartModal(false)}
             />
+
+            <div className="relative z-10 w-full max-w-md">
+              <CartSummary
+                items={cartItems}
+                onIncreaseQty={increaseQty}
+                onDecreaseQty={decreaseQty}
+                onRemove={removeItem}
+                onEdit={(key) => {
+                  const line = cart.find((entry) => cartLineKey(entry) === key);
+                  const item = line && items.find((entry) => entry.id === line.itemId);
+                  if (!line || !item) return;
+                  setEditingCartKey(key);
+                  setDraftExcludedOptionalIds(line.excludedOptionalIngredientIds);
+                  setDraftSelectedOptionIds(
+                    Array.from(resolveSelectedOptionIds(item, line.optionSelections)),
+                  );
+                  setCustomizingProduct(item);
+                  setShowCartModal(false);
+                }}
+                customerName={customerName}
+                onCustomerNameChange={setCustomerName}
+                countryCode={countryCode}
+                onCountryCodeChange={setCountryCode}
+                phoneNumber={phoneNumber}
+                onPhoneNumberChange={setPhoneNumber}
+                onConfirm={(doc) => handleConfirmOrder(doc)}
+                onClose={() => setShowCartModal(false)}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {customizingProduct && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => {
-              setCustomizingProduct(null);
-              setEditingCartKey(null);
-              setDraftExcludedOptionalIds([]);
-            }}
-          />
-
-          <div className="relative z-10 w-full max-w-md rounded-3xl border border-neutral-100 bg-white p-5 shadow-2xl">
-            <button
-              type="button"
+        {customizingProduct && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
+            <div
+              className="absolute inset-0 bg-black/40"
               onClick={() => {
                 setCustomizingProduct(null);
                 setEditingCartKey(null);
                 setDraftExcludedOptionalIds([]);
               }}
-              className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
-              aria-label="Cerrar personalizacion"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            />
 
-            {(customizingProduct.optionGroups?.length ?? 0) > 0 ? (
-              <ProductOptionsCustomizer
-                item={customizingProduct}
-                selectedOptionIds={draftSelectedOptionIds}
-                onSelectedOptionIdsChange={setDraftSelectedOptionIds}
-                onConfirm={confirmCustomizedProduct}
-              />
-            ) : (
-              <>
-            <div className="pr-10">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
-                Personalizar
-              </p>
-              <h2 className="mt-1 text-lg font-semibold text-neutral-900">
-                {customizingProduct.name}
-              </h2>
-              <p className="mt-1 text-xs font-semibold text-neutral-500">
-                Los opcionales vienen incluidos. Desmarca los que no quieras.
-              </p>
-            </div>
+            <div className="relative z-10 w-full max-w-md rounded-3xl border border-neutral-100 bg-white p-5 shadow-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomizingProduct(null);
+                  setEditingCartKey(null);
+                  setDraftExcludedOptionalIds([]);
+                }}
+                className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-50 hover:text-neutral-700"
+                aria-label="Cerrar personalizacion"
+              >
+                <X className="h-4 w-4" />
+              </button>
 
-            {getRequiredRecipeLines(customizingProduct).length > 0 ? (
-              <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
-                  Incluye siempre
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {getRequiredRecipeLines(customizingProduct).map((line) => (
-                    <span
-                      key={line.ingredientId}
-                      className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-100"
-                    >
-                      {line.ingredient?.name ?? "Ingrediente"}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+              {(customizingProduct.optionGroups?.length ?? 0) > 0 ? (
+                <ProductOptionsCustomizer
+                  item={customizingProduct}
+                  selectedOptionIds={draftSelectedOptionIds}
+                  onSelectedOptionIdsChange={setDraftSelectedOptionIds}
+                  onConfirm={confirmCustomizedProduct}
+                />
+              ) : (
+                <>
+                  <div className="pr-10">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
+                      Personalizar
+                    </p>
+                    <h2 className="mt-1 text-lg font-semibold text-neutral-900">
+                      {customizingProduct.name}
+                    </h2>
+                    <p className="mt-1 text-xs font-semibold text-neutral-500">
+                      Los opcionales vienen incluidos. Desmarca los que no quieras.
+                    </p>
+                  </div>
 
-            <div className="mt-4 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
-                Opcionales
-              </p>
-              {getOptionalRecipeLines(customizingProduct).map((line) => {
-                const checked = !draftExcludedOptionalIds.includes(line.ingredientId);
-                return (
-                  <label
-                    key={line.ingredientId}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
+                  {getRequiredRecipeLines(customizingProduct).length > 0 ? (
+                    <div className="mt-4 rounded-2xl bg-neutral-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                        Incluye siempre
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {getRequiredRecipeLines(customizingProduct).map((line) => (
+                          <span
+                            key={line.ingredientId}
+                            className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 ring-1 ring-neutral-100"
+                          >
+                            {line.ingredient?.name ?? "Ingrediente"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 space-y-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-neutral-400">
+                      Opcionales
+                    </p>
+                    {getOptionalRecipeLines(customizingProduct).map((line) => {
+                      const checked = !draftExcludedOptionalIds.includes(line.ingredientId);
+                      return (
+                        <label
+                          key={line.ingredientId}
+                          className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-neutral-100 px-3 py-3 transition active:scale-[0.99]"
+                        >
+                          <span className="text-sm font-medium text-neutral-800">
+                            {line.ingredient?.name ?? "Ingrediente"}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              setDraftExcludedOptionalIds((prev) => {
+                                if (event.target.checked) {
+                                  return prev.filter((id) => id !== line.ingredientId);
+                                }
+                                return Array.from(new Set([...prev, line.ingredientId]));
+                              });
+                            }}
+                            className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {draftExcludedOptionalIds.length > 0 ? (
+                    <p className="mt-3 text-xs font-semibold text-neutral-500">
+                      Sin:{" "}
+                      {draftExcludedOptionalIds
+                        .map(
+                          (id) =>
+                            customizingProduct.recipes?.find((line) => line.ingredientId === id)
+                              ?.ingredient?.name,
+                        )
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={confirmCustomizedProduct}
+                    className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
                   >
-                    <span className="text-sm font-medium text-neutral-800">
-                      {line.ingredient?.name ?? "Ingrediente"}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        setDraftExcludedOptionalIds((prev) => {
-                          if (event.target.checked) {
-                            return prev.filter((id) => id !== line.ingredientId);
-                          }
-                          return Array.from(new Set([...prev, line.ingredientId]));
-                        });
-                      }}
-                      className="h-5 w-5 rounded border-neutral-300 text-emerald-600 focus:ring-emerald-500"
-                    />
-                  </label>
-                );
-              })}
+                    <ShoppingBag className="h-4 w-4" />
+                    Agregar al carrito
+                  </button>
+                </>
+              )}
             </div>
-
-            {draftExcludedOptionalIds.length > 0 ? (
-              <p className="mt-3 text-xs font-semibold text-neutral-500">
-                Sin:{" "}
-                {draftExcludedOptionalIds
-                  .map(
-                    (id) =>
-                      customizingProduct.recipes?.find((line) => line.ingredientId === id)
-                        ?.ingredient?.name,
-                  )
-                  .filter(Boolean)
-                  .join(", ")}
-              </p>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={confirmCustomizedProduct}
-              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-md transition hover:bg-emerald-600 active:scale-[0.99]"
-            >
-              <ShoppingBag className="h-4 w-4" />
-              Agregar al carrito
-            </button>
-              </>
-            )}
           </div>
-        </div>
-      )}
+        )}
 
-      <ReservationDrawer
-        open={!!selectedService}
-        onClose={resetReservationUi}
-        itemId={selectedService?.id}
-        businessSlug={slug}
-        title={selectedService?.name}
-        selectedDateValue={selectedDateKey}
-        serviceDurationMinutes={selectedService?.durationMinutes}
-      />
+        <ReservationDrawer
+          open={!!selectedService}
+          onClose={resetReservationUi}
+          itemId={selectedService?.id}
+          businessSlug={slug}
+          title={selectedService?.name}
+          selectedDateValue={selectedDateKey}
+          serviceDurationMinutes={selectedService?.durationMinutes}
+        />
 
-      <ProductDetailOverlay
-        open={!!selectedProduct}
-        item={selectedProduct}
-        businessName={businessName}
-        preview={preview}
-        onClose={closeProductDetail}
-        onPrimaryAction={() => {
-          if (!selectedProduct) return;
-          if (preview) {
-            toast("Modo administrador: las compras/reservas están deshabilitadas");
-            return;
-          }
-          if (selectedProduct.type === "SERVICE") {
-            const itemToReserve = selectedProduct;
-            closeProductDetail();
-            setSelectedService(itemToReserve);
-          } else {
-            openCustomizationOrAdd(selectedProduct);
-            closeProductDetail();
-          }
-        }}
-      />
+        <ProductDetailOverlay
+          open={!!selectedProduct}
+          item={selectedProduct}
+          businessName={businessName}
+          businessLogoUrl={businessLogoUrl}
+          onShare={handleShareItem}
+          preview={preview}
+          onClose={closeProductDetail}
+          onPrimaryAction={() => {
+            if (!selectedProduct) return;
+            if (preview) {
+              toast("Modo administrador: las compras/reservas están deshabilitadas");
+              return;
+            }
+            if (selectedProduct.type === "SERVICE") {
+              const itemToReserve = selectedProduct;
+              closeProductDetail();
+              setSelectedService(itemToReserve);
+            } else {
+              openCustomizationOrAdd(selectedProduct);
+              closeProductDetail();
+            }
+          }}
+        />
 
-      <Footer config={footerConfig} />
+        <Footer config={footerConfig} />
       </div>
       {canReturnToLogin && (
         <LoginReturnHint
@@ -1443,22 +1498,54 @@ function ProductCard({
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
   const badges = getItemBadges(item);
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isInCenterBand, setIsInCenterBand] = useState(false);
+
   useEffect(() => {
     setCurrentImageIndex(0);
   }, [item.id]);
 
   useEffect(() => {
     if (!showCarousel) return;
+    const node = cardRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
 
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInCenterBand(entry.isIntersecting);
+      },
+      {
+        rootMargin: "-25% 0px -25% 0px",
+        threshold: 0.3,
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [showCarousel]);
+
+  useEffect(() => {
+    if (!showCarousel || !isInCenterBand) {
+      setCurrentImageIndex(0);
+      return;
+    }
+
+    const DURATION = 3000;
     const id = window.setInterval(() => {
       setCurrentImageIndex((prev) => (prev + 1) % imageCount);
-    }, 3000);
+    }, DURATION);
 
     return () => window.clearInterval(id);
-  }, [showCarousel, imageCount]);
+  }, [showCarousel, isInCenterBand, imageCount]);
 
   return (
-    <div className="flex w-full max-w-[220px] flex-col">
+    <div ref={cardRef} className="flex w-full max-w-[220px] flex-col select-none">
+      <style>{`
+        @keyframes storeCarouselProgress {
+          from { width: 0%; }
+          to { width: 100%; }
+        }
+      `}</style>
       <div className="relative overflow-hidden rounded-3xl bg-neutral-100">
         <div
           role="button"
@@ -1473,14 +1560,25 @@ function ProductCard({
           className="block w-full cursor-pointer"
           aria-label={`Ver ${item.name}`}
         >
-          <div className="relative aspect-[270/378] w-full">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={item.name}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
+          <div className="relative aspect-[270/378] w-full overflow-hidden">
+            {images.length > 0 ? (
+              <div
+                className="flex h-full w-full transition-transform duration-500 ease-out"
+                style={{
+                  transform: `translateX(-${currentImageIndex * 100}%)`,
+                }}
+              >
+                {images.map((img, idx) => (
+                  <div key={img.id ?? `${item.id}-img-${idx}`} className="h-full w-full shrink-0 relative">
+                    <img
+                      src={img.url}
+                      alt={`${item.name} ${idx + 1}`}
+                      className="h-full w-full object-cover select-none"
+                      loading={idx === 0 ? "eager" : "lazy"}
+                    />
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="h-full w-full bg-neutral-200" />
             )}
@@ -1490,7 +1588,7 @@ function ProductCard({
                 {badges.map((badge) => (
                   <div
                     key={`${badge.text}-${badge.color}`}
-                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase"
+                    className="rounded-xl px-3 py-1 text-[8px] font-semibold uppercase shadow-sm"
                     style={{ background: badge.color, color: getContrastColor(badge.color) }}
                   >
                     {badge.text}
@@ -1498,30 +1596,44 @@ function ProductCard({
                 ))}
               </div>
             ) : null}
-          </div>
 
-          {showCarousel && (
-            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setCurrentImageIndex(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white"
-                      : "bg-white/60",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
-            </div>
-          )}
+            {showCarousel && (
+              <div className="absolute left-3 right-3 top-3 z-20 flex gap-1.5 pointer-events-auto drop-shadow-sm">
+                {images.map((image, index) => {
+                  const isActive = index === currentImageIndex;
+                  const isCompleted = index < currentImageIndex;
+
+                  return (
+                    <button
+                      key={image.id ?? `${item.id}-seg-${index}`}
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setCurrentImageIndex(index);
+                      }}
+                      className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                      aria-label={`Imagen ${index + 1}`}
+                    >
+                      <div
+                        key={`${item.id}-${index}-${currentImageIndex}`}
+                        className="h-full rounded-full bg-white"
+                        style={
+                          isActive
+                            ? {
+                              animation: "storeCarouselProgress 3000ms linear forwards",
+                            }
+                            : isCompleted
+                              ? { width: "100%" }
+                              : { width: "0%" }
+                        }
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <button
@@ -1532,7 +1644,7 @@ function ProductCard({
             event.stopPropagation();
             onPlus();
           }}
-          className="absolute bottom-3 right-3 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-none ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className="absolute bottom-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-950 shadow-md ring-1 ring-black/5 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
           aria-label={item.type === "SERVICE" ? "Reservar" : "Agregar al carrito"}
         >
           <Plus className="h-5 w-5" />
@@ -1566,6 +1678,8 @@ function ProductDetailOverlay({
   open,
   item,
   businessName,
+  businessLogoUrl,
+  onShare,
   preview,
   onClose,
   onPrimaryAction,
@@ -1573,6 +1687,8 @@ function ProductDetailOverlay({
   open: boolean;
   item: Item | null;
   businessName: string;
+  businessLogoUrl?: string | null;
+  onShare?: (item: Item) => void;
   preview: boolean;
   onClose: () => void;
   onPrimaryAction: () => void;
@@ -1619,19 +1735,13 @@ function ProductDetailOverlay({
       />
 
       <div className="relative h-[100dvh] w-full">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute left-4 top-4 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-white/70 text-slate-900 shadow-lg ring-1 ring-black/10 backdrop-blur hover:bg-white/90 md:hidden"
-          aria-label="Cerrar"
-        >
-          <X className="h-5 w-5" />
-        </button>
-
         <div className="h-full w-full xl:hidden">
           <ReelLikeProductView
             item={item}
             businessName={businessName}
+            businessLogoUrl={businessLogoUrl}
+            onShare={onShare}
+            onClose={onClose}
             preview={preview}
             onPrimaryAction={onPrimaryAction}
             currentImageIndex={currentImageIndex}
@@ -1646,24 +1756,52 @@ function ProductDetailOverlay({
           <div className="min-w-0 flex-1 bg-white px-12 py-10">
             <div className="h-full overflow-y-auto pr-2 custom-scrollbar">
               <div className="max-w-2xl space-y-8 text-slate-900">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Volver a la tienda
-                </button>
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Volver a la tienda
+                  </button>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {businessLogoUrl ? (
+                        <img
+                          src={businessLogoUrl}
+                          alt={businessName}
+                          className="h-8 w-8 rounded-full object-cover shrink-0 border border-slate-100 shadow-sm"
+                        />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs shrink-0">
+                          {businessName ? businessName.charAt(0).toUpperCase() : <Store className="h-4 w-4" />}
+                        </div>
+                      )}
+                      <span className="font-bold text-sm text-slate-900 truncate">
+                        {businessName}
+                      </span>
+                    </div>
+
+                    {onShare && (
+                      <button
+                        type="button"
+                        onClick={() => onShare(item)}
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition active:scale-95"
+                        title="Compartir producto"
+                        aria-label="Compartir producto"
+                      >
+                        <Share2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
 
                 <div className="space-y-2">
-                  <h1 className="text-5xl font-semibold tracking-tight leading-[1.05]">
+                  <h1 className="text-4xl font-semibold tracking-tight leading-[1.05]">
                     {item.name}
                   </h1>
-                  {businessName && (
-                    <div className="text-base font-medium text-slate-600">
-                      {businessName}
-                    </div>
-                  )}
                 </div>
 
                 {badges.length ? (
@@ -1688,7 +1826,7 @@ function ProductDetailOverlay({
                       PRECIO
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <div className="text-4xl font-semibold tracking-tight text-slate-900">
+                      <div className="text-2xl font-bold tracking-tight text-slate-900">
                         ${formatPrice(item.price)}
                       </div>
                       {item.previousPrice != null &&
@@ -1739,8 +1877,6 @@ function ProductDetailOverlay({
                     </p>
                   </div>
                 )}
-
-                {/* <BenefitsList /> */}
               </div>
             </div>
           </div>
@@ -1780,39 +1916,64 @@ function DesktopProductImage({
 
   return (
     <div className="h-full w-full overflow-hidden bg-neutral-100">
-      <div className="relative h-full w-full">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={item.name}
-            className="h-full w-full object-cover"
-            draggable={false}
-          />
+      <div className="relative h-full w-full overflow-hidden">
+        {images.length > 0 ? (
+          <div
+            className="flex h-full w-full transition-transform duration-500 ease-out"
+            style={{
+              transform: `translateX(-${currentImageIndex * 100}%)`,
+            }}
+          >
+            {images.map((img, idx) => (
+              <div key={img.id ?? `${item.id}-desktop-img-${idx}`} className="h-full w-full shrink-0 relative">
+                <img
+                  src={img.url}
+                  alt={`${item.name} ${idx + 1}`}
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="h-full w-full bg-neutral-200" />
         )}
 
         {showCarousel && (
           <>
-            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-detail-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSelectImage(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
+            <div className="absolute left-6 right-6 top-6 z-10 flex gap-1.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => {
+                const isActive = index === currentImageIndex;
+                const isCompleted = index < currentImageIndex;
+
+                return (
+                  <button
+                    key={image.id ?? `${item.id}-detail-seg-${index}`}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onSelectImage(index);
+                    }}
+                    className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                    aria-label={`Imagen ${index + 1}`}
+                  >
+                    <div
+                      key={`${item.id}-desktop-${index}-${currentImageIndex}`}
+                      className="h-full rounded-full bg-white"
+                      style={
+                        isActive
+                          ? {
+                            animation: "storeCarouselProgress 3000ms linear forwards",
+                          }
+                          : isCompleted
+                            ? { width: "100%" }
+                            : { width: "0%" }
+                      }
+                    />
+                  </button>
+                );
+              })}
             </div>
 
             <button
@@ -1847,59 +2008,12 @@ function DesktopProductImage({
   );
 }
 
-/* function BenefitsList() {
-  return (
-    <div className="space-y-6 pt-2">
-      <div className="h-px w-full bg-white/10" />
-
-      <div className="space-y-5">
-        <BenefitRow
-          icon={<ShieldCheck className="h-5 w-5 text-white/70" />}
-          title="Compra segura"
-          subtitle="Tus datos están protegidos"
-        />
-        <BenefitRow
-          icon={<Truck className="h-5 w-5 text-white/70" />}
-          title="Envío rápido"
-          subtitle="Recibe tu pedido en tiempo récord"
-        />
-        <BenefitRow
-          icon={<RotateCcw className="h-5 w-5 text-white/70" />}
-          title="Devoluciones"
-          subtitle="30 días para cambios y devoluciones"
-        />
-      </div>
-    </div>
-  );
-}
-
-function BenefitRow({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="flex items-start gap-4">
-      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-white">{title}</div>
-        <div className="text-sm text-white/55">{subtitle}</div>
-      </div>
-    </div>
-  );
-}
-
-} */
-
 function ReelLikeProductView({
   item,
   businessName,
+  businessLogoUrl,
+  onShare,
+  onClose,
   preview,
   onPrimaryAction,
   currentImageIndex,
@@ -1909,6 +2023,9 @@ function ReelLikeProductView({
 }: {
   item: Item;
   businessName: string;
+  businessLogoUrl?: string | null;
+  onShare?: (item: Item) => void;
+  onClose: () => void;
   preview: boolean;
   onPrimaryAction: () => void;
   currentImageIndex: number;
@@ -1923,16 +2040,70 @@ function ReelLikeProductView({
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-white">
-      {/* IMAGE (full-bleed, no margins, no radius) */}
-      <div className="relative w-full bg-neutral-100">
-        <div className="h-[52vh] min-h-[320px] w-full bg-neutral-100">
-          {imageUrl ? (
+      {/* HEADER: Business Logo, Business Name, Share & Close Buttons */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100 shrink-0 z-20">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {businessLogoUrl ? (
             <img
-              src={imageUrl}
-              alt={item.name}
-              className="h-full w-full object-cover"
-              draggable={false}
+              src={businessLogoUrl}
+              alt={businessName}
+              className="h-8 w-8 rounded-full object-cover shrink-0 border border-slate-100 shadow-sm"
             />
+          ) : (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs shrink-0">
+              {businessName ? businessName.charAt(0).toUpperCase() : <Store className="h-4 w-4" />}
+            </div>
+          )}
+          <span className="font-bold text-sm text-slate-900 truncate">
+            {businessName}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {onShare && (
+            <button
+              type="button"
+              onClick={() => onShare(item)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition active:scale-95"
+              title="Compartir producto"
+              aria-label="Compartir producto"
+            >
+              <Share2 className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition active:scale-95"
+            title="Cerrar"
+            aria-label="Cerrar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* IMAGE (full-bleed, no margins, no radius) */}
+      <div className="relative w-full bg-neutral-100 overflow-hidden">
+        <div className="h-[48vh] min-h-[300px] w-full bg-neutral-100 overflow-hidden">
+          {images.length > 0 ? (
+            <div
+              className="flex h-full w-full transition-transform duration-500 ease-out"
+              style={{
+                transform: `translateX(-${currentImageIndex * 100}%)`,
+              }}
+            >
+              {images.map((img, idx) => (
+                <div key={img.id ?? `${item.id}-mobile-img-${idx}`} className="h-full w-full shrink-0 relative">
+                  <img
+                    src={img.url}
+                    alt={`${item.name} ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                    draggable={false}
+                  />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="h-full w-full bg-neutral-200" />
           )}
@@ -1940,25 +2111,39 @@ function ReelLikeProductView({
 
         {showCarousel && (
           <>
-            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
-              {images.map((image, index) => (
-                <button
-                  key={image.id ?? `${item.id}-mobile-seg-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSelectImage(index);
-                  }}
-                  className={[
-                    "h-0.5 flex-1 rounded-full",
-                    index === currentImageIndex
-                      ? "bg-white shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
-                      : "bg-white/60 shadow-[0_1px_8px_rgba(0,0,0,0.35)]",
-                  ].join(" ")}
-                  aria-label={`Imagen ${index + 1}`}
-                />
-              ))}
+            <div className="absolute left-3 right-3 top-3 z-10 flex gap-1.5 drop-shadow-[0_2px_10px_rgba(0,0,0,0.25)]">
+              {images.map((image, index) => {
+                const isActive = index === currentImageIndex;
+                const isCompleted = index < currentImageIndex;
+
+                return (
+                  <button
+                    key={image.id ?? `${item.id}-mobile-seg-${index}`}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onSelectImage(index);
+                    }}
+                    className="h-1 flex-1 rounded-full bg-black/25 overflow-hidden relative cursor-pointer backdrop-blur-[2px]"
+                    aria-label={`Imagen ${index + 1}`}
+                  >
+                    <div
+                      key={`${item.id}-mobile-${index}-${currentImageIndex}`}
+                      className="h-full rounded-full bg-white"
+                      style={
+                        isActive
+                          ? {
+                            animation: "storeCarouselProgress 3000ms linear forwards",
+                          }
+                          : isCompleted
+                            ? { width: "100%" }
+                            : { width: "0%" }
+                      }
+                    />
+                  </button>
+                );
+              })}
             </div>
 
             <button
@@ -1982,17 +2167,12 @@ function ReelLikeProductView({
         )}
       </div>
 
-      {/* FOOTER (full width bar, no rounded “card”) */}
+      {/* FOOTER */}
       <div className="w-full bg-white/85 px-5 py-4 backdrop-blur border-b border-black/5">
         <div className="space-y-2 pb-3">
           <div className="text-[18px] font-semibold leading-tight text-slate-900">
             {item.name}
           </div>
-          {businessName && (
-            <div className="text-xs font-semibold text-slate-600">
-              {businessName}
-            </div>
-          )}
 
           {badges.length ? (
             <div className="flex flex-wrap gap-1.5">
@@ -2015,7 +2195,7 @@ function ReelLikeProductView({
               PRECIO
             </div>
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-              <div className="text-3xl font-semibold tracking-tight text-slate-900">
+              <div className="text-2xl font-bold tracking-tight text-slate-900">
                 ${formatPrice(item.price)}
               </div>
               {item.previousPrice != null &&
@@ -2055,7 +2235,7 @@ function ReelLikeProductView({
         </div>
       </div>
 
-      {/* DESCRIPTION (padding only here; no heavy card) */}
+      {/* DESCRIPTION */}
       <div className="mx-auto min-h-0 w-full max-w-md overflow-y-auto px-4 pb-6 pt-4 custom-scrollbar">
         <div className="space-y-2 text-slate-900">
           {item.description && (
@@ -2064,12 +2244,6 @@ function ReelLikeProductView({
             </p>
           )}
         </div>
-
-        {/*
-        <div className="pt-6">
-          <BenefitsList />
-        </div>
-        */}
       </div>
     </div>
   );

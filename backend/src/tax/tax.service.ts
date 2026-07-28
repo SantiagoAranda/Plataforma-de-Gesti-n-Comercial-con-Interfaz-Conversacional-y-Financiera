@@ -15,8 +15,13 @@ export class TaxService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculateTaxPreview(businessId: string, dto: TaxPreviewDto) {
-    const sellerProfile = await this.prisma.businessTaxProfile.findUnique({
+  async calculateTaxPreview(
+    businessId: string,
+    dto: TaxPreviewDto,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const db = tx || this.prisma;
+    const sellerProfile = await db.businessTaxProfile.findUnique({
       where: { businessId },
       include: {
         responsibilities: {
@@ -32,7 +37,7 @@ export class TaxService {
         profileMissing: false,
         taxSettingsEnabled: false,
         taxDisabledReason: 'TAX_SETTINGS_DISABLED',
-      });
+      }, tx);
     }
 
     if (!sellerProfile) {
@@ -43,10 +48,10 @@ export class TaxService {
         profileMissing: true,
         taxSettingsEnabled: false,
         taxDisabledReason: 'PROFILE_MISSING',
-      });
+      }, tx);
     }
 
-    const globalParams = await this.prisma.taxGlobalParameter.findFirst({
+    const globalParams = await db.taxGlobalParameter.findFirst({
       where: { active: true },
       orderBy: { year: 'desc' },
     });
@@ -63,7 +68,7 @@ export class TaxService {
     const taxLines: any[] = [];
 
     const itemIds = dto.cartItems.map((i) => i.itemId);
-    const dbItems = await this.prisma.item.findMany({
+    const dbItems = await db.item.findMany({
       where: { id: { in: itemIds }, businessId },
     });
     const itemsMap = new Map(dbItems.map((i) => [i.id, i]));
@@ -192,7 +197,7 @@ export class TaxService {
       });
     }
 
-    const rules = await this.prisma.salesTaxRule.findMany({
+    const rules = await db.salesTaxRule.findMany({
       where: { businessId, active: true },
     });
 
@@ -737,7 +742,9 @@ export class TaxService {
     businessId: string,
     dto: TaxPreviewDto,
     options?: { profileMissing?: boolean; taxSettingsEnabled?: boolean; taxDisabledReason?: string },
+    tx?: Prisma.TransactionClient,
   ) {
+    const db = tx || this.prisma;
     let subtotalTotal = new Prisma.Decimal(0);
     const profileMissing = options?.profileMissing ?? true;
 
@@ -745,7 +752,7 @@ export class TaxService {
       const itemIds = dto?.cartItems?.map((i) => i.itemId) || [];
       if (itemIds.length > 0) {
         const dbItems =
-          (await this.prisma.item.findMany({
+          (await db.item.findMany({
             where: { id: { in: itemIds }, businessId },
           })) || [];
         const itemsMap = new Map(dbItems.map((i) => [i.id, i]));

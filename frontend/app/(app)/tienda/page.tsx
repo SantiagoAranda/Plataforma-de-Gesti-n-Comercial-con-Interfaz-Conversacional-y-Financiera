@@ -541,19 +541,47 @@ function AdminProductCard({
   const imageUrl = images[currentImageIndex]?.url ?? images[0]?.url;
   const badges = getItemBadges(item);
 
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [isInCenterBand, setIsInCenterBand] = useState(false);
+
   useEffect(() => {
     setCurrentImageIndex(0);
   }, [item.id]);
 
   useEffect(() => {
     if (!showCarousel) return;
+    const node = cardRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsInCenterBand(entry.isIntersecting);
+      },
+      {
+        rootMargin: "-25% 0px -25% 0px",
+        threshold: 0.3,
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [showCarousel]);
+
+  useEffect(() => {
+    if (!showCarousel || !isInCenterBand) {
+      setCurrentImageIndex(0);
+      return;
+    }
+
+    const hash = item.id.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const intervalDuration = 3500 + (hash % 1200);
 
     const id = window.setInterval(() => {
       setCurrentImageIndex((prev) => (prev + 1) % images.length);
-    }, 3000);
+    }, intervalDuration);
 
     return () => window.clearInterval(id);
-  }, [showCarousel, images.length]);
+  }, [showCarousel, isInCenterBand, images.length, item.id]);
 
   const handleDelete = async () => {
     const confirmDelete = confirm(
@@ -591,6 +619,7 @@ function AdminProductCard({
 
   return (
     <div
+      ref={cardRef}
       role="button"
       tabIndex={0}
       onClick={onOpenDetail}

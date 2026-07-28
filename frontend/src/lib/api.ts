@@ -1,4 +1,4 @@
-import { getToken, removeToken } from "./auth";
+import { getToken, handleSessionExpired, removeToken } from "./auth";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -70,15 +70,11 @@ export async function api<T>(
 
   if (res.status === 401) {
     if (auth) {
-      removeToken();
-
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
-      }
+      handleSessionExpired();
 
       throw new AppApiError({
         status: 401,
-        message: "Sesion expirada",
+        message: "Tu sesión ha finalizado. Por favor, inicia sesión nuevamente.",
         raw,
       });
     }

@@ -176,7 +176,7 @@ export default function RegisterForm() {
     text-gray-800 placeholder-gray-400
     focus:outline-none focus:ring-2 transition
   `;
-  const inputOk = "border-neutral-300 focus:ring-emerald-600 focus:border-emerald-600";
+  const inputOk = "border-neutral-300 focus:ring-[#0b3f64] focus:border-[#0b3f64] focus:shadow-[0_0_0_2px_rgba(11,63,100,0.15)]";
   const inputErr = "border-red-400 focus:ring-red-400 focus:border-red-400";
 
   return (
@@ -319,16 +319,17 @@ export default function RegisterForm() {
         disabled={loading}
         className="
           w-full
-          bg-emerald-600
+          bg-[#0b3f64]
           text-white
           py-3.5
           rounded-xl
           font-medium
-          shadow
-          hover:bg-emerald-700
-          active:scale-[0.98]
+          shadow-md
+          hover:bg-[#092f4a]
+          hover:shadow-lg
+          active:scale-[0.97]
           disabled:opacity-50
-          transition
+          transition-all
         "
       >
         {loading ? "Creando cuenta..." : "Registrarse"}
@@ -338,7 +339,7 @@ export default function RegisterForm() {
         ¿Ya tenés cuenta?{" "}
         <span
           onClick={() => router.push("/login")}
-          className="text-emerald-600 font-medium cursor-pointer hover:underline"
+          className="text-[#0b3f64] font-medium cursor-pointer hover:underline"
         >
           Iniciar sesión
         </span>
