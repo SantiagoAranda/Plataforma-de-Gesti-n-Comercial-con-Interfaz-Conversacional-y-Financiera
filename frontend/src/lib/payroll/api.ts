@@ -38,6 +38,35 @@ export type PayrollPeriod = {
   status: string;
 };
 
+export type PayrollOvertimeCalculationMode =
+  | "SURCHARGE_ONLY"
+  | "FULL_HOUR_FACTOR";
+
+export type PayrollOvertimeRate = {
+  code: OvertimeType;
+  name: string;
+  legalPercentage: MoneyLike;
+  totalFactor: MoneyLike;
+  payableMultiplier: MoneyLike;
+  calculationMode: PayrollOvertimeCalculationMode;
+};
+
+export type PayrollLegalParameter = {
+  id: string;
+  legalCode: string;
+  version: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  weeklyHours: MoneyLike;
+  monthlyHours: MoneyLike;
+  overtimeRates: PayrollOvertimeRate[];
+};
+
+export type PayrollBusinessConfig = {
+  globalFallback: PayrollLegalParameter | null;
+  ignoredLegacyLegalOverrides: string[];
+};
+
 export type PayrollRunUsedParameters = Record<string, unknown> & {
   serviceBonusPreview?: MoneyLike;
   serviceBonusProjected?: MoneyLike;
@@ -52,6 +81,7 @@ export type PayrollRunUsedParameters = Record<string, unknown> & {
 export type PayrollRun = {
   id: string;
   payrollPeriodId?: string;
+  postedAt?: string | null;
   employeeId: string;
   contractId: string;
   employee: Employee;
@@ -102,6 +132,59 @@ export type PayrollPayment = {
   paidAt?: string | null;
   paymentMethod?: "CASH" | "BANK_TRANSFER" | "OTHER" | string | null;
   notes?: string | null;
+  batchId?: string | null;
+};
+
+export type PayrollPaymentBatchResult = {
+  batchId: string;
+  payrollPeriodId: string;
+  paymentCycle: "MONTHLY" | "BIWEEKLY" | string;
+  installmentNumber?: number | null;
+  paymentCount: number;
+  totalPaid: MoneyLike;
+  payments: PayrollPayment[];
+};
+
+export type PayrollPaymentCandidate = {
+  payrollRunId: string;
+  employeeId: string;
+  employeeName: string;
+  identification?: string | null;
+  position?: string | null;
+  contractId: string;
+  netPay: MoneyLike;
+  paymentId?: string | null;
+  paymentStatus?: PayrollPayment["status"] | null;
+  eligible: boolean;
+  blockedReason?: string | null;
+};
+
+export type PreparedPayrollPeriod = {
+  payrollPeriodId: string;
+  status: PayrollPeriod["status"];
+  paymentCycle: "MONTHLY" | "BIWEEKLY";
+  installmentNumber?: number | null;
+  runs: PayrollPaymentCandidate[];
+};
+
+export type PayrollPreparationCandidate = {
+  employeeId: string;
+  contractId: string;
+  firstName: string;
+  lastName: string;
+  identification?: string | null;
+  position?: string | null;
+  monthlySalary: MoneyLike;
+  eligible: boolean;
+  blockedReason?: string | null;
+};
+
+export type PayrollPreparationCandidatesResult = {
+  year: number;
+  month: number;
+  paymentCycle: "MONTHLY" | "BIWEEKLY";
+  installmentNumber?: number | null;
+  candidates: PayrollPreparationCandidate[];
 };
 
 export type Settlement = {
@@ -228,7 +311,7 @@ export type CreatePayrollPeriodPayload = {
   year: number;
   month: number;
   paymentCycle: "MONTHLY" | "BIWEEKLY";
-  installmentNumber: number;
+  installmentNumber?: number;
 };
 
 export type CalculatePayrollPayload = {
@@ -237,7 +320,21 @@ export type CalculatePayrollPayload = {
   nonSalaryBonus: number;
   loanDeduction?: number;
   otherDeductions: number;
+  /** @deprecated UI compatibility only; it is intentionally never sent to the API. */
   overtimeHours?: Array<{ type: OvertimeType; quantity: number }>;
+};
+
+export type PayrollEvent = {
+  id: string; employeeId: string; payrollPeriodId?: string | null;
+  type: "OVERTIME" | string; status: "DRAFT" | "APPROVED" | "APPLIED" | "CANCELLED" | string;
+  startDate: string; endDate?: string | null; quantity?: MoneyLike; unit?: "HOURS" | "DAYS" | "MONEY" | null;
+  overtimeCode?: OvertimeType | null; amountOverride?: MoneyLike; notes?: string | null;
+};
+
+export type CreatePayrollEventPayload = {
+  employeeId: string; type: "OVERTIME"; startDate: string; quantity: number;
+  unit: "HOURS"; overtimeCode: OvertimeType; notes?: string;
+  status?: "DRAFT" | "APPROVED";
 };
 
 export type SimulateSettlementPayload = {
@@ -283,20 +380,12 @@ function normalizeCalculatePayrollPayload(
   payload: CalculatePayrollPayload,
 ): CalculatePayrollPayload {
   const workedDays = Math.trunc(nonNegativeNumber(payload.workedDays));
-  const overtimeHours = (payload.overtimeHours ?? [])
-    .map((item) => ({
-      type: item.type,
-      quantity: nonNegativeNumber(item.quantity),
-    }))
-    .filter((item) => item.quantity > 0);
-
   return {
     workedDays,
     commissions: nonNegativeNumber(payload.commissions),
     nonSalaryBonus: nonNegativeNumber(payload.nonSalaryBonus),
     loanDeduction: nonNegativeNumber(payload.loanDeduction),
     otherDeductions: nonNegativeNumber(payload.otherDeductions),
-    ...(overtimeHours.length ? { overtimeHours } : {}),
   };
 }
 
@@ -329,7 +418,8 @@ async function payrollRequest<T>(
         (errorCode === "INSUFFICIENT_PROVISION_REQUIRES_REGULARIZATION" || errorCode === "INSUFFICIENT_PROVISION_REQUIRED");
 
       if (isRegularizationConflict) {
-        console.warn("[payroll] expected regularization conflict", {
+        // This is an expected business precondition, not a failed request.
+        console.info("[payroll] regularization required", {
           endpoint,
           status: appError?.status,
           code: errorCode,
@@ -361,6 +451,11 @@ function safeJsonParse(value: string) {
 }
 
 export const payrollApi = {
+  getLegalConfig(year: number, referenceDate: string) {
+    return payrollRequest<PayrollBusinessConfig>(
+      `/payroll/config/business/${year}?referenceDate=${encodeURIComponent(referenceDate)}`,
+    );
+  },
   listPeriods() {
     return payrollRequest<PayrollPeriod[]>("/payroll/periods");
   },
@@ -426,8 +521,25 @@ export const payrollApi = {
   listArlRisks() {
     return payrollRequest<ArlRiskClass[]>("/payroll/arl-risks");
   },
+  getPeriod(periodId: string) {
+    return payrollRequest<PayrollPeriod>(`/payroll/periods/${periodId}`);
+  },
   listRuns(periodId: string) {
     return payrollRequest<PayrollRun[]>(`/payroll/periods/${periodId}/runs`);
+  },
+  listEvents(periodId: string, employeeId?: string) {
+    const query = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : "";
+    return payrollRequest<PayrollEvent[]>(`/payroll/periods/${periodId}/events${query}`);
+  },
+  createEvent(periodId: string, payload: CreatePayrollEventPayload) {
+    return payrollRequest<PayrollEvent>(`/payroll/periods/${periodId}/events`, {
+      method: "POST", body: JSON.stringify(payload),
+    });
+  },
+  updateEvent(eventId: string, payload: Partial<CreatePayrollEventPayload> & { status?: PayrollEvent["status"] }) {
+    return payrollRequest<PayrollEvent>(`/payroll/events/${eventId}`, {
+      method: "PATCH", body: JSON.stringify(payload),
+    });
   },
   listRunPayments(runId: string) {
     return payrollRequest<PayrollPayment[]>(`/payroll/runs/${runId}/payments`);
@@ -437,6 +549,87 @@ export const payrollApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
+  },
+  payPeriodBatch(periodId: string, payload: {
+    payrollRunIds: string[];
+    paymentMethod: "CASH" | "BANK_TRANSFER";
+    paidAt: string;
+    notes?: string;
+    idempotencyKey: string;
+  }) {
+    return payrollRequest<PayrollPaymentBatchResult>(`/payroll/periods/${periodId}/payments/batch`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  preparePeriod(payload: {
+    year: number;
+    month: number;
+    paymentCycle: "MONTHLY" | "BIWEEKLY";
+    installmentNumber: number | null;
+    idempotencyKey: string;
+  }) {
+    return payrollRequest<PreparedPayrollPeriod>("/payroll/periods/prepare", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  previewPayroll(payload: {
+    year: number;
+    month: number;
+    paymentCycle: "MONTHLY" | "BIWEEKLY";
+    installmentNumber: number | null;
+  }) {
+    return payrollRequest<{
+      year: number;
+      month: number;
+      paymentCycle: "MONTHLY" | "BIWEEKLY";
+      installmentNumber: number | null;
+      status: "PREVIEW";
+      runs: PayrollRun[];
+      totals: { netPay: string | number; realEmployerCost: string | number };
+    }>("/payroll/preview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  previewMonthlyOverview(payload: { year: number; month: number }) {
+    return payrollRequest<{
+      year: number;
+      month: number;
+      status: "PREVIEW";
+      runs: PayrollRun[];
+      totals: { netPay: string | number; realEmployerCost: string | number };
+    }>("/payroll/preview/monthly-overview", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  confirmPayrollPayment(payload: {
+    year: number;
+    month: number;
+    paymentCycle: "MONTHLY" | "BIWEEKLY";
+    installmentNumber: number | null;
+    employeeIds: string[];
+    paymentMethod: "CASH" | "BANK_TRANSFER";
+    idempotencyKey: string;
+  }) {
+    return payrollRequest<PayrollPaymentBatchResult>("/payroll/payments/confirm", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  listPreparationCandidates(payload: {
+    year: number;
+    month: number;
+    paymentCycle: "MONTHLY" | "BIWEEKLY";
+    installmentNumber?: number | null;
+  }) {
+    const query = new URLSearchParams({
+      year: String(payload.year), month: String(payload.month), paymentCycle: payload.paymentCycle,
+      ...(payload.installmentNumber ? { installmentNumber: String(payload.installmentNumber) } : {}),
+    });
+    return payrollRequest<PayrollPreparationCandidatesResult>(`/payroll/periods/preparation-candidates?${query}`);
   },
   calculateEmployee(periodId: string, employeeId: string, payload: CalculatePayrollPayload) {
     const normalizedPayload = normalizeCalculatePayrollPayload(payload);

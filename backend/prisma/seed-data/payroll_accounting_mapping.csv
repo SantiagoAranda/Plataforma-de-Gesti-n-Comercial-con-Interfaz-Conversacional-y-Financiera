@@ -22,6 +22,7 @@ WITHHOLDING_TAX,Retefuente por pagar,236505,Salarios y pagos laborales,CREDIT
 OTHER_DEDUCTIONS,Otras deducciones,237095,Otros,CREDIT
 LOAN_DEDUCTION,Préstamos a empleados,136595,Otros cuentas por cobrar a trabajadores,CREDIT
 NET_PAY,Neto a pagar,2505,Salarios por pagar,CREDIT
+NET_PAY,Neto a pagar,2505,Salarios por pagar,DEBIT
 EMPLOYER_HEALTH,Salud empleador por pagar,237005,Aportes a entidades promotoras de salud EPS,CREDIT
 EMPLOYER_PENSION,Pensión empleador por pagar,238030,Fondos de cesantías y/o pensiones,CREDIT
 EMPLOYER_ARL,ARL por pagar,237006,Aportes a administradoras de riesgos profesionales ARP,CREDIT
