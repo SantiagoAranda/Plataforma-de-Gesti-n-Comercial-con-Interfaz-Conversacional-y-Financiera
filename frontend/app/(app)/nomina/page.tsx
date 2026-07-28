@@ -452,8 +452,11 @@ function settlementDefaultEndDate(contract?: Contract | null, period?: PayrollPe
   return contractEnd > periodYearEnd ? periodYearEnd : contractEnd;
 }
 
-function payrollSimulationKey(employeeId: string, contractId?: string | null, periodId?: string | null) {
-  return `${employeeId}:${contractId ?? "no-contract"}:${periodId ?? "no-period"}`;
+function isContractCompatibleWithPayrollPeriod(contract?: Contract | null, period?: PayrollPeriod | null) {
+  if (!contract || !period || !isContractActiveForPeriod(contract, period)) return false;
+  if (period.paymentCycle === "MONTHLY") return contract.paymentCycle === "MONTHLY";
+  return contract.paymentCycle === "BIWEEKLY" &&
+    (period.installmentNumber === 1 || period.installmentNumber === 2);
 }
 
 function isPrimaryMonthlyPeriod(period?: PayrollPeriod | null) {
@@ -4074,7 +4077,6 @@ function PayrollNewsSheet({
   employee,
   contract,
   selectedPeriod,
-  onPreview,
   onSettlementPreview,
   onFinished,
 }: {
@@ -4084,7 +4086,6 @@ function PayrollNewsSheet({
   employee?: Employee | null;
   contract?: Contract | null;
   selectedPeriod?: PayrollPeriod;
-  onPreview?: (preview: PayrollRun) => void;
   onSettlementPreview?: (settlement: Settlement) => void;
   onFinished: (periodId: string) => void;
 }) {
@@ -4151,8 +4152,13 @@ function PayrollNewsSheet({
       !open ||
       !employeeId ||
       !selectedPeriod ||
-      !isPeriodicPayrollEnabled(selectedPeriod)
+      !isPeriodEditable(selectedPeriod)
     ) return;
+    if (!isContractCompatibleWithPayrollPeriod(sheetContract, selectedPeriod)) {
+      setPreview(null);
+      setError("El contrato no aplica al ciclo del período seleccionado.");
+      return;
+    }
     const payload = buildPayload();
     if (!payload) return;
 
@@ -4174,7 +4180,6 @@ function PayrollNewsSheet({
         ]);
         if (!alive) return;
         setPreview(payrollPreview);
-        onPreview?.(payrollPreview);
         if (settlementResult) {
           setSettlementPreview(settlementResult);
           onSettlementPreview?.(settlementResult);
@@ -4191,7 +4196,7 @@ function PayrollNewsSheet({
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [buildPayload, employeeId, onPreview, onSettlementPreview, open, selectedPeriod, sheetContract?.id, simulatedEndDate]);
+  }, [buildPayload, employeeId, onSettlementPreview, open, selectedPeriod, sheetContract, simulatedEndDate]);
 
   const save = async () => {
     if (!employeeId || !selectedPeriod) return setError("Selecciona un periodo con empleado activo.");
@@ -4669,7 +4674,6 @@ export default function PayrollPage() {
   const [employeesLoading, setEmployeesLoading] = useState(true);
   const [runsLoading, setRunsLoading] = useState(false);
   const [settlementsLoading, setSettlementsLoading] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
@@ -4687,12 +4691,10 @@ export default function PayrollPage() {
   const [editorSheetOpen, setEditorSheetOpen] = useState(false);
   const [editorRun, setEditorRun] = useState<PayrollRun | null>(null);
   const [periodRefreshKey, setPeriodRefreshKey] = useState(0);
-  const [simulationByEmployee, setSimulationByEmployee] = useState<Record<string, PayrollRun>>({});
   const [settlementPreviewByContract, setSettlementPreviewByContract] = useState<Record<string, Settlement>>({});
   const [settlementPreviewError, setSettlementPreviewError] = useState<string | null>(null);
   const [visualPaidRuns, setVisualPaidRuns] = useState<Record<string, boolean>>({});
   const [legalParameter, setLegalParameter] = useState<PayrollLegalParameter | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
   const [paymentSheet, setPaymentSheet] = useState<{
     run: PayrollRun;
     paymentMethod: "CASH" | "BANK_TRANSFER" | "OTHER";
@@ -4722,8 +4724,6 @@ export default function PayrollPage() {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [postingSettlementContractId, setPostingSettlementContractId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const previewInFlightRef = useRef(new Set<string>());
-  const previewFailedRef = useRef(new Set<string>());
   const pagePreviewKeyRef = useRef<string | null>(null);
   const pagePreviewRequestRef = useRef(0);
 
@@ -4938,14 +4938,11 @@ export default function PayrollPage() {
     const rows = employees.map((employee) => {
       const run = runByEmployeeId.get(employee.id);
       const activeContract = run?.contract ?? findActiveContractForMonth(employee.contracts, selectedYear, selectedMonth);
-      const preview = !run && activeContract && selectedPeriod?.status !== "POSTED" && selectedPeriod?.status !== "CLOSED"
-        ? simulationByEmployee[payrollSimulationKey(employee.id, activeContract.id, selectedPeriod?.id)]
-        : null;
       return {
-        key: run?.id ?? preview?.id ?? employee.id,
+        key: run?.id ?? employee.id,
         employee,
         contract: activeContract,
-        run: run ? { ...run, employee, contract: activeContract ?? run.contract } : preview,
+        run: run ? { ...run, employee, contract: activeContract ?? run.contract } : null,
       };
     });
 
@@ -4960,103 +4957,7 @@ export default function PayrollPage() {
     }
 
     return rows;
-  }, [displayPayrollRuns, employees, selectedMonth, selectedPeriod, selectedYear, simulationByEmployee]);
-
-  useEffect(() => {
-    if (
-      !selectedPeriod ||
-      !isPeriodicPayrollEnabled(selectedPeriod) ||
-      employeesLoading ||
-      runsLoading ||
-      selectedPeriod.status === "POSTED" ||
-      selectedPeriod.status === "CLOSED"
-    ) {
-      setPreviewLoading(false);
-      return;
-    }
-    const missingRows = employees
-      .map((employee) => ({
-        employee,
-        contract: findActiveContract(employee.contracts, selectedPeriod),
-        hasRun: runs.some((run) => run.employeeId === employee.id),
-      }))
-      .filter((row) => {
-        const key = payrollSimulationKey(row.employee.id, row.contract?.id, selectedPeriod.id);
-        return row.contract && !row.hasRun && !simulationByEmployee[key] &&
-          !previewInFlightRef.current.has(key) && !previewFailedRef.current.has(key);
-      });
-
-    if (!missingRows.length) {
-      setPreviewLoading(false);
-      return;
-    }
-    let alive = true;
-    const timer = window.setTimeout(async () => {
-      if (!alive) return;
-      missingRows.forEach(({ employee, contract }) =>
-        previewInFlightRef.current.add(payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id)),
-      );
-      setPreviewLoading(true);
-      const previews = await Promise.all(
-        missingRows.map(async ({ employee, contract }) => {
-          try {
-            const [payrollPreview, settlementPreview] = await Promise.all([
-              payrollApi.previewEmployee(selectedPeriod.id, employee.id, {
-                workedDays: selectedPeriod.paymentCycle === "BIWEEKLY" ? 15 : 30,
-                commissions: 0,
-                nonSalaryBonus: 0,
-                otherDeductions: 0,
-              }),
-              contract?.id
-                ? payrollApi.simulateSettlement(contract.id, {
-                  endDate: settlementDefaultEndDate(contract, selectedPeriod),
-                  calculationYear: selectedPeriod.year,
-                }).catch(() => null)
-                : Promise.resolve(null),
-            ]);
-            return { employeeId: employee.id, contractId: contract?.id, payrollPreview, settlementPreview };
-          } catch (error) {
-            const key = payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id);
-            previewFailedRef.current.add(key);
-            if (process.env.NODE_ENV === "development") {
-              console.error("Payroll preview failed", { periodId: selectedPeriod.id, employeeId: employee.id, error });
-            }
-            return null;
-          }
-        }),
-      );
-      if (!alive) return;
-      missingRows.forEach(({ employee, contract }) =>
-        previewInFlightRef.current.delete(payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id)),
-      );
-      if (previews.some((item) => item === null)) {
-        setPreviewError("No se pudo calcular la vista previa de nómina. Revisa los datos del período o del empleado.");
-      } else {
-        setPreviewError(null);
-      }
-      setSimulationByEmployee((current) => {
-        const next = { ...current };
-        for (const item of previews) {
-          if (item) next[payrollSimulationKey(item.employeeId, item.contractId, selectedPeriod.id)] = item.payrollPreview;
-        }
-        return next;
-      });
-      setSettlementPreviewByContract((current) => {
-        const next = { ...current };
-        for (const item of previews) {
-          if (item?.contractId && item.settlementPreview) next[item.contractId] = item.settlementPreview;
-        }
-        return next;
-      });
-      setPreviewLoading(false);
-    }, 500);
-
-    return () => {
-      alive = false;
-      setPreviewLoading(false);
-      window.clearTimeout(timer);
-    };
-  }, [employees, employeesLoading, runs, runsLoading, selectedPeriod?.id, selectedPeriod?.status, selectedPeriod?.paymentCycle, selectedPeriod?.year]);
+  }, [displayPayrollRuns, employees, selectedMonth, selectedYear]);
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -5229,13 +5130,6 @@ export default function PayrollPage() {
     setConfirmAction({ type: "post-settlement", run, settlement });
   }, [settlements]);
 
-
-  const handlePayrollPreview = useCallback((preview: PayrollRun) => {
-    setSimulationByEmployee((current) => ({
-      ...current,
-      [payrollSimulationKey(preview.employeeId, preview.contractId, selectedPeriodId)]: preview,
-    }));
-  }, [selectedPeriodId]);
 
   const handleSettlementPreview = useCallback((settlement: Settlement) => {
     if (settlement.preview) {
@@ -5479,7 +5373,6 @@ export default function PayrollPage() {
     !employeesLoading &&
     !runsLoading &&
     !settlementsLoading &&
-    !previewLoading &&
     !pagePreviewLoading,
   );
   const hasNoApplicableEmployees = !employeesLoading && employees.length === 0;
@@ -5702,12 +5595,6 @@ export default function PayrollPage() {
               </div>
             )}
 
-            {!isPayrollLoading && !error && previewError && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shrink-0">
-                {previewError}
-              </div>
-            )}
-
             {!isPayrollLoading && !error && pagePreviewError && (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 shrink-0">
                 {pagePreviewError}
@@ -5820,7 +5707,6 @@ export default function PayrollPage() {
         employee={newsEmployee}
         contract={newsContract}
         selectedPeriod={selectedPeriod}
-        onPreview={handlePayrollPreview}
         onSettlementPreview={handleSettlementPreview}
         onFinished={(periodId) => {
           loadEmployees();
