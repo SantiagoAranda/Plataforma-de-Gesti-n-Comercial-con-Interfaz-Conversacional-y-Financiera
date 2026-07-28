@@ -37,6 +37,12 @@ import { SimulateContractSettlementDto } from './dto/simulate-contract-settlemen
 import { QueryContractSettlementsDto } from './dto/query-contract-settlements.dto';
 import {
   CreatePayrollBenefitPaymentDto,
+  CreatePayrollPaymentBatchDto,
+  PreparePayrollPeriodDto,
+  QueryPayrollPreparationCandidatesDto,
+  PreviewPayrollDto,
+  MonthlyPayrollOverviewDto,
+  ConfirmPayrollPaymentDto,
   CreatePayrollPaymentDto,
   UpdatePayrollPaymentStatusDto,
 } from './dto/payroll-payment.dto';
@@ -339,6 +345,18 @@ export class PayrollController {
     });
   }
 
+  @Get('periods/preparation-candidates')
+  @Roles('BUSINESS')
+  listPreparationCandidates(
+    @Req() req: any,
+    @Query() dto: QueryPayrollPreparationCandidatesDto,
+  ) {
+    return this.payrollService.listPayrollPreparationCandidates(
+      this.getBusinessId(req),
+      dto,
+    );
+  }
+
   @Get('periods/:id')
   @Roles('BUSINESS')
   getPayrollPeriod(@Req() req: any, @Param('id') id: string) {
@@ -457,6 +475,30 @@ export class PayrollController {
     );
   }
 
+  @Post('periods/prepare')
+  @Roles('BUSINESS')
+  preparePayrollPeriod(@Req() req: any, @Body() dto: PreparePayrollPeriodDto) {
+    return this.payrollService.preparePayrollPeriod(this.getBusinessId(req), dto);
+  }
+
+  @Post('preview')
+  @Roles('BUSINESS')
+  previewPayroll(@Req() req: any, @Body() dto: PreviewPayrollDto) {
+    return this.payrollService.previewPayroll(this.getBusinessId(req), dto);
+  }
+
+  @Post('preview/monthly-overview')
+  @Roles('BUSINESS')
+  previewMonthlyOverview(@Req() req: any, @Body() dto: MonthlyPayrollOverviewDto) {
+    return this.payrollService.previewMonthlyOverview(this.getBusinessId(req), dto);
+  }
+
+  @Post('payments/confirm')
+  @Roles('BUSINESS')
+  confirmPayrollPayment(@Req() req: any, @Body() dto: ConfirmPayrollPaymentDto) {
+    return this.payrollService.confirmPayrollPayment(this.getBusinessId(req), dto);
+  }
+
   @Post('periods/:periodId/runs')
   @Roles('BUSINESS')
   liquidatePeriodPayroll(@Req() req: any, @Param('periodId') periodId: string) {
@@ -521,6 +563,20 @@ export class PayrollController {
     return this.payrollService.updatePayrollPaymentStatus(
       this.getBusinessId(req),
       paymentId,
+      dto,
+    );
+  }
+
+  @Post('periods/:periodId/payments/batch')
+  @Roles('BUSINESS')
+  createPayrollPaymentBatch(
+    @Req() req: any,
+    @Param('periodId') periodId: string,
+    @Body() dto: CreatePayrollPaymentBatchDto,
+  ) {
+    return this.payrollService.createPayrollPaymentBatch(
+      this.getBusinessId(req),
+      periodId,
       dto,
     );
   }

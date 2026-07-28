@@ -27,6 +27,7 @@ import {
 } from '@prisma/client';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateGlobalConfigDto } from './dto/update-global-config.dto';
@@ -50,6 +51,12 @@ import { SimulateContractSettlementDto } from './dto/simulate-contract-settlemen
 import { QueryContractSettlementsDto } from './dto/query-contract-settlements.dto';
 import {
   CreatePayrollBenefitPaymentDto,
+  CreatePayrollPaymentBatchDto,
+  PreparePayrollPeriodDto,
+  QueryPayrollPreparationCandidatesDto,
+  PreviewPayrollDto,
+  ConfirmPayrollPaymentDto,
+  MonthlyPayrollOverviewDto,
   CreatePayrollPaymentDto,
   UpdatePayrollPaymentStatusDto,
 } from './dto/payroll-payment.dto';
@@ -113,6 +120,16 @@ type PayrollAccountingMappingTemplateRow = {
   side: PayrollAccountingSide;
 };
 
+type PayrollAccountingMappingRequirement = {
+  role: string;
+  requiredSide: PayrollAccountingSide;
+  paymentMethod?: PaymentMethod | null;
+};
+
+type MissingPayrollAccountingMapping = PayrollAccountingMappingRequirement & {
+  reason: 'MISSING' | 'INACTIVE' | 'ACCOUNT_NOT_FOUND' | 'ACCOUNT_INACTIVE';
+};
+
 @Injectable()
 export class PayrollService {
   private readonly logger = new Logger(PayrollService.name);
@@ -133,6 +150,28 @@ export class PayrollService {
       throw new BadRequestException(`${fieldName} is invalid`);
     }
     return parsed;
+  }
+
+  /** Date-only payroll inputs are Colombian operational days, stored at noon UTC
+   * so serialization cannot move them to the preceding day in America/Bogota. */
+  private operationalPaymentDate(value?: string) {
+    if (!value) {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date());
+      const valueFor = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+      return new Date(Date.UTC(valueFor('year'), valueFor('month') - 1, valueFor('day'), 12));
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) throw new BadRequestException('paidAt is invalid');
+    const [, year, month, day] = match;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+    if (
+      date.getUTCFullYear() !== Number(year) ||
+      date.getUTCMonth() !== Number(month) - 1 ||
+      date.getUTCDate() !== Number(day)
+    ) throw new BadRequestException('paidAt is invalid');
+    return date;
   }
 
   private parsePayrollAccountingMappingTemplate() {
@@ -862,6 +901,110 @@ export class PayrollService {
     return 'PAYROLL_PAYMENT_CASH';
   }
 
+  private payrollMovementDescription(
+    prefix: 'Nómina' | 'Pago nómina',
+    period: {
+      year: number;
+      month: number;
+      paymentCycle?: PayrollPaymentCycle;
+      installmentNumber?: number | null;
+    },
+    employeeName: string,
+  ) {
+    const month = String(period.month).padStart(2, '0');
+    const installment =
+      period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+        ? period.installmentNumber === 1
+          ? ' Primera quincena'
+          : ' Segunda quincena'
+        : '';
+    return `${prefix} ${period.year}-${month}${installment} — ${employeeName}`;
+  }
+
+  private paymentMappingRequirements(paymentMethod: PaymentMethod) {
+    return [
+      { role: 'NET_PAY', requiredSide: PayrollAccountingSide.DEBIT },
+      {
+        role: this.paymentMethodCreditConcept(paymentMethod),
+        requiredSide: PayrollAccountingSide.CREDIT,
+        paymentMethod,
+      },
+    ] satisfies PayrollAccountingMappingRequirement[];
+  }
+
+  /**
+   * Uses the same mapping rows that will later produce the accounting lines.
+   * Inactive mappings are deliberately reported, never silently reactivated.
+   */
+  private async resolvePayrollAccountingMappings(
+    businessId: string,
+    requirements: PayrollAccountingMappingRequirement[],
+    stage: 'ACCRUAL' | 'PAYMENT' | 'BOTH',
+    tx: PayrollTx = this.prisma,
+  ) {
+    const conceptCodes = Array.from(new Set(requirements.map((item) => item.role)));
+    const mappings = await tx.payrollAccountingMapping.findMany({
+      where: { businessId, conceptCode: { in: conceptCodes } },
+    });
+    const missing: MissingPayrollAccountingMapping[] = [];
+    const resolved = new Map<string, (typeof mappings)[number]>();
+
+    for (const requirement of requirements) {
+      const matching = mappings.find(
+        (mapping) =>
+          mapping.conceptCode === requirement.role &&
+          mapping.side === requirement.requiredSide,
+      );
+      if (!matching) {
+        missing.push({ ...requirement, reason: 'MISSING' });
+        continue;
+      }
+      if (!matching.isActive) {
+        missing.push({ ...requirement, reason: 'INACTIVE' });
+        continue;
+      }
+
+      const code = matching.accountCode.trim();
+      if (code.length === 4) {
+        const account = await tx.pucCuenta.findUnique({
+          where: { code },
+          select: { code: true },
+        });
+        if (!account) {
+          missing.push({ ...requirement, reason: 'ACCOUNT_NOT_FOUND' });
+          continue;
+        }
+      } else if (code.length === 6) {
+        const subaccount = await tx.pucSubcuenta.findFirst({
+          where: { code },
+          select: { code: true, active: true },
+        });
+        if (!subaccount) {
+          missing.push({ ...requirement, reason: 'ACCOUNT_NOT_FOUND' });
+          continue;
+        }
+        if (!subaccount.active) {
+          missing.push({ ...requirement, reason: 'ACCOUNT_INACTIVE' });
+          continue;
+        }
+      } else {
+        missing.push({ ...requirement, reason: 'ACCOUNT_NOT_FOUND' });
+        continue;
+      }
+      resolved.set(`${requirement.role}:${requirement.requiredSide}`, matching);
+    }
+
+    if (missing.length) {
+      throw new BadRequestException({
+        code: 'MISSING_PAYROLL_ACCOUNTING_MAPPINGS',
+        message: 'Faltan mapeos contables requeridos para el pago de nómina.',
+        stage,
+        missingMappings: missing,
+      });
+    }
+    return resolved;
+  }
+
   private async ensurePayrollRunPayments(
     run: {
       id: string;
@@ -869,7 +1012,7 @@ export class PayrollService {
       employeeId: string;
       contractId: string;
       netPay: Prisma.Decimal;
-      contract?: { paymentCycle: PayrollPaymentCycle } | null;
+      period: { paymentCycle: PayrollPaymentCycle; installmentNumber: number };
     },
     tx: PayrollTx = this.prisma,
   ) {
@@ -881,32 +1024,21 @@ export class PayrollService {
     });
     if (existing.length) return existing;
 
-    const paymentCycle =
-      run.contract?.paymentCycle ?? PayrollPaymentCycle.MONTHLY;
-    const netPay = this.money(this.decimal(run.netPay));
-    const installments =
-      paymentCycle === PayrollPaymentCycle.BIWEEKLY ? [1, 2] : [null];
-    const firstAmount =
-      paymentCycle === PayrollPaymentCycle.BIWEEKLY
-        ? this.money(netPay.div(2))
-        : netPay;
-    const secondAmount =
-      paymentCycle === PayrollPaymentCycle.BIWEEKLY
-        ? this.money(netPay.sub(firstAmount))
-        : netPay;
-
     await tx.payrollPayment.createMany({
-      data: installments.map((installmentNumber) => ({
+      data: [{
         businessId: run.businessId,
         payrollRunId: run.id,
         employeeId: run.employeeId,
         contractId: run.contractId,
-        installmentNumber,
-        paymentCycle,
+        installmentNumber:
+          run.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+            ? run.period.installmentNumber
+            : null,
+        paymentCycle: run.period.paymentCycle,
         type: PayrollPaymentType.SALARY_PAYMENT,
         status: PayrollPaymentStatus.PENDING,
-        amount: installmentNumber === 2 ? secondAmount : firstAmount,
-      })),
+        amount: this.money(this.decimal(run.netPay)),
+      }],
     });
 
     return tx.payrollPayment.findMany({
@@ -920,23 +1052,25 @@ export class PayrollService {
     payment: {
       id: string;
       amount: Prisma.Decimal;
+      paidAt: Date | null;
       paymentMethod: PaymentMethod | null;
+      batchId?: string | null;
       payrollRun: {
-        period: { year: number; month: number };
+        id: string;
+        payrollPeriodId: string;
+        employeeId: string;
+        period: {
+          year: number;
+          month: number;
+          paymentCycle: PayrollPaymentCycle;
+          installmentNumber: number;
+        };
         employee: { firstName: string; lastName: string };
       };
     },
     tx: PayrollTx,
   ) {
-    await tx.accountingMovement.deleteMany({
-      where: {
-        businessId,
-        originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
-        originId: payment.id,
-      },
-    });
-
-    const mappings = await tx.payrollAccountingMapping.findMany({
+    /* const mappings = await tx.payrollAccountingMapping.findMany({
       where: {
         businessId,
         isActive: true,
@@ -961,14 +1095,60 @@ export class PayrollService {
     );
 
     if (!debitMapping || !creditMapping) {
-      this.logger.warn(
-        `Payroll payment accounting mapping missing for paymentId=${payment.id}, businessId=${businessId}`,
-      );
+      throw new BadRequestException('Faltan mapeos contables requeridos para el pago de nómina.');
+    } */
+    const paymentMethod = payment.paymentMethod ?? PaymentMethod.CASH;
+    const resolvedMappings = await this.resolvePayrollAccountingMappings(
+      businessId,
+      this.paymentMappingRequirements(paymentMethod),
+      'PAYMENT',
+      tx,
+    );
+    const debitMapping = resolvedMappings.get(`NET_PAY:${PayrollAccountingSide.DEBIT}`)!;
+    const creditMapping = resolvedMappings.get(
+      `${this.paymentMethodCreditConcept(paymentMethod)}:${PayrollAccountingSide.CREDIT}`,
+    )!;
+
+    const existingMovements = await tx.accountingMovement.findMany({
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
+        originId: payment.id,
+      },
+    });
+    const expectedPaymentRoles = [
+      'NET_PAY_DEBIT',
+      paymentMethod === PaymentMethod.BANK_TRANSFER
+        ? 'PAYMENT_BANK_CREDIT'
+        : 'PAYMENT_CASH_CREDIT',
+    ];
+    if (existingMovements.length) {
+      const expectedAmount = this.money(payment.amount);
+      const valid =
+        existingMovements.length === 2 &&
+        new Set(existingMovements.map((movement) => movement.accountingRole ?? (movement.metadata as any)?.accountingRole)).size === 2 &&
+        existingMovements.every((movement) => {
+          const role = movement.accountingRole ?? (movement.metadata as any)?.accountingRole;
+          const expectedMapping = role === 'NET_PAY_DEBIT' ? debitMapping : creditMapping;
+          const accountCode = expectedMapping.accountCode.trim();
+          return (
+            expectedPaymentRoles.includes(role) &&
+            movement.nature === (role === 'NET_PAY_DEBIT' ? MovementNature.DEBIT : MovementNature.CREDIT) &&
+            this.decimal(movement.amount).equals(expectedAmount) &&
+            (accountCode.length === 4 ? movement.pucCuentaCode === accountCode : movement.pucSubcuentaId === accountCode)
+          );
+        });
+      if (!valid) {
+        throw new ConflictException('PAYROLL_PAYMENT_ACCOUNTING_INCONSISTENT');
+      }
       return;
     }
 
     const employeeName = `${payment.payrollRun.employee.firstName} ${payment.payrollRun.employee.lastName}`;
-    const date = new Date();
+    if (!payment.paidAt) {
+      throw new BadRequestException('Payroll payment requires an effective payment date');
+    }
+    const date = payment.paidAt;
     const movements: Prisma.AccountingMovementCreateManyInput[] = [];
     for (const mapping of [debitMapping, creditMapping]) {
       const accountCode = mapping.accountCode.trim();
@@ -983,9 +1163,33 @@ export class PayrollService {
             ? MovementNature.DEBIT
             : MovementNature.CREDIT,
         date,
-        detail: `Pago nomina ${payment.payrollRun.period.year}-${String(payment.payrollRun.period.month).padStart(2, '0')} ${employeeName}`,
+        detail: `${this.payrollMovementDescription('Pago nómina', payment.payrollRun.period, employeeName)}`,
         originType: AccountingMovementOriginType.PAYROLL_PAYMENT,
         originId: payment.id,
+        accountingRole:
+          mapping.side === PayrollAccountingSide.DEBIT
+            ? 'NET_PAY_DEBIT'
+            : paymentMethod === PaymentMethod.BANK_TRANSFER
+              ? 'PAYMENT_BANK_CREDIT'
+              : 'PAYMENT_CASH_CREDIT',
+        metadata: {
+          payrollRunId: payment.payrollRun.id,
+          payrollPeriodId: payment.payrollRun.payrollPeriodId,
+          payrollPaymentId: payment.id,
+          payrollPaymentBatchId: payment.batchId ?? null,
+          employeeId: payment.payrollRun.employeeId,
+          employeeName,
+          paymentCycle: payment.payrollRun.period.paymentCycle,
+          installmentNumber: payment.payrollRun.period.installmentNumber,
+          paymentMethod,
+          accountingStage: 'PAYMENT',
+          accountingRole:
+            mapping.side === PayrollAccountingSide.DEBIT
+              ? 'NET_PAY_DEBIT'
+              : paymentMethod === PaymentMethod.BANK_TRANSFER
+                ? 'PAYMENT_BANK_CREDIT'
+                : 'PAYMENT_CASH_CREDIT',
+        },
       });
     }
 
@@ -1486,6 +1690,12 @@ export class PayrollService {
             run.conceptResults,
             tx,
           );
+          if (typeof tx.payrollRun.update === 'function') {
+            await tx.payrollRun.update({
+              where: { id: run.id },
+              data: { postedAt: new Date() },
+            });
+          }
 
           const paidPayments = await tx.payrollPayment.findMany({
             where: { payrollRunId: run.id, status: PayrollPaymentStatus.PAID },
@@ -1842,12 +2052,31 @@ export class PayrollService {
       period.paymentCycle === PayrollPaymentCycle.BIWEEKLY &&
       period.installmentNumber === 1
     ) {
-      return { from, to: new Date(Date.UTC(period.year, period.month - 1, 15)) };
+      return { from, to: new Date(Date.UTC(period.year, period.month - 1, 16)) };
     }
     if (period.paymentCycle === PayrollPaymentCycle.BIWEEKLY) {
-      return { from: new Date(Date.UTC(period.year, period.month - 1, 15)), to };
+      return { from: new Date(Date.UTC(period.year, period.month - 1, 16)), to };
     }
     return { from, to };
+  }
+
+  private biweeklyFullAllowance(
+    period: PayrollPeriodRef,
+    monthlyAllowance: Prisma.Decimal,
+    workedDays: Prisma.Decimal,
+    maxDays: Prisma.Decimal,
+  ) {
+    const proportional = monthlyAllowance.mul(workedDays).div(maxDays);
+    if (
+      period.paymentCycle !== PayrollPaymentCycle.BIWEEKLY ||
+      !workedDays.equals(15) ||
+      !maxDays.equals(30)
+    ) return proportional;
+
+    const firstHalf = this.money(monthlyAllowance.div(2));
+    return period.installmentNumber === 2
+      ? monthlyAllowance.sub(firstHalf)
+      : firstHalf;
   }
 
   private async buildLegalSegments(
@@ -2207,20 +2436,26 @@ export class PayrollService {
 
   private async recreateAccountingMovements(
     businessId: string,
-    period: { year: number; month: number },
-    run: { id: string; netPay: Prisma.Decimal },
+    period: {
+      year: number;
+      month: number;
+      paymentCycle?: PayrollPaymentCycle;
+      installmentNumber?: number | null;
+    },
+    run: {
+      id: string;
+      employeeId: string;
+      payrollPeriodId: string;
+      netPay: Prisma.Decimal;
+    },
     employeeName: string,
     concepts: Prisma.PayrollConceptResultCreateManyInput[],
     tx: PayrollTx,
     originType: AccountingMovementOriginType = AccountingMovementOriginType.PAYROLL_RUN,
     detailPrefix = 'Nomina',
   ) {
-    await tx.accountingMovement.deleteMany({
-      where: {
-        businessId,
-        originType,
-        originId: run.id,
-      },
+    const existingMovements = await tx.accountingMovement.findMany({
+      where: { businessId, originType, originId: run.id },
     });
 
     const conceptCodes = Array.from(
@@ -2273,9 +2508,20 @@ export class PayrollService {
               ? MovementNature.DEBIT
               : MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: `${detailPrefix} ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - ${concept.name}`,
+          detail: this.payrollMovementDescription('Nómina', period, employeeName),
           originType,
           originId: run.id,
+          accountingRole: `${concept.code}_${mapping.side}`,
+          metadata: {
+            employeeId: run.employeeId,
+            employeeName,
+            payrollRunId: run.id,
+            payrollPeriodId: run.payrollPeriodId,
+            paymentCycle: period.paymentCycle ?? PayrollPaymentCycle.MONTHLY,
+            installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+            accountingStage: 'ACCRUAL',
+            accountingRole: `${concept.code}_${mapping.side}`,
+          },
         });
       }
       if (!createdMovementForConcept) {
@@ -2304,9 +2550,20 @@ export class PayrollService {
           amount: this.money(netPay),
           nature: MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: `${detailPrefix} ${period.year}-${String(period.month).padStart(2, '0')} ${employeeName} - Neto a pagar`,
+          detail: this.payrollMovementDescription('Nómina', period, employeeName),
           originType,
           originId: run.id,
+          accountingRole: 'NET_PAY_CREDIT',
+          metadata: {
+            employeeId: run.employeeId,
+            employeeName,
+            payrollRunId: run.id,
+            payrollPeriodId: run.payrollPeriodId,
+            paymentCycle: period.paymentCycle ?? PayrollPaymentCycle.MONTHLY,
+            installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+            accountingStage: 'ACCRUAL',
+            accountingRole: 'NET_PAY_CREDIT',
+          },
         });
       } else {
         missingMappings.add('NET_PAY');
@@ -2314,8 +2571,19 @@ export class PayrollService {
     }
 
     if (missingMappings.size) {
+      const missingRoles = Array.from(missingMappings).sort();
       throw new BadRequestException(
-        `No hay cuentas contables configuradas para nomina: ${Array.from(missingMappings).sort().join(', ')}`,
+        {
+          code: 'MISSING_PAYROLL_ACCOUNTING_MAPPINGS',
+          message: `No hay cuentas contables configuradas para nomina: ${missingRoles.join(', ')}`,
+          stage: 'ACCRUAL',
+          missingMappings: missingRoles.map((role) => ({
+            role,
+            requiredSide: role === 'NET_PAY' ? PayrollAccountingSide.CREDIT : null,
+            paymentMethod: null,
+            reason: 'MISSING',
+          })),
+        },
       );
     }
 
@@ -2331,6 +2599,26 @@ export class PayrollService {
       );
     }
 
+    if (existingMovements.length) {
+      const expectedByRole = new Map(
+        movements.map((movement) => [movement.accountingRole, movement]),
+      );
+      const isConsistent =
+        existingMovements.length === movements.length &&
+        existingMovements.every((movement) => {
+          const expected = expectedByRole.get(movement.accountingRole ?? (movement.metadata as any)?.accountingRole);
+          return !!expected &&
+            movement.nature === expected.nature &&
+            this.decimal(movement.amount).equals(this.decimal(expected.amount)) &&
+            movement.pucCuentaCode === expected.pucCuentaCode &&
+            movement.pucSubcuentaId === expected.pucSubcuentaId;
+        });
+      if (!isConsistent) {
+        throw new ConflictException('PAYROLL_ACCRUAL_ACCOUNTING_INCONSISTENT');
+      }
+      return;
+    }
+
     if (movements.length) {
       await tx.accountingMovement.createMany({ data: movements });
     }
@@ -2341,8 +2629,9 @@ export class PayrollService {
     periodId: string,
     employeeId: string,
     dto: CalculatePayrollDto = {},
+    periodOverride?: any,
   ) {
-    const period = await this.getPeriodForBusiness(businessId, periodId);
+    const period = periodOverride ?? await this.getPeriodForBusiness(businessId, periodId);
     this.assertPeriodicPayrollEnabled(period);
     const employee = await this.assertEmployeeBelongsToBusiness(
       businessId,
@@ -2356,6 +2645,7 @@ export class PayrollService {
         businessId,
         employeeId,
         isActive: true,
+        paymentCycle: period.paymentCycle,
         startDate: { lte: periodEnd },
         OR: [{ endDate: null }, { endDate: { gte: periodStart } }],
       },
@@ -2388,7 +2678,7 @@ export class PayrollService {
       params.smmlv.mul(params.transportLimitSmmlv),
     );
     const proportionalAllowance = qualifiesForTransport
-      ? params.transportAllowance.mul(workedDaysDecimal).div(maxDays)
+      ? this.biweeklyFullAllowance(period, params.transportAllowance, workedDaysDecimal, maxDays)
       : this.decimal(0);
     const transportAllowance = contract.isRemote
       ? this.decimal(0)
@@ -2617,6 +2907,77 @@ export class PayrollService {
     };
   }
 
+  async previewPayroll(businessId: string, dto: PreviewPayrollDto) {
+    const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
+    const installmentNumber = isMonthly ? 1 : dto.installmentNumber;
+    if ((isMonthly && dto.installmentNumber !== null) || (!isMonthly && ![1, 2].includes(installmentNumber ?? 0))) {
+      throw new BadRequestException('MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.');
+    }
+    const period: any = { id: `preview:${dto.year}:${dto.month}:${dto.paymentCycle}:${installmentNumber}`, businessId, year: dto.year, month: dto.month, paymentCycle: dto.paymentCycle, installmentNumber, status: PayrollPeriodStatus.OPEN };
+    const bounds = this.periodBounds(period);
+    const employees = await this.prisma.employee.findMany({ where: { businessId, isActive: true, contracts: { some: { isActive: true, paymentCycle: dto.paymentCycle, startDate: { lte: bounds.to }, OR: [{ endDate: null }, { endDate: { gte: bounds.from } }] } } } });
+    const runs = await Promise.all(employees.map((employee) => this.previewEmployeePayroll(businessId, period.id, employee.id, {}, period)));
+    return { year: dto.year, month: dto.month, paymentCycle: dto.paymentCycle, installmentNumber: isMonthly ? null : installmentNumber, status: 'PREVIEW', runs, totals: { netPay: this.money(runs.reduce((total, run: any) => total.add(this.decimal(run.netPay)), this.decimal(0))), realEmployerCost: this.money(runs.reduce((total, run: any) => total.add(this.decimal(run.realEmployerCost)), this.decimal(0))) } };
+  }
+
+  async previewMonthlyOverview(businessId: string, dto: MonthlyPayrollOverviewDto) {
+    const [monthly, firstHalf, secondHalf] = await Promise.all([
+      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.MONTHLY, installmentNumber: null }),
+      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 1 }),
+      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 }),
+    ]);
+    const secondByEmployee = new Map(secondHalf.runs.map((run: any) => [run.employeeId, run]));
+    const monetaryFields = ['salaryEarned', 'grossIncome', 'transportAllowance', 'connectivityAllowance', 'commissions', 'overtimeAmount', 'employeeHealth', 'employeePension', 'solidarityFund', 'withholdingTax', 'totalEmployeeDeductions', 'employerHealth', 'employerPension', 'employerArl', 'compensationFund', 'sena', 'icbf', 'severance', 'severanceInterest', 'serviceBonus', 'vacation', 'totalBenefits', 'netPay', 'realEmployerCost'];
+    const biweeklyRuns = firstHalf.runs.map((first: any) => {
+      const second: any = secondByEmployee.get(first.employeeId);
+      if (!second || second.contractId !== first.contractId) {
+        throw new BadRequestException(`Inconsistent BIWEEKLY preview for employee ${first.employeeId}.`);
+      }
+      const consolidated: any = {
+        ...first,
+        id: `preview:${first.employeeId}:monthly-overview`,
+        preview: true,
+        contractPaymentCycle: PayrollPaymentCycle.BIWEEKLY,
+        installments: [
+          { installmentNumber: 1, netPay: first.netPay },
+          { installmentNumber: 2, netPay: second.netPay },
+        ],
+      };
+      for (const field of monetaryFields) {
+        consolidated[field] = this.money(this.decimal(first[field]).add(this.decimal(second[field]))).toString();
+      }
+      return consolidated;
+    });
+    const runs = [
+      ...monthly.runs.map((run: any) => ({ ...run, id: `preview:${run.employeeId}:monthly-overview`, preview: true, contractPaymentCycle: PayrollPaymentCycle.MONTHLY, installments: [] })),
+      ...biweeklyRuns,
+    ];
+    return {
+      year: dto.year,
+      month: dto.month,
+      status: 'PREVIEW',
+      runs,
+      totals: {
+        netPay: this.money(runs.reduce((total: Prisma.Decimal, run: any) => total.add(this.decimal(run.netPay)), this.decimal(0))).toString(),
+        realEmployerCost: this.money(runs.reduce((total: Prisma.Decimal, run: any) => total.add(this.decimal(run.realEmployerCost)), this.decimal(0))).toString(),
+      },
+    };
+  }
+
+  async confirmPayrollPayment(businessId: string, dto: ConfirmPayrollPaymentDto) {
+    // Validate the cash/bank leg before preparation can create a new period.
+    // This keeps configuration failures free of payroll side effects.
+    await this.resolvePayrollAccountingMappings(
+      businessId,
+      this.paymentMappingRequirements(dto.paymentMethod as PaymentMethod),
+      'PAYMENT',
+    );
+    const prepared = await this.preparePayrollPeriod(businessId, dto);
+    const payrollRunIds = prepared.runs.filter((run: any) => dto.employeeIds.includes(run.employeeId)).map((run: any) => run.payrollRunId);
+    if (!payrollRunIds.length) throw new BadRequestException('No applicable employees selected');
+    return this.createPayrollPaymentBatch(businessId, prepared.payrollPeriodId, { payrollRunIds, paymentMethod: dto.paymentMethod, paidAt: this.operationalPaymentDate().toISOString().slice(0, 10), idempotencyKey: dto.idempotencyKey });
+  }
+
   async calculateEmployeePayroll(
     businessId: string,
     periodId: string,
@@ -2716,7 +3077,7 @@ export class PayrollService {
         params.smmlv.mul(params.transportLimitSmmlv),
       );
       const proportionalAllowance = qualifiesForTransport
-        ? params.transportAllowance.mul(workedDaysDecimal).div(maxDays)
+        ? this.biweeklyFullAllowance(period, params.transportAllowance, workedDaysDecimal, maxDays)
         : this.decimal(0);
       const transportAllowance = contract.isRemote
         ? this.decimal(0)
@@ -3183,7 +3544,10 @@ export class PayrollService {
           employeeId,
           contractId: contract.id,
           netPay: run.netPay,
-          contract: { paymentCycle: contract.paymentCycle },
+          period: {
+            paymentCycle: period.paymentCycle,
+            installmentNumber: period.installmentNumber,
+          },
         },
         tx,
       );
@@ -3242,7 +3606,7 @@ export class PayrollService {
 
     for (const employee of employees) {
       const activeContract = await this.prisma.employeeContract.findFirst({
-        where: { businessId, employeeId: employee.id, isActive: true },
+        where: { businessId, employeeId: employee.id, isActive: true, paymentCycle: period.paymentCycle },
       });
       if (!activeContract) {
         skippedEmployees.push({
@@ -3382,7 +3746,7 @@ export class PayrollService {
   async listPayrollRunPayments(businessId: string, runId: string) {
     const run = await this.prisma.payrollRun.findFirst({
       where: { id: runId, businessId },
-      include: { contract: true },
+      include: { period: true },
     });
     if (!run) throw new NotFoundException('Payroll run not found');
     await this.ensurePayrollRunPayments(run);
@@ -3445,43 +3809,55 @@ export class PayrollService {
         },
       });
       if (!existing) throw new NotFoundException('Payroll payment not found');
+      if (existing.batchId) {
+        throw new ConflictException('Este pago pertenece a un lote y no puede modificarse individualmente.');
+      }
+      if (existing.status === PayrollPaymentStatus.PAID) {
+        throw new ConflictException('Este pago ya fue registrado y no puede modificarse.');
+      }
       if (existing.status === PayrollPaymentStatus.CANCELLED) {
         throw new BadRequestException(
           'Cancelled payroll payments cannot be modified',
         );
       }
 
-      const payment = await tx.payrollPayment.update({
-        where: { id: paymentId },
+      if (
+        dto.status === PayrollPaymentStatus.PAID &&
+        (existing.payrollRun.period.status !== PayrollPeriodStatus.POSTED ||
+          (!existing.payrollRun.postedAt && !existing.payrollRun.period.postedAt))
+      ) {
+        throw new BadRequestException('El pago solo puede registrarse para una nómina contabilizada.');
+      }
+      const paidAt = dto.status === PayrollPaymentStatus.PAID
+        ? this.operationalPaymentDate(dto.paidAt)
+        : null;
+      if (paidAt && paidAt < this.periodBounds(existing.payrollRun.period).from) {
+        throw new BadRequestException('La fecha de pago no puede ser anterior al inicio del período.');
+      }
+
+      const updateResult = await tx.payrollPayment.updateMany({
+        where: { id: paymentId, status: PayrollPaymentStatus.PENDING, batchId: null },
         data: {
           status: dto.status,
-          paidAt:
-            dto.status === PayrollPaymentStatus.PAID
-              ? dto.paidAt
-                ? this.parseDate(dto.paidAt, 'paidAt')
-                : (existing.paidAt ?? new Date())
-              : null,
+          paidAt,
           paymentMethod: dto.paymentMethod ?? existing.paymentMethod,
           notes: this.normalizeNullableText(dto.notes) ?? existing.notes,
         },
-        include: {
-          payrollRun: {
-            include: {
-              period: true,
-              employee: true,
-            },
-          },
-        },
+      });
+      if (updateResult.count !== 1) {
+        throw new ConflictException('Este pago ya fue procesado por otra operación.');
+      }
+      const payment = await tx.payrollPayment.findUniqueOrThrow({
+        where: { id: paymentId },
+        include: { payrollRun: { include: { period: true, employee: true } } },
       });
 
       if (payment.status === PayrollPaymentStatus.PAID) {
-        if (payment.payrollRun.period.status === PayrollPeriodStatus.POSTED) {
-          await this.recreatePayrollPaymentAccountingMovements(
-            businessId,
-            payment,
-            tx,
-          );
-        }
+        await this.recreatePayrollPaymentAccountingMovements(
+          businessId,
+          payment,
+          tx,
+        );
       } else {
         await tx.accountingMovement.deleteMany({
           where: {
@@ -3494,6 +3870,315 @@ export class PayrollService {
 
       return payment;
     });
+  }
+
+  /**
+   * Prepares an entire payroll obligation.  This operation deliberately never
+   * touches cash/bank: payment is only performed by createPayrollPaymentBatch.
+   */
+  async preparePayrollPeriod(businessId: string, dto: PreparePayrollPeriodDto) {
+    const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
+    if ((isMonthly && dto.installmentNumber !== null && dto.installmentNumber !== undefined) ||
+        (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))) {
+      throw new BadRequestException(
+        'MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.',
+      );
+    }
+
+    // PayrollPeriod persists MONTHLY with installmentNumber=1 for backwards
+    // compatibility; the public contract normalizes it to null.
+    const storedInstallment = isMonthly ? 1 : dto.installmentNumber!;
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      businessId,
+      year: dto.year,
+      month: dto.month,
+      paymentCycle: dto.paymentCycle,
+      installmentNumber: isMonthly ? null : storedInstallment,
+    })).digest('hex');
+
+    const previous = await this.prisma.payrollPeriodPreparation.findUnique({
+      where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
+      include: { period: true },
+    });
+    if (previous) {
+      if (previous.requestHash !== requestHash) {
+        throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
+      }
+      return this.buildPayrollPreparationResponse(businessId, previous.period);
+    }
+
+    // Validate applicability before creating the period.  An empty business
+    // must not receive an OPEN/POSTED period, runs, payments, or causation.
+    const applicableEmployees = await this.prisma.employeeContract.count({
+      where: {
+        businessId,
+        isActive: true,
+        employee: { isActive: true },
+      },
+    });
+    if (applicableEmployees === 0) {
+      throw new BadRequestException('NO_APPLICABLE_PAYROLL_EMPLOYEES');
+    }
+
+    let period = await this.prisma.payrollPeriod.findUnique({
+      where: { businessId_year_month_paymentCycle_installmentNumber: {
+        businessId, year: dto.year, month: dto.month,
+        paymentCycle: dto.paymentCycle as PayrollPaymentCycle,
+        installmentNumber: storedInstallment,
+      } },
+    });
+    if (!period) {
+      period = await this.createPayrollPeriod(businessId, {
+        year: dto.year,
+        month: dto.month,
+        paymentCycle: dto.paymentCycle as PayrollPaymentCycle,
+        installmentNumber: storedInstallment,
+      });
+    }
+
+    if (period.status !== PayrollPeriodStatus.POSTED) {
+      await this.liquidatePeriodPayroll(businessId, period.id);
+      period = await this.getPeriodForBusiness(businessId, period.id);
+    }
+
+    // The marker is intentionally written only after the whole preparation
+    // succeeds, so failed preparations are safe to retry with the same key.
+    try {
+      await this.prisma.payrollPeriodPreparation.create({
+        data: {
+          businessId,
+          payrollPeriodId: period.id,
+          idempotencyKey: dto.idempotencyKey,
+          requestHash,
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueError(error)) throw error;
+      const raced = await this.prisma.payrollPeriodPreparation.findUniqueOrThrow({
+        where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
+        include: { period: true },
+      });
+      if (raced.requestHash !== requestHash) {
+        throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
+      }
+      period = raced.period;
+    }
+    return this.buildPayrollPreparationResponse(businessId, period);
+  }
+
+  async listPayrollPreparationCandidates(
+    businessId: string,
+    dto: QueryPayrollPreparationCandidatesDto,
+  ) {
+    const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
+    if ((isMonthly && dto.installmentNumber !== null && dto.installmentNumber !== undefined) ||
+      (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))) {
+      throw new BadRequestException(
+        'MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.',
+      );
+    }
+    const from = new Date(Date.UTC(dto.year, dto.month - 1, 1));
+    const to = new Date(Date.UTC(dto.year, dto.month, 0, 23, 59, 59, 999));
+    const contracts = await this.prisma.employeeContract.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        startDate: { lte: to },
+        OR: [{ endDate: null }, { endDate: { gte: from } }],
+        employee: { isActive: true },
+      },
+      include: { employee: true },
+      orderBy: { employee: { firstName: 'asc' } },
+    });
+    return {
+      year: dto.year,
+      month: dto.month,
+      paymentCycle: dto.paymentCycle,
+      installmentNumber: isMonthly ? null : dto.installmentNumber,
+      candidates: contracts.map((contract) => ({
+        employeeId: contract.employeeId,
+        contractId: contract.id,
+        firstName: contract.employee.firstName,
+        lastName: contract.employee.lastName,
+        identification: contract.employee.documentNumber,
+        position: contract.employee.position,
+        monthlySalary: contract.salaryMonthly,
+        eligible: true,
+        blockedReason: null,
+      })),
+    };
+  }
+
+  private async buildPayrollPreparationResponse(businessId: string, period: any) {
+    const runs = await this.listPayrollRuns(businessId, period.id);
+    return {
+      payrollPeriodId: period.id,
+      status: period.status,
+      paymentCycle: period.paymentCycle,
+      installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+      runs: runs.map((run: any) => {
+        const salaries = (run.payments ?? []).filter((payment: any) => payment.type === PayrollPaymentType.SALARY_PAYMENT);
+        const payment = salaries[0];
+        const blockedReason = !run.postedAt
+          ? 'Pendiente de contabilizar'
+          : salaries.length !== 1
+            ? 'Pago salarial inconsistente'
+            : payment?.status === PayrollPaymentStatus.PAID
+              ? 'Pagado'
+              : payment?.status === PayrollPaymentStatus.CANCELLED
+                ? 'Cancelado'
+                : payment?.status !== PayrollPaymentStatus.PENDING
+                  ? 'No elegible'
+                  : null;
+        return {
+          payrollRunId: run.id,
+          employeeId: run.employeeId,
+          employeeName: `${run.employee.firstName} ${run.employee.lastName}`,
+          identification: run.employee.documentNumber ?? null,
+          position: run.employee.position ?? null,
+          contractId: run.contractId,
+          netPay: run.netPay,
+          paymentId: payment?.id ?? null,
+          paymentStatus: payment?.status ?? null,
+          eligible: !blockedReason,
+          blockedReason,
+        };
+      }),
+    };
+  }
+
+  async createPayrollPaymentBatch(
+    businessId: string,
+    periodId: string,
+    dto: CreatePayrollPaymentBatchDto,
+  ) {
+    const notes = this.normalizeNullableText(dto.notes);
+    const requestHash = createHash('sha256').update(JSON.stringify({
+      periodId,
+      payrollRunIds: [...dto.payrollRunIds].sort(),
+      paymentMethod: dto.paymentMethod,
+      paidAt: dto.paidAt,
+      notes: notes ?? null,
+    })).digest('hex');
+
+    return this.prisma.$transaction(async (tx) => {
+      const previous = await tx.payrollPaymentBatch.findUnique({
+        where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
+        include: { payments: true, period: true },
+      });
+      if (previous) {
+        if (previous.requestHash !== requestHash) {
+          throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
+        }
+        return this.serializePayrollPaymentBatch(previous);
+      }
+
+      const period = await this.getPeriodForBusiness(businessId, periodId, tx);
+      if (period.status !== PayrollPeriodStatus.POSTED) {
+        throw new BadRequestException('El período debe estar contabilizado antes de pagar la nómina.');
+      }
+      const paidAt = this.operationalPaymentDate(dto.paidAt);
+      if (paidAt < this.periodBounds(period).from) {
+        throw new BadRequestException('La fecha de pago no puede ser anterior al inicio del período.');
+      }
+
+      const runs = await tx.payrollRun.findMany({
+        where: { businessId, payrollPeriodId: periodId, id: { in: dto.payrollRunIds } },
+        include: { payments: true, period: true, employee: true },
+      });
+      if (runs.length !== dto.payrollRunIds.length) {
+        throw new BadRequestException('Uno o más runs no pertenecen al período seleccionado.');
+      }
+      if (runs.some((run) => !run.postedAt)) {
+        throw new BadRequestException('Todos los runs deben tener causación contabilizada.');
+      }
+
+      const paymentRows = runs.map((run) => {
+        const salaries = run.payments.filter((payment) => payment.type === PayrollPaymentType.SALARY_PAYMENT);
+        if (salaries.length !== 1) {
+          throw new BadRequestException(`El run ${run.id} no tiene exactamente un pago salarial.`);
+        }
+        const payment = salaries[0];
+        if (payment.status !== PayrollPaymentStatus.PENDING || payment.batchId) {
+          throw new ConflictException(`El pago del run ${run.id} no está disponible.`);
+        }
+        return payment;
+      });
+
+      const causationCount = await tx.accountingMovement.count({
+        where: {
+          businessId,
+          originType: AccountingMovementOriginType.PAYROLL_RUN,
+          originId: { in: runs.map((run) => run.id) },
+        },
+      });
+      if (causationCount < runs.length) {
+        throw new BadRequestException('Falta el asiento de causación de uno o más runs.');
+      }
+
+      const creditConcept = this.paymentMethodCreditConcept(dto.paymentMethod);
+      await this.resolvePayrollAccountingMappings(
+        businessId,
+        this.paymentMappingRequirements(dto.paymentMethod),
+        'PAYMENT',
+        tx,
+      );
+      const mappings = await tx.payrollAccountingMapping.findMany({
+        where: { businessId, isActive: true, conceptCode: { in: ['NET_PAY', creditConcept] } },
+      });
+      if (!mappings.some((item) => item.conceptCode === 'NET_PAY' && item.side === PayrollAccountingSide.DEBIT) ||
+          !mappings.some((item) => item.conceptCode === creditConcept && item.side === PayrollAccountingSide.CREDIT)) {
+        throw new BadRequestException('Faltan mapeos contables requeridos para el pago de nómina.');
+      }
+
+      const totalPaid = paymentRows.reduce((total, payment) => total.add(this.decimal(payment.amount)), this.decimal(0));
+      const batch = await tx.payrollPaymentBatch.create({
+        data: {
+          businessId,
+          payrollPeriodId: periodId,
+          paymentMethod: dto.paymentMethod,
+          paidAt,
+          notes,
+          totalPaid: this.money(totalPaid),
+          paymentCount: paymentRows.length,
+          idempotencyKey: dto.idempotencyKey,
+          requestHash,
+        },
+      });
+
+      const updatedPayments = [];
+      for (const payment of paymentRows) {
+        const updated = await tx.payrollPayment.update({
+          where: { id: payment.id },
+          data: { status: PayrollPaymentStatus.PAID, paidAt, paymentMethod: dto.paymentMethod, notes, batchId: batch.id },
+          include: { payrollRun: { include: { period: true, employee: true } } },
+        });
+        await this.recreatePayrollPaymentAccountingMovements(businessId, updated, tx);
+        updatedPayments.push(updated);
+      }
+
+      return {
+        batchId: batch.id,
+        payrollPeriodId: period.id,
+        paymentCycle: period.paymentCycle,
+        installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+        paymentCount: updatedPayments.length,
+        totalPaid: this.money(totalPaid).toString(),
+        payments: updatedPayments,
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  private serializePayrollPaymentBatch(batch: any) {
+    return {
+      batchId: batch.id,
+      payrollPeriodId: batch.payrollPeriodId,
+      paymentCycle: batch.period.paymentCycle,
+      installmentNumber: batch.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? batch.period.installmentNumber : null,
+      paymentCount: batch.paymentCount,
+      totalPaid: this.decimal(batch.totalPaid).toString(),
+      payments: batch.payments,
+    };
   }
 
   async listContractBenefitPayments(businessId: string, contractId: string) {
@@ -4194,7 +4879,7 @@ export class PayrollService {
 
     const severanceCaused = benefitSettlementBase.mul(benefitDays).div(360);
     const severanceInterestRate = params.severanceInterestRate;
-    const severanceInterestDayBasis = options.severanceInterestDayBasis ?? 365;
+    const severanceInterestDayBasis = 360;
     const severanceInterestCaused = severanceCaused
       .mul(severanceInterestRate)
       .mul(benefitDays)
@@ -4211,16 +4896,39 @@ export class PayrollService {
     const vacationDaysRaw = benefitDays.mul(15).div(360);
     const vacationDays = vacationDaysRaw.mul(10).ceil().div(10);
     const vacationCaused = vacationBase.mul(benefitDays).div(720);
-    const serviceBonusPaid = this.decimal(0);
+    const paidPrima = await tx.payrollBenefitPayment.findMany({
+      where: {
+        businessId,
+        employeeId: contract.employeeId,
+        contractId: contract.id,
+        type: 'PRIMA',
+        status: PayrollPaymentStatus.PAID,
+        year: calculationYear,
+        semester: { in: [1, 2] },
+      },
+      select: { semester: true, amount: true },
+    });
+    const paidPrimaForSemester = (semester: number) => paidPrima
+      .filter((payment) => payment.semester === semester)
+      .reduce((total, payment) => total.add(this.decimal(payment.amount)), this.decimal(0));
+    const serviceBonusPaidSemesterOne = paidPrimaForSemester(1);
+    const serviceBonusPaidSemesterTwo = paidPrimaForSemester(2);
+    const serviceBonusPaid = serviceBonusPaidSemesterOne.add(serviceBonusPaidSemesterTwo);
     const severancePaid = this.decimal(0);
     const severanceInterestPaid = this.decimal(0);
     const vacationPaid = this.decimal(0);
-    const severance = severanceCaused;
-    const severanceInterest = severanceInterestCaused;
-    const serviceBonus = serviceBonusCaused;
-    const serviceBonusSemesterOne = serviceBonusSemesterOneCaused;
-    const serviceBonusSemesterTwo = serviceBonusSemesterTwoCaused;
-    const vacation = vacationCaused;
+    // Settlement lines are the monetary source of truth: round each line once,
+    // then derive the payable total from those displayed amounts.
+    const severance = this.money(severanceCaused);
+    const severanceInterest = this.money(severanceInterestCaused);
+    const serviceBonusSemesterOne = this.money(
+      Prisma.Decimal.max(serviceBonusSemesterOneCaused.sub(serviceBonusPaidSemesterOne), 0),
+    );
+    const serviceBonusSemesterTwo = this.money(
+      Prisma.Decimal.max(serviceBonusSemesterTwoCaused.sub(serviceBonusPaidSemesterTwo), 0),
+    );
+    const serviceBonus = serviceBonusSemesterOne.add(serviceBonusSemesterTwo);
+    const vacation = this.money(vacationCaused);
     const benefitsTotal = severance
       .add(severanceInterest)
       .add(serviceBonus)
@@ -4373,8 +5081,8 @@ export class PayrollService {
         severance: severancePaid.toString(),
         severanceInterest: severanceInterestPaid.toString(),
         serviceBonus: serviceBonusPaid.toString(),
-        serviceBonusSemester1: '0',
-        serviceBonusSemester2: '0',
+        serviceBonusSemester1: serviceBonusPaidSemesterOne.toString(),
+        serviceBonusSemester2: serviceBonusPaidSemesterTwo.toString(),
         vacation: vacationPaid.toString(),
       },
       causedBenefits: {
@@ -4388,6 +5096,22 @@ export class PayrollService {
       withholdingTax: '0',
       dayCountBasis: '30/360',
       severanceInterestRate: severanceInterestRate.toString(),
+      severanceInterestDivisor: severanceInterestDayBasis,
+      rawSeverance: severanceCaused.toString(),
+      roundedSeverance: severance.toString(),
+      rawSeveranceInterest: severanceInterestCaused.toString(),
+      roundedSeveranceInterest: severanceInterest.toString(),
+      rawServiceBonusSemester1: serviceBonusSemesterOneCaused.toString(),
+      roundedServiceBonusSemester1: this.money(serviceBonusSemesterOneCaused).toString(),
+      paidServiceBonusSemester1: serviceBonusPaidSemesterOne.toString(),
+      pendingServiceBonusSemester1: serviceBonusSemesterOne.toString(),
+      rawServiceBonusSemester2: serviceBonusSemesterTwoCaused.toString(),
+      roundedServiceBonusSemester2: this.money(serviceBonusSemesterTwoCaused).toString(),
+      paidServiceBonusSemester2: serviceBonusPaidSemesterTwo.toString(),
+      pendingServiceBonusSemester2: serviceBonusSemesterTwo.toString(),
+      rawVacation: vacationCaused.toString(),
+      roundedVacation: vacation.toString(),
+      roundedTotal: settlementTotalPayable.toString(),
       vacationDaysRaw: vacationDaysRaw.toString(),
       vacationDaysFormula: 'causedDays * 15 / 360',
       vacationDaysRounding: 'CEIL_1_DECIMAL',
@@ -4460,7 +5184,7 @@ export class PayrollService {
           connectivityAllowance: settlementConnectivityAllowance.toString(),
           salaryConceptsAmount: salaryConceptsAmount.toString(),
           causedAmount: serviceBonusSemesterOneCaused.toString(),
-          paidAmount: serviceBonusPaid.toString(),
+          paidAmount: serviceBonusPaidSemesterOne.toString(),
         },
       ),
       this.settlementLine(
@@ -4477,7 +5201,7 @@ export class PayrollService {
           connectivityAllowance: settlementConnectivityAllowance.toString(),
           salaryConceptsAmount: salaryConceptsAmount.toString(),
           causedAmount: serviceBonusSemesterTwoCaused.toString(),
-          paidAmount: serviceBonusPaid.toString(),
+          paidAmount: serviceBonusPaidSemesterTwo.toString(),
         },
       ),
       this.settlementLine(
@@ -4648,7 +5372,6 @@ export class PayrollService {
         {
           calculationYear: dto.calculationYear,
           salaryConceptsAmount: dto.salaryConceptsAmount,
-          severanceInterestDayBasis: 365,
         },
       );
       return this.withSettlementComputedFields({

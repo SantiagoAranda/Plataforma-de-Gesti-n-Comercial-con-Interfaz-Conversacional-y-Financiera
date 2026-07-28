@@ -288,6 +288,8 @@ model Business {
 
   payrollContractSettlements PayrollContractSettlement[]
   payrollPayments            PayrollPayment[]
+  payrollPaymentBatches      PayrollPaymentBatch[]
+  payrollPeriodPreparations  PayrollPeriodPreparation[]
   payrollBenefitPayments     PayrollBenefitPayment[]
 
   payrollAccountingMappings PayrollAccountingMapping[]
@@ -1090,6 +1092,7 @@ model AccountingMovement {
   detail     String?
   originType AccountingMovementOriginType
   originId   String?
+  accountingRole String?
   metadata   Json?
   createdAt  DateTime                     @default(now())
   updatedAt  DateTime                     @updatedAt
@@ -1101,6 +1104,7 @@ model AccountingMovement {
   @@index([businessId, date])
   @@index([pucCuentaCode])
   @@index([pucSubcuentaId])
+  @@index([businessId, originType, originId, accountingRole])
 }
 
 // ===============================
@@ -1543,6 +1547,8 @@ model PayrollPeriod {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   runs            PayrollRun[]
+  paymentBatches  PayrollPaymentBatch[]
+  preparations    PayrollPeriodPreparation[]
   benefitPayments PayrollBenefitPayment[]
   payrollEvents   PayrollEvent[]
 
@@ -1798,6 +1804,7 @@ model PayrollPayment {
   paidAt        DateTime?
   paymentMethod PaymentMethod?
   notes         String?
+  batchId       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1806,11 +1813,51 @@ model PayrollPayment {
   payrollRun PayrollRun       @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
   employee   Employee         @relation(fields: [employeeId], references: [id])
   contract   EmployeeContract @relation(fields: [contractId], references: [id])
+  batch      PayrollPaymentBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
 
-  @@unique([payrollRunId, installmentNumber, type])
+  @@unique([payrollRunId, type])
   @@index([businessId, status])
   @@index([businessId, employeeId])
   @@index([contractId, status])
+  @@index([batchId])
+}
+
+model PayrollPaymentBatch {
+  id               String @id @default(uuid())
+  businessId       String
+  payrollPeriodId  String
+  paymentMethod    PaymentMethod
+  paidAt           DateTime
+  notes            String?
+  totalPaid        Decimal @default(0) @db.Decimal(20, 6)
+  paymentCount     Int @default(0)
+  idempotencyKey   String
+  requestHash      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  period   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  payments PayrollPayment[]
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, payrollPeriodId])
+}
+
+model PayrollPeriodPreparation {
+  id               String @id @default(uuid())
+  businessId       String
+  payrollPeriodId  String
+  idempotencyKey   String
+  requestHash      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  period   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, payrollPeriodId])
 }
 
 model PayrollBenefitPayment {

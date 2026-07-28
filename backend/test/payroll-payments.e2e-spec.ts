@@ -216,7 +216,6 @@ describe('Payroll Payments & Settlements (Integration)', () => {
     let periodId: string;
     let runId: string;
     let payment1Id: string;
-    let payment2Id: string;
 
     it('1. Create BIWEEKLY contract with monthly payroll period', async () => {
       const employee = await payrollService.createEmployee(businessId, {
@@ -248,7 +247,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
       periodId = period.id;
     });
 
-    it('2. Automatic creation of two PayrollPayments within the same PayrollRun', async () => {
+    it('2. Creates one full SALARY_PAYMENT for a biweekly PayrollRun', async () => {
       const runResult = await payrollService.calculateEmployeePayroll(
         businessId,
         periodId,
@@ -264,19 +263,19 @@ describe('Payroll Payments & Settlements (Integration)', () => {
         businessId,
         runId,
       );
-      expect(payments.length).toBe(2);
+      expect(payments.length).toBe(1);
       expect(payments[0].installmentNumber).toBe(1);
-      expect(payments[1].installmentNumber).toBe(2);
 
       payment1Id = payments[0].id;
-      payment2Id = payments[1].id;
 
-      const expectedAmount = Number(run!.netPay) / 2;
+      const expectedAmount = Number(run!.netPay);
       expect(Number(payments[0].amount)).toBeCloseTo(expectedAmount, 2);
-      expect(Number(payments[1].amount)).toBeCloseTo(expectedAmount, 2);
     });
 
     it('3. Mark Payment 1 as PAID and verify persistence', async () => {
+      await payrollService.updatePayrollPeriodStatus(businessId, periodId, {
+        status: PayrollPeriodStatus.POSTED,
+      });
       await payrollService.updatePayrollPaymentStatus(businessId, payment1Id, {
         status: PayrollPaymentStatus.PAID,
         paymentMethod: 'BANK_TRANSFER',
@@ -293,11 +292,10 @@ describe('Payroll Payments & Settlements (Integration)', () => {
         where: { id: runId },
       });
 
-      // Update the second payment just to test if recalculation occurs
-      await payrollService.updatePayrollPaymentStatus(businessId, payment2Id, {
+      await expect(payrollService.updatePayrollPaymentStatus(businessId, payment1Id, {
         status: PayrollPaymentStatus.PAID,
         paymentMethod: 'BANK_TRANSFER',
-      });
+      })).rejects.toThrow();
 
       const runAfter = await prisma.payrollRun.findUnique({
         where: { id: runId },
@@ -307,12 +305,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
     });
 
     it('9. Accounting must generate PAYROLL_PAYMENT entry only if mappings exist', async () => {
-      // First, post the period so that the already PAID payment generates the accounting entry
-      await payrollService.updatePayrollPeriodStatus(businessId, periodId, {
-        status: PayrollPeriodStatus.POSTED,
-      });
-
-      // Payment 1 was marked as PAID, it should have created accounting movements
+      // Payment 1 was marked as PAID after posting, so it has accounting movements.
       const movements = await prisma.accountingMovement.findMany({
         where: {
           businessId,
@@ -353,9 +346,8 @@ describe('Payroll Payments & Settlements (Integration)', () => {
       const payments = await prisma.payrollPayment.findMany({
         where: { payrollRunId: run2!.id },
       });
-      expect(payments.length).toBe(2);
+      expect(payments.length).toBe(1);
       expect(payments[0].status).toBe(PayrollPaymentStatus.PENDING);
-      expect(payments[1].status).toBe(PayrollPaymentStatus.PENDING);
     });
 
     it('10. Editing contract with POSTED payroll must block critical fields', async () => {

@@ -27,6 +27,7 @@ import { PayrollChatActionBar } from "@/src/components/payroll/PayrollChatAction
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import { SearchSelect, type SearchSelectOption } from "@/src/components/shared/SearchSelect";
 import { AppApiError } from "@/src/lib/api";
+import { generateCreationId } from "@/src/lib/itemHelpers";
 import {
   type ArlRiskClass,
   type CalculatePayrollPayload,
@@ -38,6 +39,7 @@ import {
   type PayrollEvent,
   type PayrollLegalParameter,
   type PayrollPayment,
+  type PayrollPreparationCandidate,
   type PayrollRun,
   type Settlement,
   type PayrollBenefitPayment,
@@ -57,6 +59,10 @@ const PAYROLL_OVERTIME_ITEMS: Array<{ type: OvertimeType; label: string }> = [
 ];
 
 const PayrollLegalParameterContext = createContext<PayrollLegalParameter | null>(null);
+
+function createIdempotencyKey(prefix: string) {
+  return `${prefix}:${generateCreationId()}`;
+}
 
 function legalRateHint(rate?: PayrollLegalParameter["overtimeRates"][number]) {
   if (!rate) return "Tasa legal no disponible";
@@ -318,6 +324,27 @@ function translatePayrollError(message: string): string {
 
 function payrollErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof AppApiError)) return fallback;
+  if (
+    error.details?.code === "MISSING_PAYROLL_ACCOUNTING_MAPPINGS" &&
+    Array.isArray(error.details?.missingMappings)
+  ) {
+    const roleLabels: Record<string, string> = {
+      NET_PAY: "Nómina por pagar",
+      PAYROLL_PAYMENT_BANK: "Banco",
+      PAYROLL_PAYMENT_CASH: "Caja",
+    };
+    const labels = error.details.missingMappings.map((item: {
+      role?: string;
+      requiredSide?: string;
+      reason?: string;
+    }) => {
+      const role = roleLabels[item.role ?? ""] ?? item.role ?? "Cuenta contable";
+      const side = item.requiredSide === "DEBIT" ? "débito" : item.requiredSide === "CREDIT" ? "crédito" : "";
+      const inactive = item.reason === "INACTIVE" || item.reason === "ACCOUNT_INACTIVE" ? " inactiva" : "";
+      return `${role}${side ? ` (${side})` : ""}${inactive}`;
+    });
+    return `No se puede pagar la nómina porque faltan o no están activas las siguientes cuentas contables: ${Array.from(new Set(labels)).join(", ")}.`;
+  }
   const detailsMessage = Array.isArray(error.details?.message)
     ? error.details.message.join(" | ")
     : error.details?.message;
@@ -398,6 +425,14 @@ function findActiveContract(contracts?: Contract[], period?: PayrollPeriod) {
   return contracts?.find((contract) => isContractActiveForPeriod(contract, period)) ?? null;
 }
 
+function findActiveContractForMonth(contracts: Contract[] | undefined, year: number, month: number) {
+  const firstDay = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = `${year}-${String(month).padStart(2, "0")}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
+  return contracts?.find((contract) =>
+    contract.isActive !== false && isoDate(contract.startDate) <= lastDay && (!contract.endDate || isoDate(contract.endDate) >= firstDay),
+  ) ?? null;
+}
+
 function isPeriodEditable(period?: PayrollPeriod) {
   return Boolean(
     isPeriodicPayrollEnabled(period) &&
@@ -410,9 +445,8 @@ function isoDate(value?: string | null) {
   return value ? value.slice(0, 10) : "";
 }
 
-function settlementDefaultEndDate(contract?: Contract | null, period?: PayrollPeriod) {
-  if (!period) return isoDate(contract?.endDate);
-  const periodYearEnd = `${period.year}-12-31`;
+function settlementDefaultEndDate(contract?: Contract | null, period?: PayrollPeriod, fallbackYear?: number) {
+  const periodYearEnd = `${period?.year ?? fallbackYear ?? new Date().getUTCFullYear()}-12-31`;
   const contractEnd = isoDate(contract?.endDate);
   if (!contractEnd) return periodYearEnd;
   return contractEnd > periodYearEnd ? periodYearEnd : contractEnd;
@@ -423,12 +457,17 @@ function payrollSimulationKey(employeeId: string, contractId?: string | null, pe
 }
 
 function isPrimaryMonthlyPeriod(period?: PayrollPeriod | null) {
-  return Boolean(period && period.paymentCycle === "MONTHLY" && (period.installmentNumber ?? 1) === 1);
+  return Boolean(period && period.paymentCycle === "MONTHLY");
 }
 
-function choosePrimaryMonthlyPeriod(periods: PayrollPeriod[], year: number, month: number) {
+function choosePayrollPeriod(
+  periods: PayrollPeriod[], year: number, month: number,
+  paymentCycle: "MONTHLY" | "BIWEEKLY" = "MONTHLY", installmentNumber?: number,
+) {
   const candidates = periods.filter(
-    (period) => period.year === year && period.month === month && isPrimaryMonthlyPeriod(period),
+    (period) => period.year === year && period.month === month &&
+      period.paymentCycle === paymentCycle &&
+      (paymentCycle === "MONTHLY" || period.installmentNumber === installmentNumber),
   );
   return candidates.find((period) => period.status === "POSTED" || period.status === "CLOSED")
     ?? candidates.find((period) => period.status === "CALCULATED")
@@ -465,17 +504,24 @@ function SummaryCard({
   period,
   totalCost,
   totalNet,
+  year,
+  month,
+  hasApplicableEmployees,
 }: {
   period?: PayrollPeriod;
   totalCost: number;
   totalNet: number;
+  year: number;
+  month: number;
+  hasApplicableEmployees: boolean;
 }) {
   const [isMinimized, setIsMinimized] = useState(false);
   const diff = totalCost - totalNet;
   const percent = totalNet > 0 ? (diff / totalNet) * 100 : 0;
 
-  let statusText = "Sin periodo";
-  if (period?.status === "POSTED") statusText = "Pagada";
+  const title = `${monthNames[month - 1]} ${year}`;
+  let statusText = hasApplicableEmployees ? "Vista previa" : "Sin empleados aplicables";
+  if (period?.status === "POSTED") statusText = "Formalizada";
   else if (period?.status === "CALCULATED") statusText = "Pendiente pago";
   else if (period?.status === "OPEN") statusText = "Abierto";
   else if (period?.status === "CLOSED") statusText = "Cerrado";
@@ -495,7 +541,7 @@ function SummaryCard({
         <div className="flex items-center justify-between w-full">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
             <h1 className="text-base font-medium tracking-tight shrink-0">
-              {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
+              {title}
             </h1>
             <span className="rounded-full bg-white/18 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur shrink-0">
               {statusText}
@@ -520,7 +566,7 @@ function SummaryCard({
           <div className="mb-3 lg:mb-2.5 flex items-start justify-between gap-3">
             <div>
               <h1 className="text-xl lg:text-lg font-medium tracking-tight">
-                {period ? `${monthNames[period.month - 1]} ${period.year}` : "Nómina"}
+                {title}
               </h1>
             </div>
             <div className="flex items-center gap-2">
@@ -538,6 +584,7 @@ function SummaryCard({
             </div>
           </div>
 
+          {!period && !hasApplicableEmployees && <p className="mb-3 text-xs text-white/75">No hay empleados aplicables para {monthNames[month - 1].toLowerCase()} de {year}.</p>}
           <div className="space-y-3 lg:space-y-2.5">
             <div>
               <p className="mb-0.5 text-[10px] lg:text-[9px] font-medium uppercase tracking-wider text-white/78">Costo laboral real</p>
@@ -707,7 +754,7 @@ function SectionBreakdown({
   );
 }
 
-function HeaderCalendar({
+function LegacyHeaderCalendar({
   periods,
   selectedId,
   onChange,
@@ -716,12 +763,12 @@ function HeaderCalendar({
   periods: PayrollPeriod[];
   selectedId: string;
   onChange: (id: string) => void;
-  onCreateOrSelect: (year: number, month: number) => void;
+  onCreateOrSelect: (year: number, month: number, paymentCycle: "MONTHLY" | "BIWEEKLY", installmentNumber?: 1 | 2) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
-  const monthlyPeriods = periods.filter(isPrimaryMonthlyPeriod);
-  const selectedPeriod = monthlyPeriods.find(p => p.id === selectedId);
+  const [cycle, setCycle] = useState<"MONTHLY" | "BIWEEKLY_1" | "BIWEEKLY_2">("MONTHLY");
+  const selectedPeriod = periods.find(p => p.id === selectedId);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -748,7 +795,7 @@ function HeaderCalendar({
       >
         <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
         <span>
-          {selectedPeriod ? `${monthNames[selectedPeriod.month - 1].substring(0, 3)} ${selectedPeriod.year}` : "Mes"}
+          {selectedPeriod ? `${monthNames[selectedPeriod.month - 1].substring(0, 3)} ${selectedPeriod.year}${selectedPeriod.paymentCycle === "BIWEEKLY" ? ` · ${selectedPeriod.installmentNumber === 1 ? "1ª" : "2ª"} quincena` : ""}` : "Mes"}
         </span>
       </button>
 
@@ -763,11 +810,18 @@ function HeaderCalendar({
               <ChevronRight className="h-4 w-4 text-slate-500" />
             </button>
           </div>
+          <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-50 p-1 text-[10px] font-semibold">
+            {([['MONTHLY', 'Mensual'], ['BIWEEKLY_1', '1ª quincena'], ['BIWEEKLY_2', '2ª quincena']] as const).map(([value, label]) => (
+              <button key={value} onClick={() => setCycle(value)} className={cn("rounded-lg px-1 py-1.5", cycle === value ? "bg-white text-[#0B3F64] shadow-sm" : "text-slate-500")}>{label}</button>
+            ))}
+          </div>
           <div className="grid grid-cols-3 gap-1.5">
             {monthNames.map((name, i) => {
               const month = i + 1;
-              const periodExists = choosePrimaryMonthlyPeriod(monthlyPeriods, viewYear, month);
-              const isSelected = selectedPeriod?.year === viewYear && selectedPeriod?.month === month;
+              const paymentCycle = cycle === "MONTHLY" ? "MONTHLY" : "BIWEEKLY";
+              const installmentNumber = cycle === "BIWEEKLY_1" ? 1 : cycle === "BIWEEKLY_2" ? 2 : undefined;
+              const periodExists = choosePayrollPeriod(periods, viewYear, month, paymentCycle, installmentNumber);
+              const isSelected = selectedPeriod?.id === periodExists?.id;
               const canCreate = canPreparePayrollPeriod(viewYear, month);
               const disabled = !periodExists && !canCreate;
 
@@ -781,7 +835,7 @@ function HeaderCalendar({
                     if (periodExists) {
                       onChange(periodExists.id);
                     } else {
-                      onCreateOrSelect(viewYear, month);
+                      onCreateOrSelect(viewYear, month, paymentCycle, installmentNumber as 1 | 2 | undefined);
                     }
                     setOpen(false);
                   }}
@@ -801,6 +855,31 @@ function HeaderCalendar({
       )}
     </div>
   );
+}
+
+function HeaderCalendar({ selectedYear, selectedMonth, onChange }: {
+  selectedYear: number;
+  selectedMonth: number;
+  onChange: (year: number, month: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [viewYear, setViewYear] = useState(selectedYear);
+  const ref = useRef<HTMLDivElement>(null);
+  const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  useEffect(() => {
+    const close = (event: MouseEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false); };
+    if (open) window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+  return <div className="relative" ref={ref}>
+    <button onClick={() => setOpen((value) => !value)} className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition">
+      <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" /><span>{months[selectedMonth - 1].slice(0, 3)} {selectedYear}</span>
+    </button>
+    {open && <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
+      <div className="mb-3 flex items-center justify-between"><button onClick={() => setViewYear((year) => year - 1)} className="rounded-lg p-1 hover:bg-slate-100"><ChevronLeft className="h-4 w-4" /></button><span className="text-sm font-semibold">{viewYear}</span><button onClick={() => setViewYear((year) => year + 1)} className="rounded-lg p-1 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button></div>
+      <div className="grid grid-cols-3 gap-1.5">{months.map((name, index) => { const month = index + 1; return <button key={month} onClick={() => { onChange(viewYear, month); setOpen(false); }} className={cn("rounded-xl py-1.5 text-xs font-medium transition", selectedYear === viewYear && selectedMonth === month ? "bg-[#0B3F64] text-white shadow-sm" : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50")}>{name.slice(0, 3)}</button>; })}</div>
+    </div>}
+  </div>;
 }
 
 type PayrollSheetMode = "editEmployee" | "createEmployee" | "createContract" | "createContractForEmployee";
@@ -2247,7 +2326,6 @@ function PayrollSummaryPanel({
   visualPaid,
   onToggleVisualPaid,
   onOpenEditor,
-  prorrateoFactor = 1,
 }: {
   run: PayrollRun;
   expanded: boolean;
@@ -2257,14 +2335,12 @@ function PayrollSummaryPanel({
   visualPaid?: boolean;
   onToggleVisualPaid?: (run: PayrollRun, paid: boolean) => void;
   onOpenEditor?: (run: PayrollRun) => void;
-  prorrateoFactor?: number;
 }) {
   // Valores escalados al período activo (quincenal o mensual)
-  const f = prorrateoFactor;
-  const netPayDisplay = toNumber(run.netPay) * f;
-  const salaryDisplay = toNumber(run.salaryEarned) * f;
-  const realCostDisplay = toNumber(run.realEmployerCost) * f;
-  const devengadoLabel = f < 1 ? "Devengado quincenal" : "Devengado mensual";
+  const netPayDisplay = toNumber(run.netPay);
+  const salaryDisplay = toNumber(run.salaryEarned);
+  const realCostDisplay = toNumber(run.realEmployerCost);
+  const devengadoLabel = selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Devengado quincenal" : "Devengado mensual";
   const extras = [
     { label: "Horas extras", value: run.overtimeAmount },
     { label: "Comisiones", value: run.commissions },
@@ -2306,10 +2382,10 @@ function PayrollSummaryPanel({
             <div className="text-right">
               <p className="text-[16px] font-medium tabular-nums text-[#0fb18f]">{money(netPayDisplay)}</p>
               <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                {f < 1 ? "Neto quincenal" : "Transferencia neta"}
+                {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Neto quincenal" : "Transferencia neta"}
               </p>
             </div>
-            <button
+            {!run.preview && <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
@@ -2320,7 +2396,7 @@ function PayrollSummaryPanel({
               aria-label="Editar"
             >
               <Edit3 className="h-4 w-4" />
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -2345,21 +2421,21 @@ function PayrollSummaryPanel({
 
           <MoneyLine
             label={viewModel.allowanceLabel}
-            value={toNumber(viewModel.allowanceValue) * f}
+            value={toNumber(viewModel.allowanceValue)}
             color="text-[#0fb18f]"
             valueColor="text-[#0fb18f]"
             sign="+"
           />
           <MoneyLine
             label="Deducción salud"
-            value={viewModel.employeeHealth * f}
+            value={viewModel.employeeHealth}
             color="text-[#C80237]"
             valueColor="text-[#C80237]"
             sign="-"
           />
           <MoneyLine
             label="Deducción pensión"
-            value={viewModel.employeePension * f}
+            value={viewModel.employeePension}
             color="text-[#C80237]"
             valueColor="text-[#C80237]"
             sign="-"
@@ -2370,7 +2446,7 @@ function PayrollSummaryPanel({
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
           <div>
             <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-              {f < 1 ? "Costo real empresa (quincenal)" : "Costo real empresa"}
+              {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Costo real empresa (quincenal)" : "Costo real empresa"}
             </p>
             <p className="text-[15px] font-medium tabular-nums text-slate-800">{money(realCostDisplay)}</p>
           </div>
@@ -2394,7 +2470,7 @@ function PayrollSummaryPanel({
             )}
             {!primarySalaryPayment && (
               <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                Pendiente pago
+                {run.preview ? "Vista previa" : "Pendiente pago"}
               </span>
             )}
             <ChevronDown className={cn("h-4 w-4 transition", expanded && "rotate-180")} />
@@ -2570,6 +2646,7 @@ function SettlementPanel({
     missingAmount?: number;
   } | null>(null);
   const [submittingPrima, setSubmittingPrima] = useState(false);
+  const submittingPrimaRef = useRef(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER" | "OTHER">("BANK_TRANSFER");
   const [benefitPayments, setBenefitPayments] = useState<PayrollBenefitPayment[]>([]);
   const paymentCalculationYear = settlement
@@ -2584,13 +2661,23 @@ function SettlementPanel({
     }
   }, [settlement?.contractId]);
 
-  const closePaymentModal = () => {
+  const closePaymentModal = (force = false) => {
+    if (!force && submittingPrimaRef.current) return;
     setPayModal(null);
     setRegularizationModal(null);
   };
 
+  const refreshBenefitPayments = async (contractId: string) => {
+    try {
+      setBenefitPayments(await payrollApi.listBenefitPayments(contractId));
+    } catch (error) {
+      console.error("[payroll] unable to refresh benefit payments", error);
+    }
+  };
+
   const submitPrimaPayment = async () => {
-    if (!settlement?.contractId || !payModal || submittingPrima) return;
+    if (!settlement?.contractId || !payModal || submittingPrimaRef.current) return;
+    submittingPrimaRef.current = true;
     setSubmittingPrima(true);
     try {
       await payrollApi.createBenefitPayment(settlement.contractId, {
@@ -2602,8 +2689,8 @@ function SettlementPanel({
         status: "PAID",
       });
       toast.success("Prima registrada como pagada.");
-      closePaymentModal();
-      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+      closePaymentModal(true);
+      await refreshBenefitPayments(settlement.contractId);
     } catch (err: any) {
       if (process.env.NODE_ENV === "development") {
         console.log("[payroll][prima-payment-catch]", {
@@ -2624,8 +2711,8 @@ function SettlementPanel({
 
       if (isAlreadyPaidConflict) {
         toast.success("Prima registrada como pagada.");
-        closePaymentModal();
-        payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+        closePaymentModal(true);
+        await refreshBenefitPayments(settlement.contractId);
         return;
       }
 
@@ -2659,12 +2746,14 @@ function SettlementPanel({
       }
       toast.error(err.message || "Error al registrar el pago.");
     } finally {
+      submittingPrimaRef.current = false;
       setSubmittingPrima(false);
     }
   };
 
   const submitRegularizedPrimaPayment = async () => {
-    if (!settlement?.contractId || !regularizationModal || submittingPrima) return;
+    if (!settlement?.contractId || !regularizationModal || submittingPrimaRef.current) return;
+    submittingPrimaRef.current = true;
     setSubmittingPrima(true);
     const payload = {
       type: "PRIMA",
@@ -2679,9 +2768,9 @@ function SettlementPanel({
     }
     try {
       await payrollApi.createBenefitPayment(settlement.contractId, payload);
-      toast.success("Saldo regularizado y prima registrada como pagada.");
-      closePaymentModal();
-      payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+      toast.success("Prima pagada y regularización contable registrada.");
+      closePaymentModal(true);
+      await refreshBenefitPayments(settlement.contractId);
     } catch (err: any) {
       const isAlreadyPaidConflict =
         err instanceof AppApiError &&
@@ -2691,13 +2780,14 @@ function SettlementPanel({
           err.message?.toLowerCase().includes("exist"));
 
       if (isAlreadyPaidConflict) {
-        toast.success("Saldo regularizado y prima registrada como pagada.");
-        closePaymentModal();
-        payrollApi.listBenefitPayments(settlement.contractId).then(setBenefitPayments).catch(console.error);
+        toast.success("Prima pagada y regularización contable registrada.");
+        closePaymentModal(true);
+        await refreshBenefitPayments(settlement.contractId);
         return;
       }
       toast.error(err.message || "Error al registrar el pago.");
     } finally {
+      submittingPrimaRef.current = false;
       setSubmittingPrima(false);
     }
   };
@@ -2724,10 +2814,8 @@ function SettlementPanel({
   const causedDays = settlement.causedDays ?? toNumber(params.causedDays ?? settlement.totalWorkedDays);
   const semester1Days = settlement.semester1Days ?? settlement.semesterOneDays ?? toNumber(params.semester1Days ?? params.daysWorkedSemester1);
   const semester2Days = settlement.semester2Days ?? settlement.semesterTwoDays ?? toNumber(params.semester2Days ?? params.daysWorkedSemester2);
-  const serviceBonusSemester1 = settlement.serviceBonusSemester1 ?? settlement.serviceBonusSemesterOne ?? 0;
-  const serviceBonusSemester2 = settlement.serviceBonusSemester2 ?? settlement.serviceBonusSemesterTwo ?? 0;
-
-  const backendTotal = settlement.totalAmount ?? settlement.settlementTotalPayable ?? 0;
+  const backendServiceBonusSemester1 = settlement.serviceBonusSemester1 ?? settlement.serviceBonusSemesterOne ?? 0;
+  const backendServiceBonusSemester2 = settlement.serviceBonusSemester2 ?? settlement.serviceBonusSemesterTwo ?? 0;
 
   const rawVacDays = settlement.vacationDays !== undefined && settlement.vacationDays !== null
     ? toNumber(settlement.vacationDays)
@@ -2740,8 +2828,25 @@ function SettlementPanel({
     : "0,0";
 
   const calculationYear = settlement.calculationYear ?? new Date(effectiveEndDate).getFullYear();
-  const prima1Paid = benefitPayments.find((p) => p.type === "PRIMA" && p.year === calculationYear && p.semester === 1);
-  const prima2Paid = benefitPayments.find((p) => p.type === "PRIMA" && p.year === calculationYear && p.semester === 2);
+  const paidPrimaAmount = (semester: 1 | 2) => benefitPayments
+    .filter((p) => p.type === "PRIMA" && p.status === "PAID" && p.year === calculationYear && p.semester === semester)
+    .reduce((total, payment) => total + toNumber(payment.amount), 0);
+  const prima1Paid = paidPrimaAmount(1) > 0;
+  const prima2Paid = paidPrimaAmount(2) > 0;
+  const pendingServiceBonus = (semester: 1 | 2, backendAmount: MoneyLike) => {
+    const snapshotPending = semester === 1
+      ? params.pendingServiceBonusSemester1
+      : params.pendingServiceBonusSemester2;
+    if (snapshotPending !== undefined && snapshotPending !== null) return toNumber(snapshotPending);
+    return Math.max(0, toNumber(backendAmount) - paidPrimaAmount(semester));
+  };
+  const serviceBonusSemester1 = pendingServiceBonus(1, backendServiceBonusSemester1);
+  const serviceBonusSemester2 = pendingServiceBonus(2, backendServiceBonusSemester2);
+  const backendTotal = settlement.totalAmount ?? settlement.settlementTotalPayable ?? 0;
+  const displayedTotal = Math.max(
+    0,
+    toNumber(backendTotal) - toNumber(backendServiceBonusSemester1) - toNumber(backendServiceBonusSemester2) + serviceBonusSemester1 + serviceBonusSemester2,
+  );
 
   return (
     <article className="min-w-full snap-start rounded-[24px] border border-slate-100 bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
@@ -2807,7 +2912,7 @@ function SettlementPanel({
         <div className="flex justify-between items-center mb-4 pt-1">
           <span className="text-[13px] font-medium text-slate-800">Total</span>
           <div className="flex items-center gap-2">
-            <span className="text-base font-medium text-violet-700">{money(backendTotal)}</span>
+            <span className="text-base font-medium text-violet-700">{money(displayedTotal)}</span>
             <ChevronDown className={cn("h-4 w-4 transition-transform text-slate-400", expanded && "rotate-180")} />
           </div>
         </div>
@@ -2880,7 +2985,7 @@ function SettlementPanel({
         footer={
           <div className="flex items-center gap-3 w-full">
             <button
-              onClick={closePaymentModal}
+              onClick={() => closePaymentModal()}
               className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
               disabled={submittingPrima}
             >
@@ -2925,13 +3030,13 @@ function SettlementPanel({
 
       <SheetShell
         open={!!regularizationModal}
-        onClose={() => setRegularizationModal(null)}
-        title="Regularizar saldo de prima"
+        onClose={closePaymentModal}
+        title="Regularización necesaria"
         subtitle={`Periodo ${regularizationModal?.year ?? paymentCalculationYear}-${regularizationModal?.semester}`}
         footer={
           <div className="flex items-center gap-3 w-full">
             <button
-              onClick={() => setRegularizationModal(null)}
+              onClick={() => closePaymentModal()}
               className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
               disabled={submittingPrima}
             >
@@ -2942,7 +3047,7 @@ function SettlementPanel({
               disabled={submittingPrima}
               className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white hover:bg-[#0da081] disabled:opacity-50"
             >
-              {submittingPrima ? "Registrando..." : "Regularizar y pagar"}
+              {submittingPrima ? "Registrando..." : "Confirmar pago y regularización"}
             </button>
           </div>
         }
@@ -2955,6 +3060,18 @@ function SettlementPanel({
             <MoneyLine label="Prima calculada" value={regularizationModal?.calculatedAmount} color="text-slate-600" valueColor="text-slate-900" />
             <MoneyLine label="Provisionado" value={regularizationModal?.provisionedAmount} color="text-slate-600" valueColor="text-slate-900" />
             <MoneyLine label="Faltante a regularizar" value={regularizationModal?.missingProvision} color="text-slate-600" valueColor="text-amber-700" />
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+              <span className="font-medium text-slate-500">Cuenta de pago</span>
+              <span className="font-semibold text-slate-800">
+                {regularizationModal?.paymentMethod === "CASH" ? "Caja" : "Banco"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-slate-500">Método de pago</span>
+              <span className="font-semibold text-slate-800">
+                {regularizationModal?.paymentMethod === "CASH" ? "Efectivo" : "Transferencia bancaria"}
+              </span>
+            </div>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-start gap-3">
@@ -2985,7 +3102,6 @@ function EmployeeCarousel({
   contractLiquidated,
   settlementPosting,
   onOpenEditor,
-  prorrateoFactor = 1,
 }: {
   run: PayrollRun;
   settlement?: Settlement;
@@ -3001,7 +3117,6 @@ function EmployeeCarousel({
   contractLiquidated?: boolean;
   settlementPosting?: boolean;
   onOpenEditor?: (run: PayrollRun) => void;
-  prorrateoFactor?: number;
 }) {
   return (
     <div
@@ -3018,7 +3133,6 @@ function EmployeeCarousel({
           visualPaid={visualPaid}
           onToggleVisualPaid={onToggleVisualPaid}
           onOpenEditor={onOpenEditor}
-          prorrateoFactor={prorrateoFactor}
         />
         <SettlementPanel
           settlement={settlement}
@@ -3036,12 +3150,14 @@ function EmployeeStandaloneCard({
   contract,
   selectedPeriod,
   complementaryAvailable,
+  fallbackReason,
   onComplementaryRun,
 }: {
   employee: Employee;
   contract?: Contract | null;
   selectedPeriod?: PayrollPeriod;
   complementaryAvailable?: boolean;
+  fallbackReason: "PREVIEW_LOADING" | "PREVIEW_ERROR" | "NOT_APPLICABLE" | "NO_CONTRACT";
   onComplementaryRun?: (employee: Employee) => void;
 }) {
   return (
@@ -3059,7 +3175,7 @@ function EmployeeStandaloneCard({
           {contract ? (
             <>
               <p className="text-[15px] font-medium tabular-nums text-[#0fb18f]">{money(contract?.salaryMonthly)}</p>
-              <p className="text-[11px] text-slate-400">{selectedPeriod ? `${monthNames[selectedPeriod.month - 1]} ${selectedPeriod.year}` : "Periodo"}</p>
+              <p className="text-[11px] text-slate-400">Salario del contrato</p>
             </>
           ) : (
             <p className="max-w-[90px] text-[11px] font-medium leading-snug text-amber-600">Crear contrato para calcular nomina</p>
@@ -3072,8 +3188,14 @@ function EmployeeStandaloneCard({
         complementaryAvailable ? "bg-amber-50 text-amber-800" : "bg-slate-50 text-slate-500",
       )}>
         {complementaryAvailable
-          ? "Empleado sin n\u00f3mina en este per\u00edodo liquidado."
-          : "Sin nomina calculada en este periodo"}
+          ? "Empleado sin nómina en este período liquidado."
+          : fallbackReason === "PREVIEW_LOADING"
+            ? "Calculando vista previa…"
+            : fallbackReason === "PREVIEW_ERROR"
+              ? "No fue posible calcular la vista previa."
+              : fallbackReason === "NO_CONTRACT"
+                ? "Crea un contrato para calcular la nómina."
+                : "No aplica al período seleccionado."}
       </p>
 
       {complementaryAvailable && (
@@ -3715,7 +3837,7 @@ function PayrollRecordWizardSheet({
 
   const findExistingPeriod = async () => {
     const data = await payrollApi.findPeriods(Number(year), Number(month));
-    return choosePrimaryMonthlyPeriod(data, Number(year), Number(month)) ?? undefined;
+    return choosePayrollPeriod(data, Number(year), Number(month)) ?? undefined;
   };
 
   const handleSubmit = async () => {
@@ -4535,7 +4657,13 @@ export default function PayrollPage() {
   const [arlRisks, setArlRisks] = useState<ArlRiskClass[]>([]);
 
   const [selectedPeriodId, setSelectedPeriodId] = useState("");
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getUTCFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getUTCMonth() + 1);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [pagePreviewRuns, setPagePreviewRuns] = useState<PayrollRun[]>([]);
+  const [pagePreviewTotals, setPagePreviewTotals] = useState<PayrollPreviewTotals | null>(null);
+  const [pagePreviewLoading, setPagePreviewLoading] = useState(false);
+  const [pagePreviewError, setPagePreviewError] = useState<string | null>(null);
   const [settlements, setSettlements] = useState<Record<string, Settlement>>({});
   const [periodsLoading, setPeriodsLoading] = useState(true);
   const [employeesLoading, setEmployeesLoading] = useState(true);
@@ -4561,8 +4689,29 @@ export default function PayrollPage() {
   const [periodRefreshKey, setPeriodRefreshKey] = useState(0);
   const [simulationByEmployee, setSimulationByEmployee] = useState<Record<string, PayrollRun>>({});
   const [settlementPreviewByContract, setSettlementPreviewByContract] = useState<Record<string, Settlement>>({});
+  const [settlementPreviewError, setSettlementPreviewError] = useState<string | null>(null);
   const [visualPaidRuns, setVisualPaidRuns] = useState<Record<string, boolean>>({});
   const [legalParameter, setLegalParameter] = useState<PayrollLegalParameter | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [paymentSheet, setPaymentSheet] = useState<{
+    run: PayrollRun;
+    paymentMethod: "CASH" | "BANK_TRANSFER" | "OTHER";
+    paidAt: string;
+    notes: string;
+  } | null>(null);
+  const [batchPaymentOpen, setBatchPaymentOpen] = useState(false);
+  const [paymentModalCycle, setPaymentModalCycle] = useState<"MONTHLY" | "BIWEEKLY_1" | "BIWEEKLY_2">("MONTHLY");
+  const [paymentModalPeriod, setPaymentModalPeriod] = useState<PayrollPeriod | null>(null);
+  const [paymentModalRuns, setPaymentModalRuns] = useState<PayrollRun[]>([]);
+  const [paymentModalCandidates, setPaymentModalCandidates] = useState<PayrollPreparationCandidate[]>([]);
+  const [paymentModalLoading, setPaymentModalLoading] = useState(false);
+  const [batchSelectedRunIds, setBatchSelectedRunIds] = useState<string[]>([]);
+  const [batchPaymentMethod, setBatchPaymentMethod] = useState<"CASH" | "BANK_TRANSFER">("BANK_TRANSFER");
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const batchSubmittingRef = useRef(false);
+  const batchIdempotencyKeyRef = useRef<string | null>(null);
+  const batchSelectionPeriodRef = useRef<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: "visual-payment"; run: PayrollRun; paid: boolean }
     | { type: "post-period" }
@@ -4573,11 +4722,55 @@ export default function PayrollPage() {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [postingSettlementContractId, setPostingSettlementContractId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const previewInFlightRef = useRef(new Set<string>());
+  const previewFailedRef = useRef(new Set<string>());
+  const pagePreviewKeyRef = useRef<string | null>(null);
+  const pagePreviewRequestRef = useRef(0);
 
   const selectedPeriod = useMemo(
-    () => periods.find((period) => period.id === selectedPeriodId && isPrimaryMonthlyPeriod(period)),
+    () => periods.find((period) => period.id === selectedPeriodId),
     [periods, selectedPeriodId],
   );
+
+  const persistedMonthlyPeriod = selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED"
+    ? selectedPeriod
+    : null;
+  const summaryPeriod = persistedMonthlyPeriod;
+
+  // The calendar owns only the month.  The detail panel may display the
+  // monthly period for that month, but payment-cycle selection stays local to
+  // the payment modal.
+  useEffect(() => {
+    const monthly = choosePayrollPeriod(periods, selectedYear, selectedMonth, "MONTHLY");
+    setSelectedPeriodId(monthly?.id ?? "");
+  }, [periods, selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    const payload = { year: selectedYear, month: selectedMonth };
+    const requestKey = `${selectedYear}-${selectedMonth}-MONTHLY-OVERVIEW`;
+    const changedPeriod = pagePreviewKeyRef.current !== requestKey;
+    const requestId = ++pagePreviewRequestRef.current;
+    if (changedPeriod) {
+      setPagePreviewRuns([]);
+      setPagePreviewTotals(null);
+    }
+    pagePreviewKeyRef.current = requestKey;
+    setPagePreviewError(null);
+    setPagePreviewLoading(true);
+    payrollApi.previewMonthlyOverview(payload)
+      .then((response) => {
+        if (requestId !== pagePreviewRequestRef.current) return;
+        const normalized = normalizePayrollPreviewResponse(response);
+        setPagePreviewRuns(normalized.runs);
+        setPagePreviewTotals(normalized.totals);
+      })
+      .catch((error) => {
+        if (requestId !== pagePreviewRequestRef.current) return;
+        setPagePreviewError(payrollErrorMessage(error, "No se pudo calcular la vista previa de nómina."));
+      })
+      .finally(() => { if (requestId === pagePreviewRequestRef.current) setPagePreviewLoading(false); });
+    return () => { if (requestId === pagePreviewRequestRef.current) pagePreviewRequestRef.current += 1; };
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
     if (!selectedPeriod) {
@@ -4604,42 +4797,9 @@ export default function PayrollPage() {
     setPeriodsLoading(true);
     setError(null);
     try {
-      const data = await payrollApi.listPeriods();
-      let nextPeriods = data;
-      const today = new Date();
-      const year = today.getUTCFullYear();
-      const month = today.getUTCMonth() + 1;
-
-      let fallbackPeriod = choosePrimaryMonthlyPeriod(nextPeriods, year, month);
-      if (!fallbackPeriod) {
-        const minimumIndex = payrollMonthIndex(
-          PERIODIC_PAYROLL_MINIMUM.year,
-          PERIODIC_PAYROLL_MINIMUM.month,
-        );
-        const currentIndex = payrollMonthIndex(year, month);
-        const preparationYear =
-          currentIndex < minimumIndex ? PERIODIC_PAYROLL_MINIMUM.year : year;
-        const preparationMonth =
-          currentIndex < minimumIndex ? PERIODIC_PAYROLL_MINIMUM.month : month;
-        fallbackPeriod = await payrollApi.createPeriod({ year: preparationYear, month: preparationMonth, paymentCycle: "MONTHLY", installmentNumber: 1 })
-          .catch(async (err) => {
-            if (err instanceof AppApiError && err.status === 409) {
-              const existingPeriods = await payrollApi.findPeriods(preparationYear, preparationMonth);
-              return choosePrimaryMonthlyPeriod(existingPeriods, preparationYear, preparationMonth);
-            }
-            throw err;
-          });
-        if (fallbackPeriod && !nextPeriods.some((period) => period.id === fallbackPeriod?.id)) {
-          nextPeriods = [fallbackPeriod, ...nextPeriods];
-        }
-      }
-
+      const nextPeriods = await payrollApi.listPeriods();
       setPeriods(nextPeriods);
-      setSelectedPeriodId((current) => {
-        const currentPeriod = nextPeriods.find((period) => period.id === current && isPrimaryMonthlyPeriod(period));
-        if (currentPeriod) return current;
-        return fallbackPeriod?.id ?? "";
-      });
+      setSelectedPeriodId((current) => current && nextPeriods.some((period) => period.id === current) ? current : "");
     } catch (err) {
       console.error(err);
       setError("No se pudo cargar nomina");
@@ -4759,12 +4919,25 @@ export default function PayrollPage() {
     };
   }, [selectedPeriodId, periodRefreshKey]);
 
+  const persistedMonthlyRuns = useMemo(
+    () => persistedMonthlyPeriod ? runs.filter((run) => run.payrollPeriodId === persistedMonthlyPeriod.id) : [],
+    [persistedMonthlyPeriod, runs],
+  );
+
+  const displayPayrollRuns = useMemo(() => {
+    const persisted = persistedMonthlyRuns;
+    const persistedByEmployeeId = new Map(persisted.map((run) => [run.employeeId, run]));
+    const resolved = pagePreviewRuns.map((previewRun) => persistedByEmployeeId.get(previewRun.employeeId) ?? previewRun);
+    const previewEmployeeIds = new Set(pagePreviewRuns.map((run) => run.employeeId));
+    return [...resolved, ...persisted.filter((run) => !previewEmployeeIds.has(run.employeeId))];
+  }, [pagePreviewRuns, persistedMonthlyRuns]);
+
   const employeeRows = useMemo(() => {
     const employeeIds = new Set(employees.map((employee) => employee.id));
-    const runByEmployeeId = new Map(runs.map((run) => [run.employeeId, run]));
+    const runByEmployeeId = new Map(displayPayrollRuns.map((run) => [run.employeeId, run]));
     const rows = employees.map((employee) => {
       const run = runByEmployeeId.get(employee.id);
-      const activeContract = run?.contract ?? findActiveContract(employee.contracts, selectedPeriod);
+      const activeContract = run?.contract ?? findActiveContractForMonth(employee.contracts, selectedYear, selectedMonth);
       const preview = !run && activeContract && selectedPeriod?.status !== "POSTED" && selectedPeriod?.status !== "CLOSED"
         ? simulationByEmployee[payrollSimulationKey(employee.id, activeContract.id, selectedPeriod?.id)]
         : null;
@@ -4776,7 +4949,7 @@ export default function PayrollPage() {
       };
     });
 
-    for (const run of runs) {
+    for (const run of displayPayrollRuns) {
       if (employeeIds.has(run.employeeId)) continue;
       rows.push({
         key: run.id,
@@ -4787,7 +4960,7 @@ export default function PayrollPage() {
     }
 
     return rows;
-  }, [employees, runs, selectedPeriod, simulationByEmployee]);
+  }, [displayPayrollRuns, employees, selectedMonth, selectedPeriod, selectedYear, simulationByEmployee]);
 
   useEffect(() => {
     if (
@@ -4807,15 +4980,23 @@ export default function PayrollPage() {
         contract: findActiveContract(employee.contracts, selectedPeriod),
         hasRun: runs.some((run) => run.employeeId === employee.id),
       }))
-      .filter((row) => row.contract && !row.hasRun && !simulationByEmployee[payrollSimulationKey(row.employee.id, row.contract?.id, selectedPeriod.id)]);
+      .filter((row) => {
+        const key = payrollSimulationKey(row.employee.id, row.contract?.id, selectedPeriod.id);
+        return row.contract && !row.hasRun && !simulationByEmployee[key] &&
+          !previewInFlightRef.current.has(key) && !previewFailedRef.current.has(key);
+      });
 
     if (!missingRows.length) {
       setPreviewLoading(false);
       return;
     }
     let alive = true;
-    setPreviewLoading(true);
     const timer = window.setTimeout(async () => {
+      if (!alive) return;
+      missingRows.forEach(({ employee, contract }) =>
+        previewInFlightRef.current.add(payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id)),
+      );
+      setPreviewLoading(true);
       const previews = await Promise.all(
         missingRows.map(async ({ employee, contract }) => {
           try {
@@ -4834,12 +5015,25 @@ export default function PayrollPage() {
                 : Promise.resolve(null),
             ]);
             return { employeeId: employee.id, contractId: contract?.id, payrollPreview, settlementPreview };
-          } catch {
+          } catch (error) {
+            const key = payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id);
+            previewFailedRef.current.add(key);
+            if (process.env.NODE_ENV === "development") {
+              console.error("Payroll preview failed", { periodId: selectedPeriod.id, employeeId: employee.id, error });
+            }
             return null;
           }
         }),
       );
       if (!alive) return;
+      missingRows.forEach(({ employee, contract }) =>
+        previewInFlightRef.current.delete(payrollSimulationKey(employee.id, contract?.id, selectedPeriod.id)),
+      );
+      if (previews.some((item) => item === null)) {
+        setPreviewError("No se pudo calcular la vista previa de nómina. Revisa los datos del período o del empleado.");
+      } else {
+        setPreviewError(null);
+      }
       setSimulationByEmployee((current) => {
         const next = { ...current };
         for (const item of previews) {
@@ -4862,7 +5056,7 @@ export default function PayrollPage() {
       setPreviewLoading(false);
       window.clearTimeout(timer);
     };
-  }, [employees, employeesLoading, runs, runsLoading, selectedPeriod, simulationByEmployee]);
+  }, [employees, employeesLoading, runs, runsLoading, selectedPeriod?.id, selectedPeriod?.status, selectedPeriod?.paymentCycle, selectedPeriod?.year]);
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -4885,15 +5079,19 @@ export default function PayrollPage() {
   // BIWEEKLY → factor 0.5 (50% = 15 días de un mes de 30 días)
   const totals = useMemo(
     () => {
-      const runFactor = (run: PayrollRun | null | undefined) =>
-        run?.contract?.paymentCycle === "BIWEEKLY" ? 0.5 : 1;
       return {
-        cost: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.realEmployerCost) * runFactor(row.run), 0),
-        net: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.netPay) * runFactor(row.run), 0),
+        cost: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.realEmployerCost), 0),
+        net: filteredRows.reduce((acc, row) => acc + toNumber(row.run?.netPay), 0),
       };
     },
     [filteredRows],
   );
+
+  const summaryTotals = persistedMonthlyRuns.length > 0
+    ? totals
+    : pagePreviewTotals
+      ? { cost: toNumber(pagePreviewTotals.realEmployerCost), net: toNumber(pagePreviewTotals.netPay) }
+      : totals;
 
   const selectedRun = useMemo(() => {
     if (selectedRunId) {
@@ -4920,11 +5118,18 @@ export default function PayrollPage() {
       return;
     }
 
-    let alive = true;
-    payrollApi.simulateSettlement(contractId, {
-      endDate: settlementDefaultEndDate(selectedRun.contract, selectedPeriod),
+    const payload = {
+      endDate: settlementDefaultEndDate(selectedRun.contract, selectedPeriod, selectedYear),
       ...(selectedPeriod ? { calculationYear: selectedPeriod.year } : {}),
-    })
+    };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(payload.endDate)) {
+      setSettlementPreviewError("No se pudo determinar la fecha de liquidación contractual.");
+      return;
+    }
+
+    let alive = true;
+    setSettlementPreviewError(null);
+    payrollApi.simulateSettlement(contractId, payload)
       .then((preview) => {
         if (!alive) return;
         if (preview) {
@@ -4935,13 +5140,13 @@ export default function PayrollPage() {
         }
       })
       .catch((err) => {
-        console.error("Failed to load settlement preview for contract:", contractId, err);
+        if (alive) setSettlementPreviewError(payrollErrorMessage(err, "No se pudo cargar la liquidación anual."));
       });
 
     return () => {
       alive = false;
     };
-  }, [selectedRun, runsLoading, settlementsLoading, settlements, settlementPreviewByContract, selectedPeriod]);
+  }, [selectedRun, runsLoading, settlementsLoading, settlements, settlementPreviewByContract, selectedPeriod, selectedYear]);
 
   const refreshRunPayments = useCallback(async (runId: string) => {
     const payments = await payrollApi.listRunPayments(runId);
@@ -4951,6 +5156,19 @@ export default function PayrollPage() {
   }, []);
 
   const togglePayment = useCallback(async (run: PayrollRun) => {
+    const existingPayment = payrollRunViewModel(run).salaryPayments[0];
+    if (!existingPayment || existingPayment.status === "PAID") {
+      toast.error(existingPayment ? "Este pago ya fue registrado y no puede modificarse." : "No hay pago generado para esta nómina.");
+      return;
+    }
+    const today = new Date();
+    setPaymentSheet({
+      run,
+      paymentMethod: "BANK_TRANSFER",
+      paidAt: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+      notes: "",
+    });
+    return;
     try {
       const viewModel = payrollRunViewModel(run);
       if (!viewModel.salaryPayments.length) {
@@ -4969,10 +5187,29 @@ export default function PayrollPage() {
       await refreshRunPayments(run.id);
       toast.success(nextStatus === "PAID" ? "Pago registrado" : "Pago marcado pendiente");
     } catch (err) {
-      setNotice(err instanceof AppApiError ? err.message : "No se pudo actualizar el pago.");
+      setNotice((err as any) instanceof AppApiError ? (err as any).message : "No se pudo actualizar el pago.");
       window.setTimeout(() => setNotice(null), 2800);
     }
   }, [refreshRunPayments]);
+
+  const submitPayrollPayment = useCallback(async () => {
+    if (!paymentSheet) return;
+    const payment = payrollRunViewModel(paymentSheet.run).salaryPayments[0];
+    if (!payment) return;
+    try {
+      await payrollApi.updatePaymentStatus(payment.id, {
+        status: "PAID",
+        paymentMethod: paymentSheet.paymentMethod,
+        paidAt: paymentSheet.paidAt,
+        notes: paymentSheet.notes,
+      });
+      await refreshRunPayments(paymentSheet.run.id);
+      setPaymentSheet(null);
+      toast.success("Pago registrado.");
+    } catch (err) {
+      toast.error(err instanceof AppApiError ? err.message : "No se pudo registrar el pago.");
+    }
+  }, [paymentSheet, refreshRunPayments]);
 
   const handleCreateFromChat = () => {
     setQuickInitialEmployee(null);
@@ -5086,19 +5323,27 @@ export default function PayrollPage() {
   }, [refreshPeople]);
 
 
-  const handleCreateOrSelectPeriod = async (year: number, month: number) => {
+  const handleCreateOrSelectPeriod = async (
+    year: number,
+    month: number,
+    paymentCycle: "MONTHLY" | "BIWEEKLY" = "MONTHLY",
+    installmentNumber?: 1 | 2,
+  ) => {
     try {
       const existingPeriods = await payrollApi.findPeriods(year, month);
-      const existingPeriod = choosePrimaryMonthlyPeriod(existingPeriods, year, month);
+      const existingPeriod = choosePayrollPeriod(existingPeriods, year, month, paymentCycle, installmentNumber);
       if (existingPeriod) {
         setSelectedPeriodId(existingPeriod.id);
         return;
       }
 
-      const newPeriod = await payrollApi.createPeriod({ year, month, paymentCycle: "MONTHLY", installmentNumber: 1 }).catch(async (err) => {
+      const newPeriod = await payrollApi.createPeriod({
+        year, month, paymentCycle,
+        ...(paymentCycle === "BIWEEKLY" ? { installmentNumber } : {}),
+      }).catch(async (err) => {
         if (err instanceof AppApiError && err.status === 409) {
           const existingPeriods = await payrollApi.findPeriods(year, month);
-          const existing = choosePrimaryMonthlyPeriod(existingPeriods, year, month);
+          const existing = choosePayrollPeriod(existingPeriods, year, month, paymentCycle, installmentNumber);
           if (existing) return existing;
         }
         throw err;
@@ -5227,14 +5472,17 @@ export default function PayrollPage() {
     }
   };
 
+  // A missing period is a valid empty state. Loading is determined only by
+  // in-flight requests, never by whether data exists.
   const hasLoadedPayrollData = Boolean(
-    selectedPeriodId &&
     !periodsLoading &&
     !employeesLoading &&
     !runsLoading &&
     !settlementsLoading &&
-    !previewLoading,
+    !previewLoading &&
+    !pagePreviewLoading,
   );
+  const hasNoApplicableEmployees = !employeesLoading && employees.length === 0;
   const hasPersistedRuns = runs.length > 0;
   const hasPayrollRows = filteredRows.some((row) => Boolean(row.run));
   const periodAlreadyPosted = hasLoadedPayrollData
@@ -5247,6 +5495,122 @@ export default function PayrollPage() {
     isPeriodicPayrollEnabled(selectedPeriod) &&
     !periodAlreadyPosted,
   );
+
+  const batchRows = useMemo(() => paymentModalRuns.map((run) => {
+    const salaries = (run.payments ?? []).filter((payment) => payment.type === "SALARY_PAYMENT");
+    const payment = salaries[0];
+    const reason = !paymentModalPeriod ? null : !run.postedAt
+      ? "Pendiente de contabilizar"
+      : salaries.length !== 1
+        ? "Pago salarial inconsistente"
+        : payment?.status === "PAID"
+          ? "Pagado"
+          : payment?.status === "CANCELLED"
+            ? "Cancelado"
+            : payment?.status !== "PENDING"
+              ? "No elegible"
+              : null;
+    return { run, payment, eligible: !reason, reason };
+  }), [paymentModalRuns]);
+  const batchEligibleRows = useMemo(() => batchRows.filter((row) => row.eligible), [batchRows]);
+  const batchSelectedRows = useMemo(
+    () => batchEligibleRows.filter((row) => batchSelectedRunIds.includes(row.run.id)),
+    [batchEligibleRows, batchSelectedRunIds],
+  );
+  const batchSelectedTotal = useMemo(
+    () => batchSelectedRows.reduce((total, row) => total + toNumber(row.run.netPay), 0),
+    [batchSelectedRows],
+  );
+  const openBatchPayment = useCallback(() => {
+    setPaymentModalCycle("MONTHLY");
+    setPaymentModalPeriod(null);
+    setPaymentModalRuns([]);
+    setPaymentModalCandidates([]);
+    setBatchSelectedRunIds([]);
+    batchSelectionPeriodRef.current = null;
+    batchIdempotencyKeyRef.current = null;
+    setBatchPaymentOpen(true);
+  }, []);
+
+  const selectBatchPeriod = useCallback((cycle: "MONTHLY" | "BIWEEKLY", installmentNumber?: 1 | 2) => {
+    if (!selectedPeriod) return;
+    const target = choosePayrollPeriod(periods, selectedPeriod.year, selectedPeriod.month, cycle, installmentNumber);
+    if (!target) {
+      toast.error("No existe un período calculado para esta opción.");
+      return;
+    }
+    setBatchSelectedRunIds([]);
+    batchSelectionPeriodRef.current = null;
+    setSelectedPeriodId(target.id);
+  }, [periods, selectedPeriod]);
+
+  const resolvePaymentModalCycle = useCallback(async (cycle: "MONTHLY" | "BIWEEKLY_1" | "BIWEEKLY_2") => {
+    batchIdempotencyKeyRef.current = null;
+    setPaymentModalCycle(cycle);
+    setBatchSelectedRunIds([]);
+    batchSelectionPeriodRef.current = null;
+    setPaymentModalRuns([]);
+    setPaymentModalPeriod(null);
+    const paymentCycle = cycle === "MONTHLY" ? "MONTHLY" : "BIWEEKLY";
+    const installmentNumber = cycle === "BIWEEKLY_1" ? 1 : cycle === "BIWEEKLY_2" ? 2 : null;
+    const target = choosePayrollPeriod(periods, selectedYear, selectedMonth, paymentCycle, installmentNumber ?? undefined);
+    setPaymentModalLoading(true);
+    try {
+      if (target?.status === "POSTED" || target?.status === "CLOSED") {
+        const persistedRuns = (await payrollApi.listRuns(target.id)).filter((run) => run.contract?.paymentCycle === paymentCycle);
+        setPaymentModalPeriod(target);
+        setPaymentModalRuns(persistedRuns);
+        setBatchSelectedRunIds(persistedRuns
+          .filter((run) => (run.payments ?? []).some((payment) => payment.type === "SALARY_PAYMENT" && payment.status === "PENDING"))
+          .map((run) => run.id));
+      } else {
+        const preview = await payrollApi.previewPayroll({ year: selectedYear, month: selectedMonth, paymentCycle, installmentNumber });
+        setPaymentModalRuns(preview.runs);
+        setBatchSelectedRunIds(preview.runs.map((run) => run.id));
+      }
+    } catch (err) { toast.error(payrollErrorMessage(err, "No se pudieron cargar los candidatos.")); }
+    finally { setPaymentModalLoading(false); }
+  }, [periods, selectedMonth, selectedYear]);
+
+  useEffect(() => {
+    if (!batchPaymentOpen || paymentModalPeriod || runsLoading || !selectedPeriodId || batchSelectionPeriodRef.current === selectedPeriodId) return;
+    setBatchSelectedRunIds(batchEligibleRows.map((row) => row.run.id));
+    batchSelectionPeriodRef.current = selectedPeriodId;
+  }, [batchEligibleRows, batchPaymentOpen, runsLoading, selectedPeriodId]);
+
+  useEffect(() => { if (batchPaymentOpen) void resolvePaymentModalCycle(paymentModalCycle); }, [batchPaymentOpen, paymentModalCycle, resolvePaymentModalCycle]);
+
+  const submitBatchPayment = useCallback(async () => {
+    if (!batchSelectedRows.length || batchSubmittingRef.current) return;
+    batchSubmittingRef.current = true;
+    setBatchSubmitting(true);
+    try {
+      const key = batchIdempotencyKeyRef.current ?? createIdempotencyKey("payroll-payment");
+      batchIdempotencyKeyRef.current = key;
+      const paymentCycle = paymentModalCycle === "MONTHLY" ? "MONTHLY" : "BIWEEKLY";
+      const installmentNumber = paymentModalCycle === "BIWEEKLY_1" ? 1 : paymentModalCycle === "BIWEEKLY_2" ? 2 : null;
+      await payrollApi.confirmPayrollPayment({
+        year: selectedYear,
+        month: selectedMonth,
+        paymentCycle,
+        installmentNumber,
+        employeeIds: batchSelectedRows.map((row) => row.run.employeeId),
+        paymentMethod: batchPaymentMethod,
+        idempotencyKey: key,
+      });
+      batchIdempotencyKeyRef.current = null;
+      setBatchConfirmOpen(false);
+      await loadPeriods();
+      await resolvePaymentModalCycle(paymentModalCycle);
+      setBatchSelectedRunIds([]);
+      toast.success("Nómina pagada y asientos contables registrados.");
+    } catch (err) {
+      toast.error(payrollErrorMessage(err, "No se pudo pagar la nómina."));
+    } finally {
+      batchSubmittingRef.current = false;
+      setBatchSubmitting(false);
+    }
+  }, [batchPaymentMethod, batchSelectedRows, loadPeriods, paymentModalCycle, resolvePaymentModalCycle, selectedMonth, selectedYear]);
 
   const totalRowsInfo = useMemo(
     () => ({
@@ -5272,7 +5636,7 @@ export default function PayrollPage() {
     <PayrollLegalParameterContext.Provider value={legalParameter}>
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
-        <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar periods={periods} selectedId={selectedPeriodId} onChange={setSelectedPeriodId} onCreateOrSelect={handleCreateOrSelectPeriod} />} />
+        <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={(year, month) => { setSelectedYear(year); setSelectedMonth(month); }} />} />
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden lg:grid lg:grid-cols-[minmax(380px,520px)_minmax(360px,1fr)]">
@@ -5290,9 +5654,12 @@ export default function PayrollPage() {
                 </section>
               ) : (
                 <SummaryCard
-                  period={selectedPeriod}
-                  totalCost={totals.cost}
-                  totalNet={totals.net}
+                  period={summaryPeriod ?? undefined}
+                  totalCost={summaryTotals.cost}
+                  totalNet={summaryTotals.net}
+                  year={selectedYear}
+                  month={selectedMonth}
+                  hasApplicableEmployees={filteredRows.length > 0}
                 />
               )}
               {selectedPeriod && !isPeriodicPayrollEnabled(selectedPeriod) && (
@@ -5307,20 +5674,16 @@ export default function PayrollPage() {
                     <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
                     <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmAction({ type: "post-period" })}
-                    disabled={!canLiquidatePayroll}
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold transition disabled:cursor-not-allowed",
-                      periodAlreadyPosted
-                        ? "border-[#0B3F64]/20 bg-[#E6EFF5] text-[#0B3F64]"
-                        : "border-[#0B3F64]/40 bg-white text-[#0B3F64] shadow-sm hover:bg-[#E6EFF5] disabled:border-slate-100 disabled:bg-slate-100 disabled:text-slate-400",
-                    )}
-                  >
-                    <ListChecks className="h-3.5 w-3.5 text-[#0B3F64]" />
-                    {periodAlreadyPosted ? "Pagada" : "Pagar nomina"}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={openBatchPayment}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0fb18f] px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0d987b] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                    >
+                      <Wallet className="h-3.5 w-3.5" />
+                      Pagar nómina
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -5339,12 +5702,24 @@ export default function PayrollPage() {
               </div>
             )}
 
+            {!isPayrollLoading && !error && previewError && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shrink-0">
+                {previewError}
+              </div>
+            )}
+
+            {!isPayrollLoading && !error && pagePreviewError && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 shrink-0">
+                {pagePreviewError}
+              </div>
+            )}
+
             {!isPayrollLoading && !error && filteredRows.length === 0 && (
               <div className="rounded-3xl bg-white p-8 text-center shadow-sm shrink-0">
                 <Wallet className="mx-auto h-8 w-8 text-slate-300" />
                 <p className="mt-3 text-sm font-medium text-slate-700">No hay empleados activos</p>
                 <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Abre las acciones con el boton + para crear un empleado o contrato.
+                  Registra un empleado y un contrato activo para preparar la nómina de {monthNames[selectedMonth - 1].toLowerCase()} de {selectedYear}.
                 </p>
               </div>
             )}
@@ -5364,6 +5739,12 @@ export default function PayrollPage() {
                           row.contract &&
                           (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED")
                         )}
+                        fallbackReason={
+                          pagePreviewLoading ? "PREVIEW_LOADING"
+                            : pagePreviewError ? "PREVIEW_ERROR"
+                              : row.contract ? "NOT_APPLICABLE"
+                                : "NO_CONTRACT"
+                        }
                         onComplementaryRun={(employee) => setConfirmAction({ type: "complementary-run", employee })}
                       />
                     );
@@ -5371,12 +5752,10 @@ export default function PayrollPage() {
 
                   const run = row.run;
                   // Factor individual según el ciclo de pago del contrato
-                  const runFactor = run.contract?.paymentCycle === "BIWEEKLY" ? 0.5 : 1;
                   return (
                     <EmployeeCarousel
                       key={row.key}
                       run={run}
-                      prorrateoFactor={runFactor}
                       settlement={settlements[run.employeeId] ?? settlementPreviewByContract[run.contractId]}
                       expanded={expandedRunId === run.id}
                       selected={selectedRun?.id === run.id}
@@ -5400,6 +5779,7 @@ export default function PayrollPage() {
                     />
                   );
                 })}
+              {settlementPreviewError && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><p className="font-medium">Liquidación año vigente</p><p className="mt-1 text-xs">{settlementPreviewError}</p></section>}
             </div>
           </div>
         </section>
@@ -5504,6 +5884,60 @@ export default function PayrollPage() {
         selectedPeriod={selectedPeriod}
         onFinished={handleSettlementPreview}
       />
+      <SheetShell
+        open={batchPaymentOpen}
+        onClose={() => {
+          if (batchSubmitting) return;
+          batchIdempotencyKeyRef.current = null;
+          setBatchConfirmOpen(false);
+          setBatchPaymentOpen(false);
+        }}
+        title="Pagar nómina"
+        subtitle={`${monthNames[selectedMonth - 1]} ${selectedYear}`}
+        footer={paymentModalRuns.length > 0 ? <button type="button" onClick={() => setBatchConfirmOpen(true)} disabled={!batchSelectedRows.length || batchSubmitting} className="flex w-full items-center justify-between rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500"><span>{batchSelectedRows.length} empleado{batchSelectedRows.length === 1 ? "" : "s"} · {money(batchSelectedTotal)}</span><ChevronRight className="h-5 w-5" /></button> : null}
+      >
+        <div className="space-y-4 pt-4">
+          <div aria-label="Ciclo de nómina" className="flex flex-wrap gap-2 text-[11px] font-semibold">
+            <button aria-pressed={paymentModalCycle === "MONTHLY"} onClick={() => resolvePaymentModalCycle("MONTHLY")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "MONTHLY" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Mensualidad</button>
+            <button aria-pressed={paymentModalCycle === "BIWEEKLY_1"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_1")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_1" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Primera quincena</button>
+            <button aria-pressed={paymentModalCycle === "BIWEEKLY_2"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_2")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_2" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Segunda quincena</button>
+          </div>
+          {!paymentModalLoading && paymentModalRuns.length === 0 && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><p>No hay empleados aplicables para este ciclo.</p></div>}
+          {paymentModalLoading && <p className="text-center text-xs text-slate-500">Cargando candidatos…</p>}
+          {paymentModalRuns.length > 0 && <>
+          <div className="flex items-center justify-between text-xs text-slate-600"><span>{batchSelectedRows.length} seleccionados / {batchEligibleRows.length} pagables</span><button type="button" onClick={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds(batchSelectedRows.length === batchEligibleRows.length ? [] : batchEligibleRows.map((row) => row.run.id)); }} className="font-semibold text-[#0B3F64]">{batchSelectedRows.length === batchEligibleRows.length ? "Limpiar" : "Seleccionar todos"}</button></div>
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {batchRows.map(({ run, eligible, reason }) => <label key={run.id} className={cn("flex items-center gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}><input type="checkbox" disabled={!eligible} checked={batchSelectedRunIds.includes(run.id)} onChange={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]); }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p><p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>{reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}</div><span className="text-sm font-semibold text-slate-800">{money(run.netPay)}</span></label>)}
+          </div>
+          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Total seleccionado: <strong>{money(batchSelectedTotal)}</strong></div>
+          <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={batchPaymentMethod} onChange={(event) => { batchIdempotencyKeyRef.current = null; setBatchPaymentMethod(event.target.value as "CASH" | "BANK_TRANSFER"); }} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option></select></label>
+          </>}
+        </div>
+      </SheetShell>
+      <PayrollConfirmDialog
+        open={batchConfirmOpen}
+        title="Confirmar pago de nómina"
+        description={`Se pagarán ${batchSelectedRows.length} empleados por ${money(batchSelectedTotal)} mediante ${batchPaymentMethod === "CASH" ? "efectivo" : "transferencia"}. La fecha de registro será hoy. Esta acción formalizará la nómina, registrará los pagos seleccionados y generará los asientos contables correspondientes con la fecha operativa actual.`}
+        confirmLabel="Confirmar pago"
+        intent="payroll"
+        loading={batchSubmitting}
+        onConfirm={submitBatchPayment}
+        onCancel={() => !batchSubmitting && setBatchConfirmOpen(false)}
+      />
+      <SheetShell
+        open={Boolean(paymentSheet)}
+        onClose={() => setPaymentSheet(null)}
+        title="Registrar pago"
+        subtitle={paymentSheet ? `${employeeName(paymentSheet.run.employee)} · ${selectedPeriod?.paymentCycle === "BIWEEKLY" ? `${selectedPeriod.installmentNumber === 1 ? "Primera" : "Segunda"} quincena` : "Mensual"}` : ""}
+        footer={<div className="flex w-full gap-3"><button onClick={() => setPaymentSheet(null)} className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button onClick={submitPayrollPayment} className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white">Confirmar pago</button></div>}
+      >
+        {paymentSheet && <div className="space-y-4 pt-4">
+          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Monto neto: <strong>{money(paymentSheet.run.netPay)}</strong></div>
+          <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={paymentSheet.paymentMethod} onChange={(event) => setPaymentSheet({ ...paymentSheet, paymentMethod: event.target.value as "CASH" | "BANK_TRANSFER" | "OTHER" })} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option><option value="OTHER">Otro</option></select></label>
+          <label className="block text-xs font-semibold text-slate-600">Fecha efectiva de pago<input type="date" value={paymentSheet.paidAt} onChange={(event) => setPaymentSheet({ ...paymentSheet, paidAt: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
+          <label className="block text-xs font-semibold text-slate-600">Observación<textarea value={paymentSheet.notes} onChange={(event) => setPaymentSheet({ ...paymentSheet, notes: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
+        </div>}
+      </SheetShell>
       <PayrollConfirmDialog
         open={Boolean(confirmAction)}
         title={
@@ -5553,5 +5987,37 @@ export default function PayrollPage() {
   );
 }
 
+type PayrollPreviewTotals = { netPay: MoneyLike; realEmployerCost: MoneyLike };
 
-
+function normalizePayrollPreviewResponse(response: unknown): { runs: PayrollRun[]; totals: PayrollPreviewTotals } {
+  const envelope = response as { data?: unknown } | null;
+  const body = (envelope?.data ?? response ?? {}) as Record<string, unknown>;
+  const rawRuns = Array.isArray(body.runs)
+    ? body.runs
+    : Array.isArray(body.employees)
+      ? body.employees
+      : Array.isArray(body.results)
+        ? body.results
+        : [];
+  const runs = rawRuns.flatMap((item) => {
+    const run = item as PayrollRun;
+    const employeeId = run.employeeId ?? run.employee?.id;
+    const contractId = run.contractId ?? run.contract?.id;
+    if (!employeeId) return [];
+    return [{
+      ...run,
+      id: run.id || `preview:${employeeId}:${contractId ?? "no-contract"}`,
+      employeeId,
+      contractId: contractId ?? null,
+      preview: true,
+    } as PayrollRun];
+  });
+  const rawTotals = ((body.totals ?? body.summary ?? {}) as Record<string, MoneyLike>);
+  return {
+    runs,
+    totals: {
+      netPay: rawTotals.netPay ?? rawTotals.totalNetPay ?? runs.reduce((sum, run) => sum + toNumber(run.netPay), 0),
+      realEmployerCost: rawTotals.realEmployerCost ?? rawTotals.totalRealEmployerCost ?? runs.reduce((sum, run) => sum + toNumber(run.realEmployerCost), 0),
+    },
+  };
+}
