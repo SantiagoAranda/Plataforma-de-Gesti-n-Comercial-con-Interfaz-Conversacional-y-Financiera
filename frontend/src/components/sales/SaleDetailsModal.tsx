@@ -1,10 +1,13 @@
 "use client";
 
-import { X, Pencil, Trash2, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import SalesChatComposer from "./SalesChatComposer";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
+import { getCached } from "@/src/lib/cache";
+import { api } from "@/src/lib/api";
 
 function formatMoney(n: number) {
   return (n ?? 0).toLocaleString("es-AR", {
@@ -38,6 +41,48 @@ export default function SaleDetailsModal({
   confirming?: boolean;
   taxSettingsEnabled?: boolean;
 }) {
+  const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
+
+  useEffect(() => {
+    if (!sale || sale.status === "CERRADO" || sale.status === "CONFIRMADO" || sale.status === "CANCELADO" || !sale.items?.length) {
+      setHasPriceDivergence(false);
+      return;
+    }
+
+    let isMounted = true;
+    getCached<any[]>("sales-catalog-items", 30000, () => api<any[]>("/items?context=sales"))
+      .then((catalogItems) => {
+        if (!isMounted || !catalogItems?.length) return;
+        const divergence = sale.items.some((it) => {
+          const bi = catalogItems.find((b) => b.id === it.itemId);
+          if (!bi) return false;
+          let optionsDelta = 0;
+          const selections = it.optionSelections ?? it.options;
+          if (bi.optionGroups && selections?.length) {
+            for (const sel of selections) {
+              if (sel.action === "REMOVE") continue;
+              const group = bi.optionGroups.find((g: any) => g.id === sel.groupId);
+              const opt = group?.options?.find((o: any) => o.id === sel.optionId);
+              if (opt) optionsDelta += Number(opt.priceDelta ?? 0);
+            }
+          }
+          const expectedCatalogPrice = Number(bi.price) + optionsDelta;
+          const unitPrice = typeof it.unitPrice === "number" && Number.isFinite(it.unitPrice) && it.unitPrice > 0
+            ? it.unitPrice
+            : (it.qty > 0 && typeof it.price === "number" ? it.price / it.qty : it.unitPrice ?? 0);
+
+          return Math.abs(expectedCatalogPrice - unitPrice) > 0.01;
+        });
+
+        setHasPriceDivergence(divergence);
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sale]);
+
   if (!open || !sale) return null;
 
   const canConfirm = sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
@@ -50,7 +95,7 @@ export default function SaleDetailsModal({
 
   const total = sale.total ?? sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
   const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
-    taxSettingsEnabled || 
+    taxSettingsEnabled ||
     Number(sale.fiscalSummary?.iva ?? 0) > 0 ||
     Number(sale.fiscalSummary?.impoconsumo ?? 0) > 0 ||
     Number(sale.fiscalSummary?.reteFuente ?? 0) > 0 ||
@@ -60,8 +105,8 @@ export default function SaleDetailsModal({
   const footerLabel = hasFiscalSummary ? "TOTAL COBRADO" : "SUBTOTAL";
   const footerValue = hasFiscalSummary
     ? Number(sale.fiscalSummary?.subtotal ?? total) +
-      Number(sale.fiscalSummary?.iva ?? 0) +
-      Number(sale.fiscalSummary?.impoconsumo ?? 0)
+    Number(sale.fiscalSummary?.iva ?? 0) +
+    Number(sale.fiscalSummary?.impoconsumo ?? 0)
     : total;
 
   const statusStyles = getStatusStyles(sale.status);
@@ -127,7 +172,7 @@ export default function SaleDetailsModal({
         </div>
 
         {/* Chips Strip */}
-        <div className="px-5 py-2.5 bg-slate-50/50 border-b border-slate-100 flex flex-wrap gap-2 shrink-0">
+        <div className="px-5 py-2.5 bg-slate-50/50 border-b border-slate-100 flex flex-wrap items-center gap-2 shrink-0">
           <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyles.badge}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dotColor}`} />
             {statusStyles.label}
@@ -147,13 +192,33 @@ export default function SaleDetailsModal({
             sale={sale}
             expanded={true}
             onCancelComposer={onClose}
-            onSave={() => {}}
+            onSave={() => { }}
             taxSettingsEnabled={taxSettingsEnabled}
           />
         </div>
 
         {/* Footer Section */}
-        <div className="p-4 sm:p-5 bg-white border-t border-slate-100/50 shrink-0">
+        <div className="p-4 sm:p-5 bg-white border-t border-slate-100/50 shrink-0 flex flex-col gap-3">
+          {hasPriceDivergence && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                <span>
+                  El precio registrado en esta venta difiere del precio actual del catálogo.
+                </span>
+              </div>
+              {canEditSale && onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(sale)}
+                  className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] px-2.5 py-1 transition active:scale-95 shadow-xs"
+                >
+                  Actualizar precio
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col min-w-0">
               <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest leading-none mb-1">

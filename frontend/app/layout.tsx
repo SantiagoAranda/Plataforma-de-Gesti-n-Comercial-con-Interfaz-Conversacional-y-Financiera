@@ -1,6 +1,6 @@
 import "./globals.css";
 import BottomNav from "../src/components/layout/BottomNav";
-import  AppHeader from "../src/components/layout/AppHeader";
+import AppHeader from "../src/components/layout/AppHeader";
 import { Toaster } from "react-hot-toast";
 
 export const metadata = {
@@ -28,7 +28,25 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-white">
         {children}
-        <Toaster position="top-right" reverseOrder={false} />
+        <Toaster
+          position="top-right"
+          reverseOrder={false}
+          toastOptions={{
+            duration: 4000,
+            style: {
+              maxWidth: '450px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: 'pointer',
+            },
+            error: {
+              duration: 5000,
+            },
+            success: {
+              duration: 3000,
+            },
+          }}
+        />
       </body>
     </html>
   );

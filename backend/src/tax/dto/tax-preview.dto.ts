@@ -9,6 +9,10 @@ export class TaxPreviewCartItemDto {
   @IsNumber()
   @Min(1)
   quantity!: number;
+
+  @IsOptional()
+  @IsNumber()
+  unitPrice?: number;
 }
 
 export class TaxPreviewDto {

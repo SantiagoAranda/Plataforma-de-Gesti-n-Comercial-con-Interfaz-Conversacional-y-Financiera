@@ -181,6 +181,7 @@ export default function SaleCreateModal({
       .map((it) => ({
         itemId: it.itemId,
         quantity: normalizeQty(type, it.qty),
+        unitPrice: it.price,
       }));
 
     if (cleanedItems.length === 0) return;

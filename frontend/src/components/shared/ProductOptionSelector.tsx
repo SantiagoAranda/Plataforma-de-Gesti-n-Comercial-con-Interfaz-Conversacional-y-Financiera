@@ -115,9 +115,15 @@ export default function ProductOptionSelector({
   });
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl">
-        <button type="button" onClick={onClose} className="absolute right-4 top-4 p-2 text-neutral-400">
+    <div
+      className="fixed inset-0 z-[10000] flex items-end justify-center bg-black/40 p-4 sm:items-center pointer-events-auto"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button type="button" onClick={onClose} className="absolute right-4 top-4 p-2 text-neutral-400 hover:text-neutral-600 transition">
           <X size={18} />
         </button>
         <h3 className="pr-10 text-lg font-semibold text-neutral-900">{item.name}</h3>
@@ -131,11 +137,11 @@ export default function ProductOptionSelector({
               </div>
               <div className="space-y-2">
                 {group.options.map((option) => (
-                  <label key={option.id} className="flex cursor-pointer items-center justify-between rounded-xl border border-neutral-200 p-3">
+                  <label key={option.id} className="flex cursor-pointer items-center justify-between rounded-xl border border-neutral-200 p-3 hover:bg-neutral-50">
                     <span>
                       <span className="block text-sm font-medium text-neutral-800">{option.name}</span>
                       {Number(option.priceDelta) !== 0 && (
-                        <span className="text-xs text-emerald-600">+${Number(option.priceDelta).toLocaleString("es-CO")}</span>
+                        <span className="text-xs font-semibold text-[#0B3F64]">+${Number(option.priceDelta).toLocaleString("es-CO")}</span>
                       )}
                     </span>
                     <input
@@ -143,6 +149,7 @@ export default function ProductOptionSelector({
                       name={group.id}
                       checked={selectedIds.has(option.id)}
                       onChange={() => toggle(group, option.id)}
+                      className="accent-[#0B3F64] h-4 w-4 rounded"
                     />
                   </label>
                 ))}
@@ -167,7 +174,7 @@ export default function ProductOptionSelector({
               unitPrice,
             })
           }
-          className="mt-4 h-12 w-full rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-40"
+          className="mt-4 h-12 w-full rounded-xl bg-[#0B3F64] text-sm font-semibold text-white disabled:opacity-40 hover:bg-[#093250] transition shadow-md"
         >
           Guardar configuración
         </button>

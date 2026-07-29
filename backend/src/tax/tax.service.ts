@@ -133,7 +133,9 @@ export class TaxService {
       if (!item) continue;
 
       const qty = new Prisma.Decimal(cartItem.quantity);
-      const itemPrice = new Prisma.Decimal(item.price);
+      const itemPrice = cartItem.unitPrice != null
+        ? new Prisma.Decimal(cartItem.unitPrice)
+        : new Prisma.Decimal(item.price);
       const itemSubtotal = itemPrice.mul(qty);
       subtotalTotal = subtotalTotal.add(itemSubtotal);
 
@@ -762,7 +764,9 @@ export class TaxService {
           const item = itemsMap.get(cartItem.itemId);
           if (item) {
             const qty = new Prisma.Decimal(cartItem.quantity);
-            const itemPrice = new Prisma.Decimal(item.price);
+            const itemPrice = cartItem.unitPrice != null
+              ? new Prisma.Decimal(cartItem.unitPrice)
+              : new Prisma.Decimal(item.price);
             subtotalTotal = subtotalTotal.add(itemPrice.mul(qty));
           }
         }

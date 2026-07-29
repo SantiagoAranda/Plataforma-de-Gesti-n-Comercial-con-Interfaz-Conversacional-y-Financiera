@@ -126,7 +126,7 @@ export default function SalesChatComposer({
   onOpenComposer,
   onCancelComposer,
   searchValue = "",
-  onSearchChange = () => {},
+  onSearchChange = () => { },
   onSave,
   taxSettingsEnabled: propEnabled,
 }: {
@@ -193,7 +193,7 @@ export default function SalesChatComposer({
   useEffect(() => {
     if ((mode === "edit" || mode === "readonly") && sale && expanded) {
       setFiscalForm(saleFiscalStateFromSale(sale));
-      
+
       const rawPhone = (sale.customerWhatsapp ?? "").replace(/\D/g, "");
       if (rawPhone.length > 10) {
         setCountryCode(rawPhone.slice(0, rawPhone.length - 10));
@@ -202,11 +202,11 @@ export default function SalesChatComposer({
         setCountryCode("57");
         setPhoneNumber(rawPhone);
       }
-      
+
       setType(sale.type);
       setStatus(sale.status === "CERRADO" ? "CERRADO" : "PENDIENTE");
       setPaymentMethod(sale.paymentMethod ?? "CASH");
-      
+
       setItems(
         sale.items.map((it, idx) => ({
           itemId: it.itemId || "",
@@ -229,7 +229,7 @@ export default function SalesChatComposer({
           excludedOptionalIngredientIds: it.excludedOptionalIngredientIds ?? [],
         }))
       );
-      
+
       const parts = parseLocalDateTimeParts(sale.scheduledAt);
       if (parts) {
         setScheduledDate(parts.date);
@@ -281,7 +281,7 @@ export default function SalesChatComposer({
     if (!newItem.itemId) return;
     const selectedBi = businessItems.find(i => i.id === newItem.itemId);
     if (!selectedBi) return;
-    
+
     setFiscalForm(prev => ({
       ...prev,
       saleConcept: selectedBi.saleConcept ?? fallbackConceptForType(selectedBi.type)
@@ -489,6 +489,7 @@ export default function SalesChatComposer({
       .map((it) => ({
         itemId: it.itemId,
         quantity: normalizeQty(requiresAgenda ? "SERVICIO" : "PRODUCTO", it.qty),
+        unitPrice: it.price,
         optionSelections: it.optionSelections,
       }));
 
@@ -636,43 +637,43 @@ export default function SalesChatComposer({
               </div>
               <div className="grid grid-cols-2 gap-2 w-full min-w-0">
                 <div className="hidden min-w-0">
-                <select
-                  value={fiscalForm.buyerDocumentType}
-                  disabled={isReadonly}
-                  onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                  className="h-11 w-full rounded-xl border border-sky-200 bg-white px-2.5 text-xs outline-none focus:border-[#0B3F64] transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
-                >
-                  {fiscalForm.buyerType === "JURIDICA" ? (
-                    <option value="NIT">NIT / RUT</option>
-                  ) : (
-                    <>
-                      <option value="CC">Cédula</option>
-                      <option value="CE">Cédula Extr.</option>
-                      <option value="PASAPORTE">Pasaporte</option>
-                      <option value="TI">T. Identidad</option>
-                    </>
-                  )}
-                </select>
+                  <select
+                    value={fiscalForm.buyerDocumentType}
+                    disabled={isReadonly}
+                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
+                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-2.5 text-xs outline-none focus:border-[#0B3F64] transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                  >
+                    {fiscalForm.buyerType === "JURIDICA" ? (
+                      <option value="NIT">NIT / RUT</option>
+                    ) : (
+                      <>
+                        <option value="CC">Cédula</option>
+                        <option value="CE">Cédula Extr.</option>
+                        <option value="PASAPORTE">Pasaporte</option>
+                        <option value="TI">T. Identidad</option>
+                      </>
+                    )}
+                  </select>
                 </div>
                 <div className="min-w-0">
-                <input
-                  value={fiscalForm.buyerDocumentNumber}
-                  disabled={isReadonly}
-                  onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
-                  placeholder={fiscalForm.buyerType === "JURIDICA" ? "NIT" : "Cédula"}
-                  className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
-                />
+                  <input
+                    value={fiscalForm.buyerDocumentNumber}
+                    disabled={isReadonly}
+                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentNumber: e.target.value }))}
+                    placeholder={fiscalForm.buyerType === "JURIDICA" ? "NIT" : "Cédula"}
+                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                  />
                 </div>
-              <div className="min-w-0">
-              <input
-                type="email"
-                value={fiscalForm.buyerEmail}
-                disabled={isReadonly}
-                onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
-                placeholder="Correo"
-                className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
-              />
-              </div>
+                <div className="min-w-0">
+                  <input
+                    type="email"
+                    value={fiscalForm.buyerEmail}
+                    disabled={isReadonly}
+                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
+                    placeholder="Correo"
+                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                  />
+                </div>
               </div>
               {fiscalForm.buyerType === "JURIDICA" && (
                 <div className="mt-4 grid grid-cols-2 gap-2">
@@ -700,11 +701,10 @@ export default function SalesChatComposer({
                           if (disabled) return;
                           toggleBuyerFiscalFlag(key, active);
                         }}
-                        className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
-                          active
+                        className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${active
                             ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
                             : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
-                        } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
+                          } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
                       >
                         {label}
                       </button>
@@ -717,98 +717,97 @@ export default function SalesChatComposer({
         </div>
 
         {taxSettingsEnabled && fiscalForm.buyerType === "JURIDICA" && (
-        <>
-        <div className="space-y-1.5 rounded-2xl border border-sky-100 bg-sky-50 p-3">
-          <span className="sr-only">
-            Datos fiscales de la venta
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <select
-              value={fiscalForm.fiscalMunicipalityCode}
-              disabled={isReadonly}
-              onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64] transition disabled:bg-slate-50 disabled:text-slate-400"
-            >
-              <option value="">Municipio ICA</option>
-              {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
-                <option key={municipality.code} value={municipality.code}>
-                  {municipality.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <>
+            <div className="space-y-1.5 rounded-2xl border border-sky-100 bg-sky-50 p-3">
+              <span className="sr-only">
+                Datos fiscales de la venta
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <select
+                  value={fiscalForm.fiscalMunicipalityCode}
+                  disabled={isReadonly}
+                  onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64] transition disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  <option value="">Municipio ICA</option>
+                  {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                    <option key={municipality.code} value={municipality.code}>
+                      {municipality.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Defecto (RUT)"
-                value={fiscalForm.reteIcaRateOverride !== undefined ? fiscalForm.reteIcaRateOverride : ""}
-                disabled={isReadonly}
-                onChange={(e) => {
-                  const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                  setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
-                }}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Defecto (RUT)"
+                    value={fiscalForm.reteIcaRateOverride !== undefined ? fiscalForm.reteIcaRateOverride : ""}
+                    disabled={isReadonly}
+                    onChange={(e) => {
+                      const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                      setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
+                    }}
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                  />
+                </div>
+
+                {taxPreview && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
+                    <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${taxPreview.sellerIsSimpleRegime
+                        ? "border-sky-200 bg-sky-50 text-[#0B3F64]"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}>
+                      {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {taxPreview && (
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
-                <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${
-                  taxPreview.sellerIsSimpleRegime 
-                    ? "border-sky-200 bg-sky-50 text-[#0B3F64]" 
-                    : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}>
-                  {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
-                </div>
+            <div className="hidden">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Contexto fiscal del comprador
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {visibleResponsibilities.map(({ key, label }) => {
+                  const granContribuyenteDisabled =
+                    key === "buyerIsGranContribuyente" &&
+                    fiscalForm.buyerType === "JURIDICA" &&
+                    fiscalForm.buyerIsAutorretenedor;
+                  const autorretenedorDisabled =
+                    key === "buyerIsAutorretenedor" &&
+                    fiscalForm.buyerType === "JURIDICA" &&
+                    fiscalForm.buyerIsGranContribuyente;
+                  const disabled = granContribuyenteDisabled || autorretenedorDisabled;
+                  const active =
+                    key === "buyerType"
+                      ? fiscalForm.buyerType === "JURIDICA"
+                      : disabled ? false : Boolean(fiscalForm[key]);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={isReadonly || disabled}
+                      aria-disabled={isReadonly || disabled}
+                      onClick={() => {
+                        if (disabled) return;
+                        toggleBuyerFiscalFlag(key, active);
+                      }}
+                      className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
-        </div>
-
-        <div className="hidden">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Contexto fiscal del comprador
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            {visibleResponsibilities.map(({ key, label }) => {
-              const granContribuyenteDisabled =
-                key === "buyerIsGranContribuyente" &&
-                fiscalForm.buyerType === "JURIDICA" &&
-                fiscalForm.buyerIsAutorretenedor;
-              const autorretenedorDisabled =
-                key === "buyerIsAutorretenedor" &&
-                fiscalForm.buyerType === "JURIDICA" &&
-                fiscalForm.buyerIsGranContribuyente;
-              const disabled = granContribuyenteDisabled || autorretenedorDisabled;
-              const active =
-                key === "buyerType"
-                  ? fiscalForm.buyerType === "JURIDICA"
-                  : disabled ? false : Boolean(fiscalForm[key]);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={isReadonly || disabled}
-                  aria-disabled={isReadonly || disabled}
-                  onClick={() => {
-                    if (disabled) return;
-                    toggleBuyerFiscalFlag(key, active);
-                  }}
-                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        </>
+            </div>
+          </>
         )}
 
         <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)] gap-2 w-full min-w-0">
@@ -821,11 +820,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("PENDIENTE")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
-                  status === "PENDIENTE"
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${status === "PENDIENTE"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
-                }`}
+                  }`}
               >
                 Pendiente
               </button>
@@ -833,11 +831,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("CERRADO")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
-                  status === "CERRADO"
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${status === "CERRADO"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
-                }`}
+                  }`}
               >
                 Confirmado
               </button>
@@ -853,11 +850,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("CASH")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${
-                  paymentMethod === "CASH"
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${paymentMethod === "CASH"
                     ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
-                }`}
+                  }`}
               >
                 Efectivo
               </button>
@@ -865,11 +861,10 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${
-                  paymentMethod === "BANK_TRANSFER"
+                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${paymentMethod === "BANK_TRANSFER"
                     ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
-                }`}
+                  }`}
               >
                 Transf.
               </button>
@@ -916,70 +911,112 @@ export default function SalesChatComposer({
           )}
 
           <div className="space-y-2">
-            {items.map((it, idx) => (
-              <div key={idx} className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-slate-800 text-sm truncate">{it.name}</div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
-                    {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+            {items.map((it, idx) => {
+              const bi = businessItems.find((b) => b.id === it.itemId);
+              let optionsDelta = 0;
+              if (bi && bi.optionGroups && it.optionSelections?.length) {
+                for (const sel of it.optionSelections) {
+                  if (sel.action === "REMOVE") continue;
+                  const group = bi.optionGroups.find((g) => g.id === sel.groupId);
+                  const opt = group?.options?.find((o) => o.id === sel.optionId);
+                  if (opt) optionsDelta += Number(opt.priceDelta ?? 0);
+                }
+              }
+              const expectedCatalogPrice = bi ? bi.price + optionsDelta : null;
+              const isDivergingPrice =
+                !isReadonly &&
+                mode === "edit" &&
+                status !== "CERRADO" &&
+                expectedCatalogPrice != null &&
+                Math.abs(expectedCatalogPrice - it.price) > 0.01;
+
+              return (
+                <div key={idx} className="flex flex-col">
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-slate-800 text-sm truncate">{it.name}</div>
+                      <div className="flex items-center gap-1.5 text-[10px] font-normal text-slate-500 mt-0.5">
+                        {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+                      </div>
+                      {it.optionNames?.map((name) => (
+                        <div key={name} className="text-[10px] text-slate-500">{name}</div>
+                      ))}
+                    </div>
+
+                    {((bi?.optionGroups?.length ?? 0) > 0) && !isReadonly && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (bi) setCustomizing({
+                            item: bi,
+                            quantity: it.qty,
+                            editIdx: idx,
+                            initialSelections: it.optionSelections,
+                          });
+                        }}
+                        className="text-xs font-semibold text-[#0B3F64] hover:text-[#0B3F64]/80 transition mr-2"
+                      >
+                        Editar
+                      </button>
+                    )}
+
+                    {!isReadonly ? (
+                      <div className="flex items-center gap-2 px-1 py-1">
+                        <button
+                          type="button"
+                          onClick={() => updateItemQty(idx, it.qty - 1)}
+                          className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                          aria-label={`Restar ${it.name}`}
+                        >
+                          -
+                        </button>
+                        <span className="w-5 text-center text-sm font-medium tabular-nums text-slate-800">{it.qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => updateItemQty(idx, it.qty + 1)}
+                          className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
+                          aria-label={`Sumar ${it.name}`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-right text-xs text-slate-500">
+                        <div>Cant. {it.qty}</div>
+                        <div className="mt-0.5 text-slate-700">${formatMoney(it.price * it.qty)}</div>
+                      </div>
+                    )}
+
+                    {!isReadonly && (
+                      <button onClick={() => removeItem(idx)} className="p-1.5 text-rose-300 hover:text-rose-500 transition">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
-                  {it.optionNames?.map((name) => (
-                    <div key={name} className="text-[10px] text-slate-500">{name}</div>
-                  ))}
+
+                  {isDivergingPrice && (
+                    <div className="mt-1.5 rounded-xl border border-amber-200 bg-amber-50/90 p-2.5 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+                      <span>
+                        El precio actual del producto es <strong>${formatMoney(expectedCatalogPrice!)}</strong>, pero esta venta conserva el precio registrado de <strong>${formatMoney(it.price)}</strong>.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setItems((current) =>
+                            current.map((line, i) =>
+                              i === idx ? { ...line, price: expectedCatalogPrice! } : line
+                            )
+                          );
+                        }}
+                        className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] px-2.5 py-1 transition active:scale-95"
+                      >
+                        Actualizar al precio actual
+                      </button>
+                    </div>
+                  )}
                 </div>
-
-                {((businessItems.find((item) => item.id === it.itemId)?.optionGroups?.length ?? 0) > 0) && !isReadonly && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const businessItem = businessItems.find((item) => item.id === it.itemId);
-                      if (businessItem) setCustomizing({
-                        item: businessItem,
-                        quantity: it.qty,
-                        editIdx: idx,
-                        initialSelections: it.optionSelections,
-                      });
-                    }}
-                    className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition mr-2"
-                  >
-                    Editar
-                  </button>
-                )}
-
-                {!isReadonly ? (
-                  <div className="flex items-center gap-2 px-1 py-1">
-                    <button
-                      type="button"
-                      onClick={() => updateItemQty(idx, it.qty - 1)}
-                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
-                      aria-label={`Restar ${it.name}`}
-                    >
-                      -
-                    </button>
-                    <span className="w-5 text-center text-sm font-medium tabular-nums text-slate-800">{it.qty}</span>
-                    <button
-                      type="button"
-                      onClick={() => updateItemQty(idx, it.qty + 1)}
-                      className="flex w-4 justify-center text-sm font-medium text-slate-400 transition hover:text-slate-700"
-                      aria-label={`Sumar ${it.name}`}
-                    >
-                      +
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-right text-xs text-slate-500">
-                    <div>Cant. {it.qty}</div>
-                    <div className="mt-0.5 text-slate-700">${formatMoney(it.price * it.qty)}</div>
-                  </div>
-                )}
-
-                {!isReadonly && (
-                  <button onClick={() => removeItem(idx)} className="p-1.5 text-rose-300 hover:text-rose-500 transition">
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            ))}
+              );
+            })}
             {items.length === 0 && (
               <div className="text-center py-6 border border-dashed border-slate-200 bg-slate-50/50 rounded-2xl">
                 <p className="text-[11px] font-medium text-slate-400 uppercase tracking-widest">Sin productos en la lista</p>
@@ -1122,7 +1159,7 @@ export default function SalesChatComposer({
           {/* CHAT BAR */}
           <WhatsappComposer
             value={expanded ? "" : searchValue}
-            onChange={expanded ? () => {} : onSearchChange}
+            onChange={expanded ? () => { } : onSearchChange}
             leftAction={expanded ? onCancelComposer : onOpenComposer}
             rightAction={expanded ? handleSave : undefined}
             onSubmit={expanded ? handleSave : undefined}
@@ -1151,40 +1188,42 @@ export default function SalesChatComposer({
       </div>
 
       {customizing && (
-        <ProductOptionSelector
-          item={customizing.item}
-          quantity={customizing.quantity}
-          initialSelections={customizing.initialSelections}
-          onClose={() => setCustomizing(null)}
-          onConfirm={({ optionSelections, optionNames, unitPrice }) => {
-            if (customizing.editIdx !== undefined) {
-              setItems((current) =>
-                current.map((line, idx) =>
-                  idx === customizing.editIdx
-                    ? { ...line, optionSelections, optionNames, price: unitPrice }
-                    : line
-                )
-              );
-            } else {
-              setItems((current) => [
-                ...current,
-                {
-                  itemId: customizing.item.id,
-                  qty: customizing.quantity,
-                  name: customizing.item.name,
-                  price: unitPrice,
-                  itemType: customizing.item.type,
-                  saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
-                  durationMin: customizing.item.durationMinutes,
-                  optionSelections,
-                  optionNames,
-                },
-              ]);
-            }
-            setNewItem({ itemId: "", qty: 1 });
-            setCustomizing(null);
-          }}
-        />
+        <div className="pointer-events-auto">
+          <ProductOptionSelector
+            item={customizing.item}
+            quantity={customizing.quantity}
+            initialSelections={customizing.initialSelections}
+            onClose={() => setCustomizing(null)}
+            onConfirm={({ optionSelections, optionNames, unitPrice }) => {
+              if (customizing.editIdx !== undefined) {
+                setItems((current) =>
+                  current.map((line, idx) =>
+                    idx === customizing.editIdx
+                      ? { ...line, optionSelections, optionNames, price: unitPrice }
+                      : line
+                  )
+                );
+              } else {
+                setItems((current) => [
+                  ...current,
+                  {
+                    itemId: customizing.item.id,
+                    qty: customizing.quantity,
+                    name: customizing.item.name,
+                    price: unitPrice,
+                    itemType: customizing.item.type,
+                    saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
+                    durationMin: customizing.item.durationMinutes,
+                    optionSelections,
+                    optionNames,
+                  },
+                ]);
+              }
+              setNewItem({ itemId: "", qty: 1 });
+              setCustomizing(null);
+            }}
+          />
+        </div>
       )}
     </div>
   );
