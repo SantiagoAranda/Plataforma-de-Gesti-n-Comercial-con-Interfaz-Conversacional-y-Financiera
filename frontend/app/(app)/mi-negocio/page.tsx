@@ -8,8 +8,11 @@ import {
   Search,
   ArrowDown,
   Calendar as CalendarIcon,
+  PackagePlus,
+  Plus,
 } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
+import { EmptyStateCard } from "@/src/components/shared/EmptyStateCard";
 import { api } from "@/src/lib/api";
 import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
@@ -842,8 +845,18 @@ function MiNegocioPageContent() {
           )}
 
         {!loading && items.length === 0 && (
-          <div className="text-center py-20 text-neutral-400 font-bold text-[10px] uppercase tracking-widest">
-            No hay items creados
+          <div className="py-6 px-2">
+            <EmptyStateCard
+              icon={PackagePlus}
+              title="Aún no hay productos ni servicios"
+              description="Crea tu primer producto o servicio desde la barra inferior para armar tu catálogo."
+              actionLabel="Crear producto o servicio"
+              actionIcon={Plus}
+              onAction={() => {
+                setEditingItem(null);
+                setComposerMode("create");
+              }}
+            />
           </div>
         )}
 

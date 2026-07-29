@@ -7,6 +7,8 @@ import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import type { SimpleItemInventorySummary } from "@/src/services/inventory";
 import { cn } from "@/src/lib/utils";
 
+import { EmptyStateCard } from "@/src/components/shared/EmptyStateCard";
+
 type Props = { products: SimpleItemInventorySummary[]; onSelect: (itemId: string) => void; };
 
 function stockIcon(product: SimpleItemInventorySummary) {
@@ -18,7 +20,13 @@ function stockIcon(product: SimpleItemInventorySummary) {
 
 export function SimpleProductList({ products, onSelect }: Props) {
   if (!products.length) {
-    return <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center"><div className="grid h-16 w-16 place-items-center rounded-full bg-slate-50 text-slate-400"><PackageSearch className="h-7 w-7" /></div><h3 className="mt-4 text-sm font-medium text-slate-800">Sin productos simples</h3><p className="mt-1 max-w-xs text-xs font-normal leading-relaxed text-slate-400">Los productos con inventario simple aparecerán acá.</p></div>;
+    return (
+      <EmptyStateCard
+        icon={PackageSearch}
+        title="Sin productos simples"
+        description="Los productos con inventario simple aparecerán acá."
+      />
+    );
   }
 
   return <div className="space-y-3.5">

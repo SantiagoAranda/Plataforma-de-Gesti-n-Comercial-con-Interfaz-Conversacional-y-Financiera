@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck } from "lucide-react";
+import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck, Plus } from "lucide-react";
 import toast from "react-hot-toast";
 
 import type { Sale } from "@/src/types/sales";
 
 import AppHeader from "@/src/components/layout/AppHeader";
+import { EmptyStateCard } from "@/src/components/shared/EmptyStateCard";
 import SalesList from "@/src/components/sales/SalesList";
 import SalesChatComposer from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
@@ -799,8 +800,19 @@ export default function VentaPage() {
           )}
 
           {!loading && !error && filtered.length === 0 && (
-            <div className="p-6 flex flex-col items-center justify-center text-center text-neutral-400 h-32">
-              No hay ventas {filterStatus !== "ALL" ? "con este estado" : "todavía"}
+            <div className="mx-auto w-full max-w-md px-3 py-4 sm:max-w-3xl sm:px-4">
+              <EmptyStateCard
+                icon={ShoppingBag}
+                title={filterStatus !== "ALL" ? "Sin ventas en este estado" : "Aún no hay ventas"}
+                description={
+                  filterStatus !== "ALL"
+                    ? "No se encontraron ventas registradas con el filtro seleccionado."
+                    : "Registrá tu primera venta enviando los productos desde la barra de chat."
+                }
+                actionLabel={filterStatus === "ALL" ? "Nueva venta" : undefined}
+                actionIcon={Plus}
+                onAction={filterStatus === "ALL" ? () => setIsCreateOpen(true) : undefined}
+              />
             </div>
           )}
 

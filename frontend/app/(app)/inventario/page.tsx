@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { Bell, BookOpen, Package, TriangleAlert } from "lucide-react";
+import { Bell, BookOpen, Package, TriangleAlert, Layers3, ChefHat } from "lucide-react";
 
 import { api } from "@/src/lib/api";
 import { cn } from "@/src/lib/utils";
@@ -11,6 +11,7 @@ import { getErrorMessage } from "@/src/lib/errors";
 import { formatMoney, formatQuantityCompact } from "@/src/lib/formatters";
 
 import AppHeader from "@/src/components/layout/AppHeader";
+import { EmptyStateCard } from "@/src/components/shared/EmptyStateCard";
 import { ItemPanelLayout } from "@/src/components/mi-negocio/ItemPanelLayout";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
 import { IngredientList } from "@/src/components/inventory/IngredientList";
@@ -359,9 +360,11 @@ function InventarioPageContent() {
           ) : activeTab === "services" ? (
             <section className="space-y-2">
               {visibleServices.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
-                  No hay servicios para mostrar.
-                </div>
+                <EmptyStateCard
+                  icon={Layers3}
+                  title="Sin servicios configurados"
+                  description="Configura el consumo de insumos por cada prestación de servicio para controlar tu stock automáticamente."
+                />
               ) : (
                 visibleServices.map((service) => (
                   <ExpandableServiceConsumptionCard
@@ -377,9 +380,11 @@ function InventarioPageContent() {
           ) : (
             <section className="space-y-2">
               {visibleRecipes.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-neutral-200 bg-white p-6 text-center text-sm font-medium text-neutral-500 shadow-sm">
-                  No hay recetas para mostrar.
-                </div>
+                <EmptyStateCard
+                  icon={ChefHat}
+                  title="Sin recetas configuradas"
+                  description="Configura las recetas de tus platos o productos para deducir insumos de inventario en cada venta."
+                />
               ) : (
                 visibleRecipes.map((item) => (
                   <ExpandableRecipeCard
