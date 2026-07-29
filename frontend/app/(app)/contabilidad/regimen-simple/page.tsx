@@ -14,6 +14,7 @@ import {
   type SimpleTaxConfig,
   type SimpleTaxPeriod,
 } from "@/src/lib/simple-tax/api";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 const ENABLE_SIMPLE_TAX_MANUAL_ADJUSTMENTS = false;
 const ENABLE_SIMPLE_TAX_ANNUAL_UI = false;
@@ -66,6 +67,7 @@ function Metric({
 }
 
 export default function RegimenSimplePage() {
+  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
   const [config, setConfig] = useState<SimpleTaxConfig | null>(null);
   const [periods, setPeriods] = useState<SimpleTaxPeriod[]>([]);
   const [taxYear, setTaxYear] = useState("2026");
@@ -102,9 +104,10 @@ export default function RegimenSimplePage() {
   };
 
   useEffect(() => {
+    if (featureFlagsLoading || !simpleRegimeEnabled) return;
     loadData(Number(taxYear) || 2026);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taxYear]);
+  }, [taxYear, featureFlagsLoading, simpleRegimeEnabled]);
 
   const selectedStoredPeriod = useMemo(
     () =>
@@ -266,6 +269,23 @@ export default function RegimenSimplePage() {
       setPaying(false);
     }
   };
+
+  if (featureFlagsLoading) {
+    return <div className="min-h-screen bg-slate-50" />;
+  }
+
+  if (!simpleRegimeEnabled) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <AppHeader title="Régimen Simple" subtitle="No disponible" showBack />
+        <main className="mx-auto max-w-xl px-4 py-8">
+          <div className="rounded-2xl border border-slate-200 bg-slate-100 p-5 text-sm font-medium text-slate-500">
+            Régimen Simple no está disponible en esta versión.
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-8 text-slate-950">

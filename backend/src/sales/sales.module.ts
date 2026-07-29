@@ -6,9 +6,10 @@ import { AccountingModule } from '../accounting/accounting.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
 import { TaxModule } from '../tax/tax.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
-  imports: [PrismaModule, AccountingModule, InventoryModule, ItemOptionsModule, TaxModule],
+  imports: [PrismaModule, AccountingModule, InventoryModule, ItemOptionsModule, TaxModule, CommonModule],
   controllers: [SalesController],
   providers: [SalesService],
 })

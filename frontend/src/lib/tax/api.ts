@@ -41,7 +41,7 @@ export type BuyerFiscalContext = {
   buyerIsRetenedor: boolean;
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
-  buyerIsRegimenSimple: boolean;
+  buyerIsRegimenSimple?: boolean;
   buyerRequiresElectronicInvoice: boolean;
   withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode: string | null;
@@ -67,7 +67,7 @@ export type TaxPreviewRequest = {
   buyerIsRetenedor: boolean;
   buyerIsGranContribuyente: boolean;
   buyerIsAutorretenedor: boolean;
-  buyerIsRegimenSimple: boolean;
+  buyerIsRegimenSimple?: boolean;
   buyerRequiresElectronicInvoice?: boolean;
   withholdingSubjectIsDeclarante?: boolean;
   fiscalMunicipalityCode?: string;

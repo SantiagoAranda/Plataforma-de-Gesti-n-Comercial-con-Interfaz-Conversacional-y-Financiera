@@ -25,6 +25,8 @@ import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
+import { getTaxProfile } from "@/src/lib/settings/api";
 
 // ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
 function MonthPickerPopover({
@@ -165,7 +167,22 @@ function getCalendarBusinessDayKey(date: Date) {
 
 export default function VentaPage() {
   const { taxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled } = useFeatureFlags();
+  const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    getTaxProfile()
+      .then((profile) => {
+        setHasHistoricalSimpleResponsibility(
+          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility.code === "47")),
+        );
+      })
+      .catch(() => setHasHistoricalSimpleResponsibility(false));
+  }, []);
+
+  const salesBlockedBySimpleRegime =
+    !simpleRegimeEnabled && hasHistoricalSimpleResponsibility;
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -674,6 +691,7 @@ export default function VentaPage() {
             }}
             viewLabel="Ver detalles"
             onEdit={
+              !salesBlockedBySimpleRegime &&
               (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
                 ? () => {
                   setEditingSale(selectedSale);
@@ -682,7 +700,7 @@ export default function VentaPage() {
                 : undefined
             }
             editLabel="Editar"
-            onDelete={() => handleDeleteSale(selectedSale)}
+            onDelete={salesBlockedBySimpleRegime ? undefined : () => handleDeleteSale(selectedSale)}
             deleteLabel="Eliminar"
           />
         ) : (
@@ -710,6 +728,11 @@ export default function VentaPage() {
           />
         )}
       </div>
+      {salesBlockedBySimpleRegime && (
+        <div className="mx-4 mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
+          Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
+        </div>
+      )}
 
       <main className="min-h-0 flex-1 overflow-hidden relative">
         <div className="h-full overflow-y-auto w-full pb-24">
@@ -811,7 +834,7 @@ export default function VentaPage() {
                 }
                 actionLabel={filterStatus === "ALL" ? "Nueva venta" : undefined}
                 actionIcon={Plus}
-                onAction={filterStatus === "ALL" ? () => setIsCreateOpen(true) : undefined}
+                onAction={filterStatus === "ALL" && !salesBlockedBySimpleRegime ? () => setIsCreateOpen(true) : undefined}
               />
             </div>
           )}
@@ -831,7 +854,7 @@ export default function VentaPage() {
         </div>
       </main>
 
-      {editingSale && (
+      {editingSale && !salesBlockedBySimpleRegime && (
         <SalesChatComposer
           mode="edit"
           sale={editingSale}
@@ -851,10 +874,10 @@ export default function VentaPage() {
         open={!!detailsSale}
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
-        onConfirm={handleConfirmSale}
-        onSaveOptionalIngredients={handleSaveOptionalIngredients}
-        onCancel={handleDeleteSale}
-        onEdit={(sale) => {
+        onConfirm={salesBlockedBySimpleRegime ? undefined : handleConfirmSale}
+        onSaveOptionalIngredients={salesBlockedBySimpleRegime ? undefined : handleSaveOptionalIngredients}
+        onCancel={salesBlockedBySimpleRegime ? undefined : handleDeleteSale}
+        onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
           setEditingSale(sale);
           setDetailsSale(null);
         }}
@@ -877,12 +900,14 @@ export default function VentaPage() {
       />
 
       <SalesChatComposer
-        expanded={isCreateOpen}
-        onOpenComposer={() => setIsCreateOpen(true)}
+        expanded={salesBlockedBySimpleRegime ? false : isCreateOpen}
+        onOpenComposer={() => {
+          if (!salesBlockedBySimpleRegime) setIsCreateOpen(true);
+        }}
         onCancelComposer={() => setIsCreateOpen(false)}
         searchValue={q}
         onSearchChange={setQ}
-        onSave={handleCreateSale}
+        onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
         taxSettingsEnabled={taxSettingsEnabled}
       />
     </div>

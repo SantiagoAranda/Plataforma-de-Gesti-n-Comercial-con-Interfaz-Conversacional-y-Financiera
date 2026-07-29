@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   AccountingMovementOriginType,
@@ -16,6 +17,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { FeatureFlagsService } from '../common/config/feature-flags';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
@@ -219,7 +221,12 @@ type PostingLine = {
 
 @Injectable()
 export class AccountingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeEnabled: true,
+    } as FeatureFlagsService,
+  ) {}
 
   private normalizeDetail(detail?: string | null) {
     const trimmed = detail?.trim();
@@ -1683,6 +1690,7 @@ export class AccountingService {
     netProfitBeforeSimpleTax: number,
     includedSimpleTaxExpense = 0,
   ) {
+    if (!this.featureFlags.simpleRegimeEnabled) return undefined;
     const profile = await this.prisma.businessTaxProfile.findUnique({
       where: { businessId },
       select: { taxSettingsEnabled: true },

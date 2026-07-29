@@ -10,6 +10,7 @@ import {
 } from "@/src/lib/tax/api";
 import type { Sale, SaleFiscalSummary } from "@/src/types/sales";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 export type SaleFiscalFormState = {
   buyerType: "NATURAL" | "JURIDICA";
@@ -94,6 +95,7 @@ export function normalizeBuyerFiscalExclusion(state: SaleFiscalFormState): SaleF
 export function buildBuyerFiscalContext(
   state: SaleFiscalFormState,
   applyBuyerExclusion = true,
+  includeSimpleRegime = true,
 ): BuyerFiscalContext {
   const normalized = applyBuyerExclusion ? normalizeBuyerFiscalExclusion(state) : state;
   return {
@@ -106,7 +108,9 @@ export function buildBuyerFiscalContext(
     buyerIsRetenedor: normalized.buyerIsRetenedor,
     buyerIsGranContribuyente: normalized.buyerIsGranContribuyente,
     buyerIsAutorretenedor: normalized.buyerIsAutorretenedor,
-    buyerIsRegimenSimple: normalized.buyerIsRegimenSimple,
+    ...(includeSimpleRegime
+      ? { buyerIsRegimenSimple: normalized.buyerIsRegimenSimple }
+      : {}),
     buyerRequiresElectronicInvoice: normalized.buyerRequiresElectronicInvoice,
     fiscalMunicipalityCode: normalized.fiscalMunicipalityCode || null,
     saleConcept: normalized.saleConcept,
@@ -285,13 +289,14 @@ export default function SaleTaxPanel({
   onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
   taxSettingsEnabled?: boolean;
 }) {
+  const { simpleRegimeEnabled } = useFeatureFlags();
   const readonly = mode === "readonly";
   const [livePreview, setLivePreview] = useState<TaxPreviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const preview = useMemo(() => {
-    if (readonly) {
+    if (readonly || !simpleRegimeEnabled) {
       return fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null;
     }
     return livePreview;
@@ -364,7 +369,9 @@ export default function SaleTaxPanel({
           buyerIsRetenedor: context.buyerIsRetenedor,
           buyerIsGranContribuyente: context.buyerIsGranContribuyente,
           buyerIsAutorretenedor: context.buyerIsAutorretenedor,
-          buyerIsRegimenSimple: context.buyerIsRegimenSimple,
+          ...(simpleRegimeEnabled
+            ? { buyerIsRegimenSimple: context.buyerIsRegimenSimple }
+            : {}),
           buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
           reteIcaRateOverride: context.reteIcaRateOverride,
@@ -382,7 +389,7 @@ export default function SaleTaxPanel({
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [context, items, readonly]);
+  }, [context, items, readonly, simpleRegimeEnabled]);
 
   const chargedTotal = preview
     ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)
@@ -545,7 +552,7 @@ export default function SaleTaxPanel({
             {value.buyerType === "JURIDICA" && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               {[
-                ["buyerIsRegimenSimple", "Regimen Simple"],
+                ...(simpleRegimeEnabled ? [["buyerIsRegimenSimple", "Regimen Simple"]] : []),
                 ["buyerType", "Juridica"],
                 ["buyerIsAutorretenedor", "Autorretenedor"],
                 ["buyerIsGranContribuyente", "Gran Contrib."],

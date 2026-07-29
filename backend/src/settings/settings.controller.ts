@@ -29,6 +29,11 @@ export class SettingsController {
     return this.settingsService.getTaxProfile(req.user.businessId);
   }
 
+  @Get('feature-flags')
+  getFeatureFlags() {
+    return this.settingsService.getFeatureFlags();
+  }
+
   @Put('tax-profile')
   upsertTaxProfile(@Req() req: any, @Body() dto: UpsertTaxProfileDto) {
     return this.settingsService.upsertTaxProfile(req.user.businessId, dto);

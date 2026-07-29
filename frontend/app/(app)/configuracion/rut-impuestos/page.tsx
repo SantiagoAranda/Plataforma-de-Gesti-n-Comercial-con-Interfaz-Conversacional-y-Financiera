@@ -23,6 +23,7 @@ import {
 } from "@/src/constants/colombianMunicipalities";
 import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "47", "48", "49", "52"];
 const SIMULATOR_RETEICA_PER_THOUSAND = "9.66";
@@ -176,6 +177,7 @@ function parsePerThousand(value: string) {
 export default function RutImpuestosPage() {
   const router = useRouter();
   const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -298,13 +300,14 @@ export default function RutImpuestosPage() {
 
   useEffect(() => {
     async function loadData() {
+      if (featureFlagsLoading) return;
       try {
         const [profile, catalog, rates, simpleTaxConfig] = await Promise.all([
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
-          getSimpleTaxConfig()
-            .then((data) => ({ loaded: true, data }))
+          (simpleRegimeEnabled ? getSimpleTaxConfig() : Promise.resolve(null))
+            .then((data) => ({ loaded: Boolean(data), data }))
             .catch(() => ({ loaded: false, data: null })),
         ]);
 
@@ -445,7 +448,7 @@ export default function RutImpuestosPage() {
       }
     }
     loadData();
-  }, []);
+  }, [featureFlagsLoading, simpleRegimeEnabled]);
 
   useEffect(() => {
     if (ciiuSearch.length < 2) {
@@ -604,20 +607,22 @@ export default function RutImpuestosPage() {
 
       await saveIcaRate();
 
-      const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
-      const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
-        enabled: hasSimpleTaxResponsibility,
-        taxYear: Number(simpleTaxYear) || 2026,
-        groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
-        activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
-        ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
-      };
-      if (simpleTaxConfigLoaded) {
-        simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
-          ? simpleTaxFilingMode
-          : "BIMONTHLY_ADVANCE";
+      if (simpleRegimeEnabled) {
+        const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
+        const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
+          enabled: hasSimpleTaxResponsibility,
+          taxYear: Number(simpleTaxYear) || 2026,
+          groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
+          activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
+          ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
+        };
+        if (simpleTaxConfigLoaded) {
+          simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
+            ? simpleTaxFilingMode
+            : "BIMONTHLY_ADVANCE";
+        }
+        await updateSimpleTaxConfig(simpleTaxPayload);
       }
-      await updateSimpleTaxConfig(simpleTaxPayload);
       window.dispatchEvent(new Event("tax-profile-updated"));
 
       const savedSnapshot = {
@@ -971,6 +976,12 @@ export default function RutImpuestosPage() {
                 })}
               </div>
             </div>
+
+            {!simpleRegimeEnabled && hasHistoricalSimpleResponsibility && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-medium leading-relaxed text-slate-500">
+                Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
+              </div>
+            )}
 
             <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-slate-700">
