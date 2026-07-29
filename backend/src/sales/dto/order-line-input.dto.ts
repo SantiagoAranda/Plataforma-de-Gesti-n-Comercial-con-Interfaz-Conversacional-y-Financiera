@@ -4,6 +4,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Min,
@@ -29,6 +30,10 @@ export class SalesOrderLineInputDto {
   @IsInt()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsNumber()
+  unitPrice?: number;
 
   @IsOptional()
   @IsArray()

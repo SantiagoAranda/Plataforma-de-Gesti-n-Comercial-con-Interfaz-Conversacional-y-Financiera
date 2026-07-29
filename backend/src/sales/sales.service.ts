@@ -281,7 +281,7 @@ export class SalesService {
     businessId: string,
     orderId: string,
     buyerFiscalContext: any,
-    cartItems: Array<{ itemId: string; quantity: number }>,
+    cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
   ) {
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (!buyerFiscalContext || cartItems.length === 0) return;
@@ -416,7 +416,21 @@ export class SalesService {
           );
         const baseUnitPrice = item.price;
         const optionsTotal = resolvedOptions.optionsTotal;
-        const unitPrice = baseUnitPrice.add(optionsTotal);
+        let unitPrice: Prisma.Decimal;
+
+        if (options?.isManual && input.unitPrice !== undefined && input.unitPrice !== null) {
+          const parsedUnitPrice = new Prisma.Decimal(input.unitPrice);
+          if (parsedUnitPrice.isNaN() || !parsedUnitPrice.isFinite()) {
+            throw new BadRequestException('Invalid unitPrice');
+          }
+          if (parsedUnitPrice.isNegative()) {
+            throw new BadRequestException('unitPrice cannot be negative');
+          }
+          unitPrice = parsedUnitPrice.toDecimalPlaces(2);
+        } else {
+          unitPrice = baseUnitPrice.add(optionsTotal);
+        }
+
         const lineTotal = unitPrice.mul(input.quantity);
 
         const data: Prisma.OrderItemUncheckedCreateWithoutOrderInput = {
@@ -826,9 +840,10 @@ export class SalesService {
           businessId,
           createdOrder.id,
           dto.buyerFiscalContext,
-          createdOrder.items.map((item) => ({
+          createdOrder.items.map((item: any) => ({
             itemId: item.itemId,
             quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice ?? item.price),
           })),
         );
       }
@@ -1245,9 +1260,10 @@ export class SalesService {
       const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal;
 
       if (fiscalContextToUse) {
-        const cartItems = order.items.map((it) => ({
+        const cartItems = order.items.map((it: any) => ({
           itemId: it.itemId,
           quantity: Number(it.quantity),
+          unitPrice: Number(it.unitPrice ?? it.price),
         }));
 
         const preview = await this.taxService.calculateTaxPreview(businessId, {
@@ -2051,7 +2067,7 @@ export class SalesService {
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
     const resolvedItems = dto.items
-      ? await this.resolveOrderLines(businessId, dto.items)
+      ? await this.resolveOrderLines(businessId, dto.items, { isManual: order.origin === 'MANUAL' })
       : null;
     const finalLines = resolvedItems?.lines ?? order.items;
     const finalSingleManualService =
@@ -2144,13 +2160,15 @@ export class SalesService {
 
       if (dto.buyerFiscalContext) {
         const currentItems = resolvedItems
-          ? resolvedItems.lines.map((line) => ({
+          ? resolvedItems.lines.map((line: any) => ({
               itemId: line.itemId,
               quantity: Number(line.quantity),
+              unitPrice: Number(line.unitPrice ?? line.price),
             }))
-          : order.items.map((item) => ({
+          : order.items.map((item: any) => ({
               itemId: item.itemId,
               quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice ?? item.price),
             }));
 
         await this.persistOrderFiscalPreview(

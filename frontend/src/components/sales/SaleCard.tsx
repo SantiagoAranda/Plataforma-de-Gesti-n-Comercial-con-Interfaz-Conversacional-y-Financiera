@@ -1,11 +1,14 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheck, ExternalLink, MessageCircle, MoreVertical, ShieldCheck, User } from "lucide-react";
+import { CheckCheck, ExternalLink, MessageCircle, MoreVertical, ShieldCheck, User, AlertTriangle } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
 import SaleFiscalSummary from "./SaleFiscalSummary";
+import { getCached } from "@/src/lib/cache";
+import { api } from "@/src/lib/api";
 
 function calcTotal(sale: Sale) {
   if (sale.total !== undefined) return sale.total;
@@ -85,6 +88,47 @@ export default function SaleCard({
   taxSettingsEnabled = false,
 }: Props) {
   const router = useRouter();
+  const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
+
+  useEffect(() => {
+    if (sale.status === "CERRADO" || sale.status === "CANCELADO" || !sale.items?.length) {
+      setHasPriceDivergence(false);
+      return;
+    }
+
+    let isMounted = true;
+    getCached<any[]>("sales-catalog-items", 30000, () => api<any[]>("/items?context=sales"))
+      .then((catalogItems) => {
+        if (!isMounted || !catalogItems?.length) return;
+        const divergence = sale.items.some((it) => {
+          const bi = catalogItems.find((b) => b.id === it.itemId);
+          if (!bi) return false;
+          let optionsDelta = 0;
+          const selections = it.optionSelections ?? it.options;
+          if (bi.optionGroups && selections?.length) {
+            for (const sel of selections) {
+              if (sel.action === "REMOVE") continue;
+              const group = bi.optionGroups.find((g: any) => g.id === sel.groupId);
+              const opt = group?.options?.find((o: any) => o.id === sel.optionId);
+              if (opt) optionsDelta += Number(opt.priceDelta ?? 0);
+            }
+          }
+          const expectedCatalogPrice = Number(bi.price) + optionsDelta;
+          const unitPrice = typeof it.unitPrice === "number" && Number.isFinite(it.unitPrice) && it.unitPrice > 0
+            ? it.unitPrice
+            : (it.qty > 0 && typeof it.price === "number" ? it.price / it.qty : it.unitPrice ?? 0);
+
+          return Math.abs(expectedCatalogPrice - unitPrice) > 0.01;
+        });
+
+        setHasPriceDivergence(divergence);
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sale]);
 
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
@@ -124,6 +168,22 @@ export default function SaleCard({
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
+            {hasPriceDivergence && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onDetails) return onDetails(sale);
+                  router.push(`/ventas/${sale.id}`);
+                }}
+                className="inline-flex items-center justify-center p-1.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-300 animate-pulse hover:animate-none hover:bg-amber-500/20 transition cursor-pointer"
+                title="El precio registrado difiere del precio actual del catálogo (Ver advertencia)"
+                aria-label="Ver advertencia de precio"
+              >
+                <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+              </button>
+            )}
+
             <span
               className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${styles.badge}`}
             >
