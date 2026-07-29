@@ -259,7 +259,9 @@ export class TaxService {
     let reteIcaTotal = new Prisma.Decimal(0);
 
     if (
-      buyerIsRetenedorOrGran &&
+      // Simulador_Ventas applies ReteFuente to a juridical buyer.  Gran
+      // Contribuyente is relevant for ReteIVA, but it is not a prerequisite
+      // for ReteFuente (nor is the buyer's Autorretenedor flag an exclusion).
       !buyerIsPersonaNatural &&
       !dto.buyerIsRegimenSimple &&
       !sellerIsRegimenSimple &&
@@ -276,7 +278,7 @@ export class TaxService {
           taxAmount: reteFuenteTotal,
           accountCode: reteFuenteRule?.pucAccountCode ?? '135515',
           applied: true,
-          reason: `Comprador es agente retenedor y la base supera ${reteFuenteMinBaseUvt} UVT.`,
+          reason: `Comprador juridico practica ReteFuente y la base alcanza ${reteFuenteMinBaseUvt} UVT.`,
         });
       } else {
         taxLines.push({
@@ -307,7 +309,7 @@ export class TaxService {
               ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteFuente.'
               : buyerIsPersonaNatural
                 ? 'El comprador es Persona Natural; no practica ReteFuente.'
-                : 'El comprador no es agente retenedor ni gran contribuyente.',
+                : 'No se cumplen las condiciones fiscales para practicar ReteFuente.',
       });
     }
 

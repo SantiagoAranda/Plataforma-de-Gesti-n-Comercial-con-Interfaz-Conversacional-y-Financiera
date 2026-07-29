@@ -3,32 +3,56 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UpsertTaxProfileDto } from './dto/upsert-tax-profile.dto';
 import { CreateIcaRateDto } from './dto/create-ica-rate.dto';
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
-import { Prisma } from '@prisma/client';
+import { PersonType, Prisma } from '@prisma/client';
+
+export function deriveIncomeTaxDeclarant(
+  personType: PersonType,
+  responsibilityCodes: string[],
+): boolean | undefined {
+  const codes = new Set(responsibilityCodes);
+
+  if (personType === PersonType.NATURAL && codes.has('49') && !codes.has('05')) {
+    return false;
+  }
+
+  if (
+    codes.has('05') ||
+    codes.has('47') ||
+    codes.has('13') ||
+    codes.has('15') ||
+    personType === PersonType.JURIDICA
+  ) {
+    return true;
+  }
+
+  return undefined;
+}
 
 @Injectable()
 export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private deriveIncomeTaxDeclarant(
-    codes: string[],
+  private resolveIncomeTaxDeclarant(
     requestedValue: boolean | undefined,
-    currentValue: boolean | undefined,
+    persistedValue: boolean | undefined,
+    personType: PersonType,
+    responsibilityCodes: string[],
   ) {
-    const normalized = [...new Set(codes)].sort();
-    const only49 = normalized.length === 1 && normalized[0] === '49';
+    const isHistoricalNaturalNonResponsible =
+      personType === PersonType.NATURAL &&
+      responsibilityCodes.includes('49') &&
+      !responsibilityCodes.includes('05');
+    const normalizedPersistedValue =
+      isHistoricalNaturalNonResponsible && persistedValue === true
+        ? undefined
+        : persistedValue;
 
-    if (
-      normalized.includes('47') ||
-      normalized.includes('13') ||
-      normalized.includes('15') ||
-      (normalized.includes('05') && normalized.includes('48'))
-    ) {
-      return true;
-    }
-
-    if (only49) return false;
-
-    return requestedValue ?? currentValue ?? true;
+    return (
+      requestedValue ??
+      normalizedPersistedValue ??
+      deriveIncomeTaxDeclarant(personType, responsibilityCodes) ??
+      true
+    );
   }
 
   async getTaxProfile(businessId: string) {
@@ -52,6 +76,12 @@ export class SettingsService {
       throw new BadRequestException('Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.');
     }
 
+    if (codes.includes('13') && codes.includes('15')) {
+      throw new BadRequestException(
+        'Un perfil fiscal no puede ser Gran Contribuyente (13) y Autorretenedor (15) simultáneamente.',
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Obtener o crear perfil
       let profile = await tx.businessTaxProfile.findUnique({
@@ -59,10 +89,11 @@ export class SettingsService {
       });
 
       if (!profile) {
-        const isIncomeTaxDeclarant = this.deriveIncomeTaxDeclarant(
-          codes,
+        const isIncomeTaxDeclarant = this.resolveIncomeTaxDeclarant(
           dto.isIncomeTaxDeclarant,
           undefined,
+          dto.personType,
+          codes,
         );
         profile = await tx.businessTaxProfile.create({
           data: {
@@ -84,10 +115,11 @@ export class SettingsService {
           },
         });
       } else {
-        const isIncomeTaxDeclarant = this.deriveIncomeTaxDeclarant(
-          codes,
+        const isIncomeTaxDeclarant = this.resolveIncomeTaxDeclarant(
           dto.isIncomeTaxDeclarant,
           profile.isIncomeTaxDeclarant,
+          dto.personType,
+          codes,
         );
         profile = await tx.businessTaxProfile.update({
           where: { businessId },

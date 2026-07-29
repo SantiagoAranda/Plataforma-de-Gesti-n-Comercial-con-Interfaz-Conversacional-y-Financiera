@@ -45,12 +45,47 @@ export const DEFAULT_SALE_FISCAL_FORM: SaleFiscalFormState = {
   reteIcaRateOverride: undefined,
 };
 
+export type BuyerFiscalFlags = {
+  isGranContribuyente: boolean;
+  isAutorretenedor: boolean;
+};
+
+export type BuyerFiscalFlag = "GRAN" | "AUTORRETENEDOR";
+
+export function normalizeBuyerFiscalFlags(state: BuyerFiscalFlags): BuyerFiscalFlags {
+  if (state.isGranContribuyente && state.isAutorretenedor) {
+    return { isGranContribuyente: true, isAutorretenedor: false };
+  }
+  return state;
+}
+
+export function toggleBuyerFiscalFlag(
+  state: BuyerFiscalFlags,
+  flag: BuyerFiscalFlag,
+): BuyerFiscalFlags {
+  const normalized = normalizeBuyerFiscalFlags(state);
+  if (flag === "GRAN") {
+    const isGranContribuyente = !normalized.isGranContribuyente;
+    return {
+      isGranContribuyente,
+      isAutorretenedor: isGranContribuyente ? false : normalized.isAutorretenedor,
+    };
+  }
+
+  const isAutorretenedor = !normalized.isAutorretenedor;
+  return {
+    isGranContribuyente: isAutorretenedor ? false : normalized.isGranContribuyente,
+    isAutorretenedor,
+  };
+}
+
 export function normalizeBuyerFiscalExclusion(state: SaleFiscalFormState): SaleFiscalFormState {
   if (
     state.buyerType === "JURIDICA" &&
     state.buyerIsGranContribuyente &&
     state.buyerIsAutorretenedor
   ) {
+    // Compatibilidad con datos históricos inválidos: prevalece Gran Contribuyente.
     return { ...state, buyerIsAutorretenedor: false };
   }
   return state;
@@ -82,7 +117,7 @@ export function buildBuyerFiscalContext(
 export function saleFiscalStateFromSale(sale: Sale | null): SaleFiscalFormState {
   const context = sale?.fiscalContext;
   if (context) {
-    return {
+    return normalizeBuyerFiscalExclusion({
       ...DEFAULT_SALE_FISCAL_FORM,
       buyerType: context.buyerType ?? DEFAULT_SALE_FISCAL_FORM.buyerType,
       buyerDocumentType:
@@ -102,7 +137,7 @@ export function saleFiscalStateFromSale(sale: Sale | null): SaleFiscalFormState 
         (sale?.type === "SERVICIO" ? "SERVICES" : "GOODS"),
       reteIcaRateOverride:
         context.reteIcaRateOverride ?? context.icaRateOverride ?? undefined,
-    };
+    });
   }
 
   const isCompany = (sale?.customerName?.length ?? 0) > 20;
@@ -285,9 +320,16 @@ export default function SaleTaxPanel({
       next.buyerIsRetenedor = false;
       next.buyerRequiresElectronicInvoice = false;
     }
-    if (patch.buyerIsAutorretenedor === true && next.buyerType === "JURIDICA" && next.buyerIsGranContribuyente) return;
-    if (patch.buyerIsGranContribuyente === true && next.buyerType === "JURIDICA") {
-      next.buyerIsAutorretenedor = false;
+    if (next.buyerType === "JURIDICA" && ("buyerIsAutorretenedor" in patch || "buyerIsGranContribuyente" in patch)) {
+      const flags = toggleBuyerFiscalFlag(
+        {
+          isGranContribuyente: value.buyerIsGranContribuyente,
+          isAutorretenedor: value.buyerIsAutorretenedor,
+        },
+        "buyerIsAutorretenedor" in patch ? "AUTORRETENEDOR" : "GRAN",
+      );
+      next.buyerIsGranContribuyente = flags.isGranContribuyente;
+      next.buyerIsAutorretenedor = flags.isAutorretenedor;
     }
     onChange(normalizeBuyerFiscalExclusion(next));
   };
@@ -508,33 +550,36 @@ export default function SaleTaxPanel({
                 ["buyerIsAutorretenedor", "Autorretenedor"],
                 ["buyerIsGranContribuyente", "Gran Contrib."],
               ].map(([key, label]) => {
+                const granContribuyenteDisabled =
+                  key === "buyerIsGranContribuyente" &&
+                  value.buyerType === "JURIDICA" &&
+                  value.buyerIsAutorretenedor;
                 const autorretenedorDisabled =
                   key === "buyerIsAutorretenedor" &&
                   value.buyerType === "JURIDICA" &&
                   value.buyerIsGranContribuyente;
+                const disabled = granContribuyenteDisabled || autorretenedorDisabled;
                 const active =
                   key === "buyerType"
                     ? value.buyerType === "JURIDICA"
-                    : autorretenedorDisabled
+                    : disabled
                       ? false
                       : Boolean(value[key as keyof SaleFiscalFormState]);
                 return (
                   <button
                     key={key}
                     type="button"
-                    disabled={readonly || autorretenedorDisabled}
-                    aria-disabled={readonly || autorretenedorDisabled}
+                    disabled={readonly || disabled}
+                    aria-disabled={readonly || disabled}
                     onClick={() => {
-                      if (autorretenedorDisabled) return;
+                      if (disabled) return;
                       if (key === "buyerType") {
                         update({ buyerType: active ? "NATURAL" : "JURIDICA" });
                         return;
                       }
                       update({ [key]: !active } as Partial<SaleFiscalFormState>);
                     }}
-                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-semibold transition ${fiscalChipClass(active, readonly)} ${
-                      autorretenedorDisabled ? "cursor-not-allowed opacity-45" : ""
-                    }`}
+                    className={`min-h-9 rounded-xl border px-2 text-[10px] font-semibold transition ${fiscalChipClass(active, readonly)} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
                   >
                     {label}
                   </button>

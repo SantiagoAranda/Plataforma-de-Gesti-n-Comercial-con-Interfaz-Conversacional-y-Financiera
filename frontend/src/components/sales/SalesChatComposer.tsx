@@ -14,13 +14,19 @@ import SaleTaxPanel, {
   buildBuyerFiscalContext,
   DEFAULT_SALE_FISCAL_FORM,
   normalizeBuyerFiscalExclusion,
+  toggleBuyerFiscalFlag as toggleBuyerFiscalFlags,
   saleFiscalStateFromSale,
   type SaleFiscalFormState,
 } from "@/src/components/sales/SaleTaxPanel";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 import { api } from "@/src/lib/api";
-import { formatLocalDateTimeValue, parseLocalDateTimeParts } from "@/src/lib/datetime";
+import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import {
+  agendaPayloadForLine,
+  requiresServiceAgenda,
+  resolveAgendaLineType,
+} from "@/src/lib/sales/serviceAgenda";
 
 
 type EditableItem = {
@@ -28,6 +34,7 @@ type EditableItem = {
   qty: number;
   name: string;
   price: number;
+  itemType?: BusinessItem["type"] | null;
   saleConcept?: SaleFiscalFormState["saleConcept"] | null;
   durationMin?: number | null;
   optionSelections?: OptionSelection[];
@@ -63,12 +70,6 @@ function formatMoney(n: number) {
 function normalizeQty(type: Sale["type"], qty: number) {
   if (type === "SERVICIO") return 1;
   return Math.max(1, Math.floor(qty || 1));
-}
-
-function formatTimeFromMinutes(value: number) {
-  const hour = String(Math.floor(value / 60)).padStart(2, "0");
-  const minute = String(value % 60).padStart(2, "0");
-  return `${hour}:${minute}`;
 }
 
 function ItemThumbnail() {
@@ -212,6 +213,7 @@ export default function SalesChatComposer({
           qty: it.qty,
           name: it.name,
           price: it.unitPrice ?? (it.price / it.qty),
+          itemType: null,
           saleConcept: sale.fiscalContext?.saleConcept ?? null,
           durationMin: it.durationMin,
           optionSelections: (it.options ?? [])
@@ -229,7 +231,7 @@ export default function SalesChatComposer({
       );
       
       const parts = parseLocalDateTimeParts(sale.scheduledAt);
-      if (sale.type === "SERVICIO" && parts) {
+      if (parts) {
         setScheduledDate(parts.date);
         const [h, m] = parts.time.split(":").map(Number);
         if (!isNaN(h) && !isNaN(m)) {
@@ -256,6 +258,24 @@ export default function SalesChatComposer({
       setIsSubmitting(false);
     }
   }, [expanded, sale?.id, mode]);
+
+  const agendaItem = useMemo(() => {
+    const first = items[0];
+    if (!first) return undefined;
+    return {
+      ...first,
+      itemType: resolveAgendaLineType(first, businessItems),
+    };
+  }, [items, businessItems]);
+  const agendaItemType = agendaItem?.itemType;
+  const requiresAgenda = requiresServiceAgenda(agendaItem, businessItems);
+
+  useEffect(() => {
+    if (agendaItemType === "PRODUCT") {
+      setScheduledDate(null);
+      setSelectedStartMinute(null);
+    }
+  }, [agendaItemType]);
 
   useEffect(() => {
     if (!newItem.itemId) return;
@@ -337,22 +357,24 @@ export default function SalesChatComposer({
       }
 
       const nextActive = !active;
-      if (
-        key === "buyerIsAutorretenedor" &&
-        nextActive &&
-        prev.buyerType === "JURIDICA" &&
-        prev.buyerIsGranContribuyente
-      ) {
-        return prev;
-      }
-
       const next = {
         ...prev,
         [key]: nextActive,
       };
 
-      if (key === "buyerIsGranContribuyente" && nextActive && prev.buyerType === "JURIDICA") {
-        next.buyerIsAutorretenedor = false;
+      if (
+        prev.buyerType === "JURIDICA" &&
+        (key === "buyerIsAutorretenedor" || key === "buyerIsGranContribuyente")
+      ) {
+        const flags = toggleBuyerFiscalFlags(
+          {
+            isGranContribuyente: prev.buyerIsGranContribuyente,
+            isAutorretenedor: prev.buyerIsAutorretenedor,
+          },
+          key === "buyerIsAutorretenedor" ? "AUTORRETENEDOR" : "GRAN",
+        );
+        next.buyerIsGranContribuyente = flags.isGranContribuyente;
+        next.buyerIsAutorretenedor = flags.isAutorretenedor;
       }
 
       return next;
@@ -362,9 +384,9 @@ export default function SalesChatComposer({
   const updateItemQty = (idx: number, qty: number) => {
     const current = items[idx];
     if (!current) return;
-    const nextQty = normalizeQty(type, qty);
+    const nextQty = normalizeQty(requiresAgenda ? "SERVICIO" : "PRODUCTO", qty);
     const businessItem = businessItems.find((item) => item.id === current.itemId);
-    if (type === "PRODUCTO" && businessItem?.inventoryMode === "SIMPLE") {
+    if (!requiresAgenda && businessItem?.inventoryMode === "SIMPLE") {
       const available = Number(businessItem.currentStock ?? 0);
       const otherQty = items.reduce(
         (acc, item, itemIdx) => acc + (itemIdx !== idx && item.itemId === current.itemId ? item.qty : 0),
@@ -446,6 +468,7 @@ export default function SalesChatComposer({
           qty: addedQty,
           name: bi.name,
           price: bi.price,
+          itemType: bi.type,
           saleConcept: bi.saleConcept ?? fallbackConceptForType(bi.type),
           durationMin: bi.durationMinutes,
         },
@@ -465,25 +488,28 @@ export default function SalesChatComposer({
     const cleanedItems = items
       .map((it) => ({
         itemId: it.itemId,
-        quantity: normalizeQty(type, it.qty),
+        quantity: normalizeQty(requiresAgenda ? "SERVICIO" : "PRODUCTO", it.qty),
         optionSelections: it.optionSelections,
       }));
 
     if (cleanedItems.length === 0) return;
 
-    const isService = type === "SERVICIO";
-    const serviceItem = items[0];
+    const serviceItem = agendaItem;
     const serviceDuration = serviceItem?.durationMin ?? Number(manualDuration || 0);
-    const scheduledAt = isService && scheduledDate && selectedStartMinute != null
-      ? `${scheduledDate}T${formatTimeFromMinutes(selectedStartMinute)}:00`
-      : undefined;
+    const agendaPayload = agendaPayloadForLine({
+      requiresAgenda,
+      date: scheduledDate,
+      startMinute: selectedStartMinute,
+      durationMinutes: serviceDuration,
+    });
+    const scheduledAt = agendaPayload.scheduledAt;
 
-    if (isService && !scheduledAt) {
+    if (requiresAgenda && !scheduledAt) {
       setFormError("Elegí fecha y hora para registrar la cita.");
       return;
     }
 
-    if (isService && (!Number.isFinite(serviceDuration) || serviceDuration <= 0)) {
+    if (requiresAgenda && (!Number.isFinite(serviceDuration) || serviceDuration <= 0)) {
       setFormError("Ingresá una duración válida para la cita.");
       return;
     }
@@ -495,7 +521,7 @@ export default function SalesChatComposer({
           ...sale!,
           customerName: cleanedName || "Consumidor final",
           customerWhatsapp: cleanedWhatsapp ?? null,
-          type,
+          type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
           status: status as any,
           paymentMethod: paymentMethod || "CASH",
           fiscalContext: buyerFiscalContext,
@@ -510,18 +536,17 @@ export default function SalesChatComposer({
             optionSelections: item.optionSelections,
             excludedOptionalIngredientIds: item.excludedOptionalIngredientIds ?? [],
           })),
-          scheduledAt,
+          ...(requiresAgenda ? { scheduledAt } : {}),
         };
         await onSave(updated);
       } else {
         await onSave({
           customerName: cleanedName || undefined,
           customerWhatsapp: cleanedWhatsapp,
-          type,
+          type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
           status,
           paymentMethod: paymentMethod || "CASH",
-          scheduledAt,
-          durationMinutes: isService ? serviceDuration : undefined,
+          ...agendaPayload,
           buyerFiscalContext,
           items: cleanedItems,
         });
@@ -652,31 +677,34 @@ export default function SalesChatComposer({
               {fiscalForm.buyerType === "JURIDICA" && (
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   {visibleResponsibilities.map(({ key, label }) => {
+                    const granContribuyenteDisabled =
+                      key === "buyerIsGranContribuyente" &&
+                      fiscalForm.buyerType === "JURIDICA" &&
+                      fiscalForm.buyerIsAutorretenedor;
                     const autorretenedorDisabled =
                       key === "buyerIsAutorretenedor" &&
                       fiscalForm.buyerType === "JURIDICA" &&
                       fiscalForm.buyerIsGranContribuyente;
+                    const disabled = granContribuyenteDisabled || autorretenedorDisabled;
                     const active =
                       key === "buyerType"
                         ? fiscalForm.buyerType === "JURIDICA"
-                        : autorretenedorDisabled
-                          ? false
-                          : Boolean(fiscalForm[key]);
+                        : disabled ? false : Boolean(fiscalForm[key]);
                     return (
                       <button
                         key={key}
                         type="button"
-                        disabled={isReadonly || autorretenedorDisabled}
-                        aria-disabled={isReadonly || autorretenedorDisabled}
+                        disabled={isReadonly || disabled}
+                        aria-disabled={isReadonly || disabled}
                         onClick={() => {
-                          if (autorretenedorDisabled) return;
+                          if (disabled) return;
                           toggleBuyerFiscalFlag(key, active);
                         }}
                         className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${
                           active
                             ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
                             : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
-                        } ${autorretenedorDisabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
+                        } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
                       >
                         {label}
                       </button>
@@ -749,29 +777,30 @@ export default function SalesChatComposer({
           </span>
           <div className="grid grid-cols-2 gap-2">
             {visibleResponsibilities.map(({ key, label }) => {
+              const granContribuyenteDisabled =
+                key === "buyerIsGranContribuyente" &&
+                fiscalForm.buyerType === "JURIDICA" &&
+                fiscalForm.buyerIsAutorretenedor;
               const autorretenedorDisabled =
                 key === "buyerIsAutorretenedor" &&
                 fiscalForm.buyerType === "JURIDICA" &&
                 fiscalForm.buyerIsGranContribuyente;
+              const disabled = granContribuyenteDisabled || autorretenedorDisabled;
               const active =
                 key === "buyerType"
                   ? fiscalForm.buyerType === "JURIDICA"
-                  : autorretenedorDisabled
-                    ? false
-                    : Boolean(fiscalForm[key]);
+                  : disabled ? false : Boolean(fiscalForm[key]);
               return (
                 <button
                   key={key}
                   type="button"
-                  disabled={isReadonly || autorretenedorDisabled}
-                  aria-disabled={isReadonly || autorretenedorDisabled}
+                  disabled={isReadonly || disabled}
+                  aria-disabled={isReadonly || disabled}
                   onClick={() => {
-                    if (autorretenedorDisabled) return;
+                    if (disabled) return;
                     toggleBuyerFiscalFlag(key, active);
                   }}
-                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${
-                    autorretenedorDisabled ? "cursor-not-allowed opacity-45" : ""
-                  }`}
+                  className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
                 >
                   {label}
                 </button>
@@ -959,7 +988,7 @@ export default function SalesChatComposer({
           </div>
         </div>
 
-        {type === "SERVICIO" && items.length > 0 && (
+        {requiresAgenda && agendaItem && (
           <div className="flex flex-col gap-3 p-4 rounded-2xl border border-emerald-50 bg-emerald-50/20">
             <div className="rounded-xl bg-white p-3 border border-emerald-100 shadow-sm">
               <span className="text-xs font-semibold text-emerald-700">
@@ -967,29 +996,29 @@ export default function SalesChatComposer({
               </span>
               <div className="mt-1 flex items-center justify-between gap-3">
                 <span className="truncate text-sm font-semibold text-slate-800">
-                  {items[0].name}
+                  {agendaItem.name}
                 </span>
                 <span className="shrink-0 text-sm font-bold text-slate-800">
-                  ${formatMoney(items[0].price)}
+                  ${formatMoney(agendaItem.price)}
                 </span>
               </div>
             </div>
 
             <ReservationSlotPicker
-              itemId={items[0].itemId}
+              itemId={agendaItem.itemId}
               mode="private"
               selectedDate={scheduledDate}
               selectedStartMinute={selectedStartMinute}
               disabled={isReadonly}
               availabilitySaleId={mode === "edit" ? sale?.id : undefined}
-              durationMin={items[0].durationMin || Number(manualDuration) || undefined}
+              durationMin={agendaItem.durationMin || Number(manualDuration) || undefined}
               onChange={({ date, startMinute }) => {
                 setScheduledDate(date);
                 setSelectedStartMinute(startMinute);
               }}
             />
 
-            {!isReadonly && !items[0]?.durationMin && (
+            {!isReadonly && !agendaItem.durationMin && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-slate-500 px-1">Duración en minutos</span>
                 <input
@@ -1144,6 +1173,7 @@ export default function SalesChatComposer({
                   qty: customizing.quantity,
                   name: customizing.item.name,
                   price: unitPrice,
+                  itemType: customizing.item.type,
                   saleConcept: customizing.item.saleConcept ?? fallbackConceptForType(customizing.item.type),
                   durationMin: customizing.item.durationMinutes,
                   optionSelections,

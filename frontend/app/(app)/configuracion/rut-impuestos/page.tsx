@@ -24,7 +24,7 @@ import {
 import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 
-const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "47", "48", "49", "52"];
+const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "13", "15", "47", "48", "49", "52"];
 const SIMULATOR_RETEICA_PER_THOUSAND = "9.66";
 
 const RESPONSIBILITY_LABELS: Record<string, string> = {
@@ -124,7 +124,27 @@ const labelClassName =
 const cardClassName = "rounded-2xl border border-slate-100 bg-white p-4 shadow-sm";
 
 function normalizeCodes(codes: string[]) {
-  return [...new Set(codes)].sort();
+  const normalized = [...new Set(codes)];
+  // Precedencia histórica para perfiles antiguos inválidos.
+  return (normalized.includes("13") ? normalized.filter((code) => code !== "15") : normalized).sort();
+}
+
+function deriveIncomeTaxDeclarant(
+  personType: "NATURAL" | "JURIDICA",
+  responsibilityCodes: string[],
+) {
+  const codes = new Set(responsibilityCodes);
+  if (personType === "NATURAL" && codes.has("49") && !codes.has("05")) return false;
+  if (
+    codes.has("05") ||
+    codes.has("47") ||
+    codes.has("13") ||
+    codes.has("15") ||
+    personType === "JURIDICA"
+  ) {
+    return true;
+  }
+  return true;
 }
 
 function sameCodeSet(a: string[], b: string[]) {
@@ -138,20 +158,6 @@ function deriveBusinessProfile(codes: string[]): TaxBusinessProfileKey {
     BUSINESS_PROFILE_OPTIONS.find((option) => sameCodeSet(option.codes, codes))?.key ??
     "ADVANCED"
   );
-}
-
-function deriveDeclarantFromCodes(codes: string[]) {
-  const normalized = normalizeCodes(codes);
-  if (
-    normalized.includes("47") ||
-    normalized.includes("13") ||
-    normalized.includes("15") ||
-    (normalized.includes("05") && normalized.includes("48"))
-  ) {
-    return true;
-  }
-  if (normalized.length === 1 && normalized[0] === "49") return false;
-  return null;
 }
 
 function DianBadge({ children }: { children: React.ReactNode }) {
@@ -213,6 +219,10 @@ export default function RutImpuestosPage() {
 
   const [initialSnapshot, setInitialSnapshot] = useState<any>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+
+  useEffect(() => {
+    setIsIncomeTaxDeclarant(deriveIncomeTaxDeclarant(personType, selectedRespCodes));
+  }, [personType, selectedRespCodes]);
 
   const currentSnapshot = useMemo(() => {
     return {
@@ -330,8 +340,9 @@ export default function RutImpuestosPage() {
           setMainCiiuDescription(profile.mainCiiuDescription || "");
           setIsIncomeTaxDeclarant(profile.isIncomeTaxDeclarant ?? true);
           const loadedCodes = profile.responsibilities.map((r) => r.responsibility.code);
-          setSelectedRespCodes(loadedCodes);
-          setBusinessProfile(deriveBusinessProfile(loadedCodes));
+          const normalizedCodes = normalizeCodes(loadedCodes);
+          setSelectedRespCodes(normalizedCodes);
+          setBusinessProfile(deriveBusinessProfile(normalizedCodes));
 
           const configuredRate = rates.find(
             (rate) =>
@@ -420,7 +431,7 @@ export default function RutImpuestosPage() {
             mainCiiuCode: profile.mainCiiuCode || "",
             mainCiiuDescription: profile.mainCiiuDescription || "",
             isIncomeTaxDeclarant: profile.isIncomeTaxDeclarant ?? true,
-            selectedRespCodes: [...loadedCodes].sort(),
+            selectedRespCodes: normalizeCodes(loadedCodes),
             icaRatePerMil: ratePerMil,
             reteIcaRatePerMil: reteRatePerMil,
             useSameReteIcaRate: sameRate,
@@ -485,8 +496,7 @@ export default function RutImpuestosPage() {
     const option = BUSINESS_PROFILE_OPTIONS.find((profile) => profile.key === key);
     if (!option) return;
 
-    setSelectedRespCodes(option.codes);
-    setIsIncomeTaxDeclarant(option.declarant);
+    setSelectedRespCodes(normalizeCodes(option.codes));
     if (option.personType) setPersonType(option.personType);
   };
 
@@ -497,13 +507,15 @@ export default function RutImpuestosPage() {
       if (checked) {
         if (code === "48") next = next.filter((currentCode) => currentCode !== "49");
         if (code === "49") next = next.filter((currentCode) => currentCode !== "48");
+        // Restaurar la precedencia histórica: Gran Contribuyente (13)
+        // prevalece sobre Autorretenedor (15).
+        if (code === "13") next = next.filter((currentCode) => currentCode !== "15");
+        if (code === "15") next = next.filter((currentCode) => currentCode !== "13");
         if (!next.includes(code)) next.push(code);
       } else {
         next = next.filter((currentCode) => currentCode !== code);
       }
 
-      const derivedDeclarant = deriveDeclarantFromCodes(next);
-      if (derivedDeclarant !== null) setIsIncomeTaxDeclarant(derivedDeclarant);
       return next;
     });
   };

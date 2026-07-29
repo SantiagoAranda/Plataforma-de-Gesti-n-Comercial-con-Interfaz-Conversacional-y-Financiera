@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { SettingsService } from './settings.service';
+import { deriveIncomeTaxDeclarant, SettingsService } from './settings.service';
 
 describe('SettingsService ICA rates', () => {
   const municipalityIcaRate = {
@@ -135,15 +135,14 @@ describe('SettingsService tax profile normalization', () => {
 
   it.each([
     [['49'], false],
+    [['49', '05'], true],
     [['05', '48'], true],
-    [['05', '48', '07'], true],
-    [['47'], true],
-    [['13', '05', '48', '07'], true],
-    [['15', '05', '48'], true],
-  ])('derives isIncomeTaxDeclarant for responsibilities %j', async (codes, expected) => {
+  ])('derives isIncomeTaxDeclarant for natural responsibilities %j', async (codes, expected) => {
     const { service, tx } = makeService();
+    const dto = baseDto(codes) as any;
+    delete dto.isIncomeTaxDeclarant;
 
-    await service.upsertTaxProfile('business-1', baseDto(codes, !expected) as any);
+    await service.upsertTaxProfile('business-1', dto);
 
     expect(tx.businessTaxProfile.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -162,17 +161,12 @@ describe('SettingsService tax profile normalization', () => {
     ).rejects.toThrow('Responsable de IVA');
   });
 
-  it('allows RUT profiles with both Gran Contribuyente (13) and Autorretenedor (15) codes', async () => {
-    const { service, tx } = makeService();
+  it('rejects RUT profiles with both Gran Contribuyente (13) and Autorretenedor (15) codes', async () => {
+    const { service } = makeService();
 
-    await service.upsertTaxProfile('business-1', baseDto(['13', '15']) as any);
-
-    expect(tx.businessTaxResponsibility.createMany).toHaveBeenCalledWith({
-      data: expect.arrayContaining([
-        expect.objectContaining({ taxResponsibilityId: 'tax-responsibility-13' }),
-        expect.objectContaining({ taxResponsibilityId: 'tax-responsibility-15' }),
-      ]),
-    });
+    await expect(
+      service.upsertTaxProfile('business-1', baseDto(['13', '15']) as any),
+    ).rejects.toThrow('Gran Contribuyente');
   });
 
   it('preserves advanced-mode declarant value when responsibilities have no clear rule', async () => {
@@ -185,6 +179,52 @@ describe('SettingsService tax profile normalization', () => {
         data: expect.objectContaining({
           isIncomeTaxDeclarant: false,
         }),
+      }),
+    );
+  });
+
+  it('preserves false when another RUT field is updated without a declarant value', async () => {
+    const { service, tx } = makeService({ id: 'profile-1', isIncomeTaxDeclarant: false });
+    const dto = baseDto(['05', '48']) as any;
+    delete dto.isIncomeTaxDeclarant;
+
+    await service.upsertTaxProfile('business-1', dto);
+
+    expect(tx.businessTaxProfile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isIncomeTaxDeclarant: false }),
+      }),
+    );
+  });
+
+  it('normalizes the historical true default for Natural + 49 without 05 before resolving persisted value', async () => {
+    const { service, tx } = makeService({ id: 'profile-1', isIncomeTaxDeclarant: true });
+    const dto = baseDto(['49']) as any;
+    delete dto.isIncomeTaxDeclarant;
+
+    await service.upsertTaxProfile('business-1', dto);
+
+    expect(tx.businessTaxProfile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isIncomeTaxDeclarant: false }),
+      }),
+    );
+  });
+
+  it('keeps the derived result when an unrelated responsibility changes', () => {
+    expect(deriveIncomeTaxDeclarant('NATURAL' as any, ['49'])).toBe(false);
+    expect(deriveIncomeTaxDeclarant('NATURAL' as any, ['49', '07'])).toBe(false);
+    expect(deriveIncomeTaxDeclarant('NATURAL' as any, ['49', '05'])).toBe(true);
+  });
+
+  it('updates declarant from false to true', async () => {
+    const { service, tx } = makeService({ id: 'profile-1', isIncomeTaxDeclarant: false });
+
+    await service.upsertTaxProfile('business-1', baseDto(['49'], true) as any);
+
+    expect(tx.businessTaxProfile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isIncomeTaxDeclarant: true }),
       }),
     );
   });

@@ -252,18 +252,6 @@ export class SalesService {
     };
   }
 
-  private assertBuyerFiscalContextAllowed(buyerFiscalContext: any) {
-    if (
-      buyerFiscalContext?.buyerType === 'JURIDICA' &&
-      buyerFiscalContext?.buyerIsGranContribuyente === true &&
-      buyerFiscalContext?.buyerIsAutorretenedor === true
-    ) {
-      throw new BadRequestException(
-        'Gran Contribuyente y Autorretenedor no pueden estar activos al mismo tiempo para el comprador de la venta.',
-      );
-    }
-  }
-
   private async persistOrderFiscalPreview(
     tx: Prisma.TransactionClient,
     businessId: string,
@@ -302,6 +290,18 @@ export class SalesService {
       preview,
       buyerFiscalContext,
     );
+  }
+
+  private assertBuyerFiscalContextAllowed(buyerFiscalContext: any) {
+    if (
+      buyerFiscalContext?.buyerType === 'JURIDICA' &&
+      buyerFiscalContext?.buyerIsGranContribuyente === true &&
+      buyerFiscalContext?.buyerIsAutorretenedor === true
+    ) {
+      throw new BadRequestException(
+        'Gran Contribuyente y Autorretenedor no pueden estar activos al mismo tiempo para el comprador de la venta.',
+      );
+    }
   }
 
   private assertOrderEditable(order: {
@@ -638,7 +638,6 @@ export class SalesService {
 
   async create(businessId: string, dto: CreateOrderDto) {
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
-
     if (!dto.items.length) {
       throw new BadRequestException('Order must contain at least one item');
     }
@@ -1143,7 +1142,6 @@ export class SalesService {
       buyerFiscalContext = undefined;
     }
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
-
     if (sourceType === 'RESERVATION') {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
     }
@@ -2014,7 +2012,6 @@ export class SalesService {
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
-
     if (sourceType === 'RESERVATION') {
       return this.updateReservation(businessId, orderId, dto);
     }

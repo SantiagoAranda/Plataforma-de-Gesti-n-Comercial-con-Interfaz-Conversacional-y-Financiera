@@ -35,6 +35,7 @@ describe('TaxService', () => {
     },
     orderFiscalContext: {
       upsert: mockFn(),
+      findUnique: mockFn(),
     },
     saleTaxLine: {
       deleteMany: mockFn(),
@@ -193,7 +194,7 @@ describe('TaxService', () => {
 
     const result = await service.calculateTaxPreview(
       businessId,
-      baseDto({ buyerIsRetenedor: true }),
+      baseDto(),
     );
 
     expect(result.reteFuenteTotal.toNumber()).toBe(25000);
@@ -202,14 +203,18 @@ describe('TaxService', () => {
 
   it('applies ReteFuente servicios: 15 UVT and 4% for declarante', async () => {
     mockSeller(['48']);
-    mockItems([{ price: 1000000 }]);
+    mockItems([{ price: 1100000, saleConcept: SaleConcept.SERVICES }]);
 
     const result = await service.calculateTaxPreview(
       businessId,
-      baseDto({ buyerIsRetenedor: true, saleConcept: SaleConcept.SERVICES }),
+      baseDto({ saleConcept: SaleConcept.GOODS }),
     );
 
-    expect(result.reteFuenteTotal.toNumber()).toBe(40000);
+    const reteFuente = result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE);
+    expect(result.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(result.reteFuenteTotal.toNumber()).toBe(44000);
+    expect(reteFuente?.baseAmount.toNumber()).toBe(1100000);
+    expect(reteFuente?.rate.toString()).toBe('0.04');
   });
 
   it('applies ReteFuente servicios: 15 UVT and 6% for no declarante', async () => {
@@ -299,6 +304,100 @@ describe('TaxService', () => {
     );
 
     expect(result.reteFuenteTotal.toNumber()).toBe(0);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE)?.applied).toBe(false);
+  });
+
+  it('applies ReteFuente compras at the inclusive 10 UVT minimum for a normal juridical buyer', async () => {
+    mockSeller(['05', '07', '48', '52']);
+    mockItems([{ price: 523740 }]);
+
+    const result = await service.calculateTaxPreview(businessId, baseDto());
+    const reteFuente = result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE);
+
+    expect(result.reteFuenteTotal.toNumber()).toBe(13093.5);
+    expect(reteFuente).toEqual(expect.objectContaining({
+      applied: true,
+      baseAmount: expect.any(Prisma.Decimal),
+      rate: expect.any(Prisma.Decimal),
+    }));
+    expect(reteFuente?.baseAmount.toNumber()).toBe(523740);
+    expect(reteFuente?.rate.toString()).toBe('0.025');
+  });
+
+  it('does not apply ReteFuente one COP below the inclusive 10 UVT minimum', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 523739 }]);
+
+    const result = await service.calculateTaxPreview(businessId, baseDto());
+
+    expect(result.reteFuenteTotal.toNumber()).toBe(0);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE)?.applied).toBe(false);
+  });
+
+  it('does not let the buyer Autorretenedor flag suppress ReteFuente', async () => {
+    mockSeller(['05', '07', '48', '52']);
+    mockItems([{ price: 1100000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({ buyerIsAutorretenedor: true }),
+    );
+
+    expect(result.reteFuenteTotal.toNumber()).toBe(27500);
+    expect(result.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE)?.applied).toBe(true);
+  });
+
+  it('uses SERVICES from the item through preview with the 15 UVT inclusive minimum and 4% rate', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 785610, saleConcept: SaleConcept.SERVICES }]);
+
+    const atMinimum = await service.calculateTaxPreview(
+      businessId,
+      baseDto({ saleConcept: SaleConcept.GOODS }),
+    );
+    const reteFuente = atMinimum.taxLines.find((line) => line.taxType === TaxType.RETEFUENTE);
+
+    expect(atMinimum.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(atMinimum.reteFuenteTotal.toNumber()).toBe(31424.4);
+    expect(reteFuente?.baseAmount.toNumber()).toBe(785610);
+    expect(reteFuente?.rate.toString()).toBe('0.04');
+    expect(reteFuente?.applied).toBe(true);
+
+    mockItems([{ price: 700000, saleConcept: SaleConcept.SERVICES }]);
+    const belowMinimum = await service.calculateTaxPreview(businessId, baseDto());
+    expect(belowMinimum.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(belowMinimum.reteFuenteTotal.toNumber()).toBe(0);
+  });
+
+  it('persists the same ReteFuente base, rate and SERVICES concept in the fiscal snapshot', async () => {
+    mockSeller(['05', '07', '48', '52']);
+    mockItems([{ price: 1100000, saleConcept: SaleConcept.SERVICES }]);
+    const buyer = baseDto({ saleConcept: SaleConcept.GOODS });
+    const preview = await service.calculateTaxPreview(businessId, buyer);
+    mockPrismaService.order.findUnique.mockResolvedValue({
+      business: {
+        taxProfile: {
+          personType: PersonType.JURIDICA,
+          isIncomeTaxDeclarant: true,
+          responsibilities: ['05', '07', '48', '52'].map((code) => ({
+            responsibility: { code },
+          })),
+        },
+      },
+    });
+
+    await service.freezeTaxCalculation(mockPrismaService as any, 'order-1', preview, buyer);
+
+    const fiscalContext = mockPrismaService.orderFiscalContext.upsert.mock.calls[0][0];
+    const snapshot = mockPrismaService.taxCalculationSnapshot.upsert.mock.calls[0][0];
+    const reteFuente = snapshot.create.rawCalculation.allLines.find(
+      (line: any) => line.taxType === TaxType.RETEFUENTE,
+    );
+    expect(fiscalContext.create.saleConcept).toBe(SaleConcept.SERVICES);
+    expect(snapshot.create.rawCalculation.saleConceptUsed).toBe(SaleConcept.SERVICES);
+    expect(snapshot.create.rawCalculation.reteFuenteTotal.toNumber()).toBe(44000);
+    expect(reteFuente.baseAmount.toNumber()).toBe(1100000);
+    expect(reteFuente.rate.toString()).toBe('0.04');
   });
 
   it('calculates ReteICA 9.66 per thousand over 1,000,000', async () => {

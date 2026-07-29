@@ -619,6 +619,28 @@ describe('SalesService personalized order lines', () => {
     );
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [true, false],
+    [false, true],
+    [false, false],
+  ])('accepts valid buyer fiscal combination Gran=%s, Autorretenedor=%s', async (buyerIsGranContribuyente, buyerIsAutorretenedor) => {
+    const { service } = createService();
+
+    await expect(
+      service.create(businessId, {
+        type: 'PRODUCTO',
+        status: 'PENDIENTE',
+        origin: 'MANUAL',
+        items: [{ itemId: item.id, quantity: 1 }],
+        buyerFiscalContext: {
+          buyerType: 'JURIDICA',
+          buyerIsGranContribuyente,
+          buyerIsAutorretenedor,
+        },
+      }),
+    ).resolves.toEqual(expect.objectContaining({ id: 'order-1' }));
+  });
 });
 
 describe('SalesService.reverseConfirmedOrder', () => {

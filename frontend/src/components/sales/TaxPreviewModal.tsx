@@ -9,6 +9,7 @@ import {
 } from "@/src/lib/tax/api";
 import type { Sale } from "@/src/types/sales";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
 
 function formatMoney(amount: number) {
   return amount.toLocaleString("es-CO", {
@@ -431,37 +432,46 @@ export default function TaxPreviewModal({
 
                 {buyerType === "JURIDICA" && (
                   <>
-                <label className="flex items-center gap-2.5 cursor-pointer text-xs font-medium text-slate-600 hover:text-slate-800 transition">
+                <label className={`flex items-center gap-2.5 text-xs font-medium transition ${buyerIsAutorretenedor ? "cursor-not-allowed text-slate-400 opacity-45" : "cursor-pointer text-slate-600 hover:text-slate-800"}`}>
                   <input
                     type="checkbox"
                     checked={buyerIsGranContribuyente}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setBuyerIsGranContribuyente(checked);
-                      if (checked) {
-                        setBuyerIsAutorretenedor(false);
-                      }
+                    disabled={buyerIsAutorretenedor}
+                    aria-disabled={buyerIsAutorretenedor}
+                    onChange={() => {
+                      if (buyerIsAutorretenedor) return;
+                      const flags = toggleBuyerFiscalFlag(
+                        {
+                          isGranContribuyente: buyerIsGranContribuyente,
+                          isAutorretenedor: buyerIsAutorretenedor,
+                        },
+                        "GRAN",
+                      );
+                      setBuyerIsGranContribuyente(flags.isGranContribuyente);
+                      setBuyerIsAutorretenedor(flags.isAutorretenedor);
                     }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />
                   <span>Gran Contribuyente (13)</span>
                 </label>
 
-                <label
-                  className={`flex items-center gap-2.5 text-xs font-medium transition ${
-                    buyerIsGranContribuyente
-                      ? "cursor-not-allowed text-slate-400 opacity-45"
-                      : "cursor-pointer text-slate-600 hover:text-slate-800"
-                  }`}
-                >
+                <label className={`flex items-center gap-2.5 text-xs font-medium transition ${buyerIsGranContribuyente ? "cursor-not-allowed text-slate-400 opacity-45" : "cursor-pointer text-slate-600 hover:text-slate-800"}`}>
                   <input
                     type="checkbox"
                     checked={buyerIsAutorretenedor && !buyerIsGranContribuyente}
                     disabled={buyerIsGranContribuyente}
                     aria-disabled={buyerIsGranContribuyente}
-                    onChange={(e) => {
+                    onChange={() => {
                       if (buyerIsGranContribuyente) return;
-                      setBuyerIsAutorretenedor(e.target.checked);
+                      const flags = toggleBuyerFiscalFlag(
+                        {
+                          isGranContribuyente: buyerIsGranContribuyente,
+                          isAutorretenedor: buyerIsAutorretenedor,
+                        },
+                        "AUTORRETENEDOR",
+                      );
+                      setBuyerIsGranContribuyente(flags.isGranContribuyente);
+                      setBuyerIsAutorretenedor(flags.isAutorretenedor);
                     }}
                     className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 focus:ring-2"
                   />

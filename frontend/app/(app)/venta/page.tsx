@@ -608,7 +608,7 @@ export default function VentaPage() {
         customerName: updated.customerName ?? undefined,
         customerWhatsapp: updated.customerWhatsapp ?? undefined,
         paymentMethod: updated.paymentMethod,
-        scheduledAt: updated.scheduledAt,
+        ...(updated.scheduledAt ? { scheduledAt: updated.scheduledAt } : {}),
         buyerFiscalContext: updated.fiscalContext ?? undefined,
         items: updated.items
           .filter((it) => it.itemId)
