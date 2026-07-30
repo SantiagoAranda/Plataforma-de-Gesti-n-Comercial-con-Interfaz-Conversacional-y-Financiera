@@ -177,6 +177,11 @@ function VentaPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const handledDeepLinkRef = useRef<string | null>(null);
+  const deepLinkRequestRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const saleElementsRef = useRef(new Map<string, HTMLDivElement>());
   const { taxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
@@ -213,6 +218,12 @@ function VentaPageContent() {
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [pendingDeepLinkSaleId, setPendingDeepLinkSaleId] = useState<
+    string | null
+  >(null);
+  const [highlightedSaleId, setHighlightedSaleId] = useState<string | null>(
+    null,
+  );
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -286,33 +297,59 @@ function VentaPageContent() {
 
   useEffect(() => {
     const saleId = searchParams.get("saleId");
-    if (!saleId || handledDeepLinkRef.current === saleId) return;
+    if (!saleId) {
+      handledDeepLinkRef.current = null;
+      return;
+    }
+    if (loading || handledDeepLinkRef.current === saleId) return;
     handledDeepLinkRef.current = saleId;
+    const requestId = ++deepLinkRequestRef.current;
+
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+    setHighlightedSaleId(null);
+    setPendingDeepLinkSaleId(null);
+    setDetailsSale(null);
 
     void getSale(saleId)
       .then((order) => {
+        if (deepLinkRequestRef.current !== requestId) return;
         const sale = mapOrderToSale(order);
         const createdAt = new Date(sale.createdAt);
+        if (Number.isNaN(createdAt.getTime())) {
+          throw new Error("INVALID_SALE_DATE");
+        }
         setSales((current) =>
           current.some((item) => item.id === sale.id)
             ? current
             : [sale, ...current],
         );
+        setQ("");
+        setFilterStatus("ALL");
         setSelectedDate(createdAt);
         setFilterYear(createdAt.getFullYear());
         setFilterMonth(createdAt.getMonth() + 1);
         setViewMode("DAILY");
-        setDetailsSale(sale);
+        setPendingDeepLinkSaleId(sale.id);
       })
-      .catch(() => toast("No se encontró la venta solicitada."))
+      .catch(() => {
+        if (deepLinkRequestRef.current !== requestId) return;
+        setPendingDeepLinkSaleId(null);
+        setHighlightedSaleId(null);
+        setDetailsSale(null);
+        toast("No se pudo abrir la venta solicitada.");
+      })
       .finally(() => {
+        if (deepLinkRequestRef.current !== requestId) return;
         const next = new URLSearchParams(searchParams.toString());
         next.delete("saleId");
         router.replace(next.toString() ? `/venta?${next}` : "/venta", {
           scroll: false,
         });
       });
-  }, [router, searchParams]);
+  }, [loading, router, searchParams]);
 
   // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
   const salesForPeriod = useMemo(() => {
@@ -368,6 +405,65 @@ function VentaPageContent() {
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
   }, [q, salesForSelectedDate, filterStatus]);
+
+  const registerSaleElement = useCallback(
+    (saleId: string, element: HTMLDivElement | null) => {
+      if (element) saleElementsRef.current.set(saleId, element);
+      else saleElementsRef.current.delete(saleId);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!pendingDeepLinkSaleId || loading) return;
+    const sale = filtered.find((item) => item.id === pendingDeepLinkSaleId);
+    const element = saleElementsRef.current.get(pendingDeepLinkSaleId);
+    if (!sale || !element) return;
+
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+    }
+    setDetailsSale(sale);
+    setHighlightedSaleId(sale.id);
+
+    const frame = requestAnimationFrame(() => {
+      const bounds = element.getBoundingClientRect();
+      const outsideViewport =
+        bounds.top < 0 ||
+        bounds.bottom >
+          (window.innerHeight || document.documentElement.clientHeight);
+      if (!outsideViewport) return;
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      element.scrollIntoView({
+        block: "center",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    });
+
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedSaleId((current) =>
+        current === sale.id ? null : current,
+      );
+      setPendingDeepLinkSaleId((current) =>
+        current === sale.id ? null : current,
+      );
+      highlightTimerRef.current = null;
+    }, 3_000);
+
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, loading, pendingDeepLinkSaleId]);
+
+  useEffect(
+    () => () => {
+      deepLinkRequestRef.current += 1;
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const todayMetrics = useMemo(() => {
     return {
@@ -884,6 +980,9 @@ function VentaPageContent() {
             <SalesList
               sales={filtered}
               selectedId={selectedSale?.id}
+              highlightedId={highlightedSaleId}
+              targetId={pendingDeepLinkSaleId}
+              onSaleElement={registerSaleElement}
               onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
               onDetails={(sale) => setDetailsSale(sale)}
               onReceipt={(sale) => setReceiptSale(sale)}

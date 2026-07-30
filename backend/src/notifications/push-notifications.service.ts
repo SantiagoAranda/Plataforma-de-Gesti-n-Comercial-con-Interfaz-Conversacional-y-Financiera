@@ -239,12 +239,9 @@ export class PushNotificationsService {
   async notifyAutomaticSaleCreated(sale: {
     businessId: string;
     saleId: string;
-    documentNumber?: string | null;
     total: number;
     customerName?: string | null;
   }) {
-    const reference =
-      sale.documentNumber?.trim() || sale.saleId.slice(-8).toUpperCase();
     const formattedTotal = new Intl.NumberFormat('es-CO', {
       style: 'currency',
       currency: 'COP',
@@ -254,12 +251,9 @@ export class PushNotificationsService {
 
     await this.sendToBusiness(sale.businessId, {
       title: 'Nueva venta recibida',
-      body: [
-        `Pedido #${reference} por ${formattedTotal}`,
-        customer ? `Cliente: ${customer}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · '),
+      body: customer
+        ? `Pedido de ${customer} por ${formattedTotal}`
+        : `Nuevo pedido por ${formattedTotal}`,
       icon: '/icons/icon-192x192.png',
       badge: '/icons/badge-72x72.png',
       tag: `sale-${sale.saleId}`,

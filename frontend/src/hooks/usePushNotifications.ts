@@ -488,6 +488,17 @@ export function usePushNotifications() {
   );
 
   const reconcileSubscription = useCallback(async () => {
+    try {
+      const backend = await fetchPushStatus(currentDevice().deviceId);
+      setStatus(backend);
+      setBackendRegistrationEnabled(backend.configured && backend.enabled);
+    } catch {
+      if (!checkSupport()) {
+        setState("unsupported");
+        return;
+      }
+    }
+
     if (!checkSupport()) {
       setState("unsupported");
       return;

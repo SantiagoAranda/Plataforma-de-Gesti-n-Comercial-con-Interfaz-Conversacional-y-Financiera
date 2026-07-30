@@ -1175,7 +1175,6 @@ export class PublicService {
       businessId: string;
       publicToken: string;
       origin: string;
-      documentNumber: string | null;
       customerName: string | null;
       total: Prisma.Decimal;
     };
@@ -1201,7 +1200,6 @@ export class PublicService {
           businessId: true,
           publicToken: true,
           origin: true,
-          documentNumber: true,
           customerName: true,
           total: true,
         },
@@ -1234,7 +1232,6 @@ export class PublicService {
         .notifyAutomaticSaleCreated({
           businessId: order.businessId,
           saleId: order.id,
-          documentNumber: order.documentNumber,
           total: Number(order.total),
           customerName: order.customerName,
         })

@@ -43,7 +43,8 @@ export default function HomePage() {
     setActiveFilter(filter);
   }, []);
 
-  const isFullScreen = activeFilter === "CLIENTES" || activeFilter === "PROVEEDORES";
+  const isFullScreen =
+    activeFilter === "CLIENTES" || activeFilter === "PROVEEDORES";
   const hideSummaries = activeFilter !== "TODOS";
 
   useEffect(() => {
@@ -72,11 +73,14 @@ export default function HomePage() {
     if (!storedUser) return;
 
     try {
-      const parsed = JSON.parse(storedUser) as
-        | { businessName?: string; name?: string; business?: { name?: string } }
-        | null;
+      const parsed = JSON.parse(storedUser) as {
+        businessName?: string;
+        name?: string;
+        business?: { name?: string };
+      } | null;
 
-      const nextName = parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+      const nextName =
+        parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
 
       if (nextName?.trim()) {
         setBusinessName(nextName.trim());
@@ -90,6 +94,7 @@ export default function HomePage() {
         title={businessName}
         subtitle={businessSubtitle || ""}
         variant="flat"
+        rightContent={<PushInviteCard />}
       />
 
       <main
@@ -98,11 +103,6 @@ export default function HomePage() {
           isFullScreen ? "flex flex-col pb-0" : "pb-24",
         )}
       >
-        {!hideSummaries && (
-          <div className="mx-auto w-full max-w-xl shrink-0 px-4 pt-4">
-            <PushInviteCard />
-          </div>
-        )}
         <div className="hidden h-full lg:flex">
           <div className="flex h-full flex-1 items-center justify-center px-6 py-10">
             <div className="w-full max-w-xl rounded-3xl bg-white p-8">

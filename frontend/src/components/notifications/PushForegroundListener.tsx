@@ -8,8 +8,35 @@ type PushMessage = {
   type?: string;
   title?: string;
   body?: string;
-  data?: { url?: string };
+  data?: { type?: string; saleId?: string; url?: string };
 };
+
+function getInternalSaleUrl(data: PushMessage["data"]) {
+  if (
+    data?.type !== "SALE_CREATED" ||
+    typeof data.saleId !== "string" ||
+    !data.saleId ||
+    typeof data.url !== "string" ||
+    !data.url.startsWith("/") ||
+    data.url.startsWith("//")
+  ) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(data.url, window.location.origin);
+    if (
+      parsed.origin !== window.location.origin ||
+      parsed.pathname !== "/venta" ||
+      parsed.searchParams.get("saleId") !== data.saleId
+    ) {
+      return null;
+    }
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
 
 export default function PushForegroundListener() {
   const router = useRouter();
@@ -18,7 +45,7 @@ export default function PushForegroundListener() {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent<PushMessage>) => {
       if (event.data?.type !== "WEB_PUSH_FOREGROUND") return;
-      const url = event.data.data?.url;
+      const url = getInternalSaleUrl(event.data.data);
       toast(
         (instance) => (
           <button
@@ -26,8 +53,7 @@ export default function PushForegroundListener() {
             className="block w-full text-left"
             onClick={() => {
               toast.dismiss(instance.id);
-              if (url?.startsWith("/") && !url.startsWith("//"))
-                router.push(url);
+              if (url) router.push(url);
             }}
           >
             <span className="block font-semibold text-[#121A28]">

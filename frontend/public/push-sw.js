@@ -61,6 +61,7 @@ self.addEventListener("push", (event) => {
         tag: typeof payload.tag === "string" ? payload.tag : undefined,
         renotify: false,
         data: safeData,
+        actions: [],
       });
     })(),
   );
@@ -68,26 +69,33 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = internalUrl(event.notification.data?.url, "/");
   event.waitUntil(
     (async () => {
+      const relativeUrl = internalUrl(event.notification.data?.url, "/");
+      const targetUrl = new URL(relativeUrl, self.location.origin).href;
       const windows = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
       });
-      const existing = windows.find((client) => {
+
+      const sameOriginWindows = windows.filter((client) => {
         try {
           return new URL(client.url).origin === self.location.origin;
         } catch {
           return false;
         }
       });
-      if (existing) {
-        await existing.navigate(target);
-        await existing.focus();
-        return;
+
+      for (const client of sameOriginWindows) {
+        try {
+          const navigatedClient = await client.navigate(targetUrl);
+          if (!navigatedClient) continue;
+          await navigatedClient.focus();
+          return;
+        } catch {}
       }
-      await self.clients.openWindow(target);
+
+      await self.clients.openWindow(targetUrl);
     })(),
   );
 });

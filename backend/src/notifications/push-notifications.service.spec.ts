@@ -175,6 +175,34 @@ describe('PushNotificationsService', () => {
     expect(options.topic.length).toBeLessThanOrEqual(32);
   });
 
+  it.each([
+    ['Juan', 'Pedido de Juan por'],
+    [null, 'Nuevo pedido por'],
+  ])(
+    'builds a sale message without exposing its reference for customer %s',
+    async (customerName, expectedPrefix) => {
+      const { service, transport } = setup();
+      const saleId = '123e4567-e89b-12d3-a456-426614174000';
+      await service.notifyAutomaticSaleCreated({
+        businessId: 'business-1',
+        saleId,
+        total: 125000,
+        customerName,
+      });
+
+      const payload = JSON.parse(transport.send.mock.calls[0][1]);
+      expect(payload.title).toBe('Nueva venta recibida');
+      expect(payload.body).toMatch(new RegExp(`^${expectedPrefix}`));
+      expect(payload.body).not.toContain(saleId);
+      expect(payload.body).not.toContain('Cliente:');
+      expect(payload.data).toEqual({
+        type: 'SALE_CREATED',
+        saleId,
+        url: `/venta?saleId=${saleId}`,
+      });
+    },
+  );
+
   it.each([404, 410])(
     'disables a terminal subscription on %s',
     async (statusCode) => {
