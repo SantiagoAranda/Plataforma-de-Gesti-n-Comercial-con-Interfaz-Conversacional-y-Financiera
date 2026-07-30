@@ -22,6 +22,7 @@ import { readBusinessProfile } from "../../../src/lib/businessProfile";
 import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
 import ManualPaidOutflowSheet from "../../../src/components/home/ManualPaidOutflowSheet";
+import PushInviteCard from "../../../src/components/notifications/PushInviteCard";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" style={{ color: "#0B3F64" }} />,
@@ -97,6 +98,11 @@ export default function HomePage() {
           isFullScreen ? "flex flex-col pb-0" : "pb-24",
         )}
       >
+        {!hideSummaries && (
+          <div className="mx-auto w-full max-w-xl shrink-0 px-4 pt-4">
+            <PushInviteCard />
+          </div>
+        )}
         <div className="hidden h-full lg:flex">
           <div className="flex h-full flex-1 items-center justify-center px-6 py-10">
             <div className="w-full max-w-xl rounded-3xl bg-white p-8">

@@ -1,4 +1,11 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { Prisma, Weekday } from '@prisma/client';
@@ -6,6 +13,7 @@ import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ItemOptionsService } from '../item-options/item-options.service';
+import { PushNotificationsService } from '../notifications/push-notifications.service';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -131,12 +139,87 @@ function normalizePublicFooterSettings(settings: unknown) {
 
 @Injectable()
 export class PublicService {
+  private readonly logger = new Logger(PublicService.name);
+
   constructor(
     private prisma: PrismaService,
     private storageService: StorageService,
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
+    @Optional()
+    private pushNotificationsService?: PushNotificationsService,
   ) {}
+
+  private publicOrderFingerprint(dto: CreatePublicOrderDto) {
+    const normalized = {
+      customerName: dto.customerName.trim(),
+      customerWhatsapp: dto.customerWhatsapp.trim(),
+      note: dto.note?.trim() || null,
+      items: dto.items
+        .map((item) => ({
+          itemId: item.itemId,
+          quantity: item.quantity,
+          excludedOptionalIngredientIds: [
+            ...(item.excludedOptionalIngredientIds ?? []),
+          ].sort(),
+          optionSelections: [...(item.optionSelections ?? [])].sort((a, b) =>
+            `${a.groupId}:${a.optionId}:${a.action}`.localeCompare(
+              `${b.groupId}:${b.optionId}:${b.action}`,
+            ),
+          ),
+        }))
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    };
+    return createHash('sha256')
+      .update(JSON.stringify(normalized))
+      .digest('base64url');
+  }
+
+  private idempotentPublicOrderResponse(
+    order: {
+      publicToken: string;
+      publicRequestFingerprint: string | null;
+    },
+    fingerprint: string,
+  ) {
+    if (order.publicRequestFingerprint !== fingerprint) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        message: 'La clave de idempotencia ya fue utilizada con otro contenido',
+      });
+    }
+    return { message: 'Order created', orderId: order.publicToken };
+  }
+
+  private isPublicOrderIdempotencyConflict(error: unknown) {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== 'P2002'
+    ) {
+      return false;
+    }
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return (
+        target.length === 2 &&
+        target.includes('businessId') &&
+        target.includes('publicRequestId')
+      );
+    }
+    if (typeof target !== 'string') return false;
+    if (target === 'Order_businessId_publicRequestId_key') return true;
+    const fields = target
+      .replace(/[()[\]"'`]/g, '')
+      .split(/[\s,]+/)
+      .filter(Boolean);
+    return (
+      fields.length === 2 &&
+      fields.includes('businessId') &&
+      fields.includes('publicRequestId')
+    );
+  }
 
   private normalizeExcludedOptionalIngredientIds(value: unknown) {
     if (value === null || value === undefined) return [];
@@ -877,6 +960,11 @@ export class PublicService {
   ===================================================== */
 
   async createOrder(slug: string, dto: CreatePublicOrderDto) {
+    if (!dto.idempotencyKey) {
+      throw new BadRequestException('idempotencyKey is required');
+    }
+    const requestFingerprint = this.publicOrderFingerprint(dto);
+
     let business = await this.prisma.business.findFirst({
       where: { slug, status: 'ACTIVE' },
     });
@@ -889,6 +977,25 @@ export class PublicService {
     }
 
     if (!business) throw new BadRequestException('Business not found');
+
+    const previousOrder = await this.prisma.order.findUnique({
+      where: {
+        businessId_publicRequestId: {
+          businessId: business.id,
+          publicRequestId: dto.idempotencyKey,
+        },
+      },
+      select: {
+        publicToken: true,
+        publicRequestFingerprint: true,
+      },
+    });
+    if (previousOrder) {
+      return this.idempotentPublicOrderResponse(
+        previousOrder,
+        requestFingerprint,
+      );
+    }
 
     if (!dto.items || dto.items.length === 0)
       throw new BadRequestException('Order must contain items');
@@ -1063,27 +1170,81 @@ export class PublicService {
       0,
     );
 
-    const order = await this.prisma.order.create({
-      data: {
-        businessId: business.id,
-        status: 'SENT',
-        origin: 'PUBLIC_STORE',
-        customerName: dto.customerName,
-        customerWhatsapp: dto.customerWhatsapp,
-        note: visibleNote,
-        sentAt: new Date(),
-        total,
-        items: {
-          create: orderItemCreates,
+    let order: {
+      id: string;
+      businessId: string;
+      publicToken: string;
+      origin: string;
+      documentNumber: string | null;
+      customerName: string | null;
+      total: Prisma.Decimal;
+    };
+    try {
+      order = await this.prisma.order.create({
+        data: {
+          businessId: business.id,
+          publicRequestId: dto.idempotencyKey,
+          publicRequestFingerprint: requestFingerprint,
+          status: 'SENT',
+          origin: 'PUBLIC_STORE',
+          customerName: dto.customerName.trim(),
+          customerWhatsapp: dto.customerWhatsapp.trim(),
+          note: visibleNote,
+          sentAt: new Date(),
+          total,
+          items: {
+            create: orderItemCreates,
+          },
         },
-      },
-      select: {
-        publicToken: true,
-        origin: true,
-      },
-    });
+        select: {
+          id: true,
+          businessId: true,
+          publicToken: true,
+          origin: true,
+          documentNumber: true,
+          customerName: true,
+          total: true,
+        },
+      });
+    } catch (error) {
+      if (!this.isPublicOrderIdempotencyConflict(error)) throw error;
+      const concurrentOrder = await this.prisma.order.findUnique({
+        where: {
+          businessId_publicRequestId: {
+            businessId: business.id,
+            publicRequestId: dto.idempotencyKey,
+          },
+        },
+        select: {
+          publicToken: true,
+          publicRequestFingerprint: true,
+        },
+      });
+      if (!concurrentOrder) throw error;
+      return this.idempotentPublicOrderResponse(
+        concurrentOrder,
+        requestFingerprint,
+      );
+    }
 
     console.log(`[PublicService] Created order origin: ${order.origin}`);
+
+    if (order.origin === 'PUBLIC_STORE' && this.pushNotificationsService) {
+      void this.pushNotificationsService
+        .notifyAutomaticSaleCreated({
+          businessId: order.businessId,
+          saleId: order.id,
+          documentNumber: order.documentNumber,
+          total: Number(order.total),
+          customerName: order.customerName,
+        })
+        .catch((error: unknown) => {
+          this.logger.error(
+            `No se pudo iniciar la notificación de la venta ${order.id}`,
+            error instanceof Error ? error.stack : String(error),
+          );
+        });
+    }
 
     return {
       message: 'Order created',

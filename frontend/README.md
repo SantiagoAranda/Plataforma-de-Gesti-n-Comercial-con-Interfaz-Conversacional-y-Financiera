@@ -18,6 +18,20 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Web Push
+
+Configure the public half of the same VAPID pair used by the backend:
+
+```env
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+NEXT_PUBLIC_ENABLE_PUSH_IN_DEV=false
+```
+
+The private VAPID key must never be added to the frontend. Production requires
+HTTPS. To test explicitly on localhost, set
+`NEXT_PUBLIC_ENABLE_PUSH_IN_DEV=true`; notification permission is still only
+requested after a user action.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

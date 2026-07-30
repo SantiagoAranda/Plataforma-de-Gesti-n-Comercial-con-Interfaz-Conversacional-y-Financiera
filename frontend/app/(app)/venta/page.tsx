@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck, Plus } from "lucide-react";
 import toast from "react-hot-toast";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import type { Sale } from "@/src/types/sales";
 
@@ -16,7 +24,7 @@ import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 
@@ -165,7 +173,10 @@ function getCalendarBusinessDayKey(date: Date) {
   );
 }
 
-export default function VentaPage() {
+function VentaPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const handledDeepLinkRef = useRef<string | null>(null);
   const { taxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
@@ -272,6 +283,36 @@ export default function VentaPage() {
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    const saleId = searchParams.get("saleId");
+    if (!saleId || handledDeepLinkRef.current === saleId) return;
+    handledDeepLinkRef.current = saleId;
+
+    void getSale(saleId)
+      .then((order) => {
+        const sale = mapOrderToSale(order);
+        const createdAt = new Date(sale.createdAt);
+        setSales((current) =>
+          current.some((item) => item.id === sale.id)
+            ? current
+            : [sale, ...current],
+        );
+        setSelectedDate(createdAt);
+        setFilterYear(createdAt.getFullYear());
+        setFilterMonth(createdAt.getMonth() + 1);
+        setViewMode("DAILY");
+        setDetailsSale(sale);
+      })
+      .catch(() => toast("No se encontró la venta solicitada."))
+      .finally(() => {
+        const next = new URLSearchParams(searchParams.toString());
+        next.delete("saleId");
+        router.replace(next.toString() ? `/venta?${next}` : "/venta", {
+          scroll: false,
+        });
+      });
+  }, [router, searchParams]);
 
   // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
   const salesForPeriod = useMemo(() => {
@@ -911,5 +952,13 @@ export default function VentaPage() {
         taxSettingsEnabled={taxSettingsEnabled}
       />
     </div>
+  );
+}
+
+export default function VentaPage() {
+  return (
+    <Suspense fallback={null}>
+      <VentaPageContent />
+    </Suspense>
   );
 }

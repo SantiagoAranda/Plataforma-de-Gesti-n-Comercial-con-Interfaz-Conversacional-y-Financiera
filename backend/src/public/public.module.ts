@@ -5,9 +5,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageModule } from '../storage/storage.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [StorageModule, InventoryModule, ItemOptionsModule],
+  imports: [
+    StorageModule,
+    InventoryModule,
+    ItemOptionsModule,
+    NotificationsModule,
+  ],
   controllers: [PublicController],
   providers: [PublicService, PrismaService],
 })

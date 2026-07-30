@@ -341,6 +341,8 @@ export default function PublicStoreClient() {
 
   const [category, setCategory] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const checkoutAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollYRef = useRef(0);
@@ -906,9 +908,33 @@ export default function PublicStoreClient() {
       toast("Modo administrador: no se pueden realizar pedidos");
       return;
     }
+    if (isSubmittingOrder) return;
 
     try {
+      setIsSubmittingOrder(true);
       const note = documentVal?.trim() ? `CEDULA: ${documentVal.trim()}` : null;
+      const checkoutPayload = {
+        customerName,
+        customerWhatsapp: `${countryCode}${phoneNumber}`,
+        items: cartItems.map((item) => ({
+          itemId: item.id,
+          quantity: item.quantity,
+          excludedOptionalIngredientIds: [...item.excludedOptionalIngredientIds].sort(),
+          optionSelections: [...item.optionSelections].sort((a, b) =>
+            `${a.groupId}:${a.optionId}:${a.action}`.localeCompare(
+              `${b.groupId}:${b.optionId}:${b.action}`,
+            ),
+          ),
+        })),
+        note,
+      };
+      const fingerprint = JSON.stringify(checkoutPayload);
+      if (checkoutAttemptRef.current?.fingerprint !== fingerprint) {
+        checkoutAttemptRef.current = {
+          fingerprint,
+          key: crypto.randomUUID(),
+        };
+      }
 
       const res = await fetch(`${API_URL}/public/${slug}/order`, {
         method: "POST",
@@ -916,15 +942,8 @@ export default function PublicStoreClient() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          customerName,
-          customerWhatsapp: `${countryCode}${phoneNumber}`,
-          items: cartItems.map((item) => ({
-            itemId: item.id,
-            quantity: item.quantity,
-            excludedOptionalIngredientIds: item.excludedOptionalIngredientIds,
-            optionSelections: item.optionSelections,
-          })),
-          note,
+          ...checkoutPayload,
+          idempotencyKey: checkoutAttemptRef.current.key,
         }),
       });
 
@@ -936,6 +955,7 @@ export default function PublicStoreClient() {
 
       toast.success("Compra enviada");
 
+      checkoutAttemptRef.current = null;
       setCart([]);
       setShowCartModal(false);
       setCustomerName("");
@@ -943,6 +963,8 @@ export default function PublicStoreClient() {
     } catch (error) {
       console.error("Order error:", error);
       toast.error("Error al enviar pedido");
+    } finally {
+      setIsSubmittingOrder(false);
     }
   };
 

@@ -25,6 +25,31 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Web Push (VAPID)
+
+Generate one stable key pair outside the build/deploy lifecycle:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Configure Railway with:
+
+```env
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:soporte@dominio.com
+```
+
+`VAPID_PRIVATE_KEY` is backend-only and must not be committed or logged. If the
+configuration is missing or invalid, Web Push is disabled without blocking
+sales. Push delivery is best effort; this version does not include a
+transactional outbox or persistent retries.
+
+The register and test rate limits use in-memory, per-process storage. With more
+than one Railway replica, each replica has its own counter and a future shared
+store will be required.
+
 ## Project setup
 
 ```bash

@@ -44,6 +44,9 @@ class OrderItemInput {
 }
 
 export class CreatePublicOrderDto {
+  @IsUUID()
+  idempotencyKey?: string;
+
   @IsString()
   @IsNotEmpty()
   customerName: string;

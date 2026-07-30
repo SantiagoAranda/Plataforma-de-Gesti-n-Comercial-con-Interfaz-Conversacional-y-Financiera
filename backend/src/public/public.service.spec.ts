@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { PublicService } from './public.service';
@@ -54,15 +54,21 @@ describe('PublicService', () => {
         findMany: mockFn().mockResolvedValue(items),
       },
       order: {
+        findUnique: mockFn().mockResolvedValue(null),
         create: mockFn().mockResolvedValue({
           id: 'order-1',
+          businessId: business.id,
           publicToken: 'public-token',
           items: [{ lineTotal: new Prisma.Decimal(10000) }],
           origin: 'PUBLIC_STORE',
+          documentNumber: null,
+          customerName: 'Customer',
+          total: new Prisma.Decimal(10000),
         }),
         update: mockFn().mockResolvedValue({}),
       },
     } as any;
+    const notifyAutomaticSaleCreated = mockFn().mockResolvedValue(undefined);
 
     return {
       service: new PublicService(
@@ -76,11 +82,13 @@ describe('PublicService', () => {
         {
           resolveSelectionsForOrderLine,
         } as any,
+        { notifyAutomaticSaleCreated } as any,
       ),
       prisma,
       getItemSellability,
       getItemsSellabilityBulk,
       resolveSelectionsForOrderLine,
+      notifyAutomaticSaleCreated,
     };
   }
 
@@ -88,6 +96,7 @@ describe('PublicService', () => {
     const { service, prisma } = createService();
 
     await service.createOrder('demo', {
+      idempotencyKey: '00000000-0000-4000-8000-000000000001',
       customerName: 'Customer',
       customerWhatsapp: '573001112233',
       items: [
@@ -116,11 +125,115 @@ describe('PublicService', () => {
     );
   });
 
+  it('returns the existing order for the same idempotency key and fingerprint', async () => {
+    const { service, prisma, notifyAutomaticSaleCreated } = createService();
+    const dto = {
+      idempotencyKey: '00000000-0000-4000-8000-000000000010',
+      customerName: 'Customer',
+      customerWhatsapp: '573001112233',
+      items: [{ itemId: 'item-1', quantity: 1 }],
+    };
+
+    await service.createOrder('demo', dto);
+    const fingerprint =
+      prisma.order.create.mock.calls[0][0].data.publicRequestFingerprint;
+    prisma.order.findUnique.mockResolvedValue({
+      publicToken: 'public-token',
+      publicRequestFingerprint: fingerprint,
+    });
+
+    const result = await service.createOrder('demo', dto);
+
+    expect(result).toEqual({
+      message: 'Order created',
+      orderId: 'public-token',
+    });
+    expect(prisma.order.create).toHaveBeenCalledTimes(1);
+    expect(notifyAutomaticSaleCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects reuse of an idempotency key with a different payload', async () => {
+    const { service, prisma } = createService();
+    prisma.order.findUnique.mockResolvedValue({
+      publicToken: 'public-token',
+      publicRequestFingerprint: 'another-fingerprint',
+    });
+
+    await expect(
+      service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000011',
+        customerName: 'Different customer',
+        customerWhatsapp: '573001112233',
+        items: [{ itemId: 'item-1', quantity: 1 }],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.item.findMany).not.toHaveBeenCalled();
+    expect(prisma.order.create).not.toHaveBeenCalled();
+  });
+
+  it('recovers only the idempotency P2002 race and preserves the public response', async () => {
+    const { service, prisma, notifyAutomaticSaleCreated } = createService();
+    const dto = {
+      idempotencyKey: '00000000-0000-4000-8000-000000000012',
+      customerName: 'Customer',
+      customerWhatsapp: '573001112233',
+      items: [{ itemId: 'item-1', quantity: 1 }],
+    };
+    const error = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: '6.19.2',
+        meta: { target: ['businessId', 'publicRequestId'] },
+      },
+    );
+    prisma.order.create.mockRejectedValue(error);
+    prisma.order.findUnique
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() =>
+        Promise.resolve({
+          publicToken: 'concurrent-token',
+          publicRequestFingerprint:
+            prisma.order.create.mock.calls[0][0].data.publicRequestFingerprint,
+        }),
+      );
+
+    await expect(service.createOrder('demo', dto)).resolves.toEqual({
+      message: 'Order created',
+      orderId: 'concurrent-token',
+    });
+    expect(notifyAutomaticSaleCreated).not.toHaveBeenCalled();
+  });
+
+  it('does not treat an unrelated P2002 as checkout idempotency', async () => {
+    const { service, prisma } = createService();
+    const error = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: '6.19.2',
+        meta: { target: ['publicToken'] },
+      },
+    );
+    prisma.order.create.mockRejectedValue(error);
+
+    await expect(
+      service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000013',
+        customerName: 'Customer',
+        customerWhatsapp: '573001112233',
+        items: [{ itemId: 'item-1', quantity: 1 }],
+      }),
+    ).rejects.toBe(error);
+    expect(prisma.order.findUnique).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects mandatory ingredient exclusions', async () => {
     const { service } = createService();
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000002',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [
@@ -139,6 +252,7 @@ describe('PublicService', () => {
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000003',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [
@@ -175,6 +289,7 @@ describe('PublicService', () => {
       });
 
     await service.createOrder('demo', {
+      idempotencyKey: '00000000-0000-4000-8000-000000000004',
       customerName: 'Customer',
       customerWhatsapp: '573001112233',
       items: [
@@ -265,6 +380,7 @@ describe('PublicService', () => {
     ];
 
     await service.createOrder('demo', {
+      idempotencyKey: '00000000-0000-4000-8000-000000000005',
       customerName: 'Customer',
       customerWhatsapp: '573001112233',
       items: [
@@ -285,6 +401,7 @@ describe('PublicService', () => {
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000006',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [{ itemId: 'missing-item', quantity: 1 }],
@@ -301,6 +418,7 @@ describe('PublicService', () => {
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000007',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [{ itemId: 'item-1', quantity: 1 }],
@@ -326,6 +444,7 @@ describe('PublicService', () => {
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000008',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [
@@ -353,6 +472,7 @@ describe('PublicService', () => {
 
     await expect(
       service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000009',
         customerName: 'Customer',
         customerWhatsapp: '573001112233',
         items: [{ itemId: 'item-1', quantity }],
