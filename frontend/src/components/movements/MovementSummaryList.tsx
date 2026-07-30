@@ -131,18 +131,24 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
     pct,
     isDeduction,
     isResult = false,
+    isBlue = false,
   }: {
     label: string;
     value: number;
     pct: number;
     isDeduction: boolean;
     isResult?: boolean;
+    isBlue?: boolean;
   }) {
     return (
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {isDeduction ? (
+            {isBlue ? (
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-bold text-base">
+                =
+              </div>
+            ) : isDeduction ? (
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-500">
                 <ArrowDownRight className="h-4 w-4" />
               </div>
@@ -153,14 +159,14 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             )}
             <span className={cn(
               "text-sm",
-              isResult ? "font-semibold text-neutral-900" : "font-medium text-slate-700"
+              isResult || isBlue ? "font-semibold text-neutral-900" : "font-medium text-slate-700"
             )}>
               {label}
             </span>
           </div>
           <span className={cn(
             "text-sm tabular-nums",
-            isResult ? "font-semibold text-neutral-900" : "font-semibold text-slate-900"
+            isResult || isBlue ? "font-semibold text-neutral-900" : "font-semibold text-slate-900"
           )}>
             {formatARS(value)}
           </span>
@@ -170,7 +176,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-300",
-                isDeduction ? "bg-rose-500" : "bg-emerald-500"
+                isBlue ? "bg-blue-600" : isDeduction ? "bg-rose-500" : "bg-emerald-500"
               )}
               style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
             />
@@ -250,7 +256,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
         {/* 2. CUERPO CON LOS ÍTEMS NORMALES */}
         <div className="space-y-4">
           <ProfitRow label="Total Gastos Operacionales" value={totalGastosOperacionales} pct={pctTotalGastosOperacionales} isDeduction={true} />
-          <ProfitRow label="Utilidad Operacional"       value={utilidadOperacional}       pct={rawPctUtilidadOperacional}       isDeduction={false} />
+          <ProfitRow label="Utilidad Operacional"       value={utilidadOperacional}       pct={rawPctUtilidadOperacional}       isDeduction={false} isBlue={true} />
           <ProfitRow label="Ingresos No Operacionales"  value={ingresosNoOperacionales}   pct={pctIngresosNoOperacionales}   isDeduction={false} />
           <ProfitRow label="Gastos No Operacionales"    value={gastosNoOperacionales}     pct={pctGastosNoOperacionales}     isDeduction={true}  />
         </div>

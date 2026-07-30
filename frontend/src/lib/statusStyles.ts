@@ -28,9 +28,9 @@ export const STATUS_STYLES = {
   PENDIENTE: {
     label: "Pendiente",
     border: "border-l-4 border-amber-500",
-    badge: "bg-amber-50 text-amber-700 border border-amber-200",
-    softBg: "bg-amber-50",
-    dotColor: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-900 border border-amber-300 font-semibold",
+    softBg: "bg-amber-100/60",
+    dotColor: "bg-amber-600",
   },
 
   CANCELADO: {

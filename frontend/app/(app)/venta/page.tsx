@@ -842,11 +842,6 @@ export default function VentaPage() {
         />
       )}
 
-
-
-
-
-
       <SaleDetailsModal
         open={!!detailsSale}
         sale={detailsSale}
@@ -876,15 +871,17 @@ export default function VentaPage() {
         onChange={setFilterStatus}
       />
 
-      <SalesChatComposer
-        expanded={isCreateOpen}
-        onOpenComposer={() => setIsCreateOpen(true)}
-        onCancelComposer={() => setIsCreateOpen(false)}
-        searchValue={q}
-        onSearchChange={setQ}
-        onSave={handleCreateSale}
-        taxSettingsEnabled={taxSettingsEnabled}
-      />
+      {!editingSale && (
+        <SalesChatComposer
+          expanded={isCreateOpen}
+          onOpenComposer={() => setIsCreateOpen(true)}
+          onCancelComposer={() => setIsCreateOpen(false)}
+          searchValue={q}
+          onSearchChange={setQ}
+          onSave={handleCreateSale}
+          taxSettingsEnabled={taxSettingsEnabled}
+        />
+      )}
     </div>
   );
 }

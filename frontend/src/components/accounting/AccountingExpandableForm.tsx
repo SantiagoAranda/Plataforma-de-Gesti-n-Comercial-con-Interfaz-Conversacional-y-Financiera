@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import type { Dispatch, SetStateAction } from "react";
 import type { AccountingFormState } from "@/src/types/accounting-form";
@@ -29,7 +29,6 @@ export function AccountingExpandableForm({
     <div className="rounded-[32px] bg-white p-6 border border-slate-200/80 shadow-[0_12px_32px_rgba(0,0,0,0.08)]">
       <div className="flex flex-col gap-0.5 mb-5 px-1">
         <h2 className="font-medium text-slate-900 text-lg">Movimiento Contable</h2>
-        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">GESTIÓN PUC</span>
       </div>
 
       <div className="flex flex-col gap-4">

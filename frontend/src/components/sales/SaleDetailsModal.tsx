@@ -116,7 +116,7 @@ export default function SaleDetailsModal({
   const paymentMethodStyles =
     sale.paymentMethod === "BANK_TRANSFER"
       ? "bg-teal-50 text-teal-700 border border-teal-100"
-      : "bg-amber-50 text-amber-700 border border-amber-100";
+      : "bg-amber-100 text-amber-900 border border-amber-300 font-semibold";
 
   const handleConfirmAction = () => {
     if (onConfirm) onConfirm(sale);

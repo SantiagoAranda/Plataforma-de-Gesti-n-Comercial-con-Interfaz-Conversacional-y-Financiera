@@ -176,11 +176,11 @@ export default function SaleCard({
                   if (onDetails) return onDetails(sale);
                   router.push(`/ventas/${sale.id}`);
                 }}
-                className="inline-flex items-center justify-center p-1.5 rounded-full bg-amber-500/10 text-amber-700 border border-amber-300 animate-pulse hover:animate-none hover:bg-amber-500/20 transition cursor-pointer"
+                className="inline-flex items-center justify-center p-1.5 rounded-full bg-amber-100 text-amber-900 border border-amber-400 animate-pulse hover:animate-none hover:bg-amber-200 transition cursor-pointer"
                 title="El precio registrado difiere del precio actual del catálogo (Ver advertencia)"
                 aria-label="Ver advertencia de precio"
               >
-                <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                <AlertTriangle size={13} className="text-amber-800 shrink-0" />
               </button>
             )}
 

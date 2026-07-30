@@ -1112,7 +1112,7 @@ export default function SalesChatComposer({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-30 px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none"
+      className={`fixed inset-x-0 bottom-0 ${expanded ? "z-50" : "z-30"} px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none`}
       style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
     >
       <div className="mx-auto w-full max-w-3xl pointer-events-auto">

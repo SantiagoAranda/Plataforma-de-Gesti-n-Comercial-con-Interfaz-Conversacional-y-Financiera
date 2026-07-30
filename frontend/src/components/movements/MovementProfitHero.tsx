@@ -85,13 +85,14 @@ export function MovementProfitHero({
   const isZero = ventasBrutas <= 0;
 
   // Re-mapeo Lógico de los Tramos del Gráfico
-  const pctVerde = isZero ? 0 : (utilidadDelEjercicioFinal / ventasBrutas) * 100;
-  const totalDeduccionesYGastos = costos + totalGastosOperacionales + gastosNoOperacionales + provisionesImpuesto;
-  const pctRojo = isZero ? 0 : (totalDeduccionesYGastos / ventasBrutas) * 100;
+  const totalDeduccionesYGastos = devoluciones + costos + totalGastosOperacionales + gastosNoOperacionales + provisionesImpuesto;
+  const pctVerde = isZero ? 0 : Math.max((utilidadDelEjercicioFinal / ventasBrutas) * 100, 0);
+  const pctRojo = isZero ? 0 : Math.max((totalDeduccionesYGastos / ventasBrutas) * 100, 0);
+  const pctAmarillo = isZero ? 0 : Math.max((reservaLegal / ventasBrutas) * 100, 0);
 
-  const widthVerde = isZero ? 60 : Math.min(Math.max(Math.round(pctVerde || 0), 0), 100);
-  const widthRojo = isZero ? 25 : Math.min(Math.max(Math.round(pctRojo || 0), 0), 100);
-  const widthAmarillo = isZero ? 15 : Math.min(Math.max(100 - widthVerde - widthRojo, 0), 100);
+  const widthVerde = isZero ? 0 : Math.min(Math.round(pctVerde), 100);
+  const widthRojo = isZero ? 0 : Math.min(Math.round(pctRojo), 100);
+  const widthAmarillo = isZero ? 0 : Math.min(Math.round(pctAmarillo), 100);
 
   const eficienciaReal = ventasBrutas > 0 
     ? Math.round((utilidadDelEjercicioFinal / ventasBrutas) * 100) 
@@ -153,7 +154,7 @@ export function MovementProfitHero({
         <div className="mt-2.5 flex items-center gap-x-4 text-slate-600 text-[11px] font-medium">
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500 shrink-0" />
-            <span>Ingresos</span>
+            <span>Ganancia</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0" />
