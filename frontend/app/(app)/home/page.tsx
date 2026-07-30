@@ -22,6 +22,7 @@ import { readBusinessProfile } from "../../../src/lib/businessProfile";
 import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
 import ManualPaidOutflowSheet from "../../../src/components/home/ManualPaidOutflowSheet";
+import PushInviteCard from "../../../src/components/notifications/PushInviteCard";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
   BUSINESS: <Building2 className="h-5 w-5" style={{ color: "#0B3F64" }} />,
@@ -42,7 +43,8 @@ export default function HomePage() {
     setActiveFilter(filter);
   }, []);
 
-  const isFullScreen = activeFilter === "CLIENTES" || activeFilter === "PROVEEDORES";
+  const isFullScreen =
+    activeFilter === "CLIENTES" || activeFilter === "PROVEEDORES";
   const hideSummaries = activeFilter !== "TODOS";
 
   useEffect(() => {
@@ -71,11 +73,14 @@ export default function HomePage() {
     if (!storedUser) return;
 
     try {
-      const parsed = JSON.parse(storedUser) as
-        | { businessName?: string; name?: string; business?: { name?: string } }
-        | null;
+      const parsed = JSON.parse(storedUser) as {
+        businessName?: string;
+        name?: string;
+        business?: { name?: string };
+      } | null;
 
-      const nextName = parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+      const nextName =
+        parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
 
       if (nextName?.trim()) {
         setBusinessName(nextName.trim());
@@ -89,6 +94,7 @@ export default function HomePage() {
         title={businessName}
         subtitle={businessSubtitle || ""}
         variant="flat"
+        rightContent={<PushInviteCard />}
       />
 
       <main

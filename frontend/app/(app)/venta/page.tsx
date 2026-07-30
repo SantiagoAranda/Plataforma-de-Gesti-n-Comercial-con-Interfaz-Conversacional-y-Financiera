@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Filter, ShoppingBag, WalletCards, LineChart, ClipboardCheck, Plus } from "lucide-react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { AlertTriangle, Filter, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import type { Sale } from "@/src/types/sales";
 
@@ -16,15 +24,16 @@ import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 
 import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
+import { getTaxProfile } from "@/src/lib/settings/api";
 
 // ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
 function MonthPickerPopover({
@@ -163,9 +172,32 @@ function getCalendarBusinessDayKey(date: Date) {
   );
 }
 
-export default function VentaPage() {
+function VentaPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const handledDeepLinkRef = useRef<string | null>(null);
+  const deepLinkRequestRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const saleElementsRef = useRef(new Map<string, HTMLDivElement>());
   const { taxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled } = useFeatureFlags();
+  const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    getTaxProfile()
+      .then((profile) => {
+        setHasHistoricalSimpleResponsibility(
+          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility.code === "47")),
+        );
+      })
+      .catch(() => setHasHistoricalSimpleResponsibility(false));
+  }, []);
+
+  const salesBlockedBySimpleRegime =
+    !simpleRegimeEnabled && hasHistoricalSimpleResponsibility;
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -185,6 +217,12 @@ export default function VentaPage() {
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [pendingDeepLinkSaleId, setPendingDeepLinkSaleId] = useState<
+    string | null
+  >(null);
+  const [highlightedSaleId, setHighlightedSaleId] = useState<string | null>(
+    null,
+  );
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("ALL");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -256,6 +294,62 @@ export default function VentaPage() {
     loadOrders();
   }, [loadOrders]);
 
+  useEffect(() => {
+    const saleId = searchParams.get("saleId");
+    if (!saleId) {
+      handledDeepLinkRef.current = null;
+      return;
+    }
+    if (loading || handledDeepLinkRef.current === saleId) return;
+    handledDeepLinkRef.current = saleId;
+    const requestId = ++deepLinkRequestRef.current;
+
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+    setHighlightedSaleId(null);
+    setPendingDeepLinkSaleId(null);
+    setDetailsSale(null);
+
+    void getSale(saleId)
+      .then((order) => {
+        if (deepLinkRequestRef.current !== requestId) return;
+        const sale = mapOrderToSale(order);
+        const createdAt = new Date(sale.createdAt);
+        if (Number.isNaN(createdAt.getTime())) {
+          throw new Error("INVALID_SALE_DATE");
+        }
+        setSales((current) =>
+          current.some((item) => item.id === sale.id)
+            ? current
+            : [sale, ...current],
+        );
+        setQ("");
+        setFilterStatus("ALL");
+        setSelectedDate(createdAt);
+        setFilterYear(createdAt.getFullYear());
+        setFilterMonth(createdAt.getMonth() + 1);
+        setViewMode("DAILY");
+        setPendingDeepLinkSaleId(sale.id);
+      })
+      .catch(() => {
+        if (deepLinkRequestRef.current !== requestId) return;
+        setPendingDeepLinkSaleId(null);
+        setHighlightedSaleId(null);
+        setDetailsSale(null);
+        toast("No se pudo abrir la venta solicitada.");
+      })
+      .finally(() => {
+        if (deepLinkRequestRef.current !== requestId) return;
+        const next = new URLSearchParams(searchParams.toString());
+        next.delete("saleId");
+        router.replace(next.toString() ? `/venta?${next}` : "/venta", {
+          scroll: false,
+        });
+      });
+  }, [loading, router, searchParams]);
+
   // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
   const salesForPeriod = useMemo(() => {
     if (viewMode === "MONTH") {
@@ -310,6 +404,65 @@ export default function VentaPage() {
       return s.items.some((i) => i.name.toLowerCase().includes(term));
     });
   }, [q, salesForSelectedDate, filterStatus]);
+
+  const registerSaleElement = useCallback(
+    (saleId: string, element: HTMLDivElement | null) => {
+      if (element) saleElementsRef.current.set(saleId, element);
+      else saleElementsRef.current.delete(saleId);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!pendingDeepLinkSaleId || loading) return;
+    const sale = filtered.find((item) => item.id === pendingDeepLinkSaleId);
+    const element = saleElementsRef.current.get(pendingDeepLinkSaleId);
+    if (!sale || !element) return;
+
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+    }
+    setDetailsSale(sale);
+    setHighlightedSaleId(sale.id);
+
+    const frame = requestAnimationFrame(() => {
+      const bounds = element.getBoundingClientRect();
+      const outsideViewport =
+        bounds.top < 0 ||
+        bounds.bottom >
+        (window.innerHeight || document.documentElement.clientHeight);
+      if (!outsideViewport) return;
+      const reduceMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      element.scrollIntoView({
+        block: "center",
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    });
+
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedSaleId((current) =>
+        current === sale.id ? null : current,
+      );
+      setPendingDeepLinkSaleId((current) =>
+        current === sale.id ? null : current,
+      );
+      highlightTimerRef.current = null;
+    }, 3_000);
+
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, loading, pendingDeepLinkSaleId]);
+
+  useEffect(
+    () => () => {
+      deepLinkRequestRef.current += 1;
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const todayMetrics = useMemo(() => {
     return {
@@ -674,7 +827,8 @@ export default function VentaPage() {
             }}
             viewLabel="Ver detalles"
             onEdit={
-              (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+              !salesBlockedBySimpleRegime &&
+                (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
                 ? () => {
                   setEditingSale(selectedSale);
                   setSelectedSale(null);
@@ -682,7 +836,7 @@ export default function VentaPage() {
                 : undefined
             }
             editLabel="Editar"
-            onDelete={() => handleDeleteSale(selectedSale)}
+            onDelete={salesBlockedBySimpleRegime ? undefined : () => handleDeleteSale(selectedSale)}
             deleteLabel="Eliminar"
           />
         ) : (
@@ -710,6 +864,11 @@ export default function VentaPage() {
           />
         )}
       </div>
+      {salesBlockedBySimpleRegime && (
+        <div className="mx-4 mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium leading-relaxed text-slate-600">
+          Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
+        </div>
+      )}
 
       <main className="min-h-0 flex-1 overflow-hidden relative">
         <div className="h-full overflow-y-auto w-full pb-24">
@@ -811,7 +970,7 @@ export default function VentaPage() {
                 }
                 actionLabel={filterStatus === "ALL" ? "Nueva venta" : undefined}
                 actionIcon={Plus}
-                onAction={filterStatus === "ALL" ? () => setIsCreateOpen(true) : undefined}
+                onAction={filterStatus === "ALL" && !salesBlockedBySimpleRegime ? () => setIsCreateOpen(true) : undefined}
               />
             </div>
           )}
@@ -820,6 +979,9 @@ export default function VentaPage() {
             <SalesList
               sales={filtered}
               selectedId={selectedSale?.id}
+              highlightedId={highlightedSaleId}
+              targetId={pendingDeepLinkSaleId}
+              onSaleElement={registerSaleElement}
               onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
               onDetails={(sale) => setDetailsSale(sale)}
               onReceipt={(sale) => setReceiptSale(sale)}
@@ -831,7 +993,7 @@ export default function VentaPage() {
         </div>
       </main>
 
-      {editingSale && (
+      {editingSale && !salesBlockedBySimpleRegime && (
         <SalesChatComposer
           mode="edit"
           sale={editingSale}
@@ -846,10 +1008,10 @@ export default function VentaPage() {
         open={!!detailsSale}
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
-        onConfirm={handleConfirmSale}
-        onSaveOptionalIngredients={handleSaveOptionalIngredients}
-        onCancel={handleDeleteSale}
-        onEdit={(sale) => {
+        onConfirm={salesBlockedBySimpleRegime ? undefined : handleConfirmSale}
+        onSaveOptionalIngredients={salesBlockedBySimpleRegime ? undefined : handleSaveOptionalIngredients}
+        onCancel={salesBlockedBySimpleRegime ? undefined : handleDeleteSale}
+        onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
           setEditingSale(sale);
           setDetailsSale(null);
         }}
@@ -871,17 +1033,25 @@ export default function VentaPage() {
         onChange={setFilterStatus}
       />
 
-      {!editingSale && (
-        <SalesChatComposer
-          expanded={isCreateOpen}
-          onOpenComposer={() => setIsCreateOpen(true)}
-          onCancelComposer={() => setIsCreateOpen(false)}
-          searchValue={q}
-          onSearchChange={setQ}
-          onSave={handleCreateSale}
-          taxSettingsEnabled={taxSettingsEnabled}
-        />
-      )}
+      <SalesChatComposer
+        expanded={salesBlockedBySimpleRegime ? false : isCreateOpen}
+        onOpenComposer={() => {
+          if (!salesBlockedBySimpleRegime) setIsCreateOpen(true);
+        }}
+        onCancelComposer={() => setIsCreateOpen(false)}
+        searchValue={q}
+        onSearchChange={setQ}
+        onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
+        taxSettingsEnabled={taxSettingsEnabled}
+      />
     </div>
+  );
+}
+
+export default function VentaPage() {
+  return (
+    <Suspense fallback={null}>
+      <VentaPageContent />
+    </Suspense>
   );
 }

@@ -228,6 +228,16 @@ enum SaleOrigin {
   PUBLIC_STORE
 }
 
+enum PushPlatform {
+  WEB_WINDOWS
+  WEB_ANDROID
+  WEB_IOS
+  WEB_MACOS
+  WEB_LINUX
+  WEB_DESKTOP
+  UNKNOWN
+}
+
 //
 // MODELOS CORE
 //
@@ -242,6 +252,8 @@ model User {
   // ADMIN queda sin negocio (businessId = null).
   businessId String?   @unique
   business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  pushSubscriptions PushSubscription[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -261,6 +273,7 @@ model Business {
   logoSizeBytes Int?
   status        BusinessStatus @default(ACTIVE)
   inactivatedAt DateTime?
+  notifyOnAutomaticSale Boolean        @default(false)
 
   // Business classification used to drive inventory defaults and module behavior.
   businessCategory BusinessCategory @default(RETAIL)
@@ -271,6 +284,7 @@ model Business {
   items        Item[]
   orders       Order[]
   reservations Reservation[]
+  pushSubscriptions PushSubscription[]
 
   schedules           ServiceScheduleWindow[]
   blocks              ServiceScheduleBlock[]
@@ -334,6 +348,30 @@ model StoreFooterSettings {
   updatedAt DateTime @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model PushSubscription {
+  id             String       @id @default(cuid())
+  businessId     String
+  userId         String
+  deviceId       String
+  endpoint       String       @unique
+  expirationTime DateTime?
+  p256dh         String
+  auth           String
+  platform       PushPlatform
+  userAgent      String?
+  enabled        Boolean      @default(true)
+  lastUsedAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([businessId, enabled])
+  @@index([userId])
 }
 
 model Item {
@@ -793,7 +831,9 @@ model InventoryMovement {
 model Order {
   id String @id @default(uuid())
 
-  publicToken String @unique @default(uuid())
+  publicToken              String  @unique @default(uuid())
+  publicRequestId          String?
+  publicRequestFingerprint String?
 
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -834,6 +874,7 @@ model Order {
   updatedAt DateTime @updatedAt
 
   @@unique([id, businessId])
+  @@unique([businessId, publicRequestId])
   @@index([businessId, createdAt])
   @@index([businessId, inventoryPostedAt])
   @@index([status])

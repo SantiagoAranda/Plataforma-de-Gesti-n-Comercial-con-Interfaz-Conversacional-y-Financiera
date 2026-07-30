@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import BottomNavbar from "@/src/components/layout/BottomNav";
@@ -154,6 +155,7 @@ function MonthPickerPopover({
 
 export default function MovimientosPage() {
   const { taxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled } = useFeatureFlags();
   const [viewMode, setViewMode] = useState<ViewMode>("DAILY");
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
@@ -309,7 +311,7 @@ export default function MovimientosPage() {
           <>
             {summary && <MovementProfitHero metrics={summary} />}
 
-            {taxSettingsEnabled && summary?.simpleTaxProjection?.enabled && (
+            {simpleRegimeEnabled && taxSettingsEnabled && summary?.simpleTaxProjection?.enabled && (
               <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>

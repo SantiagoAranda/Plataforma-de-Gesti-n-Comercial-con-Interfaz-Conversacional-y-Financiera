@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, MapPin } from "lucide-react";
+import { ArrowLeft, Check, Lock, MapPin } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   getTaxProfile,
@@ -23,8 +23,9 @@ import {
 } from "@/src/constants/colombianMunicipalities";
 import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
-const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "13", "15", "47", "48", "49", "52"];
+const RUT_VISIBLE_RESPONSIBILITY_CODES = ["05", "07", "10", "47", "48", "49", "52"];
 const SIMULATOR_RETEICA_PER_THOUSAND = "9.66";
 
 const RESPONSIBILITY_LABELS: Record<string, string> = {
@@ -94,12 +95,6 @@ const BUSINESS_PROFILE_OPTIONS: Array<{
     codes: ["05", "48", "07"],
     declarant: true,
     personType: "JURIDICA",
-  },
-  {
-    key: "RST",
-    label: "Régimen Simple (RST)",
-    codes: ["47"],
-    declarant: true,
   },
   {
     key: "GRAN_CONTRIBUYENTE",
@@ -182,6 +177,7 @@ function parsePerThousand(value: string) {
 export default function RutImpuestosPage() {
   const router = useRouter();
   const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -304,13 +300,14 @@ export default function RutImpuestosPage() {
 
   useEffect(() => {
     async function loadData() {
+      if (featureFlagsLoading) return;
       try {
         const [profile, catalog, rates, simpleTaxConfig] = await Promise.all([
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
-          getSimpleTaxConfig()
-            .then((data) => ({ loaded: true, data }))
+          (simpleRegimeEnabled ? getSimpleTaxConfig() : Promise.resolve(null))
+            .then((data) => ({ loaded: Boolean(data), data }))
             .catch(() => ({ loaded: false, data: null })),
         ]);
 
@@ -451,7 +448,7 @@ export default function RutImpuestosPage() {
       }
     }
     loadData();
-  }, []);
+  }, [featureFlagsLoading, simpleRegimeEnabled]);
 
   useEffect(() => {
     if (ciiuSearch.length < 2) {
@@ -483,6 +480,10 @@ export default function RutImpuestosPage() {
   const visibleResponsibilities = responsibilitiesCatalog.filter((responsibility) =>
     RUT_VISIBLE_RESPONSIBILITY_CODES.includes(responsibility.code),
   );
+  // El código 47 solo se conserva cuando llegó desde un perfil histórico. No puede
+  // agregarse ni quitarse desde esta pantalla.
+  const hasHistoricalSimpleResponsibility =
+    initialSnapshot?.selectedRespCodes.includes("47") ?? false;
 
   const handleMunicipalityChange = (code: string) => {
     setMunicipalityCode(code);
@@ -496,11 +497,18 @@ export default function RutImpuestosPage() {
     const option = BUSINESS_PROFILE_OPTIONS.find((profile) => profile.key === key);
     if (!option) return;
 
-    setSelectedRespCodes(normalizeCodes(option.codes));
+    setSelectedRespCodes((prev) =>
+      normalizeCodes([
+        ...option.codes.filter((code) => code !== "47"),
+        ...(prev.includes("47") ? ["47"] : []),
+      ]),
+    );
     if (option.personType) setPersonType(option.personType);
   };
 
   const handleRespChange = (code: string, checked: boolean) => {
+    if (code === "47") return;
+
     setBusinessProfile("ADVANCED");
     setSelectedRespCodes((prev) => {
       let next = [...prev];
@@ -575,6 +583,11 @@ export default function RutImpuestosPage() {
     setSaving(true);
 
     try {
+      const responsibilitiesToSave = normalizeCodes([
+        ...selectedRespCodes.filter((code) => code !== "47"),
+        ...(hasHistoricalSimpleResponsibility ? ["47"] : []),
+      ]);
+
       await updateTaxProfile({
         personType,
         documentType,
@@ -589,25 +602,27 @@ export default function RutImpuestosPage() {
         mainCiiuCode: mainCiiuCode || null,
         mainCiiuDescription: mainCiiuDescription || null,
         isIncomeTaxDeclarant,
-        responsibilityCodes: normalizeCodes(selectedRespCodes),
+        responsibilityCodes: responsibilitiesToSave,
       });
 
       await saveIcaRate();
 
-      const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
-      const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
-        enabled: hasSimpleTaxResponsibility,
-        taxYear: Number(simpleTaxYear) || 2026,
-        groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
-        activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
-        ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
-      };
-      if (simpleTaxConfigLoaded) {
-        simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
-          ? simpleTaxFilingMode
-          : "BIMONTHLY_ADVANCE";
+      if (simpleRegimeEnabled) {
+        const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
+        const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
+          enabled: hasSimpleTaxResponsibility,
+          taxYear: Number(simpleTaxYear) || 2026,
+          groupCode: hasSimpleTaxResponsibility ? simpleTaxGroupCode || null : null,
+          activityLabel: hasSimpleTaxResponsibility ? simpleTaxActivityLabel || null : null,
+          ciiuCode: hasSimpleTaxResponsibility ? mainCiiuCode || null : null,
+        };
+        if (simpleTaxConfigLoaded) {
+          simpleTaxPayload.filingMode = hasSimpleTaxResponsibility
+            ? simpleTaxFilingMode
+            : "BIMONTHLY_ADVANCE";
+        }
+        await updateSimpleTaxConfig(simpleTaxPayload);
       }
-      await updateSimpleTaxConfig(simpleTaxPayload);
       window.dispatchEvent(new Event("tax-profile-updated"));
 
       const savedSnapshot = {
@@ -906,20 +921,27 @@ export default function RutImpuestosPage() {
 
               <div className="space-y-2">
                 {visibleResponsibilities.map((responsibility) => {
-                  const selected = selectedRespCodes.includes(responsibility.code);
+                  const isDisabledResponsibility = responsibility.code === "47";
+                  const selected =
+                    !isDisabledResponsibility && selectedRespCodes.includes(responsibility.code);
 
                   return (
                     <label
                       key={responsibility.id}
-                      className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 transition ${
-                        selected
+                      aria-disabled={isDisabledResponsibility}
+                      className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 ${
+                        isDisabledResponsibility
+                          ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-80"
+                          : selected
                           ? "border-blue-700 bg-blue-700 text-white shadow-sm"
-                          : "border-slate-200 bg-slate-50 text-slate-800 hover:border-blue-200 hover:bg-white"
+                          : "cursor-pointer border-slate-200 bg-slate-50 text-slate-800 transition hover:border-blue-200 hover:bg-white"
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={selected}
+                        disabled={isDisabledResponsibility}
+                        aria-disabled={isDisabledResponsibility}
                         onChange={(event) =>
                           handleRespChange(responsibility.code, event.target.checked)
                         }
@@ -927,7 +949,9 @@ export default function RutImpuestosPage() {
                       />
                       <span
                         className={`inline-flex min-w-8 items-center justify-center rounded-md px-1.5 py-1 text-[10px] font-black ${
-                          selected
+                          isDisabledResponsibility
+                            ? "bg-slate-200 text-slate-400 ring-1 ring-slate-300"
+                            : selected
                             ? "bg-blue-500 text-white"
                             : "bg-white text-blue-800 ring-1 ring-slate-200"
                         }`}
@@ -936,45 +960,26 @@ export default function RutImpuestosPage() {
                       </span>
                       <span className="min-w-0 flex-1 text-xs font-bold">
                         {RESPONSIBILITY_LABELS[responsibility.code] || responsibility.name}
+                        {isDisabledResponsibility && (
+                          <span className="mt-0.5 block text-[10px] font-medium text-slate-400">
+                            No disponible en esta versión
+                          </span>
+                        )}
                       </span>
-                      {selected && <Check className="h-4 w-4 shrink-0" strokeWidth={2.75} />}
+                      {isDisabledResponsibility ? (
+                        <Lock className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                      ) : (
+                        selected && <Check className="h-4 w-4 shrink-0" strokeWidth={2.75} />
+                      )}
                     </label>
                   );
                 })}
               </div>
             </div>
 
-            {selectedRespCodes.includes("47") && (
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-black text-emerald-950">
-                      Régimen Simple activo según RUT
-                    </h3>
-                    <p className="mt-1 text-[11px] font-medium text-emerald-800">
-                      La liquidación se gestiona desde el módulo Régimen Simple.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push("/contabilidad/regimen-simple")}
-                    className="shrink-0 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-emerald-800 ring-1 ring-emerald-100 transition hover:bg-emerald-100"
-                  >
-                    Ir a liquidar
-                  </button>
-                </div>
-                {simpleTaxConfigLoaded && simpleTaxFilingMode === "ANNUAL_EXCEPTION" && (
-                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-[11px] font-medium text-amber-800">
-                    <span className="font-bold">Advertencia:</span> Tienes activa la modalidad Excepción Anual de pruebas. Te sugerimos cambiar a la modalidad estándar de <strong>Anticipos bimestrales</strong> para habilitar las liquidaciones normales.
-                    <button
-                      type="button"
-                      onClick={() => setSimpleTaxFilingMode("BIMONTHLY_ADVANCE")}
-                      className="mt-2 block font-black text-amber-900 underline hover:text-amber-950"
-                    >
-                      Volver a Anticipos Bimestrales
-                    </button>
-                  </div>
-                )}
+            {!simpleRegimeEnabled && hasHistoricalSimpleResponsibility && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-medium leading-relaxed text-slate-500">
+                Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
               </div>
             )}
 

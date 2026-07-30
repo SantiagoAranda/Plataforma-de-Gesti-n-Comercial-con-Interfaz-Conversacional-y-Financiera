@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
   AccountingMovementOriginType,
   MovementNature,
@@ -10,6 +10,8 @@ import {
   SimpleTaxAnnualReturnStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FeatureFlagsService } from '../common/config/feature-flags';
+import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
 import {
   SimpleTaxCalculateDto,
@@ -87,7 +89,18 @@ type SimpleTaxActivityGroupMappingRow = {
 
 @Injectable()
 export class SimpleTaxService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeEnabled: true,
+    } as FeatureFlagsService,
+  ) {}
+
+  private assertSimpleRegimeAvailable() {
+    if (!this.featureFlags.simpleRegimeEnabled) {
+      throw new SimpleRegimeNotAvailableException();
+    }
+  }
 
   async getConfig(businessId: string) {
     const existing = await this.prisma.businessSimpleTaxConfig.findUnique({
@@ -121,6 +134,7 @@ export class SimpleTaxService {
   }
 
   async upsertConfig(businessId: string, dto: UpsertSimpleTaxConfigDto) {
+    this.assertSimpleRegimeAvailable();
     const updateData: Prisma.BusinessSimpleTaxConfigUpdateInput = {
       enabled: dto.enabled,
       taxYear: dto.taxYear,
@@ -170,6 +184,7 @@ export class SimpleTaxService {
   }
 
   async calculateAndPersist(businessId: string, dto: SimpleTaxCalculateDto) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const calculation = await this.calculate(businessId, dto);
     const existing = await this.prisma.simpleTaxPeriod.findUnique({
@@ -216,6 +231,7 @@ export class SimpleTaxService {
   }
 
   async updatePeriod(businessId: string, id: string, dto: SimpleTaxUpdatePeriodDto) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const existing = await this.getPeriod(businessId, id);
     if (
@@ -250,6 +266,7 @@ export class SimpleTaxService {
   }
 
   async postPeriod(businessId: string, id: string) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
@@ -361,6 +378,7 @@ export class SimpleTaxService {
   }
 
   async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
@@ -1062,6 +1080,7 @@ export class SimpleTaxService {
   }
 
   async calculateAnnualReturn(businessId: string, taxYear: number, payload: CalculateSimpleTaxAnnualReturnDto) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const config = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
@@ -1240,6 +1259,7 @@ export class SimpleTaxService {
   }
 
   async postAnnualReturn(businessId: string, id: string) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
@@ -1310,6 +1330,7 @@ export class SimpleTaxService {
   }
 
   async payAnnualReturn(businessId: string, id: string, dto: PaySimpleTaxAnnualReturnDto) {
+    this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     return this.prisma.$transaction(async (tx) => {
       const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({

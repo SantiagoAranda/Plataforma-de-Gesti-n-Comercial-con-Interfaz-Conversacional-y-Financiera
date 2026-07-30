@@ -23,6 +23,7 @@ import { ItemOptionsModule } from './item-options/item-options.module';
 import { SettingsModule } from './settings/settings.module';
 import { TaxModule } from './tax/tax.module';
 import { SimpleTaxModule } from './simple-tax/simple-tax.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { SimpleTaxModule } from './simple-tax/simple-tax.module';
     SettingsModule,
     TaxModule,
     SimpleTaxModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

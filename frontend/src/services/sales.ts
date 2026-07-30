@@ -75,6 +75,10 @@ export function listSales() {
   return api<ApiOrder[]>("/sales");
 }
 
+export function getSale(id: string) {
+  return api<ApiOrder>(`/sales/${encodeURIComponent(id)}`);
+}
+
 export type SaleLineInput = {
   itemId: string;
   quantity: number;

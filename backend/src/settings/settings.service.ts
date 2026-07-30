@@ -1,9 +1,11 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertTaxProfileDto } from './dto/upsert-tax-profile.dto';
 import { CreateIcaRateDto } from './dto/create-ica-rate.dto';
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { PersonType, Prisma } from '@prisma/client';
+import { FeatureFlagsService } from '../common/config/feature-flags';
+import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 
 export function deriveIncomeTaxDeclarant(
   personType: PersonType,
@@ -30,7 +32,12 @@ export function deriveIncomeTaxDeclarant(
 
 @Injectable()
 export class SettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeEnabled: true,
+    } as FeatureFlagsService,
+  ) {}
 
   private resolveIncomeTaxDeclarant(
     requestedValue: boolean | undefined,
@@ -71,7 +78,26 @@ export class SettingsService {
 
   async upsertTaxProfile(businessId: string, dto: UpsertTaxProfileDto) {
     // Validación de exclusión mutua 48 (Responsable de IVA) vs 49 (No responsable de IVA)
-    const codes = [...new Set(dto.responsibilityCodes)];
+    const existingProfile = this.prisma.businessTaxProfile?.findUnique
+      ? await this.prisma.businessTaxProfile.findUnique({
+          where: { businessId },
+          include: { responsibilities: { include: { responsibility: true } } },
+        })
+      : null;
+    const existingHasSimpleResponsibility = Boolean(
+      existingProfile?.responsibilities.some((item) => item.responsibility.code === '47'),
+    );
+    const requestedCodes = [...new Set(dto.responsibilityCodes)];
+    if (
+      !this.featureFlags.simpleRegimeEnabled &&
+      requestedCodes.includes('47') &&
+      !existingHasSimpleResponsibility
+    ) {
+      throw new SimpleRegimeNotAvailableException();
+    }
+    const codes = !this.featureFlags.simpleRegimeEnabled && existingHasSimpleResponsibility
+      ? [...new Set([...requestedCodes.filter((code) => code !== '47'), '47'])]
+      : requestedCodes;
     if (codes.includes('48') && codes.includes('49')) {
       throw new BadRequestException('Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.');
     }
@@ -188,6 +214,10 @@ export class SettingsService {
       },
       orderBy: { code: 'asc' },
     });
+  }
+
+  getFeatureFlags() {
+    return { simpleRegimeEnabled: this.featureFlags.simpleRegimeEnabled };
   }
 
   // --- ICA rates ---

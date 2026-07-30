@@ -4,6 +4,7 @@ import { ArrowUpRight, ArrowDownRight, Briefcase, Building2, Scale } from "lucid
 import { cn } from "@/src/lib/utils";
 import type { AccountingSummary } from "@/src/services/accounting";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 function formatARS(v: number) {
   return v.toLocaleString("es-AR", {
@@ -19,6 +20,7 @@ type MovementSummaryListProps = {
 
 export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
   const { taxSettingsEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled } = useFeatureFlags();
   // 1. Pre-procesamiento de Valores Redondeados en Cadena
   const operacion = metrics?.operacionComercial || {
     ventasNetas: 0,
@@ -61,7 +63,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
 
   const iva = Math.abs(Math.round(impuestos.iva || 0));
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
-  const simpleTaxProjection = metrics.simpleTaxProjection;
+  const simpleTaxProjection = simpleRegimeEnabled ? metrics.simpleTaxProjection : undefined;
   const hasConfiguredSimpleTax =
     Boolean(taxSettingsEnabled && simpleTaxProjection?.enabled && simpleTaxProjection.configured);
   const isOpenSimpleTaxEstimate = Boolean(taxSettingsEnabled && simpleTaxProjection?.source === "MONTHLY_MIN_RATE");

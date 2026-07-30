@@ -10,6 +10,7 @@ import {
 import type { Sale } from "@/src/types/sales";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 function formatMoney(amount: number) {
   return amount.toLocaleString("es-CO", {
@@ -50,6 +51,7 @@ export default function TaxPreviewModal({
   initialContext?: BuyerFiscalContext | null;
   actionLabel?: string;
 }) {
+  const { simpleRegimeEnabled } = useFeatureFlags();
   const [buyerType, setBuyerType] = useState<"NATURAL" | "JURIDICA">("NATURAL");
   const [buyerDocumentType, setBuyerDocumentType] = useState<"CC" | "NIT" | "CE" | "PASAPORTE" | "TI">("CC");
   const [buyerDocumentNumber, setBuyerDocumentNumber] = useState("");
@@ -116,7 +118,7 @@ export default function TaxPreviewModal({
 
   // Automatically update preview when fields change
   useEffect(() => {
-    if (!open || !sale) return;
+    if (!open || !sale || !simpleRegimeEnabled) return;
 
     const fetchPreview = async () => {
       try {
@@ -143,7 +145,7 @@ export default function TaxPreviewModal({
           buyerIsRetenedor,
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
-          buyerIsRegimenSimple,
+          ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
           buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
           reteIcaRateOverride,
@@ -182,9 +184,22 @@ export default function TaxPreviewModal({
     fiscalMunicipalityCode,
     reteIcaRateOverride,
     saleConcept,
+    simpleRegimeEnabled,
   ]);
 
   if (!open || !sale) return null;
+
+  if (!simpleRegimeEnabled) {
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
+        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+          <h2 className="text-base font-bold text-slate-900">Vista fiscal no disponible</h2>
+          <p className="mt-2 text-sm text-slate-500">Régimen Simple no está disponible en esta versión.</p>
+          <button type="button" onClick={onClose} className="mt-5 rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Cerrar</button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,7 +213,7 @@ export default function TaxPreviewModal({
       buyerIsRetenedor,
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
-      buyerIsRegimenSimple,
+      ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
       buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,

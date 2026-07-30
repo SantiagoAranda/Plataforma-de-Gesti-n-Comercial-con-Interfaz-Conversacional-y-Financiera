@@ -22,6 +22,7 @@ import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalitie
 import { api } from "@/src/lib/api";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
+import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 import {
   agendaPayloadForLine,
   requiresServiceAgenda,
@@ -141,6 +142,7 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
 }) {
   const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
+  const { simpleRegimeEnabled } = useFeatureFlags();
   const taxSettingsEnabled = propEnabled ?? hookEnabled;
   const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
   const [taxPreview, setTaxPreview] = useState<any>(null);
@@ -325,12 +327,15 @@ export default function SalesChatComposer({
   ] as const;
 
   const visibleResponsibilities = responsibilities.filter(
-    ({ key }) => key !== "buyerIsRetenedor" && key !== "buyerRequiresElectronicInvoice"
+    ({ key }) =>
+      key !== "buyerIsRetenedor" &&
+      key !== "buyerRequiresElectronicInvoice" &&
+      (simpleRegimeEnabled || key !== "buyerIsRegimenSimple"),
   );
 
   const buyerFiscalContext = useMemo<BuyerFiscalContext>(
-    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
-    [fiscalForm, taxSettingsEnabled],
+    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled, simpleRegimeEnabled),
+    [fiscalForm, taxSettingsEnabled, simpleRegimeEnabled],
   );
 
   const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {
@@ -1076,7 +1081,7 @@ export default function SalesChatComposer({
           </div>
         )}
 
-        {(taxSettingsEnabled || Boolean(sale?.fiscalSummary)) && (
+        {((simpleRegimeEnabled && taxSettingsEnabled) || Boolean(sale?.fiscalSummary)) && (
           <SaleTaxPanel
             mode={isReadonly ? "readonly" : "create"}
             value={fiscalForm}
