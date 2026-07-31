@@ -13,7 +13,7 @@ import {
 import { getToken } from "@/src/lib/auth";
 
 export type PushState =
-  "unsupported" | "default" | "granted" | "denied" | "registered" | "error";
+  | "unsupported" | "default" | "granted" | "denied" | "registered" | "error";
 
 export type PushActivationStage =
   | "support"
@@ -28,15 +28,15 @@ export type PushActivationStage =
 export type ActivatePushResult =
   | { ok: true; deviceRegistered: true }
   | {
-      ok: false;
-      deviceRegistered: false;
-      stage: PushActivationStage;
-      message: string;
-    };
+    ok: false;
+    deviceRegistered: false;
+    stage: PushActivationStage;
+    message: string;
+  };
 
 type ActivationFailure = Extract<ActivatePushResult, { ok: false }>;
 type TimeoutStage =
-  "service_worker" | "subscribe" | "backend_register" | "status";
+  | "service_worker" | "subscribe" | "backend_register" | "status";
 
 type ActivationCoordinatorEvent = {
   inFlight: boolean;
@@ -289,6 +289,7 @@ function waitForWorkerTransition(registration: ServiceWorkerRegistration) {
 async function getReadyPushRegistration(
   requestedRegistration: ServiceWorkerRegistration,
 ) {
+  console.log("👉 [Push Log] Buscando ServiceWorkerReady...");
   let readyRegistration = await withTimeout(
     navigator.serviceWorker.ready,
     SERVICE_WORKER_READY_TIMEOUT_MS,
@@ -296,6 +297,7 @@ async function getReadyPushRegistration(
   );
   if (registrationIsValid(readyRegistration)) return readyRegistration;
 
+  console.log("👉 [Push Log] Actualizando ServiceWorker...");
   await withTimeout(
     requestedRegistration.update(),
     SERVICE_WORKER_READY_TIMEOUT_MS,
@@ -369,6 +371,7 @@ export function usePushNotifications() {
 
   const failActivation = useCallback(
     (stage: PushActivationStage, message = ACTIVATION_MESSAGES[stage]) => {
+      console.warn(`❌ [Push Fail Stage: ${stage}]`, message);
       const failure: ActivationFailure = {
         ok: false,
         deviceRegistered: false,
@@ -430,16 +433,7 @@ export function usePushNotifications() {
         throw new PushFlowError("backend_register");
       }
 
-      if (process.env.NODE_ENV !== "production" && debugContext) {
-        console.debug("[Push activation]", {
-          ...debugContext,
-          registerRequestStarted: true,
-        });
-        console.debug("[Push activation stage]", {
-          stage: "backend_register_start",
-        });
-      }
-
+      console.log("👉 [Push Log] Enviando suscripción al backend...");
       try {
         await withAbortableTimeout(
           (signal) =>
@@ -465,6 +459,7 @@ export function usePushNotifications() {
         throw new PushFlowError("backend_register");
       }
 
+      console.log("👉 [Push Log] Verificando estado en backend...");
       let verified: PushStatusResponse;
       try {
         verified = await withAbortableTimeout(
@@ -583,6 +578,7 @@ export function usePushNotifications() {
 
   const runActivation = useCallback(async (): Promise<ActivatePushResult> => {
     setActivationError(null);
+    console.log("👉 [Push Log] 1. Iniciando runActivation...");
     if (!checkSupport()) return failActivation("support");
     if (isIosBrowser() && !isStandalone()) {
       setNeedsIosInstall(true);
@@ -598,6 +594,7 @@ export function usePushNotifications() {
     try {
       let requestedRegistration: ServiceWorkerRegistration;
       try {
+        console.log("👉 [Push Log] 2. Registrando /push-sw.js...");
         requestedRegistration = await withTimeout(
           navigator.serviceWorker.register("/push-sw.js", { scope: "/" }),
           SERVICE_WORKER_READY_TIMEOUT_MS,
@@ -615,6 +612,7 @@ export function usePushNotifications() {
 
       let permissionResult: NotificationPermission;
       try {
+        console.log("👉 [Push Log] 3. Pidiendo permisos de notificación...");
         permissionResult =
           permissionBefore === "default"
             ? await Notification.requestPermission()
@@ -629,12 +627,8 @@ export function usePushNotifications() {
 
       let registration: ServiceWorkerRegistration;
       try {
+        console.log("👉 [Push Log] 4. Esperando ServiceWorker listo...");
         registration = await getReadyPushRegistration(requestedRegistration);
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[Push activation stage]", {
-            stage: "service_worker_ready",
-          });
-        }
       } catch (error) {
         if (error instanceof PushActivationTimeoutError) {
           debugActivationTimeout(
@@ -647,6 +641,7 @@ export function usePushNotifications() {
 
       let existingSubscription: PushSubscription | null;
       try {
+        console.log("👉 [Push Log] 5. Verificando suscripción existente...");
         existingSubscription = await withTimeout(
           registration.pushManager.getSubscription(),
           SUBSCRIBE_TIMEOUT_MS,
@@ -661,20 +656,9 @@ export function usePushNotifications() {
 
       let subscription = existingSubscription;
       if (!subscription) {
+        console.log("👉 [Push Log] 6. Generando nueva suscripción...");
         const rawVapidKey =
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? "";
-
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[Push VAPID runtime]", {
-            present: rawVapidKey.length > 0,
-            encodedLength: rawVapidKey.length,
-            hasWhitespace: /\s/.test(rawVapidKey),
-            startsWithQuote:
-              rawVapidKey.startsWith('"') || rawVapidKey.startsWith("'"),
-            endsWithQuote:
-              rawVapidKey.endsWith('"') || rawVapidKey.endsWith("'"),
-          });
-        }
 
         let applicationServerKey: ArrayBuffer;
         try {
@@ -687,12 +671,6 @@ export function usePushNotifications() {
         }
 
         const decodedVapidKey = new Uint8Array(applicationServerKey);
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[Push VAPID decoded]", {
-            decodedLength: applicationServerKey.byteLength,
-            firstByte: decodedVapidKey[0] ?? null,
-          });
-        }
 
         if (
           applicationServerKey.byteLength !== 65 ||
@@ -705,11 +683,6 @@ export function usePushNotifications() {
         }
 
         try {
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation stage]", {
-              stage: "subscribe_start",
-            });
-          }
           subscription = await withTimeout(
             registration.pushManager.subscribe({
               userVisibleOnly: true,
@@ -718,23 +691,12 @@ export function usePushNotifications() {
             SUBSCRIBE_TIMEOUT_MS,
             "subscribe",
           );
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation stage]", {
-              stage: "subscribe_completed",
-            });
-          }
         } catch (error) {
           const errorName =
             error instanceof Error ? error.name : "UnknownError";
           const errorMessage =
             error instanceof Error ? error.message : String(error);
 
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation subscribe error]", {
-              name: errorName,
-              message: errorMessage,
-            });
-          }
           if (error instanceof PushActivationTimeoutError) {
             debugActivationTimeout("subscribe", SUBSCRIBE_TIMEOUT_MS);
             return failActivation(
@@ -775,6 +737,7 @@ export function usePushNotifications() {
       setActivationError(null);
       setBackendRegistrationEnabled(true);
       setState("registered");
+      console.log("✅ [Push Log] Activación finalizada con éxito!");
       return { ok: true, deviceRegistered: true };
     } catch {
       return failActivation("subscribe");
@@ -872,9 +835,9 @@ export function usePushNotifications() {
       setStatus((current) =>
         current
           ? {
-              ...current,
-              notifyOnAutomaticSale: preference.notifyOnAutomaticSale,
-            }
+            ...current,
+            notifyOnAutomaticSale: preference.notifyOnAutomaticSale,
+          }
           : current,
       );
       return true;
