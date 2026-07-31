@@ -14,6 +14,8 @@ import {
   SimpleTaxPeriodStatus,
   SimpleTaxPeriodType,
   TaxDirection,
+  FiscalSourceType,
+  SaleAccountingEntryType,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -26,6 +28,7 @@ import {
   ManualPaidOutflowPaymentMethod,
   ManualPaidOutflowType,
 } from './dto/create-manual-paid-outflow.dto';
+import { assertBalancedEntry } from './automatic-entry-balance';
 
 const ORDER_ACCOUNTING_DEFAULTS = {
   // Use active subaccounts from prisma/seed-data/puc_subcuenta.csv.
@@ -925,12 +928,25 @@ export class AccountingService {
     }
 
     // 1. Cargar contexto fiscal e impuestos
-    const fiscalContext = await tx.orderFiscalContext.findUnique({
-      where: { orderId: order.id },
-    });
+    const fiscalContext = (tx as any).saleFiscalContext
+      ? await tx.saleFiscalContext.findFirst({
+          where: {
+            businessId,
+            OR: [{ orderId: order.id }, { reservationId: order.id }],
+          },
+        })
+      : await (tx as any).orderFiscalContext.findUnique({
+          where: { orderId: order.id },
+        });
 
-    const taxLines = await tx.saleTaxLine.findMany({
-      where: { orderId: order.id, applied: true },
+    const taxLines = await (tx as any).saleTaxLine.findMany({
+      where: (tx as any).saleFiscalContext
+        ? {
+            fiscalContextId: fiscalContext?.id ?? '__NO_FISCAL_CONTEXT__',
+            applied: true,
+            isReversal: false,
+          }
+        : { orderId: order.id, applied: true },
     });
 
     // 2. Determinar montos
@@ -1214,6 +1230,7 @@ export class AccountingService {
     }
 
     // --- VALIDACIÓN DE BALANCE (DÉBITOS = CRÉDITOS) ---
+    const exactBalance = assertBalancedEntry(movements);
     let sumDebits = new Prisma.Decimal(0);
     let sumCredits = new Prisma.Decimal(0);
     for (const mov of movements) {
@@ -1231,7 +1248,143 @@ export class AccountingService {
       );
     }
 
+    if (!(tx as any).saleAccountingEntry) {
+      return movements.map((movement) => this.serializeMovement(movement));
+    }
+    const sourceType =
+      fiscalContext?.sourceType ??
+      ((await tx.reservation.findFirst({
+        where: { id: order.id, businessId },
+        select: { id: true },
+      }))
+        ? FiscalSourceType.RESERVATION
+        : FiscalSourceType.ORDER);
+    const entry = await tx.saleAccountingEntry.create({
+      data: {
+        businessId,
+        sourceType,
+        orderId: sourceType === FiscalSourceType.ORDER ? order.id : null,
+        reservationId:
+          sourceType === FiscalSourceType.RESERVATION ? order.id : null,
+        fiscalContextId: fiscalContext?.id ?? null,
+        entryType: SaleAccountingEntryType.ORIGINAL,
+        postedAt: date,
+        debitTotal: exactBalance.debitTotal,
+        creditTotal: exactBalance.creditTotal,
+      },
+    });
+    await tx.accountingMovement.updateMany({
+      where: { id: { in: movements.map((movement) => movement.id) } },
+      data: { saleAccountingEntryId: entry.id },
+    });
+
     return movements.map((movement) => this.serializeMovement(movement));
+  }
+
+  async reverseSaleAccountingEntry(
+    tx: Prisma.TransactionClient,
+    input: {
+      businessId: string;
+      sourceType: FiscalSourceType;
+      sourceId: string;
+      fiscalContextId?: string | null;
+      saleReversalId: string;
+      reason: string;
+      postedAt: Date;
+    },
+  ) {
+    const sourceWhere =
+      input.sourceType === FiscalSourceType.ORDER
+        ? { orderId: input.sourceId }
+        : { reservationId: input.sourceId };
+    const originalEntry = await tx.saleAccountingEntry.findFirst({
+      where: { ...sourceWhere, entryType: SaleAccountingEntryType.ORIGINAL },
+      include: { movements: true },
+    });
+    const originalMovements =
+      originalEntry?.movements ??
+      (await tx.accountingMovement.findMany({
+        where: {
+          businessId: input.businessId,
+          originType: AccountingMovementOriginType.ORDER,
+          originId: input.sourceId,
+          reversalOfMovementId: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      }));
+
+    if (!originalMovements.length) {
+      throw Object.assign(
+        new BadRequestException('No existe un asiento original inequívoco.'),
+        { code: 'LEGACY_ACCOUNTING_GROUP_AMBIGUOUS' },
+      );
+    }
+
+    try {
+      assertBalancedEntry(originalMovements);
+    } catch {
+      throw Object.assign(
+        new BadRequestException('El asiento histórico no está balanceado.'),
+        { code: 'LEGACY_ENTRY_UNBALANCED' },
+      );
+    }
+
+    const inverseLines = originalMovements.map((movement) => ({
+      amount: movement.amount,
+      nature:
+        movement.nature === MovementNature.DEBIT
+          ? MovementNature.CREDIT
+          : MovementNature.DEBIT,
+    }));
+    const balance = assertBalancedEntry(inverseLines);
+    const reversalEntry = await tx.saleAccountingEntry.create({
+      data: {
+        businessId: input.businessId,
+        sourceType: input.sourceType,
+        orderId:
+          input.sourceType === FiscalSourceType.ORDER ? input.sourceId : null,
+        reservationId:
+          input.sourceType === FiscalSourceType.RESERVATION
+            ? input.sourceId
+            : null,
+        fiscalContextId: input.fiscalContextId ?? null,
+        entryType: SaleAccountingEntryType.REVERSAL,
+        postedAt: input.postedAt,
+        debitTotal: balance.debitTotal,
+        creditTotal: balance.creditTotal,
+      },
+    });
+
+    const movements = [];
+    for (const original of originalMovements) {
+      movements.push(
+        await tx.accountingMovement.create({
+          data: {
+            businessId: input.businessId,
+            pucCuentaCode: original.pucCuentaCode,
+            pucSubcuentaId: original.pucSubcuentaId,
+            amount: original.amount,
+            nature:
+              original.nature === MovementNature.DEBIT
+                ? MovementNature.CREDIT
+                : MovementNature.DEBIT,
+            date: input.postedAt,
+            detail: `Reversión: ${input.reason}`,
+            originType: AccountingMovementOriginType.ORDER,
+            originId: input.sourceId,
+            accountingRole: original.accountingRole,
+            metadata: {
+              kind: 'SALE_REVERSAL',
+              saleReversalId: input.saleReversalId,
+            },
+            saleAccountingEntryId: reversalEntry.id,
+            reversalOfMovementId: original.id,
+          },
+        }),
+      );
+    }
+
+    return { entry: reversalEntry, movements };
   }
 
   async findAllMovements(businessId: string, q: AccountingMovementsQueryDto) {

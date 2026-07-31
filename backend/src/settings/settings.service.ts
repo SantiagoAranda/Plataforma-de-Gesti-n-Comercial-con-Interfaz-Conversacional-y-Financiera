@@ -6,6 +6,7 @@ import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { PersonType, Prisma } from '@prisma/client';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
+import { FiscalLifecycleService } from '../tax/fiscal-lifecycle.service';
 
 export function deriveIncomeTaxDeclarant(
   personType: PersonType,
@@ -37,6 +38,7 @@ export class SettingsService {
     @Optional() private readonly featureFlags: FeatureFlagsService = {
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
+    @Optional() private readonly fiscalLifecycle?: FiscalLifecycleService,
   ) {}
 
   private resolveIncomeTaxDeclarant(
@@ -108,6 +110,21 @@ export class SettingsService {
       );
     }
 
+    if (dto.isImpoconsumoResponsible === false) {
+      const activeIncItems = await this.prisma.item.count({
+        where: { businessId, appliesImpoconsumo: true, status: 'ACTIVE' },
+      });
+      if (
+        activeIncItems > 0 &&
+        dto.confirmImpoconsumoResponsibilityConflict !== true
+      ) {
+        throw new BadRequestException({
+          code: 'IMPOCONSUMO_RESPONSIBILITY_CONFLICT_CONFIRMATION_REQUIRED',
+          activeItemCount: activeIncItems,
+        });
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Obtener o crear perfil
       let profile = await tx.businessTaxProfile.findUnique({
@@ -138,6 +155,7 @@ export class SettingsService {
             mainCiiuCode: dto.mainCiiuCode,
             mainCiiuDescription: dto.mainCiiuDescription,
             isIncomeTaxDeclarant,
+            isImpoconsumoResponsible: dto.isImpoconsumoResponsible,
           },
         });
       } else {
@@ -164,6 +182,7 @@ export class SettingsService {
             mainCiiuCode: dto.mainCiiuCode,
             mainCiiuDescription: dto.mainCiiuDescription,
             isIncomeTaxDeclarant,
+            isImpoconsumoResponsible: dto.isImpoconsumoResponsible,
           },
         });
       }
@@ -192,6 +211,11 @@ export class SettingsService {
         where: { id: businessId },
         data: { fiscalId: dto.nit.trim() },
       });
+      await this.fiscalLifecycle?.invalidateBusiness(
+        businessId,
+        'TAX_CONFIGURATION_CHANGED',
+        tx,
+      );
 
       return tx.businessTaxProfile.findUnique({
         where: { id: profile.id },
@@ -243,7 +267,7 @@ export class SettingsService {
       throw new BadRequestException('Ya existe una tarifa ICA para este municipio y actividad económica.');
     }
 
-    return this.prisma.municipalityIcaRate.create({
+    const created = await this.prisma.municipalityIcaRate.create({
       data: {
         businessId,
         municipalityCode: dto.municipalityCode,
@@ -254,6 +278,8 @@ export class SettingsService {
         minBaseUvt: dto.minBaseUvt,
       },
     });
+    await this.fiscalLifecycle?.invalidateBusiness(businessId, 'ICA_CHANGED');
+    return created;
   }
 
   async updateIcaRate(businessId: string, id: string, dto: Partial<CreateIcaRateDto>) {
@@ -262,7 +288,7 @@ export class SettingsService {
     });
     if (!existing) throw new NotFoundException('Tarifa ICA no encontrada');
 
-    return this.prisma.municipalityIcaRate.update({
+    const updated = await this.prisma.municipalityIcaRate.update({
       where: { id },
       data: {
         municipalityCode: dto.municipalityCode,
@@ -279,6 +305,8 @@ export class SettingsService {
         minBaseUvt: dto.minBaseUvt,
       },
     });
+    await this.fiscalLifecycle?.invalidateBusiness(businessId, 'ICA_CHANGED');
+    return updated;
   }
 
   async deleteIcaRate(businessId: string, id: string) {
@@ -288,6 +316,7 @@ export class SettingsService {
     if (!existing) throw new NotFoundException('Tarifa ICA no encontrada');
 
     await this.prisma.municipalityIcaRate.delete({ where: { id } });
+    await this.fiscalLifecycle?.invalidateBusiness(businessId, 'ICA_CHANGED');
     return { ok: true };
   }
 
@@ -300,7 +329,7 @@ export class SettingsService {
   }
 
   async createTaxRule(businessId: string, dto: CreateTaxRuleDto) {
-    return this.prisma.salesTaxRule.create({
+    const created = await this.prisma.salesTaxRule.create({
       data: {
         businessId,
         taxType: dto.taxType,
@@ -313,6 +342,11 @@ export class SettingsService {
         postToAccounting: dto.postToAccounting ?? false,
       },
     });
+    await this.fiscalLifecycle?.invalidateBusiness(
+      businessId,
+      'TAX_CONFIGURATION_CHANGED',
+    );
+    return created;
   }
 
   async updateTaxRule(businessId: string, id: string, dto: Partial<CreateTaxRuleDto>) {
@@ -321,7 +355,7 @@ export class SettingsService {
     });
     if (!existing) throw new NotFoundException('Regla tributaria no encontrada');
 
-    return this.prisma.salesTaxRule.update({
+    const updated = await this.prisma.salesTaxRule.update({
       where: { id },
       data: {
         taxType: dto.taxType,
@@ -334,6 +368,11 @@ export class SettingsService {
         postToAccounting: dto.postToAccounting,
       },
     });
+    await this.fiscalLifecycle?.invalidateBusiness(
+      businessId,
+      'TAX_CONFIGURATION_CHANGED',
+    );
+    return updated;
   }
 
   async deleteTaxRule(businessId: string, id: string) {
@@ -343,6 +382,10 @@ export class SettingsService {
     if (!existing) throw new NotFoundException('Regla tributaria no encontrada');
 
     await this.prisma.salesTaxRule.delete({ where: { id } });
+    await this.fiscalLifecycle?.invalidateBusiness(
+      businessId,
+      'TAX_CONFIGURATION_CHANGED',
+    );
     return { ok: true };
   }
 
@@ -396,6 +439,10 @@ export class SettingsService {
       });
     }
 
+    await this.fiscalLifecycle?.invalidateBusiness(
+      businessId,
+      'TAX_CONFIGURATION_CHANGED',
+    );
     return profile;
   }
 }

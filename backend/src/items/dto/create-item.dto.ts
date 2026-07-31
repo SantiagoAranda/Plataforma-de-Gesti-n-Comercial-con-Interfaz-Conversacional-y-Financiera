@@ -10,10 +10,18 @@ import {
   Min,
   Matches,
   ValidateNested,
+  MaxLength,
+  IsNotEmpty,
 } from 'class-validator';
 
-import { Type } from 'class-transformer';
-import { InventoryMode, ItemType, Weekday, SaleConcept } from '@prisma/client';
+import { Transform, Type } from 'class-transformer';
+import {
+  InventoryMode,
+  ItemTaxTreatment,
+  ItemType,
+  Weekday,
+  SaleConcept,
+} from '@prisma/client';
 
 class BadgeInput {
   @IsString()
@@ -68,6 +76,49 @@ export class CreateItemDto {
   @Min(0)
   @Max(1)
   impoconsumoRate?: number | null;
+
+  @IsOptional()
+  @IsEnum(ItemTaxTreatment)
+  taxTreatment?: ItemTaxTreatment;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  vatRate?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === ''
+      ? undefined
+      : String(value).trim(),
+  )
+  fiscalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === ''
+      ? undefined
+      : String(value).trim(),
+  )
+  unitMeasureCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === ''
+      ? undefined
+      : String(value).trim(),
+  )
+  standardCode?: string;
 
   @IsOptional()
   @IsString()

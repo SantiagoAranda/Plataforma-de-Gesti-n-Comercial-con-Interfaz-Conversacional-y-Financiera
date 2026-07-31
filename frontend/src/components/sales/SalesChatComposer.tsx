@@ -1095,6 +1095,7 @@ export default function SalesChatComposer({
             onPreviewChange={setTaxPreview}
             fiscalSummary={sale?.fiscalSummary}
             taxLines={sale?.taxLines}
+            fiscalCalculationStatus={sale?.fiscalCalculationStatus}
           />
         )}
 

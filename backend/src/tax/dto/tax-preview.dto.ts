@@ -1,6 +1,11 @@
-import { IsString, IsOptional, IsEnum, IsArray, ValidateNested, IsBoolean, IsNumber, Min, IsEmail } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsOptional, IsEnum, IsArray, ValidateNested, IsBoolean, IsNumber, Min, IsEmail, Matches, MaxLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { PersonType, DocumentType, SaleConcept } from '@prisma/client';
+
+const optionalTrimmed = ({ value }: { value: unknown }) =>
+  value === null || value === undefined || value === ''
+    ? undefined
+    : String(value).trim();
 
 export class TaxPreviewCartItemDto {
   @IsString()
@@ -35,6 +40,44 @@ export class TaxPreviewDto {
   @IsOptional()
   @IsEmail()
   buyerEmail?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @Matches(/^\d{1,10}$/)
+  buyerDv?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(200)
+  buyerAddress?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(30)
+  buyerPhone?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => optionalTrimmed({ value })?.toUpperCase())
+  @Matches(/^[A-Z]{2}$/)
+  buyerCountryCode?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @Matches(/^\d+$/)
+  @MaxLength(20)
+  buyerMunicipalityCode?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(50)
+  buyerTributeCode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  buyerIsFinalConsumer?: boolean;
 
   @IsBoolean()
   buyerIsIvaResponsable!: boolean;

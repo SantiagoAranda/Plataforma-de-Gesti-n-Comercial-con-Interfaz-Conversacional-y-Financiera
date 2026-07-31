@@ -1,4 +1,5 @@
 export type ItemType = "PRODUCT" | "SERVICE";
+export type ItemTaxTreatment = "TAXED" | "EXEMPT" | "EXCLUDED" | "NOT_TAXED";
 
 export type ItemInventoryMode = "NONE" | "SIMPLE" | "RECIPE_BASED";
 export type ItemSellabilityStatus =
@@ -85,6 +86,11 @@ export type Item = {
   price: number;
   appliesImpoconsumo?: boolean;
   impoconsumoRate?: number | string | null;
+  taxTreatment?: ItemTaxTreatment;
+  vatRate?: number | string | null;
+  fiscalCode?: string | null;
+  unitMeasureCode?: string;
+  standardCode?: string;
   badges?: Array<{ text: string; color: string }> | null;
   badgeText?: string | null;
   badgeColor?: string | null;
@@ -123,6 +129,8 @@ export type FormErrors = {
   schedule?: string;
   inventory?: string;
   impoconsumoRate?: string;
+  vatRate?: string;
+  fiscalConfiguration?: string;
 };
 
 export type ItemImage = {

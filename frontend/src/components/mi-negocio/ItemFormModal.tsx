@@ -17,6 +17,7 @@ import {
   WeeklySchedule,
   FormErrors,
   ItemInventoryMode,
+  ItemTaxTreatment,
 } from "@/src/types/item";
 import {
   generateCreationId,
@@ -57,6 +58,12 @@ export default function ItemFormModal({
   const [priceDisplay, setPriceDisplay] = useState("");
   const [appliesImpoconsumo, setAppliesImpoconsumo] = useState(false);
   const [impoconsumoRatePercent, setImpoconsumoRatePercent] = useState("");
+  const [taxTreatment, setTaxTreatment] =
+    useState<ItemTaxTreatment>("TAXED");
+  const [vatRatePercent, setVatRatePercent] = useState("");
+  const [fiscalCode, setFiscalCode] = useState("");
+  const [unitMeasureCode, setUnitMeasureCode] = useState("94");
+  const [standardCode, setStandardCode] = useState("999");
   const [description, setDescription] = useState("");
   const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
   const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
@@ -104,6 +111,15 @@ export default function ItemFormModal({
           ? ""
           : String(Number(editingItem.impoconsumoRate) * 100),
       );
+      setTaxTreatment(editingItem.taxTreatment ?? "TAXED");
+      setVatRatePercent(
+        editingItem.vatRate == null
+          ? ""
+          : String(Number(editingItem.vatRate) * 100),
+      );
+      setFiscalCode(editingItem.fiscalCode ?? "");
+      setUnitMeasureCode(editingItem.unitMeasureCode ?? "94");
+      setStandardCode(editingItem.standardCode ?? "999");
       setDescription(editingItem.description ?? "");
       setSaleConcept(editingItem.saleConcept || (editingItem.type === "SERVICE" ? "SERVICES" : "GOODS"));
       setExistingImages(editingItem.images ?? []);
@@ -153,6 +169,11 @@ export default function ItemFormModal({
     setPriceDisplay("");
     setAppliesImpoconsumo(false);
     setImpoconsumoRatePercent("");
+    setTaxTreatment("TAXED");
+    setVatRatePercent("");
+    setFiscalCode("");
+    setUnitMeasureCode("94");
+    setStandardCode("999");
     setDescription("");
     revokePendingImages(newImages);
     setNewImages([]);
@@ -258,6 +279,27 @@ export default function ItemFormModal({
       errors.impoconsumoRate = "La tarifa debe ser mayor a 0 y máximo 100";
     }
 
+    const parsedVatRate = vatRatePercent
+      ? Number(vatRatePercent.replace(",", "."))
+      : null;
+    if (
+      parsedVatRate !== null &&
+      (!Number.isFinite(parsedVatRate) ||
+        parsedVatRate < 0 ||
+        parsedVatRate > 100)
+    ) {
+      errors.vatRate = "La tarifa de IVA debe estar entre 0 y 100";
+    } else if (taxTreatment === "TAXED" && parsedVatRate === 0) {
+      errors.vatRate = "Un ítem gravado no admite tarifa explícita de 0%";
+    }
+    if (
+      appliesImpoconsumo &&
+      (taxTreatment !== "TAXED" || parsedVatRate !== null)
+    ) {
+      errors.fiscalConfiguration =
+        "Impoconsumo requiere tratamiento gravado y no admite tarifa de IVA";
+    }
+
     let finalDuration = duration;
     if (type === "SERVICE") {
       const n = parseFloat(durationInput);
@@ -336,6 +378,11 @@ export default function ItemFormModal({
           parsedImpoconsumoRate !== null
             ? parsedImpoconsumoRate / 100
             : null,
+        taxTreatment,
+        vatRate: parsedVatRate === null ? null : parsedVatRate / 100,
+        fiscalCode: fiscalCode.trim() || null,
+        unitMeasureCode: unitMeasureCode.trim() || "94",
+        standardCode: standardCode.trim() || "999",
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
@@ -491,6 +538,16 @@ export default function ItemFormModal({
         setAppliesImpoconsumo={setAppliesImpoconsumo}
         impoconsumoRatePercent={impoconsumoRatePercent}
         setImpoconsumoRatePercent={setImpoconsumoRatePercent}
+        taxTreatment={taxTreatment}
+        setTaxTreatment={setTaxTreatment}
+        vatRatePercent={vatRatePercent}
+        setVatRatePercent={setVatRatePercent}
+        fiscalCode={fiscalCode}
+        setFiscalCode={setFiscalCode}
+        unitMeasureCode={unitMeasureCode}
+        setUnitMeasureCode={setUnitMeasureCode}
+        standardCode={standardCode}
+        setStandardCode={setStandardCode}
         durationInput={durationInput}
         setDurationInput={setDurationInput}
         setDuration={setDuration}

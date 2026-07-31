@@ -195,6 +195,8 @@ export default function RutImpuestosPage() {
   const [mainCiiuCode, setMainCiiuCode] = useState("");
   const [mainCiiuDescription, setMainCiiuDescription] = useState("");
   const [isIncomeTaxDeclarant, setIsIncomeTaxDeclarant] = useState(true);
+  const [isImpoconsumoResponsible, setIsImpoconsumoResponsible] =
+    useState<boolean | null>(null);
   const [businessProfile, setBusinessProfile] = useState<TaxBusinessProfileKey>("ADVANCED");
   const [responsibilitiesCatalog, setResponsibilitiesCatalog] = useState<TaxResponsibility[]>([]);
   const [selectedRespCodes, setSelectedRespCodes] = useState<string[]>([]);
@@ -235,6 +237,7 @@ export default function RutImpuestosPage() {
       mainCiiuCode: mainCiiuCode.trim(),
       mainCiiuDescription: mainCiiuDescription.trim(),
       isIncomeTaxDeclarant,
+      isImpoconsumoResponsible,
       selectedRespCodes: [...selectedRespCodes].sort(),
       icaRatePerMil: icaRatePerMil.trim(),
       reteIcaRatePerMil: reteIcaRatePerMil.trim(),
@@ -259,6 +262,7 @@ export default function RutImpuestosPage() {
     mainCiiuCode,
     mainCiiuDescription,
     isIncomeTaxDeclarant,
+    isImpoconsumoResponsible,
     selectedRespCodes,
     icaRatePerMil,
     reteIcaRatePerMil,
@@ -336,6 +340,9 @@ export default function RutImpuestosPage() {
           setMainCiiuCode(profile.mainCiiuCode || "");
           setMainCiiuDescription(profile.mainCiiuDescription || "");
           setIsIncomeTaxDeclarant(profile.isIncomeTaxDeclarant ?? true);
+          setIsImpoconsumoResponsible(
+            profile.isImpoconsumoResponsible ?? null,
+          );
           const loadedCodes = profile.responsibilities.map((r) => r.responsibility.code);
           const normalizedCodes = normalizeCodes(loadedCodes);
           setSelectedRespCodes(normalizedCodes);
@@ -372,6 +379,7 @@ export default function RutImpuestosPage() {
           mainCiiuCode: "",
           mainCiiuDescription: "",
           isIncomeTaxDeclarant: true,
+          isImpoconsumoResponsible: null as boolean | null,
           selectedRespCodes: [] as string[],
           icaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
           reteIcaRatePerMil: SIMULATOR_RETEICA_PER_THOUSAND,
@@ -428,6 +436,8 @@ export default function RutImpuestosPage() {
             mainCiiuCode: profile.mainCiiuCode || "",
             mainCiiuDescription: profile.mainCiiuDescription || "",
             isIncomeTaxDeclarant: profile.isIncomeTaxDeclarant ?? true,
+            isImpoconsumoResponsible:
+              profile.isImpoconsumoResponsible ?? null,
             selectedRespCodes: normalizeCodes(loadedCodes),
             icaRatePerMil: ratePerMil,
             reteIcaRatePerMil: reteRatePerMil,
@@ -602,6 +612,9 @@ export default function RutImpuestosPage() {
         mainCiiuCode: mainCiiuCode || null,
         mainCiiuDescription: mainCiiuDescription || null,
         isIncomeTaxDeclarant,
+        isImpoconsumoResponsible,
+        confirmImpoconsumoResponsibilityConflict:
+          isImpoconsumoResponsible === false,
         responsibilityCodes: responsibilitiesToSave,
       });
 
@@ -901,6 +914,37 @@ export default function RutImpuestosPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <label className={labelClassName}>
+                Responsabilidad de impoconsumo
+              </label>
+              <select
+                value={
+                  isImpoconsumoResponsible == null
+                    ? "UNCONFIRMED"
+                    : isImpoconsumoResponsible
+                      ? "YES"
+                      : "NO"
+                }
+                onChange={(event) =>
+                  setIsImpoconsumoResponsible(
+                    event.target.value === "UNCONFIRMED"
+                      ? null
+                      : event.target.value === "YES",
+                  )
+                }
+                className={inputClassName}
+              >
+                <option value="UNCONFIRMED">Sin confirmar</option>
+                <option value="YES">Sí, responsable</option>
+                <option value="NO">No responsable</option>
+              </select>
+              <p className="text-[11px] text-slate-500">
+                Esta capacidad es independiente de la responsabilidad de IVA.
+                No modifica ventas ni productos existentes.
+              </p>
             </div>
 
             <div className="space-y-2">

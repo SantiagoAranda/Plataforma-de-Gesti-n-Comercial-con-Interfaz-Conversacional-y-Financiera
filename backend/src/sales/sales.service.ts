@@ -5,7 +5,12 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { OrderStatus, Prisma, Weekday } from '@prisma/client';
+import {
+  FiscalSourceType,
+  OrderStatus,
+  Prisma,
+  Weekday,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -20,6 +25,9 @@ import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
 import { TaxService } from '../tax/tax.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
+import { FiscalLifecycleService } from '../tax/fiscal-lifecycle.service';
+import { assertExactFiscalReversalLine } from '../tax/fiscal-reversal-line';
+import { ElectronicSaleReversalGuard } from './electronic-sale-reversal.guard';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -53,6 +61,11 @@ export interface UnifiedSaleDto {
   } | null;
   taxLines?: any[] | null;
   fiscalContext?: any | null;
+  fiscalIntegrityStatus:
+    | 'COMPLETE'
+    | 'LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT'
+    | 'ORPHANED_DATA';
+  fiscalCalculationStatus: 'CURRENT' | 'STALE' | 'LOCKED' | null;
   items: Array<{
     orderItemId?: string;
     name: string;
@@ -98,6 +111,8 @@ export class SalesService {
     @Optional() private featureFlags: FeatureFlagsService = {
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
+    @Optional() private fiscalLifecycle?: FiscalLifecycleService,
+    @Optional() private electronicReversalGuard?: ElectronicSaleReversalGuard,
   ) { }
 
   private async assertSimpleRegimeAvailableForNewSale(
@@ -205,11 +220,12 @@ export class SalesService {
   }
 
   private mapFiscalContextForSales(order: any) {
+    const taxSnapshot = order.fiscalContext?.taxSnapshot ?? order.taxSnapshot;
     const snapshotBuyerFiscal =
-      order.taxSnapshot &&
-      typeof order.taxSnapshot.buyerFiscal === 'object' &&
-      !Array.isArray(order.taxSnapshot.buyerFiscal)
-        ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+      taxSnapshot &&
+      typeof taxSnapshot.buyerFiscal === 'object' &&
+      !Array.isArray(taxSnapshot.buyerFiscal)
+        ? (taxSnapshot.buyerFiscal as Record<string, any>)
         : {};
 
     if (!order.fiscalContext && Object.keys(snapshotBuyerFiscal).length === 0) {
@@ -231,6 +247,28 @@ export class SalesService {
         null,
       buyerEmail:
         snapshotBuyerFiscal.buyerEmail ?? order.fiscalContext?.buyerEmail ?? null,
+      buyerDv:
+        snapshotBuyerFiscal.buyerDv ?? order.fiscalContext?.buyerDv ?? null,
+      buyerAddress:
+        snapshotBuyerFiscal.buyerAddress ?? order.fiscalContext?.buyerAddress ?? null,
+      buyerPhone:
+        snapshotBuyerFiscal.buyerPhone ?? order.fiscalContext?.buyerPhone ?? null,
+      buyerCountryCode:
+        snapshotBuyerFiscal.buyerCountryCode ??
+        order.fiscalContext?.buyerCountryCode ??
+        null,
+      buyerMunicipalityCode:
+        snapshotBuyerFiscal.buyerMunicipalityCode ??
+        order.fiscalContext?.buyerMunicipalityCode ??
+        null,
+      buyerTributeCode:
+        snapshotBuyerFiscal.buyerTributeCode ??
+        order.fiscalContext?.buyerTributeCode ??
+        null,
+      buyerIsFinalConsumer:
+        snapshotBuyerFiscal.buyerIsFinalConsumer ??
+        order.fiscalContext?.buyerIsFinalConsumer ??
+        false,
       buyerIsIvaResponsable:
         snapshotBuyerFiscal.buyerIsIvaResponsable ??
         order.fiscalContext?.buyerIsIvaResponsable ??
@@ -292,6 +330,13 @@ export class SalesService {
       buyerDocumentType: buyerFiscalContext.buyerDocumentType,
       buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
       buyerEmail: buyerFiscalContext.buyerEmail,
+      buyerDv: buyerFiscalContext.buyerDv,
+      buyerAddress: buyerFiscalContext.buyerAddress,
+      buyerPhone: buyerFiscalContext.buyerPhone,
+      buyerCountryCode: buyerFiscalContext.buyerCountryCode,
+      buyerMunicipalityCode: buyerFiscalContext.buyerMunicipalityCode,
+      buyerTributeCode: buyerFiscalContext.buyerTributeCode,
+      buyerIsFinalConsumer: buyerFiscalContext.buyerIsFinalConsumer,
       buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
       buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
       buyerIsGranContribuyente:
@@ -755,6 +800,9 @@ export class SalesService {
           status: 'PENDING',
           origin: dto.origin ?? 'MANUAL',
           paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+          itemNameSnapshot: item.name,
+          unitPriceSnapshot: item.price,
+          durationMinutesSnapshot: duration,
         },
         include: { item: true },
       });
@@ -827,6 +875,8 @@ export class SalesService {
           scheduledAt: dto.scheduledAt,
           durationMinutes:
             manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+          itemName: manualScheduledServiceItem.name,
+          unitPrice: manualScheduledServiceItem.price,
         });
 
         await tx.reservation.create({
@@ -872,9 +922,9 @@ export class SalesService {
           items: {
             include: this.orderItemRecipeInclude,
           },
-          fiscalContext: true,
-          taxLines: true,
-          taxSnapshot: true,
+          fiscalContext: {
+            include: { taxLines: true, taxSnapshot: true },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -888,6 +938,9 @@ export class SalesService {
         },
         include: {
           item: true,
+          fiscalContext: {
+            include: { taxLines: true, taxSnapshot: true },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -913,33 +966,34 @@ export class SalesService {
     if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
 
     const mappedOrders: UnifiedSaleDto[] = orders.map((o) => {
+      const taxLines = o.fiscalContext?.taxLines ?? (o as any).taxLines ?? [];
       const fiscalSummary = o.fiscalContext
         ? {
             subtotal: Number(o.fiscalContext.subtotal),
             iva: Number(
-              o.taxLines.find(
+              taxLines.filter(
                 (line) => line.taxType === 'IVA' && line.applied,
-              )?.taxAmount ?? 0,
+              ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             impoconsumo: Number(
-              o.taxLines.find(
+              taxLines.filter(
                 (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
-              )?.taxAmount ?? 0,
+              ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             reteFuente: Number(
-              o.taxLines.find(
+              taxLines.filter(
                 (line) => line.taxType === 'RETEFUENTE' && line.applied,
-              )?.taxAmount ?? 0,
+              ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             reteIva: Number(
-              o.taxLines.find(
+              taxLines.filter(
                 (line) => line.taxType === 'RETEIVA' && line.applied,
-              )?.taxAmount ?? 0,
+              ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             reteIca: Number(
-              o.taxLines.find(
+              taxLines.filter(
                 (line) => line.taxType === 'RETEICA' && line.applied,
-              )?.taxAmount ?? 0,
+              ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             totalCollected:
               Number(o.fiscalContext.subtotal) +
@@ -971,16 +1025,22 @@ export class SalesService {
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
       fiscalSummary,
       fiscalContext: this.mapFiscalContextForSales(o),
-      taxLines: o.taxLines ? o.taxLines.map((line) => ({
+      fiscalIntegrityStatus: o.fiscalContext
+        ? 'COMPLETE'
+        : o.status === 'COMPLETED'
+          ? 'LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT'
+          : 'COMPLETE',
+      fiscalCalculationStatus: o.fiscalContext?.calculationStatus ?? null,
+      taxLines: taxLines.map((line) => ({
         taxType: line.taxType,
         direction: line.direction,
-        baseAmount: Number(line.baseAmount),
+        baseAmount: Number(line.taxableBase),
         rate: Number(line.rate),
         taxAmount: Number(line.taxAmount),
         accountCode: line.accountCode,
         applied: line.applied,
         reason: line.reason,
-      })) : null,
+      })),
       items: o.items.map((it) => ({
         orderItemId: it.id,
         name: it.itemNameSnapshot,
@@ -1003,7 +1063,7 @@ export class SalesService {
       .filter((r) => !orderIds.has(r.id))
       .map((r) => {
       const item = (r as any).item;
-      const price = Number(item?.price ?? 0);
+      const price = Number(r.unitPriceSnapshot ?? item?.price ?? 0);
 
       return {
         id: r.id,
@@ -1019,6 +1079,12 @@ export class SalesService {
         origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
         scheduledAt: this.toScheduledAt(r.date, r.startMinute),
         type: 'SERVICIO',
+        fiscalIntegrityStatus: r.fiscalContext
+          ? 'COMPLETE'
+          : r.status === 'CONFIRMED'
+            ? 'LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT'
+            : 'COMPLETE',
+        fiscalCalculationStatus: r.fiscalContext?.calculationStatus ?? null,
         items: [
           {
             name: item?.name ?? 'Servicio no disponible',
@@ -1102,6 +1168,8 @@ export class SalesService {
     paymentMethod?: 'CASH' | 'BANK_TRANSFER' | null;
     scheduledAt: string;
     durationMinutes: number;
+    itemName: string;
+    unitPrice: Prisma.Decimal.Value;
   }) {
     const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
     const endMinute = startMinute + input.durationMinutes;
@@ -1126,6 +1194,9 @@ export class SalesService {
         status: 'PENDING' as const,
         origin: 'MANUAL' as const,
         paymentMethod: input.paymentMethod ?? 'CASH',
+        itemNameSnapshot: input.itemName,
+        unitPriceSnapshot: new Prisma.Decimal(input.unitPrice),
+        durationMinutesSnapshot: input.durationMinutes,
       },
       update: {
         itemId: input.itemId,
@@ -1137,6 +1208,9 @@ export class SalesService {
         endMinute,
         status: 'PENDING' as const,
         origin: 'MANUAL' as const,
+        itemNameSnapshot: input.itemName,
+        unitPriceSnapshot: new Prisma.Decimal(input.unitPrice),
+        durationMinutesSnapshot: input.durationMinutes,
       },
     };
   }
@@ -1193,7 +1267,7 @@ export class SalesService {
         where: { id, businessId },
         include: {
           items: { include: { item: true, options: true } },
-          taxSnapshot: true,
+          fiscalContext: { include: { taxSnapshot: true, taxLines: true } },
         },
       });
 
@@ -1252,12 +1326,43 @@ export class SalesService {
       }
 
       const persistedBuyerFiscal =
-        order.taxSnapshot &&
-        typeof order.taxSnapshot.buyerFiscal === 'object' &&
-        !Array.isArray(order.taxSnapshot.buyerFiscal)
-          ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
+        order.fiscalContext?.taxSnapshot &&
+        typeof order.fiscalContext.taxSnapshot.buyerFiscal === 'object' &&
+        !Array.isArray(order.fiscalContext.taxSnapshot.buyerFiscal)
+          ? (order.fiscalContext.taxSnapshot.buyerFiscal as Record<string, any>)
           : null;
-      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal;
+      const persistedContextBuyer = order.fiscalContext
+        ? {
+            buyerType: order.fiscalContext.buyerType,
+            buyerName: order.fiscalContext.buyerName,
+            buyerDocumentType: order.fiscalContext.buyerDocumentType,
+            buyerDocumentNumber: order.fiscalContext.buyerDocumentNumber,
+            buyerEmail: order.fiscalContext.buyerEmail,
+            buyerDv: order.fiscalContext.buyerDv,
+            buyerAddress: order.fiscalContext.buyerAddress,
+            buyerPhone: order.fiscalContext.buyerPhone,
+            buyerCountryCode: order.fiscalContext.buyerCountryCode,
+            buyerMunicipalityCode: order.fiscalContext.buyerMunicipalityCode,
+            buyerTributeCode: order.fiscalContext.buyerTributeCode,
+            buyerIsFinalConsumer: order.fiscalContext.buyerIsFinalConsumer,
+            buyerIsIvaResponsable: order.fiscalContext.buyerIsIvaResponsable,
+            buyerIsRetenedor: order.fiscalContext.buyerIsRetenedor,
+            buyerIsGranContribuyente:
+              order.fiscalContext.buyerIsGranContribuyente,
+            buyerIsAutorretenedor:
+              order.fiscalContext.buyerIsAutorretenedor,
+            buyerIsRegimenSimple:
+              order.fiscalContext.buyerIsRegimenSimple,
+            buyerRequiresElectronicInvoice:
+              order.fiscalContext.buyerRequiresElectronicInvoice,
+            fiscalMunicipalityCode:
+              order.fiscalContext.fiscalMunicipalityCode,
+            saleConcept: order.fiscalContext.saleConcept,
+            reteIcaRateOverride: order.fiscalContext.reteIcaRateOverride,
+          }
+        : null;
+      const fiscalContextToUse =
+        buyerFiscalContext ?? persistedBuyerFiscal ?? persistedContextBuyer;
 
       if (fiscalContextToUse) {
         const cartItems = order.items.map((it: any) => ({
@@ -1272,6 +1377,13 @@ export class SalesService {
           buyerDocumentType: fiscalContextToUse.buyerDocumentType,
           buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
           buyerEmail: fiscalContextToUse.buyerEmail,
+          buyerDv: fiscalContextToUse.buyerDv,
+          buyerAddress: fiscalContextToUse.buyerAddress,
+          buyerPhone: fiscalContextToUse.buyerPhone,
+          buyerCountryCode: fiscalContextToUse.buyerCountryCode,
+          buyerMunicipalityCode: fiscalContextToUse.buyerMunicipalityCode,
+          buyerTributeCode: fiscalContextToUse.buyerTributeCode,
+          buyerIsFinalConsumer: fiscalContextToUse.buyerIsFinalConsumer,
           buyerIsIvaResponsable: fiscalContextToUse.buyerIsIvaResponsable || false,
           buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
           buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
@@ -1287,7 +1399,12 @@ export class SalesService {
           cartItems,
         }, tx);
 
-        await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
+        await this.taxService.freezeTaxCalculation(
+          tx,
+          { sourceType: 'ORDER', sourceId: id, businessId },
+          preview,
+          fiscalContextToUse,
+        );
       }
 
       if (
@@ -1330,6 +1447,14 @@ export class SalesService {
             finalizedOrder as any,
           );
 
+      await (tx as any).saleFiscalContext?.updateMany({
+        where: { orderId: id, calculationStatus: 'CURRENT' },
+        data: {
+          calculationStatus: 'LOCKED',
+          calculationLockedAt: finalizedOrder.accountingPostedAt,
+        },
+      });
+
       const updatedOrder = await tx.order.findUniqueOrThrow({
         where: { id },
         include: { items: { include: { item: true, options: true } } },
@@ -1353,12 +1478,32 @@ export class SalesService {
     return this.prisma.$transaction(async (tx) => {
       const res = await tx.reservation.findFirst({
         where: { id, businessId },
-        include: { item: true },
+        include: {
+          item: true,
+          fiscalContext: { include: { taxSnapshot: true } },
+        },
       });
 
       if (!res) throw new NotFoundException('Reservation not found');
       if (res.status === 'CANCELLED')
         throw new BadRequestException('Cancelled reservations cannot be confirmed');
+      if (
+        res.itemNameSnapshot == null ||
+        res.unitPriceSnapshot == null ||
+        res.durationMinutesSnapshot == null
+      ) {
+        const commercialSnapshot = {
+          itemNameSnapshot: res.itemNameSnapshot ?? res.item.name,
+          unitPriceSnapshot: res.unitPriceSnapshot ?? res.item.price,
+          durationMinutesSnapshot:
+            res.durationMinutesSnapshot ?? res.item.durationMinutes,
+        };
+        await tx.reservation.update({
+          where: { id },
+          data: commercialSnapshot,
+        });
+        Object.assign(res, commercialSnapshot);
+      }
 
       const existingMovements = await tx.accountingMovement.findMany({
         where: {
@@ -1379,8 +1524,18 @@ export class SalesService {
 
       console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
 
-      if (buyerFiscalContext) {
-        this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
+      const persistedReservationBuyer =
+        res.fiscalContext?.taxSnapshot &&
+        typeof res.fiscalContext.taxSnapshot.buyerFiscal === 'object' &&
+        !Array.isArray(res.fiscalContext.taxSnapshot.buyerFiscal)
+          ? (res.fiscalContext.taxSnapshot.buyerFiscal as Record<string, any>)
+          : res.fiscalContext
+            ? this.mapFiscalContextForSales({ fiscalContext: res.fiscalContext })
+            : null;
+      const reservationFiscalData =
+        buyerFiscalContext ?? persistedReservationBuyer;
+      if (reservationFiscalData) {
+        this.assertBuyerFiscalContextAllowed(reservationFiscalData);
         const cartItems = [
           {
             itemId: res.itemId,
@@ -1389,28 +1544,32 @@ export class SalesService {
         ];
 
         const preview = await this.taxService.calculateTaxPreview(businessId, {
-          buyerType: buyerFiscalContext.buyerType,
-          buyerName: buyerFiscalContext.buyerName,
-          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
-          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
-          buyerEmail: buyerFiscalContext.buyerEmail,
-          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
-          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
-          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
-          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
-          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+          buyerType: reservationFiscalData.buyerType,
+          buyerName: reservationFiscalData.buyerName,
+          buyerDocumentType: reservationFiscalData.buyerDocumentType,
+          buyerDocumentNumber: reservationFiscalData.buyerDocumentNumber,
+          buyerEmail: reservationFiscalData.buyerEmail,
+          buyerIsIvaResponsable: reservationFiscalData.buyerIsIvaResponsable || false,
+          buyerIsRetenedor: reservationFiscalData.buyerIsRetenedor || false,
+          buyerIsGranContribuyente: reservationFiscalData.buyerIsGranContribuyente || false,
+          buyerIsAutorretenedor: reservationFiscalData.buyerIsAutorretenedor || false,
+          buyerIsRegimenSimple: reservationFiscalData.buyerIsRegimenSimple || false,
           buyerRequiresElectronicInvoice:
-            buyerFiscalContext.buyerRequiresElectronicInvoice || false,
-          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
-          saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+            reservationFiscalData.buyerRequiresElectronicInvoice || false,
+          fiscalMunicipalityCode: reservationFiscalData.fiscalMunicipalityCode,
+          saleConcept: reservationFiscalData.saleConcept || 'SERVICES',
           reteIcaRateOverride:
-            buyerFiscalContext.reteIcaRateOverride ??
-            buyerFiscalContext.icaRateOverride,
+            reservationFiscalData.reteIcaRateOverride ??
+            reservationFiscalData.icaRateOverride,
           cartItems,
         }, tx);
 
-        // Omitir congelamiento fiscal en reservas por ahora
-        // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+        await this.taxService.freezeTaxCalculation(
+          tx,
+          { sourceType: 'RESERVATION', sourceId: id, businessId },
+          preview,
+          reservationFiscalData,
+        );
       }
 
       const virtualOrder = this.mapReservationToVirtualOrder(updated);
@@ -1430,6 +1589,20 @@ export class SalesService {
             virtualOrder as any,
           )
         : existingMovements;
+
+      const reservationAccountingEntry = await (tx as any).saleAccountingEntry?.findFirst({
+        where: { reservationId: id, entryType: 'ORIGINAL' },
+        select: { postedAt: true },
+      });
+      if (reservationAccountingEntry) {
+        await (tx as any).saleFiscalContext?.updateMany({
+          where: { reservationId: id, calculationStatus: 'CURRENT' },
+          data: {
+            calculationStatus: 'LOCKED',
+            calculationLockedAt: reservationAccountingEntry.postedAt,
+          },
+        });
+      }
 
       return {
         order: virtualOrder, // Frontend expects something that looks like an order/sale
@@ -1546,8 +1719,7 @@ export class SalesService {
       throw new BadRequestException('Reservation service is not available');
     }
 
-    // Falls back to current item price if no snapshot (as per user request)
-    const price = res.item.price ?? 0;
+    const price = res.unitPriceSnapshot ?? res.item.price ?? 0;
 
     return {
       id: res.id,
@@ -1565,9 +1737,10 @@ export class SalesService {
           id: `virtual-oi-${res.id}`,
           itemId: res.itemId,
           quantity: 1,
-          itemNameSnapshot: res.item.name,
+          itemNameSnapshot: res.itemNameSnapshot ?? res.item.name,
           itemTypeSnapshot: 'SERVICE',
-          durationMinutesSnapshot: res.item.durationMinutes,
+          durationMinutesSnapshot:
+            res.durationMinutesSnapshot ?? res.item.durationMinutes,
           unitPrice: price,
           price: price,
           item: res.item,
@@ -1705,6 +1878,11 @@ export class SalesService {
         data: { total: totals._sum.lineTotal ?? 0 },
       });
 
+      await this.fiscalLifecycle?.invalidateOrder(
+        order.id,
+        'ITEMS_CHANGED',
+        tx,
+      );
       return created;
     });
   }
@@ -1759,6 +1937,11 @@ export class SalesService {
         data: { total: totals._sum.lineTotal ?? 0 },
       });
 
+      await this.fiscalLifecycle?.invalidateOrder(
+        orderId,
+        dto.quantity !== undefined ? 'QUANTITY_CHANGED' : 'ITEMS_CHANGED',
+        tx,
+      );
       return updated;
     });
   }
@@ -1787,6 +1970,11 @@ export class SalesService {
         data: { total: totals._sum.lineTotal ?? 0 },
       });
 
+      await this.fiscalLifecycle?.invalidateOrder(
+        orderId,
+        'ITEMS_CHANGED',
+        tx,
+      );
       return { ok: true };
     });
   }
@@ -1798,9 +1986,9 @@ export class SalesService {
         items: {
           include: this.orderItemRecipeInclude,
         },
-        fiscalContext: true,
-        taxLines: true,
-        taxSnapshot: true,
+        fiscalContext: {
+          include: { taxLines: true, taxSnapshot: true },
+        },
       },
     });
 
@@ -1816,33 +2004,34 @@ export class SalesService {
     );
     const mirrorReservation = mirrorReservations.get(order.id);
 
+    const taxLines = order.fiscalContext?.taxLines ?? [];
     const fiscalSummary = order.fiscalContext
       ? {
           subtotal: Number(order.fiscalContext.subtotal),
           iva: Number(
-            order.taxLines.find(
+            taxLines.filter(
               (line) => line.taxType === 'IVA' && line.applied,
-            )?.taxAmount ?? 0,
+            ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           impoconsumo: Number(
-            order.taxLines.find(
+            taxLines.filter(
               (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
-            )?.taxAmount ?? 0,
+            ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           reteFuente: Number(
-            order.taxLines.find(
+            taxLines.filter(
               (line) => line.taxType === 'RETEFUENTE' && line.applied,
-            )?.taxAmount ?? 0,
+            ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           reteIva: Number(
-            order.taxLines.find(
+            taxLines.filter(
               (line) => line.taxType === 'RETEIVA' && line.applied,
-            )?.taxAmount ?? 0,
+            ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           reteIca: Number(
-            order.taxLines.find(
+            taxLines.filter(
               (line) => line.taxType === 'RETEICA' && line.applied,
-            )?.taxAmount ?? 0,
+            ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           totalCollected:
             Number(order.fiscalContext.subtotal) +
@@ -1860,16 +2049,22 @@ export class SalesService {
         : undefined,
       fiscalSummary,
       fiscalContext: this.mapFiscalContextForSales(order),
-      taxLines: order.taxLines ? order.taxLines.map((line) => ({
+      fiscalIntegrityStatus: order.fiscalContext
+        ? 'COMPLETE'
+        : order.status === 'COMPLETED'
+          ? 'LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT'
+          : 'COMPLETE',
+      fiscalCalculationStatus: order.fiscalContext?.calculationStatus ?? null,
+      taxLines: taxLines.map((line) => ({
         taxType: line.taxType,
         direction: line.direction,
-        baseAmount: Number(line.baseAmount),
+        baseAmount: Number(line.taxableBase),
         rate: Number(line.rate),
         taxAmount: Number(line.taxAmount),
         accountCode: line.accountCode,
         applied: line.applied,
         reason: line.reason,
-      })) : null,
+      })),
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
     };
   }
@@ -1886,11 +2081,17 @@ export class SalesService {
           include: { item: true },
         });
         if (!res) throw new NotFoundException('Reservation not found');
-
-        if (res.inventoryPostedAt) {
-          await this.inventoryService.reverseInventoryConsumptionForReservation(tx, businessId, res.id);
+        if (res.status === 'CONFIRMED' || res.inventoryPostedAt) {
+          throw new ConflictException(
+            'Confirmed reservations require the total reversal flow',
+          );
         }
 
+        await this.fiscalLifecycle?.invalidateReservation(
+          id,
+          'SALE_CANCELLED',
+          tx,
+        );
         return tx.reservation.update({
           where: { id },
           data: { status: 'CANCELLED' },
@@ -1910,6 +2111,11 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.fiscalLifecycle?.invalidateOrder(
+        id,
+        'SALE_CANCELLED',
+        tx,
+      );
       const cancelledOrder = await tx.order.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -1934,65 +2140,266 @@ export class SalesService {
     });
   }
 
-  async reverseConfirmedOrder(businessId: string, id: string, dto: ReverseOrderDto) {
+  async reverseConfirmedOrder(
+    businessId: string,
+    id: string,
+    dto: ReverseOrderDto,
+    sourceType: UnifiedSourceType = 'ORDER',
+    createdByUserId?: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findFirst({
-        where: { id, businessId },
-        include: {
-          items: { include: { item: true } },
-        },
-      });
+      const order =
+        sourceType === 'ORDER'
+          ? await tx.order.findFirst({
+              where: { id, businessId },
+              include: { items: { include: { item: true } } },
+            })
+          : null;
+      const reservation =
+        sourceType === 'RESERVATION'
+          ? await tx.reservation.findFirst({
+              where: { id, businessId },
+              include: { item: true },
+            })
+          : null;
+      if (!order && !reservation) throw new NotFoundException('Sale not found');
+      const confirmed =
+        order?.status === 'COMPLETED' || reservation?.status === 'CONFIRMED';
+      if (!confirmed) {
+        throw new BadRequestException('Only confirmed sales can be reversed');
+      }
+      if (!(tx as any).saleReversal) {
+        const existingReturn = await tx.inventoryMovement.findMany({
+          where: { businessId, orderId: id, type: 'SALE_RETURN' },
+          take: 1,
+          select: { id: true },
+        });
+        if (existingReturn.length) {
+          throw new ConflictException('Order inventory already reversed');
+        }
+        const reversalMovements =
+          await this.inventoryService.reverseInventoryConsumptionForOrder(
+            tx,
+            businessId,
+            { orderId: id, reason: dto.reason },
+          );
+        const updatedOrder = await tx.order.update({
+          where: { id },
+          data: { status: 'CANCELLED' },
+          include: { items: { include: { item: true } } },
+        });
+        return {
+          order: updatedOrder,
+          inventoryReversed: reversalMovements.length > 0,
+          reversalMovements,
+        };
+      }
 
-      if (!order) throw new NotFoundException('Order not found');
-
-      const existingReturn = await tx.inventoryMovement.findMany({
-        where: {
-          businessId,
-          orderId: id,
-          type: 'SALE_RETURN',
-        },
-        take: 1,
+      const existingReversal = await tx.saleReversal.findFirst({
+        where:
+          sourceType === 'ORDER'
+            ? { orderId: id }
+            : { reservationId: id },
         select: { id: true },
       });
-
-      if (existingReturn.length) {
-        throw new ConflictException('Order inventory already reversed');
+      if (existingReversal) {
+        throw Object.assign(new ConflictException('Sale already reversed'), {
+          code: 'SALE_ALREADY_REVERSED',
+        });
       }
 
-      if (order.status === 'CANCELLED') {
-        throw new BadRequestException('Cancelled orders cannot be reversed');
+      const fiscalContext = await tx.saleFiscalContext.findFirst({
+        where:
+          sourceType === 'ORDER'
+            ? { businessId, orderId: id }
+            : { businessId, reservationId: id },
+        include: { taxLines: { where: { isReversal: false } } },
+      });
+      if (
+        fiscalContext &&
+        fiscalContext.calculationStatus !== 'LOCKED'
+      ) {
+        throw new ConflictException('Fiscal context must be locked');
       }
-      if (order.status !== 'COMPLETED') {
-        throw new BadRequestException('Only completed orders can be reversed');
-      }
-      if (!order.inventoryPostedAt) {
-        throw new BadRequestException('Order inventory was not posted');
-      }
+      await this.electronicReversalGuard?.assertCanReverse(tx, {
+        businessId,
+        sourceType:
+          sourceType === 'ORDER'
+            ? FiscalSourceType.ORDER
+            : FiscalSourceType.RESERVATION,
+        sourceId: id,
+      });
 
-      const reversalMovements =
-        await this.inventoryService.reverseInventoryConsumptionForOrder(
-          tx,
-          businessId,
-          { orderId: id, reason: dto.reason },
-        );
-
-      const updatedOrder = await tx.order.update({
-        where: { id },
+      const reversedAt = new Date();
+      const reason = dto.reason?.trim() || 'Reversión total de venta confirmada';
+      const reversal = await tx.saleReversal.create({
         data: {
-          status: 'CANCELLED',
-        },
-        include: {
-          items: { include: { item: true } },
+          businessId,
+          sourceType:
+            sourceType === 'ORDER'
+              ? FiscalSourceType.ORDER
+              : FiscalSourceType.RESERVATION,
+          orderId: sourceType === 'ORDER' ? id : null,
+          reservationId: sourceType === 'RESERVATION' ? id : null,
+          fiscalContextId: fiscalContext?.id ?? null,
+          reason,
+          createdByUserId,
+          reversedAt,
         },
       });
+
+      const reversalMovements =
+        sourceType === 'ORDER'
+          ? await this.inventoryService.reverseInventoryConsumptionForOrder(
+              tx,
+              businessId,
+              { orderId: id, reason },
+            )
+          : await this.inventoryService.reverseInventoryConsumptionForReservation(
+              tx,
+              businessId,
+              id,
+            );
+      if (reversalMovements.length) {
+        await tx.inventoryMovement.updateMany({
+          where: { id: { in: reversalMovements.map((movement) => movement.id) } },
+          data: { saleReversalId: reversal.id },
+        });
+      }
+
+      const accounting = await this.accountingService.reverseSaleAccountingEntry(
+        tx,
+        {
+          businessId,
+          sourceType:
+            sourceType === 'ORDER'
+              ? FiscalSourceType.ORDER
+              : FiscalSourceType.RESERVATION,
+          sourceId: id,
+          fiscalContextId: fiscalContext?.id,
+          saleReversalId: reversal.id,
+          reason,
+          postedAt: reversedAt,
+        },
+      );
+
+      for (const original of fiscalContext?.taxLines ?? []) {
+        const inverse = {
+          ...original,
+          taxableBase: original.taxableBase.negated(),
+          taxAmount: original.taxAmount.negated(),
+          isReversal: true,
+        };
+        assertExactFiscalReversalLine(original, inverse);
+        await tx.saleTaxLine.create({
+          data: {
+            fiscalContextId: fiscalContext!.id,
+            taxType: original.taxType,
+            direction: original.direction,
+            taxTreatment: original.taxTreatment,
+            taxableBase: inverse.taxableBase,
+            rate: original.rate,
+            taxAmount: inverse.taxAmount,
+            saleConcept: original.saleConcept,
+            calculationMethod: original.calculationMethod,
+            roundingMode: original.roundingMode,
+            roundingScale: original.roundingScale,
+            accountCode: original.accountCode,
+            applied: original.applied,
+            reason: `Reversión: ${reason}`,
+            isReversal: true,
+            saleReversalId: reversal.id,
+            reversalOfTaxLineId: original.id,
+          },
+        });
+      }
+
+      await this.createSimpleTaxReversalAdjustment(tx, {
+        businessId,
+        reversalId: reversal.id,
+        fiscalContextId: fiscalContext?.id,
+        originalPostedAt:
+          fiscalContext?.calculationLockedAt ??
+          accounting.entry.postedAt,
+        amount: fiscalContext?.subtotal ??
+          new Prisma.Decimal(order?.total ?? reservation?.unitPriceSnapshot ?? reservation?.item.price ?? 0),
+      });
+
+      await tx.saleReversal.update({
+        where: { id: reversal.id },
+        data: {
+          inventoryReversedAt: reversedAt,
+          accountingReversedAt: reversedAt,
+          reversalAccountingEntryId: accounting.entry.id,
+        },
+      });
+      const updatedOrder =
+        sourceType === 'ORDER'
+          ? await tx.order.update({
+              where: { id },
+              data: { status: 'CANCELLED' },
+              include: { items: { include: { item: true } } },
+            })
+          : await tx.reservation.update({
+              where: { id },
+              data: { status: 'CANCELLED' },
+              include: { item: true },
+            });
 
       return {
         order: updatedOrder,
         inventoryReversed: reversalMovements.length > 0,
         reversalMovements,
+        accountingReversed: true,
+        saleReversalId: reversal.id,
       };
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+
+  private async createSimpleTaxReversalAdjustment(
+    tx: Prisma.TransactionClient,
+    input: {
+      businessId: string;
+      reversalId: string;
+      fiscalContextId?: string;
+      originalPostedAt: Date;
+      amount: Prisma.Decimal;
+    },
+  ) {
+    const originalTaxYear = input.originalPostedAt.getUTCFullYear();
+    const originalPeriodNumber =
+      Math.floor(input.originalPostedAt.getUTCMonth() / 2) + 1;
+    const originalPeriod = await tx.simpleTaxPeriod.findUnique({
+      where: {
+        businessId_taxYear_periodNumber: {
+          businessId: input.businessId,
+          taxYear: originalTaxYear,
+          periodNumber: originalPeriodNumber,
+        },
+      },
+    });
+    if (!originalPeriod || ['DRAFT', 'CALCULATED'].includes(originalPeriod.status)) {
+      return;
+    }
+    let targetTaxYear = originalTaxYear;
+    let targetPeriodNumber = originalPeriodNumber + 1;
+    if (targetPeriodNumber > 6) {
+      targetTaxYear += 1;
+      targetPeriodNumber = 1;
+    }
+    await tx.simpleTaxIncomeAdjustment.create({
+      data: {
+        businessId: input.businessId,
+        saleReversalId: input.reversalId,
+        sourceFiscalContextId: input.fiscalContextId,
+        originalTaxYear,
+        originalPeriodNumber,
+        targetTaxYear,
+        targetPeriodNumber,
+        amount: input.amount.negated(),
+      },
     });
   }
 
@@ -2141,6 +2548,14 @@ export class SalesService {
           paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
           scheduledAt: dto.scheduledAt,
           durationMinutes: finalServiceDuration,
+          itemName:
+            (finalLines[0] as any).itemNameSnapshot ??
+            (finalLines[0] as any).item?.name ??
+            'Servicio',
+          unitPrice:
+            (finalLines[0] as any).unitPrice ??
+            (finalLines[0] as any).price ??
+            0,
         });
 
         await tx.reservation.upsert({
@@ -2178,6 +2593,21 @@ export class SalesService {
           dto.buyerFiscalContext,
           currentItems,
         );
+      } else if (
+        resolvedItems ||
+        dto.customerName !== undefined ||
+        dto.customerWhatsapp !== undefined ||
+        dto.paymentMethod !== undefined
+      ) {
+        await this.fiscalLifecycle?.invalidateOrder(
+          orderId,
+          resolvedItems
+            ? 'ITEMS_CHANGED'
+            : dto.paymentMethod !== undefined
+              ? 'PAYMENT_CHANGED'
+              : 'BUYER_CHANGED',
+          tx,
+        );
       }
 
       return tx.order.findUniqueOrThrow({
@@ -2186,9 +2616,9 @@ export class SalesService {
           items: {
             include: this.orderItemRecipeInclude,
           },
-          fiscalContext: true,
-          taxLines: true,
-          taxSnapshot: true,
+          fiscalContext: {
+            include: { taxLines: true, taxSnapshot: true },
+          },
         },
       });
     });

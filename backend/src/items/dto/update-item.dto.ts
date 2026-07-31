@@ -11,9 +11,10 @@ import {
   Min,
   Max,
   ValidateNested,
+  MaxLength,
 } from "class-validator";
 import { Transform, Type } from "class-transformer";
-import { InventoryMode, ItemType, SaleConcept } from "@prisma/client";
+import { InventoryMode, ItemTaxTreatment, ItemType, SaleConcept } from "@prisma/client";
 import { ScheduleInput } from "./create-item.dto";
 
 class BadgeInput {
@@ -58,6 +59,51 @@ export class UpdateItemDto {
   @Min(0)
   @Max(1)
   impoconsumoRate?: number | null;
+
+  @IsOptional()
+  @IsEnum(ItemTaxTreatment)
+  taxTreatment?: ItemTaxTreatment;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  vatRate?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  @Transform(({ value }) =>
+    value === undefined || value === ""
+      ? undefined
+      : value === null
+        ? null
+      : String(value).trim()
+  )
+  fiscalCode?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === ""
+      ? undefined
+      : String(value).trim()
+  )
+  unitMeasureCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === ""
+      ? undefined
+      : String(value).trim()
+  )
+  standardCode?: string;
 
   @IsOptional()
   @IsString()

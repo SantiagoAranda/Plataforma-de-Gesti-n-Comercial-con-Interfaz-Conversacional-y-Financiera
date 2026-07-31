@@ -9,7 +9,17 @@ import {
   TaxDirection,
   TaxType,
   Prisma,
+  FiscalSourceType,
+  FiscalCalculationStatus,
+  TaxCalculationMethod,
+  FiscalRoundingMode,
 } from '@prisma/client';
+import {
+  roundCalculatedFiscalAmount,
+  roundFiscalRate,
+} from './fiscal-rounding';
+import { createFiscalSourceFingerprint } from './fiscal-fingerprint';
+import { assertSellerImpoconsumoResponsibility } from './impoconsumo-responsibility';
 
 @Injectable()
 export class TaxService {
@@ -103,6 +113,25 @@ export class TaxService {
     const sellerIsIncomeTaxDeclarant = sellerProfile.isIncomeTaxDeclarant ?? true;
     const reteIcaRateOverridePerThousand =
       dto.reteIcaRateOverride ?? dto.icaRateOverride;
+
+    if (sellerIsIvaResponsable && sellerIsPersonaNaturalNoResponsable) {
+      throw Object.assign(new Error('Perfil de IVA del vendedor contradictorio.'), {
+        code: 'INVALID_SELLER_VAT_PROFILE',
+      });
+    }
+
+    if (
+      dbItems.some((item) => item.appliesImpoconsumo) &&
+      Object.prototype.hasOwnProperty.call(
+        sellerProfile,
+        'isImpoconsumoResponsible',
+      )
+    ) {
+      assertSellerImpoconsumoResponsibility(
+        true,
+        sellerProfile.isImpoconsumoResponsible,
+      );
+    }
 
     // Derivación de saleConcept con control de conceptos mixtos
     const cartConcepts = Array.from(
@@ -379,7 +408,7 @@ export class TaxService {
         const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
         let icaRateObj = null;
         if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -389,7 +418,7 @@ export class TaxService {
           });
         }
         if (!icaRateObj && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -419,7 +448,7 @@ export class TaxService {
       if (reteIcaRateOverridePerThousand === undefined || reteIcaRateOverridePerThousand === null) {
         const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
         if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -429,7 +458,7 @@ export class TaxService {
           });
         }
         if (!icaRateObj && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -523,6 +552,59 @@ export class TaxService {
       netReceived = new Prisma.Decimal(0);
     }
 
+    const sourceFingerprint = createFiscalSourceFingerprint({
+      sourceType: 'SALE_PREVIEW',
+      businessId,
+      lines: dto.cartItems.map((cartItem) => {
+        const item = itemsMap.get(cartItem.itemId);
+        return {
+          id: cartItem.itemId,
+          quantity: cartItem.quantity,
+          unitPrice: cartItem.unitPrice ?? item?.price ?? null,
+          saleConcept: item?.saleConcept ?? null,
+          taxTreatment: item?.taxTreatment ?? null,
+          vatRate: item?.vatRate ?? null,
+          appliesImpoconsumo: item?.appliesImpoconsumo ?? false,
+          impoconsumoRate: item?.impoconsumoRate ?? null,
+        };
+      }),
+      buyer: {
+        buyerType: dto.buyerType,
+        buyerDocumentType: dto.buyerDocumentType,
+        buyerDocumentNumber: dto.buyerDocumentNumber,
+        buyerIsIvaResponsable: dto.buyerIsIvaResponsable,
+        buyerIsRetenedor: dto.buyerIsRetenedor,
+        buyerIsGranContribuyente: dto.buyerIsGranContribuyente,
+        buyerIsAutorretenedor: dto.buyerIsAutorretenedor,
+        buyerIsRegimenSimple: dto.buyerIsRegimenSimple,
+        fiscalMunicipalityCode: dto.fiscalMunicipalityCode,
+      },
+      fiscal: {
+        saleConcept: derivedSaleConcept,
+        reteIcaRateOverride: reteIcaRateOverridePerThousand,
+        defaultVat,
+        defaultImpoconsumo,
+        uvtValue,
+        taxYear: globalParams?.year ?? new Date().getFullYear(),
+        sellerPersonType: sellerProfile.personType,
+        sellerResponsibilities: sellerResponsibilityCodes.slice().sort(),
+        sellerIsIncomeTaxDeclarant,
+        sellerIsImpoconsumoResponsible:
+          sellerProfile.isImpoconsumoResponsible,
+        rules: rules.map((rule) => ({
+          id: rule.id,
+          taxType: rule.taxType,
+          direction: rule.direction,
+          saleConcept: rule.saleConcept,
+          rate: rule.rate,
+          minBaseUvt: rule.minBaseUvt,
+          active: rule.active,
+        })),
+      },
+      calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+      taxEngineVersion: 'aggregate-v1',
+    });
+
     return {
       subtotal: subtotalTotal,
       vatTotal,
@@ -549,43 +631,81 @@ export class TaxService {
       profileMissing: false,
       taxSettingsEnabled: true,
       taxDisabledReason: null,
+      sourceFingerprint,
     };
   }
 
   async freezeTaxCalculation(
     tx: Prisma.TransactionClient,
-    orderId: string,
+    source:
+      | string
+      | {
+          sourceType: FiscalSourceType;
+          sourceId: string;
+          businessId: string;
+        },
     preview: any,
     buyerData: any,
   ) {
-    const order = await tx.order.findUnique({
-      where: { id: orderId },
-      include: {
-        business: {
-          include: {
-            taxProfile: {
-              include: {
-                responsibilities: {
-                  include: {
-                    responsibility: true,
+    const normalizedSource =
+      typeof source === 'string'
+        ? {
+            sourceType: FiscalSourceType.ORDER,
+            sourceId: source,
+            businessId: '',
+          }
+        : source;
+    const sourceRecord =
+      normalizedSource.sourceType === FiscalSourceType.ORDER
+        ? await tx.order.findUnique({
+            where: { id: normalizedSource.sourceId },
+            include: {
+              business: {
+                include: {
+                  taxProfile: {
+                    include: {
+                      responsibilities: { include: { responsibility: true } },
+                    },
                   },
                 },
               },
             },
-          },
-        },
-      },
-    });
+          })
+        : await tx.reservation.findUnique({
+            where: { id: normalizedSource.sourceId },
+            include: {
+              business: {
+                include: {
+                  taxProfile: {
+                    include: {
+                      responsibilities: { include: { responsibility: true } },
+                    },
+                  },
+                },
+              },
+            },
+          });
 
-    if (!order) throw new NotFoundException('Orden no encontrada');
+    if (!sourceRecord) throw new NotFoundException('Fuente de venta no encontrada');
+    const businessId = normalizedSource.businessId || sourceRecord.businessId;
+    if (businessId !== sourceRecord.businessId) {
+      throw new NotFoundException('Fuente de venta no encontrada');
+    }
 
-    const sellerProfile = order.business.taxProfile;
+    const uniqueWhere =
+      normalizedSource.sourceType === FiscalSourceType.ORDER
+        ? { orderId: normalizedSource.sourceId }
+        : { reservationId: normalizedSource.sourceId };
+    const sellerProfile = sourceRecord.business.taxProfile;
     const sellerPersonType = sellerProfile?.personType || null;
     const sellerIsSimpleRegime = sellerProfile
-      ? sellerProfile.responsibilities.some((r) => r.responsibility.code === '47')
+      ? sellerProfile.responsibilities.some(
+          (responsibility) =>
+            responsibility.responsibility.code === '47',
+        )
       : false;
-    const sellerIsIncomeTaxDeclarant = sellerProfile?.isIncomeTaxDeclarant ?? true;
-
+    const sellerIsIncomeTaxDeclarant =
+      sellerProfile?.isIncomeTaxDeclarant ?? true;
     const sellerFiscalSnapshot = sellerProfile
       ? {
           tradeName: sellerProfile.tradeName,
@@ -596,98 +716,174 @@ export class TaxService {
           isIncomeTaxDeclarant: sellerProfile.isIncomeTaxDeclarant,
           personType: sellerProfile.personType,
           responsibilities: sellerProfile.responsibilities.map(
-            (r) => r.responsibility.code,
+            (responsibility) => responsibility.responsibility.code,
           ),
         }
       : {};
-
     const chargedTaxTotal = new Prisma.Decimal(preview.vatTotal).add(
       new Prisma.Decimal(preview.impoconsumoTotal),
     );
     const withheldTaxTotal = new Prisma.Decimal(preview.reteFuenteTotal)
       .add(new Prisma.Decimal(preview.reteIvaTotal))
       .add(new Prisma.Decimal(preview.reteIcaTotal));
+    if (!(tx as any).saleFiscalContext) {
+      await (tx as any).orderFiscalContext.upsert({
+        where: { orderId: normalizedSource.sourceId },
+        update: {
+          ...buyerData,
+          subtotal: preview.subtotal,
+          chargedTaxTotal,
+          withheldTaxTotal,
+          netReceived: preview.netReceived,
+          saleConcept: preview.saleConceptUsed,
+        },
+        create: {
+          orderId: normalizedSource.sourceId,
+          ...buyerData,
+          subtotal: preview.subtotal,
+          chargedTaxTotal,
+          withheldTaxTotal,
+          netReceived: preview.netReceived,
+          saleConcept: preview.saleConceptUsed,
+        },
+      });
+      await (tx as any).saleTaxLine.deleteMany({
+        where: { orderId: normalizedSource.sourceId },
+      });
+      await (tx as any).saleTaxLine.createMany({
+        data: preview.taxLines.map((line: any) => ({
+          orderId: normalizedSource.sourceId,
+          ...line,
+        })),
+      });
+      await (tx as any).taxCalculationSnapshot.upsert({
+        where: { orderId: normalizedSource.sourceId },
+        update: {
+          uvtValue: preview.uvtValue,
+          sellerFiscal: sellerFiscalSnapshot,
+          buyerFiscal: buyerData,
+          rawCalculation: {
+            ...preview,
+            allLines: preview.taxLines,
+          },
+        },
+        create: {
+          orderId: normalizedSource.sourceId,
+          uvtValue: preview.uvtValue,
+          sellerFiscal: sellerFiscalSnapshot,
+          buyerFiscal: buyerData,
+          rawCalculation: {
+            ...preview,
+            allLines: preview.taxLines,
+          },
+        },
+      });
+      return (tx as any).orderFiscalContext.findUnique({
+        where: { orderId: normalizedSource.sourceId },
+      });
+    }
+    const existing = await tx.saleFiscalContext.findUnique({
+      where: uniqueWhere,
+    });
+    if (existing?.calculationStatus === FiscalCalculationStatus.LOCKED) {
+      throw Object.assign(
+        new Error('El contexto fiscal confirmado es inmutable.'),
+        { code: 'FISCAL_CONTEXT_LOCKED' },
+      );
+    }
 
-    await tx.orderFiscalContext.upsert({
-      where: { orderId },
+    const now = new Date();
+    const subtotal = roundCalculatedFiscalAmount(preview.subtotal);
+    const chargedTaxTotalRounded =
+      roundCalculatedFiscalAmount(chargedTaxTotal);
+    const withheldTaxTotalRounded =
+      roundCalculatedFiscalAmount(withheldTaxTotal);
+    const netReceived = roundCalculatedFiscalAmount(preview.netReceived);
+    const commonData = {
+      businessId,
+      sourceType: normalizedSource.sourceType,
+      buyerType: buyerData.buyerType,
+      buyerName: buyerData.buyerName,
+      buyerDocumentType: buyerData.buyerDocumentType,
+      buyerDocumentNumber: buyerData.buyerDocumentNumber,
+      buyerEmail: buyerData.buyerEmail,
+      buyerDv: buyerData.buyerDv,
+      buyerAddress: buyerData.buyerAddress,
+      buyerPhone: buyerData.buyerPhone,
+      buyerCountryCode: buyerData.buyerCountryCode,
+      buyerMunicipalityCode: buyerData.buyerMunicipalityCode,
+      buyerTributeCode: buyerData.buyerTributeCode,
+      buyerIsFinalConsumer: buyerData.buyerIsFinalConsumer ?? false,
+      buyerIsIvaResponsable: buyerData.buyerIsIvaResponsable ?? false,
+      buyerIsRetenedor: buyerData.buyerIsRetenedor ?? false,
+      buyerIsGranContribuyente: buyerData.buyerIsGranContribuyente ?? false,
+      buyerIsAutorretenedor: buyerData.buyerIsAutorretenedor ?? false,
+      buyerIsRegimenSimple: buyerData.buyerIsRegimenSimple ?? false,
+      buyerRequiresElectronicInvoice:
+        buyerData.buyerRequiresElectronicInvoice ?? false,
+      fiscalMunicipalityCode: buyerData.fiscalMunicipalityCode,
+      saleConcept: preview.saleConceptUsed,
+      subtotal,
+      chargedTaxTotal: chargedTaxTotalRounded,
+      withheldTaxTotal: withheldTaxTotalRounded,
+      netReceived,
+      sellerPersonType,
+      sellerIsSimpleRegime,
+      sellerIsIncomeTaxDeclarant,
+      icaRateUsed: null,
+      reteIcaRateUsed: preview.reteIcaRateUsed,
+      reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
+      hasMixedConcepts: preview.hasMixedConcepts ?? false,
+      mixedConceptsWarning: preview.mixedConceptsWarning,
+      impoconsumoRateUsed: preview.impoconsumoRateUsed,
+      taxYear: preview.taxYear,
+      uvtValue: preview.uvtValue,
+      calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+      taxEngineVersion: 'aggregate-v1',
+      roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+      roundingScale: 2,
+      calculationStatus: FiscalCalculationStatus.CURRENT,
+      sourceFingerprint: preview.sourceFingerprint ?? null,
+      calculatedAt: now,
+      invalidatedAt: null,
+      invalidationReason: null,
+    };
+
+    const context = await tx.saleFiscalContext.upsert({
+      where: uniqueWhere,
       update: {
-        buyerType: buyerData.buyerType,
-        buyerName: buyerData.buyerName,
-        buyerDocumentType: buyerData.buyerDocumentType,
-        buyerDocumentNumber: buyerData.buyerDocumentNumber,
-        buyerEmail: buyerData.buyerEmail,
-        buyerIsIvaResponsable: buyerData.buyerIsIvaResponsable ?? false,
-        buyerIsRetenedor: buyerData.buyerIsRetenedor ?? false,
-        buyerIsGranContribuyente: buyerData.buyerIsGranContribuyente ?? false,
-        buyerIsAutorretenedor: buyerData.buyerIsAutorretenedor ?? false,
-        buyerIsRegimenSimple: buyerData.buyerIsRegimenSimple ?? false,
-        buyerRequiresElectronicInvoice:
-          buyerData.buyerRequiresElectronicInvoice ?? false,
-        fiscalMunicipalityCode: buyerData.fiscalMunicipalityCode,
-        saleConcept: preview.saleConceptUsed,
-        subtotal: preview.subtotal,
-        chargedTaxTotal,
-        withheldTaxTotal,
-        netReceived: preview.netReceived,
-        sellerPersonType,
-        sellerIsSimpleRegime,
-        sellerIsIncomeTaxDeclarant,
-        icaRateUsed: null,
-        reteIcaRateUsed: preview.reteIcaRateUsed,
-        reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
-        hasMixedConcepts: preview.hasMixedConcepts ?? false,
-        mixedConceptsWarning: preview.mixedConceptsWarning,
-        impoconsumoRateUsed: preview.impoconsumoRateUsed,
-        taxYear: preview.taxYear,
-        uvtValue: preview.uvtValue,
+        ...commonData,
       },
       create: {
-        orderId,
-        buyerType: buyerData.buyerType,
-        buyerName: buyerData.buyerName,
-        buyerDocumentType: buyerData.buyerDocumentType,
-        buyerDocumentNumber: buyerData.buyerDocumentNumber,
-        buyerEmail: buyerData.buyerEmail,
-        buyerIsIvaResponsable: buyerData.buyerIsIvaResponsable ?? false,
-        buyerIsRetenedor: buyerData.buyerIsRetenedor ?? false,
-        buyerIsGranContribuyente: buyerData.buyerIsGranContribuyente ?? false,
-        buyerIsAutorretenedor: buyerData.buyerIsAutorretenedor ?? false,
-        buyerIsRegimenSimple: buyerData.buyerIsRegimenSimple ?? false,
-        buyerRequiresElectronicInvoice:
-          buyerData.buyerRequiresElectronicInvoice ?? false,
-        fiscalMunicipalityCode: buyerData.fiscalMunicipalityCode,
-        saleConcept: preview.saleConceptUsed,
-        subtotal: preview.subtotal,
-        chargedTaxTotal,
-        withheldTaxTotal,
-        netReceived: preview.netReceived,
-        sellerPersonType,
-        sellerIsSimpleRegime,
-        sellerIsIncomeTaxDeclarant,
-        icaRateUsed: null,
-        reteIcaRateUsed: preview.reteIcaRateUsed,
-        reteIcaRateOverride: preview.reteIcaRateOverrideUsed,
-        hasMixedConcepts: preview.hasMixedConcepts ?? false,
-        mixedConceptsWarning: preview.mixedConceptsWarning,
-        impoconsumoRateUsed: preview.impoconsumoRateUsed,
-        taxYear: preview.taxYear,
-        uvtValue: preview.uvtValue,
+        ...commonData,
+        orderId:
+          normalizedSource.sourceType === FiscalSourceType.ORDER
+            ? normalizedSource.sourceId
+            : null,
+        reservationId:
+          normalizedSource.sourceType === FiscalSourceType.RESERVATION
+            ? normalizedSource.sourceId
+            : null,
       },
     });
 
     await tx.saleTaxLine.deleteMany({
-      where: { orderId },
+      where: { fiscalContextId: context.id, isReversal: false },
     });
 
     if (preview.taxLines.length > 0) {
       await tx.saleTaxLine.createMany({
         data: preview.taxLines.map((l: any) => ({
-          orderId,
+          fiscalContextId: context.id,
           taxType: l.taxType,
           direction: l.direction,
-          baseAmount: l.baseAmount,
-          rate: l.rate,
-          taxAmount: l.taxAmount,
+          taxableBase: roundCalculatedFiscalAmount(l.baseAmount),
+          rate: roundFiscalRate(l.rate),
+          taxAmount: roundCalculatedFiscalAmount(l.taxAmount),
+          saleConcept: preview.saleConceptUsed,
+          calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+          roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+          roundingScale: 2,
           accountCode: l.accountCode,
           applied: l.applied,
           reason: l.reason,
@@ -696,7 +892,7 @@ export class TaxService {
     }
 
     await tx.taxCalculationSnapshot.upsert({
-      where: { orderId },
+      where: { fiscalContextId: context.id },
       update: {
         uvtValue: preview.uvtValue,
         sellerFiscal: sellerFiscalSnapshot,
@@ -723,9 +919,15 @@ export class TaxService {
           impoconsumoRateUsed: preview.impoconsumoRateUsed,
           taxYear: preview.taxYear,
         },
+        calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+        taxEngineVersion: 'aggregate-v1',
+        roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+        roundingScale: 2,
+        sourceFingerprint: preview.sourceFingerprint ?? null,
+        calculatedAt: now,
       },
       create: {
-        orderId,
+        fiscalContextId: context.id,
         uvtValue: preview.uvtValue,
         sellerFiscal: sellerFiscalSnapshot,
         buyerFiscal: buyerData,
@@ -751,11 +953,17 @@ export class TaxService {
           impoconsumoRateUsed: preview.impoconsumoRateUsed,
           taxYear: preview.taxYear,
         },
+        calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+        taxEngineVersion: 'aggregate-v1',
+        roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+        roundingScale: 2,
+        sourceFingerprint: preview.sourceFingerprint ?? null,
+        calculatedAt: now,
       },
     });
 
-    return tx.orderFiscalContext.findUnique({
-      where: { orderId },
+    return tx.saleFiscalContext.findUnique({
+      where: uniqueWhere,
     });
   }
 

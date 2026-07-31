@@ -241,6 +241,9 @@ export class ReservationsService {
         date: dateOnly,
         startMinute: dto.startMinute,
         endMinute: dto.endMinute,
+        itemNameSnapshot: item.name,
+        unitPriceSnapshot: item.price,
+        durationMinutesSnapshot: item.durationMinutes,
       },
     });
   }

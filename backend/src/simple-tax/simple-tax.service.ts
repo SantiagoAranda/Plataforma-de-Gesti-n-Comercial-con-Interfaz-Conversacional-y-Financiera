@@ -186,6 +186,11 @@ export class SimpleTaxService {
   async calculateAndPersist(businessId: string, dto: SimpleTaxCalculateDto) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
+    await this.prepareSimpleTaxAdjustments(
+      businessId,
+      dto.taxYear,
+      dto.periodNumber,
+    );
     const calculation = await this.calculate(businessId, dto);
     const existing = await this.prisma.simpleTaxPeriod.findUnique({
       where: {
@@ -204,19 +209,29 @@ export class SimpleTaxService {
       throw new BadRequestException('El periodo RST ya esta cerrado.');
     }
 
-    const period = await this.prisma.simpleTaxPeriod.upsert({
-      where: {
-        businessId_taxYear_periodNumber: {
-          businessId,
-          taxYear: dto.taxYear,
-          periodNumber: dto.periodNumber,
+    const period = await this.prisma.$transaction(async (tx) => {
+      const persisted = await tx.simpleTaxPeriod.upsert({
+        where: {
+          businessId_taxYear_periodNumber: {
+            businessId,
+            taxYear: dto.taxYear,
+            periodNumber: dto.periodNumber,
+          },
         },
-      },
-      update: this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
-      create: {
-        businessId,
-        ...this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
-      },
+        update: this.periodPersistenceData(
+          calculation,
+          SimpleTaxPeriodStatus.CALCULATED,
+        ),
+        create: {
+          businessId,
+          ...this.periodPersistenceData(
+            calculation,
+            SimpleTaxPeriodStatus.CALCULATED,
+          ),
+        },
+      });
+      await this.claimSimpleTaxAdjustments(persisted, tx);
+      return persisted;
     });
 
     return {
@@ -241,6 +256,11 @@ export class SimpleTaxService {
       throw new BadRequestException('El periodo RST ya esta cerrado.');
     }
 
+    await this.prepareSimpleTaxAdjustments(
+      businessId,
+      existing.taxYear,
+      existing.periodNumber,
+    );
     const calculation = await this.calculate(businessId, {
       taxYear: existing.taxYear,
       periodNumber: existing.periodNumber,
@@ -253,9 +273,16 @@ export class SimpleTaxService {
       notes: dto.notes ?? existing.notes,
     });
 
-    const updated = await this.prisma.simpleTaxPeriod.update({
-      where: { id: existing.id },
-      data: this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const persisted = await tx.simpleTaxPeriod.update({
+        where: { id: existing.id },
+        data: this.periodPersistenceData(
+          calculation,
+          SimpleTaxPeriodStatus.CALCULATED,
+        ),
+      });
+      await this.claimSimpleTaxAdjustments(persisted, tx);
+      return persisted;
     });
 
     return {
@@ -297,6 +324,21 @@ export class SimpleTaxService {
 
       if (period.status !== SimpleTaxPeriodStatus.CALCULATED) {
         throw new BadRequestException('Solo se pueden presentar periodos calculados.');
+      }
+      const pendingAdjustments = (tx as any).simpleTaxIncomeAdjustment
+        ? await tx.simpleTaxIncomeAdjustment.count({
+        where: {
+          businessId,
+          status: 'PENDING',
+          targetTaxYear: period.taxYear,
+          targetPeriodNumber: period.periodNumber,
+        },
+          })
+        : 0;
+      if (pendingAdjustments > 0) {
+        throw new BadRequestException(
+          'Hay ajustes SIMPLE pendientes destinados a este periodo.',
+        );
       }
 
       const netSimpleTax = new Prisma.Decimal(period.netSimpleTax);
@@ -555,7 +597,12 @@ export class SimpleTaxService {
       periodRange.start,
       periodRange.endExclusive,
     );
-    const salesGrossIncome = salesSummary.total;
+    const adjustmentTotal = await this.calculateSimpleTaxAdjustmentTotal(
+      businessId,
+      input.taxYear,
+      input.periodNumber,
+    );
+    const salesGrossIncome = salesSummary.total.add(adjustmentTotal);
     const manualGrossIncome = this.toNonNegativeDecimal(input.manualGrossIncome);
     const excludedIncome = this.toNonNegativeDecimal(input.excludedIncome);
     const electronicPaymentsIncome = this.toNonNegativeDecimal(
@@ -805,6 +852,178 @@ export class SimpleTaxService {
       hasSimpleTaxResponsibility,
       groupResolution,
     };
+  }
+
+  private nextSimpleTaxPeriod(taxYear: number, periodNumber: number) {
+    return periodNumber >= 6
+      ? { taxYear: taxYear + 1, periodNumber: 1 }
+      : { taxYear, periodNumber: periodNumber + 1 };
+  }
+
+  private async prepareSimpleTaxAdjustments(
+    businessId: string,
+    calculatedTaxYear: number,
+    calculatedPeriodNumber: number,
+  ) {
+    if (!(this.prisma as any).simpleTaxIncomeAdjustment) return;
+    await this.prisma.$transaction(async (tx) => {
+      const pending = await tx.simpleTaxIncomeAdjustment.findMany({
+        where: { businessId, status: 'PENDING' },
+        orderBy: [{ targetTaxYear: 'asc' }, { targetPeriodNumber: 'asc' }],
+      });
+      for (const adjustment of pending) {
+        let target = {
+          taxYear: adjustment.targetTaxYear,
+          periodNumber: adjustment.targetPeriodNumber,
+        };
+        while (
+          target.taxYear < calculatedTaxYear ||
+          (target.taxYear === calculatedTaxYear &&
+            target.periodNumber <= calculatedPeriodNumber)
+        ) {
+          const targetPeriod = await tx.simpleTaxPeriod.findUnique({
+            where: {
+              businessId_taxYear_periodNumber: {
+                businessId,
+                taxYear: target.taxYear,
+                periodNumber: target.periodNumber,
+              },
+            },
+          });
+          if (
+            !targetPeriod ||
+            !['POSTED', 'PAID'].includes(targetPeriod.status)
+          ) {
+            break;
+          }
+          const next = this.nextSimpleTaxPeriod(
+            target.taxYear,
+            target.periodNumber,
+          );
+          await tx.simpleTaxAdjustmentTargetHistory.create({
+            data: {
+              adjustmentId: adjustment.id,
+              fromTaxYear: target.taxYear,
+              fromPeriodNumber: target.periodNumber,
+              toTaxYear: next.taxYear,
+              toPeriodNumber: next.periodNumber,
+              reason: 'TARGET_PERIOD_CLOSED',
+            },
+          });
+          await tx.simpleTaxIncomeAdjustment.updateMany({
+            where: {
+              id: adjustment.id,
+              status: 'PENDING',
+              appliedPeriodId: null,
+              targetTaxYear: target.taxYear,
+              targetPeriodNumber: target.periodNumber,
+            },
+            data: {
+              targetTaxYear: next.taxYear,
+              targetPeriodNumber: next.periodNumber,
+            },
+          });
+          target = next;
+        }
+      }
+    });
+  }
+
+  private async calculateSimpleTaxAdjustmentTotal(
+    businessId: string,
+    taxYear: number,
+    periodNumber: number,
+  ) {
+    if (!(this.prisma as any).simpleTaxIncomeAdjustment) {
+      return new Prisma.Decimal(0);
+    }
+    const adjustments = await this.prisma.simpleTaxIncomeAdjustment.findMany({
+      where: {
+        businessId,
+        OR: [
+          {
+            status: 'PENDING',
+            targetTaxYear: taxYear,
+            targetPeriodNumber: periodNumber,
+            appliedPeriodId: null,
+          },
+          {
+            status: 'APPLIED',
+            appliedPeriod: { taxYear, periodNumber },
+          },
+        ],
+      },
+      select: { amount: true },
+    });
+    return adjustments.reduce(
+      (total, adjustment) => total.add(adjustment.amount),
+      new Prisma.Decimal(0),
+    );
+  }
+
+  private async claimSimpleTaxAdjustments(period: {
+    id: string;
+    businessId: string;
+    taxYear: number;
+    periodNumber: number;
+    status: SimpleTaxPeriodStatus;
+  }, db: Prisma.TransactionClient | PrismaService = this.prisma) {
+    if (!(this.prisma as any).simpleTaxIncomeAdjustment) return;
+    if (
+      period.status === SimpleTaxPeriodStatus.POSTED ||
+      period.status === SimpleTaxPeriodStatus.PAID
+    ) {
+      return;
+    }
+    const claim = async (tx: Prisma.TransactionClient | PrismaService) => {
+      const pending = await tx.simpleTaxIncomeAdjustment.findMany({
+        where: {
+          businessId: period.businessId,
+          status: 'PENDING',
+          targetTaxYear: period.taxYear,
+          targetPeriodNumber: period.periodNumber,
+          appliedPeriodId: null,
+        },
+        select: { id: true },
+      });
+      for (const adjustment of pending) {
+        const result = await tx.simpleTaxIncomeAdjustment.updateMany({
+          where: {
+            id: adjustment.id,
+            status: 'PENDING',
+            targetTaxYear: period.taxYear,
+            targetPeriodNumber: period.periodNumber,
+            appliedPeriodId: null,
+          },
+          data: {
+            status: 'APPLIED',
+            appliedPeriodId: period.id,
+            appliedAt: new Date(),
+          },
+        });
+        if (result.count === 0) {
+          const current = await tx.simpleTaxIncomeAdjustment.findUnique({
+            where: { id: adjustment.id },
+          });
+          if (
+            current?.status !== 'APPLIED' ||
+            current.appliedPeriodId !== period.id
+          ) {
+            throw Object.assign(
+              new BadRequestException(
+                'El ajuste SIMPLE fue reclamado o reasignado por otro proceso.',
+              ),
+              { code: 'SIMPLE_ADJUSTMENT_CLAIM_CONFLICT' },
+            );
+          }
+        }
+      }
+    };
+    if ('$transaction' in db) {
+      await (db as PrismaService).$transaction((tx) => claim(tx));
+    } else {
+      await claim(db);
+    }
   }
 
   private async calculateSalesGrossIncome(

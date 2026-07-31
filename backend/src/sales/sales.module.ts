@@ -7,10 +7,11 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
 import { TaxModule } from '../tax/tax.module';
 import { CommonModule } from '../common/common.module';
+import { ElectronicSaleReversalGuard } from './electronic-sale-reversal.guard';
 
 @Module({
   imports: [PrismaModule, AccountingModule, InventoryModule, ItemOptionsModule, TaxModule, CommonModule],
   controllers: [SalesController],
-  providers: [SalesService],
+  providers: [SalesService, ElectronicSaleReversalGuard],
 })
 export class SalesModule {}

@@ -57,6 +57,13 @@ export default function TaxPreviewModal({
   const [buyerDocumentNumber, setBuyerDocumentNumber] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerDv, setBuyerDv] = useState("");
+  const [buyerAddress, setBuyerAddress] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [buyerCountryCode, setBuyerCountryCode] = useState("");
+  const [buyerMunicipalityCode, setBuyerMunicipalityCode] = useState("");
+  const [buyerTributeCode, setBuyerTributeCode] = useState("");
+  const [buyerIsFinalConsumer, setBuyerIsFinalConsumer] = useState(false);
   const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   
   // Fiscal responsibilities of the buyer
@@ -83,6 +90,13 @@ export default function TaxPreviewModal({
     );
     setBuyerDocumentNumber(initialContext?.buyerDocumentNumber || "");
     setBuyerEmail(initialContext?.buyerEmail || "");
+    setBuyerDv(initialContext?.buyerDv || "");
+    setBuyerAddress(initialContext?.buyerAddress || "");
+    setBuyerPhone(initialContext?.buyerPhone || "");
+    setBuyerCountryCode(initialContext?.buyerCountryCode || "");
+    setBuyerMunicipalityCode(initialContext?.buyerMunicipalityCode || "");
+    setBuyerTributeCode(initialContext?.buyerTributeCode || "");
+    setBuyerIsFinalConsumer(initialContext?.buyerIsFinalConsumer ?? false);
     
     // Automatically match CC vs NIT based on name length or defaults
     if (initialContext) {
@@ -141,6 +155,14 @@ export default function TaxPreviewModal({
           buyerDocumentType,
           buyerDocumentNumber: buyerDocumentNumber.trim() || undefined,
           buyerEmail: buyerEmail.trim() || undefined,
+          buyerDv: buyerDv.trim() || undefined,
+          buyerAddress: buyerAddress.trim() || undefined,
+          buyerPhone: buyerPhone.trim() || undefined,
+          buyerCountryCode: buyerCountryCode.trim().toUpperCase() || undefined,
+          buyerMunicipalityCode:
+            buyerMunicipalityCode.trim() || undefined,
+          buyerTributeCode: buyerTributeCode.trim() || undefined,
+          buyerIsFinalConsumer,
           buyerIsIvaResponsable,
           buyerIsRetenedor,
           buyerIsGranContribuyente,
@@ -175,6 +197,13 @@ export default function TaxPreviewModal({
     buyerDocumentNumber,
     buyerName,
     buyerEmail,
+    buyerDv,
+    buyerAddress,
+    buyerPhone,
+    buyerCountryCode,
+    buyerMunicipalityCode,
+    buyerTributeCode,
+    buyerIsFinalConsumer,
     buyerIsIvaResponsable,
     buyerIsRetenedor,
     buyerIsGranContribuyente,
@@ -209,6 +238,13 @@ export default function TaxPreviewModal({
       buyerDocumentType,
       buyerDocumentNumber: buyerDocumentNumber.trim() || null,
       buyerEmail: buyerEmail.trim() || null,
+      buyerDv: buyerDv.trim() || null,
+      buyerAddress: buyerAddress.trim() || null,
+      buyerPhone: buyerPhone.trim() || null,
+      buyerCountryCode: buyerCountryCode.trim().toUpperCase() || null,
+      buyerMunicipalityCode: buyerMunicipalityCode.trim() || null,
+      buyerTributeCode: buyerTributeCode.trim() || null,
+      buyerIsFinalConsumer,
       buyerIsIvaResponsable,
       buyerIsRetenedor,
       buyerIsGranContribuyente,
@@ -354,6 +390,70 @@ export default function TaxPreviewModal({
                   className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={buyerDv}
+                  onChange={(event) =>
+                    setBuyerDv(event.target.value.replace(/\D/g, ""))
+                  }
+                  placeholder="DV"
+                  inputMode="numeric"
+                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
+                />
+                <input
+                  value={buyerPhone}
+                  onChange={(event) => setBuyerPhone(event.target.value)}
+                  placeholder="Teléfono"
+                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
+                />
+              </div>
+              <input
+                value={buyerAddress}
+                onChange={(event) => setBuyerAddress(event.target.value)}
+                placeholder="Dirección"
+                className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  value={buyerCountryCode}
+                  maxLength={2}
+                  onChange={(event) =>
+                    setBuyerCountryCode(
+                      event.target.value.replace(/[^a-z]/gi, "").toUpperCase(),
+                    )
+                  }
+                  placeholder="País"
+                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs uppercase"
+                />
+                <input
+                  value={buyerMunicipalityCode}
+                  onChange={(event) =>
+                    setBuyerMunicipalityCode(
+                      event.target.value.replace(/\D/g, ""),
+                    )
+                  }
+                  placeholder="Municipio"
+                  inputMode="numeric"
+                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
+                />
+                <input
+                  value={buyerTributeCode}
+                  onChange={(event) => setBuyerTributeCode(event.target.value)}
+                  placeholder="Tributo"
+                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={buyerIsFinalConsumer}
+                  onChange={(event) =>
+                    setBuyerIsFinalConsumer(event.target.checked)
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                />
+                Consumidor final
+              </label>
             </div>
 
             {/* Municipio */}

@@ -83,8 +83,19 @@ export class SalesController {
   }
 
   @Post(':id/reverse')
-  reverse(@Req() req: any, @Param('id') id: string, @Body() dto: ReverseOrderDto) {
-    return this.salesService.reverseConfirmedOrder(req.user.businessId, id, dto);
+  reverse(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ReverseOrderDto,
+    @Query('sourceType') sourceType?: any,
+  ) {
+    return this.salesService.reverseConfirmedOrder(
+      req.user.businessId,
+      id,
+      dto,
+      sourceType,
+      req.user.id,
+    );
   }
 
   @Post(":id/items")

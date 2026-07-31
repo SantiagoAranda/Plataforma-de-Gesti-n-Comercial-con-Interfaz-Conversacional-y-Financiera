@@ -7,7 +7,13 @@ import {
   jest,
 } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PersonType, SaleConcept, TaxType, Prisma } from '@prisma/client';
+import {
+  ItemTaxTreatment,
+  PersonType,
+  SaleConcept,
+  TaxType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaxPreviewDto } from './dto/tax-preview.dto';
 import { TaxService } from './tax.service';
@@ -92,6 +98,8 @@ describe('TaxService', () => {
       appliesImpoconsumo?: boolean;
       impoconsumoRate?: Prisma.Decimal | null;
       saleConcept?: SaleConcept;
+      taxTreatment?: ItemTaxTreatment;
+      vatRate?: Prisma.Decimal | null;
     }>,
   ) => {
     mockPrismaService.item.findMany.mockResolvedValue(
@@ -101,6 +109,8 @@ describe('TaxService', () => {
         appliesImpoconsumo: item.appliesImpoconsumo ?? false,
         impoconsumoRate: item.impoconsumoRate ?? null,
         saleConcept: item.saleConcept,
+        taxTreatment: item.taxTreatment ?? ItemTaxTreatment.TAXED,
+        vatRate: item.vatRate ?? null,
       })),
     );
   };
@@ -150,6 +160,22 @@ describe('TaxService', () => {
     expect(result.subtotal.toNumber()).toBe(100000);
     expect(result.vatTotal.toNumber()).toBe(19000);
     expect(result.impoconsumoTotal.toNumber()).toBe(0);
+    expect(result.netReceived.toNumber()).toBe(119000);
+  });
+
+  it('keeps the official aggregate engine isolated from candidate item treatment in 1A', async () => {
+    mockSeller(['48']);
+    mockItems([
+      {
+        price: 100000,
+        appliesImpoconsumo: false,
+        taxTreatment: ItemTaxTreatment.EXCLUDED,
+      },
+    ]);
+
+    const result = await service.calculateTaxPreview(businessId, baseDto());
+
+    expect(result.vatTotal.toNumber()).toBe(19000);
     expect(result.netReceived.toNumber()).toBe(119000);
   });
 

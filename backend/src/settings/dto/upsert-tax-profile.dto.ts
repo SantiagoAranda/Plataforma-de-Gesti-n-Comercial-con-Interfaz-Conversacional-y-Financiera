@@ -49,6 +49,14 @@ export class UpsertTaxProfileDto {
   @IsBoolean()
   taxSettingsEnabled?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  isImpoconsumoResponsible?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  confirmImpoconsumoResponsibilityConflict?: boolean;
+
   @IsArray()
   @IsString({ each: true })
   responsibilityCodes!: string[];

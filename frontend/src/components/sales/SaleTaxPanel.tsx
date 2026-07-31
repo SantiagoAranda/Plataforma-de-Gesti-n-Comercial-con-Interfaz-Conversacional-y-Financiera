@@ -18,6 +18,13 @@ export type SaleFiscalFormState = {
   buyerDocumentNumber: string;
   buyerName: string;
   buyerEmail: string;
+  buyerDv: string;
+  buyerAddress: string;
+  buyerPhone: string;
+  buyerCountryCode: string;
+  buyerMunicipalityCode: string;
+  buyerTributeCode: string;
+  buyerIsFinalConsumer: boolean;
   buyerIsIvaResponsable: boolean;
   buyerIsRetenedor: boolean;
   buyerIsGranContribuyente: boolean;
@@ -35,6 +42,13 @@ export const DEFAULT_SALE_FISCAL_FORM: SaleFiscalFormState = {
   buyerDocumentNumber: "",
   buyerName: "",
   buyerEmail: "",
+  buyerDv: "",
+  buyerAddress: "",
+  buyerPhone: "",
+  buyerCountryCode: "",
+  buyerMunicipalityCode: "",
+  buyerTributeCode: "",
+  buyerIsFinalConsumer: false,
   buyerIsIvaResponsable: false,
   buyerIsRetenedor: false,
   buyerIsGranContribuyente: false,
@@ -104,6 +118,14 @@ export function buildBuyerFiscalContext(
     buyerDocumentType: normalized.buyerDocumentType,
     buyerDocumentNumber: normalized.buyerDocumentNumber.trim() || null,
     buyerEmail: normalized.buyerEmail.trim() || null,
+    buyerDv: normalized.buyerDv.trim() || null,
+    buyerAddress: normalized.buyerAddress.trim() || null,
+    buyerPhone: normalized.buyerPhone.trim() || null,
+    buyerCountryCode: normalized.buyerCountryCode.trim().toUpperCase() || null,
+    buyerMunicipalityCode:
+      normalized.buyerMunicipalityCode.trim() || null,
+    buyerTributeCode: normalized.buyerTributeCode.trim() || null,
+    buyerIsFinalConsumer: normalized.buyerIsFinalConsumer,
     buyerIsIvaResponsable: normalized.buyerIsIvaResponsable,
     buyerIsRetenedor: normalized.buyerIsRetenedor,
     buyerIsGranContribuyente: normalized.buyerIsGranContribuyente,
@@ -129,6 +151,13 @@ export function saleFiscalStateFromSale(sale: Sale | null): SaleFiscalFormState 
       buyerDocumentNumber: context.buyerDocumentNumber ?? "",
       buyerName: context.buyerName ?? sale?.customerName ?? "",
       buyerEmail: context.buyerEmail ?? "",
+      buyerDv: context.buyerDv ?? "",
+      buyerAddress: context.buyerAddress ?? "",
+      buyerPhone: context.buyerPhone ?? "",
+      buyerCountryCode: context.buyerCountryCode ?? "",
+      buyerMunicipalityCode: context.buyerMunicipalityCode ?? "",
+      buyerTributeCode: context.buyerTributeCode ?? "",
+      buyerIsFinalConsumer: Boolean(context.buyerIsFinalConsumer),
       buyerIsIvaResponsable: Boolean(context.buyerIsIvaResponsable),
       buyerIsRetenedor: Boolean(context.buyerIsRetenedor),
       buyerIsGranContribuyente: Boolean(context.buyerIsGranContribuyente),
@@ -275,6 +304,7 @@ export default function SaleTaxPanel({
   previewOnly = false,
   onPreviewChange,
   taxSettingsEnabled = false,
+  fiscalCalculationStatus,
 }: {
   mode: "create" | "edit" | "readonly";
   value: SaleFiscalFormState;
@@ -288,6 +318,7 @@ export default function SaleTaxPanel({
   previewOnly?: boolean;
   onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
   taxSettingsEnabled?: boolean;
+  fiscalCalculationStatus?: Sale["fiscalCalculationStatus"];
 }) {
   const { simpleRegimeEnabled } = useFeatureFlags();
   const readonly = mode === "readonly";
@@ -365,6 +396,13 @@ export default function SaleTaxPanel({
           buyerDocumentType: context.buyerDocumentType,
           buyerDocumentNumber: context.buyerDocumentNumber || undefined,
           buyerEmail: context.buyerEmail || undefined,
+          buyerDv: context.buyerDv || undefined,
+          buyerAddress: context.buyerAddress || undefined,
+          buyerPhone: context.buyerPhone || undefined,
+          buyerCountryCode: context.buyerCountryCode || undefined,
+          buyerMunicipalityCode: context.buyerMunicipalityCode || undefined,
+          buyerTributeCode: context.buyerTributeCode || undefined,
+          buyerIsFinalConsumer: context.buyerIsFinalConsumer,
           buyerIsIvaResponsable: context.buyerIsIvaResponsable,
           buyerIsRetenedor: context.buyerIsRetenedor,
           buyerIsGranContribuyente: context.buyerIsGranContribuyente,
@@ -405,6 +443,17 @@ export default function SaleTaxPanel({
 
   return (
     <section className={`space-y-3 ${className}`}>
+      {fiscalCalculationStatus === "STALE" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          El cálculo fiscal está desactualizado. Debe recalcularse antes de
+          confirmar la venta.
+        </div>
+      )}
+      {fiscalCalculationStatus === "LOCKED" && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          El cálculo fiscal está bloqueado porque la venta fue confirmada.
+        </div>
+      )}
       {!previewOnly && (
         <div className="rounded-2xl border border-slate-100 bg-white p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -502,6 +551,81 @@ export default function SaleTaxPanel({
                 placeholder="Correo"
                 className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
               />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={value.buyerDv}
+                  disabled={readonly}
+                  onChange={(event) =>
+                    update({ buyerDv: event.target.value.replace(/\D/g, "") })
+                  }
+                  placeholder="DV"
+                  inputMode="numeric"
+                  className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                />
+                <input
+                  value={value.buyerPhone}
+                  disabled={readonly}
+                  onChange={(event) => update({ buyerPhone: event.target.value })}
+                  placeholder="Teléfono"
+                  className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                />
+              </div>
+              <input
+                value={value.buyerAddress}
+                disabled={readonly}
+                onChange={(event) => update({ buyerAddress: event.target.value })}
+                placeholder="Dirección"
+                className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
+              />
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  value={value.buyerCountryCode}
+                  disabled={readonly}
+                  maxLength={2}
+                  onChange={(event) =>
+                    update({
+                      buyerCountryCode: event.target.value
+                        .replace(/[^a-z]/gi, "")
+                        .toUpperCase(),
+                    })
+                  }
+                  placeholder="País"
+                  className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs uppercase outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                />
+                <input
+                  value={value.buyerMunicipalityCode}
+                  disabled={readonly}
+                  onChange={(event) =>
+                    update({
+                      buyerMunicipalityCode: event.target.value.replace(/\D/g, ""),
+                    })
+                  }
+                  placeholder="Municipio"
+                  inputMode="numeric"
+                  className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                />
+                <input
+                  value={value.buyerTributeCode}
+                  disabled={readonly}
+                  onChange={(event) =>
+                    update({ buyerTributeCode: event.target.value })
+                  }
+                  placeholder="Tributo"
+                  className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs outline-none focus:border-emerald-500 disabled:bg-slate-50"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={value.buyerIsFinalConsumer}
+                  disabled={readonly}
+                  onChange={(event) =>
+                    update({ buyerIsFinalConsumer: event.target.checked })
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
+                />
+                Consumidor final
+              </label>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <select
                   value={value.fiscalMunicipalityCode}

@@ -17,6 +17,7 @@ export type TaxProfile = {
   mainCiiuCode: string | null;
   mainCiiuDescription: string | null;
   isIncomeTaxDeclarant: boolean;
+  isImpoconsumoResponsible: boolean | null;
   responsibilities: Array<{
     responsibility: {
       id: string;

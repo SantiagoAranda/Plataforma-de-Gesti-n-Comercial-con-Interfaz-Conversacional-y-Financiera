@@ -10,6 +10,7 @@ import {
   WeeklySchedule,
   FormErrors,
   ItemInventoryMode,
+  ItemTaxTreatment,
 } from "@/src/types/item";
 import {
   formatPriceInput,
@@ -227,6 +228,16 @@ interface ItemFormContentProps {
   setAppliesImpoconsumo: (value: boolean) => void;
   impoconsumoRatePercent: string;
   setImpoconsumoRatePercent: (value: string) => void;
+  taxTreatment: ItemTaxTreatment;
+  setTaxTreatment: (value: ItemTaxTreatment) => void;
+  vatRatePercent: string;
+  setVatRatePercent: (value: string) => void;
+  fiscalCode: string;
+  setFiscalCode: (value: string) => void;
+  unitMeasureCode: string;
+  setUnitMeasureCode: (value: string) => void;
+  standardCode: string;
+  setStandardCode: (value: string) => void;
   durationInput: string;
   setDurationInput: (val: string) => void;
   setDuration: (val: number) => void;
@@ -272,6 +283,16 @@ export function ItemFormContent(props: ItemFormContentProps) {
     setAppliesImpoconsumo,
     impoconsumoRatePercent,
     setImpoconsumoRatePercent,
+    taxTreatment,
+    setTaxTreatment,
+    vatRatePercent,
+    setVatRatePercent,
+    fiscalCode,
+    setFiscalCode,
+    unitMeasureCode,
+    setUnitMeasureCode,
+    standardCode,
+    setStandardCode,
     durationInput,
     setDurationInput,
     setDuration,
@@ -483,6 +504,10 @@ export function ItemFormContent(props: ItemFormContentProps) {
             <p className="mt-2 text-xs leading-relaxed text-neutral-500">
               El IVA y retenciones se calculan automáticamente según el RUT del negocio y el concepto seleccionado.
             </p>
+            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
+              La clasificación por ítem se guarda para diagnóstico. En esta
+              etapa todavía no modifica el cálculo fiscal oficial de las ventas.
+            </p>
           </div>
 
           <div className="space-y-3 border-t border-neutral-200/70 pt-4">
@@ -504,6 +529,86 @@ export function ItemFormContent(props: ItemFormContentProps) {
               </select>
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+                  Tratamiento tributario
+                </label>
+                <select
+                  value={taxTreatment}
+                  onChange={(event) => {
+                    const next = event.target.value as ItemTaxTreatment;
+                    setTaxTreatment(next);
+                    if (next === "EXEMPT") {
+                      setVatRatePercent("0");
+                      setAppliesImpoconsumo(false);
+                    } else if (next !== "TAXED") {
+                      setVatRatePercent("");
+                      setAppliesImpoconsumo(false);
+                    }
+                  }}
+                  className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64]"
+                >
+                  <option value="TAXED">Gravado</option>
+                  <option value="EXEMPT">Exento</option>
+                  <option value="EXCLUDED">Excluido</option>
+                  <option value="NOT_TAXED">No gravado</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
+                  Tarifa IVA específica
+                </label>
+                <div className="flex h-11 items-center rounded-xl border border-neutral-200 bg-white px-3">
+                  <input
+                    value={vatRatePercent}
+                    disabled={
+                      appliesImpoconsumo ||
+                      taxTreatment === "EXCLUDED" ||
+                      taxTreatment === "NOT_TAXED"
+                    }
+                    onChange={(event) => setVatRatePercent(event.target.value)}
+                    inputMode="decimal"
+                    placeholder={
+                      taxTreatment === "TAXED" ? "Usar global" : "0"
+                    }
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none disabled:text-neutral-400"
+                  />
+                  <span className="text-xs text-neutral-400">%</span>
+                </div>
+                {formErrors.vatRate && (
+                  <p className="text-[11px] text-red-500">{formErrors.vatRate}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <input
+                value={fiscalCode}
+                onChange={(event) => setFiscalCode(event.target.value)}
+                placeholder="Código fiscal"
+                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
+              />
+              <input
+                value={unitMeasureCode}
+                onChange={(event) => setUnitMeasureCode(event.target.value)}
+                placeholder="Unidad (94)"
+                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
+              />
+              <input
+                value={standardCode}
+                onChange={(event) => setStandardCode(event.target.value)}
+                placeholder="Estándar (999)"
+                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
+              />
+            </div>
+
+            {formErrors.fiscalConfiguration && (
+              <p className="text-[11px] text-red-500">
+                {formErrors.fiscalConfiguration}
+              </p>
+            )}
+
             {type === "PRODUCT" && (
               <>
                 <label className="flex cursor-pointer items-center justify-between gap-4 pt-2">
@@ -520,6 +625,10 @@ export function ItemFormContent(props: ItemFormContentProps) {
                     checked={appliesImpoconsumo}
                     onChange={(event) => {
                       setAppliesImpoconsumo(event.target.checked);
+                      if (event.target.checked) {
+                        setTaxTreatment("TAXED");
+                        setVatRatePercent("");
+                      }
                       if (!event.target.checked) {
                         setImpoconsumoRatePercent("");
                         setFormErrors((current) => ({

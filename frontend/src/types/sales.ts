@@ -15,6 +15,13 @@ export type SaleFiscalContext = {
   buyerDocumentType?: "CC" | "NIT" | "CE" | "PASAPORTE" | "TI" | null;
   buyerDocumentNumber?: string | null;
   buyerEmail?: string | null;
+  buyerDv?: string | null;
+  buyerAddress?: string | null;
+  buyerPhone?: string | null;
+  buyerCountryCode?: string | null;
+  buyerMunicipalityCode?: string | null;
+  buyerTributeCode?: string | null;
+  buyerIsFinalConsumer?: boolean | null;
   buyerIsIvaResponsable?: boolean | null;
   buyerIsRetenedor?: boolean | null;
   buyerIsGranContribuyente?: boolean | null;
@@ -110,6 +117,11 @@ export interface Sale {
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;
   taxLines?: any[] | null;
+  fiscalIntegrityStatus?:
+    | "COMPLETE"
+    | "LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT"
+    | "ORPHANED_DATA";
+  fiscalCalculationStatus?: "CURRENT" | "STALE" | "LOCKED" | null;
 
   items: SaleItem[];
 

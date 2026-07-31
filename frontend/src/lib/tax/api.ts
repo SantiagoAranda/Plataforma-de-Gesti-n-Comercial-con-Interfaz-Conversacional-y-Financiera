@@ -37,6 +37,13 @@ export type BuyerFiscalContext = {
   buyerDocumentType: "CC" | "NIT" | "CE" | "PASAPORTE" | "TI";
   buyerDocumentNumber: string | null;
   buyerEmail: string | null;
+  buyerDv?: string | null;
+  buyerAddress?: string | null;
+  buyerPhone?: string | null;
+  buyerCountryCode?: string | null;
+  buyerMunicipalityCode?: string | null;
+  buyerTributeCode?: string | null;
+  buyerIsFinalConsumer?: boolean;
   buyerIsIvaResponsable: boolean;
   buyerIsRetenedor: boolean;
   buyerIsGranContribuyente: boolean;
@@ -63,6 +70,13 @@ export type TaxPreviewRequest = {
   buyerDocumentType?: BuyerFiscalContext["buyerDocumentType"];
   buyerDocumentNumber?: string;
   buyerEmail?: string;
+  buyerDv?: string;
+  buyerAddress?: string;
+  buyerPhone?: string;
+  buyerCountryCode?: string;
+  buyerMunicipalityCode?: string;
+  buyerTributeCode?: string;
+  buyerIsFinalConsumer?: boolean;
   buyerIsIvaResponsable: boolean;
   buyerIsRetenedor: boolean;
   buyerIsGranContribuyente: boolean;

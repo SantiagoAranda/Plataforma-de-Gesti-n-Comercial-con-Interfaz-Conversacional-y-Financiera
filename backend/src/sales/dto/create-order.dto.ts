@@ -9,9 +9,21 @@ import {
   Min,
   IsNumber,
   ValidateNested,
+  Matches,
+  MaxLength,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { SalesOrderLineInputDto } from './order-line-input.dto';
+
+const optionalTrimmed = ({ value }: { value: unknown }) =>
+  value === null || value === undefined || value === ''
+    ? undefined
+    : String(value).trim();
+
+const optionalCountryCode = ({ value }: { value: unknown }) => {
+  const normalized = optionalTrimmed({ value });
+  return normalized?.toUpperCase();
+};
 
 export class BuyerFiscalContextDto {
   @IsOptional()
@@ -33,6 +45,44 @@ export class BuyerFiscalContextDto {
   @IsOptional()
   @IsString()
   buyerEmail?: string | null;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @Matches(/^\d{1,10}$/)
+  buyerDv?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(200)
+  buyerAddress?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(30)
+  buyerPhone?: string;
+
+  @IsOptional()
+  @Transform(optionalCountryCode)
+  @Matches(/^[A-Z]{2}$/)
+  buyerCountryCode?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @Matches(/^\d+$/)
+  @MaxLength(20)
+  buyerMunicipalityCode?: string;
+
+  @IsOptional()
+  @Transform(optionalTrimmed)
+  @IsString()
+  @MaxLength(50)
+  buyerTributeCode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  buyerIsFinalConsumer?: boolean;
 
   @IsOptional()
   @IsBoolean()

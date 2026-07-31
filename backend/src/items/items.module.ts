@@ -3,9 +3,10 @@ import { ItemsService } from './items.service';
 import { ItemsController } from './items.controller';
 import { StorageModule } from '../storage/storage.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { TaxModule } from '../tax/tax.module';
 
 @Module({
-  imports: [StorageModule, InventoryModule],
+  imports: [StorageModule, InventoryModule, TaxModule],
   controllers: [ItemsController],
   providers: [ItemsService],
 })

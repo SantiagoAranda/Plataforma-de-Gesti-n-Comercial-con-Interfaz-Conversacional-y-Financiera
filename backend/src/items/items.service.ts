@@ -2,8 +2,14 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { InventoryMode, ItemStatus, Prisma } from '@prisma/client';
+import {
+  InventoryMode,
+  ItemStatus,
+  ItemTaxTreatment,
+  Prisma,
+} from '@prisma/client';
 import sharp from 'sharp';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +18,11 @@ import { InventoryService } from '../inventory/inventory.service';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { AddItemImageDto } from './dto/add-item-image.dto';
 import { CreateItemDto } from './dto/create-item.dto';
+import {
+  ItemFiscalConfiguration,
+  validateItemFiscalConfiguration,
+} from './item-fiscal-validation';
+import { FiscalLifecycleService } from '../tax/fiscal-lifecycle.service';
 
 @Injectable()
 export class ItemsService {
@@ -19,6 +30,7 @@ export class ItemsService {
     private prisma: PrismaService,
     private storageService: StorageService,
     private inventoryService: InventoryService,
+    @Optional() private fiscalLifecycle?: FiscalLifecycleService,
   ) {}
 
   private normalizeBadges(input: any) {
@@ -35,6 +47,13 @@ export class ItemsService {
         color: b.color || '#ef4444',
       }))
       .slice(0, 2);
+  }
+
+  private assertValidFiscalConfiguration(input: ItemFiscalConfiguration) {
+    const error = validateItemFiscalConfiguration(input);
+    if (error) {
+      throw new BadRequestException(error);
+    }
   }
 
   private mapItemWithSchedule<
@@ -103,6 +122,20 @@ export class ItemsService {
 
         const finalBadges = nextBadges.slice(0, 2);
         const firstBadge = finalBadges[0] ?? null;
+        const taxTreatment = dto.taxTreatment ?? ItemTaxTreatment.TAXED;
+        const appliesImpoconsumo =
+          dto.type === 'PRODUCT' ? (dto.appliesImpoconsumo ?? false) : false;
+        const impoconsumoRate =
+          dto.type === 'PRODUCT' && appliesImpoconsumo
+            ? (dto.impoconsumoRate ?? null)
+            : null;
+
+        this.assertValidFiscalConfiguration({
+          taxTreatment,
+          vatRate: dto.vatRate ?? null,
+          appliesImpoconsumo,
+          impoconsumoRate,
+        });
 
         const item = await tx.item.create({
           data: {
@@ -115,12 +148,13 @@ export class ItemsService {
             ),
             name: dto.name,
             price: dto.price,
-            appliesImpoconsumo:
-              dto.type === 'PRODUCT' ? (dto.appliesImpoconsumo ?? false) : false,
-            impoconsumoRate:
-              dto.type === 'PRODUCT' && dto.appliesImpoconsumo
-                ? dto.impoconsumoRate
-                : null,
+            appliesImpoconsumo,
+            impoconsumoRate,
+            taxTreatment,
+            vatRate: dto.vatRate ?? null,
+            fiscalCode: dto.fiscalCode?.trim() || null,
+            unitMeasureCode: dto.unitMeasureCode?.trim() || '94',
+            standardCode: dto.standardCode?.trim() || '999',
             saleConcept: dto.saleConcept ?? (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS'),
             description: dto.description?.trim() || null,
             minStock:
@@ -243,6 +277,11 @@ export class ItemsService {
           price: true,
           appliesImpoconsumo: true,
           impoconsumoRate: true,
+          taxTreatment: true,
+          vatRate: true,
+          fiscalCode: true,
+          unitMeasureCode: true,
+          standardCode: true,
           saleConcept: true,
           type: true,
           status: true,
@@ -389,6 +428,27 @@ export class ItemsService {
         ? (dto.durationMinutes ?? existing.durationMinutes ?? 0)
         : null;
 
+    const nextAppliesImpoconsumo =
+      nextType === 'PRODUCT'
+        ? (dto.appliesImpoconsumo ?? existing.appliesImpoconsumo)
+        : false;
+    const nextImpoconsumoRate =
+      nextType !== 'PRODUCT' || !nextAppliesImpoconsumo
+        ? null
+        : dto.impoconsumoRate === undefined
+          ? existing.impoconsumoRate
+          : dto.impoconsumoRate;
+    const nextTaxTreatment = dto.taxTreatment ?? existing.taxTreatment;
+    const nextVatRate =
+      dto.vatRate === undefined ? existing.vatRate : dto.vatRate;
+
+    this.assertValidFiscalConfiguration({
+      taxTreatment: nextTaxTreatment,
+      vatRate: nextVatRate,
+      appliesImpoconsumo: nextAppliesImpoconsumo,
+      impoconsumoRate: nextImpoconsumoRate,
+    });
+
     if (
       nextType === 'SERVICE' &&
       (nextDuration === null || nextDuration === undefined)
@@ -454,6 +514,12 @@ export class ItemsService {
                 : dto.impoconsumoRate === undefined
                   ? undefined
                   : dto.impoconsumoRate,
+          taxTreatment: dto.taxTreatment,
+          vatRate: dto.vatRate,
+          fiscalCode:
+            dto.fiscalCode === undefined ? undefined : dto.fiscalCode?.trim() || null,
+          unitMeasureCode: dto.unitMeasureCode?.trim(),
+          standardCode: dto.standardCode?.trim(),
           saleConcept: dto.saleConcept !== undefined 
             ? dto.saleConcept 
             : dto.type !== undefined
@@ -519,6 +585,7 @@ export class ItemsService {
         },
       });
 
+      await this.fiscalLifecycle?.invalidateItem(businessId, id, tx);
       return this.mapItemWithSchedule(updated);
     });
   }
@@ -543,9 +610,12 @@ export class ItemsService {
 
     if (!existing) throw new NotFoundException('Item not found');
 
-    await this.prisma.item.update({
-      where: { id },
-      data: { status: ItemStatus.INACTIVE },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.item.update({
+        where: { id },
+        data: { status: ItemStatus.INACTIVE },
+      });
+      await this.fiscalLifecycle?.invalidateItem(businessId, id, tx);
     });
 
     return { ok: true };
