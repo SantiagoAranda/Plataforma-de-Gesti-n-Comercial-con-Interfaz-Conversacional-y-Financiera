@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "react-hot-toast";
 import PushForegroundListener from "../src/components/notifications/PushForegroundListener";
+import ToastLimitListener from "../src/components/notifications/ToastLimitListener";
 
 export const metadata: Metadata = {
   title: {
@@ -47,9 +48,14 @@ export default function RootLayout({
       <body className="min-h-screen bg-white">
         {children}
         <PushForegroundListener />
+        <ToastLimitListener />
         <Toaster
           position="top-right"
           reverseOrder={false}
+          containerStyle={{
+            top: "calc(68px + env(safe-area-inset-top, 0px))",
+            right: 12,
+          }}
           toastOptions={{
             duration: 4000,
             style: {
