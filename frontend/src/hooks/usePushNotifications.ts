@@ -579,6 +579,8 @@ export function usePushNotifications() {
   const runActivation = useCallback(async (): Promise<ActivatePushResult> => {
     setActivationError(null);
     console.log("👉 [Push Log] 1. Iniciando runActivation...");
+
+    // 1. Validaciones iniciales y de entorno
     if (!checkSupport()) return failActivation("support");
     if (isIosBrowser() && !isStandalone()) {
       setNeedsIosInstall(true);
@@ -587,14 +589,32 @@ export function usePushNotifications() {
         "En iPhone debes abrir la plataforma como una aplicación instalada.",
       );
     }
-
     setNeedsIosInstall(false);
+
     const permissionBefore = Notification.permission;
 
+    // 2. SOLICITAR PERMISO PRIMERO (Aprovecha el "User Gesture" directo del click)
+    let permissionResult: NotificationPermission;
+    try {
+      console.log("👉 [Push Log] 2. Pidiendo permisos de notificación inmediatamente...");
+      permissionResult =
+        permissionBefore === "default"
+          ? await Notification.requestPermission()
+          : permissionBefore;
+    } catch {
+      return failActivation("permission");
+    }
+
+    setPermissionGranted(permissionResult === "granted");
+    if (permissionResult !== "granted") {
+      return failActivation("permission");
+    }
+
+    // 3. UNA VEZ OTORGADO EL PERMISO, registrar Service Worker y preparar la suscripción
     try {
       let requestedRegistration: ServiceWorkerRegistration;
       try {
-        console.log("👉 [Push Log] 2. Registrando /push-sw.js...");
+        console.log("👉 [Push Log] 3. Registrando /push-sw.js...");
         requestedRegistration = await withTimeout(
           navigator.serviceWorker.register("/push-sw.js", { scope: "/" }),
           SERVICE_WORKER_READY_TIMEOUT_MS,
@@ -608,21 +628,6 @@ export function usePushNotifications() {
           );
         }
         return failActivation("service_worker");
-      }
-
-      let permissionResult: NotificationPermission;
-      try {
-        console.log("👉 [Push Log] 3. Pidiendo permisos de notificación...");
-        permissionResult =
-          permissionBefore === "default"
-            ? await Notification.requestPermission()
-            : permissionBefore;
-      } catch {
-        return failActivation("permission");
-      }
-      setPermissionGranted(permissionResult === "granted");
-      if (permissionResult !== "granted") {
-        return failActivation("permission");
       }
 
       let registration: ServiceWorkerRegistration;
@@ -656,7 +661,7 @@ export function usePushNotifications() {
 
       let subscription = existingSubscription;
       if (!subscription) {
-        console.log("👉 [Push Log] 6. Generando nueva suscripción...");
+        console.log("👉 [Push Log] 6. Generando nueva suscripción VAPID...");
         const rawVapidKey =
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? "";
 
@@ -718,7 +723,9 @@ export function usePushNotifications() {
       }
       setBrowserSubscriptionExists(true);
 
+      // 4. Registro final en el Backend
       try {
+        console.log("👉 [Push Log] 7. Registrando dispositivo en Backend...");
         await registerSubscriptionWithBackend(subscription, {
           permissionBefore,
           permissionResult,
