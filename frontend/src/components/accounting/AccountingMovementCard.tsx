@@ -293,7 +293,7 @@ export function AccountingMovementCard({
             {movement.nature === "CREDIT" ? badgeForNature(movement.nature) : null}
           </div>
           <span
-            className={`inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none uppercase tracking-wide sm:px-3 sm:text-[11px] ${kindStyle.badge}`}
+            className={`inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none sm:px-3 sm:text-[11px] ${kindStyle.badge}`}
             title={kindStyle.label}
           >
             {kindStyle.label}

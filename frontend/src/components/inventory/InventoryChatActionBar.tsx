@@ -228,13 +228,13 @@ export function InventoryChatActionBar({
                       : "Abrir menú"
                 }
               >
-                {onlyCreateIngredient && onCreateIngredient ? (
-                  createIngredientActive ? <X className="h-5 w-5" /> : <Plus className="h-5 w-5" />
-                ) : menuOpen && hasMenu ? (
-                  <X className="h-5 w-5" />
-                ) : (
-                  <Plus className="h-5 w-5" />
-                )}
+                <Plus
+                  className={`h-5 w-5 transition-transform duration-300 ease-in-out ${
+                    (onlyCreateIngredient && onCreateIngredient ? createIngredientActive : menuOpen && hasMenu)
+                      ? "rotate-[135deg]"
+                      : "rotate-0"
+                  }`}
+                />
               </button>
 
               <input

@@ -31,7 +31,7 @@ const rightIcons: Record<RightIconVariant, LucideIcon> = {
 
 const leftIcons: Record<LeftIconVariant, LucideIcon> = {
   plus: Plus,
-  x: X,
+  x: Plus,
   search: Search,
 };
 
@@ -135,7 +135,14 @@ export function WhatsappComposer({
           )}
           aria-label={plusAriaLabel}
         >
-          {leftIcon ?? <LeftIcon className="h-5 w-5" />}
+          {leftIcon ?? (
+            <LeftIcon
+              className={cn(
+                "h-5 w-5 transition-transform duration-300 ease-in-out",
+                leftIconVariant === "x" ? "rotate-[135deg]" : "rotate-0"
+              )}
+            />
+          )}
         </button>
 
         <div

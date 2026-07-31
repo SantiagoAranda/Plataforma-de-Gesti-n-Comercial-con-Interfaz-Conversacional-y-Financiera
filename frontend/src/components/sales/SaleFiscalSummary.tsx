@@ -72,8 +72,8 @@ export default function SaleFiscalSummary({
               <div
                 className={`truncate text-xs font-bold tabular-nums ${
                   row.kind === "charge"
-                    ? "text-emerald-600"
-                    : "text-amber-800"
+                    ? "text-amber-600"
+                    : "text-red-600"
                 }`}
               >
                 {row.kind === "withhold" && hasValue ? "−" : ""}
@@ -98,7 +98,7 @@ export default function SaleFiscalSummary({
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-0.5">
               Total retenido
             </div>
-            <div className="text-xs font-extrabold tabular-nums text-amber-800">
+            <div className="text-xs font-extrabold tabular-nums text-red-600">
               {formatMoney(summary.totalWithheld)}
             </div>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Building2, FileText, ShoppingBag, Trash2, Plus, User, X } from "lucide-react";
+import { Building2, FileText, ShoppingBag, Trash2, Plus, User, X, Search, Send } from "lucide-react";
+import { cn } from "@/src/lib/utils";
 import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
@@ -10,6 +11,7 @@ import ReservationSlotPicker from "@/src/components/reservations/ReservationSlot
 import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
 import type { PublicItemOptionGroup } from "@/src/types/item";
 import type { BuyerFiscalContext } from "@/src/lib/tax/api";
+import type { FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleTaxPanel, {
   buildBuyerFiscalContext,
   DEFAULT_SALE_FISCAL_FORM,
@@ -130,6 +132,8 @@ export default function SalesChatComposer({
   onSearchChange = () => { },
   onSave,
   taxSettingsEnabled: propEnabled,
+  filterStatus = "ALL",
+  onFilterStatusChange,
 }: {
   mode?: "create" | "edit" | "readonly";
   sale?: Sale | null;
@@ -140,6 +144,8 @@ export default function SalesChatComposer({
   onSearchChange?: (val: string) => void;
   onSave: (data: any) => Promise<void> | void;
   taxSettingsEnabled?: boolean;
+  filterStatus?: FilterStatus;
+  onFilterStatusChange?: (status: FilterStatus) => void;
 }) {
   const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
   const { simpleRegimeEnabled } = useFeatureFlags();
@@ -1162,21 +1168,31 @@ export default function SalesChatComposer({
           )}
 
           {/* CHAT BAR */}
-          <WhatsappComposer
-            value={expanded ? "" : searchValue}
-            onChange={expanded ? () => { } : onSearchChange}
-            leftAction={expanded ? onCancelComposer : onOpenComposer}
-            rightAction={expanded ? handleSave : undefined}
-            onSubmit={expanded ? handleSave : undefined}
-            placeholder="Buscar por cliente o ID..."
-            leftIconVariant={expanded ? "x" : "plus"}
-            rightIconVariant={expanded ? "send" : "search"}
-            submitDisabled={expanded && (items.length === 0 || isSubmitting)}
-            isSubmitting={isSubmitting}
-            className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-            centerContent={
-              expanded ? (
-                <div className="flex h-full w-full items-center justify-between px-2 pt-0.5">
+          <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            <form
+              className="flex min-w-0 items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (expanded) {
+                  handleSave();
+                }
+              }}
+            >
+              <button
+                type="button"
+                onClick={expanded ? onCancelComposer : onOpenComposer}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95"
+                aria-label={expanded ? "Cancelar venta" : "Nueva venta"}
+              >
+                <Plus
+                  className={`h-5 w-5 transition-transform duration-300 ease-in-out ${
+                    expanded ? "rotate-[135deg]" : "rotate-0"
+                  }`}
+                />
+              </button>
+
+              {expanded ? (
+                <div className="flex h-full w-full items-center justify-between px-2 pt-0.5 min-w-0 flex-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                     {totalLabel}
                   </span>
@@ -1184,11 +1200,86 @@ export default function SalesChatComposer({
                     ${formatMoney(totalToDisplay)}
                   </span>
                 </div>
-              ) : undefined
-            }
-            plusAriaLabel={expanded ? "Cancelar venta" : "Nueva venta"}
-            submitAriaLabel={expanded ? (mode === "edit" ? "Guardar cambios" : "Guardar venta") : "Buscar ventas"}
-          />
+              ) : (
+                <input
+                  value={searchValue}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  placeholder="Buscar por cliente o ID..."
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              )}
+
+              <button
+                type="submit"
+                disabled={expanded && (items.length === 0 || isSubmitting)}
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95",
+                  expanded && (items.length === 0 || isSubmitting)
+                    ? "cursor-not-allowed bg-slate-200 text-slate-400"
+                    : "bg-[#0B3F64] text-white hover:bg-[#0B3F64]/90"
+                )}
+                aria-label={expanded ? (mode === "edit" ? "Guardar cambios" : "Guardar venta") : "Buscar ventas"}
+              >
+                {expanded ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+              </button>
+            </form>
+
+            {!expanded && onFilterStatusChange && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:pl-12 sm:pr-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilterStatusChange(filterStatus === "PENDING" ? "ALL" : "PENDING")
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    filterStatus === "PENDING"
+                      ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Pendientes
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilterStatusChange(filterStatus === "CLOSED" ? "ALL" : "CLOSED")
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    filterStatus === "CLOSED"
+                      ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Cerradas
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilterStatusChange(filterStatus === "CANCELLED" ? "ALL" : "CANCELLED")
+                  }
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    filterStatus === "CANCELLED"
+                      ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Canceladas
+                </button>
+                {(filterStatus !== "ALL" || (searchValue && searchValue.trim() !== "")) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onFilterStatusChange("ALL");
+                      onSearchChange("");
+                    }}
+                    className="rounded-full px-3 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
+                  >
+                    Limpiar filtros
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

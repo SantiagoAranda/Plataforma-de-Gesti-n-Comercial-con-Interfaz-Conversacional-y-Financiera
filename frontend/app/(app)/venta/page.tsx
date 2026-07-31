@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, Filter, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -845,14 +845,6 @@ function VentaPageContent() {
             showBack
             rightContent={
               <div className="flex items-center gap-2">
-                {/* Filtro de estados */}
-                <button
-                  onClick={() => setFilterOpen(true)}
-                  aria-label="Filtrar estado"
-                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 transition"
-                >
-                  <Filter size={18} />
-                </button>
                 {/* Selector de mes */}
                 <MonthPickerPopover
                   selectedYear={filterYear}
@@ -902,7 +894,7 @@ function VentaPageContent() {
                     <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
                       Total ventas
                     </span>
-                    <span className="text-xl font-bold text-white tabular-nums">
+                    <span className="text-xl font-normal text-white tabular-nums">
                       ${formatDisplayMoney(todayMetrics.total)}
                     </span>
                   </div>
@@ -923,7 +915,7 @@ function VentaPageContent() {
                     <span className="text-[10px] font-semibold text-white/80 uppercase tracking-wider mb-2">
                       Transacciones
                     </span>
-                    <span className="text-xl font-bold text-white">
+                    <span className="text-xl font-normal text-white">
                       {todayMetrics.transactions} realizadas
                     </span>
                   </div>
@@ -1041,6 +1033,8 @@ function VentaPageContent() {
         onCancelComposer={() => setIsCreateOpen(false)}
         searchValue={q}
         onSearchChange={setQ}
+        filterStatus={filterStatus}
+        onFilterStatusChange={setFilterStatus}
         onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
         taxSettingsEnabled={taxSettingsEnabled}
       />

@@ -1017,6 +1017,7 @@ function PayrollSheetFooter({
         rightIconVariant="send"
         plusAriaLabel="Cancelar"
         submitAriaLabel={primaryLabel}
+        className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
       />
     </div>
   );
@@ -1082,8 +1083,7 @@ function PayrollEmployeeSheetShell<T extends string>({
             </div>
           </div>
 
-          {/* CHAT COMPOSER AT BOTTOM */}
-          {footer}
+          {/* CHAT COMPOSER AT BOTTOM - Handled by persistent PayrollChatActionBar */}
         </div>
       </div>
     </div>
@@ -5686,6 +5686,11 @@ export default function PayrollPage() {
         searchValue={search}
         onSearchChange={setSearch}
         onCreateEmployee={handleCreateFromChat}
+        isOpen={quickSheetMode !== null}
+        onClose={() => {
+          setQuickSheetMode(null);
+          setQuickInitialEmployee(null);
+        }}
       />
 
       {notice && (

@@ -185,7 +185,7 @@ export default function SaleCard({
             )}
 
             <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${styles.badge}`}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${styles.badge}`}
             >
               <span className={`h-1.5 w-1.5 rounded-full ${styles.dotColor}`} />
               {styles.label}

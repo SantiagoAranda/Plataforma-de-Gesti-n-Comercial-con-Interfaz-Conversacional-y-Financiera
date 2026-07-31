@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, Plus, Search } from "lucide-react";
+import { Check, ChevronDown, Plus, Search, Send } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -125,35 +125,45 @@ export function AccountingChatComposer({
             </div>
           )}
 
-          {expanded ? (
-            <WhatsappComposer
-              value={value.detail}
-              onChange={(next) => onChange((prev) => ({ ...prev, detail: next }))}
-              onPlusClick={onCancel}
-              onSubmit={onSubmit}
-              placeholder={
-                isEditing
-                  ? "Edita la descripcion del movimiento (opcional)..."
-                  : "Describi el movimiento contable (opcional)..."
-              }
-              leftIconVariant="x"
-              rightIconVariant="send"
-              className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-              plusAriaLabel={isEditing ? "Cancelar edicion" : "Cancelar creacion"}
-              submitAriaLabel="Confirmar movimiento"
-            />
-          ) : (
-            <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
-              <form className="flex min-w-0 items-center gap-2" onSubmit={handleSearchSubmit}>
-                <button
-                  type="button"
-                  onClick={onOpenComposer}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95"
-                  aria-label="Crear asiento contable"
-                >
-                  <Plus className="h-5 w-5" />
-                </button>
+          <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+            <form
+              className="flex min-w-0 items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (expanded) {
+                  onSubmit();
+                } else {
+                  handleSearchSubmit(e);
+                }
+              }}
+            >
+              <button
+                type="button"
+                onClick={expanded ? onCancel : onOpenComposer}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95"
+                aria-label={expanded ? (isEditing ? "Cancelar edicion" : "Cancelar creacion") : "Crear asiento contable"}
+              >
+                <Plus
+                  className={`h-5 w-5 transition-transform duration-300 ease-in-out ${
+                    expanded ? "rotate-[135deg]" : "rotate-0"
+                  }`}
+                />
+              </button>
 
+              {expanded ? (
+                <input
+                  value={value.detail}
+                  onChange={(e) =>
+                    onChange((prev) => ({ ...prev, detail: e.target.value }))
+                  }
+                  placeholder={
+                    isEditing
+                      ? "Edita la descripcion del movimiento (opcional)..."
+                      : "Describi el movimiento contable (opcional)..."
+                  }
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              ) : (
                 <input
                   ref={inputRef}
                   value={query}
@@ -161,7 +171,9 @@ export function AccountingChatComposer({
                   placeholder={currentSearchMode.placeholder}
                   className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
                 />
+              )}
 
+              {!expanded && (
                 <div className="relative shrink-0">
                   <button
                     type="button"
@@ -195,16 +207,18 @@ export function AccountingChatComposer({
                     </div>
                   )}
                 </div>
+              )}
 
-                <button
-                  type="submit"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white transition hover:bg-[#0B3F64]/90 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95"
-                  aria-label="Buscar"
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-              </form>
+              <button
+                type="submit"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white transition hover:bg-[#0B3F64]/90 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95"
+                aria-label={expanded ? "Confirmar movimiento" : "Buscar"}
+              >
+                {expanded ? <Send className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+              </button>
+            </form>
 
+            {!expanded && (
               <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:pl-12 sm:pr-2">
                 <button
                   type="button"
@@ -238,8 +252,8 @@ export function AccountingChatComposer({
                   </button>
                 )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
