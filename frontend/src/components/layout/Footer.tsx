@@ -233,7 +233,7 @@ export const Footer: React.FC<FooterProps> = ({ config }) => {
                 hasCustomColors ? "hover:opacity-80" : "text-neutral-500 hover:text-[#064e3b]"
               }`}
             >
-              Sactec
+              SACTEC
             </a>
             &nbsp;| Desarrollado por{' '}
             <a 

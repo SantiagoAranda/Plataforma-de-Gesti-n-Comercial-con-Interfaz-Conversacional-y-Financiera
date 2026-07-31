@@ -362,7 +362,7 @@ export default function MiTiendaPage() {
   ]);
 
   return (
-    <div className="min-h-dvh bg-white w-full min-w-0 overflow-x-hidden">
+    <div className="flex min-h-dvh flex-col bg-white w-full min-w-0 overflow-x-hidden">
       <header
         className="sticky top-0 z-40 bg-white/90 backdrop-blur"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
@@ -484,7 +484,7 @@ export default function MiTiendaPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-32 pt-0">
+      <main className="flex-1 mx-auto w-full max-w-[420px] lg:max-w-6xl px-4 lg:px-6 pb-28 pt-0">
         {loading ? (
           <p className="text-center text-neutral-400 mt-6">
             Cargando productos...
@@ -508,8 +508,6 @@ export default function MiTiendaPage() {
           </div>
         )}
       </main>
-
-      <Footer config={footerConfig} />
 
       <BottomNav active="tienda" />
 

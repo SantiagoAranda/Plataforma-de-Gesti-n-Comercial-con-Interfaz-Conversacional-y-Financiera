@@ -5,8 +5,8 @@ import PushForegroundListener from "../src/components/notifications/PushForegrou
 
 export const metadata: Metadata = {
   title: {
-    default: "Sactec",
-    template: "%s | Sactec",
+    default: "SACTEC",
+    template: "%s | SACTEC",
   },
   description: "MVP Gestión Comercial",
   manifest: "/manifest.webmanifest",

@@ -17,7 +17,7 @@ export default function NavigationTransitionBackdrop({
           {isStore ? <Store className="h-6 w-6" /> : <LogIn className="h-6 w-6" />}
         </div>
         <div className="text-center">
-          <p className="text-lg font-semibold">{isStore ? "sactec" : "Iniciar sesión"}</p>
+          <p className="text-lg font-semibold">{isStore ? "SACTEC" : "Iniciar sesión"}</p>
           {isStore && <p className="text-sm text-slate-500">Ver tienda</p>}
         </div>
       </div>

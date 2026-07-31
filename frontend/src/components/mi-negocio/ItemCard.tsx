@@ -82,6 +82,8 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
     };
   })();
 
+  const hasImage = currentImages.length > 0;
+
   return (
     <div className={`relative group select-none ${isOpen ? "z-30" : ""}`}>
       <SelectableCard
@@ -91,7 +93,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
         className="relative select-none ml-auto max-w-[85%] lg:max-w-[460px] flex flex-col min-h-[140px]"
       >
         {/* Botón de 3 puntitos como nuevo gatillador */}
-        <div className="absolute top-2 right-2 z-10">
+        <div className={`absolute ${hasImage ? "top-2 right-2" : "top-2.5 right-2"} z-10`}>
           <button
             type="button"
             onClick={(e) => {
@@ -182,7 +184,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
           )}
         </div>
 
-        {(currentImages.length > 0) && (
+        {hasImage && (
           <div className="aspect-[4/3] w-full overflow-hidden rounded-t-3xl border-b border-neutral-100 bg-neutral-50 shrink-0 lg:aspect-auto lg:h-[220px]">
             <ItemImageViewer
               images={currentImages}
@@ -205,11 +207,11 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
 
         <div className="px-4 py-3 flex-1 flex flex-col gap-1.5">
           {/* HEADER: NOMBRE + PRECIO */}
-          <div className="flex justify-between items-start gap-2 pr-8">
+          <div className={`flex justify-between items-center gap-2 ${hasImage ? "pr-0" : "pr-8"}`}>
             <p className="text-sm font-semibold text-neutral-900 flex-1 line-clamp-1">
               {item.name}
             </p>
-            <p className="text-emerald-600 font-medium text-sm whitespace-nowrap">
+            <p className="text-emerald-600 font-semibold text-sm whitespace-nowrap">
               ${formatMoney(item.price)}
             </p>
           </div>

@@ -974,10 +974,10 @@ function MiNegocioPageContent() {
       )}
 
 
-      {showScrollBottom && (
+      {showScrollBottom && composerMode === "closed" && !itemForDetail && !deleteId && (
         <button
           onClick={() => scrollToBottom("smooth")}
-          className="fixed bottom-28 right-6 md:bottom-36 z-[99999] bg-[#0B3F64] border border-[#0B3F64] text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgba(11,63,100,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95 hover:bg-[#072D49] transition-colors"
+          className="fixed bottom-28 right-6 md:bottom-36 z-20 bg-[#0B3F64] border border-[#0B3F64] text-white rounded-full w-12 h-12 flex items-center justify-center shadow-[0_8px_30px_rgba(11,63,100,0.3)] animate-in fade-in slide-in-from-bottom-4 duration-300 active:scale-95 hover:bg-[#072D49] transition-colors"
           aria-label="Ir al final"
         >
           <ArrowDown size={20} strokeWidth={2.5} />

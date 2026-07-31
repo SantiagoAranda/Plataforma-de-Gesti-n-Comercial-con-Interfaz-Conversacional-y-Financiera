@@ -19,6 +19,7 @@ import {
 } from "../../../src/lib/home/moduleActivity";
 import { useHomeModuleSummaries } from "../../../src/lib/home/useHomeModuleSummaries";
 import { readBusinessProfile } from "../../../src/lib/businessProfile";
+import { getBusinessProfile } from "../../../src/lib/businessLogo";
 import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
 import ManualPaidOutflowSheet from "../../../src/components/home/ManualPaidOutflowSheet";
@@ -36,6 +37,7 @@ export default function HomePage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("Mi Negocio");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const { summaries, loading, error, orders } = useHomeModuleSummaries();
   const [activeFilter, setActiveFilter] = useState("TODOS");
 
@@ -69,6 +71,12 @@ export default function HomePage() {
     if (profile.name?.trim()) setBusinessName(profile.name.trim());
     if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
 
+    getBusinessProfile()
+      .then((data) => {
+        if (data?.logoUrl) setLogoUrl(data.logoUrl);
+      })
+      .catch(() => {});
+
     const storedUser = localStorage.getItem("user");
     if (!storedUser) return;
 
@@ -76,14 +84,18 @@ export default function HomePage() {
       const parsed = JSON.parse(storedUser) as {
         businessName?: string;
         name?: string;
-        business?: { name?: string };
+        business?: { name?: string; logoUrl?: string };
       } | null;
 
       const nextName =
         parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
+      const nextLogo = parsed?.business?.logoUrl;
 
       if (nextName?.trim()) {
         setBusinessName(nextName.trim());
+      }
+      if (nextLogo) {
+        setLogoUrl(nextLogo);
       }
     } catch {}
   }, []);
@@ -94,6 +106,8 @@ export default function HomePage() {
         title={businessName}
         subtitle={businessSubtitle || ""}
         variant="flat"
+        showLogo={true}
+        logoUrl={logoUrl}
         rightContent={<PushInviteCard />}
       />
 
@@ -125,9 +139,9 @@ export default function HomePage() {
           <HomeAgenda sales={orders} onFilterChange={handleFilterChange} />
 
           {!hideSummaries && loading && (
-            <div>
+            <div className="mt-2">
               {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-[74px] animate-pulse px-4 py-3">
+                <div key={i} className="h-[60px] animate-pulse px-4 py-1.5">
                   <div className="flex items-center gap-3">
                     <div className="h-11 w-11 rounded-full bg-neutral-100" />
                     <div className="min-w-0 flex-1 space-y-2">
@@ -150,7 +164,7 @@ export default function HomePage() {
           )}
 
           {!hideSummaries && !loading && !error && (
-            <div>
+            <div className="mt-2">
               {summaries.map((summary) => (
                 <ThreadItem
                   key={summary.module}
