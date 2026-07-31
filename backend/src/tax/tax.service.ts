@@ -13,13 +13,23 @@ import {
   FiscalCalculationStatus,
   TaxCalculationMethod,
   FiscalRoundingMode,
+  LineTaxType,
+  ItemTaxTreatment,
 } from '@prisma/client';
 import {
   roundCalculatedFiscalAmount,
   roundFiscalRate,
+  sumRoundedFiscalAmounts,
 } from './fiscal-rounding';
 import { createFiscalSourceFingerprint } from './fiscal-fingerprint';
 import { assertSellerImpoconsumoResponsibility } from './impoconsumo-responsibility';
+import { calculateLineTax } from './line-tax-calculator';
+import {
+  assertOrderTotalMatchesFiscalSubtotal,
+  assertReservationFiscalShape,
+  assertRetentionsWithinGross,
+  assertZeroCommercialDiscounts,
+} from './v2-fiscal-invariants';
 
 @Injectable()
 export class TaxService {
@@ -38,6 +48,13 @@ export class TaxService {
     tx?: Prisma.TransactionClient,
   ) {
     const db = tx || this.prisma;
+    const calculationMethod = await this.resolveCalculationMethod(
+      db,
+      businessId,
+      dto,
+    );
+    const useLineRoundedV2 =
+      calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2;
     const sellerProfile = await db.businessTaxProfile.findUnique({
       where: { businessId },
       include: {
@@ -64,7 +81,7 @@ export class TaxService {
         profileMissing: false,
         taxSettingsEnabled: false,
         taxDisabledReason: 'TAX_SETTINGS_DISABLED',
-      }, tx);
+      }, tx, calculationMethod);
     }
 
     if (!sellerProfile) {
@@ -75,7 +92,7 @@ export class TaxService {
         profileMissing: true,
         taxSettingsEnabled: false,
         taxDisabledReason: 'PROFILE_MISSING',
-      }, tx);
+      }, tx, calculationMethod);
     }
 
     const globalParams = await db.taxGlobalParameter.findFirst({
@@ -93,6 +110,7 @@ export class TaxService {
     let vatTotal = new Prisma.Decimal(0);
     let impoconsumoTotal = new Prisma.Decimal(0);
     const taxLines: any[] = [];
+    const itemBreakdown: any[] = [];
 
     const itemIds = dto.cartItems.map((i) => i.itemId);
     const dbItems = await db.item.findMany({
@@ -182,6 +200,50 @@ export class TaxService {
       const itemPrice = cartItem.unitPrice != null
         ? new Prisma.Decimal(cartItem.unitPrice)
         : new Prisma.Decimal(item.price);
+      if (useLineRoundedV2) {
+        const line = calculateLineTax({
+          quantity: qty,
+          unitPrice: itemPrice,
+          discountRate: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          taxTreatment: item.taxTreatment ?? ItemTaxTreatment.TAXED,
+          vatRate: item.vatRate ?? null,
+          globalVatRate: defaultVat,
+          appliesImpoconsumo: item.appliesImpoconsumo,
+          impoconsumoRate: item.impoconsumoRate ?? null,
+          globalImpoconsumoRate: defaultImpoconsumo,
+          sellerIsVatResponsible: sellerIsIvaResponsable,
+          sellerIsNaturalNonVatResponsible:
+            sellerIsPersonaNaturalNoResponsable,
+        });
+        subtotalTotal = subtotalTotal.add(line.baseAmount);
+        if (line.taxType === LineTaxType.VAT) {
+          vatBase = vatBase.add(line.baseAmount);
+          vatTotal = vatTotal.add(line.taxAmount);
+        } else if (line.taxType === LineTaxType.IMPOCONSUMO) {
+          impoconsumoBase = impoconsumoBase.add(line.baseAmount);
+          impoconsumoTotal = impoconsumoTotal.add(line.taxAmount);
+          impoconsumoRatesUsed.add(line.taxRate.toFixed(4));
+          impoconsumoRateUsed =
+            impoconsumoRatesUsed.size === 1 ? line.taxRate : null;
+        }
+        itemBreakdown.push({
+          sourceLineKey: cartItem.sourceLineKey ?? cartItem.itemId,
+          itemId: item.id,
+          fiscalCode: item.fiscalCode ?? item.id,
+          name: item.name,
+          quantity: qty,
+          unitPriceNet: itemPrice,
+          discountRate: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          unitMeasureCode: item.unitMeasureCode,
+          standardCode: item.standardCode,
+          saleConcept: item.saleConcept,
+          ...line,
+        });
+        continue;
+      }
+
       const itemSubtotal = itemPrice.mul(qty);
       subtotalTotal = subtotalTotal.add(itemSubtotal);
 
@@ -206,7 +268,56 @@ export class TaxService {
       }
     }
 
-    if (vatTotal.gt(0)) {
+    if (useLineRoundedV2) {
+      const grouped = new Map<string, any>();
+      for (const line of itemBreakdown) {
+        const mappedTaxType =
+          line.taxType === LineTaxType.VAT
+            ? TaxType.IVA
+            : line.taxType === LineTaxType.IMPOCONSUMO
+              ? TaxType.IMPOCONSUMO
+              : TaxType[line.taxType as keyof typeof TaxType];
+        const key = [
+          mappedTaxType,
+          line.taxRate.toString(),
+          line.taxTreatment,
+          line.saleConcept,
+        ].join('|');
+        const existingLine = grouped.get(key);
+        if (existingLine) {
+          existingLine.baseAmount = existingLine.baseAmount.add(
+            line.baseAmount,
+          );
+          existingLine.taxAmount = existingLine.taxAmount.add(
+            line.taxAmount,
+          );
+        } else {
+          grouped.set(key, {
+            taxType: mappedTaxType,
+            direction: TaxDirection.CHARGE,
+            taxTreatment: line.taxTreatment,
+            baseAmount: line.baseAmount,
+            rate: line.taxRate,
+            taxAmount: line.taxAmount,
+            saleConcept: line.saleConcept,
+            accountCode:
+              mappedTaxType === TaxType.IVA
+                ? '2408'
+                : mappedTaxType === TaxType.IMPOCONSUMO
+                  ? '519595'
+                  : 'INFORMATIONAL',
+            applied:
+              mappedTaxType === TaxType.IVA ||
+              mappedTaxType === TaxType.IMPOCONSUMO,
+            informational:
+              mappedTaxType !== TaxType.IVA &&
+              mappedTaxType !== TaxType.IMPOCONSUMO,
+            reason: 'Resultado oficial LINE_ROUNDED_V2 agrupado por línea.',
+          });
+        }
+      }
+      taxLines.push(...grouped.values());
+    } else if (vatTotal.gt(0)) {
       taxLines.push({
         taxType: TaxType.IVA,
         direction: TaxDirection.CHARGE,
@@ -232,7 +343,7 @@ export class TaxService {
       });
     }
 
-    if (impoconsumoTotal.gt(0)) {
+    if (!useLineRoundedV2 && impoconsumoTotal.gt(0)) {
       taxLines.push({
         taxType: TaxType.IMPOCONSUMO,
         direction: TaxDirection.CHARGE,
@@ -243,6 +354,22 @@ export class TaxService {
         applied: true,
         reason: 'Aplica Impoconsumo sobre items configurados individualmente.',
       });
+    }
+
+    if (useLineRoundedV2) {
+      subtotalTotal = sumRoundedFiscalAmounts(
+        itemBreakdown.map((line) => line.baseAmount),
+      );
+      vatTotal = sumRoundedFiscalAmounts(
+        itemBreakdown
+          .filter((line) => line.taxType === LineTaxType.VAT)
+          .map((line) => line.taxAmount),
+      );
+      impoconsumoTotal = sumRoundedFiscalAmounts(
+        itemBreakdown
+          .filter((line) => line.taxType === LineTaxType.IMPOCONSUMO)
+          .map((line) => line.taxAmount),
+      );
     }
 
     const rules = await db.salesTaxRule.findMany({
@@ -541,24 +668,60 @@ export class TaxService {
       }
     }
 
-    let netReceived = subtotalTotal
-      .add(vatTotal)
-      .add(impoconsumoTotal)
-      .sub(reteFuenteTotal)
-      .sub(reteIcaTotal)
-      .sub(reteIvaTotal);
+    if (useLineRoundedV2) {
+      reteFuenteTotal = roundCalculatedFiscalAmount(reteFuenteTotal);
+      reteIvaTotal = roundCalculatedFiscalAmount(reteIvaTotal);
+      reteIcaTotal = roundCalculatedFiscalAmount(reteIcaTotal);
+      autoRetencionTotal = roundCalculatedFiscalAmount(autoRetencionTotal);
+      for (const line of taxLines) {
+        if (
+          line.direction !== TaxDirection.CHARGE &&
+          line.applied === true
+        ) {
+          line.baseAmount =
+            line.taxType === TaxType.RETEIVA ? vatTotal : subtotalTotal;
+          line.taxAmount =
+            line.taxType === TaxType.RETEFUENTE
+              ? reteFuenteTotal
+              : line.taxType === TaxType.RETEIVA
+                ? reteIvaTotal
+                : line.taxType === TaxType.RETEICA
+                  ? reteIcaTotal
+                  : autoRetencionTotal;
+        }
+      }
+    }
+
+    const grossFiscalTotal = useLineRoundedV2
+      ? sumRoundedFiscalAmounts([
+          subtotalTotal,
+          vatTotal,
+          impoconsumoTotal,
+        ])
+      : subtotalTotal.add(vatTotal).add(impoconsumoTotal);
+    const buyerRetentions = useLineRoundedV2
+      ? assertRetentionsWithinGross({
+          grossFiscalTotal,
+          withholdingTax: reteFuenteTotal,
+          vatWithholding: reteIvaTotal,
+          icaWithholding: reteIcaTotal,
+        })
+      : reteFuenteTotal.add(reteIvaTotal).add(reteIcaTotal);
+
+    let netReceived = grossFiscalTotal.sub(buyerRetentions);
 
     if (netReceived.lt(0)) {
       netReceived = new Prisma.Decimal(0);
     }
 
     const sourceFingerprint = createFiscalSourceFingerprint({
-      sourceType: 'SALE_PREVIEW',
+      sourceType: dto.sourceType ?? 'SALE_PREVIEW',
+      sourceId: dto.sourceId ?? null,
       businessId,
       lines: dto.cartItems.map((cartItem) => {
         const item = itemsMap.get(cartItem.itemId);
         return {
-          id: cartItem.itemId,
+           id: cartItem.sourceLineKey ?? cartItem.itemId,
           quantity: cartItem.quantity,
           unitPrice: cartItem.unitPrice ?? item?.price ?? null,
           saleConcept: item?.saleConcept ?? null,
@@ -601,8 +764,10 @@ export class TaxService {
           active: rule.active,
         })),
       },
-      calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
-      taxEngineVersion: 'aggregate-v1',
+      calculationMethod,
+      taxEngineVersion: useLineRoundedV2
+        ? 'line-rounded-v2'
+        : 'aggregate-v1',
     });
 
     return {
@@ -614,7 +779,9 @@ export class TaxService {
       reteIcaTotal,
       autoRetencionTotal,
       netReceived,
+      grossFiscalTotal,
       taxLines,
+      itemBreakdown,
       uvtValue,
       taxYear: globalParams?.year ?? new Date().getFullYear(),
       saleConceptUsed: derivedSaleConcept,
@@ -632,6 +799,14 @@ export class TaxService {
       taxSettingsEnabled: true,
       taxDisabledReason: null,
       sourceFingerprint,
+      calculationMethod,
+      taxEngineVersion: useLineRoundedV2
+        ? 'line-rounded-v2'
+        : 'aggregate-v1',
+      roundingMode: useLineRoundedV2
+        ? FiscalRoundingMode.ROUND_HALF_UP
+        : FiscalRoundingMode.DATABASE_DEFAULT,
+      roundingScale: 2,
     };
   }
 
@@ -660,6 +835,7 @@ export class TaxService {
         ? await tx.order.findUnique({
             where: { id: normalizedSource.sourceId },
             include: {
+              items: { include: { item: true } },
               business: {
                 include: {
                   taxProfile: {
@@ -674,6 +850,7 @@ export class TaxService {
         : await tx.reservation.findUnique({
             where: { id: normalizedSource.sourceId },
             include: {
+              item: true,
               business: {
                 include: {
                   taxProfile: {
@@ -799,6 +976,25 @@ export class TaxService {
     const withheldTaxTotalRounded =
       roundCalculatedFiscalAmount(withheldTaxTotal);
     const netReceived = roundCalculatedFiscalAmount(preview.netReceived);
+    const calculationMethod =
+      preview.calculationMethod ?? TaxCalculationMethod.LINE_ROUNDED_V2;
+    const roundingMode =
+      calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+        ? FiscalRoundingMode.ROUND_HALF_UP
+        : FiscalRoundingMode.DATABASE_DEFAULT;
+    const taxEngineVersion =
+      calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+        ? 'line-rounded-v2'
+        : 'aggregate-v1';
+    if (
+      existing &&
+      existing.calculationMethod !== calculationMethod
+    ) {
+      throw Object.assign(
+        new Error('El método fiscal persistido no puede cambiar.'),
+        { code: 'FISCAL_CALCULATION_METHOD_MISMATCH' },
+      );
+    }
     const commonData = {
       businessId,
       sourceType: normalizedSource.sourceType,
@@ -827,6 +1023,10 @@ export class TaxService {
       chargedTaxTotal: chargedTaxTotalRounded,
       withheldTaxTotal: withheldTaxTotalRounded,
       netReceived,
+      grossFiscalTotal:
+        calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+          ? roundCalculatedFiscalAmount(preview.grossFiscalTotal)
+          : null,
       sellerPersonType,
       sellerIsSimpleRegime,
       sellerIsIncomeTaxDeclarant,
@@ -838,9 +1038,9 @@ export class TaxService {
       impoconsumoRateUsed: preview.impoconsumoRateUsed,
       taxYear: preview.taxYear,
       uvtValue: preview.uvtValue,
-      calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
-      taxEngineVersion: 'aggregate-v1',
-      roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+      calculationMethod,
+      taxEngineVersion,
+      roundingMode,
       roundingScale: 2,
       calculationStatus: FiscalCalculationStatus.CURRENT,
       sourceFingerprint: preview.sourceFingerprint ?? null,
@@ -853,6 +1053,10 @@ export class TaxService {
       where: uniqueWhere,
       update: {
         ...commonData,
+        calculationMethod: undefined,
+        taxEngineVersion: undefined,
+        roundingMode: undefined,
+        roundingScale: undefined,
       },
       create: {
         ...commonData,
@@ -867,6 +1071,13 @@ export class TaxService {
       },
     });
 
+    if (context.calculationMethod !== calculationMethod) {
+      throw Object.assign(
+        new Error('El método fiscal persistido no puede cambiar.'),
+        { code: 'FISCAL_CALCULATION_METHOD_MISMATCH' },
+      );
+    }
+
     await tx.saleTaxLine.deleteMany({
       where: { fiscalContextId: context.id, isReversal: false },
     });
@@ -880,15 +1091,95 @@ export class TaxService {
           taxableBase: roundCalculatedFiscalAmount(l.baseAmount),
           rate: roundFiscalRate(l.rate),
           taxAmount: roundCalculatedFiscalAmount(l.taxAmount),
-          saleConcept: preview.saleConceptUsed,
-          calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
-          roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+          taxTreatment: l.taxTreatment ?? null,
+          saleConcept: l.saleConcept ?? preview.saleConceptUsed,
+          calculationMethod,
+          roundingMode,
           roundingScale: 2,
           accountCode: l.accountCode,
           applied: l.applied,
           reason: l.reason,
         })),
       });
+    }
+
+    const lineSnapshotIds: string[] = [];
+    if (calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2) {
+      const breakdown = preview.itemBreakdown ?? [];
+      assertZeroCommercialDiscounts(breakdown);
+
+      if (normalizedSource.sourceType === FiscalSourceType.ORDER) {
+        assertOrderTotalMatchesFiscalSubtotal(
+          (sourceRecord as any).total,
+          subtotal,
+        );
+      } else {
+        assertReservationFiscalShape({
+          lineCount: breakdown.length,
+          quantity: breakdown[0]?.quantity ?? 0,
+          unitPriceSnapshot: (sourceRecord as any).unitPriceSnapshot,
+          fiscalSubtotal: subtotal,
+        });
+      }
+
+      await tx.saleItemFiscalSnapshot.deleteMany({
+        where: { fiscalContextId: context.id },
+      });
+      for (const line of breakdown) {
+        const sourceLineKey =
+          normalizedSource.sourceType === FiscalSourceType.ORDER
+            ? String(line.sourceLineKey)
+            : `reservation:${normalizedSource.sourceId}`;
+        const orderItem =
+          normalizedSource.sourceType === FiscalSourceType.ORDER
+            ? (sourceRecord as any).items?.find(
+                (candidate: any) => candidate.id === sourceLineKey,
+              )
+            : null;
+        if (
+          normalizedSource.sourceType === FiscalSourceType.ORDER &&
+          !orderItem
+        ) {
+          throw Object.assign(
+            new Error('La línea fiscal no pertenece a la orden.'),
+            { code: 'FISCAL_SNAPSHOT_SOURCE_MISMATCH' },
+          );
+        }
+        const snapshot = await tx.saleItemFiscalSnapshot.create({
+          data: {
+            businessId,
+            fiscalContextId: context.id,
+            sourceLineKey,
+            orderItemId: orderItem?.id ?? null,
+            reservationId:
+              normalizedSource.sourceType === FiscalSourceType.RESERVATION
+                ? normalizedSource.sourceId
+                : null,
+            itemId: line.itemId ?? null,
+            fiscalCode: line.fiscalCode,
+            name: line.name,
+            quantity: line.quantity,
+            unitPriceNet: line.unitPriceNet,
+            discountRate: 0,
+            discountAmount: 0,
+            unitMeasureCode: line.unitMeasureCode,
+            standardCode: line.standardCode,
+            taxTreatment: line.taxTreatment,
+            taxType: line.taxType,
+            taxRate: roundFiscalRate(line.taxRate),
+            taxableBase: roundCalculatedFiscalAmount(line.baseAmount),
+            taxAmount: roundCalculatedFiscalAmount(line.taxAmount),
+            grossAmount: roundCalculatedFiscalAmount(line.grossAmount),
+            saleConcept: line.saleConcept,
+            calculationMethod,
+            roundingMode,
+            roundingScale: 2,
+            taxEngineVersion,
+          },
+          select: { id: true },
+        });
+        lineSnapshotIds.push(snapshot.id);
+      }
     }
 
     await tx.taxCalculationSnapshot.upsert({
@@ -901,6 +1192,7 @@ export class TaxService {
           subtotal: preview.subtotal,
           vatTotal: preview.vatTotal,
           impoconsumoTotal: preview.impoconsumoTotal,
+          grossFiscalTotal: preview.grossFiscalTotal,
           reteFuenteTotal: preview.reteFuenteTotal,
           reteIvaTotal: preview.reteIvaTotal,
           reteIcaTotal: preview.reteIcaTotal,
@@ -919,12 +1211,13 @@ export class TaxService {
           impoconsumoRateUsed: preview.impoconsumoRateUsed,
           taxYear: preview.taxYear,
         },
-        calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
-        taxEngineVersion: 'aggregate-v1',
-        roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+        calculationMethod,
+        taxEngineVersion,
+        roundingMode,
         roundingScale: 2,
         sourceFingerprint: preview.sourceFingerprint ?? null,
         calculatedAt: now,
+        lineSnapshotIds,
       },
       create: {
         fiscalContextId: context.id,
@@ -935,6 +1228,7 @@ export class TaxService {
           subtotal: preview.subtotal,
           vatTotal: preview.vatTotal,
           impoconsumoTotal: preview.impoconsumoTotal,
+          grossFiscalTotal: preview.grossFiscalTotal,
           reteFuenteTotal: preview.reteFuenteTotal,
           reteIvaTotal: preview.reteIvaTotal,
           reteIcaTotal: preview.reteIcaTotal,
@@ -953,12 +1247,13 @@ export class TaxService {
           impoconsumoRateUsed: preview.impoconsumoRateUsed,
           taxYear: preview.taxYear,
         },
-        calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
-        taxEngineVersion: 'aggregate-v1',
-        roundingMode: FiscalRoundingMode.DATABASE_DEFAULT,
+        calculationMethod,
+        taxEngineVersion,
+        roundingMode,
         roundingScale: 2,
         sourceFingerprint: preview.sourceFingerprint ?? null,
         calculatedAt: now,
+        lineSnapshotIds,
       },
     });
 
@@ -967,11 +1262,52 @@ export class TaxService {
     });
   }
 
+  private async resolveCalculationMethod(
+    db: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    dto: TaxPreviewDto,
+  ): Promise<TaxCalculationMethod> {
+    if (!dto.sourceType && !dto.sourceId) {
+      return TaxCalculationMethod.LINE_ROUNDED_V2;
+    }
+    if (!dto.sourceType || !dto.sourceId) {
+      throw Object.assign(
+        new Error('sourceType y sourceId deben enviarse juntos.'),
+        { code: 'INVALID_FISCAL_SOURCE' },
+      );
+    }
+
+    const sourceWhere =
+      dto.sourceType === FiscalSourceType.ORDER
+        ? { orderId: dto.sourceId }
+        : { reservationId: dto.sourceId };
+    const context = await (db as any).saleFiscalContext?.findFirst({
+      where: { businessId, ...sourceWhere },
+      select: { calculationMethod: true },
+    });
+    if (context) return context.calculationMethod;
+
+    const source =
+      dto.sourceType === FiscalSourceType.ORDER
+        ? await (db as any).order.findFirst({
+            where: { id: dto.sourceId, businessId },
+            select: { id: true },
+          })
+        : await (db as any).reservation.findFirst({
+            where: { id: dto.sourceId, businessId },
+            select: { id: true },
+          });
+    if (!source) throw new NotFoundException('Fiscal sale source not found');
+    return TaxCalculationMethod.LINE_ROUNDED_V2;
+  }
+
   private async emptyTaxPreview(
     businessId: string,
     dto: TaxPreviewDto,
     options?: { profileMissing?: boolean; taxSettingsEnabled?: boolean; taxDisabledReason?: string },
     tx?: Prisma.TransactionClient,
+    calculationMethod: TaxCalculationMethod =
+      TaxCalculationMethod.LINE_ROUNDED_V2,
   ) {
     const db = tx || this.prisma;
     let subtotalTotal = new Prisma.Decimal(0);
@@ -1000,15 +1336,19 @@ export class TaxService {
       this.logger.error('Error calculating real subtotal for emptyTaxPreview', e);
     }
 
+    const subtotal = calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+      ? roundCalculatedFiscalAmount(subtotalTotal)
+      : subtotalTotal;
     return {
-      subtotal: subtotalTotal,
+      subtotal,
       vatTotal: new Prisma.Decimal(0),
       impoconsumoTotal: new Prisma.Decimal(0),
       reteFuenteTotal: new Prisma.Decimal(0),
       reteIvaTotal: new Prisma.Decimal(0),
       reteIcaTotal: new Prisma.Decimal(0),
       autoRetencionTotal: new Prisma.Decimal(0),
-      netReceived: subtotalTotal,
+      grossFiscalTotal: subtotal,
+      netReceived: subtotal,
       taxLines: [],
       uvtValue: new Prisma.Decimal(52374),
       taxYear: new Date().getFullYear(),
@@ -1023,6 +1363,18 @@ export class TaxService {
       profileMissing,
       taxSettingsEnabled: options?.taxSettingsEnabled ?? false,
       taxDisabledReason: options?.taxDisabledReason ?? null,
+      itemBreakdown: [],
+      sourceFingerprint: null,
+      calculationMethod,
+      taxEngineVersion:
+        calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+          ? 'line-rounded-v2'
+          : 'aggregate-v1',
+      roundingMode:
+        calculationMethod === TaxCalculationMethod.LINE_ROUNDED_V2
+          ? FiscalRoundingMode.ROUND_HALF_UP
+          : FiscalRoundingMode.DATABASE_DEFAULT,
+      roundingScale: 2,
     };
   }
 }

@@ -13,6 +13,8 @@ import {
   SaleConcept,
   TaxType,
   Prisma,
+  FiscalSourceType,
+  TaxCalculationMethod,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaxPreviewDto } from './dto/tax-preview.dto';
@@ -52,6 +54,19 @@ describe('TaxService', () => {
     },
     order: {
       findUnique: mockFn(),
+      findFirst: mockFn(),
+    },
+    reservation: {
+      findFirst: mockFn(),
+    },
+    saleFiscalContext: {
+      findFirst: mockFn(),
+      findUnique: mockFn(),
+      upsert: mockFn(),
+    },
+    saleItemFiscalSnapshot: {
+      deleteMany: mockFn(),
+      create: mockFn(),
     },
   };
 
@@ -130,6 +145,19 @@ describe('TaxService', () => {
     mockPrismaService.taxGlobalParameter.findFirst.mockResolvedValue(globalParams);
     mockPrismaService.salesTaxRule.findMany.mockResolvedValue([]);
     mockPrismaService.municipalityIcaRate.findFirst.mockResolvedValue(null);
+    mockPrismaService.saleFiscalContext.findFirst.mockResolvedValue(null);
+    mockPrismaService.saleFiscalContext.findUnique.mockResolvedValue(null);
+    mockPrismaService.saleFiscalContext.upsert.mockResolvedValue({
+      id: 'context-1',
+      calculationMethod: TaxCalculationMethod.LINE_ROUNDED_V2,
+    });
+    mockPrismaService.saleItemFiscalSnapshot.create.mockResolvedValue({
+      id: 'line-snapshot-1',
+    });
+    mockPrismaService.order.findFirst.mockResolvedValue({ id: 'order-1' });
+    mockPrismaService.reservation.findFirst.mockResolvedValue({
+      id: 'reservation-1',
+    });
   });
 
   afterEach(() => {
@@ -163,7 +191,7 @@ describe('TaxService', () => {
     expect(result.netReceived.toNumber()).toBe(119000);
   });
 
-  it('keeps the official aggregate engine isolated from candidate item treatment in 1A', async () => {
+  it('uses the item treatment in the official LINE_ROUNDED_V2 engine', async () => {
     mockSeller(['48']);
     mockItems([
       {
@@ -175,8 +203,73 @@ describe('TaxService', () => {
 
     const result = await service.calculateTaxPreview(businessId, baseDto());
 
+    expect(result.vatTotal.toNumber()).toBe(0);
+    expect(result.netReceived.toNumber()).toBe(100000);
+    expect(result.calculationMethod).toBe('LINE_ROUNDED_V2');
+  });
+
+  it('preserves AGGREGATE_V1 for an existing persisted context', async () => {
+    mockSeller(['48']);
+    mockItems([
+      {
+        price: 100000,
+        taxTreatment: ItemTaxTreatment.EXCLUDED,
+      },
+    ]);
+    mockPrismaService.saleFiscalContext.findFirst.mockResolvedValue({
+      calculationMethod: TaxCalculationMethod.AGGREGATE_V1,
+    });
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        sourceType: FiscalSourceType.ORDER,
+        sourceId: 'order-1',
+      }),
+    );
+
+    expect(result.calculationMethod).toBe(TaxCalculationMethod.AGGREGATE_V1);
     expect(result.vatTotal.toNumber()).toBe(19000);
-    expect(result.netReceived.toNumber()).toBe(119000);
+  });
+
+  it('makes the classic one-cent case official with per-line rounding', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 0.03 }, { price: 0.03 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        cartItems: [
+          { itemId: 'item-1', quantity: 1 },
+          { itemId: 'item-2', quantity: 1 },
+        ],
+      }),
+    );
+
+    expect(result.subtotal.toFixed(2)).toBe('0.06');
+    expect(result.vatTotal.toFixed(2)).toBe('0.02');
+    expect(result.grossFiscalTotal.toFixed(2)).toBe('0.08');
+  });
+
+  it('rejects buyer retentions greater than the official gross total', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 100 }]);
+    mockPrismaService.salesTaxRule.findMany.mockResolvedValue([
+      {
+        id: 'invalid-retention',
+        taxType: TaxType.RETEFUENTE,
+        direction: 'WITHHOLD',
+        saleConcept: SaleConcept.GOODS,
+        minBaseUvt: new Prisma.Decimal(0),
+        rate: new Prisma.Decimal(2),
+        pucAccountCode: '135515',
+        active: true,
+      },
+    ]);
+
+    await expect(
+      service.calculateTaxPreview(businessId, baseDto()),
+    ).rejects.toMatchObject({ code: 'RETENTIONS_EXCEED_GROSS_TOTAL' });
   });
 
   it('calculates Impoconsumo 8% without IVA on the same item', async () => {
@@ -188,10 +281,12 @@ describe('TaxService', () => {
     expect(result.vatTotal.toNumber()).toBe(0);
     expect(result.impoconsumoTotal.toNumber()).toBe(8000);
     expect(result.netReceived.toNumber()).toBe(108000);
-    expect(result.taxLines.find((line) => line.taxType === TaxType.IVA)?.applied).toBe(false);
+    expect(
+      result.taxLines.some((line) => line.taxType === TaxType.IVA),
+    ).toBe(false);
   });
 
-  it('sets IVA and Impoconsumo to zero for Persona Natural No Responsable', async () => {
+  it('keeps INC independent from the seller VAT responsibility', async () => {
     mockSeller(['49'], { personType: PersonType.NATURAL });
     mockItems([
       { id: 'item-1', price: 100000, appliesImpoconsumo: true },
@@ -210,8 +305,8 @@ describe('TaxService', () => {
 
     expect(result.subtotal.toNumber()).toBe(150000);
     expect(result.vatTotal.toNumber()).toBe(0);
-    expect(result.impoconsumoTotal.toNumber()).toBe(0);
-    expect(result.netReceived.toNumber()).toBe(150000);
+    expect(result.impoconsumoTotal.toNumber()).toBe(8000);
+    expect(result.netReceived.toNumber()).toBe(158000);
   });
 
   it('applies ReteFuente compras: 10 UVT and 2.5% for declarante', async () => {
@@ -401,6 +496,10 @@ describe('TaxService', () => {
     const buyer = baseDto({ saleConcept: SaleConcept.GOODS });
     const preview = await service.calculateTaxPreview(businessId, buyer);
     mockPrismaService.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      businessId,
+      total: new Prisma.Decimal(1100000),
+      items: [{ id: 'item-1', itemId: 'item-1' }],
       business: {
         taxProfile: {
           personType: PersonType.JURIDICA,
@@ -414,12 +513,15 @@ describe('TaxService', () => {
 
     await service.freezeTaxCalculation(mockPrismaService as any, 'order-1', preview, buyer);
 
-    const fiscalContext = mockPrismaService.orderFiscalContext.upsert.mock.calls[0][0];
+    const fiscalContext = mockPrismaService.saleFiscalContext.upsert.mock.calls[0][0];
     const snapshot = mockPrismaService.taxCalculationSnapshot.upsert.mock.calls[0][0];
     const reteFuente = snapshot.create.rawCalculation.allLines.find(
       (line: any) => line.taxType === TaxType.RETEFUENTE,
     );
     expect(fiscalContext.create.saleConcept).toBe(SaleConcept.SERVICES);
+    expect(fiscalContext.create.calculationMethod).toBe(
+      TaxCalculationMethod.LINE_ROUNDED_V2,
+    );
     expect(snapshot.create.rawCalculation.saleConceptUsed).toBe(SaleConcept.SERVICES);
     expect(snapshot.create.rawCalculation.reteFuenteTotal.toNumber()).toBe(44000);
     expect(reteFuente.baseAmount.toNumber()).toBe(1100000);

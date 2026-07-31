@@ -8,6 +8,17 @@ export type SummableTaxLine = {
   isReversal?: boolean;
 };
 
+const INFORMATIONAL_TAX_TYPES = new Set<TaxType>([
+  TaxType.EXEMPT,
+  TaxType.EXCLUDED,
+  TaxType.NOT_TAXED,
+  TaxType.NONE,
+]);
+
+export function isInformationalTaxType(taxType: TaxType): boolean {
+  return INFORMATIONAL_TAX_TYPES.has(taxType);
+}
+
 export function sumTaxLinesByType(
   lines: readonly SummableTaxLine[],
   taxType: TaxType,
@@ -24,4 +35,3 @@ export function sumTaxLinesByType(
       .map((line) => line.taxAmount),
   );
 }
-

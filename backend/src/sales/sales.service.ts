@@ -55,6 +55,8 @@ export interface UnifiedSaleDto {
     reteIva: number;
     reteIca: number;
     totalCollected: number;
+    grossFiscalTotal: number;
+    calculationMethod: 'AGGREGATE_V1' | 'LINE_ROUNDED_V2';
     totalCharged: number;
     totalWithheld: number;
     netReceived: number;
@@ -323,8 +325,25 @@ export class SalesService {
   ) {
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (!buyerFiscalContext || cartItems.length === 0) return;
+    const persistedItems = (tx as any).orderItem?.findMany
+      ? await tx.orderItem.findMany({
+          where: { orderId, businessId },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    const fiscalCartItems =
+      persistedItems.length > 0
+        ? persistedItems.map((item) => ({
+            itemId: item.itemId,
+            sourceLineKey: item.id,
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+          }))
+        : cartItems;
 
     const preview = await this.taxService.calculateTaxPreview(businessId, {
+      sourceType: 'ORDER',
+      sourceId: orderId,
       buyerType: buyerFiscalContext.buyerType,
       buyerName: buyerFiscalContext.buyerName,
       buyerDocumentType: buyerFiscalContext.buyerDocumentType,
@@ -350,12 +369,12 @@ export class SalesService {
       reteIcaRateOverride:
         buyerFiscalContext.reteIcaRateOverride ??
         buyerFiscalContext.icaRateOverride,
-      cartItems,
+      cartItems: fiscalCartItems,
     }, tx);
 
     await this.taxService.freezeTaxCalculation(
       tx,
-      orderId,
+      { sourceType: 'ORDER', sourceId: orderId, businessId },
       preview,
       buyerFiscalContext,
     );
@@ -996,8 +1015,20 @@ export class SalesService {
               ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
             ),
             totalCollected:
-              Number(o.fiscalContext.subtotal) +
-              Number(o.fiscalContext.chargedTaxTotal),
+              Number(
+                o.fiscalContext.grossFiscalTotal ??
+                  new Prisma.Decimal(o.fiscalContext.subtotal).add(
+                    o.fiscalContext.chargedTaxTotal,
+                  ),
+              ),
+            grossFiscalTotal: Number(
+              o.fiscalContext.grossFiscalTotal ??
+                new Prisma.Decimal(o.fiscalContext.subtotal).add(
+                  o.fiscalContext.chargedTaxTotal,
+                ),
+            ),
+            calculationMethod:
+              o.fiscalContext.calculationMethod ?? 'AGGREGATE_V1',
             totalCharged: Number(o.fiscalContext.chargedTaxTotal),
             totalWithheld: Number(o.fiscalContext.withheldTaxTotal),
             netReceived: Number(o.fiscalContext.netReceived),
@@ -1032,13 +1063,17 @@ export class SalesService {
           : 'COMPLETE',
       fiscalCalculationStatus: o.fiscalContext?.calculationStatus ?? null,
       taxLines: taxLines.map((line) => ({
-        taxType: line.taxType,
-        direction: line.direction,
+         taxType: line.taxType,
+         direction: line.direction,
+         taxTreatment: line.taxTreatment,
         baseAmount: Number(line.taxableBase),
         rate: Number(line.rate),
         taxAmount: Number(line.taxAmount),
         accountCode: line.accountCode,
-        applied: line.applied,
+         applied: line.applied,
+         informational: ['EXEMPT', 'EXCLUDED', 'NOT_TAXED', 'NONE'].includes(
+           line.taxType,
+         ),
         reason: line.reason,
       })),
       items: o.items.map((it) => ({
@@ -1064,6 +1099,48 @@ export class SalesService {
       .map((r) => {
       const item = (r as any).item;
       const price = Number(r.unitPriceSnapshot ?? item?.price ?? 0);
+      const reservationTaxLines = r.fiscalContext?.taxLines ?? [];
+      const reservationFiscalSummary = r.fiscalContext
+        ? {
+            subtotal: Number(r.fiscalContext.subtotal),
+            iva: reservationTaxLines
+              .filter((line) => line.taxType === 'IVA' && line.applied)
+              .reduce((sum, line) => sum + Number(line.taxAmount), 0),
+            impoconsumo: reservationTaxLines
+              .filter(
+                (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
+              )
+              .reduce((sum, line) => sum + Number(line.taxAmount), 0),
+            reteFuente: reservationTaxLines
+              .filter(
+                (line) => line.taxType === 'RETEFUENTE' && line.applied,
+              )
+              .reduce((sum, line) => sum + Number(line.taxAmount), 0),
+            reteIva: reservationTaxLines
+              .filter((line) => line.taxType === 'RETEIVA' && line.applied)
+              .reduce((sum, line) => sum + Number(line.taxAmount), 0),
+            reteIca: reservationTaxLines
+              .filter((line) => line.taxType === 'RETEICA' && line.applied)
+              .reduce((sum, line) => sum + Number(line.taxAmount), 0),
+            totalCollected: Number(
+              r.fiscalContext.grossFiscalTotal ??
+                new Prisma.Decimal(r.fiscalContext.subtotal).add(
+                  r.fiscalContext.chargedTaxTotal,
+                ),
+            ),
+            grossFiscalTotal: Number(
+              r.fiscalContext.grossFiscalTotal ??
+                new Prisma.Decimal(r.fiscalContext.subtotal).add(
+                  r.fiscalContext.chargedTaxTotal,
+                ),
+            ),
+            totalCharged: Number(r.fiscalContext.chargedTaxTotal),
+            totalWithheld: Number(r.fiscalContext.withheldTaxTotal),
+            netReceived: Number(r.fiscalContext.netReceived),
+            calculationMethod:
+              r.fiscalContext.calculationMethod ?? 'AGGREGATE_V1',
+          }
+        : null;
 
       return {
         id: r.id,
@@ -1079,12 +1156,28 @@ export class SalesService {
         origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
         scheduledAt: this.toScheduledAt(r.date, r.startMinute),
         type: 'SERVICIO',
+        fiscalSummary: reservationFiscalSummary,
+        fiscalContext: this.mapFiscalContextForSales(r),
         fiscalIntegrityStatus: r.fiscalContext
           ? 'COMPLETE'
           : r.status === 'CONFIRMED'
             ? 'LEGACY_CONFIRMED_WITHOUT_FISCAL_CONTEXT'
             : 'COMPLETE',
         fiscalCalculationStatus: r.fiscalContext?.calculationStatus ?? null,
+        taxLines: reservationTaxLines.map((line) => ({
+          taxType: line.taxType,
+          direction: line.direction,
+          taxTreatment: line.taxTreatment,
+          baseAmount: Number(line.taxableBase),
+          rate: Number(line.rate),
+          taxAmount: Number(line.taxAmount),
+          accountCode: line.accountCode,
+          applied: line.applied,
+          informational: ['EXEMPT', 'EXCLUDED', 'NOT_TAXED', 'NONE'].includes(
+            line.taxType,
+          ),
+          reason: line.reason,
+        })),
         items: [
           {
             name: item?.name ?? 'Servicio no disponible',
@@ -1367,11 +1460,14 @@ export class SalesService {
       if (fiscalContextToUse) {
         const cartItems = order.items.map((it: any) => ({
           itemId: it.itemId,
+          sourceLineKey: it.id,
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice ?? it.price),
         }));
 
         const preview = await this.taxService.calculateTaxPreview(businessId, {
+          sourceType: 'ORDER',
+          sourceId: id,
           buyerType: fiscalContextToUse.buyerType,
           buyerName: fiscalContextToUse.buyerName,
           buyerDocumentType: fiscalContextToUse.buyerDocumentType,
@@ -1539,11 +1635,15 @@ export class SalesService {
         const cartItems = [
           {
             itemId: res.itemId,
+            sourceLineKey: `reservation:${id}`,
             quantity: 1,
+            unitPrice: Number(res.unitPriceSnapshot),
           },
         ];
 
         const preview = await this.taxService.calculateTaxPreview(businessId, {
+          sourceType: 'RESERVATION',
+          sourceId: id,
           buyerType: reservationFiscalData.buyerType,
           buyerName: reservationFiscalData.buyerName,
           buyerDocumentType: reservationFiscalData.buyerDocumentType,
@@ -1614,6 +1714,7 @@ export class SalesService {
       };
     }, {
       timeout: 20000, // P2028 fix: accounting posting for reservation confirmation needs extra time
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
 
@@ -2034,8 +2135,20 @@ export class SalesService {
             ).reduce((sum, line) => sum + Number(line.taxAmount), 0),
           ),
           totalCollected:
-            Number(order.fiscalContext.subtotal) +
-            Number(order.fiscalContext.chargedTaxTotal),
+            Number(
+              order.fiscalContext.grossFiscalTotal ??
+                new Prisma.Decimal(order.fiscalContext.subtotal).add(
+                  order.fiscalContext.chargedTaxTotal,
+                ),
+            ),
+          grossFiscalTotal: Number(
+            order.fiscalContext.grossFiscalTotal ??
+              new Prisma.Decimal(order.fiscalContext.subtotal).add(
+                order.fiscalContext.chargedTaxTotal,
+              ),
+          ),
+          calculationMethod:
+            order.fiscalContext.calculationMethod ?? 'AGGREGATE_V1',
           totalCharged: Number(order.fiscalContext.chargedTaxTotal),
           totalWithheld: Number(order.fiscalContext.withheldTaxTotal),
           netReceived: Number(order.fiscalContext.netReceived),
@@ -2058,11 +2171,15 @@ export class SalesService {
       taxLines: taxLines.map((line) => ({
         taxType: line.taxType,
         direction: line.direction,
+        taxTreatment: line.taxTreatment,
         baseAmount: Number(line.taxableBase),
         rate: Number(line.rate),
         taxAmount: Number(line.taxAmount),
         accountCode: line.accountCode,
         applied: line.applied,
+        informational: ['EXEMPT', 'EXCLUDED', 'NOT_TAXED', 'NONE'].includes(
+          line.taxType,
+        ),
         reason: line.reason,
       })),
       hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),

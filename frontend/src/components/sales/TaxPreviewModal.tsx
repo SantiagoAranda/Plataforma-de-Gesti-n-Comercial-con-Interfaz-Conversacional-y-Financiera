@@ -147,9 +147,12 @@ export default function TaxPreviewModal({
           .map((it) => ({
             itemId: it.itemId,
             quantity: it.qty,
+            unitPrice: it.unitPrice,
           }));
 
         const data = await getTaxPreview({
+          sourceType: sale.sourceType,
+          sourceId: sale.id,
           buyerType,
           buyerName: buyerName.trim() || undefined,
           buyerDocumentType,
@@ -172,7 +175,13 @@ export default function TaxPreviewModal({
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
           reteIcaRateOverride,
           saleConcept,
-          cartItems,
+          cartItems: cartItems.map((item, index) => ({
+            ...item,
+            sourceLineKey:
+              sale.sourceType === "RESERVATION"
+                ? `reservation:${sale.id}`
+                : sale.items[index]?.orderItemId,
+          })),
         });
 
         setPreview(data);
@@ -262,9 +271,6 @@ export default function TaxPreviewModal({
   const chargeLines = preview?.taxLines.filter((l) => l.direction === "CHARGE" && l.applied) || [];
   const withholdLines = preview?.taxLines.filter((l) => l.direction === "WITHHOLD" && l.applied) || [];
   const selfLines = preview?.taxLines.filter((l) => l.direction === "SELF" && l.applied) || [];
-  const chargedTotal = preview
-    ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)
-    : 0;
   const withheldTotal = preview
     ? Number(preview.reteFuenteTotal) +
       Number(preview.reteIvaTotal) +
@@ -693,7 +699,7 @@ export default function TaxPreviewModal({
                     </span>
                     <span>Total cobrado</span>
                     <span className="text-right font-semibold tabular-nums">
-                      {formatMoney(Number(preview.subtotal) + chargedTotal)}
+                      {formatMoney(Number(preview.grossFiscalTotal))}
                     </span>
                     <span>Total retenido</span>
                     <span className="text-right font-semibold tabular-nums">
@@ -742,7 +748,7 @@ export default function TaxPreviewModal({
                       <div
                         key={`${line.taxType}-${line.direction}-${index}`}
                         className={`p-3 rounded-2xl border text-xs flex flex-col gap-1 transition ${
-                          line.applied
+                          line.applied || line.informational
                             ? "bg-white border-slate-100 shadow-sm"
                             : "bg-slate-50/30 border-slate-100 opacity-60"
                         }`}
@@ -757,10 +763,10 @@ export default function TaxPreviewModal({
                                 ? "bg-amber-50 text-amber-700 border border-amber-100"
                                 : "bg-blue-50 text-blue-700 border border-blue-100"
                             }`}>
-                              {line.direction === "CHARGE" ? "Cobrado" : line.direction === "WITHHOLD" ? "Retenido" : "Autorretención"}
+                              {line.informational ? "Informativo" : line.direction === "CHARGE" ? "Cobrado" : line.direction === "WITHHOLD" ? "Retenido" : "Autorretención"}
                             </span>
                           </span>
-                          {line.applied ? (
+                          {line.applied || line.informational ? (
                             <span className="font-medium text-slate-800 tabular-nums">
                               {formatMoney(line.taxAmount)}
                             </span>

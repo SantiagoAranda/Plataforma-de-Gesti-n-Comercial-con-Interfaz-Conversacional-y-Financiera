@@ -29,6 +29,7 @@ import {
   ManualPaidOutflowType,
 } from './dto/create-manual-paid-outflow.dto';
 import { assertBalancedEntry } from './automatic-entry-balance';
+import { isInformationalTaxType } from '../tax/tax-line-summary';
 
 const ORDER_ACCOUNTING_DEFAULTS = {
   // Use active subaccounts from prisma/seed-data/puc_subcuenta.csv.
@@ -1049,7 +1050,11 @@ export class AccountingService {
     );
 
     // B. Impuestos cobrados (IVA, IMPOCONSUMO) que son créditos (pasivos por pagar)
-    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.CHARGE)) {
+    for (const tLine of taxLines.filter(
+      (l) =>
+        l.direction === TaxDirection.CHARGE &&
+        !isInformationalTaxType(l.taxType),
+    )) {
       const code = tLine.accountCode;
       const ref = await this.loadPucReferenceOrThrow(
         code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }

@@ -51,6 +51,8 @@ export type SaleFiscalSummary = {
   reteIva: number;
   reteIca: number;
   totalCollected: number;
+  grossFiscalTotal: number;
+  calculationMethod: "AGGREGATE_V1" | "LINE_ROUNDED_V2";
   totalCharged: number;
   totalWithheld: number;
   netReceived: number;

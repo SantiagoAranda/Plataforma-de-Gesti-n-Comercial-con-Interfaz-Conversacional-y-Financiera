@@ -197,15 +197,11 @@ function formatTaxRate(taxType: TaxPreviewLine["taxType"], rate: number) {
 }
 
 function lineStatus(line: TaxPreviewLine) {
+  if (line.informational) return "Informativo";
   if (!line.applied) return "No aplica";
   if (line.direction === "CHARGE") return "Cobrado";
   if (line.direction === "WITHHOLD") return "Retenido";
   return "Autorretencion";
-}
-
-function findTaxLine(lines: TaxPreviewLine[] | undefined, taxType: TaxPreviewLine["taxType"]) {
-  return lines?.find((line) => line.taxType === taxType && line.applied) ??
-    lines?.find((line) => line.taxType === taxType);
 }
 
 function taxValidationDescription(taxType: TaxPreviewLine["taxType"]) {
@@ -286,6 +282,10 @@ function summaryToPreview(summary: SaleFiscalSummary, taxLines?: TaxPreviewLine[
     reteIcaTotal: Number(summary.reteIca ?? 0),
     autoRetencionTotal: 0,
     netReceived: Number(summary.netReceived ?? 0),
+    grossFiscalTotal: Number(
+      summary.grossFiscalTotal ?? summary.totalCollected ?? 0,
+    ),
+    calculationMethod: summary.calculationMethod ?? "AGGREGATE_V1",
     taxLines: taxLines ?? [],
     uvtValue: 0,
   };
@@ -429,9 +429,6 @@ export default function SaleTaxPanel({
     return () => clearTimeout(timer);
   }, [context, items, readonly, simpleRegimeEnabled]);
 
-  const chargedTotal = preview
-    ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)
-    : 0;
   const withheldTotal = preview
     ? Number(preview.reteFuenteTotal) +
       Number(preview.reteIvaTotal) +
@@ -762,7 +759,7 @@ export default function SaleTaxPanel({
                   <SummaryRow label="Autorretencion" value={Number(preview.autoRetencionTotal)} />
                 </div>
                 <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 font-medium text-slate-800">
-                  <SummaryRow label="Total cobrado" value={Number(preview.subtotal) + chargedTotal} />
+                  <SummaryRow label="Total cobrado" value={Number(preview.grossFiscalTotal)} />
                   <SummaryRow label="Total retenido" value={withheldTotal} />
                 </div>
                 <div className="mt-4 flex items-end justify-between gap-4 border-t border-slate-100 pt-4">
@@ -805,7 +802,9 @@ export default function SaleTaxPanel({
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="font-semibold text-slate-800">
-                          {line.applied ? `$${formatCop(Number(line.taxAmount))}` : "No aplica"}
+                          {line.applied || line.informational
+                            ? `$${formatCop(Number(line.taxAmount))}`
+                            : "No aplica"}
                         </p>
                         <p className="mt-1 text-[10px] text-slate-400">PUC: {line.accountCode}</p>
                       </div>

@@ -1,6 +1,11 @@
 import { IsString, IsOptional, IsEnum, IsArray, ValidateNested, IsBoolean, IsNumber, Min, IsEmail, Matches, MaxLength } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { PersonType, DocumentType, SaleConcept } from '@prisma/client';
+import {
+  PersonType,
+  DocumentType,
+  SaleConcept,
+  FiscalSourceType,
+} from '@prisma/client';
 
 const optionalTrimmed = ({ value }: { value: unknown }) =>
   value === null || value === undefined || value === ''
@@ -10,6 +15,10 @@ const optionalTrimmed = ({ value }: { value: unknown }) =>
 export class TaxPreviewCartItemDto {
   @IsString()
   itemId!: string;
+
+  @IsOptional()
+  @IsString()
+  sourceLineKey?: string;
 
   @IsNumber()
   @Min(1)
@@ -21,6 +30,14 @@ export class TaxPreviewCartItemDto {
 }
 
 export class TaxPreviewDto {
+  @IsOptional()
+  @IsEnum(FiscalSourceType)
+  sourceType?: FiscalSourceType;
+
+  @IsOptional()
+  @IsString()
+  sourceId?: string;
+
   @IsOptional()
   @IsEnum(PersonType)
   buyerType?: PersonType;

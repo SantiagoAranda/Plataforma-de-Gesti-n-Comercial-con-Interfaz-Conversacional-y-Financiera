@@ -1,5 +1,8 @@
 import { Prisma, TaxType } from '@prisma/client';
-import { sumTaxLinesByType } from './tax-line-summary';
+import {
+  isInformationalTaxType,
+  sumTaxLinesByType,
+} from './tax-line-summary';
 
 describe('tax line summaries', () => {
   const lines = [
@@ -33,5 +36,14 @@ describe('tax line summaries', () => {
         2,
       ),
     ).toBe('4.99');
+  });
+
+  it('classifies only zero-tax treatments as informational', () => {
+    expect(isInformationalTaxType(TaxType.EXEMPT)).toBe(true);
+    expect(isInformationalTaxType(TaxType.EXCLUDED)).toBe(true);
+    expect(isInformationalTaxType(TaxType.NOT_TAXED)).toBe(true);
+    expect(isInformationalTaxType(TaxType.NONE)).toBe(true);
+    expect(isInformationalTaxType(TaxType.IVA)).toBe(false);
+    expect(isInformationalTaxType(TaxType.RETEFUENTE)).toBe(false);
   });
 });

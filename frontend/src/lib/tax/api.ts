@@ -1,8 +1,10 @@
 import { api } from "@/src/lib/api";
 
 export type TaxPreviewLine = {
-  taxType: "IVA" | "IMPOCONSUMO" | "RETEFUENTE" | "RETEIVA" | "RETEICA" | "AUTORRETENCION";
+  taxType: "IVA" | "IMPOCONSUMO" | "RETEFUENTE" | "RETEIVA" | "RETEICA" | "AUTORRETENCION" | "EXEMPT" | "EXCLUDED" | "NOT_TAXED" | "NONE";
   direction: "CHARGE" | "WITHHOLD" | "SELF";
+  taxTreatment?: "TAXED" | "EXEMPT" | "EXCLUDED" | "NOT_TAXED" | null;
+  informational?: boolean;
   baseAmount: number;
   rate: number;
   taxAmount: number;
@@ -20,6 +22,8 @@ export type TaxPreviewResponse = {
   reteIcaTotal: number;
   autoRetencionTotal: number;
   netReceived: number;
+  grossFiscalTotal: number;
+  calculationMethod: "AGGREGATE_V1" | "LINE_ROUNDED_V2";
   taxLines: TaxPreviewLine[];
   uvtValue: number;
   profileMissing?: boolean;
@@ -65,6 +69,8 @@ export type BuyerFiscalContext = {
 };
 
 export type TaxPreviewRequest = {
+  sourceType?: "ORDER" | "RESERVATION";
+  sourceId?: string;
   buyerType?: BuyerFiscalContext["buyerType"];
   buyerName?: string;
   buyerDocumentType?: BuyerFiscalContext["buyerDocumentType"];
@@ -89,7 +95,7 @@ export type TaxPreviewRequest = {
   /** @deprecated Use reteIcaRateOverride. */
   icaRateOverride?: number;
   saleConcept?: BuyerFiscalContext["saleConcept"];
-  cartItems: Array<{ itemId: string; quantity: number }>;
+  cartItems: Array<{ itemId: string; quantity: number; sourceLineKey?: string; unitPrice?: number }>;
 };
 
 export function getTaxPreview(data: TaxPreviewRequest) {

@@ -187,6 +187,8 @@ describe('SalesService.findAll', () => {
       reteIva: 0,
       reteIca: 400,
       totalCollected: 119000,
+      grossFiscalTotal: 119000,
+      calculationMethod: 'AGGREGATE_V1',
       totalCharged: 19000,
       totalWithheld: 400,
       netReceived: 118600,

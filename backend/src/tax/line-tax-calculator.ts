@@ -9,7 +9,8 @@ export type LineTaxErrorCode =
   | 'INVALID_GLOBAL_VAT_RATE'
   | 'INVALID_GLOBAL_IMPOCONSUMO_RATE'
   | 'INVALID_QUANTITY'
-  | 'INVALID_UNIT_PRICE';
+  | 'INVALID_UNIT_PRICE'
+  | 'COMMERCIAL_DISCOUNTS_NOT_SUPPORTED';
 
 export class LineTaxCalculationError extends Error {
   constructor(public readonly code: LineTaxErrorCode) {
@@ -21,6 +22,8 @@ export class LineTaxCalculationError extends Error {
 export type LineTaxInput = {
   quantity: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
+  discountRate?: Prisma.Decimal;
+  discountAmount?: Prisma.Decimal;
   taxTreatment: ItemTaxTreatment;
   vatRate: Prisma.Decimal | null;
   globalVatRate: Prisma.Decimal;
@@ -88,6 +91,16 @@ export function calculateLineTax(input: LineTaxInput): LineTaxResult {
   if (!isFiniteDecimal(input.unitPrice) || input.unitPrice.lt(0)) {
     throw new LineTaxCalculationError('INVALID_UNIT_PRICE');
   }
+  const discountRate = input.discountRate ?? ZERO;
+  const discountAmount = input.discountAmount ?? ZERO;
+  if (
+    !isFiniteDecimal(discountRate) ||
+    !isFiniteDecimal(discountAmount) ||
+    !discountRate.eq(0) ||
+    !discountAmount.eq(0)
+  ) {
+    throw new LineTaxCalculationError('COMMERCIAL_DISCOUNTS_NOT_SUPPORTED');
+  }
 
   assertRate(input.globalVatRate, 'INVALID_GLOBAL_VAT_RATE');
   assertRate(
@@ -146,7 +159,9 @@ export function calculateLineTax(input: LineTaxInput): LineTaxResult {
     throw new LineTaxCalculationError('IMPOCONSUMO_FORBIDS_VAT_RATE');
   }
 
-  const baseAmount = roundTaxAmount(input.quantity.mul(input.unitPrice));
+  const baseAmount = roundTaxAmount(
+    input.quantity.mul(input.unitPrice).sub(discountAmount),
+  );
   let taxType: LineTaxType;
   let taxRate = ZERO;
 

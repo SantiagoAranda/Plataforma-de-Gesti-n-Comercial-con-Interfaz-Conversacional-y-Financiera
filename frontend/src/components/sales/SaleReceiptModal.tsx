@@ -167,7 +167,13 @@ function SaleReceiptView({
   const taxes = hasFiscalSummary && sale.fiscalSummary
     ? Number(sale.fiscalSummary.iva ?? 0) + Number(sale.fiscalSummary.impoconsumo ?? 0)
     : 0;
-  const displayTotal = hasFiscalSummary ? (subtotal + taxes) : total;
+  const displayTotal =
+    hasFiscalSummary && sale.fiscalSummary
+      ? Number(
+          sale.fiscalSummary.grossFiscalTotal ??
+            sale.fiscalSummary.totalCollected,
+        )
+      : total;
   const statusStyles = getStatusStyles(sale.status);
 
   return (
