@@ -528,7 +528,27 @@ function InventarioPageContent() {
 
           {/* Floating Action / Chat Composer Bar */}
           <div className="relative z-50">
-            {ingredientSheetOpen ? (
+            {saveBarContext ? (
+              <WhatsappComposer
+                leftAction={saveBarContext.onDiscard}
+                leftIconVariant="x"
+                rightAction={() => {
+                  void saveBarContext.onSave();
+                }}
+                isSubmitting={saveBarContext.isSaving}
+                rightIconVariant="send"
+                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
+                centerContent={
+                  <div className="flex h-full w-full items-center justify-between px-2">
+                    <span className="truncate text-sm font-medium text-slate-700">
+                      {saveBarContext.message}
+                    </span>
+                  </div>
+                }
+                plusAriaLabel="Descartar cambios"
+                submitAriaLabel={saveBarContext.saveLabel}
+              />
+            ) : ingredientSheetOpen ? (
               <WhatsappComposer
                 leftAction={() => {
                   setIngredientSheetOpen(false);
