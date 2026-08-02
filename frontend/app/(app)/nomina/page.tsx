@@ -102,11 +102,11 @@ function canPreparePayrollPeriod(year: number, month: number, now = new Date()) 
 function isPeriodicPayrollEnabled(period?: Pick<PayrollPeriod, "year" | "month">) {
   return Boolean(
     period &&
-      payrollMonthIndex(period.year, period.month) >=
-        payrollMonthIndex(
-          PERIODIC_PAYROLL_MINIMUM.year,
-          PERIODIC_PAYROLL_MINIMUM.month,
-        ),
+    payrollMonthIndex(period.year, period.month) >=
+    payrollMonthIndex(
+      PERIODIC_PAYROLL_MINIMUM.year,
+      PERIODIC_PAYROLL_MINIMUM.month,
+    ),
   );
 }
 
@@ -436,8 +436,8 @@ function findActiveContractForMonth(contracts: Contract[] | undefined, year: num
 function isPeriodEditable(period?: PayrollPeriod) {
   return Boolean(
     isPeriodicPayrollEnabled(period) &&
-      period?.status !== "POSTED" &&
-      period?.status !== "CLOSED",
+    period?.status !== "POSTED" &&
+    period?.status !== "CLOSED",
   );
 }
 
@@ -1001,24 +1001,35 @@ function PayrollSheetFooter({
   onPrimary: () => void;
 }) {
   return (
-    <div className="w-full">
+    <div className="w-full space-y-2">
       {error && (
-        <div className="mb-2 px-1">
-          <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
-        </div>
+        <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
       )}
-      <WhatsappComposer
-        onPlusClick={onCancel}
-        onSubmit={onPrimary}
-        isSubmitting={submitting}
-        submitDisabled={primaryDisabled}
-        placeholder={primaryLabel ? `${primaryLabel}...` : "Escribe una observación..."}
-        leftIconVariant="x"
-        rightIconVariant="send"
-        plusAriaLabel="Cancelar"
-        submitAriaLabel={primaryLabel}
-        className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-      />
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={onPrimary}
+          disabled={submitting || primaryDisabled}
+          className="flex h-10 items-center justify-center gap-2 rounded-xl bg-[#0B3F64] px-5 text-xs font-medium text-white shadow-sm hover:bg-[#0B3F64]/90 disabled:opacity-50"
+        >
+          {submitting ? (
+            <>
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Guardando...
+            </>
+          ) : (
+            primaryLabel
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1057,33 +1068,30 @@ function PayrollEmployeeSheetShell<T extends string>({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="relative">
-          {/* OVERLAY BACKDROP */}
-          <div
-            className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
-            onClick={onClose}
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
+      {/* OVERLAY BACKDROP */}
+      <div
+        className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+        onClick={onClose}
+      />
+
+      {/* MODAL DIALOG CONTAINER */}
+      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-neutral-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:max-h-[85vh] sm:rounded-[28px]">
+        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
+          <PayrollEmployeeHeader
+            title={title}
+            subtitle={subtitle}
+            documentNumber={documentNumber}
+            role={role}
+            onClose={onClose}
           />
-
-          {/* EXPANDABLE MODAL CONTENT */}
-          <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 mx-auto flex max-h-[min(78vh,640px)] w-full flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300">
-            <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
-              <PayrollEmployeeHeader
-                title={title}
-                subtitle={subtitle}
-                documentNumber={documentNumber}
-                role={role}
-                onClose={onClose}
-              />
-              <PayrollEmployeeTabs tabs={tabs} activeTab={activeTab} onChange={changeTab} />
-            </div>
-            <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
-              {children}
-            </div>
-          </div>
-
-          {/* CHAT COMPOSER AT BOTTOM - Handled by persistent PayrollChatActionBar */}
+          <PayrollEmployeeTabs tabs={tabs} activeTab={activeTab} onChange={changeTab} />
+        </div>
+        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
+          {children}
+        </div>
+        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3.5">
+          {footer}
         </div>
       </div>
     </div>
@@ -1398,7 +1406,7 @@ function PayrollQuickEmployeeSheet({
             <button onClick={() => { toast.dismiss(t.id); onClose(); }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Descartar</button>
           </div>
         </div>
-      ), { duration: Infinity });
+      ), { duration: 3000 });
       return;
     }
     onClose();
@@ -2036,284 +2044,282 @@ function EmployeePayrollEditorSheet({
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[70] px-4 pb-3 pt-2 lg:left-[408px] lg:right-0">
-      <div className="mx-auto w-full max-w-3xl">
-        <div className="relative">
-          {/* OVERLAY BACKDROP */}
-          <div
-            className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
-            onClick={onClose}
-          />
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 p-0 backdrop-blur-sm sm:items-center sm:p-4 lg:left-[408px]">
+      {/* OVERLAY BACKDROP */}
+      <div
+        className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+        onClick={onClose}
+      />
 
-          {/* EXPANDABLE MODAL CONTENT */}
-          <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-10 mx-auto flex max-h-[min(78vh,640px)] w-full flex-col overflow-hidden rounded-[28px] border border-neutral-200 bg-white shadow-[0_18px_40px_rgba(0,0,0,0.18)] animate-in slide-in-from-bottom-4 duration-300">
-            <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
-              {/* Header */}
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="truncate text-lg font-medium text-slate-900">{employeeName(run.employee)}</h2>
-                  <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
-                    {run.employee.documentNumber ?? "Sin doc."} • {employeeRole(run.employee, run.contract)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (run.contract && run.contract.isActive !== false) {
-                        toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
-                        return;
-                      }
-                      onClose();
-                      onInactivateEmployee?.(run.employee);
-                    }}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                    aria-label="Inactivar"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const currentSnapshot = JSON.stringify({
-                        workedDays, commissions, nonSalaryBonus, loans, otherDeductions,
-                        salaryMonthly, startDate, endDate, contractType, arlRiskClassId, applyLaw1819, isRemote, paymentCycle,
-                        firstName, lastName, documentNumber, position, email, phone, active
-                      });
-                      if (currentSnapshot !== initialSnapshot) {
-                        toast((t) => (
-                          <div className="flex flex-col gap-2">
-                            <p className="text-xs font-medium text-slate-800">Tienes cambios sin guardar. ¿Deseas descartar o continuar editando?</p>
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  toast.dismiss(t.id);
-                                  onClose();
-                                }}
-                                className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-600"
-                              >
-                                Descartar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => toast.dismiss(t.id)}
-                                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
-                              >
-                                Continuar
-                              </button>
-                            </div>
-                          </div>
-                        ), { duration: 5000 });
-                      } else {
-                        onClose();
-                      }
-                    }}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    aria-label="Cerrar"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Navigation Tabs */}
-              <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-                <button
-                  type="button"
-                  onClick={() => changeTab("horas")}
-                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-                >
-                  Novedades
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeTab("contrato")}
-                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-                >
-                  Contrato
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeTab("empleado")}
-                  className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
-                >
-                  Empleado
-                </button>
-              </div>
+      {/* MODAL DIALOG CONTAINER */}
+      <div className="relative z-10 flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[28px] border border-neutral-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200 sm:max-h-[85vh] sm:rounded-[28px]">
+        <div className="shrink-0 border-b border-neutral-100 bg-white px-5 pb-4 pt-4">
+          {/* Header */}
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-medium text-slate-900">{employeeName(run.employee)}</h2>
+              <p className="mt-0.5 truncate text-xs font-medium text-slate-500">
+                {run.employee.documentNumber ?? "Sin doc."} • {employeeRole(run.employee, run.contract)}
+              </p>
             </div>
-
-            {/* Form Body */}
-            <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
-              {activeTab === "horas" && (
-                <div className="space-y-3">
-                  {!editable && (
-                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                      Este periodo ya fue liquidado. No se pueden modificar novedades.
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Dias trabajados">
-                      <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" disabled={!editable} />
-                    </FieldBlock>
-                    <FieldBlock label="Prestamos">
-                      <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" disabled={!editable} />
-                    </FieldBlock>
-                    <FieldBlock label="Comisiones salariales">
-                      <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" disabled={!editable} />
-                    </FieldBlock>
-                    <FieldBlock label="Bonos no salariales">
-                      <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" disabled={!editable} />
-                    </FieldBlock>
-                    <FieldBlock label="Otras deducciones">
-                      <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" disabled={!editable} />
-                    </FieldBlock>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === "contrato" && (
-                <div className="space-y-3">
-                  {run.contract ? (
-                    <div className="rounded-[22px] border border-neutral-100 bg-white p-4 shadow-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Contrato actual</p>
-                          <p className="mt-0.5 text-sm font-semibold text-slate-900">{run.employee.position || "Sin cargo definido"}</p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {run.contract.contractType === "INDEFINITE" ? "Término indefinido" : run.contract.contractType === "FIXED_TERM" ? "Término fijo" : "Obra o labor"} · Salario: ${Number(run.contract.salaryMonthly || 0).toLocaleString("es-CO")}
-                          </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (run.contract && run.contract.isActive !== false) {
+                    toast.error("Este empleado tiene un contrato activo. Primero debes inactivar o liquidar el contrato.", { duration: 4000 });
+                    return;
+                  }
+                  onClose();
+                  onInactivateEmployee?.(run.employee);
+                }}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                aria-label="Inactivar"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const currentSnapshot = JSON.stringify({
+                    workedDays, commissions, nonSalaryBonus, loans, otherDeductions,
+                    salaryMonthly, startDate, endDate, contractType, arlRiskClassId, applyLaw1819, isRemote, paymentCycle,
+                    firstName, lastName, documentNumber, position, email, phone, active
+                  });
+                  if (currentSnapshot !== initialSnapshot) {
+                    toast((t) => (
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs font-medium text-slate-800">Tienes cambios sin guardar. ¿Deseas descartar o continuar editando?</p>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              toast.dismiss(t.id);
+                              onClose();
+                            }}
+                            className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-rose-600"
+                          >
+                            Descartar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toast.dismiss(t.id)}
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+                          >
+                            Continuar
+                          </button>
                         </div>
-                        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", run.contract.isActive !== false ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
-                          {run.contract.isActive !== false ? "Activo" : "Inactivo"}
-                        </span>
                       </div>
-                    </div>
-                  ) : (
-                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-                      Este empleado no tiene contrato registrado. Completa la información a continuación para crearlo.
-                    </p>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Tipo de contrato">
-                      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1">
-                        <SegmentedOption value="INDEFINITE" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Indefinido</SegmentedOption>
-                        <SegmentedOption value="FIXED_TERM" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Fijo</SegmentedOption>
-                        <SegmentedOption value="TASK" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Obra/Labor</SegmentedOption>
-                      </div>
-                    </FieldBlock>
-                    <FieldBlock label="Riesgo ARL">
-                      <select
-                        value={arlRiskClassId}
-                        onChange={(event) => setArlRiskClassId(event.target.value)}
-                        disabled={hasPostedHistoryError}
-                        className="h-12 w-full rounded-2xl border border-transparent bg-slate-100 px-3 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-slate-200"
-                      >
-                        {arlRisks.map((item: ArlRiskClass) => (
-                          <option key={item.id} value={item.id}>
-                            Riesgo {item.level} ({Number(item.rate ?? 0) * 100}%)
-                          </option>
-                        ))}
-                      </select>
-                    </FieldBlock>
-                  </div>
-
-                  {Boolean(run.contract && run.contract.isActive !== false) && (
-                    <p className="mt-1 text-[11px] font-medium text-slate-500">
-                      Contrato activo vigente. Para crear uno nuevo, primero debes inactivar o liquidar el contrato actual.
-                    </p>
-                  )}
-
-                  {hasPostedHistoryError && (
-                    <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
-                      Este contrato tiene nómina liquidada. Los cambios críticos requieren una nueva versión de contrato.
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Fecha ingreso">
-                      <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
-                    </FieldBlock>
-                    <FieldBlock label="Fecha salida">
-                      <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
-                    </FieldBlock>
-                  </div>
-
-                  <FieldBlock label="Salario mensual">
-                    <BigInput
-                      value={salaryMonthly ? Number(String(salaryMonthly).replace(/\D/g, "")).toLocaleString("es-CO") : ""}
-                      onChange={(event) => {
-                        const raw = event.target.value.replace(/\D/g, "");
-                        setSalaryMonthly(raw);
-                      }}
-                      placeholder="0"
-                      disabled={hasPostedHistoryError}
-                    />
-                  </FieldBlock>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Exención Ley 1819">
-                      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
-                        <SegmentedOption value={true} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
-                        <SegmentedOption value={false} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>No</SegmentedOption>
-                      </div>
-                    </FieldBlock>
-                    <FieldBlock label="Trabajo remoto">
-                      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
-                        <SegmentedOption value={true} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
-                        <SegmentedOption value={false} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>No</SegmentedOption>
-                      </div>
-                    </FieldBlock>
-                  </div>
-
-                  <FieldBlock label="Frecuencia de pago">
-                    <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
-                      <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Mensual</SegmentedOption>
-                      <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Quincenal</SegmentedOption>
-                    </div>
-                  </FieldBlock>
-                </div>
-              )}
-
-              {activeTab === "empleado" && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Nombre">
-                      <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
-                    </FieldBlock>
-                    <FieldBlock label="Apellido">
-                      <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
-                    </FieldBlock>
-                    <FieldBlock label="Documento">
-                      <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
-                    </FieldBlock>
-                    <FieldBlock label="Cargo">
-                      <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
-                    </FieldBlock>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <FieldBlock label="Telefono">
-                      <BigInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="3001234567" />
-                    </FieldBlock>
-                    <FieldBlock label="Correo opcional">
-                      <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
-                    </FieldBlock>
-                  </div>
-                </div>
-              )}
+                    ), { duration: 5000 });
+                  } else {
+                    onClose();
+                  }
+                }}
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+                aria-label="Cerrar"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-
-            {/* CHAT COMPOSER AT BOTTOM */}
-            <PayrollSheetFooter
-              error={error}
-              primaryLabel="Guardar"
-              submitting={submitting}
-              primaryDisabled={activeTab === "horas" && !editable}
-              onCancel={onClose}
-              onPrimary={handleSave}
-            />
           </div>
+
+          {/* Navigation Tabs */}
+          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => changeTab("horas")}
+              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "horas" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            >
+              Novedades
+            </button>
+            <button
+              type="button"
+              onClick={() => changeTab("contrato")}
+              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "contrato" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            >
+              Contrato
+            </button>
+            <button
+              type="button"
+              onClick={() => changeTab("empleado")}
+              className={cn("flex-1 rounded-lg py-2 text-xs font-medium transition-colors", activeTab === "empleado" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700")}
+            >
+              Empleado
+            </button>
+          </div>
+        </div>
+
+        {/* Form Body */}
+        <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
+          {activeTab === "horas" && (
+            <div className="space-y-3">
+              {!editable && (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                  Este periodo ya fue liquidado. No se pueden modificar novedades.
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Dias trabajados">
+                  <BigInput value={workedDays} onChange={(event) => setWorkedDays(event.target.value)} type="number" min="1" max="30" disabled={!editable} />
+                </FieldBlock>
+                <FieldBlock label="Prestamos">
+                  <BigInput value={loans} onChange={(event) => setLoans(event.target.value)} type="number" min="0" disabled={!editable} />
+                </FieldBlock>
+                <FieldBlock label="Comisiones salariales">
+                  <BigInput value={commissions} onChange={(event) => setCommissions(event.target.value)} type="number" min="0" disabled={!editable} />
+                </FieldBlock>
+                <FieldBlock label="Bonos no salariales">
+                  <BigInput value={nonSalaryBonus} onChange={(event) => setNonSalaryBonus(event.target.value)} type="number" min="0" disabled={!editable} />
+                </FieldBlock>
+                <FieldBlock label="Otras deducciones">
+                  <BigInput value={otherDeductions} onChange={(event) => setOtherDeductions(event.target.value)} type="number" min="0" disabled={!editable} />
+                </FieldBlock>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "contrato" && (
+            <div className="space-y-3">
+              {run.contract ? (
+                <div className="rounded-[22px] border border-neutral-100 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Contrato actual</p>
+                      <p className="mt-0.5 text-sm font-semibold text-slate-900">{run.employee.position || "Sin cargo definido"}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {run.contract.contractType === "INDEFINITE" ? "Término indefinido" : run.contract.contractType === "FIXED_TERM" ? "Término fijo" : "Obra o labor"} · Salario: ${Number(run.contract.salaryMonthly || 0).toLocaleString("es-CO")}
+                      </p>
+                    </div>
+                    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", run.contract.isActive !== false ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
+                      {run.contract.isActive !== false ? "Activo" : "Inactivo"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                  Este empleado no tiene contrato registrado. Completa la información a continuación para crearlo.
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Tipo de contrato">
+                  <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1">
+                    <SegmentedOption value="INDEFINITE" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Indefinido</SegmentedOption>
+                    <SegmentedOption value="FIXED_TERM" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Fijo</SegmentedOption>
+                    <SegmentedOption value="TASK" current={contractType} onChange={(val) => setContractType(val as any)} disabled={hasPostedHistoryError}>Obra/Labor</SegmentedOption>
+                  </div>
+                </FieldBlock>
+                <FieldBlock label="Riesgo ARL">
+                  <select
+                    value={arlRiskClassId}
+                    onChange={(event) => setArlRiskClassId(event.target.value)}
+                    disabled={hasPostedHistoryError}
+                    className="h-12 w-full rounded-2xl border border-transparent bg-slate-100 px-3 text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-slate-200"
+                  >
+                    {arlRisks.map((item: ArlRiskClass) => (
+                      <option key={item.id} value={item.id}>
+                        Riesgo {item.level} ({Number(item.rate ?? 0) * 100}%)
+                      </option>
+                    ))}
+                  </select>
+                </FieldBlock>
+              </div>
+
+              {Boolean(run.contract && run.contract.isActive !== false) && (
+                <p className="mt-1 text-[11px] font-medium text-slate-500">
+                  Contrato activo vigente. Para crear uno nuevo, primero debes inactivar o liquidar el contrato actual.
+                </p>
+              )}
+
+              {hasPostedHistoryError && (
+                <div className="space-y-2 rounded-[20px] border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800">
+                  Este contrato tiene nómina liquidada. Los cambios críticos requieren una nueva versión de contrato.
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Fecha ingreso">
+                  <BigInput value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
+                </FieldBlock>
+                <FieldBlock label="Fecha salida">
+                  <BigInput value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" disabled={hasPostedHistoryError} />
+                </FieldBlock>
+              </div>
+
+              <FieldBlock label="Salario mensual">
+                <BigInput
+                  value={salaryMonthly ? Number(String(salaryMonthly).replace(/\D/g, "")).toLocaleString("es-CO") : ""}
+                  onChange={(event) => {
+                    const raw = event.target.value.replace(/\D/g, "");
+                    setSalaryMonthly(raw);
+                  }}
+                  placeholder="0"
+                  disabled={hasPostedHistoryError}
+                />
+              </FieldBlock>
+
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Exención Ley 1819">
+                  <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                    <SegmentedOption value={true} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
+                    <SegmentedOption value={false} current={applyLaw1819} onChange={setApplyLaw1819} disabled={hasPostedHistoryError}>No</SegmentedOption>
+                  </div>
+                </FieldBlock>
+                <FieldBlock label="Trabajo remoto">
+                  <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                    <SegmentedOption value={true} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>Sí</SegmentedOption>
+                    <SegmentedOption value={false} current={isRemote} onChange={setIsRemote} disabled={hasPostedHistoryError}>No</SegmentedOption>
+                  </div>
+                </FieldBlock>
+              </div>
+
+              <FieldBlock label="Frecuencia de pago">
+                <div className="grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+                  <SegmentedOption value="MONTHLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Mensual</SegmentedOption>
+                  <SegmentedOption value="BIWEEKLY" current={paymentCycle} onChange={setPaymentCycle} disabled={hasPostedHistoryError}>Quincenal</SegmentedOption>
+                </div>
+              </FieldBlock>
+            </div>
+          )}
+
+          {activeTab === "empleado" && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Nombre">
+                  <BigInput value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="Juan" />
+                </FieldBlock>
+                <FieldBlock label="Apellido">
+                  <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
+                </FieldBlock>
+                <FieldBlock label="Documento">
+                  <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
+                </FieldBlock>
+                <FieldBlock label="Cargo">
+                  <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
+                </FieldBlock>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FieldBlock label="Telefono">
+                  <BigInput value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="3001234567" />
+                </FieldBlock>
+                <FieldBlock label="Correo opcional">
+                  <BigInput value={email} onChange={(event) => setEmail(event.target.value)} placeholder="correo@empresa.com" type="email" />
+                </FieldBlock>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* MODAL FOOTER */}
+        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3.5">
+          <PayrollSheetFooter
+            error={error}
+            primaryLabel="Guardar"
+            submitting={submitting}
+            primaryDisabled={activeTab === "horas" && !editable}
+            onCancel={onClose}
+            onPrimary={handleSave}
+          />
         </div>
       </div>
     </div>
@@ -3803,17 +3809,17 @@ function PayrollRecordWizardSheet({
     if (step === 1) {
       if (!contractId) return "Selecciona un contrato activo.";
     }
-      if (step === 2) {
-        const parsedYear = Number(year);
-        const parsedMonth = Number(month);
-        if (!Number.isInteger(parsedYear) || parsedYear < 1900) return "El anio del periodo no es valido.";
-        if (!Number.isInteger(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) return "El mes del periodo no es valido.";
-        if (!isPeriodicPayrollEnabled({ year: parsedYear, month: parsedMonth })) {
-          return "Las nominas anteriores a agosto de 2026 requieren calculo por vigencias diarias y todavia no estan habilitadas.";
-        }
-        if (!canPreparePayrollPeriod(parsedYear, parsedMonth, today)) {
-          return "Solo se permite preparar el mes actual o el mes inmediatamente siguiente.";
-        }
+    if (step === 2) {
+      const parsedYear = Number(year);
+      const parsedMonth = Number(month);
+      if (!Number.isInteger(parsedYear) || parsedYear < 1900) return "El anio del periodo no es valido.";
+      if (!Number.isInteger(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) return "El mes del periodo no es valido.";
+      if (!isPeriodicPayrollEnabled({ year: parsedYear, month: parsedMonth })) {
+        return "Las nominas anteriores a agosto de 2026 requieren calculo por vigencias diarias y todavia no estan habilitadas.";
+      }
+      if (!canPreparePayrollPeriod(parsedYear, parsedMonth, today)) {
+        return "Solo se permite preparar el mes actual o el mes inmediatamente siguiente.";
+      }
       const parsedWorkedDays = numberValue(workedDays);
       if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
         return "Los dias trabajados deben estar entre 1 y 30.";
@@ -5169,7 +5175,7 @@ export default function PayrollPage() {
           }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Inactivar contrato</button>
         </div>
       </div>
-    ), { duration: Infinity });
+    ), { duration: 3000 });
   }, [refreshPeople]);
 
   const handleInactivateEmployee = useCallback((employee: Employee) => {
@@ -5191,7 +5197,7 @@ export default function PayrollPage() {
           }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Inactivar empleado</button>
         </div>
       </div>
-    ), { duration: Infinity });
+    ), { duration: 3000 });
   }, [refreshPeople]);
 
   const handleHardDeleteEmployee = useCallback((employee: Employee) => {
@@ -5213,7 +5219,7 @@ export default function PayrollPage() {
           }} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Eliminar empleado</button>
         </div>
       </div>
-    ), { duration: Infinity });
+    ), { duration: 3000 });
   }, [refreshPeople]);
 
 
@@ -5527,353 +5533,353 @@ export default function PayrollPage() {
 
   return (
     <PayrollLegalParameterContext.Provider value={legalParameter}>
-    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
-      <div className="shrink-0">
-        <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={(year, month) => { setSelectedYear(year); setSelectedMonth(month); }} />} />
-      </div>
+      <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
+        <div className="shrink-0">
+          <AppHeader title="Nómina" showBack hrefBack="/home" rightContent={<HeaderCalendar selectedYear={selectedYear} selectedMonth={selectedMonth} onChange={(year, month) => { setSelectedYear(year); setSelectedMonth(month); }} />} />
+        </div>
 
-      <main className="min-h-0 flex-1 overflow-hidden lg:grid lg:grid-cols-[minmax(380px,520px)_minmax(360px,1fr)]">
-        <section className="flex flex-col h-full min-h-0 px-4 pt-4 lg:pb-0">
-          <div className="mx-auto flex w-full max-w-3xl flex-col min-h-0 h-full">
-            <div className="shrink-0">
-              {isPayrollLoading ? (
-                <section className="rounded-[28px] bg-white p-5 shadow-sm">
-                  <div className="h-5 w-36 rounded-full bg-slate-100" />
-                  <div className="mt-6 h-9 w-48 rounded-full bg-slate-100" />
-                  <div className="mt-5 grid grid-cols-2 gap-3">
-                    <div className="h-20 rounded-2xl bg-slate-100" />
-                    <div className="h-20 rounded-2xl bg-slate-100" />
+        <main className="min-h-0 flex-1 overflow-hidden lg:grid lg:grid-cols-[minmax(380px,520px)_minmax(360px,1fr)]">
+          <section className="flex flex-col h-full min-h-0 px-4 pt-4 lg:pb-0">
+            <div className="mx-auto flex w-full max-w-3xl flex-col min-h-0 h-full">
+              <div className="shrink-0">
+                {isPayrollLoading ? (
+                  <section className="rounded-[28px] bg-white p-5 shadow-sm">
+                    <div className="h-5 w-36 rounded-full bg-slate-100" />
+                    <div className="mt-6 h-9 w-48 rounded-full bg-slate-100" />
+                    <div className="mt-5 grid grid-cols-2 gap-3">
+                      <div className="h-20 rounded-2xl bg-slate-100" />
+                      <div className="h-20 rounded-2xl bg-slate-100" />
+                    </div>
+                  </section>
+                ) : (
+                  <SummaryCard
+                    period={summaryPeriod ?? undefined}
+                    totalCost={summaryTotals.cost}
+                    totalNet={summaryTotals.net}
+                    year={selectedYear}
+                    month={selectedMonth}
+                    hasApplicableEmployees={filteredRows.length > 0}
+                  />
+                )}
+                {selectedPeriod && !isPeriodicPayrollEnabled(selectedPeriod) && (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+                    Las nóminas anteriores a agosto de 2026 requieren cálculo por vigencias diarias y todavía no están habilitadas. El histórico permanece disponible para consulta.
                   </div>
-                </section>
-              ) : (
-                <SummaryCard
-                  period={summaryPeriod ?? undefined}
-                  totalCost={summaryTotals.cost}
-                  totalNet={summaryTotals.net}
-                  year={selectedYear}
-                  month={selectedMonth}
-                  hasApplicableEmployees={filteredRows.length > 0}
-                />
-              )}
-              {selectedPeriod && !isPeriodicPayrollEnabled(selectedPeriod) && (
-                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-                  Las nóminas anteriores a agosto de 2026 requieren cálculo por vigencias diarias y todavía no están habilitadas. El histórico permanece disponible para consulta.
+                )}
+
+                <div className="mb-3 mt-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
+                      <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={openBatchPayment}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[#0fb18f] px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0d987b] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                      >
+                        <Wallet className="h-3.5 w-3.5" />
+                        Pagar nómina
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+
+              {isPayrollLoading && (
+                <div className="py-16 text-center text-xs font-medium uppercase tracking-[0.18em] text-slate-400 shrink-0">
+                  Cargando nomina...
                 </div>
               )}
 
-              <div className="mb-3 mt-5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
-                    <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={openBatchPayment}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#0fb18f] px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0d987b] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                    >
-                      <Wallet className="h-3.5 w-3.5" />
-                      Pagar nómina
-                    </button>
-                  </div>
+              {!isPayrollLoading && error && (
+                <div className="rounded-3xl bg-white p-5 text-center shadow-sm shrink-0">
+                  <AlertCircle className="mx-auto h-7 w-7 text-rose-400" />
+                  <p className="mt-2 text-sm font-medium text-slate-800">{error}</p>
                 </div>
-              </div>
-            </div>
+              )}
 
+              {!isPayrollLoading && !error && pagePreviewError && (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 shrink-0">
+                  {pagePreviewError}
+                </div>
+              )}
 
-            {isPayrollLoading && (
-              <div className="py-16 text-center text-xs font-medium uppercase tracking-[0.18em] text-slate-400 shrink-0">
-                Cargando nomina...
-              </div>
-            )}
+              {!isPayrollLoading && !error && filteredRows.length === 0 && (
+                <div className="rounded-3xl bg-white p-8 text-center shadow-sm shrink-0">
+                  <Wallet className="mx-auto h-8 w-8 text-slate-300" />
+                  <p className="mt-3 text-sm font-medium text-slate-700">No hay empleados activos</p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    Registra un empleado y un contrato activo para preparar la nómina de {monthNames[selectedMonth - 1].toLowerCase()} de {selectedYear}.
+                  </p>
+                </div>
+              )}
 
-            {!isPayrollLoading && error && (
-              <div className="rounded-3xl bg-white p-5 text-center shadow-sm shrink-0">
-                <AlertCircle className="mx-auto h-7 w-7 text-rose-400" />
-                <p className="mt-2 text-sm font-medium text-slate-800">{error}</p>
-              </div>
-            )}
+              <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto space-y-2.5 px-1 -mx-1 pb-44 lg:pb-[150px]">
+                {!isPayrollLoading &&
+                  !error &&
+                  filteredRows.map((row) => {
+                    if (!row.run) {
+                      return (
+                        <EmployeeStandaloneCard
+                          key={row.key}
+                          employee={row.employee}
+                          contract={row.contract}
+                          selectedPeriod={selectedPeriod}
+                          complementaryAvailable={Boolean(
+                            row.contract &&
+                            (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED")
+                          )}
+                          fallbackReason={
+                            pagePreviewLoading ? "PREVIEW_LOADING"
+                              : pagePreviewError ? "PREVIEW_ERROR"
+                                : row.contract ? "NOT_APPLICABLE"
+                                  : "NO_CONTRACT"
+                          }
+                          onComplementaryRun={(employee) => setConfirmAction({ type: "complementary-run", employee })}
+                        />
+                      );
+                    }
 
-            {!isPayrollLoading && !error && pagePreviewError && (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 shrink-0">
-                {pagePreviewError}
-              </div>
-            )}
-
-            {!isPayrollLoading && !error && filteredRows.length === 0 && (
-              <div className="rounded-3xl bg-white p-8 text-center shadow-sm shrink-0">
-                <Wallet className="mx-auto h-8 w-8 text-slate-300" />
-                <p className="mt-3 text-sm font-medium text-slate-700">No hay empleados activos</p>
-                <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                  Registra un empleado y un contrato activo para preparar la nómina de {monthNames[selectedMonth - 1].toLowerCase()} de {selectedYear}.
-                </p>
-              </div>
-            )}
-
-            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto space-y-2.5 px-1 -mx-1 pb-44 lg:pb-[150px]">
-              {!isPayrollLoading &&
-                !error &&
-                filteredRows.map((row) => {
-                  if (!row.run) {
+                    const run = row.run;
+                    // Factor individual según el ciclo de pago del contrato
                     return (
-                      <EmployeeStandaloneCard
+                      <EmployeeCarousel
                         key={row.key}
-                        employee={row.employee}
-                        contract={row.contract}
+                        run={run}
+                        settlement={settlements[run.employeeId] ?? settlementPreviewByContract[run.contractId]}
+                        expanded={expandedRunId === run.id}
+                        selected={selectedRun?.id === run.id}
+                        onSelect={() => setSelectedRunId(run.id)}
+                        onToggleExpanded={() => {
+                          setSelectedRunId(run.id);
+                          setExpandedRunId((current) => (current === run.id ? null : run.id));
+                        }}
+                        onTogglePayment={togglePayment}
                         selectedPeriod={selectedPeriod}
-                        complementaryAvailable={Boolean(
-                          row.contract &&
-                          (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED")
-                        )}
-                        fallbackReason={
-                          pagePreviewLoading ? "PREVIEW_LOADING"
-                            : pagePreviewError ? "PREVIEW_ERROR"
-                              : row.contract ? "NOT_APPLICABLE"
-                                : "NO_CONTRACT"
-                        }
-                        onComplementaryRun={(employee) => setConfirmAction({ type: "complementary-run", employee })}
+                        visualPaid={visualPaidRuns[run.id]}
+                        onToggleVisualPaid={handleToggleVisualPayment}
+                        onLiquidateContract={handleLiquidateContractPrompt}
+                        contractLiquidated={Boolean(settlements[run.employeeId] && !settlements[run.employeeId].preview)}
+                        settlementPosting={postingSettlementContractId === run.contractId}
+                        onOpenEditor={(selectedRun) => {
+                          setSelectedRunId(selectedRun.id);
+                          setEditorRun(selectedRun);
+                          setEditorSheetOpen(true);
+                        }}
                       />
                     );
-                  }
-
-                  const run = row.run;
-                  // Factor individual según el ciclo de pago del contrato
-                  return (
-                    <EmployeeCarousel
-                      key={row.key}
-                      run={run}
-                      settlement={settlements[run.employeeId] ?? settlementPreviewByContract[run.contractId]}
-                      expanded={expandedRunId === run.id}
-                      selected={selectedRun?.id === run.id}
-                      onSelect={() => setSelectedRunId(run.id)}
-                      onToggleExpanded={() => {
-                        setSelectedRunId(run.id);
-                        setExpandedRunId((current) => (current === run.id ? null : run.id));
-                      }}
-                      onTogglePayment={togglePayment}
-                      selectedPeriod={selectedPeriod}
-                      visualPaid={visualPaidRuns[run.id]}
-                      onToggleVisualPaid={handleToggleVisualPayment}
-                      onLiquidateContract={handleLiquidateContractPrompt}
-                      contractLiquidated={Boolean(settlements[run.employeeId] && !settlements[run.employeeId].preview)}
-                      settlementPosting={postingSettlementContractId === run.contractId}
-                      onOpenEditor={(selectedRun) => {
-                        setSelectedRunId(selectedRun.id);
-                        setEditorRun(selectedRun);
-                        setEditorSheetOpen(true);
-                      }}
-                    />
-                  );
-                })}
-              {settlementPreviewError && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><p className="font-medium">Liquidación año vigente</p><p className="mt-1 text-xs">{settlementPreviewError}</p></section>}
+                  })}
+                {settlementPreviewError && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><p className="font-medium">Liquidación año vigente</p><p className="mt-1 text-xs">{settlementPreviewError}</p></section>}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <DetailPanel
-          run={!isPayrollLoading ? selectedRun : undefined}
-          settlement={!isPayrollLoading && selectedRun ? (settlements[selectedRun.employeeId] ?? settlementPreviewByContract[selectedRun.contractId]) : undefined}
-          onTogglePayment={togglePayment}
-          selectedPeriod={selectedPeriod}
-          onLiquidateContract={handleLiquidateContractPrompt}
-          contractLiquidated={!isPayrollLoading && selectedRun ? Boolean(settlements[selectedRun.employeeId] && !settlements[selectedRun.employeeId].preview) : false}
-          settlementPosting={!isPayrollLoading && selectedRun ? postingSettlementContractId === selectedRun.contractId : false}
+          <DetailPanel
+            run={!isPayrollLoading ? selectedRun : undefined}
+            settlement={!isPayrollLoading && selectedRun ? (settlements[selectedRun.employeeId] ?? settlementPreviewByContract[selectedRun.contractId]) : undefined}
+            onTogglePayment={togglePayment}
+            selectedPeriod={selectedPeriod}
+            onLiquidateContract={handleLiquidateContractPrompt}
+            contractLiquidated={!isPayrollLoading && selectedRun ? Boolean(settlements[selectedRun.employeeId] && !settlements[selectedRun.employeeId].preview) : false}
+            settlementPosting={!isPayrollLoading && selectedRun ? postingSettlementContractId === selectedRun.contractId : false}
+          />
+        </main>
+
+        <PayrollChatActionBar
+          searchValue={search}
+          onSearchChange={setSearch}
+          onCreateEmployee={handleCreateFromChat}
+          isOpen={quickSheetMode !== null}
+          onClose={() => {
+            setQuickSheetMode(null);
+            setQuickInitialEmployee(null);
+          }}
         />
-      </main>
 
-      <PayrollChatActionBar
-        searchValue={search}
-        onSearchChange={setSearch}
-        onCreateEmployee={handleCreateFromChat}
-        isOpen={quickSheetMode !== null}
-        onClose={() => {
-          setQuickSheetMode(null);
-          setQuickInitialEmployee(null);
-        }}
-      />
-
-      {notice && (
-        <div className="fixed bottom-24 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-[11px] font-medium text-white shadow-2xl">
-          <Sparkles className="h-3.5 w-3.5 text-[#0fb18f]" />
-          {notice}
-        </div>
-      )}
-
-      <PayrollNewsSheet
-        open={newsSheetOpen}
-        onClose={() => {
-          setNewsSheetOpen(false);
-          setNewsRun(null);
-          setNewsEmployee(null);
-          setNewsContract(null);
-        }}
-        run={newsRun}
-        employee={newsEmployee}
-        contract={newsContract}
-        selectedPeriod={selectedPeriod}
-        onSettlementPreview={handleSettlementPreview}
-        onFinished={(periodId) => {
-          loadEmployees();
-          loadPeriods();
-          setSelectedPeriodId(periodId);
-          setPeriodRefreshKey((value) => value + 1);
-        }}
-      />
-      <EmployeePayrollEditorSheet
-        open={editorSheetOpen}
-        onClose={() => {
-          setEditorSheetOpen(false);
-          setEditorRun(null);
-        }}
-        run={editorRun}
-        arlRisks={arlRisks}
-        selectedPeriod={selectedPeriod}
-        onChanged={() => {
-          loadEmployees();
-          loadPeriods();
-        }}
-        onCreateContract={(employee) => {
-          setQuickInitialEmployee(employee);
-          setQuickSheetMode("createContractForEmployee");
-        }}
-        onInactivateContract={handleInactivateContract}
-        onInactivateEmployee={handleInactivateEmployee}
-        onHardDeleteEmployee={handleHardDeleteEmployee}
-      />
-      <PayrollQuickEmployeeSheet
-        open={quickSheetMode !== null}
-        mode={quickSheetMode}
-        initialEmployee={quickInitialEmployee}
-        employees={employees}
-        arlRisks={arlRisks}
-        selectedPeriod={selectedPeriod}
-        onClose={() => {
-          setQuickSheetMode(null);
-          setQuickInitialEmployee(null);
-        }}
-        onChanged={() => {
-          loadEmployees();
-          loadPeriods();
-          setPeriodRefreshKey((value) => value + 1);
-        }}
-      />
-      <EmployeeFormSheet
-        open={employeeSheetOpen}
-        onClose={() => {
-          setEmployeeSheetOpen(false);
-          setEmployeeToEdit(null);
-        }}
-        employee={employeeToEdit}
-        onChanged={loadEmployees}
-      />
-
-      <SettlementSimulationSheet
-        open={settlementSheetOpen}
-        onClose={() => setSettlementSheetOpen(false)}
-        employees={employees}
-        selectedPeriod={selectedPeriod}
-        onFinished={handleSettlementPreview}
-      />
-      <SheetShell
-        open={batchPaymentOpen}
-        onClose={() => {
-          if (batchSubmitting) return;
-          batchIdempotencyKeyRef.current = null;
-          setBatchConfirmOpen(false);
-          setBatchPaymentOpen(false);
-        }}
-        title="Pagar nómina"
-        subtitle={`${monthNames[selectedMonth - 1]} ${selectedYear}`}
-        footer={paymentModalRuns.length > 0 ? <button type="button" onClick={() => setBatchConfirmOpen(true)} disabled={!batchSelectedRows.length || batchSubmitting} className="flex w-full items-center justify-between rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500"><span>{batchSelectedRows.length} empleado{batchSelectedRows.length === 1 ? "" : "s"} · {money(batchSelectedTotal)}</span><ChevronRight className="h-5 w-5" /></button> : null}
-      >
-        <div className="space-y-4 pt-4">
-          <div aria-label="Ciclo de nómina" className="flex flex-wrap gap-2 text-[11px] font-semibold">
-            <button aria-pressed={paymentModalCycle === "MONTHLY"} onClick={() => resolvePaymentModalCycle("MONTHLY")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "MONTHLY" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Mensualidad</button>
-            <button aria-pressed={paymentModalCycle === "BIWEEKLY_1"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_1")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_1" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Primera quincena</button>
-            <button aria-pressed={paymentModalCycle === "BIWEEKLY_2"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_2")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_2" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Segunda quincena</button>
+        {notice && (
+          <div className="fixed bottom-24 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-[11px] font-medium text-white shadow-2xl">
+            <Sparkles className="h-3.5 w-3.5 text-[#0fb18f]" />
+            {notice}
           </div>
-          {!paymentModalLoading && paymentModalRuns.length === 0 && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><p>No hay empleados aplicables para este ciclo.</p></div>}
-          {paymentModalLoading && <p className="text-center text-xs text-slate-500">Cargando candidatos…</p>}
-          {paymentModalRuns.length > 0 && <>
-          <div className="flex items-center justify-between text-xs text-slate-600"><span>{batchSelectedRows.length} seleccionados / {batchEligibleRows.length} pagables</span><button type="button" onClick={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds(batchSelectedRows.length === batchEligibleRows.length ? [] : batchEligibleRows.map((row) => row.run.id)); }} className="font-semibold text-[#0B3F64]">{batchSelectedRows.length === batchEligibleRows.length ? "Limpiar" : "Seleccionar todos"}</button></div>
-          <div className="max-h-64 space-y-2 overflow-y-auto">
-            {batchRows.map(({ run, eligible, reason }) => <label key={run.id} className={cn("flex items-center gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}><input type="checkbox" disabled={!eligible} checked={batchSelectedRunIds.includes(run.id)} onChange={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]); }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p><p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>{reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}</div><span className="text-sm font-semibold text-slate-800">{money(run.netPay)}</span></label>)}
+        )}
+
+        <PayrollNewsSheet
+          open={newsSheetOpen}
+          onClose={() => {
+            setNewsSheetOpen(false);
+            setNewsRun(null);
+            setNewsEmployee(null);
+            setNewsContract(null);
+          }}
+          run={newsRun}
+          employee={newsEmployee}
+          contract={newsContract}
+          selectedPeriod={selectedPeriod}
+          onSettlementPreview={handleSettlementPreview}
+          onFinished={(periodId) => {
+            loadEmployees();
+            loadPeriods();
+            setSelectedPeriodId(periodId);
+            setPeriodRefreshKey((value) => value + 1);
+          }}
+        />
+        <EmployeePayrollEditorSheet
+          open={editorSheetOpen}
+          onClose={() => {
+            setEditorSheetOpen(false);
+            setEditorRun(null);
+          }}
+          run={editorRun}
+          arlRisks={arlRisks}
+          selectedPeriod={selectedPeriod}
+          onChanged={() => {
+            loadEmployees();
+            loadPeriods();
+          }}
+          onCreateContract={(employee) => {
+            setQuickInitialEmployee(employee);
+            setQuickSheetMode("createContractForEmployee");
+          }}
+          onInactivateContract={handleInactivateContract}
+          onInactivateEmployee={handleInactivateEmployee}
+          onHardDeleteEmployee={handleHardDeleteEmployee}
+        />
+        <PayrollQuickEmployeeSheet
+          open={quickSheetMode !== null}
+          mode={quickSheetMode}
+          initialEmployee={quickInitialEmployee}
+          employees={employees}
+          arlRisks={arlRisks}
+          selectedPeriod={selectedPeriod}
+          onClose={() => {
+            setQuickSheetMode(null);
+            setQuickInitialEmployee(null);
+          }}
+          onChanged={() => {
+            loadEmployees();
+            loadPeriods();
+            setPeriodRefreshKey((value) => value + 1);
+          }}
+        />
+        <EmployeeFormSheet
+          open={employeeSheetOpen}
+          onClose={() => {
+            setEmployeeSheetOpen(false);
+            setEmployeeToEdit(null);
+          }}
+          employee={employeeToEdit}
+          onChanged={loadEmployees}
+        />
+
+        <SettlementSimulationSheet
+          open={settlementSheetOpen}
+          onClose={() => setSettlementSheetOpen(false)}
+          employees={employees}
+          selectedPeriod={selectedPeriod}
+          onFinished={handleSettlementPreview}
+        />
+        <SheetShell
+          open={batchPaymentOpen}
+          onClose={() => {
+            if (batchSubmitting) return;
+            batchIdempotencyKeyRef.current = null;
+            setBatchConfirmOpen(false);
+            setBatchPaymentOpen(false);
+          }}
+          title="Pagar nómina"
+          subtitle={`${monthNames[selectedMonth - 1]} ${selectedYear}`}
+          footer={paymentModalRuns.length > 0 ? <button type="button" onClick={() => setBatchConfirmOpen(true)} disabled={!batchSelectedRows.length || batchSubmitting} className="flex w-full items-center justify-between rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500"><span>{batchSelectedRows.length} empleado{batchSelectedRows.length === 1 ? "" : "s"} · {money(batchSelectedTotal)}</span><ChevronRight className="h-5 w-5" /></button> : null}
+        >
+          <div className="space-y-4 pt-4">
+            <div aria-label="Ciclo de nómina" className="flex flex-wrap gap-2 text-[11px] font-semibold">
+              <button aria-pressed={paymentModalCycle === "MONTHLY"} onClick={() => resolvePaymentModalCycle("MONTHLY")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "MONTHLY" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Mensualidad</button>
+              <button aria-pressed={paymentModalCycle === "BIWEEKLY_1"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_1")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_1" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Primera quincena</button>
+              <button aria-pressed={paymentModalCycle === "BIWEEKLY_2"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_2")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_2" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Segunda quincena</button>
+            </div>
+            {!paymentModalLoading && paymentModalRuns.length === 0 && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><p>No hay empleados aplicables para este ciclo.</p></div>}
+            {paymentModalLoading && <p className="text-center text-xs text-slate-500">Cargando candidatos…</p>}
+            {paymentModalRuns.length > 0 && <>
+              <div className="flex items-center justify-between text-xs text-slate-600"><span>{batchSelectedRows.length} seleccionados / {batchEligibleRows.length} pagables</span><button type="button" onClick={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds(batchSelectedRows.length === batchEligibleRows.length ? [] : batchEligibleRows.map((row) => row.run.id)); }} className="font-semibold text-[#0B3F64]">{batchSelectedRows.length === batchEligibleRows.length ? "Limpiar" : "Seleccionar todos"}</button></div>
+              <div className="max-h-64 space-y-2 overflow-y-auto">
+                {batchRows.map(({ run, eligible, reason }) => <label key={run.id} className={cn("flex items-center gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}><input type="checkbox" disabled={!eligible} checked={batchSelectedRunIds.includes(run.id)} onChange={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]); }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p><p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>{reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}</div><span className="text-sm font-semibold text-slate-800">{money(run.netPay)}</span></label>)}
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Total seleccionado: <strong>{money(batchSelectedTotal)}</strong></div>
+              <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={batchPaymentMethod} onChange={(event) => { batchIdempotencyKeyRef.current = null; setBatchPaymentMethod(event.target.value as "CASH" | "BANK_TRANSFER"); }} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option></select></label>
+            </>}
           </div>
-          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Total seleccionado: <strong>{money(batchSelectedTotal)}</strong></div>
-          <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={batchPaymentMethod} onChange={(event) => { batchIdempotencyKeyRef.current = null; setBatchPaymentMethod(event.target.value as "CASH" | "BANK_TRANSFER"); }} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option></select></label>
-          </>}
-        </div>
-      </SheetShell>
-      <PayrollConfirmDialog
-        open={batchConfirmOpen}
-        title="Confirmar pago de nómina"
-        description={`Se pagarán ${batchSelectedRows.length} empleados por ${money(batchSelectedTotal)} mediante ${batchPaymentMethod === "CASH" ? "efectivo" : "transferencia"}. La fecha de registro será hoy. Esta acción formalizará la nómina, registrará los pagos seleccionados y generará los asientos contables correspondientes con la fecha operativa actual.`}
-        confirmLabel="Confirmar pago"
-        intent="payroll"
-        loading={batchSubmitting}
-        onConfirm={submitBatchPayment}
-        onCancel={() => !batchSubmitting && setBatchConfirmOpen(false)}
-      />
-      <SheetShell
-        open={Boolean(paymentSheet)}
-        onClose={() => setPaymentSheet(null)}
-        title="Registrar pago"
-        subtitle={paymentSheet ? `${employeeName(paymentSheet.run.employee)} · ${selectedPeriod?.paymentCycle === "BIWEEKLY" ? `${selectedPeriod.installmentNumber === 1 ? "Primera" : "Segunda"} quincena` : "Mensual"}` : ""}
-        footer={<div className="flex w-full gap-3"><button onClick={() => setPaymentSheet(null)} className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button onClick={submitPayrollPayment} className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white">Confirmar pago</button></div>}
-      >
-        {paymentSheet && <div className="space-y-4 pt-4">
-          <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Monto neto: <strong>{money(paymentSheet.run.netPay)}</strong></div>
-          <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={paymentSheet.paymentMethod} onChange={(event) => setPaymentSheet({ ...paymentSheet, paymentMethod: event.target.value as "CASH" | "BANK_TRANSFER" | "OTHER" })} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option><option value="OTHER">Otro</option></select></label>
-          <label className="block text-xs font-semibold text-slate-600">Fecha efectiva de pago<input type="date" value={paymentSheet.paidAt} onChange={(event) => setPaymentSheet({ ...paymentSheet, paidAt: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
-          <label className="block text-xs font-semibold text-slate-600">Observación<textarea value={paymentSheet.notes} onChange={(event) => setPaymentSheet({ ...paymentSheet, notes: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
-        </div>}
-      </SheetShell>
-      <PayrollConfirmDialog
-        open={Boolean(confirmAction)}
-        title={
-          confirmAction?.type === "visual-payment"
-            ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
-            : confirmAction?.type === "post-period"
-              ? "Pagar la nomina mensual de este periodo?"
-              : confirmAction?.type === "complementary-run"
-                ? "¿Pagar nómina complementaria?"
-                : "Pagar este contrato?"
-        }
-        description={
-          confirmAction?.type === "visual-payment"
-            ? (confirmAction.paid
-              ? "Esta accion solo cambia el estado visual de pago. No crea asientos ni pagos de prestaciones."
-              : "Esta accion solo devuelve el estado visual a pendiente. No modifica contabilidad.")
-            : confirmAction?.type === "post-period"
-              ? "Esta accion generara la liquidacion del periodo y los asientos contables correspondientes. No uses este boton si solo quieres marcar el pago como realizado."
-              : confirmAction?.type === "complementary-run"
-                ? "Se generará una liquidación adicional solo para este empleado y se registrará un asiento contable independiente. No se modificará la nómina original del período."
-                : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
-        }
-        confirmLabel={
-          confirmAction?.type === "visual-payment"
-            ? (confirmAction.paid ? "Marcar pagada" : "Marcar pendiente")
-            : confirmAction?.type === "post-period"
-              ? "Confirmar liquidacion"
-              : confirmAction?.type === "complementary-run"
-                ? "Confirmar"
-                : "Confirmar liquidacion"
-        }
-        intent={
-          confirmAction?.type === "visual-payment"
-            ? "visual"
-            : confirmAction?.type === "post-period"
-              ? "payroll"
-              : confirmAction?.type === "complementary-run"
+        </SheetShell>
+        <PayrollConfirmDialog
+          open={batchConfirmOpen}
+          title="Confirmar pago de nómina"
+          description={`Se pagarán ${batchSelectedRows.length} empleados por ${money(batchSelectedTotal)} mediante ${batchPaymentMethod === "CASH" ? "efectivo" : "transferencia"}. La fecha de registro será hoy. Esta acción formalizará la nómina, registrará los pagos seleccionados y generará los asientos contables correspondientes con la fecha operativa actual.`}
+          confirmLabel="Confirmar pago"
+          intent="payroll"
+          loading={batchSubmitting}
+          onConfirm={submitBatchPayment}
+          onCancel={() => !batchSubmitting && setBatchConfirmOpen(false)}
+        />
+        <SheetShell
+          open={Boolean(paymentSheet)}
+          onClose={() => setPaymentSheet(null)}
+          title="Registrar pago"
+          subtitle={paymentSheet ? `${employeeName(paymentSheet.run.employee)} · ${selectedPeriod?.paymentCycle === "BIWEEKLY" ? `${selectedPeriod.installmentNumber === 1 ? "Primera" : "Segunda"} quincena` : "Mensual"}` : ""}
+          footer={<div className="flex w-full gap-3"><button onClick={() => setPaymentSheet(null)} className="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">Cancelar</button><button onClick={submitPayrollPayment} className="flex-1 rounded-xl bg-[#0fb18f] px-4 py-3 text-sm font-semibold text-white">Confirmar pago</button></div>}
+        >
+          {paymentSheet && <div className="space-y-4 pt-4">
+            <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Monto neto: <strong>{money(paymentSheet.run.netPay)}</strong></div>
+            <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={paymentSheet.paymentMethod} onChange={(event) => setPaymentSheet({ ...paymentSheet, paymentMethod: event.target.value as "CASH" | "BANK_TRANSFER" | "OTHER" })} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option><option value="OTHER">Otro</option></select></label>
+            <label className="block text-xs font-semibold text-slate-600">Fecha efectiva de pago<input type="date" value={paymentSheet.paidAt} onChange={(event) => setPaymentSheet({ ...paymentSheet, paidAt: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
+            <label className="block text-xs font-semibold text-slate-600">Observación<textarea value={paymentSheet.notes} onChange={(event) => setPaymentSheet({ ...paymentSheet, notes: event.target.value })} className="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
+          </div>}
+        </SheetShell>
+        <PayrollConfirmDialog
+          open={Boolean(confirmAction)}
+          title={
+            confirmAction?.type === "visual-payment"
+              ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
+              : confirmAction?.type === "post-period"
+                ? "Pagar la nomina mensual de este periodo?"
+                : confirmAction?.type === "complementary-run"
+                  ? "¿Pagar nómina complementaria?"
+                  : "Pagar este contrato?"
+          }
+          description={
+            confirmAction?.type === "visual-payment"
+              ? (confirmAction.paid
+                ? "Esta accion solo cambia el estado visual de pago. No crea asientos ni pagos de prestaciones."
+                : "Esta accion solo devuelve el estado visual a pendiente. No modifica contabilidad.")
+              : confirmAction?.type === "post-period"
+                ? "Esta accion generara la liquidacion del periodo y los asientos contables correspondientes. No uses este boton si solo quieres marcar el pago como realizado."
+                : confirmAction?.type === "complementary-run"
+                  ? "Se generará una liquidación adicional solo para este empleado y se registrará un asiento contable independiente. No se modificará la nómina original del período."
+                  : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
+          }
+          confirmLabel={
+            confirmAction?.type === "visual-payment"
+              ? (confirmAction.paid ? "Marcar pagada" : "Marcar pendiente")
+              : confirmAction?.type === "post-period"
+                ? "Confirmar liquidacion"
+                : confirmAction?.type === "complementary-run"
+                  ? "Confirmar"
+                  : "Confirmar liquidacion"
+          }
+          intent={
+            confirmAction?.type === "visual-payment"
+              ? "visual"
+              : confirmAction?.type === "post-period"
                 ? "payroll"
-                : "settlement"
-        }
-        loading={confirmLoading}
-        onConfirm={handleConfirmAction}
-        onCancel={() => !confirmLoading && setConfirmAction(null)}
-      />
-    </div>
+                : confirmAction?.type === "complementary-run"
+                  ? "payroll"
+                  : "settlement"
+          }
+          loading={confirmLoading}
+          onConfirm={handleConfirmAction}
+          onCancel={() => !confirmLoading && setConfirmAction(null)}
+        />
+      </div>
     </PayrollLegalParameterContext.Provider>
   );
 }

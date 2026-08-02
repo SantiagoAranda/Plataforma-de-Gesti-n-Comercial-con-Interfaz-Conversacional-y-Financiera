@@ -198,14 +198,14 @@ export function WhatsappComposer({
               "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95",
               isSubmitting
                 ? (rightButtonVariant === "primary"
-                    ? "bg-[#0B3F64] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                    : "bg-transparent text-slate-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed")
+                  ? "bg-[#0B3F64] text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  : "bg-transparent text-slate-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed")
                 : (isSubmitDisabled
-                    ? "cursor-not-allowed bg-slate-200 text-slate-400"
-                    : (rightButtonVariant === "primary"
-                        ? "bg-[#0B3F64] text-white hover:bg-[#0B3F64]/90"
-                        : "bg-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700")
-                  )
+                  ? "cursor-not-allowed bg-slate-200 text-slate-400"
+                  : (rightButtonVariant === "primary"
+                    ? "bg-[#0B3F64] text-white hover:bg-[#0B3F64]/90"
+                    : "bg-transparent text-slate-500 hover:bg-slate-100/70 hover:text-slate-700")
+                )
             )}
             aria-label={submitAriaLabel}
           >

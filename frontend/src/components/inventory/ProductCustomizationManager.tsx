@@ -225,7 +225,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
   };
 
   const showTemporarySuccess = (message: string, duration = 1800) => {
-    const resultToastId = toast.success(message, { duration: Infinity });
+    const resultToastId = toast.success(message, { duration });
     if (typeof window !== "undefined") {
       window.setTimeout(() => toast.remove(resultToastId), duration);
     }
@@ -250,7 +250,7 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
           }} className="rounded-lg bg-[#c80237] px-3 py-2 text-xs font-medium text-white">Quitar</button>
         </div>
       </div>
-    ), { duration: Infinity });
+    ), { duration: 3000 });
   };
 
   const performDeleteGroup = async (group: any) => {
