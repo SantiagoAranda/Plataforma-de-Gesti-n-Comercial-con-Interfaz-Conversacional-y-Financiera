@@ -57,7 +57,7 @@ export default function RootLayout({
             right: 12,
           }}
           toastOptions={{
-            duration: 4000,
+            duration: 3000,
             style: {
               maxWidth: "450px",
               fontSize: "13px",
@@ -65,9 +65,18 @@ export default function RootLayout({
               cursor: "pointer",
             },
             error: {
-              duration: 5000,
+              duration: 3000,
             },
             success: {
+              duration: 3000,
+            },
+            loading: {
+              duration: 3000,
+            },
+            blank: {
+              duration: 3000,
+            },
+            custom: {
               duration: 3000,
             },
           }}
