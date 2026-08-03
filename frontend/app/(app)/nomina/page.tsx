@@ -2394,18 +2394,18 @@ function PayrollSummaryPanel({
                 {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Neto quincenal" : "Transferencia neta"}
               </p>
             </div>
-            {!run.preview && <button
+            <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenEditor?.(run);
               }}
-              className="p-2 text-slate-400 hover:text-blue-500 hover:bg-slate-50 transition-colors rounded-full shrink-0"
+              className="p-1.5 text-slate-400 hover:text-[#0fb18f] hover:bg-slate-100 transition-colors rounded-full shrink-0 -mr-1"
               title="Editar empleado"
               aria-label="Editar"
             >
               <Edit3 className="h-4 w-4" />
-            </button>}
+            </button>
           </div>
         </div>
 
@@ -2453,12 +2453,6 @@ function PayrollSummaryPanel({
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-              {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Costo real empresa (quincenal)" : "Costo real empresa"}
-            </p>
-            <p className="text-[15px] font-medium tabular-nums text-slate-800">{money(realCostDisplay)}</p>
-          </div>
           <div className="flex items-center gap-2">
             {primarySalaryPayment && (
               <button
@@ -2482,7 +2476,16 @@ function PayrollSummaryPanel({
                 {run.preview ? "Vista previa" : "Pendiente pago"}
               </span>
             )}
-            <ChevronDown className={cn("h-4 w-4 transition", expanded && "rotate-180")} />
+          </div>
+
+          <div className="flex items-center gap-2 text-right">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                {selectedPeriod?.paymentCycle === "BIWEEKLY" ? "Costo real empresa (quincenal)" : "Costo real empresa"}
+              </p>
+              <p className="text-[15px] font-medium tabular-nums text-slate-800">{money(realCostDisplay)}</p>
+            </div>
+            <ChevronDown className={cn("h-4 w-4 transition text-slate-500 ml-1", expanded && "rotate-180")} />
           </div>
         </div>
 
