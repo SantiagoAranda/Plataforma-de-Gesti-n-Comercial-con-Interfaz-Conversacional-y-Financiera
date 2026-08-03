@@ -389,9 +389,7 @@ export default function HomeAgenda({
     <div
       className={cn(
         "flex flex-col",
-        isFullScreen
-          ? "min-h-[calc(100vh-72px-env(safe-area-inset-top,0px))]"
-          : "pb-1",
+        isFullScreen && "min-h-[calc(100vh-72px-env(safe-area-inset-top,0px))]"
       )}
     >
       {/* ── Filter pills bar (always visible) ── */}
@@ -418,7 +416,7 @@ export default function HomeAgenda({
 
           <div
             ref={filtersRef}
-            className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             {(
               [
