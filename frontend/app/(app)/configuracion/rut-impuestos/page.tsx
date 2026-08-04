@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Lock, MapPin } from "lucide-react";
+import { ArrowLeft, Check, MapPin } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   getTaxProfile,
@@ -490,10 +490,7 @@ export default function RutImpuestosPage() {
   const visibleResponsibilities = responsibilitiesCatalog.filter((responsibility) =>
     RUT_VISIBLE_RESPONSIBILITY_CODES.includes(responsibility.code),
   );
-  // El código 47 solo se conserva cuando llegó desde un perfil histórico. No puede
-  // agregarse ni quitarse desde esta pantalla.
-  const hasHistoricalSimpleResponsibility =
-    initialSnapshot?.selectedRespCodes.includes("47") ?? false;
+
 
   const handleMunicipalityChange = (code: string) => {
     setMunicipalityCode(code);
@@ -517,8 +514,6 @@ export default function RutImpuestosPage() {
   };
 
   const handleRespChange = (code: string, checked: boolean) => {
-    if (code === "47") return;
-
     setBusinessProfile("ADVANCED");
     setSelectedRespCodes((prev) => {
       let next = [...prev];
@@ -593,10 +588,7 @@ export default function RutImpuestosPage() {
     setSaving(true);
 
     try {
-      const responsibilitiesToSave = normalizeCodes([
-        ...selectedRespCodes.filter((code) => code !== "47"),
-        ...(hasHistoricalSimpleResponsibility ? ["47"] : []),
-      ]);
+      const responsibilitiesToSave = normalizeCodes(selectedRespCodes);
 
       await updateTaxProfile({
         personType,
@@ -917,37 +909,6 @@ export default function RutImpuestosPage() {
             </div>
 
             <div className="space-y-2">
-              <label className={labelClassName}>
-                Responsabilidad de impoconsumo
-              </label>
-              <select
-                value={
-                  isImpoconsumoResponsible == null
-                    ? "UNCONFIRMED"
-                    : isImpoconsumoResponsible
-                      ? "YES"
-                      : "NO"
-                }
-                onChange={(event) =>
-                  setIsImpoconsumoResponsible(
-                    event.target.value === "UNCONFIRMED"
-                      ? null
-                      : event.target.value === "YES",
-                  )
-                }
-                className={inputClassName}
-              >
-                <option value="UNCONFIRMED">Sin confirmar</option>
-                <option value="YES">Sí, responsable</option>
-                <option value="NO">No responsable</option>
-              </select>
-              <p className="text-[11px] text-slate-500">
-                Esta capacidad es independiente de la responsabilidad de IVA.
-                No modifica ventas ni productos existentes.
-              </p>
-            </div>
-
-            <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <span className={labelClassName}>
                   <DianBadge>53</DianBadge>
@@ -965,18 +926,13 @@ export default function RutImpuestosPage() {
 
               <div className="space-y-2">
                 {visibleResponsibilities.map((responsibility) => {
-                  const isDisabledResponsibility = responsibility.code === "47";
-                  const selected =
-                    !isDisabledResponsibility && selectedRespCodes.includes(responsibility.code);
+                  const selected = selectedRespCodes.includes(responsibility.code);
 
                   return (
                     <label
                       key={responsibility.id}
-                      aria-disabled={isDisabledResponsibility}
                       className={`flex min-h-11 items-center gap-3 rounded-xl border px-3 py-2 ${
-                        isDisabledResponsibility
-                          ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-80"
-                          : selected
+                        selected
                           ? "border-blue-700 bg-blue-700 text-white shadow-sm"
                           : "cursor-pointer border-slate-200 bg-slate-50 text-slate-800 transition hover:border-blue-200 hover:bg-white"
                       }`}
@@ -984,8 +940,6 @@ export default function RutImpuestosPage() {
                       <input
                         type="checkbox"
                         checked={selected}
-                        disabled={isDisabledResponsibility}
-                        aria-disabled={isDisabledResponsibility}
                         onChange={(event) =>
                           handleRespChange(responsibility.code, event.target.checked)
                         }
@@ -993,9 +947,7 @@ export default function RutImpuestosPage() {
                       />
                       <span
                         className={`inline-flex min-w-8 items-center justify-center rounded-md px-1.5 py-1 text-[10px] font-black ${
-                          isDisabledResponsibility
-                            ? "bg-slate-200 text-slate-400 ring-1 ring-slate-300"
-                            : selected
+                          selected
                             ? "bg-blue-500 text-white"
                             : "bg-white text-blue-800 ring-1 ring-slate-200"
                         }`}
@@ -1004,28 +956,13 @@ export default function RutImpuestosPage() {
                       </span>
                       <span className="min-w-0 flex-1 text-xs font-bold">
                         {RESPONSIBILITY_LABELS[responsibility.code] || responsibility.name}
-                        {isDisabledResponsibility && (
-                          <span className="mt-0.5 block text-[10px] font-medium text-slate-400">
-                            No disponible en esta versión
-                          </span>
-                        )}
                       </span>
-                      {isDisabledResponsibility ? (
-                        <Lock className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-                      ) : (
-                        selected && <Check className="h-4 w-4 shrink-0" strokeWidth={2.75} />
-                      )}
+                      {selected && <Check className="h-4 w-4 shrink-0" strokeWidth={2.75} />}
                     </label>
                   );
                 })}
               </div>
             </div>
-
-            {!simpleRegimeEnabled && hasHistoricalSimpleResponsibility && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-medium leading-relaxed text-slate-500">
-                Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
-              </div>
-            )}
 
             <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <summary className="cursor-pointer text-xs font-black text-slate-700">

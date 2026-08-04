@@ -5,7 +5,6 @@ import { CreateIcaRateDto } from './dto/create-ica-rate.dto';
 import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { PersonType, Prisma } from '@prisma/client';
 import { FeatureFlagsService } from '../common/config/feature-flags';
-import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { FiscalLifecycleService } from '../tax/fiscal-lifecycle.service';
 
 export function deriveIncomeTaxDeclarant(
@@ -80,26 +79,8 @@ export class SettingsService {
 
   async upsertTaxProfile(businessId: string, dto: UpsertTaxProfileDto) {
     // Validación de exclusión mutua 48 (Responsable de IVA) vs 49 (No responsable de IVA)
-    const existingProfile = this.prisma.businessTaxProfile?.findUnique
-      ? await this.prisma.businessTaxProfile.findUnique({
-          where: { businessId },
-          include: { responsibilities: { include: { responsibility: true } } },
-        })
-      : null;
-    const existingHasSimpleResponsibility = Boolean(
-      existingProfile?.responsibilities.some((item) => item.responsibility.code === '47'),
-    );
     const requestedCodes = [...new Set(dto.responsibilityCodes)];
-    if (
-      !this.featureFlags.simpleRegimeEnabled &&
-      requestedCodes.includes('47') &&
-      !existingHasSimpleResponsibility
-    ) {
-      throw new SimpleRegimeNotAvailableException();
-    }
-    const codes = !this.featureFlags.simpleRegimeEnabled && existingHasSimpleResponsibility
-      ? [...new Set([...requestedCodes.filter((code) => code !== '47'), '47'])]
-      : requestedCodes;
+    const codes = requestedCodes;
     if (codes.includes('48') && codes.includes('49')) {
       throw new BadRequestException('Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.');
     }

@@ -22,7 +22,6 @@ import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalitie
 import { api } from "@/src/lib/api";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
-import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 import {
   agendaPayloadForLine,
   requiresServiceAgenda,
@@ -142,7 +141,6 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
 }) {
   const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
   const taxSettingsEnabled = propEnabled ?? hookEnabled;
   const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
   const [taxPreview, setTaxPreview] = useState<any>(null);
@@ -329,13 +327,12 @@ export default function SalesChatComposer({
   const visibleResponsibilities = responsibilities.filter(
     ({ key }) =>
       key !== "buyerIsRetenedor" &&
-      key !== "buyerRequiresElectronicInvoice" &&
-      (simpleRegimeEnabled || key !== "buyerIsRegimenSimple"),
+      key !== "buyerRequiresElectronicInvoice",
   );
 
   const buyerFiscalContext = useMemo<BuyerFiscalContext>(
-    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled, simpleRegimeEnabled),
-    [fiscalForm, taxSettingsEnabled, simpleRegimeEnabled],
+    () => buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
+    [fiscalForm, taxSettingsEnabled],
   );
 
   const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {
@@ -681,7 +678,10 @@ export default function SalesChatComposer({
                 </div>
               </div>
               {fiscalForm.buyerType === "JURIDICA" && (
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div
+                  data-testid="corporate-buyer-flags"
+                  className="mt-4 grid grid-cols-2 gap-2"
+                >
                   {visibleResponsibilities.map(({ key, label }) => {
                     const granContribuyenteDisabled =
                       key === "buyerIsGranContribuyente" &&
@@ -700,6 +700,11 @@ export default function SalesChatComposer({
                       <button
                         key={key}
                         type="button"
+                        data-testid={
+                          key === "buyerIsRegimenSimple"
+                            ? "buyer-simple-regime-chip"
+                            : undefined
+                        }
                         disabled={isReadonly || disabled}
                         aria-disabled={isReadonly || disabled}
                         onClick={() => {
@@ -1081,7 +1086,7 @@ export default function SalesChatComposer({
           </div>
         )}
 
-        {((simpleRegimeEnabled && taxSettingsEnabled) || Boolean(sale?.fiscalSummary)) && (
+        {(taxSettingsEnabled || Boolean(sale?.fiscalSummary)) && (
           <SaleTaxPanel
             mode={isReadonly ? "readonly" : "create"}
             value={fiscalForm}

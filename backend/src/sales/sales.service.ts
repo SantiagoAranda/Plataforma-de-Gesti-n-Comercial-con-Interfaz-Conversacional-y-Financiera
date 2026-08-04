@@ -23,8 +23,6 @@ import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.d
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
 import { TaxService } from '../tax/tax.service';
-import { FeatureFlagsService } from '../common/config/feature-flags';
-import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { FiscalLifecycleService } from '../tax/fiscal-lifecycle.service';
 import { assertExactFiscalReversalLine } from '../tax/fiscal-reversal-line';
 import { ElectronicSaleReversalGuard } from './electronic-sale-reversal.guard';
@@ -110,30 +108,9 @@ export class SalesService {
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
     private taxService: TaxService,
-    @Optional() private featureFlags: FeatureFlagsService = {
-      simpleRegimeEnabled: true,
-    } as FeatureFlagsService,
     @Optional() private fiscalLifecycle?: FiscalLifecycleService,
     @Optional() private electronicReversalGuard?: ElectronicSaleReversalGuard,
   ) { }
-
-  private async assertSimpleRegimeAvailableForNewSale(
-    businessId: string,
-    buyerFiscalContext?: { buyerIsRegimenSimple?: boolean } | null,
-  ) {
-    if (this.featureFlags.simpleRegimeEnabled) return;
-    if (buyerFiscalContext?.buyerIsRegimenSimple === true) {
-      throw new SimpleRegimeNotAvailableException();
-    }
-
-    const profile = await this.prisma.businessTaxProfile.findUnique({
-      where: { businessId },
-      include: { responsibilities: { include: { responsibility: true } } },
-    });
-    if (profile?.responsibilities.some((item) => item.responsibility.code === '47')) {
-      throw new SimpleRegimeNotAvailableException();
-    }
-  }
 
   private readonly orderItemRecipeInclude = {
     item: {
@@ -739,7 +716,6 @@ export class SalesService {
   }
 
   async create(businessId: string, dto: CreateOrderDto) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, dto.buyerFiscalContext);
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
     if (!dto.items.length) {
       throw new BadRequestException('Order must contain at least one item');
@@ -1348,7 +1324,6 @@ export class SalesService {
       sourceType = buyerFiscalContext as UnifiedSourceType;
       buyerFiscalContext = undefined;
     }
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, buyerFiscalContext);
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (sourceType === 'RESERVATION') {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
@@ -1871,7 +1846,6 @@ export class SalesService {
     orderItemId: string,
     dto: UpdateOrderItemOptionalsDto,
   ) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId);
     const excludedIds = this.normalizeExcludedOptionalIngredientIds(
       dto.excludedOptionalIngredientIds,
     );
@@ -1943,7 +1917,6 @@ export class SalesService {
   }
 
   async addItem(businessId: string, orderId: string, dto: AddOrderItemDto) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId);
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
     const resolved = await this.resolveOrderLines(businessId, [dto], { isManual: order.origin === 'MANUAL' });
@@ -1994,7 +1967,6 @@ export class SalesService {
     orderItemId: string,
     dto: UpdateOrderItemDto,
   ) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId);
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
 
@@ -2048,7 +2020,6 @@ export class SalesService {
   }
 
   async removeItem(businessId: string, orderId: string, orderItemId: string) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId);
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
 
@@ -2525,7 +2496,6 @@ export class SalesService {
     id: string,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId);
     if (sourceType === 'RESERVATION') {
       const res = await this.prisma.reservation.findFirst({
         where: { id, businessId },
@@ -2582,7 +2552,6 @@ export class SalesService {
     dto: UpdateOrderDto,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, dto.buyerFiscalContext);
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
     if (sourceType === 'RESERVATION') {
       return this.updateReservation(businessId, orderId, dto);

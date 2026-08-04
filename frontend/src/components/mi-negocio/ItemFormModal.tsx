@@ -370,7 +370,7 @@ export default function ItemFormModal({
         type,
         name,
         price: parseFloat(price),
-        saleConcept,
+        ...(editingItem?.saleConcept ? { saleConcept: editingItem.saleConcept } : {}),
         appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
         impoconsumoRate:
           type === "PRODUCT" &&
@@ -378,11 +378,11 @@ export default function ItemFormModal({
           parsedImpoconsumoRate !== null
             ? parsedImpoconsumoRate / 100
             : null,
-        taxTreatment,
-        vatRate: parsedVatRate === null ? null : parsedVatRate / 100,
-        fiscalCode: fiscalCode.trim() || null,
-        unitMeasureCode: unitMeasureCode.trim() || "94",
-        standardCode: standardCode.trim() || "999",
+        ...(editingItem?.taxTreatment ? { taxTreatment: editingItem.taxTreatment } : {}),
+        ...(editingItem?.vatRate != null ? { vatRate: editingItem.vatRate } : {}),
+        ...(editingItem?.fiscalCode ? { fiscalCode: editingItem.fiscalCode } : {}),
+        ...(editingItem?.unitMeasureCode ? { unitMeasureCode: editingItem.unitMeasureCode } : {}),
+        ...(editingItem?.standardCode ? { standardCode: editingItem.standardCode } : {}),
         description: description.trim() || null,
         durationMinutes: type === "SERVICE" ? finalDuration : null,
         inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,

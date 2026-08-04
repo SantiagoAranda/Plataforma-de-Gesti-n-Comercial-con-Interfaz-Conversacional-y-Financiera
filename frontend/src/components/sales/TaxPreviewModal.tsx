@@ -170,7 +170,7 @@ export default function TaxPreviewModal({
           buyerIsRetenedor,
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
-          ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
+          buyerIsRegimenSimple: Boolean(buyerIsRegimenSimple),
           buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
           reteIcaRateOverride,
@@ -258,7 +258,7 @@ export default function TaxPreviewModal({
       buyerIsRetenedor,
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
-      ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
+      buyerIsRegimenSimple: Boolean(buyerIsRegimenSimple),
       buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,
@@ -419,47 +419,6 @@ export default function TaxPreviewModal({
                 placeholder="Dirección"
                 className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
               />
-              <div className="grid grid-cols-3 gap-3">
-                <input
-                  value={buyerCountryCode}
-                  maxLength={2}
-                  onChange={(event) =>
-                    setBuyerCountryCode(
-                      event.target.value.replace(/[^a-z]/gi, "").toUpperCase(),
-                    )
-                  }
-                  placeholder="País"
-                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs uppercase"
-                />
-                <input
-                  value={buyerMunicipalityCode}
-                  onChange={(event) =>
-                    setBuyerMunicipalityCode(
-                      event.target.value.replace(/\D/g, ""),
-                    )
-                  }
-                  placeholder="Municipio"
-                  inputMode="numeric"
-                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
-                />
-                <input
-                  value={buyerTributeCode}
-                  onChange={(event) => setBuyerTributeCode(event.target.value)}
-                  placeholder="Tributo"
-                  className="h-10 rounded-xl border border-slate-200 px-3 text-xs"
-                />
-              </div>
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={buyerIsFinalConsumer}
-                  onChange={(event) =>
-                    setBuyerIsFinalConsumer(event.target.checked)
-                  }
-                  className="h-4 w-4 rounded border-slate-300 text-emerald-600"
-                />
-                Consumidor final
-              </label>
             </div>
 
             {/* Municipio */}

@@ -1,8 +1,6 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaxPreviewDto } from './dto/tax-preview.dto';
-import { FeatureFlagsService } from '../common/config/feature-flags';
-import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import {
   PersonType,
   SaleConcept,
@@ -37,9 +35,6 @@ export class TaxService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly featureFlags: FeatureFlagsService = {
-      simpleRegimeEnabled: true,
-    } as FeatureFlagsService,
   ) {}
 
   async calculateTaxPreview(
@@ -65,16 +60,6 @@ export class TaxService {
         },
       },
     });
-
-    const sellerHasSimpleResponsibility = Boolean(
-      sellerProfile?.responsibilities.some((item) => item.responsibility.code === '47'),
-    );
-    if (
-      !this.featureFlags.simpleRegimeEnabled &&
-      (dto.buyerIsRegimenSimple === true || sellerHasSimpleResponsibility)
-    ) {
-      throw new SimpleRegimeNotAvailableException();
-    }
 
     if (sellerProfile && sellerProfile.taxSettingsEnabled === false) {
       return await this.emptyTaxPreview(businessId, dto, {

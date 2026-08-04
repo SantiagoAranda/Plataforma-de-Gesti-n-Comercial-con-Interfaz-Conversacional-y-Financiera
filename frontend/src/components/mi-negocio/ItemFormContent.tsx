@@ -495,192 +495,79 @@ export function ItemFormContent(props: ItemFormContentProps) {
         )}
       </div>
 
-      {taxSettingsEnabled && (
+      {taxSettingsEnabled && type === "PRODUCT" && (
         <section className="space-y-4 rounded-2xl border border-neutral-100 bg-neutral-50/70 p-4">
           <div>
             <h3 className="text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-              Configuración fiscal
+              Impuesto al consumo
             </h3>
-            <p className="mt-2 text-xs leading-relaxed text-neutral-500">
-              El IVA y retenciones se calculan automáticamente según el RUT del negocio y el concepto seleccionado.
-            </p>
-            <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
-              La clasificación por ítem se guarda para diagnóstico. En esta
-              etapa todavía no modifica el cálculo fiscal oficial de las ventas.
-            </p>
           </div>
 
           <div className="space-y-3 border-t border-neutral-200/70 pt-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
-                Concepto fiscal
-              </label>
-              <select
-                value={saleConcept}
-                onChange={(e) => setSaleConcept(e.target.value as any)}
-                className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#0B3F64] transition text-slate-700 font-medium"
-              >
-                <option value="GOODS">Bienes / Productos</option>
-                <option value="SERVICES">Servicios Generales</option>
-                <option value="HONORARIOS">Honorarios</option>
-                <option value="ARRENDAMIENTOS">Arrendamientos</option>
-                <option value="FOOD_BEVERAGES">Consumo (Comidas/Bebidas)</option>
-                <option value="OTHER">Otros Conceptos</option>
-              </select>
-            </div>
+            <label className="flex cursor-pointer items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm font-semibold text-neutral-800">
+                  Aplica impoconsumo
+                </span>
+                <span className="mt-0.5 block text-[11px] text-neutral-500">
+                  Actívalo para productos sujetos al impuesto al consumo.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={appliesImpoconsumo}
+                onChange={(event) => {
+                  setAppliesImpoconsumo(event.target.checked);
+                  if (!event.target.checked) {
+                    setImpoconsumoRatePercent("");
+                    setFormErrors((current) => ({
+                      ...current,
+                      impoconsumoRate: undefined,
+                    }));
+                  }
+                }}
+                className="h-5 w-5 rounded border-neutral-300 text-[#0B3F64] focus:ring-[#0B3F64]"
+              />
+            </label>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            {appliesImpoconsumo && (
               <div className="space-y-2">
                 <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
-                  Tratamiento tributario
+                  Tarifa impoconsumo
                 </label>
-                <select
-                  value={taxTreatment}
-                  onChange={(event) => {
-                    const next = event.target.value as ItemTaxTreatment;
-                    setTaxTreatment(next);
-                    if (next === "EXEMPT") {
-                      setVatRatePercent("0");
-                      setAppliesImpoconsumo(false);
-                    } else if (next !== "TAXED") {
-                      setVatRatePercent("");
-                      setAppliesImpoconsumo(false);
-                    }
-                  }}
-                  className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64]"
+                <div
+                  className={`flex h-12 items-center rounded-2xl border bg-white px-4 shadow-sm ${
+                    formErrors.impoconsumoRate ? "border-red-300" : "border-neutral-100"
+                  }`}
                 >
-                  <option value="TAXED">Gravado</option>
-                  <option value="EXEMPT">Exento</option>
-                  <option value="EXCLUDED">Excluido</option>
-                  <option value="NOT_TAXED">No gravado</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
-                  Tarifa IVA específica
-                </label>
-                <div className="flex h-11 items-center rounded-xl border border-neutral-200 bg-white px-3">
                   <input
-                    value={vatRatePercent}
-                    disabled={
-                      appliesImpoconsumo ||
-                      taxTreatment === "EXCLUDED" ||
-                      taxTreatment === "NOT_TAXED"
-                    }
-                    onChange={(event) => setVatRatePercent(event.target.value)}
+                    type="text"
                     inputMode="decimal"
-                    placeholder={
-                      taxTreatment === "TAXED" ? "Usar global" : "0"
-                    }
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none disabled:text-neutral-400"
+                    value={impoconsumoRatePercent}
+                    onChange={(event) => {
+                      const value = event.target.value
+                        .replace(/[^0-9.,]/g, "")
+                        .replace(",", ".");
+                      setImpoconsumoRatePercent(value);
+                      setFormErrors((current) => ({
+                        ...current,
+                        impoconsumoRate: undefined,
+                      }));
+                    }}
+                    placeholder="Ej: 8"
+                    className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
                   />
-                  <span className="text-xs text-neutral-400">%</span>
+                  <span className="text-sm text-neutral-400">%</span>
                 </div>
-                {formErrors.vatRate && (
-                  <p className="text-[11px] text-red-500">{formErrors.vatRate}</p>
+                <p className="text-[11px] leading-relaxed text-neutral-500">
+                  Déjala vacía para usar la tarifa global. El porcentaje se envía como decimal al guardar.
+                </p>
+                {formErrors.impoconsumoRate && (
+                  <p className="text-[10px] font-medium uppercase text-red-500">
+                    {formErrors.impoconsumoRate}
+                  </p>
                 )}
               </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <input
-                value={fiscalCode}
-                onChange={(event) => setFiscalCode(event.target.value)}
-                placeholder="Código fiscal"
-                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
-              />
-              <input
-                value={unitMeasureCode}
-                onChange={(event) => setUnitMeasureCode(event.target.value)}
-                placeholder="Unidad (94)"
-                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
-              />
-              <input
-                value={standardCode}
-                onChange={(event) => setStandardCode(event.target.value)}
-                placeholder="Estándar (999)"
-                className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64]"
-              />
-            </div>
-
-            {formErrors.fiscalConfiguration && (
-              <p className="text-[11px] text-red-500">
-                {formErrors.fiscalConfiguration}
-              </p>
-            )}
-
-            {type === "PRODUCT" && (
-              <>
-                <label className="flex cursor-pointer items-center justify-between gap-4 pt-2">
-                  <span>
-                    <span className="block text-sm font-semibold text-neutral-800">
-                      Aplica impoconsumo
-                    </span>
-                    <span className="mt-0.5 block text-[11px] text-neutral-500">
-                      Actívalo para productos sujetos al impuesto al consumo.
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={appliesImpoconsumo}
-                    onChange={(event) => {
-                      setAppliesImpoconsumo(event.target.checked);
-                      if (event.target.checked) {
-                        setTaxTreatment("TAXED");
-                        setVatRatePercent("");
-                      }
-                      if (!event.target.checked) {
-                        setImpoconsumoRatePercent("");
-                        setFormErrors((current) => ({
-                          ...current,
-                          impoconsumoRate: undefined,
-                        }));
-                      }
-                    }}
-                    className="h-5 w-5 rounded border-neutral-300 text-[#0B3F64] focus:ring-[#0B3F64]"
-                  />
-                </label>
-
-                {appliesImpoconsumo && (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
-                      Tarifa impoconsumo
-                    </label>
-                    <div
-                      className={`flex h-12 items-center rounded-2xl border bg-white px-4 shadow-sm ${
-                        formErrors.impoconsumoRate ? "border-red-300" : "border-neutral-100"
-                      }`}
-                    >
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={impoconsumoRatePercent}
-                        onChange={(event) => {
-                          const value = event.target.value
-                            .replace(/[^0-9.,]/g, "")
-                            .replace(",", ".");
-                          setImpoconsumoRatePercent(value);
-                          setFormErrors((current) => ({
-                            ...current,
-                            impoconsumoRate: undefined,
-                          }));
-                        }}
-                        placeholder="Ej: 8"
-                        className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none"
-                      />
-                      <span className="text-sm text-neutral-400">%</span>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-neutral-500">
-                      Déjala vacía para usar la tarifa global. El porcentaje se envía como decimal al guardar.
-                    </p>
-                    {formErrors.impoconsumoRate && (
-                      <p className="text-[10px] font-medium uppercase text-red-500">
-                        {formErrors.impoconsumoRate}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
             )}
           </div>
         </section>
