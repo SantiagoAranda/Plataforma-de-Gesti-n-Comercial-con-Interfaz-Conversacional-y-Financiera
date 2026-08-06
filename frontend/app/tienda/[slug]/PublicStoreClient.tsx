@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import Image from "next/image";
 import {
   ArrowLeft,
   ArrowRight,
@@ -1015,12 +1014,10 @@ export default function PublicStoreClient() {
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
                 {businessLogoUrl ? (
-                  <Image
+                  <img
                     src={businessLogoUrl}
                     alt={`Logo de ${businessName || "Tienda"}`}
-                    width={40}
-                    height={40}
-                    className="h-full w-full object-contain rounded-full"
+                    className="h-full w-full object-cover rounded-full"
                   />
                 ) : (
                   <Store className="h-5 w-5" />
