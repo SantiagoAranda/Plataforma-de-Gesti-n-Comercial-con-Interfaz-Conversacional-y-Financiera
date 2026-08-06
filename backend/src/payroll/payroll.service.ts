@@ -70,6 +70,11 @@ type PayrollPeriodRef = {
   installmentNumber?: number | null;
 };
 
+const PAYROLL_TX_OPTIONS = {
+  maxWait: 10000,
+  timeout: 30000,
+} as const;
+
 const PERIODIC_PAYROLL_MINIMUM = { year: 2026, month: 7 } as const;
 const DATED_OVERTIME_REQUIRED_MESSAGE =
   'Las horas extra deben registrarse como una novedad fechada del período.';
@@ -496,7 +501,7 @@ export class PayrollService {
       }
 
       return updated;
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async getBusinessConfig(
@@ -946,6 +951,38 @@ export class PayrollService {
     const mappings = await tx.payrollAccountingMapping.findMany({
       where: { businessId, conceptCode: { in: conceptCodes } },
     });
+
+    const active4Codes = new Set<string>();
+    const active6Codes = new Set<string>();
+
+    for (const mapping of mappings) {
+      if (!mapping.isActive) continue;
+      const code = mapping.accountCode.trim();
+      if (code.length === 4) active4Codes.add(code);
+      else if (code.length === 6) active6Codes.add(code);
+    }
+
+    const [cuentas, subcuentas] = await Promise.all([
+      active4Codes.size > 0
+        ? tx.pucCuenta.findMany({
+            where: { code: { in: Array.from(active4Codes) } },
+            select: { code: true },
+          })
+        : [],
+      active6Codes.size > 0
+        ? tx.pucSubcuenta.findMany({
+            where: { code: { in: Array.from(active6Codes) } },
+            select: { code: true, active: true },
+          })
+        : [],
+    ]);
+
+    const validCuentasSet = new Set(cuentas.map((c) => c.code));
+    const subcuentasMap = new Map<string, boolean>();
+    for (const s of subcuentas) {
+      subcuentasMap.set(s.code, s.active);
+    }
+
     const missing: MissingPayrollAccountingMapping[] = [];
     const resolved = new Map<string, (typeof mappings)[number]>();
 
@@ -966,24 +1003,17 @@ export class PayrollService {
 
       const code = matching.accountCode.trim();
       if (code.length === 4) {
-        const account = await tx.pucCuenta.findUnique({
-          where: { code },
-          select: { code: true },
-        });
-        if (!account) {
+        if (!validCuentasSet.has(code)) {
           missing.push({ ...requirement, reason: 'ACCOUNT_NOT_FOUND' });
           continue;
         }
       } else if (code.length === 6) {
-        const subaccount = await tx.pucSubcuenta.findFirst({
-          where: { code },
-          select: { code: true, active: true },
-        });
-        if (!subaccount) {
+        const active = subcuentasMap.get(code);
+        if (active === undefined) {
           missing.push({ ...requirement, reason: 'ACCOUNT_NOT_FOUND' });
           continue;
         }
-        if (!subaccount.active) {
+        if (!active) {
           missing.push({ ...requirement, reason: 'ACCOUNT_INACTIVE' });
           continue;
         }
@@ -1411,7 +1441,7 @@ export class PayrollService {
           arlRiskClassId: dto.arlRiskClassId,
         },
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async listContracts(businessId: string, employeeId: string) {
@@ -1524,7 +1554,7 @@ export class PayrollService {
           isActive: dto.isActive,
         },
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async deleteContract(businessId: string, contractId: string) {
@@ -1729,7 +1759,7 @@ export class PayrollService {
             dto.status === PayrollPeriodStatus.CLOSED ? new Date() : undefined,
         },
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async createPayrollAdjustment(
@@ -1865,7 +1895,7 @@ export class PayrollService {
           notes: this.normalizeNullableText(dto.notes), createdById,
         },
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async updatePayrollEvent(businessId: string, eventId: string, dto: UpdatePayrollEventDto) {
@@ -1888,7 +1918,7 @@ export class PayrollService {
         where: { id: eventId },
         data: { ...dto, startDate, endDate, overtimeCode: dto.overtimeCode === undefined ? undefined : this.normalizeOvertimeCode(dto.overtimeCode), notes: dto.notes === undefined ? undefined : this.normalizeNullableText(dto.notes) },
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   /**
@@ -3589,7 +3619,7 @@ export class PayrollService {
         },
       });
       return this.withPayrollRunComputedFields(persistedRun);
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async calculatePeriodPayroll(businessId: string, periodId: string) {
@@ -3869,7 +3899,7 @@ export class PayrollService {
       }
 
       return payment;
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   /**
@@ -4166,7 +4196,7 @@ export class PayrollService {
         totalPaid: this.money(totalPaid).toString(),
         payments: updatedPayments,
       };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, ...PAYROLL_TX_OPTIONS });
   }
 
   private serializePayrollPaymentBatch(batch: any) {
@@ -4637,7 +4667,7 @@ export class PayrollService {
       }
 
       return payment;
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   private initialBenefitRegularizationOriginId(
@@ -5429,7 +5459,7 @@ export class PayrollService {
         lines: calculated.lines,
         preview: true,
       });
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async createContractSettlement(
@@ -5515,7 +5545,7 @@ export class PayrollService {
         include: { employee: true, contract: true, lines: true },
       });
       return this.withSettlementComputedFields(posted);
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 
   async listContractSettlements(
@@ -5680,6 +5710,6 @@ export class PayrollService {
         include: { employee: true, contract: true, lines: true },
       });
       return this.withSettlementComputedFields(posted);
-    });
+    }, PAYROLL_TX_OPTIONS);
   }
 }
