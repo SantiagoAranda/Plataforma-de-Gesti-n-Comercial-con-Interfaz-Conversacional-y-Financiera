@@ -505,7 +505,7 @@ export function MovementForm({
                   }))}
                 />
                 {selectedPurchaseOption?.composition ? (
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-[11px] text-indigo-800">
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2 text-[11px] text-[#0B3F64]">
                     <p className="font-semibold">
                       Contenido: {selectedPurchaseOption.composition}
                     </p>
@@ -532,7 +532,7 @@ export function MovementForm({
                     }
                     inputMode="decimal"
                     placeholder="0"
-                    className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
+                    className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-blue-600"
                   />
                   <span className="absolute right-4 text-xs font-bold text-slate-400">
                     {purchaseUnitLabel || "-"}
@@ -557,36 +557,36 @@ export function MovementForm({
                     }
                     inputMode="decimal"
                     placeholder="0"
-                    className="w-full rounded-2xl border border-slate-200 bg-white pl-8 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
+                    className="w-full rounded-2xl border border-slate-200 bg-white pl-8 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-blue-600"
                   />
                 </div>
               </div>
 
               {preview.valid ? (
-                <div className="col-span-2 rounded-[20px] bg-emerald-50/90 border border-emerald-100 p-4 shadow-sm space-y-3 transition animate-in fade-in duration-200">
+                <div className="col-span-2 rounded-[20px] bg-blue-50/70 border border-blue-200 p-4 shadow-sm space-y-3 transition animate-in fade-in duration-200">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-800">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-[#0B3F64]">
                       <Scale className="h-4 w-4" />
                     </div>
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-800">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#0B3F64]">
                       Conversión a stock
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1 border-t border-emerald-200/40">
+                  <div className="grid grid-cols-2 gap-3 pt-1 border-t border-blue-200/70">
                     <div>
-                      <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
                         Cantidad comprada
                       </p>
-                      <p className="text-base font-bold text-emerald-900">
+                      <p className="text-base font-bold text-[#121A28]">
                         {purchaseQuantity || "0"} {purchaseUnitLabel}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
                         Costo por {purchaseUnitLabel || "unidad"}
                       </p>
-                      <p className="text-base font-bold text-emerald-900">
+                      <p className="text-base font-bold text-[#121A28]">
                         $
                         {formatMoney(
                           Number(
@@ -596,18 +596,18 @@ export function MovementForm({
                       </p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
                         Costo total
                       </p>
-                      <p className="text-base font-bold text-emerald-900">
+                      <p className="text-base font-bold text-[#121A28]">
                         ${formatMoney(purchaseTotal)}
                       </p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
                         Ingreso a Stock
                       </p>
-                      <p className="text-base font-bold text-emerald-900">
+                      <p className="text-base font-bold text-[#121A28]">
                         +
                         {preview.stockQuantityAdded !== null
                           ? formatMoney(preview.stockQuantityAdded)
@@ -616,10 +616,10 @@ export function MovementForm({
                       </p>
                     </div>
                     <div>
-                      <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
                         Costo Kardex / {preview.stockUnitLabel}
                       </p>
-                      <p className="text-base font-bold text-emerald-900">
+                      <p className="text-base font-bold text-[#121A28]">
                         $
                         {preview.baseUnitCost !== null
                           ? formatMoney(preview.baseUnitCost)
@@ -628,10 +628,10 @@ export function MovementForm({
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white/60 p-2.5 text-[11px] font-semibold text-emerald-950/90 space-y-1">
+                  <div className="rounded-xl bg-white/60 p-2.5 text-[11px] font-semibold text-[#0B3F64] space-y-1">
                     {preview.lines.map((line, i) => (
                       <div key={i} className="flex items-center gap-1.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
                         <span>{line}</span>
                       </div>
                     ))}

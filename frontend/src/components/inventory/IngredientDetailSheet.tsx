@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { Check, Edit2, Power, Trash2, X, Plus } from "lucide-react";
+import {
+  Circle,
+  CircleCheck,
+  Edit2,
+  LoaderCircle,
+  Plus,
+  Power,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 import {
@@ -35,6 +44,7 @@ import {
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 type TabType = "compras" | "kardex" | "insumo";
+type PresentationEditorMode = "create" | "edit" | null;
 
 type Props = {
   ingredientId: string | null;
@@ -62,6 +72,8 @@ export function IngredientDetailSheet({
   const contentRef = useRef<HTMLDivElement>(null);
   const movementFormRef = useRef<HTMLFormElement>(null);
   const ingredientFormRef = useRef<HTMLFormElement>(null);
+  const presentationEditorRef = useRef<HTMLDivElement>(null);
+  const defaultChangeInFlightRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<TabType>("compras");
   const [loading, setLoading] = useState(false);
@@ -75,6 +87,11 @@ export function IngredientDetailSheet({
   const [movementFormSubmitting, setMovementFormSubmitting] = useState(false);
   const [ingredientFormValid, setIngredientFormValid] = useState(false);
   const [presentationSubmitting, setPresentationSubmitting] = useState(false);
+  const [presentationEditorMode, setPresentationEditorMode] =
+    useState<PresentationEditorMode>(null);
+  const [defaultUpdatingId, setDefaultUpdatingId] = useState<string | null>(
+    null,
+  );
   const [editingPresentationId, setEditingPresentationId] = useState<
     string | null
   >(null);
@@ -92,20 +109,36 @@ export function IngredientDetailSheet({
     return units.find((u) => u.code === ingredient.consumptionUnit) ?? null;
   }, [ingredient, units]);
 
-  const resetPresentationForm = useCallback(() => {
-    setEditingPresentationId(null);
+  const getEmptyPresentationForm = useCallback(() => {
     const stockUnit = getIngredientStockUnit();
     if (stockUnit?.code === "UNIT") {
       const unit = units.find((u) => u.code === "UNIT");
-      setPresentationForm({
+      return {
         ...emptyPresentationForm,
         contentUnitId: unit?.id ?? "",
         contentQuantity: "1",
-      });
-    } else {
-      setPresentationForm(emptyPresentationForm);
+      };
     }
+    return emptyPresentationForm;
   }, [units, getIngredientStockUnit]);
+
+  const closePresentationEditor = useCallback(() => {
+    setPresentationEditorMode(null);
+    setEditingPresentationId(null);
+    setPresentationForm(getEmptyPresentationForm());
+  }, [getEmptyPresentationForm]);
+
+  const startNewPresentation = useCallback(() => {
+    setEditingPresentationId(null);
+    setPresentationForm(getEmptyPresentationForm());
+    setPresentationEditorMode("create");
+    window.requestAnimationFrame(() =>
+      presentationEditorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      }),
+    );
+  }, [getEmptyPresentationForm]);
 
   const loadIngredientData = useCallback(async (id: string) => {
     try {
@@ -120,6 +153,7 @@ export function IngredientDetailSheet({
       setConversions(conversionData);
       setMovements([]);
       setKardexLoaded(false);
+      return ingData;
     } catch (err) {
       console.error(err);
       toast.error("No se pudo cargar el detalle del ingrediente");
@@ -143,6 +177,7 @@ export function IngredientDetailSheet({
     if (!open || !ingredientId) return;
 
     setActiveTab("compras");
+    setPresentationEditorMode(null);
     setEditingPresentationId(null);
     setPresentationForm(emptyPresentationForm);
     void loadIngredientData(ingredientId);
@@ -156,12 +191,17 @@ export function IngredientDetailSheet({
     setKardexLoaded(false);
     setUnits([]);
     setConversions([]);
+    setPresentationEditorMode(null);
     setEditingPresentationId(null);
     setPresentationForm(emptyPresentationForm);
   }, [open]);
 
   useEffect(() => {
-    if (ingredient && units.length > 0 && !editingPresentationId) {
+    if (
+      ingredient &&
+      units.length > 0 &&
+      presentationEditorMode === "create"
+    ) {
       const stockUnit = getIngredientStockUnit();
       if (stockUnit?.code === "UNIT") {
         const unit = units.find((u) => u.code === "UNIT");
@@ -177,7 +217,12 @@ export function IngredientDetailSheet({
         });
       }
     }
-  }, [ingredient, units, editingPresentationId, getIngredientStockUnit]);
+  }, [
+    ingredient,
+    units,
+    presentationEditorMode,
+    getIngredientStockUnit,
+  ]);
 
   if (!open || !ingredientId) return null;
 
@@ -216,7 +261,7 @@ export function IngredientDetailSheet({
 
     if (stockUnit.code === "UNIT") {
       return (
-        <p className="text-[10px] text-indigo-600 font-semibold bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-50 leading-normal">
+        <p className="text-[10px] text-blue-700 font-semibold bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 leading-normal">
           Este insumo se controla por unidades. Para un pack de 6 latas, cargá:
           6 latas × 1 unidad.
         </p>
@@ -224,7 +269,7 @@ export function IngredientDetailSheet({
     }
     if (stockUnit.code === "ML" || stockUnit.code === "L") {
       return (
-        <p className="text-[10px] text-indigo-600 font-semibold bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-50 leading-normal">
+        <p className="text-[10px] text-blue-700 font-semibold bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 leading-normal">
           Este insumo se controla por volumen. Para un pack de 6 latas de 354
           ml, cargá: 6 latas × 354 ml.
         </p>
@@ -232,7 +277,7 @@ export function IngredientDetailSheet({
     }
     if (stockUnit.code === "G" || stockUnit.code === "KG") {
       return (
-        <p className="text-[10px] text-indigo-600 font-semibold bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-50 leading-normal">
+        <p className="text-[10px] text-blue-700 font-semibold bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 leading-normal">
           Este insumo se controla por peso. Para una caja de 4 medallones de 250
           g, cargá: 4 medallón × 250 g.
         </p>
@@ -249,7 +294,7 @@ export function IngredientDetailSheet({
 
     if (stockUnit.code === "UNIT") {
       return (
-        <span className="text-[10px] text-emerald-600 font-semibold mt-1 block">
+        <span className="text-[10px] text-blue-700 font-semibold mt-1 block">
           Cada {innerUnit} suma 1 unidad al stock
         </span>
       );
@@ -424,6 +469,7 @@ export function IngredientDetailSheet({
   const startEditPresentation = (
     presentation: IngredientPurchasePresentation,
   ) => {
+    setPresentationEditorMode("edit");
     setEditingPresentationId(presentation.id);
     setPresentationForm({
       name: presentation.name,
@@ -434,6 +480,63 @@ export function IngredientDetailSheet({
       contentUnitId: presentation.contentUnitId,
       isDefault: presentation.isDefault,
     });
+    window.requestAnimationFrame(() =>
+      presentationEditorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      }),
+    );
+  };
+
+  const handleSetDefaultPresentation = async (
+    presentation: IngredientPurchasePresentation,
+  ) => {
+    if (
+      !ingredient ||
+      presentation.isDefault ||
+      defaultChangeInFlightRef.current
+    ) {
+      return;
+    }
+    defaultChangeInFlightRef.current = true;
+    setDefaultUpdatingId(presentation.id);
+    const toastId = toast.loading("Actualizando presentación predeterminada...");
+    try {
+      await updatePurchasePresentation(ingredient.id, presentation.id, {
+        name: presentation.name,
+        purchaseUnitId: presentation.purchaseUnitId,
+        innerQuantity: String(presentation.innerQuantity),
+        innerUnitLabel: presentation.innerUnitLabel?.trim() || "unidades",
+        contentQuantity: String(presentation.contentQuantity),
+        contentUnitId: presentation.contentUnitId,
+        isDefault: true,
+        isActive: true,
+      });
+      const refreshedIngredient = await loadIngredientData(ingredient.id);
+      const refreshedEditingPresentation =
+        presentationEditorMode === "edit"
+          ? refreshedIngredient?.purchasePresentations?.find(
+              (candidate) => candidate.id === editingPresentationId,
+            )
+          : null;
+      if (refreshedEditingPresentation) {
+        setPresentationForm((current) => ({
+          ...current,
+          isDefault: refreshedEditingPresentation.isDefault,
+        }));
+      }
+      toast.success("Presentación predeterminada actualizada", { id: toastId });
+      onChanged();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        "No se pudo cambiar la presentación predeterminada. Inténtalo nuevamente.",
+        { id: toastId },
+      );
+    } finally {
+      defaultChangeInFlightRef.current = false;
+      setDefaultUpdatingId(null);
+    }
   };
 
   const handleSavePresentation = async () => {
@@ -465,7 +568,7 @@ export function IngredientDetailSheet({
         await createPurchasePresentation(ingredient.id, payload);
       }
       toast.success("Presentación guardada", { id: toastId });
-      resetPresentationForm();
+      closePresentationEditor();
       await loadIngredientData(ingredient.id);
       onChanged();
     } catch (err) {
@@ -484,6 +587,9 @@ export function IngredientDetailSheet({
     try {
       await deactivatePurchasePresentation(ingredient.id, presentationId);
       toast.success("Presentación desactivada", { id: toastId });
+      if (editingPresentationId === presentationId) {
+        closePresentationEditor();
+      }
       await loadIngredientData(ingredient.id);
       onChanged();
     } catch (err) {
@@ -636,22 +742,10 @@ export function IngredientDetailSheet({
 
                   {activeTab === "insumo" && (
                     <div className="space-y-4">
-                      {/* Ingredient Edit Form */}
-                      <IngredientForm
-                        formRef={ingredientFormRef}
-                        mode="edit"
-                        initial={ingredient}
-                        submitting={submitting}
-                        onSubmit={handleUpdate}
-                        hideSubmitButton
-                        hideReadOnlyMetrics
-                        onValidationChange={setIngredientFormValid}
-                      />
-
                       <section className="space-y-3 border-t border-slate-100 pt-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <h3 className="text-sm font-semibold text-slate-900">
+                            <h3 className="text-sm font-semibold text-[#0B3F64]">
                               Presentaciones de compra
                             </h3>
                             <p className="text-[11px] text-slate-500">
@@ -660,10 +754,12 @@ export function IngredientDetailSheet({
                           </div>
                           <button
                             type="button"
-                            onClick={resetPresentationForm}
-                            className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700"
+                            onClick={startNewPresentation}
+                            aria-label="Nueva presentación de compra"
+                            className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
                           >
-                            <Plus className="h-3.5 w-3.5" /> Nueva
+                            <Plus className="h-4 w-4" />
+                            <span className="hidden sm:inline">Nueva</span>
                           </button>
                         </div>
 
@@ -684,7 +780,7 @@ export function IngredientDetailSheet({
                               return (
                                 <div
                                   key={presentation.id}
-                                  className="rounded-2xl border border-slate-200 bg-white p-3"
+                                  className="rounded-2xl border border-blue-100 bg-white p-3"
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
@@ -692,14 +788,53 @@ export function IngredientDetailSheet({
                                         <p className="truncate text-sm font-semibold text-slate-900">
                                           {presentation.name}
                                         </p>
-                                        {presentation.isDefault ? (
-                                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">
-                                            <Check className="h-3 w-3" />{" "}
-                                            Predeterminada
-                                          </span>
-                                        ) : null}
+                                        <button
+                                          type="button"
+                                          disabled={
+                                            presentation.isDefault ||
+                                            defaultUpdatingId !== null
+                                          }
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void handleSetDefaultPresentation(
+                                              presentation,
+                                            );
+                                          }}
+                                          aria-label={
+                                            presentation.isDefault
+                                              ? `${presentation.name} es la presentación predeterminada`
+                                              : `Marcar ${presentation.name} como presentación predeterminada`
+                                          }
+                                          title={
+                                            presentation.isDefault
+                                              ? "Presentación predeterminada"
+                                              : "Marcar como predeterminada"
+                                          }
+                                          aria-busy={
+                                            defaultUpdatingId === presentation.id
+                                          }
+                                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#0B3F64] transition enabled:hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-default disabled:opacity-70"
+                                        >
+                                          {defaultUpdatingId ===
+                                          presentation.id ? (
+                                            <LoaderCircle
+                                              className="h-4 w-4 animate-spin"
+                                              aria-hidden="true"
+                                            />
+                                          ) : presentation.isDefault ? (
+                                            <CircleCheck
+                                              className="h-4 w-4"
+                                              aria-hidden="true"
+                                            />
+                                          ) : (
+                                            <Circle
+                                              className="h-4 w-4 text-slate-400"
+                                              aria-hidden="true"
+                                            />
+                                          )}
+                                        </button>
                                       </div>
-                                      <p className="mt-1 text-[11px] text-slate-500">
+                                      <p className="mt-1 text-[11px] text-[#62748E]">
                                         1 {purchaseLabel} ={" "}
                                         {presentation.innerQuantity}{" "}
                                         {presentation.innerUnitLabel ||
@@ -714,23 +849,25 @@ export function IngredientDetailSheet({
                                     <div className="flex shrink-0 gap-1">
                                       <button
                                         type="button"
-                                        onClick={() =>
+                                        onClick={(event) => {
+                                          event.stopPropagation();
                                           startEditPresentation(presentation)
-                                        }
-                                        className="grid h-8 w-8 place-items-center rounded-full bg-slate-100 text-slate-600"
-                                        aria-label="Editar presentación"
+                                        }}
+                                        className="grid h-8 w-8 place-items-center rounded-full bg-blue-50 text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                        aria-label={`Editar presentación ${presentation.name}`}
                                       >
                                         <Edit2 className="h-3.5 w-3.5" />
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() =>
+                                        onClick={(event) => {
+                                          event.stopPropagation();
                                           void handleDeactivatePresentation(
                                             presentation.id,
-                                          )
-                                        }
-                                        className="grid h-8 w-8 place-items-center rounded-full bg-rose-50 text-rose-600"
-                                        aria-label="Desactivar presentación"
+                                          );
+                                        }}
+                                        className="grid h-8 w-8 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                                        aria-label={`Eliminar presentación ${presentation.name}`}
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
@@ -741,12 +878,19 @@ export function IngredientDetailSheet({
                             })}
                           </div>
                         ) : (
-                          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-                            No hay presentaciones comerciales configuradas.
-                          </p>
+                          <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs text-[#62748E]">
+                            <p>Todavía no hay presentaciones configuradas.</p>
+                            <p className="mt-1">
+                              Agrega la primera presentación de compra.
+                            </p>
+                          </div>
                         )}
 
-                        <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-3">
+                        {presentationEditorMode ? (
+                          <div
+                            ref={presentationEditorRef}
+                            className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-3"
+                          >
                           <div className="grid grid-cols-2 gap-3">
                             <label className="col-span-2 space-y-1 text-[11px] font-medium text-slate-600">
                               Nombre de la presentación
@@ -861,33 +1005,14 @@ export function IngredientDetailSheet({
                             </p>
                           ) : null}
                           {getDynamicFormulaPreview() ? (
-                            <p className="rounded-xl bg-white p-2.5 text-xs font-semibold text-emerald-800">
+                            <p className="rounded-xl border border-blue-100 bg-white p-2.5 text-xs font-semibold text-[#0B3F64]">
                               {getDynamicFormulaPreview()}
                             </p>
                           ) : null}
-                          <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={presentationForm.isDefault}
-                              disabled={Boolean(
-                                editingPresentationId &&
-                                editablePresentations.find(
-                                  (item) => item.id === editingPresentationId,
-                                )?.isDefault,
-                              )}
-                              onChange={(event) =>
-                                setPresentationForm((current) => ({
-                                  ...current,
-                                  isDefault: event.target.checked,
-                                }))
-                              }
-                            />
-                            Presentación predeterminada
-                          </label>
                           <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
-                              onClick={resetPresentationForm}
+                              onClick={closePresentationEditor}
                               className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold text-slate-600"
                             >
                               Cancelar
@@ -898,17 +1023,31 @@ export function IngredientDetailSheet({
                                 !canSavePresentation || presentationSubmitting
                               }
                               onClick={() => void handleSavePresentation()}
-                              className="rounded-xl bg-indigo-700 px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+                              className="rounded-xl bg-[#0B3F64] px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
                             >
                               {presentationSubmitting
                                 ? "Guardando..."
-                                : editingPresentationId
+                                : presentationEditorMode === "edit"
                                   ? "Actualizar"
                                   : "Agregar"}
                             </button>
                           </div>
-                        </div>
+                          </div>
+                        ) : null}
                       </section>
+
+                      {/* Ingredient Edit Form */}
+                      <IngredientForm
+                        formRef={ingredientFormRef}
+                        mode="edit"
+                        initial={ingredient}
+                        submitting={submitting}
+                        onSubmit={handleUpdate}
+                        hideSubmitButton
+                        hideReadOnlyMetrics
+                        hidePurchasePresentationConfiguration
+                        onValidationChange={setIngredientFormValid}
+                      />
                     </div>
                   )}
                 </>

@@ -55,6 +55,7 @@ type Props = {
   hideSubmitButton?: boolean;
   hideReadOnlyMetrics?: boolean;
   hideTitle?: boolean;
+  hidePurchasePresentationConfiguration?: boolean;
   onValidationChange?: (isValid: boolean) => void;
   formRef?: RefObject<HTMLFormElement | null>;
 };
@@ -114,6 +115,7 @@ export function IngredientForm({
   hideSubmitButton = false,
   hideReadOnlyMetrics = false,
   hideTitle = false,
+  hidePurchasePresentationConfiguration = false,
   onValidationChange,
   formRef,
 }: Props) {
@@ -375,7 +377,8 @@ export function IngredientForm({
         </p>
       </div>
 
-      <div className="space-y-2">
+      {!hidePurchasePresentationConfiguration ? (
+        <div className="space-y-2">
         <label className="text-xs font-medium text-slate-600">
           Presentación de compra
         </label>
@@ -390,10 +393,11 @@ export function IngredientForm({
         <p className="text-[11px] text-slate-400">
           El sistema convertirá automáticamente cada compra a la unidad base.
         </p>
-      </div>
+        </div>
+      ) : null}
 
-      {isCommercial ? (
-        <div className="space-y-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+      {isCommercial && !hidePurchasePresentationConfiguration ? (
+        <div className="space-y-4 rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
           <div>
             <p className="text-xs font-semibold text-slate-800">
               Contenido de la presentación
@@ -486,8 +490,8 @@ export function IngredientForm({
             </div>
           </div>
           {factorToBaseUnit !== null ? (
-            <div className="rounded-xl border border-emerald-100 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
+            <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[#0B3F64]">
                 Equivalencia total
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -495,7 +499,7 @@ export function IngredientForm({
                 {contentQuantity} {contentLabel} ={" "}
                 {formatQuantity(factorToBaseUnit)} {stockLabel}
               </p>
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-[#62748E]">
                 Se agregarán {formatQuantity(factorToBaseUnit)} {stockLabel} al
                 stock por cada {purchaseLabel} comprada.
               </p>
@@ -607,7 +611,7 @@ export function IngredientForm({
             LEGACY_UNIT_BY_CODE[selectedPurchaseUnit.code] ?? "UNIT",
           purchaseToConsumptionFactor: decimalPayload(factorToBaseUnit),
           minStock: decimalPayload(minStockBase),
-          ...(isCommercial
+          ...(isCommercial && !hidePurchasePresentationConfiguration
             ? {
                 purchasePresentationDraft: {
                   name: presentationName,

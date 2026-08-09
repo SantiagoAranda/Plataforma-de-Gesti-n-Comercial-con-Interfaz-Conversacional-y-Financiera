@@ -276,6 +276,68 @@ export class SalesService {
     };
   }
 
+  private async hydrateNormalizedOrderFiscalData<T extends { id: string }>(
+    businessId: string,
+    orders: T[],
+  ): Promise<Array<T & { fiscalContext: any; taxLines: any[]; taxSnapshot: any }>> {
+    if (orders.length === 0) return [];
+
+    const orderIds = orders.map((order) => order.id);
+    const fiscalContexts = await this.prisma.$queryRaw<any[]>(Prisma.sql`
+      SELECT context.*
+      FROM "SaleFiscalContext" AS context
+      WHERE context."businessId" = ${businessId}
+        AND context."orderId" IN (${Prisma.join(orderIds)})
+    `);
+
+    const contextIds = fiscalContexts.map((context) => context.id as string);
+    const [taxLines, taxSnapshots] = contextIds.length
+      ? await Promise.all([
+          this.prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT line.*
+            FROM "SaleTaxLine" AS line
+            WHERE line."fiscalContextId" IN (${Prisma.join(contextIds)})
+            ORDER BY line."createdAt" ASC
+          `),
+          this.prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT snapshot.*
+            FROM "TaxCalculationSnapshot" AS snapshot
+            WHERE snapshot."fiscalContextId" IN (${Prisma.join(contextIds)})
+          `),
+        ])
+      : [[], []];
+
+    const contextsByOrderId = new Map(
+      fiscalContexts.map((context) => [context.orderId as string, context]),
+    );
+    const taxLinesByContextId = new Map<string, any[]>();
+    for (const line of taxLines) {
+      const current = taxLinesByContextId.get(line.fiscalContextId) ?? [];
+      current.push(line);
+      taxLinesByContextId.set(line.fiscalContextId, current);
+    }
+    const snapshotsByContextId = new Map(
+      taxSnapshots.map((snapshot) => [
+        snapshot.fiscalContextId as string,
+        snapshot,
+      ]),
+    );
+
+    return orders.map((order) => {
+      const fiscalContext = contextsByOrderId.get(order.id) ?? null;
+      return {
+        ...order,
+        fiscalContext,
+        taxLines: fiscalContext
+          ? (taxLinesByContextId.get(fiscalContext.id) ?? [])
+          : [],
+        taxSnapshot: fiscalContext
+          ? (snapshotsByContextId.get(fiscalContext.id) ?? null)
+          : null,
+      };
+    });
+  }
+
   private async persistOrderFiscalPreview(
     tx: Prisma.TransactionClient,
     businessId: string,
@@ -861,7 +923,7 @@ export class SalesService {
 
   async findAll(businessId: string, options?: { includeArchived?: boolean }): Promise<UnifiedSaleDto[]> {
     const includeArchived = options?.includeArchived ?? false;
-    const [orders, reservations] = await Promise.all([
+    const [baseOrders, reservations] = await Promise.all([
       this.prisma.order.findMany({
         where: { 
           businessId,
@@ -872,9 +934,6 @@ export class SalesService {
           items: {
             include: this.orderItemRecipeInclude,
           },
-          fiscalContext: true,
-          taxLines: true,
-          taxSnapshot: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -894,6 +953,10 @@ export class SalesService {
         },
       }),
     ]);
+    const orders = await this.hydrateNormalizedOrderFiscalData(
+      businessId,
+      baseOrders,
+    );
 
     const conversions = await this.prisma.unitConversion.findMany();
     const orderIds = new Set(orders.map((order) => order.id));
@@ -1792,19 +1855,19 @@ export class SalesService {
   }
 
   async getOne(businessId: string, orderId: string) {
-    const order = await this.prisma.order.findFirst({
+    const baseOrder = await this.prisma.order.findFirst({
       where: { id: orderId, businessId },
       include: {
         items: {
           include: this.orderItemRecipeInclude,
         },
-        fiscalContext: true,
-        taxLines: true,
-        taxSnapshot: true,
       },
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!baseOrder) throw new NotFoundException('Order not found');
+    const [order] = await this.hydrateNormalizedOrderFiscalData(businessId, [
+      baseOrder,
+    ]);
 
     const conversions = await this.prisma.unitConversion.findMany();
     const mirrorReservations = await this.findMirrorReservationsForOrders(
