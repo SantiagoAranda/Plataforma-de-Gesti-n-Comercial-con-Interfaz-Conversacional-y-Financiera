@@ -575,7 +575,8 @@ export class InventoryService {
         const stock = this.decimal(si.ingredient.currentStock);
         const reqQty = this.decimal(si.quantityRequired).mul(requiredQuantity);
         if (stock.lt(reqQty)) {
-          const unitStr = si.ingredient.customUnitLabel || si.ingredient.consumptionUnit;
+          const unitStr =
+            si.ingredient.customUnitLabel || si.ingredient.consumptionUnit;
           return {
             sellable: false,
             status: 'NO_STOCK',
@@ -618,8 +619,7 @@ export class InventoryService {
       }
 
       const minStockValue = this.decimal(item.minStock ?? 0);
-      const isLowStock =
-        minStockValue.gt(0) && currentStock.lte(minStockValue);
+      const isLowStock = minStockValue.gt(0) && currentStock.lte(minStockValue);
 
       return {
         sellable: true,
@@ -984,7 +984,9 @@ export class InventoryService {
 
     if (sourceType === 'ORDER') {
       if (!order || !order.id) {
-        throw new BadRequestException('orderId is required for ORDER inventory flow');
+        throw new BadRequestException(
+          'orderId is required for ORDER inventory flow',
+        );
       }
       if (order.inventoryPostedAt) {
         return [];
@@ -1256,7 +1258,11 @@ export class InventoryService {
     for (const orderItem of orderItems) {
       if (orderItem.itemTypeSnapshot === 'SERVICE') {
         const serviceIngredients = await tx.serviceIngredient.findMany({
-          where: { businessId, serviceItemId: orderItem.itemId, isActive: true },
+          where: {
+            businessId,
+            serviceItemId: orderItem.itemId,
+            isActive: true,
+          },
         });
         for (const si of serviceIngredients) {
           consumptions.push({
@@ -2222,11 +2228,16 @@ export class InventoryService {
         }
 
         if (dto.purchasePresentationId) {
-          return this.resolvePresentationPurchaseInput(tx, businessId, ingredient, {
-            purchasePresentationId: dto.purchasePresentationId,
-            purchaseQuantity,
-            purchaseUnitCost,
-          });
+          return this.resolvePresentationPurchaseInput(
+            tx,
+            businessId,
+            ingredient,
+            {
+              purchasePresentationId: dto.purchasePresentationId,
+              purchaseQuantity,
+              purchaseUnitCost,
+            },
+          );
         }
 
         return this.resolveStandardPurchaseInput(tx, ingredient, {
@@ -2258,12 +2269,30 @@ export class InventoryService {
     fromUnitId: string,
     toUnitId: string,
   ) {
+    if (fromUnitId === toUnitId) {
+      const unit = await tx.unit.findUnique({ where: { id: fromUnitId } });
+      if (
+        !unit ||
+        unit.isActive === false ||
+        unit.kind === UnitKind.COMMERCIAL
+      ) {
+        throw new BadRequestException(
+          'La unidad de compra no es compatible con la unidad base del insumo.',
+        );
+      }
+      return {
+        factor: new Prisma.Decimal(1),
+        fromUnit: unit,
+        toUnit: unit,
+      };
+    }
+
     const conversion = await tx.unitConversion.findUnique({
       where: { fromUnitId_toUnitId: { fromUnitId, toUnitId } },
       include: { fromUnit: true, toUnit: true },
     });
 
-    if (!conversion) {
+    if (!conversion || this.decimal(conversion.factor).lte(0)) {
       throw new BadRequestException(
         'La unidad de compra no es compatible con la unidad base del insumo.',
       );
@@ -2271,6 +2300,8 @@ export class InventoryService {
 
     // Commercial package labels are ingredient-specific presentations, not global conversions.
     if (
+      conversion.fromUnit.isActive === false ||
+      conversion.toUnit.isActive === false ||
       conversion.fromUnit.kind === UnitKind.COMMERCIAL ||
       conversion.toUnit.kind === UnitKind.COMMERCIAL
     ) {
@@ -2422,12 +2453,10 @@ export class InventoryService {
       purchaseUnitLabel,
       factorToBaseUnitSnapshot: presentationFactor,
       conversionDetail:
-        this.decimal(presentation.innerQuantity).eq(1)
-          ? `1 ${purchaseUnitLabel} × ${presentationFactor.toString()} ${stockUnitLabel} = ${presentationFactor.toString()} ${stockUnitLabel}`
-          : `1 ${purchaseUnitLabel} ${presentation.name} = ` +
-            `${this.decimal(presentation.innerQuantity).toString()} ${innerLabel} x ` +
-            `${this.decimal(presentation.contentQuantity).toString()} ${contentUnitLabel} = ` +
-            `${presentationFactor.toString()} ${stockUnitLabel}`,
+        `1 ${purchaseUnitLabel} = ` +
+        `${this.decimal(presentation.innerQuantity).toString()} ${innerLabel} × ` +
+        `${this.decimal(presentation.contentQuantity).toString()} ${contentUnitLabel} = ` +
+        `${presentationFactor.toString()} ${stockUnitLabel}`,
     };
   }
 
@@ -2535,7 +2564,9 @@ export class InventoryService {
   async replaceServiceConsumption(
     businessId: string,
     serviceItemId: string,
-    dto: { ingredients: Array<{ ingredientId: string; quantityRequired: string }> },
+    dto: {
+      ingredients: Array<{ ingredientId: string; quantityRequired: string }>;
+    },
   ) {
     const service = await this.prisma.item.findFirst({
       where: { id: serviceItemId, businessId, type: 'SERVICE' },
@@ -2555,13 +2586,17 @@ export class InventoryService {
     });
 
     if (dbIngredients.length !== ingredientIds.length) {
-      throw new BadRequestException('One or more ingredients are invalid or inactive');
+      throw new BadRequestException(
+        'One or more ingredients are invalid or inactive',
+      );
     }
 
     for (const ing of dto.ingredients) {
       const qty = this.decimal(ing.quantityRequired);
       if (qty.lte(0)) {
-        throw new BadRequestException('quantityRequired must be greater than zero');
+        throw new BadRequestException(
+          'quantityRequired must be greater than zero',
+        );
       }
     }
 
@@ -2612,7 +2647,13 @@ export class InventoryService {
   async applyInventoryConsumptionForReservation(
     tx: Prisma.TransactionClient,
     businessId: string,
-    reservation: { id: string; itemId: string; customerName: string | null; item: { name: string }; inventoryPostedAt?: Date | null },
+    reservation: {
+      id: string;
+      itemId: string;
+      customerName: string | null;
+      item: { name: string };
+      inventoryPostedAt?: Date | null;
+    },
     occurredAt: Date = new Date(),
   ) {
     if (reservation.inventoryPostedAt) {
@@ -2632,13 +2673,15 @@ export class InventoryService {
       return [];
     }
 
-    const consumptions: OrderIngredientConsumption[] = serviceIngredients.map((si) => ({
-      ingredientId: si.ingredientId,
-      quantity: this.decimal(si.quantityRequired),
-      orderItemId: `virtual-res-oi-${reservation.id}`, // Placeholder
-      soldItemId: reservation.itemId,
-      itemName: reservation.item.name,
-    }));
+    const consumptions: OrderIngredientConsumption[] = serviceIngredients.map(
+      (si) => ({
+        ingredientId: si.ingredientId,
+        quantity: this.decimal(si.quantityRequired),
+        orderItemId: `virtual-res-oi-${reservation.id}`, // Placeholder
+        soldItemId: reservation.itemId,
+        itemName: reservation.item.name,
+      }),
+    );
 
     await this.validateStockAvailability(businessId, consumptions, tx);
 
@@ -2800,9 +2843,10 @@ export class InventoryService {
     }
 
     const requestedLimit = Number(query.limit ?? 2);
-    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
-      ? Math.min(requestedLimit, 20)
-      : 2;
+    const limit =
+      Number.isInteger(requestedLimit) && requestedLimit > 0
+        ? Math.min(requestedLimit, 20)
+        : 2;
 
     const recentSales = await this.prisma.inventoryMovement.findMany({
       where,

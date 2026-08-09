@@ -221,9 +221,8 @@ describe('InventoryService', () => {
       currentStock: new Prisma.Decimal(5),
       averageCost: new Prisma.Decimal(2),
     });
-    tx.inventoryMovement.create.mockImplementation(
-      ({ data }: { data: any }) =>
-        Promise.resolve({ id: 'movement-1', ...data }),
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
     );
 
     const movement = await service.applyInventoryMovement(
@@ -314,9 +313,7 @@ describe('InventoryService', () => {
         unitCost: 2,
         referenceType: 'PURCHASE_MANUAL',
       }),
-    ).rejects.toThrow(
-      'Cannot create inventory movements for an inactive item',
-    );
+    ).rejects.toThrow('Cannot create inventory movements for an inactive item');
 
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
@@ -333,9 +330,8 @@ describe('InventoryService', () => {
       currentStock: new Prisma.Decimal(3),
       averageCost: new Prisma.Decimal(2),
     });
-    tx.inventoryMovement.create.mockImplementation(
-      ({ data }: { data: any }) =>
-        Promise.resolve({ id: 'movement-1', ...data }),
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
     );
 
     const movement = await service.applyInventoryMovement(
@@ -376,9 +372,8 @@ describe('InventoryService', () => {
       averageCost: new Prisma.Decimal(0),
     });
     tx.inventoryMovement.findFirst.mockResolvedValue(null);
-    tx.inventoryMovement.create.mockImplementation(
-      ({ data }: { data: any }) =>
-        Promise.resolve({ id: 'movement-1', ...data }),
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
     );
 
     const movement = await service.registerInitial(businessId, {
@@ -891,6 +886,14 @@ describe('InventoryService', () => {
       },
       isActive: true,
     });
+    tx.unit.findUnique.mockResolvedValue({
+      id: 'unit-unit',
+      code: 'UNIT',
+      symbol: 'u',
+      name: 'Unidad',
+      kind: 'COUNT',
+      isActive: true,
+    });
     tx.unitConversion.findUnique.mockResolvedValue({
       factor: new Prisma.Decimal(1),
       fromUnit: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
@@ -914,7 +917,9 @@ describe('InventoryService', () => {
     expect(movement.purchaseMode).toBe('PRESENTATION');
     expect(movement.purchasePresentationId).toBe('presentation-box-1');
     expect((movement as any).factorToBaseUnitSnapshot.toString()).toBe('24');
-    expect(movement.conversionDetail).toBe('1 paquete × 24 u = 24 u');
+    expect(movement.conversionDetail).toBe(
+      '1 paquete = 1 unidades × 24 u = 24 u',
+    );
   });
 
   it('standard LB to G purchase enters 500 g', async () => {
@@ -2935,9 +2940,13 @@ describe('InventoryService', () => {
         },
       });
 
-      const result = await service.replaceServiceConsumption(businessId, 'service-1', {
-        ingredients: [{ ingredientId: 'ing-1', quantityRequired: '5' }],
-      });
+      const result = await service.replaceServiceConsumption(
+        businessId,
+        'service-1',
+        {
+          ingredients: [{ ingredientId: 'ing-1', quantityRequired: '5' }],
+        },
+      );
 
       expect(result).toHaveLength(1);
       expect(tx.serviceIngredient.deleteMany).toHaveBeenCalledWith({
@@ -2986,8 +2995,8 @@ describe('InventoryService', () => {
           averageCost: new Prisma.Decimal(1.5),
         },
       ]);
-      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
-        Promise.resolve({ id: 'm-1', ...data }),
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) => Promise.resolve({ id: 'm-1', ...data }),
       );
 
       const movements = await service.applyInventoryConsumptionForReservation(
@@ -3031,11 +3040,12 @@ describe('InventoryService', () => {
         },
       ]);
 
-      const returnedMovements = await service.reverseInventoryConsumptionForReservation(
-        tx as any,
-        businessId,
-        'res-1',
-      );
+      const returnedMovements =
+        await service.reverseInventoryConsumptionForReservation(
+          tx as any,
+          businessId,
+          'res-1',
+        );
 
       expect(returnedMovements).toHaveLength(1);
       expect(tx.ingredient.update).toHaveBeenCalledWith({
@@ -3079,11 +3089,16 @@ describe('InventoryService', () => {
         }),
       );
       tx.ingredient.findMany.mockResolvedValue([
-        { id: 'ingredient-cheese', currentStock: new Prisma.Decimal(1000), name: 'Cheese' },
+        {
+          id: 'ingredient-cheese',
+          currentStock: new Prisma.Decimal(1000),
+          name: 'Cheese',
+        },
       ]);
 
-      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
-        Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) =>
+          Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
       );
       tx.ingredient.update.mockResolvedValue({});
       tx.order.update.mockResolvedValue({});
@@ -3150,11 +3165,16 @@ describe('InventoryService', () => {
         }),
       );
       tx.ingredient.findMany.mockResolvedValue([
-        { id: 'ingredient-opt', currentStock: new Prisma.Decimal(1000), name: 'Extra ingredient' },
+        {
+          id: 'ingredient-opt',
+          currentStock: new Prisma.Decimal(1000),
+          name: 'Extra ingredient',
+        },
       ]);
 
-      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
-        Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) =>
+          Promise.resolve({ id: `movement-${data.ingredientId}`, ...data }),
       );
       tx.ingredient.update.mockResolvedValue({});
       tx.order.update.mockResolvedValue({});
@@ -3228,24 +3248,56 @@ describe('InventoryService', () => {
         ])
         .mockResolvedValueOnce([
           {
-            id: 'movement-2', type: 'SALE', quantity: new Prisma.Decimal(2), unitCost: new Prisma.Decimal(3), totalValue: new Prisma.Decimal(6), occurredAt: new Date('2026-01-02'),
-            ingredient: { id: 'ingredient-1', name: 'Harina', consumptionUnit: 'g', customUnitLabel: null },
-            orderItem: { id: 'order-item-2', quantity: 1, order: { id: 'order-2', documentNumber: '1002', createdAt: new Date('2026-01-02') } },
+            id: 'movement-2',
+            type: 'SALE',
+            quantity: new Prisma.Decimal(2),
+            unitCost: new Prisma.Decimal(3),
+            totalValue: new Prisma.Decimal(6),
+            occurredAt: new Date('2026-01-02'),
+            ingredient: {
+              id: 'ingredient-1',
+              name: 'Harina',
+              consumptionUnit: 'g',
+              customUnitLabel: null,
+            },
+            orderItem: {
+              id: 'order-item-2',
+              quantity: 1,
+              order: {
+                id: 'order-2',
+                documentNumber: '1002',
+                createdAt: new Date('2026-01-02'),
+              },
+            },
           },
         ]);
 
-      const result = await service.getRecipeConsumptionHistory(businessId, 'item-1', { limit: '2' });
+      const result = await service.getRecipeConsumptionHistory(
+        businessId,
+        'item-1',
+        { limit: '2' },
+      );
 
-      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
-        distinct: ['orderItemId'],
-        orderBy: { occurredAt: 'desc' },
-        take: 2,
-      }));
-      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
-        where: expect.objectContaining({ orderItemId: { in: ['order-item-2', 'order-item-1'] } }),
-      }));
+      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          distinct: ['orderItemId'],
+          orderBy: { occurredAt: 'desc' },
+          take: 2,
+        }),
+      );
+      expect(tx.inventoryMovement.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: expect.objectContaining({
+            orderItemId: { in: ['order-item-2', 'order-item-1'] },
+          }),
+        }),
+      );
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(expect.objectContaining({ id: 'movement-2', totalValue: 6 }));
+      expect(result[0]).toEqual(
+        expect.objectContaining({ id: 'movement-2', totalValue: 6 }),
+      );
     });
 
     it('enforces multitenant security isolation in history endpoints', async () => {
@@ -3260,6 +3312,329 @@ describe('InventoryService', () => {
       await expect(
         service.getServiceConsumptionHistory(businessId, 'service-other', {}),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('two-level commercial purchase presentations', () => {
+    const cases = [
+      {
+        name: '24 packages of 500 g enter 12000 g without an identity conversion row',
+        stockUnit: {
+          id: 'unit-g',
+          code: 'G',
+          symbol: 'g',
+          name: 'Gramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        contentUnit: {
+          id: 'unit-g',
+          code: 'G',
+          symbol: 'g',
+          name: 'Gramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        innerQuantity: '24',
+        contentQuantity: '500',
+        expectedFactor: '12000',
+        purchaseQuantity: '2',
+        expectedQuantity: '24000',
+        expectedTotal: '120000',
+        expectedUnitCost: '5',
+      },
+      {
+        name: '20 packages of 250 g enter 5 kg through a direct conversion',
+        stockUnit: {
+          id: 'unit-kg',
+          code: 'KG',
+          symbol: 'kg',
+          name: 'Kilogramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        contentUnit: {
+          id: 'unit-g',
+          code: 'G',
+          symbol: 'g',
+          name: 'Gramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        conversion: '0.001',
+        innerQuantity: '20',
+        contentQuantity: '250',
+        expectedFactor: '5',
+      },
+      {
+        name: '12 bottles of 500 ml enter 6 l through a direct conversion',
+        stockUnit: {
+          id: 'unit-l',
+          code: 'L',
+          symbol: 'l',
+          name: 'Litro',
+          kind: 'VOLUME',
+          isActive: true,
+        },
+        contentUnit: {
+          id: 'unit-ml',
+          code: 'ML',
+          symbol: 'ml',
+          name: 'Mililitro',
+          kind: 'VOLUME',
+          isActive: true,
+        },
+        conversion: '0.001',
+        innerQuantity: '12',
+        contentQuantity: '500',
+        expectedFactor: '6',
+      },
+      {
+        name: '24 countable units enter 24 base units',
+        stockUnit: {
+          id: 'unit-unit',
+          code: 'UNIT',
+          symbol: 'u',
+          name: 'Unidad',
+          kind: 'COUNT',
+          isActive: true,
+        },
+        contentUnit: {
+          id: 'unit-unit',
+          code: 'UNIT',
+          symbol: 'u',
+          name: 'Unidad',
+          kind: 'COUNT',
+          isActive: true,
+        },
+        innerQuantity: '24',
+        contentQuantity: '1',
+        expectedFactor: '24',
+      },
+      {
+        name: 'keeps the historical simplified 1 x 12000 g interpretation',
+        stockUnit: {
+          id: 'unit-g',
+          code: 'G',
+          symbol: 'g',
+          name: 'Gramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        contentUnit: {
+          id: 'unit-g',
+          code: 'G',
+          symbol: 'g',
+          name: 'Gramo',
+          kind: 'WEIGHT',
+          isActive: true,
+        },
+        innerQuantity: '1',
+        contentQuantity: '12000',
+        expectedFactor: '12000',
+      },
+    ];
+
+    it.each(cases)('$name', async (testCase) => {
+      const { service, tx } = createService();
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: ingredientId,
+        businessId,
+        name: 'Levadura',
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(0),
+        stockUnitId: testCase.stockUnit.id,
+        defaultPurchaseUnitId: testCase.stockUnit.id,
+      });
+      tx.ingredientPurchasePresentation.findFirst.mockResolvedValue({
+        id: 'presentation-box',
+        businessId,
+        ingredientId,
+        name: 'Caja',
+        purchaseUnitId: 'unit-box',
+        purchaseUnit: {
+          id: 'unit-box',
+          code: 'BOX',
+          symbol: 'caja',
+          name: 'Caja',
+          kind: 'COMMERCIAL',
+          isActive: true,
+        },
+        innerQuantity: new Prisma.Decimal(testCase.innerQuantity),
+        innerUnitLabel: 'paquetes',
+        contentQuantity: new Prisma.Decimal(testCase.contentQuantity),
+        contentUnitId: testCase.contentUnit.id,
+        contentUnit: testCase.contentUnit,
+        isActive: true,
+      });
+      tx.unit.findUnique.mockResolvedValue(testCase.contentUnit);
+      if (testCase.conversion) {
+        tx.unitConversion.findUnique.mockResolvedValue({
+          factor: new Prisma.Decimal(testCase.conversion),
+          fromUnit: testCase.contentUnit,
+          toUnit: testCase.stockUnit,
+        });
+      }
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) =>
+          Promise.resolve({ id: 'movement-presentation', ...data }),
+      );
+      tx.ingredient.update.mockResolvedValue({});
+
+      const movement = await service.registerPurchase(businessId, {
+        ingredientId,
+        purchasePresentationId: 'presentation-box',
+        purchaseQuantity: testCase.purchaseQuantity ?? '1',
+        purchaseUnitCost: '60000',
+      });
+
+      expect(movement.quantity.toString()).toBe(
+        testCase.expectedQuantity ?? testCase.expectedFactor,
+      );
+      expect(movement.factorToBaseUnitSnapshot.toString()).toBe(
+        testCase.expectedFactor,
+      );
+      if (testCase.expectedTotal) {
+        expect(movement.totalValue.toString()).toBe(testCase.expectedTotal);
+        expect(movement.unitCost.toString()).toBe(testCase.expectedUnitCost);
+        expect(movement.conversionDetail).toBe(
+          '1 caja = 24 paquetes × 500 g = 12000 g',
+        );
+      }
+      if (testCase.contentUnit.id === testCase.stockUnit.id) {
+        expect(tx.unitConversion.findUnique).not.toHaveBeenCalled();
+      }
+    });
+
+    it('uses base quantity for weighted average and preserves the confirmed snapshot', async () => {
+      const { service, tx } = createService();
+      const contentUnit = {
+        id: 'unit-g',
+        code: 'G',
+        symbol: 'g',
+        name: 'Gramo',
+        kind: 'WEIGHT',
+        isActive: true,
+      };
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: ingredientId,
+        businessId,
+        name: 'Levadura',
+        currentStock: new Prisma.Decimal(10000),
+        averageCost: new Prisma.Decimal(4),
+        stockUnitId: contentUnit.id,
+        defaultPurchaseUnitId: contentUnit.id,
+      });
+      tx.ingredientPurchasePresentation.findFirst.mockResolvedValue({
+        id: 'presentation-box',
+        businessId,
+        ingredientId,
+        name: 'Caja',
+        purchaseUnitId: 'unit-box',
+        purchaseUnit: {
+          id: 'unit-box',
+          code: 'BOX',
+          symbol: 'caja',
+          name: 'Caja',
+          kind: 'COMMERCIAL',
+          isActive: true,
+        },
+        innerQuantity: new Prisma.Decimal(24),
+        innerUnitLabel: 'paquetes',
+        contentQuantity: new Prisma.Decimal(500),
+        contentUnitId: contentUnit.id,
+        contentUnit,
+        isActive: true,
+      });
+      tx.unit.findUnique.mockResolvedValue(contentUnit);
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) =>
+          Promise.resolve({ id: 'movement-weighted-presentation', ...data }),
+      );
+      tx.ingredient.update.mockResolvedValue({});
+
+      const movement = await service.registerPurchase(businessId, {
+        ingredientId,
+        purchasePresentationId: 'presentation-box',
+        purchaseQuantity: '1',
+        purchaseUnitCost: '60000',
+      });
+
+      expect(movement.quantity.toString()).toBe('12000');
+      expect(movement.unitCost.toString()).toBe('5');
+      expect(movement.stockAfter.toString()).toBe('22000');
+      expect(movement.averageCostAfter.toString()).toBe('4.545455');
+      expect(movement.factorToBaseUnitSnapshot.toString()).toBe('12000');
+      expect(movement.totalValue.toString()).toBe('60000');
+    });
+
+    it('rejects an inactive presentation before calculating the purchase', async () => {
+      const { service, tx } = createService();
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: ingredientId,
+        businessId,
+        name: 'Levadura',
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(0),
+        stockUnitId: 'unit-g',
+      });
+      tx.ingredientPurchasePresentation.findFirst.mockResolvedValue({
+        id: 'presentation-inactive',
+        businessId,
+        ingredientId,
+        isActive: false,
+      });
+
+      await expect(
+        service.registerPurchase(businessId, {
+          ingredientId,
+          purchasePresentationId: 'presentation-inactive',
+          purchaseQuantity: '1',
+          purchaseUnitCost: '60000',
+        }),
+      ).rejects.toThrow('Purchase presentation is inactive');
+      expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps the first movement snapshot after the presentation is edited', async () => {
+      const { service, tx } = createService();
+      const contentUnit = {
+        id: 'unit-g', code: 'G', symbol: 'g', name: 'Gramo', kind: 'WEIGHT', isActive: true,
+      };
+      const presentation = {
+        id: 'presentation-editable', businessId, ingredientId, name: 'Caja',
+        purchaseUnitId: 'unit-box',
+        purchaseUnit: { id: 'unit-box', code: 'BOX', symbol: 'caja', name: 'Caja', kind: 'COMMERCIAL', isActive: true },
+        innerQuantity: new Prisma.Decimal(24), innerUnitLabel: 'paquetes',
+        contentQuantity: new Prisma.Decimal(500), contentUnitId: contentUnit.id,
+        contentUnit, isActive: true,
+      };
+      tx.ingredient.findFirst.mockResolvedValue({
+        id: ingredientId, businessId, name: 'Levadura',
+        currentStock: new Prisma.Decimal(0), averageCost: new Prisma.Decimal(0),
+        stockUnitId: contentUnit.id,
+      });
+      tx.ingredientPurchasePresentation.findFirst.mockImplementation(async () => presentation);
+      tx.unit.findUnique.mockResolvedValue(contentUnit);
+      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({ id: `movement-${data.factorToBaseUnitSnapshot}`, ...data }),
+      );
+      tx.ingredient.update.mockResolvedValue({});
+
+      const original = await service.registerPurchase(businessId, {
+        ingredientId, purchasePresentationId: presentation.id,
+        purchaseQuantity: '1', purchaseUnitCost: '60000',
+      });
+      presentation.innerQuantity = new Prisma.Decimal(12);
+      const future = await service.registerPurchase(businessId, {
+        ingredientId, purchasePresentationId: presentation.id,
+        purchaseQuantity: '1', purchaseUnitCost: '60000',
+      });
+
+      expect(original.factorToBaseUnitSnapshot.toString()).toBe('12000');
+      expect(original.conversionDetail).toBe('1 caja = 24 paquetes × 500 g = 12000 g');
+      expect(future.factorToBaseUnitSnapshot.toString()).toBe('6000');
+      expect(future.conversionDetail).toBe('1 caja = 12 paquetes × 500 g = 6000 g');
     });
   });
 });
