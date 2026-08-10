@@ -446,7 +446,7 @@ export default function MiTiendaPage() {
 
             <div
               ref={filtersRef}
-              className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+              className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               {([
                 { key: "", label: "Todo" },
@@ -461,7 +461,7 @@ export default function MiTiendaPage() {
                     className={cn(
                       "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
                       active
-                        ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
+                        ? "bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                         : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
                     )}
                     type="button"
