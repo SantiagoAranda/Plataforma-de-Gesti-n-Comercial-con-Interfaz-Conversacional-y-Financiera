@@ -39,12 +39,40 @@ export class IngredientsService {
     return value.trim();
   }
 
+  private async assertNameAvailable(
+    businessId: string,
+    name: string,
+    excludeId?: string,
+  ) {
+    const existing = await this.prisma.ingredient.findFirst({
+      where: {
+        businessId,
+        deletedAt: null,
+        name: { equals: this.normalizeText(name), mode: 'insensitive' },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { status: true },
+    });
+    if (!existing) return;
+
+    throw new ConflictException({
+      code: 'INGREDIENT_NAME_ALREADY_EXISTS',
+      message:
+        existing.status === 'INACTIVE'
+          ? 'Ya existe un ingrediente inactivo con este nombre. Puedes reactivarlo o eliminarlo antes de crear uno nuevo.'
+          : 'Ya existe un ingrediente con este nombre.',
+    });
+  }
+
   private handleKnownPrismaError(error: unknown): never {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === 'P2002'
     ) {
-      throw new ConflictException('Ingredient name already exists');
+      throw new ConflictException({
+        code: 'INGREDIENT_NAME_ALREADY_EXISTS',
+        message: 'Ya existe un ingrediente con este nombre.',
+      });
     }
 
     throw error;
@@ -345,6 +373,7 @@ export class IngredientsService {
   }
 
   async create(businessId: string, dto: CreateIngredientDto) {
+    await this.assertNameAvailable(businessId, dto.name);
     const units = await this.resolveIngredientUnits(dto);
 
     const minStock = new Prisma.Decimal(dto.minStock ?? 0);
@@ -413,6 +442,7 @@ export class IngredientsService {
     const ingredients = await this.prisma.ingredient.findMany({
       where: {
         businessId,
+        deletedAt: null,
         ...(query.status ? { status: query.status } : {}),
         ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
       },
@@ -429,7 +459,7 @@ export class IngredientsService {
 
   async findOne(businessId: string, id: string) {
     const ingredient = await this.prisma.ingredient.findFirst({
-      where: { id, businessId },
+      where: { id, businessId, deletedAt: null },
       include: {
         _count: { select: { inventoryMovements: true } },
         stockUnit: true,
@@ -474,6 +504,10 @@ export class IngredientsService {
 
   async update(businessId: string, id: string, dto: UpdateIngredientDto) {
     const existing = await this.findOne(businessId, id);
+
+    if (dto.name !== undefined) {
+      await this.assertNameAvailable(businessId, dto.name, id);
+    }
 
     if (dto.minStock !== undefined && new Prisma.Decimal(dto.minStock).lt(0)) {
       throw new BadRequestException(
@@ -562,7 +596,7 @@ export class IngredientsService {
       );
 
       const ingredient = await tx.ingredient.findFirst({
-        where: { id, businessId },
+        where: { id, businessId, deletedAt: null },
       });
       if (!ingredient) throw new NotFoundException('Ingredient not found');
 
@@ -579,7 +613,7 @@ export class IngredientsService {
 
   async getDeactivationImpact(businessId: string, id: string) {
     const ingredient = await this.prisma.ingredient.findFirst({
-      where: { id, businessId },
+      where: { id, businessId, deletedAt: null },
       select: { id: true, name: true },
     });
     if (!ingredient) throw new NotFoundException('Ingredient not found');
@@ -712,9 +746,193 @@ export class IngredientsService {
     });
   }
 
+  private async loadDeletionState(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    ingredientId: string,
+  ) {
+    const [
+      inventoryMovements,
+      recipes,
+      serviceIngredients,
+      itemOptions,
+      purchasePresentations,
+      orderItemOptions,
+    ] = await Promise.all([
+      tx.inventoryMovement.count({ where: { businessId, ingredientId } }),
+      tx.recipe.count({ where: { businessId, ingredientId } }),
+      tx.serviceIngredient.count({ where: { businessId, ingredientId } }),
+      tx.itemOption.count({ where: { businessId, ingredientId } }),
+      tx.ingredientPurchasePresentation.count({
+        where: { businessId, ingredientId },
+      }),
+      tx.orderItemOption.count({
+        where: { ingredientId, orderItem: { order: { businessId } } },
+      }),
+    ]);
+
+    const protectedRelations = {
+      inventoryMovements,
+      recipes,
+      serviceIngredients,
+      itemOptions,
+      purchasePresentations,
+      orderItemOptions,
+    };
+    const protectedRelationCount = Object.values(protectedRelations).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    return { protectedRelations, protectedRelationCount };
+  }
+
+  private deletionMode(
+    ingredient: { currentStock: Prisma.Decimal; averageCost: Prisma.Decimal },
+    protectedRelationCount: number,
+  ) {
+    if (protectedRelationCount > 0) return 'PRESERVE_REQUIRED' as const;
+    if (
+      !new Prisma.Decimal(ingredient.currentStock).isZero() ||
+      !new Prisma.Decimal(ingredient.averageCost).isZero()
+    ) {
+      return 'RESIDUAL_DECISION_REQUIRED' as const;
+    }
+    return 'HARD_DELETE' as const;
+  }
+
+  async getDeletionImpact(businessId: string, id: string) {
+    const ingredient = await this.prisma.ingredient.findFirst({
+      where: { id, businessId, deletedAt: null },
+      include: { stockUnit: true },
+    });
+    if (!ingredient) throw new NotFoundException('Ingredient not found');
+
+    const [dependencies, deletionState] = await Promise.all([
+      this.loadDeactivationDependencies(this.prisma, businessId, id),
+      this.loadDeletionState(this.prisma, businessId, id),
+    ]);
+    return {
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      deletionMode: this.deletionMode(
+        ingredient,
+        deletionState.protectedRelationCount,
+      ),
+      currentStock: ingredient.currentStock.toString(),
+      averageCost: ingredient.averageCost.toString(),
+      unitLabel:
+        ingredient.stockUnit?.symbol ??
+        ingredient.customUnitLabel ??
+        ingredient.consumptionUnit,
+      dependencies,
+      summary: {
+        recipes: dependencies.recipes.length,
+        services: dependencies.services.length,
+        itemOptions: dependencies.itemOptions.length,
+        total:
+          dependencies.recipes.length +
+          dependencies.services.length +
+          dependencies.itemOptions.length,
+      },
+      protectedRelations: deletionState.protectedRelations,
+    };
+  }
+
+  async remove(
+    businessId: string,
+    id: string,
+    residualInventoryAction?: string,
+  ) {
+    const allowedActions = [
+      undefined,
+      'DELETE_PERMANENTLY',
+      'PRESERVE_HISTORY',
+    ];
+    if (!allowedActions.includes(residualInventoryAction)) {
+      throw new BadRequestException('Invalid residualInventoryAction');
+    }
+
+    return this.runSerializableTransaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "Ingredient" WHERE "businessId" = ${businessId} AND "id" = ${id} AND "deletedAt" IS NULL FOR UPDATE`,
+      );
+      const ingredient = await tx.ingredient.findFirst({
+        where: { id, businessId, deletedAt: null },
+      });
+      if (!ingredient) throw new NotFoundException('Ingredient not found');
+
+      const deletionState = await this.loadDeletionState(tx, businessId, id);
+      const mode = this.deletionMode(
+        ingredient,
+        deletionState.protectedRelationCount,
+      );
+
+      if (
+        mode === 'PRESERVE_REQUIRED' ||
+        (mode === 'RESIDUAL_DECISION_REQUIRED' &&
+          residualInventoryAction === 'PRESERVE_HISTORY')
+      ) {
+        await tx.ingredient.update({
+          where: { id },
+          data: { status: 'INACTIVE', deletedAt: new Date() },
+        });
+        return {
+          deleted: true,
+          preservedHistory: true,
+          ingredientId: id,
+          deletionMode: 'SOFT_DELETE' as const,
+        };
+      }
+
+      if (
+        mode === 'RESIDUAL_DECISION_REQUIRED' &&
+        residualInventoryAction !== 'DELETE_PERMANENTLY'
+      ) {
+        throw new ConflictException({
+          code: 'INGREDIENT_DELETION_DECISION_REQUIRED',
+          message:
+            'El ingrediente conserva saldo o costo residual. Debes elegir cómo eliminarlo.',
+          currentStock: ingredient.currentStock.toString(),
+          averageCost: ingredient.averageCost.toString(),
+        });
+      }
+
+      await tx.ingredient.delete({ where: { id } });
+      return {
+        deleted: true,
+        preservedHistory: false,
+        ingredientId: id,
+        deletionMode: 'HARD_DELETE' as const,
+      };
+    });
+  }
+
+  private async runSerializableTransaction<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        const retryable =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          (error.code === 'P2034' ||
+            (error.code === 'P2010' &&
+              String(
+                (error.meta as { code?: unknown } | undefined)?.code ?? '',
+              ) === '40001'));
+        if (!retryable || attempt === maxAttempts) throw error;
+      }
+    }
+    throw new ConflictException('Could not serialize ingredient deletion');
+  }
+
   async listPurchasePresentations(businessId: string, ingredientId: string) {
     const ingredient = await this.prisma.ingredient.findFirst({
-      where: { id: ingredientId, businessId },
+      where: { id: ingredientId, businessId, deletedAt: null },
       include: { stockUnit: true },
     });
     if (!ingredient) throw new NotFoundException('Ingredient not found');
@@ -756,7 +974,7 @@ export class IngredientsService {
     dto: UpsertPurchasePresentationDto,
   ) {
     const ingredient = await tx.ingredient.findFirst({
-      where: { id: ingredientId, businessId },
+      where: { id: ingredientId, businessId, deletedAt: null },
       include: { stockUnit: true },
     });
     if (!ingredient) throw new NotFoundException('Ingredient not found');
@@ -1102,9 +1320,10 @@ export class IngredientsService {
         throw new NotFoundException('Purchase presentation not found');
 
       const ingredient = await tx.ingredient.findFirst({
-        where: { id: ingredientId, businessId },
+        where: { id: ingredientId, businessId, deletedAt: null },
         select: { stockUnitId: true },
       });
+      if (!ingredient) throw new NotFoundException('Ingredient not found');
 
       const updated = await tx.ingredientPurchasePresentation.update({
         where: { id: presentationId },

@@ -18,6 +18,7 @@ import {
   UnitKind,
 } from '@prisma/client';
 import { AccountingService } from '../accounting/accounting.service';
+import { isIngredientOperational } from '../ingredients/ingredient-operational';
 import { deriveRecipeValidity } from '../recipes/recipe-validity';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
@@ -436,6 +437,7 @@ export class InventoryService {
     const ingredients = await this.prisma.ingredient.findMany({
       where: {
         businessId,
+        deletedAt: null,
         ...(query.status ? { status: query.status } : {}),
       },
       include: {
@@ -540,6 +542,7 @@ export class InventoryService {
                 id: true,
                 name: true,
                 status: true,
+                deletedAt: true,
                 currentStock: true,
                 averageCost: true,
                 consumptionUnit: true,
@@ -570,6 +573,7 @@ export class InventoryService {
               id: true,
               name: true,
               status: true,
+              deletedAt: true,
               currentStock: true,
               consumptionUnit: true,
               customUnitLabel: true,
@@ -704,7 +708,8 @@ export class InventoryService {
       ingredient: {
         id?: string;
         name: string;
-        status: string;
+        status: Ingredient['status'];
+        deletedAt?: Date | null;
         currentStock: Prisma.Decimal | string | number;
         consumptionUnit: string;
         customUnitLabel: string | null;
@@ -717,7 +722,7 @@ export class InventoryService {
     }
 
     const inactiveIngredients = serviceIngredients
-      .filter((line) => line.ingredient.status === 'INACTIVE')
+      .filter((line) => !isIngredientOperational(line.ingredient))
       .map((line) => ({
         id: line.ingredient.id ?? '',
         name: line.ingredient.name,
@@ -734,7 +739,9 @@ export class InventoryService {
     const requiredQuantity = this.decimal(quantity);
     for (const line of serviceIngredients) {
       const stock = this.decimal(line.ingredient.currentStock);
-      const required = this.decimal(line.quantityRequired).mul(requiredQuantity);
+      const required = this.decimal(line.quantityRequired).mul(
+        requiredQuantity,
+      );
       if (stock.lt(required)) {
         const unit =
           line.ingredient.customUnitLabel || line.ingredient.consumptionUnit;
@@ -774,6 +781,7 @@ export class InventoryService {
                 id: true,
                 name: true,
                 status: true,
+                deletedAt: true,
                 currentStock: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
@@ -789,6 +797,7 @@ export class InventoryService {
                 id: true,
                 name: true,
                 status: true,
+                deletedAt: true,
                 currentStock: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
@@ -819,7 +828,7 @@ export class InventoryService {
 
       if (item.type === 'SERVICE') {
         const inactiveIngredients = item.serviceIngredients
-          .filter((line) => line.ingredient.status === 'INACTIVE')
+          .filter((line) => !isIngredientOperational(line.ingredient))
           .map((line) => ({
             id: line.ingredient.id,
             name: line.ingredient.name,
@@ -1040,6 +1049,8 @@ export class InventoryService {
           where: {
             businessId,
             id: { in: ingredientIds },
+            status: 'ACTIVE',
+            deletedAt: null,
           },
           select: {
             id: true,
@@ -1692,13 +1703,13 @@ export class InventoryService {
 
     const ingredients = await tx.ingredient.findMany({
       where: { businessId, id: { in: ingredientIds } },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, deletedAt: true },
     });
     if (ingredients.length !== ingredientIds.length) {
       throw new BadRequestException('One or more ingredients are invalid');
     }
     const inactiveIngredients = ingredients
-      .filter((ingredient) => ingredient.status === 'INACTIVE')
+      .filter((ingredient) => !isIngredientOperational(ingredient))
       .map((ingredient) => ({ id: ingredient.id, name: ingredient.name }));
     if (inactiveIngredients.length === 0) return;
 
@@ -1755,10 +1766,24 @@ export class InventoryService {
 
     const ingredient = await tx.ingredient.findFirst({
       where: { id: ingredientId, businessId },
-      select: { stockUnitId: true, name: true },
+      select: {
+        stockUnitId: true,
+        name: true,
+        status: true,
+        deletedAt: true,
+      },
     });
     if (!ingredient) {
       throw new BadRequestException('Option ingredient snapshot is invalid');
+    }
+    if (!isIngredientOperational(ingredient)) {
+      throw new BadRequestException({
+        code: 'INGREDIENT_NOT_OPERATIONAL',
+        message: 'El ingrediente no está disponible para nuevas operaciones.',
+        ingredientId,
+        status: ingredient.status,
+        deleted: ingredient.deletedAt != null,
+      });
     }
     if (!ingredient.stockUnitId) {
       throw new BadRequestException(
@@ -2022,10 +2047,14 @@ export class InventoryService {
         businessId,
         input.ingredientId,
       );
-      if (ingredient.status === 'INACTIVE') {
-        throw new BadRequestException(
-          'Cannot create inventory movements for an inactive ingredient',
-        );
+      if (!isIngredientOperational(ingredient)) {
+        throw new BadRequestException({
+          code: 'INGREDIENT_NOT_OPERATIONAL',
+          message: 'El ingrediente no está disponible para nuevas operaciones.',
+          ingredientId: ingredient.id,
+          status: ingredient.status,
+          deleted: ingredient.deletedAt != null,
+        });
       }
       return {
         kind: 'ingredient',
@@ -2720,6 +2749,7 @@ export class InventoryService {
                 id: true,
                 name: true,
                 status: true,
+                deletedAt: true,
                 currentStock: true,
                 averageCost: true,
                 consumptionUnit: true,
@@ -2769,6 +2799,7 @@ export class InventoryService {
                 id: true,
                 name: true,
                 status: true,
+                deletedAt: true,
                 currentStock: true,
                 averageCost: true,
                 consumptionUnit: true,

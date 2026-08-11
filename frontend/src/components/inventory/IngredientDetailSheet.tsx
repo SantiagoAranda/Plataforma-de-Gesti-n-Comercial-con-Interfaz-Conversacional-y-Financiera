@@ -8,7 +8,6 @@ import {
   Edit2,
   LoaderCircle,
   Plus,
-  Power,
   Trash2,
   X,
 } from "lucide-react";
@@ -16,9 +15,9 @@ import {
 import { cn } from "@/src/lib/utils";
 import {
   createPurchasePresentation,
-  deactivateIngredient,
+  deleteIngredient,
   deactivatePurchasePresentation,
-  getIngredientDeactivationImpact,
+  getIngredientDeletionImpact,
   getIngredient,
   listKardex,
   listUnitConversions,
@@ -26,7 +25,7 @@ import {
   updateIngredient,
   updatePurchasePresentation,
   type Ingredient,
-  type IngredientDeactivationImpact,
+  type IngredientDeletionImpact,
   type IngredientPurchasePresentation,
   type InventoryMovement,
   type Unit,
@@ -101,11 +100,10 @@ export function IngredientDetailSheet({
   const [presentationForm, setPresentationForm] = useState(
     emptyPresentationForm,
   );
-  const [deactivationImpact, setDeactivationImpact] =
-    useState<IngredientDeactivationImpact | null>(null);
-  const [loadingDeactivationImpact, setLoadingDeactivationImpact] =
-    useState(false);
-  const [deactivatingIngredient, setDeactivatingIngredient] = useState(false);
+  const [deletionImpact, setDeletionImpact] =
+    useState<IngredientDeletionImpact | null>(null);
+  const [loadingDeletionImpact, setLoadingDeletionImpact] = useState(false);
+  const [deletingIngredient, setDeletingIngredient] = useState(false);
 
   const getIngredientStockUnit = useCallback(() => {
     if (!ingredient) return null;
@@ -399,36 +397,44 @@ export function IngredientDetailSheet({
     }
   };
 
-  const handleDeactivate = async () => {
+  const handleDelete = async () => {
     if (!ingredient) return;
-    setLoadingDeactivationImpact(true);
+    setLoadingDeletionImpact(true);
     try {
-      setDeactivationImpact(
-        await getIngredientDeactivationImpact(ingredient.id),
-      );
+      setDeletionImpact(await getIngredientDeletionImpact(ingredient.id));
     } catch (err) {
       console.error(err);
-      toast.error("No se pudo consultar el impacto de la desactivación");
+      toast.error("No se pudo consultar el impacto de la eliminación");
     } finally {
-      setLoadingDeactivationImpact(false);
+      setLoadingDeletionImpact(false);
     }
   };
 
-  const confirmDeactivate = async () => {
-    if (!ingredient || deactivatingIngredient) return;
-    setDeactivatingIngredient(true);
-    const toastId = toast.loading("Desactivando ingrediente...");
+  const confirmDelete = async (
+    residualInventoryAction?: "DELETE_PERMANENTLY" | "PRESERVE_HISTORY",
+  ) => {
+    if (!ingredient || deletingIngredient) return;
+    setDeletingIngredient(true);
+    const toastId = toast.loading("Eliminando ingrediente...");
     try {
-      await deactivateIngredient(ingredient.id);
-      toast.success("Ingrediente desactivado", { id: toastId });
-      setDeactivationImpact(null);
+      const result = await deleteIngredient(
+        ingredient.id,
+        residualInventoryAction,
+      );
+      toast.success(
+        result.preservedHistory
+          ? "Ingrediente eliminado. Su historial se conservó para mantener la trazabilidad."
+          : "Ingrediente eliminado.",
+        { id: toastId },
+      );
+      setDeletionImpact(null);
       onChanged();
       onClose();
     } catch (err) {
       console.error(err);
-      toast.error("No se pudo desactivar el ingrediente", { id: toastId });
+      toast.error("No se pudo eliminar el ingrediente", { id: toastId });
     } finally {
-      setDeactivatingIngredient(false);
+      setDeletingIngredient(false);
     }
   };
 
@@ -668,19 +674,19 @@ export function IngredientDetailSheet({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {ingredient?.status === "ACTIVE" && (
+                    {ingredient && (
                       <button
                         type="button"
-                        onClick={handleDeactivate}
-                        disabled={loadingDeactivationImpact}
+                        onClick={handleDelete}
+                        disabled={loadingDeletionImpact}
                         className="grid h-9 w-9 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 active:scale-95"
-                        aria-label="Desactivar ingrediente"
-                        title="Desactivar ingrediente"
+                        aria-label="Eliminar ingrediente"
+                        title="Eliminar ingrediente"
                       >
-                        {loadingDeactivationImpact ? (
+                        {loadingDeletionImpact ? (
                           <LoaderCircle className="h-5 w-5 animate-spin" />
                         ) : (
-                          <Power className="h-5 w-5" />
+                          <Trash2 className="h-5 w-5" />
                         )}
                       </button>
                     )}
@@ -1156,12 +1162,12 @@ export function IngredientDetailSheet({
           </div>
         </div>
       </div>
-      {deactivationImpact && (
+      {deletionImpact && (
         <IngredientDeactivationImpactModal
-          impact={deactivationImpact}
-          submitting={deactivatingIngredient}
-          onCancel={() => setDeactivationImpact(null)}
-          onConfirm={confirmDeactivate}
+          impact={deletionImpact}
+          submitting={deletingIngredient}
+          onCancel={() => setDeletionImpact(null)}
+          onConfirm={confirmDelete}
         />
       )}
     </>

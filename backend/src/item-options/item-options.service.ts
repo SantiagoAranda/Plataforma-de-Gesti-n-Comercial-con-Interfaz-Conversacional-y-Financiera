@@ -12,6 +12,7 @@ import {
   ItemType,
   Prisma,
 } from '@prisma/client';
+import { isIngredientOperational } from '../ingredients/ingredient-operational';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOptionGroupDto } from './dto/create-option-group.dto';
@@ -158,7 +159,8 @@ export class ItemOptionsService {
       const inactiveSelection = selected.find(
         ({ option }) =>
           option.targetType === ItemOptionTargetType.INGREDIENT &&
-          option.ingredient?.status === 'INACTIVE',
+          option.ingredient != null &&
+          !isIngredientOperational(option.ingredient),
       );
       if (inactiveSelection) {
         const ingredient = inactiveSelection.option.ingredient;
@@ -915,7 +917,7 @@ export class ItemOptionsService {
       where: { id: ingredientId, businessId },
     });
     if (!ingredient) throw new BadRequestException('Ingredient is invalid');
-    if (ingredient.status !== 'ACTIVE') {
+    if (!isIngredientOperational(ingredient)) {
       throw new BadRequestException({
         code: 'ITEM_OPTION_REQUIRES_REVIEW',
         message: 'No se puede utilizar un ingrediente inactivo en una opción.',
@@ -996,9 +998,18 @@ export class ItemOptionsService {
     if (!unitId) throw new BadRequestException('SHARED_TOTAL requires a unit');
     const ingredient = await this.prisma.ingredient.findFirst({
       where: { id: ingredientId, businessId },
-      select: { stockUnitId: true },
+      select: { stockUnitId: true, status: true, deletedAt: true },
     });
     if (!ingredient) throw new BadRequestException('Ingredient is invalid');
+    if (!isIngredientOperational(ingredient)) {
+      throw new BadRequestException({
+        code: 'INGREDIENT_NOT_OPERATIONAL',
+        message: 'El ingrediente no está disponible para nuevas operaciones.',
+        ingredientId,
+        status: ingredient.status,
+        deleted: ingredient.deletedAt != null,
+      });
+    }
     if (!ingredient.stockUnitId) {
       throw new BadRequestException(
         'SHARED_TOTAL ingredients must use the Unit catalog',
@@ -1057,6 +1068,7 @@ export class ItemOptionsService {
           id: true,
           name: true,
           status: true,
+          deletedAt: true,
           currentStock: true,
           averageCost: true,
           stockUnitId: true,

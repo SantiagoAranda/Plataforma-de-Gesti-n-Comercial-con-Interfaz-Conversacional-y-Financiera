@@ -1,9 +1,11 @@
 import { IngredientStatus } from '@prisma/client';
+import { isIngredientOperational } from '../ingredients/ingredient-operational';
 
 export type RecipeIngredientState = {
   id: string;
   name: string;
   status: IngredientStatus;
+  deletedAt?: Date | null;
 };
 
 export type RecipeLineWithIngredientState = {
@@ -21,7 +23,7 @@ export function deriveRecipeValidity(
   const inactiveById = new Map<string, { id: string; name: string }>();
 
   for (const line of lines) {
-    if (line.ingredient.status === IngredientStatus.INACTIVE) {
+    if (!isIngredientOperational(line.ingredient)) {
       inactiveById.set(line.ingredient.id, {
         id: line.ingredient.id,
         name: line.ingredient.name,

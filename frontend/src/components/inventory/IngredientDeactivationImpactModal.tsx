@@ -8,13 +8,15 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import type { IngredientDeactivationImpact } from "@/src/services/inventory";
+import type { IngredientDeletionImpact } from "@/src/services/inventory";
 
 type Props = {
-  impact: IngredientDeactivationImpact;
+  impact: IngredientDeletionImpact;
   submitting: boolean;
   onCancel: () => void;
-  onConfirm: () => void | Promise<void>;
+  onConfirm: (
+    action?: "DELETE_PERMANENTLY" | "PRESERVE_HISTORY",
+  ) => void | Promise<void>;
 };
 
 export function IngredientDeactivationImpactModal({
@@ -25,6 +27,9 @@ export function IngredientDeactivationImpactModal({
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const hasDependencies = impact.summary.total > 0;
+  const requiresPreservation = impact.deletionMode === "PRESERVE_REQUIRED";
+  const requiresResidualDecision =
+    impact.deletionMode === "RESIDUAL_DECISION_REQUIRED";
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -55,12 +60,14 @@ export function IngredientDeactivationImpactModal({
                 id="ingredient-deactivation-title"
                 className="font-bold text-slate-900"
               >
-                ¿Desactivar {impact.ingredientName}?
+                ¿Eliminar {impact.ingredientName}?
               </h2>
               <p className="mt-1 text-sm leading-5 text-slate-600">
-                {hasDependencies
-                  ? "Este ingrediente se utiliza actualmente. Las configuraciones afectadas deberán revisarse antes de volver a operar normalmente."
-                  : "El ingrediente ya no podrá utilizarse en nuevas compras, recetas ni movimientos de inventario."}
+                {requiresPreservation
+                  ? "Este ingrediente tiene historial o configuraciones asociadas. Se eliminará de la operación diaria, pero se conservará para mantener la trazabilidad."
+                  : requiresResidualDecision
+                    ? "Este ingrediente no tiene relaciones asociadas, pero conserva saldo o costo residual. Elige cómo deseas eliminarlo."
+                    : "Este ingrediente no tiene historial ni configuraciones asociadas y se eliminará definitivamente."}
               </p>
             </div>
           </div>
@@ -74,6 +81,20 @@ export function IngredientDeactivationImpactModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        {requiresResidualDecision && (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <p>
+              Stock actual:{" "}
+              <strong>
+                {impact.currentStock} {impact.unitLabel}
+              </strong>
+            </p>
+            <p>
+              Costo promedio: <strong>{impact.averageCost}</strong>
+            </p>
+          </div>
+        )}
 
         {hasDependencies && (
           <div className="mt-4 space-y-3">
@@ -98,9 +119,9 @@ export function IngredientDeactivationImpactModal({
             </div>
 
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-              Desactivar este ingrediente no eliminará ni modificará
-              automáticamente estas relaciones. Los cambios posteriores en la
-              composición pueden afectar costos y consumos.
+              Eliminar este ingrediente no eliminará ni modificará
+              automáticamente estas relaciones. Las configuraciones afectadas
+              podrán requerir revisión.
             </div>
 
             <button
@@ -156,15 +177,39 @@ export function IngredientDeactivationImpactModal({
           >
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={() => void onConfirm()}
-            disabled={submitting}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-          >
-            {submitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
-            Desactivar ingrediente
-          </button>
+          {requiresResidualDecision ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void onConfirm("PRESERVE_HISTORY")}
+                disabled={submitting}
+                className="min-h-11 rounded-xl border border-blue-200 px-4 text-sm font-semibold text-[#0B3F64] hover:bg-blue-50 disabled:opacity-60"
+              >
+                Preservar historial
+              </button>
+              <button
+                type="button"
+                onClick={() => void onConfirm("DELETE_PERMANENTLY")}
+                disabled={submitting}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                {submitting && (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                )}
+                Eliminar definitivamente
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void onConfirm()}
+              disabled={submitting}
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+            >
+              {submitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              Eliminar ingrediente
+            </button>
+          )}
         </div>
       </div>
     </div>

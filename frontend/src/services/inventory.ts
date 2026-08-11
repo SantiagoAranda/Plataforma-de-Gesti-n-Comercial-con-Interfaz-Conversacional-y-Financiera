@@ -73,6 +73,7 @@ export type Ingredient = {
   recipeUnitLabel?: string | null;
   recipeUnitFactor?: string | null;
   status: IngredientStatus;
+  deletedAt?: string | null;
   currentStock: string;
   averageCost: string;
   hasMovements?: boolean;
@@ -323,6 +324,31 @@ export type IngredientDeactivationImpact = {
   };
 };
 
+export type IngredientDeletionMode =
+  "HARD_DELETE" | "RESIDUAL_DECISION_REQUIRED" | "PRESERVE_REQUIRED";
+
+export type IngredientDeletionImpact = IngredientDeactivationImpact & {
+  deletionMode: IngredientDeletionMode;
+  currentStock: string;
+  averageCost: string;
+  unitLabel: string;
+  protectedRelations: {
+    inventoryMovements: number;
+    recipes: number;
+    serviceIngredients: number;
+    itemOptions: number;
+    purchasePresentations: number;
+    orderItemOptions: number;
+  };
+};
+
+export type IngredientDeletionResult = {
+  deleted: true;
+  preservedHistory: boolean;
+  ingredientId: string;
+  deletionMode: "SOFT_DELETE" | "HARD_DELETE";
+};
+
 export function listIngredients(
   query: { status?: IngredientStatus; search?: string } = {},
 ) {
@@ -430,6 +456,22 @@ export function getIngredientDeactivationImpact(id: string) {
   return api<IngredientDeactivationImpact>(
     `/ingredients/${id}/deactivation-impact`,
   );
+}
+
+export function getIngredientDeletionImpact(id: string) {
+  return api<IngredientDeletionImpact>(`/ingredients/${id}/deletion-impact`);
+}
+
+export function deleteIngredient(
+  id: string,
+  residualInventoryAction?: "DELETE_PERMANENTLY" | "PRESERVE_HISTORY",
+) {
+  const query = residualInventoryAction
+    ? `?residualInventoryAction=${residualInventoryAction}`
+    : "";
+  return api<IngredientDeletionResult>(`/ingredients/${id}${query}`, {
+    method: "DELETE",
+  });
 }
 
 export function reactivateIngredient(id: string) {

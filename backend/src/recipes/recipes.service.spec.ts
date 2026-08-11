@@ -181,7 +181,13 @@ describe('RecipesService', () => {
       where: {
         businessId,
         id: { in: [itemId, 'other-business-item'] },
-        recipes: { some: { ingredient: { status: 'INACTIVE' } } },
+        recipes: {
+          some: {
+            ingredient: {
+              OR: [{ status: 'INACTIVE' }, { deletedAt: { not: null } }],
+            },
+          },
+        },
       },
       select: { id: true },
     });

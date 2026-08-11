@@ -296,9 +296,35 @@ describe('InventoryService', () => {
         referenceType: 'PURCHASE_MANUAL',
       }),
     ).rejects.toThrow(
-      'Cannot create inventory movements for an inactive ingredient',
+      'El ingrediente no está disponible para nuevas operaciones.',
     );
 
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects movements for a deleted ingredient even if status is ACTIVE', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'ACTIVE',
+      deletedAt: new Date(),
+      currentStock: new Prisma.Decimal(5),
+      averageCost: new Prisma.Decimal(2),
+    });
+
+    await expect(
+      service.applyInventoryMovement(tx as any, businessId, {
+        ingredientId,
+        type: 'PURCHASE',
+        quantity: 1,
+        unitCost: 2,
+        referenceType: 'PURCHASE_MANUAL',
+      }),
+    ).rejects.toThrow(
+      'El ingrediente no está disponible para nuevas operaciones.',
+    );
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
 

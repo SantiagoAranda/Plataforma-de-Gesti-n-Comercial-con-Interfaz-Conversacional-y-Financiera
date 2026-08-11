@@ -40,7 +40,15 @@ export class RecipesService {
         businessId,
         id: { in: uniqueItemIds },
         ...(requiresReview
-          ? { recipes: { some: { ingredient: { status: 'INACTIVE' } } } }
+          ? {
+              recipes: {
+                some: {
+                  ingredient: {
+                    OR: [{ status: 'INACTIVE' }, { deletedAt: { not: null } }],
+                  },
+                },
+              },
+            }
           : {}),
       },
       select: { id: true },
@@ -173,7 +181,7 @@ export class RecipesService {
         businessId,
         id: { in: sortedIngredientIds },
       },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, deletedAt: true },
     });
 
     if (ingredients.length !== uniqueIngredientIds.size) {

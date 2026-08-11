@@ -46,6 +46,11 @@ export class IngredientsController {
     );
   }
 
+  @Get(':id/deletion-impact')
+  getDeletionImpact(@Req() req: any, @Param('id') id: string) {
+    return this.ingredientsService.getDeletionImpact(req.user.businessId, id);
+  }
+
   @Get(':id/purchase-presentations')
   listPresentations(@Req() req: any, @Param('id') id: string) {
     return this.ingredientsService.listPurchasePresentations(
@@ -112,5 +117,18 @@ export class IngredientsController {
   @Patch(':id/reactivate')
   reactivate(@Req() req: any, @Param('id') id: string) {
     return this.ingredientsService.reactivate(req.user.businessId, id);
+  }
+
+  @Delete(':id')
+  remove(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('residualInventoryAction') residualInventoryAction?: string,
+  ) {
+    return this.ingredientsService.remove(
+      req.user.businessId,
+      id,
+      residualInventoryAction,
+    );
   }
 }
