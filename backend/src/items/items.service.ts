@@ -305,13 +305,23 @@ export class ItemsService {
               where: { isActive: true },
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               include: {
-                ingredient: { select: { id: true, name: true } },
+                ingredient: {
+                  select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    currentStock: true,
+                    averageCost: true,
+                  },
+                },
                 item: {
                   select: {
                     id: true,
                     name: true,
                     type: true,
                     inventoryMode: true,
+                    status: true,
+                    currentStock: true,
                   },
                 },
                 unit: true,

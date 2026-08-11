@@ -34,6 +34,10 @@ import { parseNumber } from "@/src/components/inventory/inventoryUtils";
 import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { ExpandableRecipeCard } from "@/src/components/inventory/ExpandableRecipeCard";
 import { ExpandableServiceConsumptionCard } from "@/src/components/inventory/ExpandableServiceConsumptionCard";
+import {
+  getRecipeOperationalHealth,
+  getServiceOperationalHealth,
+} from "@/src/components/inventory/inventoryOperationalHealth";
 import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
 import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
@@ -148,6 +152,11 @@ function InventarioPageContent() {
   const [recipesByItemId, setRecipesByItemId] = useState<
     Record<string, RecipeLine[]>
   >({});
+  const [reviewRecipeItemIds, setReviewRecipeItemIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [recipeReviewOnly, setRecipeReviewOnly] = useState(false);
+  const [serviceReviewOnly, setServiceReviewOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [ingredientSheetOpen, setIngredientSheetOpen] = useState(false);
@@ -248,9 +257,13 @@ function InventarioPageContent() {
           item.inventoryMode === "RECIPE_BASED",
       );
 
-      setRecipesByItemId(
-        await getRecipesBulk(inventoryProducts.map((item) => item.id)),
-      );
+      const recipeItemIds = inventoryProducts.map((item) => item.id);
+      const [allRecipes, reviewRecipes] = await Promise.all([
+        getRecipesBulk(recipeItemIds),
+        getRecipesBulk(recipeItemIds, { requiresReview: true }),
+      ]);
+      setRecipesByItemId(allRecipes);
+      setReviewRecipeItemIds(new Set(Object.keys(reviewRecipes)));
     } catch (err) {
       console.error(err);
       setError(getErrorMessage(err, "No se pudo cargar el inventario"));
@@ -297,11 +310,25 @@ function InventarioPageContent() {
 
   const visibleRecipes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return recipeItems;
-    return recipeItems.filter((item) =>
-      item.name.toLowerCase().includes(query),
+    return recipeItems.filter(
+      (item) =>
+        (!recipeReviewOnly ||
+          reviewRecipeItemIds.has(item.id) ||
+          getRecipeOperationalHealth(
+            item,
+            recipesByItemId[item.id] ?? [],
+            summary,
+          ).requiresReview) &&
+        (!query || item.name.toLowerCase().includes(query)),
     );
-  }, [recipeItems, searchQuery]);
+  }, [
+    recipeItems,
+    recipeReviewOnly,
+    reviewRecipeItemIds,
+    recipesByItemId,
+    searchQuery,
+    summary,
+  ]);
 
   const visibleProducts = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -313,9 +340,13 @@ function InventarioPageContent() {
 
   const visibleServices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return services;
-    return services.filter((item) => item.name.toLowerCase().includes(query));
-  }, [services, searchQuery]);
+    return services.filter(
+      (item) =>
+        (!serviceReviewOnly ||
+          getServiceOperationalHealth(item).requiresReview) &&
+        (!query || item.name.toLowerCase().includes(query)),
+    );
+  }, [services, serviceReviewOnly, searchQuery]);
 
   const recipeCost = useCallback(
     (itemId: string) => {
@@ -470,8 +501,16 @@ function InventarioPageContent() {
               {visibleServices.length === 0 ? (
                 <EmptyStateCard
                   icon={Layers3}
-                  title="Sin servicios configurados"
-                  description="Configura el consumo de insumos por cada prestación de servicio para controlar tu stock automáticamente."
+                  title={
+                    serviceReviewOnly
+                      ? "Sin servicios que requieran revisión"
+                      : "Sin servicios configurados"
+                  }
+                  description={
+                    serviceReviewOnly
+                      ? "Todos los servicios visibles utilizan ingredientes activos."
+                      : "Configura el consumo de insumos por cada prestación de servicio para controlar tu stock automáticamente."
+                  }
                 />
               ) : (
                 visibleServices.map((service) => (
@@ -490,8 +529,16 @@ function InventarioPageContent() {
               {visibleRecipes.length === 0 ? (
                 <EmptyStateCard
                   icon={ChefHat}
-                  title="Sin recetas configuradas"
-                  description="Configura las recetas de tus platos o productos para deducir insumos de inventario en cada venta."
+                  title={
+                    recipeReviewOnly
+                      ? "Sin recetas que requieran revisión"
+                      : "Sin recetas configuradas"
+                  }
+                  description={
+                    recipeReviewOnly
+                      ? "Todas las recetas visibles utilizan ingredientes activos."
+                      : "Configura las recetas de tus platos o productos para deducir insumos de inventario en cada venta."
+                  }
                 />
               ) : (
                 visibleRecipes.map((item) => (
@@ -749,6 +796,40 @@ function InventarioPageContent() {
               />
             )}
           </div>
+          {!saveBarContext &&
+            !ingredientSheetOpen &&
+            (activeTab === "recipes" || activeTab === "services") && (
+              <div className="relative z-50 mt-2 flex items-center gap-2 px-1">
+                {[
+                  { label: "Todas", value: false },
+                  { label: "Requieren revisión", value: true },
+                ].map((option) => {
+                  const selected =
+                    activeTab === "recipes"
+                      ? recipeReviewOnly === option.value
+                      : serviceReviewOnly === option.value;
+                  return (
+                    <button
+                      key={option.label}
+                      type="button"
+                      onClick={() =>
+                        activeTab === "recipes"
+                          ? setRecipeReviewOnly(option.value)
+                          : setServiceReviewOnly(option.value)
+                      }
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                        selected
+                          ? "bg-[#0B3F64] text-white"
+                          : "border border-slate-200 bg-white text-slate-600 hover:bg-blue-50",
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
         </div>
       </div>
 

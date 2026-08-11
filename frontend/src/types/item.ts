@@ -9,6 +9,8 @@ export type ItemSellabilityStatus =
   | "MISSING_RECIPE"
   | "EMPTY_RECIPE"
   | "INSUFFICIENT_RECIPE_STOCK"
+  | "RECIPE_REQUIRES_REVIEW"
+  | "SERVICE_REQUIRES_REVIEW"
   | "INACTIVE";
 
 export type ItemSellability = {
@@ -24,6 +26,7 @@ export type ItemSellability = {
     available: number | string;
     unit?: string | null;
   }>;
+  inactiveIngredients?: Array<{ id: string; name: string }>;
 };
 
 export type Schedule = {
@@ -35,9 +38,7 @@ export type Schedule = {
 export type ItemOptionTargetType = "NONE" | "INGREDIENT" | "ITEM";
 
 export type ItemOptionQuantityMode =
-  | "FIXED_PER_OPTION"
-  | "SHARED_TOTAL"
-  | "NO_QUANTITY";
+  "FIXED_PER_OPTION" | "SHARED_TOTAL" | "NO_QUANTITY";
 
 export type PublicItemOption = {
   id: string;
@@ -53,12 +54,22 @@ export type PublicItemOption = {
   selectedByDefault: boolean;
   removable: boolean;
   sortOrder: number;
-  ingredient?: { id: string; name: string } | null;
+  isActive?: boolean;
+  hasStock?: boolean;
+  ingredient?: {
+    id: string;
+    name: string;
+    status?: "ACTIVE" | "INACTIVE";
+    currentStock?: number | string;
+    averageCost?: number | string;
+  } | null;
   item?: {
     id: string;
     name: string;
     type: ItemType;
     inventoryMode?: ItemInventoryMode | null;
+    status?: "ACTIVE" | "INACTIVE";
+    currentStock?: number | string;
   } | null;
   unit?: { id: string; code?: string; name?: string; symbol?: string } | null;
 };
@@ -73,8 +84,14 @@ export type PublicItemOptionGroup = {
   quantityMode: ItemOptionQuantityMode;
   totalQuantityLimit?: number | null;
   totalQuantityUnitId?: string | null;
-  totalQuantityUnit?: { id: string; code?: string; name?: string; symbol?: string } | null;
+  totalQuantityUnit?: {
+    id: string;
+    code?: string;
+    name?: string;
+    symbol?: string;
+  } | null;
   sortOrder: number;
+  isActive?: boolean;
   options: PublicItemOption[];
 };
 
@@ -99,7 +116,14 @@ export type Item = {
   images?: { id: string; url: string; order: number }[];
   optionGroups?: PublicItemOptionGroup[];
   status: "ACTIVE" | "INACTIVE";
-  saleConcept?: "GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER" | null;
+  saleConcept?:
+    | "GOODS"
+    | "SERVICES"
+    | "HONORARIOS"
+    | "ARRENDAMIENTOS"
+    | "FOOD_BEVERAGES"
+    | "OTHER"
+    | null;
   createdAt?: string;
   updatedAt?: string;
   _count?: { images: number };

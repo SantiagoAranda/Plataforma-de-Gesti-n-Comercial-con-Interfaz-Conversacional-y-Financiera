@@ -20,8 +20,10 @@ import {
 } from "@/src/services/inventory";
 import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { getErrorMessage } from "@/src/lib/errors";
+import { AppApiError } from "@/src/lib/api";
 import { ConsumptionHistoryTab } from "./ConsumptionHistoryTab";
 import { ProfitSimulator } from "./ProfitSimulator";
+import { getServiceOperationalHealth } from "./inventoryOperationalHealth";
 
 type Props = {
   service: ServiceConsumptionItem;
@@ -34,9 +36,10 @@ type DraftServiceIngredient = {
   ingredientId: string;
   quantityRequired: number;
   quantityInput: string;
+  ingredient?: ServiceIngredientLine;
 };
 
-function toNumber(val: any, fallback = 0): number {
+function toNumber(val: unknown, fallback = 0): number {
   if (val === null || val === undefined) return fallback;
   const num = Number(String(val).replace(",", "."));
   return Number.isFinite(num) ? num : fallback;
@@ -65,12 +68,22 @@ export function ExpandableServiceConsumptionCard({
   const [submitting, setSubmitting] = useState(false);
 
   const getIngredientDetails = (ingredientId: string) => {
-    return allIngredients.find((i) => i.id === ingredientId) ?? null;
+    return (
+      allIngredients.find((i) => i.id === ingredientId) ??
+      service.ingredients.find((line) => line.ingredientId === ingredientId) ??
+      null
+    );
   };
 
   const getIngredientUnit = (ingredientId: string) => {
-    const ing = getIngredientDetails(ingredientId);
-    return ing ? getStockUnitSymbol(ing) : "";
+    const activeIngredient = allIngredients.find(
+      (ingredient) => ingredient.id === ingredientId,
+    );
+    if (activeIngredient) return getStockUnitSymbol(activeIngredient);
+    const historical = service.ingredients.find(
+      (line) => line.ingredientId === ingredientId,
+    );
+    return historical?.customUnitLabel ?? historical?.consumptionUnit ?? "";
   };
 
   const getIngredientName = (ingredientId: string) => {
@@ -85,6 +98,7 @@ export function ExpandableServiceConsumptionCard({
       ingredientId: line.ingredientId,
       quantityRequired: qty,
       quantityInput: formatQuantity(qty),
+      ingredient: line,
     };
   };
 
@@ -151,6 +165,12 @@ export function ExpandableServiceConsumptionCard({
       return {
         label: "SIN INSUMOS",
         tone: "bg-rose-50 text-rose-700 border border-rose-100",
+      };
+    }
+    if (lines.some((line) => line.ingredient?.status === "INACTIVE")) {
+      return {
+        label: "REQUIERE REVISIÓN",
+        tone: "bg-amber-50 text-amber-800 border border-amber-200",
       };
     }
     const hasInvalid = lines.some(
@@ -272,6 +292,8 @@ export function ExpandableServiceConsumptionCard({
       for (const line of draftLines) {
         if (!line.ingredientId)
           return "Cada línea debe tener un insumo válido.";
+        if (line.ingredient?.status === "INACTIVE")
+          return `Corrige o elimina el ingrediente inactivo ${line.ingredient.name}.`;
         if (line.quantityRequired <= 0)
           return "La cantidad de cada insumo debe ser mayor a 0.";
       }
@@ -304,6 +326,42 @@ export function ExpandableServiceConsumptionCard({
     } catch (error) {
       console.error(error);
       toast.dismiss(loadingId);
+      if (
+        error instanceof AppApiError &&
+        error.details?.code === "SERVICE_REQUIRES_REVIEW" &&
+        Array.isArray(error.details?.inactiveIngredients)
+      ) {
+        const inactiveById = new Map<string, { id: string; name: string }>(
+          error.details.inactiveIngredients.map(
+            (ingredient: { id: string; name: string }) =>
+              [ingredient.id, ingredient] as const,
+          ),
+        );
+        setDraftLines((current) =>
+          current.map((line) => {
+            const inactive = inactiveById.get(line.ingredientId);
+            return inactive
+              ? {
+                  ...line,
+                  ingredient: {
+                    ...(line.ingredient ?? {
+                      ingredientId: inactive.id,
+                      quantityRequired: line.quantityRequired,
+                      currentStock: 0,
+                      averageCost: 0,
+                      consumptionUnit: "",
+                      customUnitLabel: null,
+                    }),
+                    id: line.ingredient?.id ?? line.ingredientId,
+                    ingredientId: inactive.id,
+                    name: inactive.name,
+                    status: "INACTIVE",
+                  },
+                }
+              : line;
+          }),
+        );
+      }
       toast.error(
         getErrorMessage(error, "No se pudo guardar la configuración"),
       );
@@ -320,6 +378,10 @@ export function ExpandableServiceConsumptionCard({
   const displayCost = isExpanded ? draftCost : originalCost;
   const displayMargin = isExpanded ? draftMargin : originalMargin;
   const displayStatus = isExpanded ? currentStatus : status;
+  const operationalHealth = getServiceOperationalHealth(service);
+  const inactiveIngredientCount = service.ingredients.filter(
+    (line) => line.status === "INACTIVE",
+  ).length;
   const serviceInitial =
     service.name?.trim().split(/\s+/)[0]?.charAt(0).toUpperCase() ?? "S";
 
@@ -347,6 +409,20 @@ export function ExpandableServiceConsumptionCard({
           >
             {displayStatus.label}
           </span>
+          {inactiveIngredientCount > 0 && (
+            <span className="shrink-0 text-[9px] font-medium text-amber-800 sm:text-[10px]">
+              {inactiveIngredientCount}{" "}
+              {inactiveIngredientCount === 1
+                ? "ingrediente inactivo"
+                : "ingredientes inactivos"}
+            </span>
+          )}
+          {operationalHealth.stockInsufficient && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[9px] font-medium text-orange-800 sm:text-[10px]">
+              <AlertTriangle className="h-3 w-3" />
+              Stock insuficiente
+            </span>
+          )}
           <span className="shrink-0 rounded-lg p-1.5 text-black transition-colors">
             <ChevronUp
               className={cn(
@@ -430,6 +506,15 @@ export function ExpandableServiceConsumptionCard({
             />
           ) : (
             <>
+              {draftLines.some(
+                (line) => line.ingredient?.status === "INACTIVE",
+              ) && (
+                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Este servicio requiere revisión porque contiene ingredientes
+                  inactivos.
+                </div>
+              )}
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -494,17 +579,31 @@ export function ExpandableServiceConsumptionCard({
                     const ing = getIngredientDetails(line.ingredientId);
                     const costVal = toNumber(ing?.averageCost, 0);
                     const unitLabel = getIngredientUnit(line.ingredientId);
+                    const ingredientInactive =
+                      line.ingredient?.status === "INACTIVE";
+                    const ingredientStockInsufficient =
+                      !ingredientInactive &&
+                      toNumber(ing?.currentStock, 0) <
+                        toNumber(line.quantityRequired, 0);
 
                     return (
                       <div
                         key={`${line.ingredientId}-${idx}`}
-                        className="rounded-2xl border-y border-r border-l-4 border-l-amber-400 border-slate-100 bg-neutral-50 p-3 pl-4 shadow-2xs space-y-2"
+                        className={cn(
+                          "rounded-2xl border-y border-r border-l-4 border-l-amber-400 border-slate-100 bg-neutral-50 p-3 pl-4 shadow-2xs space-y-2",
+                          ingredientInactive && "border-amber-300 bg-amber-50",
+                        )}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                             <h4 className="truncate text-neutral-800 text-sm font-medium">
                               {getIngredientName(line.ingredientId)}
                             </h4>
+                            {ingredientInactive && (
+                              <span className="text-[10px] font-semibold text-amber-800">
+                                Ingrediente inactivo
+                              </span>
+                            )}
                             <div className="text-neutral-500 text-xs font-mono bg-neutral-100 px-2 py-0.5 rounded-md shrink-0">
                               {line.quantityRequired} {unitLabel}
                             </div>
@@ -571,6 +670,12 @@ export function ExpandableServiceConsumptionCard({
                             {unitLabel}
                           </span>
                         </div>
+                        {ingredientStockInsufficient && (
+                          <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-orange-700">
+                            <AlertTriangle className="h-3 w-3" />
+                            Stock insuficiente para producir el servicio
+                          </div>
+                        )}
                       </div>
                     );
                   })}

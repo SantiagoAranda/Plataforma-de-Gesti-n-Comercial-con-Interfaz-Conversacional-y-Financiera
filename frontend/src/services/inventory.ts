@@ -260,6 +260,21 @@ export type RecipeLine = {
   ingredientId: string;
   quantityRequired: number;
   isOptional?: boolean;
+  ingredient?: {
+    id: string;
+    name: string;
+    status: IngredientStatus;
+    currentStock?: number | string;
+    averageCost?: number | string;
+    consumptionUnit?: string;
+    customUnitLabel?: string | null;
+    stockUnit?: {
+      id?: string;
+      code?: string;
+      symbol?: string;
+      name?: string;
+    } | null;
+  };
 };
 
 export type ReplaceRecipeDto = {
@@ -267,6 +282,46 @@ export type ReplaceRecipeDto = {
 };
 
 export type RecipeBulkResult = Record<string, RecipeLine[]>;
+
+export type InactiveIngredientReference = { id: string; name: string };
+
+export type IngredientDeactivationImpact = {
+  ingredientId: string;
+  ingredientName: string;
+  dependencies: {
+    recipes: Array<{
+      itemId: string;
+      itemName: string;
+      itemStatus: string;
+      quantity: string;
+      unitLabel: string | null;
+      isOptional: boolean;
+    }>;
+    services: Array<{
+      serviceIngredientId: string;
+      itemId: string;
+      itemName: string;
+      itemStatus: string;
+      quantity: string;
+      unitLabel: string | null;
+    }>;
+    itemOptions: Array<{
+      optionId: string;
+      optionName: string;
+      groupId: string;
+      groupName: string;
+      itemId: string;
+      itemName: string;
+      itemStatus: string;
+    }>;
+  };
+  summary: {
+    recipes: number;
+    services: number;
+    itemOptions: number;
+    total: number;
+  };
+};
 
 export function listIngredients(
   query: { status?: IngredientStatus; search?: string } = {},
@@ -369,6 +424,12 @@ export function deactivatePurchasePresentation(
 
 export function deactivateIngredient(id: string) {
   return api<Ingredient>(`/ingredients/${id}/deactivate`, { method: "PATCH" });
+}
+
+export function getIngredientDeactivationImpact(id: string) {
+  return api<IngredientDeactivationImpact>(
+    `/ingredients/${id}/deactivation-impact`,
+  );
 }
 
 export function reactivateIngredient(id: string) {
@@ -483,10 +544,14 @@ export function getRecipe(itemId: string) {
   return api<RecipeLine[]>(`/items/${itemId}/recipe`);
 }
 
-export function getRecipesBulk(itemIds: string[]): Promise<RecipeBulkResult> {
+export function getRecipesBulk(
+  itemIds: string[],
+  options: { requiresReview?: boolean } = {},
+): Promise<RecipeBulkResult> {
   const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
   if (!uniqueItemIds.length) return Promise.resolve({});
   const qs = new URLSearchParams({ itemIds: uniqueItemIds.join(",") });
+  if (options.requiresReview) qs.set("requiresReview", "true");
   return api<RecipeBulkResult>(`/recipes/bulk?${qs.toString()}`);
 }
 
@@ -500,8 +565,10 @@ export type ServiceIngredientLine = {
   id: string;
   ingredientId: string;
   name: string;
+  status: IngredientStatus;
   quantityRequired: number;
   currentStock: number;
+  averageCost: number;
   consumptionUnit: string;
   customUnitLabel: string | null;
 };
@@ -512,6 +579,7 @@ export type ServiceConsumptionItem = {
   price: number;
   durationMinutes: number | null;
   status: string;
+  sellability?: import("@/src/types/item").ItemSellability;
   ingredients: ServiceIngredientLine[];
 };
 

@@ -556,12 +556,147 @@ export class IngredientsService {
   }
 
   async deactivate(businessId: string, id: string) {
-    await this.findOne(businessId, id);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "Ingredient" WHERE "businessId" = ${businessId} AND "id" = ${id} FOR UPDATE`,
+      );
 
-    return this.prisma.ingredient.update({
-      where: { id },
-      data: { status: 'INACTIVE' },
+      const ingredient = await tx.ingredient.findFirst({
+        where: { id, businessId },
+      });
+      if (!ingredient) throw new NotFoundException('Ingredient not found');
+
+      // Revalidate operational dependencies after acquiring the ingredient lock.
+      // They are intentionally preserved; review state is derived from status.
+      await this.loadDeactivationDependencies(tx, businessId, id);
+
+      return tx.ingredient.update({
+        where: { id },
+        data: { status: 'INACTIVE' },
+      });
     });
+  }
+
+  async getDeactivationImpact(businessId: string, id: string) {
+    const ingredient = await this.prisma.ingredient.findFirst({
+      where: { id, businessId },
+      select: { id: true, name: true },
+    });
+    if (!ingredient) throw new NotFoundException('Ingredient not found');
+
+    const dependencies = await this.loadDeactivationDependencies(
+      this.prisma,
+      businessId,
+      id,
+    );
+
+    return {
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      dependencies,
+      summary: {
+        recipes: dependencies.recipes.length,
+        services: dependencies.services.length,
+        itemOptions: dependencies.itemOptions.length,
+        total:
+          dependencies.recipes.length +
+          dependencies.services.length +
+          dependencies.itemOptions.length,
+      },
+    };
+  }
+
+  private async loadDeactivationDependencies(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    ingredientId: string,
+  ) {
+    const [recipes, services, itemOptions] = await Promise.all([
+      tx.recipe.findMany({
+        where: { businessId, ingredientId },
+        include: {
+          item: { select: { id: true, name: true, status: true } },
+          ingredient: {
+            select: {
+              consumptionUnit: true,
+              customUnitLabel: true,
+              stockUnit: { select: { symbol: true, name: true } },
+            },
+          },
+        },
+        orderBy: [{ item: { name: 'asc' } }, { id: 'asc' }],
+      }),
+      tx.serviceIngredient.findMany({
+        where: { businessId, ingredientId, isActive: true },
+        include: {
+          serviceItem: { select: { id: true, name: true, status: true } },
+          ingredient: {
+            select: {
+              consumptionUnit: true,
+              customUnitLabel: true,
+              stockUnit: { select: { symbol: true, name: true } },
+            },
+          },
+        },
+        orderBy: [{ serviceItem: { name: 'asc' } }, { id: 'asc' }],
+      }),
+      tx.itemOption.findMany({
+        where: {
+          businessId,
+          ingredientId,
+          isActive: true,
+          group: { isActive: true },
+        },
+        include: {
+          group: {
+            select: {
+              id: true,
+              title: true,
+              item: { select: { id: true, name: true, status: true } },
+            },
+          },
+        },
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+
+    const unitLabel = (ingredient: {
+      customUnitLabel: string | null;
+      consumptionUnit: string;
+      stockUnit: { symbol: string; name: string } | null;
+    }) =>
+      ingredient.stockUnit?.symbol ??
+      ingredient.stockUnit?.name ??
+      ingredient.customUnitLabel ??
+      ingredient.consumptionUnit;
+
+    return {
+      recipes: recipes.map((line) => ({
+        itemId: line.item.id,
+        itemName: line.item.name,
+        itemStatus: line.item.status,
+        quantity: line.quantityRequired.toString(),
+        unitLabel: unitLabel(line.ingredient),
+        isOptional: line.isOptional,
+      })),
+      services: services.map((line) => ({
+        serviceIngredientId: line.id,
+        itemId: line.serviceItem.id,
+        itemName: line.serviceItem.name,
+        itemStatus: line.serviceItem.status,
+        quantity: line.quantityRequired.toString(),
+        unitLabel: unitLabel(line.ingredient),
+      })),
+      itemOptions: itemOptions.map((option) => ({
+        optionId: option.id,
+        optionName: option.name,
+        groupId: option.group.id,
+        groupName: option.group.title,
+        itemId: option.group.item.id,
+        itemName: option.group.item.name,
+        itemStatus: option.group.item.status,
+      })),
+    };
   }
 
   async reactivate(businessId: string, id: string) {

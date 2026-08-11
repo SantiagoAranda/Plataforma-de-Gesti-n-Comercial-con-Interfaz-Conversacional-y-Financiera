@@ -8,7 +8,7 @@ import {
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
-import { Prisma, Weekday } from '@prisma/client';
+import { IngredientStatus, Prisma, Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -44,6 +44,7 @@ type PublicOptionForGroup = {
   ingredient?: {
     id: string;
     name: string;
+    status: IngredientStatus;
     currentStock: Prisma.Decimal;
   } | null;
   item?: {
@@ -108,7 +109,10 @@ function removeFooterMeta(socials: unknown) {
     : [];
 }
 
-function getFooterColorMetaValue(socials: unknown, type: string): string | null {
+function getFooterColorMetaValue(
+  socials: unknown,
+  type: string,
+): string | null {
   const value = getFooterMetaValue(socials, type);
   return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
 }
@@ -273,7 +277,9 @@ export class PublicService {
                     option.ingredient?.currentStock == null
                       ? 0
                       : Number(option.ingredient.currentStock);
-                  hasStock = currentStock >= requiredQty;
+                  hasStock =
+                    option.ingredient?.status === 'ACTIVE' &&
+                    currentStock >= requiredQty;
                 } else if (option.targetType === 'ITEM') {
                   hasStock =
                     optionSellabilityById.get(option.id)?.sellable ?? false;
@@ -295,7 +301,11 @@ export class PublicService {
                   removable: option.removable,
                   sortOrder: option.sortOrder,
                   ingredient: option.ingredient
-                    ? { id: option.ingredient.id, name: option.ingredient.name }
+                    ? {
+                        id: option.ingredient.id,
+                        name: option.ingredient.name,
+                        status: option.ingredient.status,
+                      }
                     : null,
                   item: option.item,
                   unit: option.unit,
@@ -500,7 +510,7 @@ export class PublicService {
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
-        const end   = cursor + duration; // guaranteed not to exceed window end
+        const end = cursor + duration; // guaranteed not to exceed window end
 
         // Skip past slots that have already elapsed today.
         if (isToday && start < currentMinutes) {
@@ -625,7 +635,12 @@ export class PublicService {
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               include: {
                 ingredient: {
-                  select: { id: true, name: true, currentStock: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    currentStock: true,
+                  },
                 },
                 item: {
                   select: {
@@ -1004,9 +1019,7 @@ export class PublicService {
         (item) => !Number.isInteger(item.quantity) || item.quantity <= 0,
       )
     ) {
-      throw new BadRequestException(
-        'Item quantity must be a positive integer',
-      );
+      throw new BadRequestException('Item quantity must be a positive integer');
     }
 
     const uniqueItemIds = Array.from(
@@ -1132,38 +1145,36 @@ export class PublicService {
         .join('\n') || null;
 
     const orderItemCreates: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] =
-      normalizedInputs.map(
-        ({ input, item, excludedIds, resolvedOptions }) => {
-          const quantity = input.quantity;
-          const baseUnitPrice = item.price;
-          const optionsTotal = resolvedOptions.optionsTotal;
-          const unitPrice = baseUnitPrice.add(optionsTotal);
-          const lineTotal = unitPrice.mul(quantity);
+      normalizedInputs.map(({ input, item, excludedIds, resolvedOptions }) => {
+        const quantity = input.quantity;
+        const baseUnitPrice = item.price;
+        const optionsTotal = resolvedOptions.optionsTotal;
+        const unitPrice = baseUnitPrice.add(optionsTotal);
+        const lineTotal = unitPrice.mul(quantity);
 
-          return {
-            businessId: business.id,
-            itemId: item.id,
-            quantity,
-            unitPrice,
-            lineTotal,
-            itemNameSnapshot: item.name,
-            itemTypeSnapshot: item.type,
-            inventoryModeSnapshot: item.inventoryMode,
-            durationMinutesSnapshot: item.durationMinutes,
-            excludedOptionalIngredientIds:
-              excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
-            baseUnitPriceSnapshot: baseUnitPrice,
-            optionsTotalSnapshot: optionsTotal,
-            finalUnitPriceSnapshot: unitPrice,
-            lineTotalSnapshot: lineTotal,
-            options: resolvedOptions.snapshots.length
-              ? {
-                  create: resolvedOptions.snapshots,
-                }
-              : undefined,
-          };
-        },
-      );
+        return {
+          businessId: business.id,
+          itemId: item.id,
+          quantity,
+          unitPrice,
+          lineTotal,
+          itemNameSnapshot: item.name,
+          itemTypeSnapshot: item.type,
+          inventoryModeSnapshot: item.inventoryMode,
+          durationMinutesSnapshot: item.durationMinutes,
+          excludedOptionalIngredientIds:
+            excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+          baseUnitPriceSnapshot: baseUnitPrice,
+          optionsTotalSnapshot: optionsTotal,
+          finalUnitPriceSnapshot: unitPrice,
+          lineTotalSnapshot: lineTotal,
+          options: resolvedOptions.snapshots.length
+            ? {
+                create: resolvedOptions.snapshots,
+              }
+            : undefined,
+        };
+      });
 
     const total = orderItemCreates.reduce(
       (acc, item) => acc + Number(item.lineTotal),
@@ -1252,7 +1263,6 @@ export class PublicService {
   /* =====================================================
      FIND RESERVATION BY ID (página pública de consulta)
   ===================================================== */
-
 
   async findReservationById(id: string) {
     const reservation = await this.prisma.reservation.findUnique({

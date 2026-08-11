@@ -18,6 +18,7 @@ import {
   createPurchasePresentation,
   deactivateIngredient,
   deactivatePurchasePresentation,
+  getIngredientDeactivationImpact,
   getIngredient,
   listKardex,
   listUnitConversions,
@@ -25,6 +26,7 @@ import {
   updateIngredient,
   updatePurchasePresentation,
   type Ingredient,
+  type IngredientDeactivationImpact,
   type IngredientPurchasePresentation,
   type InventoryMovement,
   type Unit,
@@ -42,6 +44,7 @@ import {
   presentationFactorFromFields,
 } from "./purchasePresentation";
 import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
+import { IngredientDeactivationImpactModal } from "./IngredientDeactivationImpactModal";
 
 type TabType = "compras" | "kardex" | "insumo";
 type PresentationEditorMode = "create" | "edit" | null;
@@ -98,6 +101,11 @@ export function IngredientDetailSheet({
   const [presentationForm, setPresentationForm] = useState(
     emptyPresentationForm,
   );
+  const [deactivationImpact, setDeactivationImpact] =
+    useState<IngredientDeactivationImpact | null>(null);
+  const [loadingDeactivationImpact, setLoadingDeactivationImpact] =
+    useState(false);
+  const [deactivatingIngredient, setDeactivatingIngredient] = useState(false);
 
   const getIngredientStockUnit = useCallback(() => {
     if (!ingredient) return null;
@@ -197,11 +205,7 @@ export function IngredientDetailSheet({
   }, [open]);
 
   useEffect(() => {
-    if (
-      ingredient &&
-      units.length > 0 &&
-      presentationEditorMode === "create"
-    ) {
+    if (ingredient && units.length > 0 && presentationEditorMode === "create") {
       const stockUnit = getIngredientStockUnit();
       if (stockUnit?.code === "UNIT") {
         const unit = units.find((u) => u.code === "UNIT");
@@ -217,12 +221,7 @@ export function IngredientDetailSheet({
         });
       }
     }
-  }, [
-    ingredient,
-    units,
-    presentationEditorMode,
-    getIngredientStockUnit,
-  ]);
+  }, [ingredient, units, presentationEditorMode, getIngredientStockUnit]);
 
   if (!open || !ingredientId) return null;
 
@@ -402,18 +401,34 @@ export function IngredientDetailSheet({
 
   const handleDeactivate = async () => {
     if (!ingredient) return;
-    if (!window.confirm(`¿Desactivar el ingrediente "${ingredient.name}"?`))
-      return;
+    setLoadingDeactivationImpact(true);
+    try {
+      setDeactivationImpact(
+        await getIngredientDeactivationImpact(ingredient.id),
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("No se pudo consultar el impacto de la desactivación");
+    } finally {
+      setLoadingDeactivationImpact(false);
+    }
+  };
 
+  const confirmDeactivate = async () => {
+    if (!ingredient || deactivatingIngredient) return;
+    setDeactivatingIngredient(true);
     const toastId = toast.loading("Desactivando ingrediente...");
     try {
       await deactivateIngredient(ingredient.id);
       toast.success("Ingrediente desactivado", { id: toastId });
+      setDeactivationImpact(null);
       onChanged();
       onClose();
     } catch (err) {
       console.error(err);
       toast.error("No se pudo desactivar el ingrediente", { id: toastId });
+    } finally {
+      setDeactivatingIngredient(false);
     }
   };
 
@@ -500,7 +515,9 @@ export function IngredientDetailSheet({
     }
     defaultChangeInFlightRef.current = true;
     setDefaultUpdatingId(presentation.id);
-    const toastId = toast.loading("Actualizando presentación predeterminada...");
+    const toastId = toast.loading(
+      "Actualizando presentación predeterminada...",
+    );
     try {
       await updatePurchasePresentation(ingredient.id, presentation.id, {
         name: presentation.name,
@@ -601,531 +618,552 @@ export function IngredientDetailSheet({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-x-0 bottom-0 z-50 px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none"
-      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
-    >
-      <div className="mx-auto w-full max-w-md relative pointer-events-auto">
-        <div className="relative">
-          {/* Overlay Backdrop - Dark without blur */}
-          <div
-            className="fixed inset-0 z-40 bg-black/40 transition-opacity"
-            onClick={onClose}
-            aria-hidden
-          />
-
-          {/* Floating Detail Panel (4-side rounded card floating 12px above chat bar) */}
-          <div className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 flex max-h-[min(70vh,580px)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
-            {/* Header container */}
-            <div className="shrink-0 border-b border-slate-100/60 bg-white px-5 pb-3 pt-5">
-              <div className="mb-3 flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-lg font-bold text-slate-800">
-                    {loading
-                      ? "Cargando..."
-                      : ingredient?.name || "Detalle de Insumo"}
-                  </h2>
-                  {ingredient && !loading && stockHeader ? (
-                    <div className="mt-1 text-xs font-normal text-slate-400 space-y-0.5 leading-tight">
-                      <p>
-                        Stock:{" "}
-                        <span className="font-medium text-slate-600">
-                          {stockHeader.stockText}
-                        </span>{" "}
-                        · Prom:{" "}
-                        <span className="font-medium text-slate-600">
-                          {stockHeader.averageCostText}
-                        </span>{" "}
-                        · Mín:{" "}
-                        <span className="font-medium text-slate-600">
-                          {stockHeader.minStockText}
-                        </span>
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Ficha de producto
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {ingredient?.status === "ACTIVE" && (
-                    <button
-                      type="button"
-                      onClick={handleDeactivate}
-                      className="grid h-9 w-9 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 active:scale-95"
-                      aria-label="Desactivar ingrediente"
-                      title="Desactivar ingrediente"
-                    >
-                      <Power className="h-5 w-5" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 active:scale-95"
-                    aria-label="Cerrar"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Pill Tabs Selector (Identical to Inventory main tabs) */}
-              <div className="flex gap-2 min-w-0 flex-1 items-center py-0.5">
-                {tabs.map((tab) => {
-                  const isActive = activeTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => handleTabChange(tab.id)}
-                      className={cn(
-                        "flex-1 rounded-full py-2 text-xs font-semibold transition-all active:scale-[0.98]",
-                        isActive
-                          ? "bg-[#E0E7FF] text-[#0B3F64] shadow-none"
-                          : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 font-medium",
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Scrollable Content Area */}
+    <>
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none"
+        style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto w-full max-w-md relative pointer-events-auto">
+          <div className="relative">
+            {/* Overlay Backdrop - Dark without blur */}
             <div
-              ref={contentRef}
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-white px-5 py-4 custom-scrollbar overscroll-contain"
-            >
-              {loading ? (
-                <div className="py-12 text-center text-sm font-semibold text-slate-400">
-                  Cargando información del insumo...
-                </div>
-              ) : !ingredient ? (
-                <div className="py-12 text-center text-sm font-semibold text-slate-400">
-                  No se encontró la información.
-                </div>
-              ) : (
-                <>
-                  {activeTab === "compras" && (
-                    <MovementForm
-                      formRef={movementFormRef}
-                      ingredient={ingredient}
-                      initialAction="PURCHASE"
-                      disabledActions={[
-                        "PURCHASE_RETURN",
-                        "ADJUSTMENT_POSITIVE",
-                        "ADJUSTMENT_NEGATIVE",
-                      ]}
-                      onSuccess={handleMovementSuccess}
-                      compact
-                      hideSubmitButton
-                      onValidationChange={setMovementFormValid}
-                      onSubmittingChange={setMovementFormSubmitting}
-                    />
-                  )}
+              className="fixed inset-0 z-40 bg-black/40 transition-opacity"
+              onClick={onClose}
+              aria-hidden
+            />
 
-                  {activeTab === "kardex" &&
-                    (!kardexLoaded ? (
-                      <div className="py-12 text-center text-sm font-semibold text-slate-400">
-                        Cargando timeline de Kardex...
+            {/* Floating Detail Panel (4-side rounded card floating 12px above chat bar) */}
+            <div className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 flex max-h-[min(70vh,580px)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+              {/* Header container */}
+              <div className="shrink-0 border-b border-slate-100/60 bg-white px-5 pb-3 pt-5">
+                <div className="mb-3 flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-lg font-bold text-slate-800">
+                      {loading
+                        ? "Cargando..."
+                        : ingredient?.name || "Detalle de Insumo"}
+                    </h2>
+                    {ingredient && !loading && stockHeader ? (
+                      <div className="mt-1 text-xs font-normal text-slate-400 space-y-0.5 leading-tight">
+                        <p>
+                          Stock:{" "}
+                          <span className="font-medium text-slate-600">
+                            {stockHeader.stockText}
+                          </span>{" "}
+                          · Prom:{" "}
+                          <span className="font-medium text-slate-600">
+                            {stockHeader.averageCostText}
+                          </span>{" "}
+                          · Mín:{" "}
+                          <span className="font-medium text-slate-600">
+                            {stockHeader.minStockText}
+                          </span>
+                        </p>
                       </div>
                     ) : (
-                      <KardexList
-                        movements={movements}
-                        stockUnitLabel={stockUnitLabel}
+                      <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        Ficha de producto
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {ingredient?.status === "ACTIVE" && (
+                      <button
+                        type="button"
+                        onClick={handleDeactivate}
+                        disabled={loadingDeactivationImpact}
+                        className="grid h-9 w-9 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 active:scale-95"
+                        aria-label="Desactivar ingrediente"
+                        title="Desactivar ingrediente"
+                      >
+                        {loadingDeactivationImpact ? (
+                          <LoaderCircle className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Power className="h-5 w-5" />
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 active:scale-95"
+                      aria-label="Cerrar"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pill Tabs Selector (Identical to Inventory main tabs) */}
+                <div className="flex gap-2 min-w-0 flex-1 items-center py-0.5">
+                  {tabs.map((tab) => {
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => handleTabChange(tab.id)}
+                        className={cn(
+                          "flex-1 rounded-full py-2 text-xs font-semibold transition-all active:scale-[0.98]",
+                          isActive
+                            ? "bg-[#E0E7FF] text-[#0B3F64] shadow-none"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 font-medium",
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Scrollable Content Area */}
+              <div
+                ref={contentRef}
+                className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-white px-5 py-4 custom-scrollbar overscroll-contain"
+              >
+                {loading ? (
+                  <div className="py-12 text-center text-sm font-semibold text-slate-400">
+                    Cargando información del insumo...
+                  </div>
+                ) : !ingredient ? (
+                  <div className="py-12 text-center text-sm font-semibold text-slate-400">
+                    No se encontró la información.
+                  </div>
+                ) : (
+                  <>
+                    {activeTab === "compras" && (
+                      <MovementForm
+                        formRef={movementFormRef}
+                        ingredient={ingredient}
+                        initialAction="PURCHASE"
+                        disabledActions={[
+                          "PURCHASE_RETURN",
+                          "ADJUSTMENT_POSITIVE",
+                          "ADJUSTMENT_NEGATIVE",
+                        ]}
+                        onSuccess={handleMovementSuccess}
+                        compact
+                        hideSubmitButton
+                        onValidationChange={setMovementFormValid}
+                        onSubmittingChange={setMovementFormSubmitting}
                       />
-                    ))}
+                    )}
 
-                  {activeTab === "insumo" && (
-                    <div className="space-y-4">
-                      <section className="space-y-3 border-t border-slate-100 pt-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <h3 className="text-sm font-semibold text-[#0B3F64]">
-                              Presentaciones de compra
-                            </h3>
-                            <p className="text-[11px] text-slate-500">
-                              Configura cada empaque comercial por separado.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={startNewPresentation}
-                            aria-label="Nueva presentación de compra"
-                            className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                          >
-                            <Plus className="h-4 w-4" />
-                            <span className="hidden sm:inline">Nueva</span>
-                          </button>
+                    {activeTab === "kardex" &&
+                      (!kardexLoaded ? (
+                        <div className="py-12 text-center text-sm font-semibold text-slate-400">
+                          Cargando timeline de Kardex...
                         </div>
+                      ) : (
+                        <KardexList
+                          movements={movements}
+                          stockUnitLabel={stockUnitLabel}
+                        />
+                      ))}
 
-                        {editablePresentations.length ? (
-                          <div className="space-y-2">
-                            {editablePresentations.map((presentation) => {
-                              const factor = Number(
-                                presentation.factorToBaseUnit,
-                              );
-                              const purchaseLabel =
-                                presentation.purchaseUnit?.symbol ||
-                                presentation.purchaseUnit?.name ||
-                                presentation.name;
-                              const contentLabel =
-                                presentation.contentUnit?.symbol ||
-                                presentation.contentUnit?.name ||
-                                "";
-                              return (
-                                <div
-                                  key={presentation.id}
-                                  className="rounded-2xl border border-blue-100 bg-white p-3"
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        <p className="truncate text-sm font-semibold text-slate-900">
-                                          {presentation.name}
+                    {activeTab === "insumo" && (
+                      <div className="space-y-4">
+                        <section className="space-y-3 border-t border-slate-100 pt-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-sm font-semibold text-[#0B3F64]">
+                                Presentaciones de compra
+                              </h3>
+                              <p className="text-[11px] text-slate-500">
+                                Configura cada empaque comercial por separado.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={startNewPresentation}
+                              aria-label="Nueva presentación de compra"
+                              className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            >
+                              <Plus className="h-4 w-4" />
+                              <span className="hidden sm:inline">Nueva</span>
+                            </button>
+                          </div>
+
+                          {editablePresentations.length ? (
+                            <div className="space-y-2">
+                              {editablePresentations.map((presentation) => {
+                                const factor = Number(
+                                  presentation.factorToBaseUnit,
+                                );
+                                const purchaseLabel =
+                                  presentation.purchaseUnit?.symbol ||
+                                  presentation.purchaseUnit?.name ||
+                                  presentation.name;
+                                const contentLabel =
+                                  presentation.contentUnit?.symbol ||
+                                  presentation.contentUnit?.name ||
+                                  "";
+                                return (
+                                  <div
+                                    key={presentation.id}
+                                    className="rounded-2xl border border-blue-100 bg-white p-3"
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <p className="truncate text-sm font-semibold text-slate-900">
+                                            {presentation.name}
+                                          </p>
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              presentation.isDefault ||
+                                              defaultUpdatingId !== null
+                                            }
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              void handleSetDefaultPresentation(
+                                                presentation,
+                                              );
+                                            }}
+                                            aria-label={
+                                              presentation.isDefault
+                                                ? `${presentation.name} es la presentación predeterminada`
+                                                : `Marcar ${presentation.name} como presentación predeterminada`
+                                            }
+                                            title={
+                                              presentation.isDefault
+                                                ? "Presentación predeterminada"
+                                                : "Marcar como predeterminada"
+                                            }
+                                            aria-busy={
+                                              defaultUpdatingId ===
+                                              presentation.id
+                                            }
+                                            className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#0B3F64] transition enabled:hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-default disabled:opacity-70"
+                                          >
+                                            {defaultUpdatingId ===
+                                            presentation.id ? (
+                                              <LoaderCircle
+                                                className="h-4 w-4 animate-spin"
+                                                aria-hidden="true"
+                                              />
+                                            ) : presentation.isDefault ? (
+                                              <CircleCheck
+                                                className="h-4 w-4"
+                                                aria-hidden="true"
+                                              />
+                                            ) : (
+                                              <Circle
+                                                className="h-4 w-4 text-slate-400"
+                                                aria-hidden="true"
+                                              />
+                                            )}
+                                          </button>
+                                        </div>
+                                        <p className="mt-1 text-[11px] text-[#62748E]">
+                                          1 {purchaseLabel} ={" "}
+                                          {presentation.innerQuantity}{" "}
+                                          {presentation.innerUnitLabel ||
+                                            "unidades"}{" "}
+                                          × {presentation.contentQuantity}{" "}
+                                          {contentLabel}
+                                          {Number.isFinite(factor) && factor > 0
+                                            ? ` = ${formatQuantity(factor)} ${stockUnitLabel}`
+                                            : ""}
                                         </p>
+                                      </div>
+                                      <div className="flex shrink-0 gap-1">
                                         <button
                                           type="button"
-                                          disabled={
-                                            presentation.isDefault ||
-                                            defaultUpdatingId !== null
-                                          }
                                           onClick={(event) => {
                                             event.stopPropagation();
-                                            void handleSetDefaultPresentation(
-                                              presentation,
+                                            startEditPresentation(presentation);
+                                          }}
+                                          className="grid h-8 w-8 place-items-center rounded-full bg-blue-50 text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                          aria-label={`Editar presentación ${presentation.name}`}
+                                        >
+                                          <Edit2 className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void handleDeactivatePresentation(
+                                              presentation.id,
                                             );
                                           }}
-                                          aria-label={
-                                            presentation.isDefault
-                                              ? `${presentation.name} es la presentación predeterminada`
-                                              : `Marcar ${presentation.name} como presentación predeterminada`
-                                          }
-                                          title={
-                                            presentation.isDefault
-                                              ? "Presentación predeterminada"
-                                              : "Marcar como predeterminada"
-                                          }
-                                          aria-busy={
-                                            defaultUpdatingId === presentation.id
-                                          }
-                                          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#0B3F64] transition enabled:hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-default disabled:opacity-70"
+                                          className="grid h-8 w-8 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200"
+                                          aria-label={`Eliminar presentación ${presentation.name}`}
                                         >
-                                          {defaultUpdatingId ===
-                                          presentation.id ? (
-                                            <LoaderCircle
-                                              className="h-4 w-4 animate-spin"
-                                              aria-hidden="true"
-                                            />
-                                          ) : presentation.isDefault ? (
-                                            <CircleCheck
-                                              className="h-4 w-4"
-                                              aria-hidden="true"
-                                            />
-                                          ) : (
-                                            <Circle
-                                              className="h-4 w-4 text-slate-400"
-                                              aria-hidden="true"
-                                            />
-                                          )}
+                                          <Trash2 className="h-3.5 w-3.5" />
                                         </button>
                                       </div>
-                                      <p className="mt-1 text-[11px] text-[#62748E]">
-                                        1 {purchaseLabel} ={" "}
-                                        {presentation.innerQuantity}{" "}
-                                        {presentation.innerUnitLabel ||
-                                          "unidades"}{" "}
-                                        × {presentation.contentQuantity}{" "}
-                                        {contentLabel}
-                                        {Number.isFinite(factor) && factor > 0
-                                          ? ` = ${formatQuantity(factor)} ${stockUnitLabel}`
-                                          : ""}
-                                      </p>
-                                    </div>
-                                    <div className="flex shrink-0 gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          startEditPresentation(presentation)
-                                        }}
-                                        className="grid h-8 w-8 place-items-center rounded-full bg-blue-50 text-[#0B3F64] transition hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                                        aria-label={`Editar presentación ${presentation.name}`}
-                                      >
-                                        <Edit2 className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          void handleDeactivatePresentation(
-                                            presentation.id,
-                                          );
-                                        }}
-                                        className="grid h-8 w-8 place-items-center rounded-full bg-rose-50 text-rose-600 transition hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-200"
-                                        aria-label={`Eliminar presentación ${presentation.name}`}
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs text-[#62748E]">
-                            <p>Todavía no hay presentaciones configuradas.</p>
-                            <p className="mt-1">
-                              Agrega la primera presentación de compra.
-                            </p>
-                          </div>
-                        )}
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3 text-xs text-[#62748E]">
+                              <p>Todavía no hay presentaciones configuradas.</p>
+                              <p className="mt-1">
+                                Agrega la primera presentación de compra.
+                              </p>
+                            </div>
+                          )}
 
-                        {presentationEditorMode ? (
-                          <div
-                            ref={presentationEditorRef}
-                            className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-3"
-                          >
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="col-span-2 space-y-1 text-[11px] font-medium text-slate-600">
-                              Nombre de la presentación
-                              <input
-                                value={presentationForm.name}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    name: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                                placeholder="Caja"
-                              />
-                            </label>
-                            <label className="col-span-2 space-y-1 text-[11px] font-medium text-slate-600">
-                              Presentación mayor
-                              <select
-                                value={presentationForm.purchaseUnitId}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    purchaseUnitId: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                              >
-                                <option value="">Seleccionar...</option>
-                                {commercialUnits.map((unit) => (
-                                  <option key={unit.id} value={unit.id}>
-                                    {unit.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="space-y-1 text-[11px] font-medium text-slate-600">
-                              Cantidad contenida
-                              <input
-                                value={presentationForm.innerQuantity}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    innerQuantity: event.target.value.replace(
-                                      /[^0-9.,]/g,
-                                      "",
-                                    ),
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                                inputMode="decimal"
-                                placeholder="24"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] font-medium text-slate-600">
-                              Unidad contenida
-                              <input
-                                value={presentationForm.innerUnitLabel}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    innerUnitLabel: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                                placeholder="paquete"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] font-medium text-slate-600">
-                              Contenido por unidad
-                              <input
-                                value={presentationForm.contentQuantity}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    contentQuantity: event.target.value.replace(
-                                      /[^0-9.,]/g,
-                                      "",
-                                    ),
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                                inputMode="decimal"
-                                placeholder="500"
-                              />
-                            </label>
-                            <label className="space-y-1 text-[11px] font-medium text-slate-600">
-                              Unidad del contenido
-                              <select
-                                value={presentationForm.contentUnitId}
-                                onChange={(event) =>
-                                  setPresentationForm((current) => ({
-                                    ...current,
-                                    contentUnitId: event.target.value,
-                                  }))
-                                }
-                                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
-                              >
-                                <option value="">Seleccionar...</option>
-                                {filteredContentUnits.map((unit) => (
-                                  <option key={unit.id} value={unit.id}>
-                                    {unit.name} ({unit.symbol})
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          </div>
-                          {renderHelpText()}
-                          {renderContentQuantityHelperText()}
-                          {presentationValidationError ? (
-                            <p className="text-xs font-medium text-rose-600">
-                              {presentationValidationError}
-                            </p>
-                          ) : null}
-                          {getDynamicFormulaPreview() ? (
-                            <p className="rounded-xl border border-blue-100 bg-white p-2.5 text-xs font-semibold text-[#0B3F64]">
-                              {getDynamicFormulaPreview()}
-                            </p>
-                          ) : null}
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={closePresentationEditor}
-                              className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold text-slate-600"
+                          {presentationEditorMode ? (
+                            <div
+                              ref={presentationEditorRef}
+                              className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-3"
                             >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              disabled={
-                                !canSavePresentation || presentationSubmitting
-                              }
-                              onClick={() => void handleSavePresentation()}
-                              className="rounded-xl bg-[#0B3F64] px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
-                            >
-                              {presentationSubmitting
-                                ? "Guardando..."
-                                : presentationEditorMode === "edit"
-                                  ? "Actualizar"
-                                  : "Agregar"}
-                            </button>
-                          </div>
-                          </div>
-                        ) : null}
-                      </section>
+                              <div className="grid grid-cols-2 gap-3">
+                                <label className="col-span-2 space-y-1 text-[11px] font-medium text-slate-600">
+                                  Nombre de la presentación
+                                  <input
+                                    value={presentationForm.name}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        name: event.target.value,
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                    placeholder="Caja"
+                                  />
+                                </label>
+                                <label className="col-span-2 space-y-1 text-[11px] font-medium text-slate-600">
+                                  Presentación mayor
+                                  <select
+                                    value={presentationForm.purchaseUnitId}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        purchaseUnitId: event.target.value,
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                  >
+                                    <option value="">Seleccionar...</option>
+                                    {commercialUnits.map((unit) => (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="space-y-1 text-[11px] font-medium text-slate-600">
+                                  Cantidad contenida
+                                  <input
+                                    value={presentationForm.innerQuantity}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        innerQuantity:
+                                          event.target.value.replace(
+                                            /[^0-9.,]/g,
+                                            "",
+                                          ),
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                    inputMode="decimal"
+                                    placeholder="24"
+                                  />
+                                </label>
+                                <label className="space-y-1 text-[11px] font-medium text-slate-600">
+                                  Unidad contenida
+                                  <input
+                                    value={presentationForm.innerUnitLabel}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        innerUnitLabel: event.target.value,
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                    placeholder="paquete"
+                                  />
+                                </label>
+                                <label className="space-y-1 text-[11px] font-medium text-slate-600">
+                                  Contenido por unidad
+                                  <input
+                                    value={presentationForm.contentQuantity}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        contentQuantity:
+                                          event.target.value.replace(
+                                            /[^0-9.,]/g,
+                                            "",
+                                          ),
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                    inputMode="decimal"
+                                    placeholder="500"
+                                  />
+                                </label>
+                                <label className="space-y-1 text-[11px] font-medium text-slate-600">
+                                  Unidad del contenido
+                                  <select
+                                    value={presentationForm.contentUnitId}
+                                    onChange={(event) =>
+                                      setPresentationForm((current) => ({
+                                        ...current,
+                                        contentUnitId: event.target.value,
+                                      }))
+                                    }
+                                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                                  >
+                                    <option value="">Seleccionar...</option>
+                                    {filteredContentUnits.map((unit) => (
+                                      <option key={unit.id} value={unit.id}>
+                                        {unit.name} ({unit.symbol})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                              {renderHelpText()}
+                              {renderContentQuantityHelperText()}
+                              {presentationValidationError ? (
+                                <p className="text-xs font-medium text-rose-600">
+                                  {presentationValidationError}
+                                </p>
+                              ) : null}
+                              {getDynamicFormulaPreview() ? (
+                                <p className="rounded-xl border border-blue-100 bg-white p-2.5 text-xs font-semibold text-[#0B3F64]">
+                                  {getDynamicFormulaPreview()}
+                                </p>
+                              ) : null}
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={closePresentationEditor}
+                                  className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold text-slate-600"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={
+                                    !canSavePresentation ||
+                                    presentationSubmitting
+                                  }
+                                  onClick={() => void handleSavePresentation()}
+                                  className="rounded-xl bg-[#0B3F64] px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  {presentationSubmitting
+                                    ? "Guardando..."
+                                    : presentationEditorMode === "edit"
+                                      ? "Actualizar"
+                                      : "Agregar"}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </section>
 
-                      {/* Ingredient Edit Form */}
-                      <IngredientForm
-                        formRef={ingredientFormRef}
-                        mode="edit"
-                        initial={ingredient}
-                        submitting={submitting}
-                        onSubmit={handleUpdate}
-                        hideSubmitButton
-                        hideReadOnlyMetrics
-                        hidePurchasePresentationConfiguration
-                        onValidationChange={setIngredientFormValid}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
+                        {/* Ingredient Edit Form */}
+                        <IngredientForm
+                          formRef={ingredientFormRef}
+                          mode="edit"
+                          initial={ingredient}
+                          submitting={submitting}
+                          onSubmit={handleUpdate}
+                          hideSubmitButton
+                          hideReadOnlyMetrics
+                          hidePurchasePresentationConfiguration
+                          onValidationChange={setIngredientFormValid}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Isolated Floating WhatsApp Chat Composer Footer */}
-          {ingredient && !loading && (
-            <div className="relative z-50">
-              <WhatsappComposer
-                placeholder={
-                  activeTab === "compras"
-                    ? "Confirmar movimiento"
-                    : activeTab === "insumo"
-                      ? "Guardar cambios"
-                      : "Kardex"
-                }
-                value=""
-                onChange={() => {}}
-                onSubmit={() => {
-                  const ref =
+            {/* Isolated Floating WhatsApp Chat Composer Footer */}
+            {ingredient && !loading && (
+              <div className="relative z-50">
+                <WhatsappComposer
+                  placeholder={
                     activeTab === "compras"
-                      ? movementFormRef
+                      ? "Confirmar movimiento"
                       : activeTab === "insumo"
-                        ? ingredientFormRef
-                        : null;
-                  if (ref?.current) {
-                    if (typeof ref.current.requestSubmit === "function")
-                      ref.current.requestSubmit();
-                    else
-                      ref.current.dispatchEvent(
-                        new Event("submit", {
-                          cancelable: true,
-                          bubbles: true,
-                        }),
-                      );
+                        ? "Guardar cambios"
+                        : "Kardex"
                   }
-                }}
-                disabled={activeTab === "kardex"}
-                isSubmitting={
-                  activeTab === "compras" ? movementFormSubmitting : submitting
-                }
-                submitDisabled={
-                  activeTab === "compras"
-                    ? !movementFormValid
-                    : activeTab === "insumo"
-                      ? !ingredientFormValid
-                      : true
-                }
-                rightIconVariant="send"
-                leftIconVariant="x"
-                onPlusClick={onClose}
-                plusAriaLabel="Cerrar"
-                submitAriaLabel={
-                  activeTab === "compras"
-                    ? "Confirmar movimiento"
-                    : activeTab === "insumo"
-                      ? "Guardar cambios"
-                      : "Enviar"
-                }
-                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-md"
-                centerContent={
-                  <div className="flex h-full w-full items-center justify-center pt-0.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      {activeTab === "compras"
-                        ? "Confirmar movimiento"
+                  value=""
+                  onChange={() => {}}
+                  onSubmit={() => {
+                    const ref =
+                      activeTab === "compras"
+                        ? movementFormRef
                         : activeTab === "insumo"
-                          ? "Guardar cambios"
-                          : "Historial Kardex"}
-                    </span>
-                  </div>
-                }
-              />
-            </div>
-          )}
+                          ? ingredientFormRef
+                          : null;
+                    if (ref?.current) {
+                      if (typeof ref.current.requestSubmit === "function")
+                        ref.current.requestSubmit();
+                      else
+                        ref.current.dispatchEvent(
+                          new Event("submit", {
+                            cancelable: true,
+                            bubbles: true,
+                          }),
+                        );
+                    }
+                  }}
+                  disabled={activeTab === "kardex"}
+                  isSubmitting={
+                    activeTab === "compras"
+                      ? movementFormSubmitting
+                      : submitting
+                  }
+                  submitDisabled={
+                    activeTab === "compras"
+                      ? !movementFormValid
+                      : activeTab === "insumo"
+                        ? !ingredientFormValid
+                        : true
+                  }
+                  rightIconVariant="send"
+                  leftIconVariant="x"
+                  onPlusClick={onClose}
+                  plusAriaLabel="Cerrar"
+                  submitAriaLabel={
+                    activeTab === "compras"
+                      ? "Confirmar movimiento"
+                      : activeTab === "insumo"
+                        ? "Guardar cambios"
+                        : "Enviar"
+                  }
+                  className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-md"
+                  centerContent={
+                    <div className="flex h-full w-full items-center justify-center pt-0.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        {activeTab === "compras"
+                          ? "Confirmar movimiento"
+                          : activeTab === "insumo"
+                            ? "Guardar cambios"
+                            : "Historial Kardex"}
+                      </span>
+                    </div>
+                  }
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+      {deactivationImpact && (
+        <IngredientDeactivationImpactModal
+          impact={deactivationImpact}
+          submitting={deactivatingIngredient}
+          onCancel={() => setDeactivationImpact(null)}
+          onConfirm={confirmDeactivate}
+        />
+      )}
+    </>
   );
 }

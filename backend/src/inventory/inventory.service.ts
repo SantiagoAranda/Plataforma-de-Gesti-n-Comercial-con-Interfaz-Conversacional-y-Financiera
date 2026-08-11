@@ -18,6 +18,7 @@ import {
   UnitKind,
 } from '@prisma/client';
 import { AccountingService } from '../accounting/accounting.service';
+import { deriveRecipeValidity } from '../recipes/recipe-validity';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
 import { CreateInventoryInitialDto } from './dto/create-inventory-initial.dto';
@@ -71,6 +72,11 @@ type OrderIngredientConsumption = InventoryRequirement & {
   itemName: string;
 };
 
+type OperationalIngredientContext = {
+  kind: 'recipe' | 'service' | 'option';
+  itemName: string;
+};
+
 type ApplyInventoryMovementInput = {
   ingredientId?: string | null;
   itemId?: string | null;
@@ -109,6 +115,8 @@ export type ItemSellabilityStatus =
   | 'MISSING_RECIPE'
   | 'EMPTY_RECIPE'
   | 'INSUFFICIENT_RECIPE_STOCK'
+  | 'RECIPE_REQUIRES_REVIEW'
+  | 'SERVICE_REQUIRES_REVIEW'
   | 'INACTIVE';
 
 export type ItemSellability = {
@@ -124,6 +132,7 @@ export type ItemSellability = {
     available: Prisma.Decimal;
     unit?: string | null;
   }>;
+  inactiveIngredients?: Array<{ id: string; name: string }>;
 };
 
 export type ItemSellabilityRequest = {
@@ -530,7 +539,9 @@ export class InventoryService {
               select: {
                 id: true,
                 name: true,
+                status: true,
                 currentStock: true,
+                averageCost: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
               },
@@ -558,6 +569,7 @@ export class InventoryService {
             select: {
               id: true,
               name: true,
+              status: true,
               currentStock: true,
               consumptionUnit: true,
               customUnitLabel: true,
@@ -566,26 +578,11 @@ export class InventoryService {
         },
       });
 
-      if (serviceIngredients.length === 0) {
-        return { sellable: true, status: 'SELLABLE' };
-      }
-
-      const requiredQuantity = this.decimal(quantity);
-      for (const si of serviceIngredients) {
-        const stock = this.decimal(si.ingredient.currentStock);
-        const reqQty = this.decimal(si.quantityRequired).mul(requiredQuantity);
-        if (stock.lt(reqQty)) {
-          const unitStr =
-            si.ingredient.customUnitLabel || si.ingredient.consumptionUnit;
-          return {
-            sellable: false,
-            status: 'NO_STOCK',
-            message: `Insumo ${si.ingredient.name} insuficiente para el servicio ${item.name}. Disponible: ${stock.toString()} ${unitStr}, Requerido: ${reqQty.toString()} ${unitStr}.`,
-          };
-        }
-      }
-
-      return { sellable: true, status: 'SELLABLE' };
+      return this.getServiceIngredientSellability(
+        item.name,
+        serviceIngredients,
+        quantity,
+      );
     }
 
     if (item.inventoryMode === 'NONE') {
@@ -627,6 +624,16 @@ export class InventoryService {
         message: isLowStock ? `${item.name} tiene stock bajo.` : undefined,
         currentStock,
         averageCost,
+      };
+    }
+
+    const recipeValidity = deriveRecipeValidity(item.recipes);
+    if (recipeValidity.requiresReview) {
+      return {
+        sellable: false,
+        status: 'RECIPE_REQUIRES_REVIEW',
+        message: `${item.name} utiliza ingredientes inactivos y su receta requiere revisión.`,
+        inactiveIngredients: recipeValidity.inactiveIngredients,
       };
     }
 
@@ -690,6 +697,58 @@ export class InventoryService {
     return { sellable: true, status: 'SELLABLE' };
   }
 
+  private getServiceIngredientSellability(
+    serviceName: string,
+    serviceIngredients: Array<{
+      quantityRequired: Prisma.Decimal | string | number;
+      ingredient: {
+        id?: string;
+        name: string;
+        status: string;
+        currentStock: Prisma.Decimal | string | number;
+        consumptionUnit: string;
+        customUnitLabel: string | null;
+      };
+    }>,
+    quantity: Prisma.Decimal | string | number,
+  ): ItemSellability {
+    if (serviceIngredients.length === 0) {
+      return { sellable: true, status: 'SELLABLE' };
+    }
+
+    const inactiveIngredients = serviceIngredients
+      .filter((line) => line.ingredient.status === 'INACTIVE')
+      .map((line) => ({
+        id: line.ingredient.id ?? '',
+        name: line.ingredient.name,
+      }));
+    if (inactiveIngredients.length > 0) {
+      return {
+        sellable: false,
+        status: 'SERVICE_REQUIRES_REVIEW',
+        message: `${serviceName} utiliza ingredientes inactivos y requiere revisión.`,
+        inactiveIngredients,
+      };
+    }
+
+    const requiredQuantity = this.decimal(quantity);
+    for (const line of serviceIngredients) {
+      const stock = this.decimal(line.ingredient.currentStock);
+      const required = this.decimal(line.quantityRequired).mul(requiredQuantity);
+      if (stock.lt(required)) {
+        const unit =
+          line.ingredient.customUnitLabel || line.ingredient.consumptionUnit;
+        return {
+          sellable: false,
+          status: 'NO_STOCK',
+          message: `Insumo ${line.ingredient.name} insuficiente para el servicio ${serviceName}. Disponible: ${stock.toString()} ${unit}, Requerido: ${required.toString()} ${unit}.`,
+        };
+      }
+    }
+
+    return { sellable: true, status: 'SELLABLE' };
+  }
+
   async getItemsSellabilityBulk(
     businessId: string,
     requests: Array<string | ItemSellabilityRequest>,
@@ -714,6 +773,22 @@ export class InventoryService {
               select: {
                 id: true,
                 name: true,
+                status: true,
+                currentStock: true,
+                consumptionUnit: true,
+                customUnitLabel: true,
+              },
+            },
+          },
+        },
+        serviceIngredients: {
+          where: { isActive: true },
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                status: true,
                 currentStock: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
@@ -742,7 +817,38 @@ export class InventoryService {
         };
       }
 
-      if (item.type === 'SERVICE' || item.inventoryMode === 'NONE') {
+      if (item.type === 'SERVICE') {
+        const inactiveIngredients = item.serviceIngredients
+          .filter((line) => line.ingredient.status === 'INACTIVE')
+          .map((line) => ({
+            id: line.ingredient.id,
+            name: line.ingredient.name,
+          }));
+        if (inactiveIngredients.length > 0) {
+          return {
+            sellable: false,
+            status: 'SERVICE_REQUIRES_REVIEW',
+            message: `${item.name} utiliza ingredientes inactivos y requiere revisión.`,
+            inactiveIngredients,
+          };
+        }
+
+        for (const line of item.serviceIngredients) {
+          const required = this.decimal(line.quantityRequired).mul(
+            requiredQuantity,
+          );
+          if (this.decimal(line.ingredient.currentStock).lt(required)) {
+            return {
+              sellable: false,
+              status: 'NO_STOCK',
+              message: `Insumo ${line.ingredient.name} insuficiente para el servicio ${item.name}.`,
+            };
+          }
+        }
+        return { sellable: true, status: 'SELLABLE' };
+      }
+
+      if (item.inventoryMode === 'NONE') {
         return { sellable: true, status: 'SELLABLE' };
       }
 
@@ -777,6 +883,16 @@ export class InventoryService {
           message: isLowStock ? `${item.name} tiene stock bajo.` : undefined,
           currentStock,
           averageCost,
+        };
+      }
+
+      const recipeValidity = deriveRecipeValidity(item.recipes);
+      if (recipeValidity.requiresReview) {
+        return {
+          sellable: false,
+          status: 'RECIPE_REQUIRES_REVIEW',
+          message: `${item.name} utiliza ingredientes inactivos y su receta requiere revisión.`,
+          inactiveIngredients: recipeValidity.inactiveIngredients,
         };
       }
 
@@ -1152,7 +1268,6 @@ export class InventoryService {
         averageCost: true,
       },
     });
-
     if (ingredients.length !== ingredientIds.length) {
       throw new NotFoundException('Ingredient not found for return movement');
     }
@@ -1254,6 +1369,19 @@ export class InventoryService {
     } = {},
   ): Promise<OrderIngredientConsumption[]> {
     const consumptions: OrderIngredientConsumption[] = [];
+    const operationalIngredients = new Map<
+      string,
+      OperationalIngredientContext[]
+    >();
+
+    const trackIngredient = (
+      ingredientId: string,
+      context: OperationalIngredientContext,
+    ) => {
+      const contexts = operationalIngredients.get(ingredientId) ?? [];
+      contexts.push(context);
+      operationalIngredients.set(ingredientId, contexts);
+    };
 
     for (const orderItem of orderItems) {
       if (orderItem.itemTypeSnapshot === 'SERVICE') {
@@ -1265,6 +1393,10 @@ export class InventoryService {
           },
         });
         for (const si of serviceIngredients) {
+          trackIngredient(si.ingredientId, {
+            kind: 'service',
+            itemName: orderItem.itemNameSnapshot,
+          });
           consumptions.push({
             orderItemId: orderItem.id,
             soldItemId: orderItem.itemId,
@@ -1308,6 +1440,7 @@ export class InventoryService {
           orderItem,
           consumptions,
           diagnosticContext.orderOrigin,
+          operationalIngredients,
         );
         continue;
       }
@@ -1350,6 +1483,7 @@ export class InventoryService {
           orderItem,
           consumptions,
           diagnosticContext.orderOrigin,
+          operationalIngredients,
         );
         continue;
       }
@@ -1366,6 +1500,13 @@ export class InventoryService {
         },
       });
       const mandatoryLines = recipe.filter((line) => !line.isOptional);
+
+      for (const line of recipe) {
+        trackIngredient(line.ingredientId, {
+          kind: 'recipe',
+          itemName: orderItem.itemNameSnapshot,
+        });
+      }
 
       console.log('[InventoryService] Sale inventory recipe lookup', {
         ...baseLog,
@@ -1421,8 +1562,15 @@ export class InventoryService {
         orderItem,
         consumptions,
         diagnosticContext.orderOrigin,
+        operationalIngredients,
       );
     }
+
+    await this.assertOperationalIngredientsActive(
+      tx,
+      businessId,
+      operationalIngredients,
+    );
 
     return consumptions;
   }
@@ -1433,6 +1581,7 @@ export class InventoryService {
     orderItem: OrderItemForInventory,
     consumptions: OrderIngredientConsumption[],
     orderOrigin?: string | null,
+    operationalIngredients?: Map<string, OperationalIngredientContext[]>,
   ) {
     for (const option of orderItem.options ?? []) {
       const targetType = option.targetTypeSnapshot;
@@ -1460,6 +1609,13 @@ export class InventoryService {
             'Option ingredient snapshot is missing',
           );
         }
+        const optionContexts =
+          operationalIngredients?.get(option.ingredientId) ?? [];
+        optionContexts.push({
+          kind: 'option',
+          itemName: orderItem.itemNameSnapshot,
+        });
+        operationalIngredients?.set(option.ingredientId, optionContexts);
         const convertedQuantity =
           await this.convertOptionQuantityToIngredientStock(
             tx,
@@ -1495,6 +1651,18 @@ export class InventoryService {
           tx,
         );
         for (const requirement of expanded) {
+          if (requirement.ingredientId) {
+            const optionContexts =
+              operationalIngredients?.get(requirement.ingredientId) ?? [];
+            optionContexts.push({
+              kind: 'option',
+              itemName: orderItem.itemNameSnapshot,
+            });
+            operationalIngredients?.set(
+              requirement.ingredientId,
+              optionContexts,
+            );
+          }
           consumptions.push({
             orderItemId: orderItem.id,
             soldItemId: orderItem.itemId,
@@ -1506,6 +1674,68 @@ export class InventoryService {
         }
       }
     }
+  }
+
+  private async assertOperationalIngredientsActive(
+    tx: Prisma.TransactionClient | PrismaService,
+    businessId: string,
+    contextsByIngredientId: Map<string, OperationalIngredientContext[]>,
+  ) {
+    const ingredientIds = Array.from(contextsByIngredientId.keys()).sort();
+    if (ingredientIds.length === 0) return;
+
+    if ('$queryRaw' in tx) {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "Ingredient" WHERE "businessId" = ${businessId} AND "id" IN (${Prisma.join(ingredientIds)}) ORDER BY "id" FOR KEY SHARE`,
+      );
+    }
+
+    const ingredients = await tx.ingredient.findMany({
+      where: { businessId, id: { in: ingredientIds } },
+      select: { id: true, name: true, status: true },
+    });
+    if (ingredients.length !== ingredientIds.length) {
+      throw new BadRequestException('One or more ingredients are invalid');
+    }
+    const inactiveIngredients = ingredients
+      .filter((ingredient) => ingredient.status === 'INACTIVE')
+      .map((ingredient) => ({ id: ingredient.id, name: ingredient.name }));
+    if (inactiveIngredients.length === 0) return;
+
+    const inactiveIds = new Set(
+      inactiveIngredients.map((ingredient) => ingredient.id),
+    );
+    const contexts = inactiveIngredients.flatMap((ingredient) =>
+      (contextsByIngredientId.get(ingredient.id) ?? []).map((context) => ({
+        ...context,
+        ingredientId: ingredient.id,
+      })),
+    );
+    const kinds = new Set(contexts.map((context) => context.kind));
+    const code = kinds.has('recipe')
+      ? 'RECIPE_REQUIRES_REVIEW'
+      : kinds.has('service')
+        ? 'SERVICE_REQUIRES_REVIEW'
+        : 'ITEM_OPTION_REQUIRES_REVIEW';
+    const affectedItems = Array.from(
+      new Set(
+        contexts
+          .filter((context) => inactiveIds.has(context.ingredientId))
+          .map((context) => context.itemName),
+      ),
+    );
+
+    throw new BadRequestException({
+      code,
+      message:
+        code === 'RECIPE_REQUIRES_REVIEW'
+          ? 'La venta contiene una receta que requiere revisión.'
+          : code === 'SERVICE_REQUIRES_REVIEW'
+            ? 'La venta contiene un servicio que requiere revisión.'
+            : 'La venta contiene una opción que requiere revisión.',
+      affectedItems,
+      inactiveIngredients,
+    });
   }
 
   private async convertOptionQuantityToIngredientStock(
@@ -2489,7 +2719,9 @@ export class InventoryService {
               select: {
                 id: true,
                 name: true,
+                status: true,
                 currentStock: true,
+                averageCost: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
               },
@@ -2506,12 +2738,19 @@ export class InventoryService {
       price: Number(s.price),
       durationMinutes: s.durationMinutes,
       status: s.status,
+      sellability: this.getServiceIngredientSellability(
+        s.name,
+        s.serviceIngredients,
+        1,
+      ),
       ingredients: s.serviceIngredients.map((si) => ({
         id: si.id,
         ingredientId: si.ingredientId,
         name: si.ingredient.name,
+        status: si.ingredient.status,
         quantityRequired: Number(si.quantityRequired),
         currentStock: Number(si.ingredient.currentStock),
+        averageCost: Number(si.ingredient.averageCost),
         consumptionUnit: si.ingredient.consumptionUnit,
         customUnitLabel: si.ingredient.customUnitLabel,
       })),
@@ -2529,7 +2768,9 @@ export class InventoryService {
               select: {
                 id: true,
                 name: true,
+                status: true,
                 currentStock: true,
+                averageCost: true,
                 consumptionUnit: true,
                 customUnitLabel: true,
               },
@@ -2553,8 +2794,10 @@ export class InventoryService {
         id: si.id,
         ingredientId: si.ingredientId,
         name: si.ingredient.name,
+        status: si.ingredient.status,
         quantityRequired: Number(si.quantityRequired),
         currentStock: Number(si.ingredient.currentStock),
+        averageCost: Number(si.ingredient.averageCost),
         consumptionUnit: si.ingredient.consumptionUnit,
         customUnitLabel: si.ingredient.customUnitLabel,
       })),
@@ -2568,27 +2811,9 @@ export class InventoryService {
       ingredients: Array<{ ingredientId: string; quantityRequired: string }>;
     },
   ) {
-    const service = await this.prisma.item.findFirst({
-      where: { id: serviceItemId, businessId, type: 'SERVICE' },
-    });
-    if (!service) {
-      throw new NotFoundException('Service not found');
-    }
-
-    // Validate ingredients belong to the same business and quantity > 0
     const ingredientIds = dto.ingredients.map((i) => i.ingredientId);
     if (new Set(ingredientIds).size !== ingredientIds.length) {
       throw new BadRequestException('Duplicate ingredients are not allowed');
-    }
-
-    const dbIngredients = await this.prisma.ingredient.findMany({
-      where: { id: { in: ingredientIds }, businessId, status: 'ACTIVE' },
-    });
-
-    if (dbIngredients.length !== ingredientIds.length) {
-      throw new BadRequestException(
-        'One or more ingredients are invalid or inactive',
-      );
     }
 
     for (const ing of dto.ingredients) {
@@ -2601,6 +2826,19 @@ export class InventoryService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const service = await tx.item.findFirst({
+        where: { id: serviceItemId, businessId, type: 'SERVICE' },
+      });
+      if (!service) throw new NotFoundException('Service not found');
+
+      const contexts = new Map<string, OperationalIngredientContext[]>();
+      for (const ingredientId of ingredientIds) {
+        contexts.set(ingredientId, [
+          { kind: 'service', itemName: service.name },
+        ]);
+      }
+      await this.assertOperationalIngredientsActive(tx, businessId, contexts);
+
       // Deactivate/delete previous service ingredients
       await tx.serviceIngredient.deleteMany({
         where: { businessId, serviceItemId },
@@ -2672,6 +2910,21 @@ export class InventoryService {
       });
       return [];
     }
+
+    const operationalIngredients = new Map<
+      string,
+      OperationalIngredientContext[]
+    >();
+    for (const line of serviceIngredients) {
+      operationalIngredients.set(line.ingredientId, [
+        { kind: 'service', itemName: reservation.item.name },
+      ]);
+    }
+    await this.assertOperationalIngredientsActive(
+      tx,
+      businessId,
+      operationalIngredients,
+    );
 
     const consumptions: OrderIngredientConsumption[] = serviceIngredients.map(
       (si) => ({

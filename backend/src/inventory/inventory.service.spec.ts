@@ -16,7 +16,17 @@ describe('InventoryService', () => {
     const tx = {
       ingredient: {
         findFirst: mockFn(),
-        findMany: mockFn(),
+        findMany: mockFn().mockImplementation(({ where }: { where?: any }) =>
+          Promise.resolve(
+            (where?.id?.in ?? []).map((id: string) => ({
+              id,
+              name: id,
+              status: 'ACTIVE',
+              currentStock: new Prisma.Decimal(100),
+              averageCost: new Prisma.Decimal(1),
+            })),
+          ),
+        ),
         update: mockFn(),
       },
       item: {
@@ -1566,18 +1576,17 @@ describe('InventoryService', () => {
         isOptional: true,
       },
     ]);
-    tx.ingredient.findMany.mockResolvedValue([
-      {
-        id: 'ingredient-1',
-        name: 'Bread',
-        currentStock: new Prisma.Decimal(10),
-      },
-      {
-        id: 'ingredient-optional',
-        name: 'Mayo',
-        currentStock: new Prisma.Decimal(10),
-      },
-    ]);
+    tx.ingredient.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.id.in.map((id: string) => ({
+          id,
+          name: id === 'ingredient-1' ? 'Bread' : 'Sauce',
+          status: 'ACTIVE',
+          currentStock: new Prisma.Decimal(10),
+          averageCost: new Prisma.Decimal(1),
+        })),
+      ),
+    );
     tx.ingredient.findFirst.mockImplementation(({ where }: any) =>
       Promise.resolve({
         id: where.id,
@@ -1638,13 +1647,17 @@ describe('InventoryService', () => {
         isOptional: true,
       },
     ]);
-    tx.ingredient.findMany.mockResolvedValue([
-      {
-        id: 'ingredient-1',
-        name: 'Bread',
-        currentStock: new Prisma.Decimal(10),
-      },
-    ]);
+    tx.ingredient.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.id.in.map((id: string) => ({
+          id,
+          name: id === 'ingredient-1' ? 'Bread' : 'Sauce',
+          status: 'ACTIVE',
+          currentStock: new Prisma.Decimal(10),
+          averageCost: new Prisma.Decimal(1),
+        })),
+      ),
+    );
     tx.ingredient.findFirst.mockResolvedValue({
       id: 'ingredient-1',
       businessId,
@@ -1684,6 +1697,43 @@ describe('InventoryService', () => {
         data: expect.objectContaining({ ingredientId: 'ingredient-1' }),
       }),
     );
+  });
+
+  it('rejects an inactive recipe ingredient before creating partial movements', async () => {
+    const { service, tx } = createService();
+    tx.recipe.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-1',
+        quantityRequired: new Prisma.Decimal(1),
+        isOptional: false,
+      },
+    ]);
+    tx.ingredient.findMany.mockResolvedValue([
+      { id: 'ingredient-1', name: 'Leche', status: 'INACTIVE' },
+    ]);
+
+    await expect(
+      service.applyInventoryConsumptionForOrder(tx as any, businessId, {
+        id: 'order-1',
+        items: [
+          {
+            id: 'order-item-1',
+            itemId: 'item-1',
+            quantity: 1,
+            itemNameSnapshot: 'Café con leche',
+            itemTypeSnapshot: 'PRODUCT',
+            inventoryModeSnapshot: 'RECIPE_BASED',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'RECIPE_REQUIRES_REVIEW',
+        inactiveIngredients: [{ id: 'ingredient-1', name: 'Leche' }],
+      },
+    });
+    expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
+    expect(tx.order.update).not.toHaveBeenCalled();
   });
 
   it('does not affect stock for SERVICE item sales', async () => {
@@ -2202,6 +2252,93 @@ describe('InventoryService', () => {
 
     expect(result.sellable).toBe(false);
     expect(result.status).toBe('MISSING_RECIPE');
+  });
+
+  it('marks a recipe with an inactive optional ingredient as requiring review', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Hamburguesa',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'RECIPE_BASED',
+      recipes: [
+        {
+          ingredientId: 'ingredient-pan',
+          quantityRequired: new Prisma.Decimal(1),
+          isOptional: false,
+          ingredient: {
+            id: 'ingredient-pan',
+            name: 'Pan',
+            status: 'ACTIVE',
+            currentStock: new Prisma.Decimal(10),
+          },
+        },
+        {
+          ingredientId: 'ingredient-cheese',
+          quantityRequired: new Prisma.Decimal(1),
+          isOptional: true,
+          ingredient: {
+            id: 'ingredient-cheese',
+            name: 'Queso',
+            status: 'INACTIVE',
+            currentStock: new Prisma.Decimal(10),
+          },
+        },
+      ],
+    });
+
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
+
+    expect(result).toMatchObject({
+      sellable: false,
+      status: 'RECIPE_REQUIRES_REVIEW',
+      inactiveIngredients: [{ id: 'ingredient-cheese', name: 'Queso' }],
+    });
+  });
+
+  it('marks a service with an inactive ingredient as requiring review', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'service-1',
+      businessId,
+      name: 'Masaje',
+      status: 'ACTIVE',
+      type: 'SERVICE',
+      inventoryMode: 'NONE',
+      recipes: [],
+    });
+    tx.serviceIngredient.findMany.mockResolvedValue([
+      {
+        ingredientId: 'ingredient-oil',
+        quantityRequired: new Prisma.Decimal(1),
+        ingredient: {
+          id: 'ingredient-oil',
+          name: 'Aceite',
+          status: 'INACTIVE',
+          currentStock: new Prisma.Decimal(10),
+        },
+      },
+    ]);
+
+    const result = await service.getItemSellability(
+      businessId,
+      'service-1',
+      1,
+      tx as any,
+    );
+
+    expect(result).toMatchObject({
+      sellable: false,
+      status: 'SERVICE_REQUIRES_REVIEW',
+      inactiveIngredients: [{ id: 'ingredient-oil', name: 'Aceite' }],
+    });
   });
 
   it('marks RECIPE_BASED item with insufficient ingredient stock as not sellable', async () => {
@@ -2874,6 +3011,47 @@ describe('InventoryService', () => {
   });
 
   describe('Service Consumption CRUD & History', () => {
+    it('separates inactive service dependencies from temporary stock shortages', () => {
+      const { service } = createService();
+      const inactive = (service as any).getServiceIngredientSellability(
+        'Lavado',
+        [
+          {
+            quantityRequired: new Prisma.Decimal(400),
+            ingredient: {
+              id: 'ing-1',
+              name: 'Yerba',
+              status: 'INACTIVE',
+              currentStock: new Prisma.Decimal(1000),
+              consumptionUnit: 'ml',
+              customUnitLabel: null,
+            },
+          },
+        ],
+        1,
+      );
+      const withoutStock = (service as any).getServiceIngredientSellability(
+        'Lavado',
+        [
+          {
+            quantityRequired: new Prisma.Decimal(400),
+            ingredient: {
+              id: 'ing-1',
+              name: 'Yerba',
+              status: 'ACTIVE',
+              currentStock: new Prisma.Decimal(100),
+              consumptionUnit: 'ml',
+              customUnitLabel: null,
+            },
+          },
+        ],
+        1,
+      );
+
+      expect(inactive.status).toBe('SERVICE_REQUIRES_REVIEW');
+      expect(withoutStock.status).toBe('NO_STOCK');
+    });
+
     it('listServiceConsumption returns active services with mapped service ingredients', async () => {
       const { service, tx } = createService();
       tx.item.findMany.mockResolvedValue([
@@ -2890,7 +3068,9 @@ describe('InventoryService', () => {
               quantityRequired: new Prisma.Decimal(10),
               ingredient: {
                 name: 'Oil',
+                status: 'ACTIVE',
                 currentStock: new Prisma.Decimal(500),
+                averageCost: new Prisma.Decimal(2),
                 consumptionUnit: 'ml',
                 customUnitLabel: 'ml',
               },
@@ -2907,13 +3087,19 @@ describe('InventoryService', () => {
         price: 120,
         durationMinutes: 60,
         status: 'ACTIVE',
+        sellability: {
+          sellable: true,
+          status: 'SELLABLE',
+        },
         ingredients: [
           {
             id: 'si-1',
             ingredientId: 'ing-1',
             name: 'Oil',
+            status: 'ACTIVE',
             quantityRequired: 10,
             currentStock: 500,
+            averageCost: 2,
             consumptionUnit: 'ml',
             customUnitLabel: 'ml',
           },
@@ -3599,42 +3785,77 @@ describe('InventoryService', () => {
     it('keeps the first movement snapshot after the presentation is edited', async () => {
       const { service, tx } = createService();
       const contentUnit = {
-        id: 'unit-g', code: 'G', symbol: 'g', name: 'Gramo', kind: 'WEIGHT', isActive: true,
+        id: 'unit-g',
+        code: 'G',
+        symbol: 'g',
+        name: 'Gramo',
+        kind: 'WEIGHT',
+        isActive: true,
       };
       const presentation = {
-        id: 'presentation-editable', businessId, ingredientId, name: 'Caja',
+        id: 'presentation-editable',
+        businessId,
+        ingredientId,
+        name: 'Caja',
         purchaseUnitId: 'unit-box',
-        purchaseUnit: { id: 'unit-box', code: 'BOX', symbol: 'caja', name: 'Caja', kind: 'COMMERCIAL', isActive: true },
-        innerQuantity: new Prisma.Decimal(24), innerUnitLabel: 'paquetes',
-        contentQuantity: new Prisma.Decimal(500), contentUnitId: contentUnit.id,
-        contentUnit, isActive: true,
+        purchaseUnit: {
+          id: 'unit-box',
+          code: 'BOX',
+          symbol: 'caja',
+          name: 'Caja',
+          kind: 'COMMERCIAL',
+          isActive: true,
+        },
+        innerQuantity: new Prisma.Decimal(24),
+        innerUnitLabel: 'paquetes',
+        contentQuantity: new Prisma.Decimal(500),
+        contentUnitId: contentUnit.id,
+        contentUnit,
+        isActive: true,
       };
       tx.ingredient.findFirst.mockResolvedValue({
-        id: ingredientId, businessId, name: 'Levadura',
-        currentStock: new Prisma.Decimal(0), averageCost: new Prisma.Decimal(0),
+        id: ingredientId,
+        businessId,
+        name: 'Levadura',
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(0),
         stockUnitId: contentUnit.id,
       });
-      tx.ingredientPurchasePresentation.findFirst.mockImplementation(async () => presentation);
+      tx.ingredientPurchasePresentation.findFirst.mockImplementation(
+        async () => presentation,
+      );
       tx.unit.findUnique.mockResolvedValue(contentUnit);
-      tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
-        Promise.resolve({ id: `movement-${data.factorToBaseUnitSnapshot}`, ...data }),
+      tx.inventoryMovement.create.mockImplementation(
+        ({ data }: { data: any }) =>
+          Promise.resolve({
+            id: `movement-${data.factorToBaseUnitSnapshot}`,
+            ...data,
+          }),
       );
       tx.ingredient.update.mockResolvedValue({});
 
       const original = await service.registerPurchase(businessId, {
-        ingredientId, purchasePresentationId: presentation.id,
-        purchaseQuantity: '1', purchaseUnitCost: '60000',
+        ingredientId,
+        purchasePresentationId: presentation.id,
+        purchaseQuantity: '1',
+        purchaseUnitCost: '60000',
       });
       presentation.innerQuantity = new Prisma.Decimal(12);
       const future = await service.registerPurchase(businessId, {
-        ingredientId, purchasePresentationId: presentation.id,
-        purchaseQuantity: '1', purchaseUnitCost: '60000',
+        ingredientId,
+        purchasePresentationId: presentation.id,
+        purchaseQuantity: '1',
+        purchaseUnitCost: '60000',
       });
 
       expect(original.factorToBaseUnitSnapshot.toString()).toBe('12000');
-      expect(original.conversionDetail).toBe('1 caja = 24 paquetes × 500 g = 12000 g');
+      expect(original.conversionDetail).toBe(
+        '1 caja = 24 paquetes × 500 g = 12000 g',
+      );
       expect(future.factorToBaseUnitSnapshot.toString()).toBe('6000');
-      expect(future.conversionDetail).toBe('1 caja = 12 paquetes × 500 g = 6000 g');
+      expect(future.conversionDetail).toBe(
+        '1 caja = 12 paquetes × 500 g = 6000 g',
+      );
     });
   });
 });
