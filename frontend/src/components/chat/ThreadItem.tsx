@@ -37,7 +37,7 @@ function ThreadItem({
     <div
       onClick={onClick}
       className={cn(
-        "flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-neutral-50",
+        "flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-neutral-50",
         divider && "border-b border-neutral-100",
         selected && "bg-emerald-50/70",
         className,

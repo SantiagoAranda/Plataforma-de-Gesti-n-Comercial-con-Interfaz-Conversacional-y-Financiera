@@ -24,6 +24,7 @@ import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } fr
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
+import { cn } from "@/src/lib/utils";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import CartSummary from "@/src/components/shared/CartSummary";
 import LoginReturnHint from "@/src/components/store/LoginReturnHint";
@@ -1066,7 +1067,7 @@ export default function PublicStoreClient() {
               >
                 <ShoppingBag className="h-5 w-5" />
                 {cartCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E0E7FF] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E6EFF5] px-1 text-[11px] font-semibold text-[#0B3F64] shadow-sm">
                     {cartCount}
                   </span>
                 )}
@@ -1086,23 +1087,29 @@ export default function PublicStoreClient() {
               />
             </div>
 
-            <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {["", "PRODUCT", "SERVICE"].map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setCategory(type)}
-                  className={`shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition ${category === type
-                    ? "bg-[#E0E7FF] text-[#0B3F64] border-none shadow-none"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
-                    }`}
-                >
-                  {type === ""
-                    ? "Todo"
-                    : type === "PRODUCT"
-                      ? "Productos"
-                      : "Servicios"}
-                </button>
-              ))}
+            <div className="flex flex-nowrap min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {([
+                { key: "", label: "Todo" },
+                { key: "PRODUCT", label: "Productos" },
+                { key: "SERVICE", label: "Servicios" },
+              ] as const).map((opt) => {
+                const active = category === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => setCategory(opt.key)}
+                    className={cn(
+                      "shrink-0 px-4 py-1.5 rounded-full text-[13px] font-medium transition flex items-center gap-1.5",
+                      active
+                        ? "bg-[#E6EFF5] text-[#0B3F64] font-semibold"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200/80"
+                    )}
+                    type="button"
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </header>
