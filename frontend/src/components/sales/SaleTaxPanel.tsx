@@ -95,7 +95,6 @@ export function normalizeBuyerFiscalExclusion(state: SaleFiscalFormState): SaleF
 export function buildBuyerFiscalContext(
   state: SaleFiscalFormState,
   applyBuyerExclusion = true,
-  includeSimpleRegime = true,
 ): BuyerFiscalContext {
   const normalized = applyBuyerExclusion ? normalizeBuyerFiscalExclusion(state) : state;
   return {
@@ -108,9 +107,7 @@ export function buildBuyerFiscalContext(
     buyerIsRetenedor: normalized.buyerIsRetenedor,
     buyerIsGranContribuyente: normalized.buyerIsGranContribuyente,
     buyerIsAutorretenedor: normalized.buyerIsAutorretenedor,
-    ...(includeSimpleRegime
-      ? { buyerIsRegimenSimple: normalized.buyerIsRegimenSimple }
-      : {}),
+    buyerIsRegimenSimple: Boolean(normalized.buyerIsRegimenSimple),
     buyerRequiresElectronicInvoice: normalized.buyerRequiresElectronicInvoice,
     fiscalMunicipalityCode: normalized.fiscalMunicipalityCode || null,
     saleConcept: normalized.saleConcept,
@@ -369,9 +366,9 @@ export default function SaleTaxPanel({
           buyerIsRetenedor: context.buyerIsRetenedor,
           buyerIsGranContribuyente: context.buyerIsGranContribuyente,
           buyerIsAutorretenedor: context.buyerIsAutorretenedor,
-          ...(simpleRegimeEnabled
-            ? { buyerIsRegimenSimple: context.buyerIsRegimenSimple }
-            : {}),
+          buyerIsRegimenSimple: simpleRegimeEnabled
+            ? context.buyerIsRegimenSimple
+            : false,
           buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
           reteIcaRateOverride: context.reteIcaRateOverride,
