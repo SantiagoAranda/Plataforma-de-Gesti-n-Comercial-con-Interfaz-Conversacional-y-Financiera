@@ -19,6 +19,7 @@ import {
 } from '@prisma/client';
 import { AccountingService } from '../accounting/accounting.service';
 import { isIngredientOperational } from '../ingredients/ingredient-operational';
+import { deriveItemOptionValidity } from '../item-options/item-option-validity';
 import { deriveRecipeValidity } from '../recipes/recipe-validity';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
@@ -118,6 +119,7 @@ export type ItemSellabilityStatus =
   | 'INSUFFICIENT_RECIPE_STOCK'
   | 'RECIPE_REQUIRES_REVIEW'
   | 'SERVICE_REQUIRES_REVIEW'
+  | 'ITEM_OPTION_REQUIRES_REVIEW'
   | 'INACTIVE';
 
 export type ItemSellability = {
@@ -551,6 +553,24 @@ export class InventoryService {
             },
           },
         },
+        optionGroups: {
+          where: { isActive: true },
+          include: {
+            options: {
+              where: { isActive: true },
+              include: {
+                ingredient: {
+                  select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    deletedAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -563,6 +583,16 @@ export class InventoryService {
         message: `${item.name} no está activo.`,
       };
     }
+
+    const optionValidity = deriveItemOptionValidity(item.optionGroups ?? []);
+    const optionReview: ItemSellability | null = optionValidity.requiresReview
+      ? {
+          sellable: false,
+          status: 'ITEM_OPTION_REQUIRES_REVIEW',
+          message: `${item.name} tiene un grupo de personalización que requiere revisión.`,
+          inactiveIngredients: optionValidity.inactiveIngredients,
+        }
+      : null;
 
     if (item.type === 'SERVICE') {
       const serviceIngredients = await tx.serviceIngredient.findMany({
@@ -582,20 +612,24 @@ export class InventoryService {
         },
       });
 
-      return this.getServiceIngredientSellability(
+      const serviceSellability = this.getServiceIngredientSellability(
         item.name,
         serviceIngredients,
         quantity,
       );
+      return serviceSellability.sellable
+        ? (optionReview ?? serviceSellability)
+        : serviceSellability;
     }
 
     if (item.inventoryMode === 'NONE') {
-      return { sellable: true, status: 'SELLABLE' };
+      return optionReview ?? { sellable: true, status: 'SELLABLE' };
     }
 
     const requiredQuantity = this.decimal(quantity);
 
     if (item.inventoryMode === 'SIMPLE') {
+      if (optionReview) return optionReview;
       const currentStock = this.decimal(item.currentStock);
       const averageCost = this.decimal(item.averageCost);
 
@@ -640,6 +674,8 @@ export class InventoryService {
         inactiveIngredients: recipeValidity.inactiveIngredients,
       };
     }
+
+    if (optionReview) return optionReview;
 
     const mandatoryLines = item.recipes.filter((line) => !line.isOptional);
     if (!item.recipes.length || !mandatoryLines.length) {
@@ -805,6 +841,24 @@ export class InventoryService {
             },
           },
         },
+        optionGroups: {
+          where: { isActive: true },
+          include: {
+            options: {
+              where: { isActive: true },
+              include: {
+                ingredient: {
+                  select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    deletedAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -826,6 +880,16 @@ export class InventoryService {
         };
       }
 
+      const optionValidity = deriveItemOptionValidity(item.optionGroups ?? []);
+      const optionReview: ItemSellability | null = optionValidity.requiresReview
+        ? {
+            sellable: false,
+            status: 'ITEM_OPTION_REQUIRES_REVIEW',
+            message: `${item.name} tiene un grupo de personalización que requiere revisión.`,
+            inactiveIngredients: optionValidity.inactiveIngredients,
+          }
+        : null;
+
       if (item.type === 'SERVICE') {
         const inactiveIngredients = item.serviceIngredients
           .filter((line) => !isIngredientOperational(line.ingredient))
@@ -841,6 +905,8 @@ export class InventoryService {
             inactiveIngredients,
           };
         }
+
+        if (optionReview) return optionReview;
 
         for (const line of item.serviceIngredients) {
           const required = this.decimal(line.quantityRequired).mul(
@@ -858,10 +924,11 @@ export class InventoryService {
       }
 
       if (item.inventoryMode === 'NONE') {
-        return { sellable: true, status: 'SELLABLE' };
+        return optionReview ?? { sellable: true, status: 'SELLABLE' };
       }
 
       if (item.inventoryMode === 'SIMPLE') {
+        if (optionReview) return optionReview;
         const currentStock = this.decimal(item.currentStock);
         const averageCost = this.decimal(item.averageCost);
         if (currentStock.lte(0)) {
@@ -904,6 +971,8 @@ export class InventoryService {
           inactiveIngredients: recipeValidity.inactiveIngredients,
         };
       }
+
+      if (optionReview) return optionReview;
 
       const mandatoryLines = item.recipes.filter((line) => !line.isOptional);
       if (!item.recipes.length || !mandatoryLines.length) {

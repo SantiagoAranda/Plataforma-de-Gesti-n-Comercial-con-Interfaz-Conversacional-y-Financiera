@@ -2427,6 +2427,106 @@ describe('InventoryService', () => {
     expect(result.status).toBe('SELLABLE');
   });
 
+  it.each([
+    { status: 'INACTIVE', deletedAt: null },
+    { status: 'ACTIVE', deletedAt: new Date('2026-08-11T00:00:00.000Z') },
+  ])(
+    'marks a required option group with a non-operational ingredient as requiring review',
+    async (ingredientState) => {
+      const { service, tx } = createService();
+      tx.item.findFirst.mockResolvedValue({
+        id: 'item-1',
+        businessId,
+        name: 'Pizza',
+        status: 'ACTIVE',
+        type: 'PRODUCT',
+        inventoryMode: 'NONE',
+        recipes: [],
+        optionGroups: [
+          {
+            id: 'group-1',
+            title: 'Toppings',
+            required: true,
+            minSelections: 1,
+            isActive: true,
+            options: [
+              {
+                isActive: true,
+                targetType: 'INGREDIENT',
+                selectedByDefault: false,
+                removable: true,
+                ingredient: {
+                  id: 'ingredient-pineapple',
+                  name: 'Piña',
+                  ...ingredientState,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const result = await service.getItemSellability(
+        businessId,
+        'item-1',
+        1,
+        tx as any,
+      );
+
+      expect(result).toMatchObject({
+        sellable: false,
+        status: 'ITEM_OPTION_REQUIRES_REVIEW',
+        inactiveIngredients: [{ id: 'ingredient-pineapple', name: 'Piña' }],
+      });
+    },
+  );
+
+  it('does not confuse an operational option without stock with structural review', async () => {
+    const { service, tx } = createService();
+    tx.item.findFirst.mockResolvedValue({
+      id: 'item-1',
+      businessId,
+      name: 'Pizza',
+      status: 'ACTIVE',
+      type: 'PRODUCT',
+      inventoryMode: 'NONE',
+      recipes: [],
+      optionGroups: [
+        {
+          id: 'group-1',
+          title: 'Toppings',
+          required: true,
+          minSelections: 1,
+          isActive: true,
+          options: [
+            {
+              isActive: true,
+              targetType: 'INGREDIENT',
+              selectedByDefault: false,
+              removable: true,
+              ingredient: {
+                id: 'ingredient-pineapple',
+                name: 'Piña',
+                status: 'ACTIVE',
+                deletedAt: null,
+                currentStock: new Prisma.Decimal(0),
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await service.getItemSellability(
+      businessId,
+      'item-1',
+      1,
+      tx as any,
+    );
+
+    expect(result).toEqual({ sellable: true, status: 'SELLABLE' });
+  });
+
   it('RECIPE_BASED con cantidad 3 multiplica consumo de ingredientes', async () => {
     const { service, tx } = createService();
     tx.item.findFirst.mockResolvedValue({

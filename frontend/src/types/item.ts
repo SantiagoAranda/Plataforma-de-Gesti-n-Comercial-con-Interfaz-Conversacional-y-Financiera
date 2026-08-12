@@ -11,6 +11,7 @@ export type ItemSellabilityStatus =
   | "INSUFFICIENT_RECIPE_STOCK"
   | "RECIPE_REQUIRES_REVIEW"
   | "SERVICE_REQUIRES_REVIEW"
+  | "ITEM_OPTION_REQUIRES_REVIEW"
   | "INACTIVE";
 
 export type ItemSellability = {
@@ -56,6 +57,7 @@ export type PublicItemOption = {
   sortOrder: number;
   isActive?: boolean;
   hasStock?: boolean;
+  availabilityStatus?: "AVAILABLE" | "OUT_OF_STOCK" | "UNAVAILABLE";
   ingredient?: {
     id: string;
     name: string;

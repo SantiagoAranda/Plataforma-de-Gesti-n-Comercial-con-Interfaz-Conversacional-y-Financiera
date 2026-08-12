@@ -14,6 +14,7 @@ import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { PushNotificationsService } from '../notifications/push-notifications.service';
+import { isIngredientOperational } from '../ingredients/ingredient-operational';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -45,6 +46,7 @@ type PublicOptionForGroup = {
     id: string;
     name: string;
     status: IngredientStatus;
+    deletedAt: Date | null;
     currentStock: Prisma.Decimal;
   } | null;
   item?: {
@@ -272,17 +274,29 @@ export class PublicService {
                 }
 
                 let hasStock = true;
+                let availabilityStatus:
+                  | 'AVAILABLE'
+                  | 'OUT_OF_STOCK'
+                  | 'UNAVAILABLE' = 'AVAILABLE';
                 if (option.targetType === 'INGREDIENT') {
                   const currentStock =
                     option.ingredient?.currentStock == null
                       ? 0
                       : Number(option.ingredient.currentStock);
+                  const structurallyAvailable =
+                    option.ingredient != null &&
+                    isIngredientOperational(option.ingredient);
                   hasStock =
-                    option.ingredient?.status === 'ACTIVE' &&
-                    currentStock >= requiredQty;
+                    structurallyAvailable && currentStock >= requiredQty;
+                  availabilityStatus = !structurallyAvailable
+                    ? 'UNAVAILABLE'
+                    : hasStock
+                      ? 'AVAILABLE'
+                      : 'OUT_OF_STOCK';
                 } else if (option.targetType === 'ITEM') {
                   hasStock =
                     optionSellabilityById.get(option.id)?.sellable ?? false;
+                  availabilityStatus = hasStock ? 'AVAILABLE' : 'OUT_OF_STOCK';
                 }
 
                 return {
@@ -305,11 +319,13 @@ export class PublicService {
                         id: option.ingredient.id,
                         name: option.ingredient.name,
                         status: option.ingredient.status,
+                        deletedAt: option.ingredient.deletedAt,
                       }
                     : null,
                   item: option.item,
                   unit: option.unit,
                   hasStock,
+                  availabilityStatus,
                 };
               }),
           );
@@ -639,6 +655,7 @@ export class PublicService {
                     id: true,
                     name: true,
                     status: true,
+                    deletedAt: true,
                     currentStock: true,
                   },
                 },

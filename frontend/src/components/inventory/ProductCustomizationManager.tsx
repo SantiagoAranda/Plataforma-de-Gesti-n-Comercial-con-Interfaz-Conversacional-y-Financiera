@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Trash2, HelpCircle, Pencil, Check, X, AlertTriangle, Eye, EyeOff, Search, ChevronDown, Layers } from "lucide-react";
 
@@ -853,7 +853,11 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
           const groupHealth = getOptionGroupHealth(group, allIngredients);
 
           if (editingGroupId === group.id) {
-            return renderGroupForm({ mode: "edit" });
+            return (
+              <Fragment key={`group-editor:${group.id}`}>
+                {renderGroupForm({ mode: "edit" })}
+              </Fragment>
+            );
             return (
               <div key={group.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar grupo</span>
@@ -934,7 +938,11 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                         }
 
                         if (editingOptionId === option.id) {
-                          return renderOptionForm({ group, mode: "edit" });
+                          return (
+                            <Fragment key={`option-editor:${option.id}`}>
+                              {renderOptionForm({ group, mode: "edit" })}
+                            </Fragment>
+                          );
                           return (
                             <div key={option.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
                               <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar opción</span>
