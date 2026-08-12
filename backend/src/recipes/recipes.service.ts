@@ -1,8 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InventoryMode, ItemType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReplaceRecipeDto } from './dto/replace-recipe.dto';
 import { RecipeLineDto } from './dto/recipe-line.dto';
+import { deriveRecipeValidity } from './recipe-validity';
 
 @Injectable()
 export class RecipesService {
@@ -22,7 +27,11 @@ export class RecipesService {
     });
   }
 
-  async getBulkForItems(businessId: string, itemIds: string[]) {
+  async getBulkForItems(
+    businessId: string,
+    itemIds: string[],
+    requiresReview = false,
+  ) {
     const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
     if (!uniqueItemIds.length) return {};
 
@@ -30,6 +39,17 @@ export class RecipesService {
       where: {
         businessId,
         id: { in: uniqueItemIds },
+        ...(requiresReview
+          ? {
+              recipes: {
+                some: {
+                  ingredient: {
+                    OR: [{ status: 'INACTIVE' }, { deletedAt: { not: null } }],
+                  },
+                },
+              },
+            }
+          : {}),
       },
       select: { id: true },
     });
@@ -57,11 +77,15 @@ export class RecipesService {
     return byItemId;
   }
 
-  async replaceForItem(businessId: string, itemId: string, dto: ReplaceRecipeDto) {
-    const item = await this.loadItemOrThrow(businessId, itemId);
-    await this.validateRecipeForItem(businessId, item, dto.lines);
-
+  async replaceForItem(
+    businessId: string,
+    itemId: string,
+    dto: ReplaceRecipeDto,
+  ) {
     return this.prisma.$transaction(async (tx) => {
+      const item = await this.loadItemOrThrow(businessId, itemId, tx);
+      await this.validateRecipeForItem(businessId, item, dto.lines, tx);
+
       await tx.recipe.deleteMany({
         where: { businessId, itemId },
       });
@@ -86,8 +110,12 @@ export class RecipesService {
     });
   }
 
-  private async loadItemOrThrow(businessId: string, itemId: string) {
-    const item = await this.prisma.item.findFirst({
+  private async loadItemOrThrow(
+    businessId: string,
+    itemId: string,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const item = await tx.item.findFirst({
       where: { id: itemId, businessId },
     });
 
@@ -102,6 +130,7 @@ export class RecipesService {
     businessId: string,
     item: { id: string; type: ItemType; inventoryMode: InventoryMode },
     lines: RecipeLineDto[],
+    tx: Prisma.TransactionClient | PrismaService,
   ) {
     if (item.type === 'SERVICE') {
       if (lines.length > 0) {
@@ -112,7 +141,9 @@ export class RecipesService {
 
     if (item.inventoryMode === 'NONE') {
       if (lines.length > 0) {
-        throw new BadRequestException('Items with inventoryMode NONE cannot have recipes');
+        throw new BadRequestException(
+          'Items with inventoryMode NONE cannot have recipes',
+        );
       }
       return;
     }
@@ -132,23 +163,45 @@ export class RecipesService {
 
     for (const line of lines) {
       if (this.decimal(line.quantityRequired).lte(0)) {
-        throw new BadRequestException('Recipe quantityRequired must be greater than zero');
+        throw new BadRequestException(
+          'Recipe quantityRequired must be greater than zero',
+        );
       }
     }
 
-    const ingredients = await this.prisma.ingredient.findMany({
+    const sortedIngredientIds = Array.from(uniqueIngredientIds).sort();
+    if (sortedIngredientIds.length > 0 && '$queryRaw' in tx) {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "Ingredient" WHERE "businessId" = ${businessId} AND "id" IN (${Prisma.join(sortedIngredientIds)}) ORDER BY "id" FOR KEY SHARE`,
+      );
+    }
+
+    const ingredients = await tx.ingredient.findMany({
       where: {
         businessId,
-        id: { in: ingredientIds },
+        id: { in: sortedIngredientIds },
       },
-      select: { id: true },
+      select: { id: true, name: true, status: true, deletedAt: true },
     });
 
     if (ingredients.length !== uniqueIngredientIds.size) {
       throw new BadRequestException('One or more ingredients are invalid');
     }
 
-    const mandatoryCount = lines.filter((line) => !(line.isOptional ?? false)).length;
+    const validity = deriveRecipeValidity(
+      ingredients.map((ingredient) => ({ ingredient })),
+    );
+    if (validity.requiresReview) {
+      throw new BadRequestException({
+        code: 'INACTIVE_RECIPE_INGREDIENT',
+        message: 'La receta contiene ingredientes inactivos.',
+        inactiveIngredients: validity.inactiveIngredients,
+      });
+    }
+
+    const mandatoryCount = lines.filter(
+      (line) => !(line.isOptional ?? false),
+    ).length;
 
     if (item.inventoryMode === 'RECIPE_BASED' && mandatoryCount < 1) {
       throw new BadRequestException(

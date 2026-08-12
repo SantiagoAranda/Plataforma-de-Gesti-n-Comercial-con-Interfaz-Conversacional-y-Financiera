@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { ReplaceRecipeDto } from './dto/replace-recipe.dto';
@@ -30,13 +39,18 @@ export class RecipesBulkController {
   constructor(private readonly recipesService: RecipesService) {}
 
   @Get('bulk')
-  getBulk(@Req() req: any, @Query('itemIds') itemIds = '') {
+  getBulk(
+    @Req() req: any,
+    @Query('itemIds') itemIds = '',
+    @Query('requiresReview') requiresReview?: string,
+  ) {
     return this.recipesService.getBulkForItems(
       req.user.businessId,
       itemIds
         .split(',')
         .map((id) => id.trim())
         .filter(Boolean),
+      requiresReview === 'true',
     );
   }
 }

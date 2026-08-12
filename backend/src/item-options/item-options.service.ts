@@ -12,6 +12,7 @@ import {
   ItemType,
   Prisma,
 } from '@prisma/client';
+import { isIngredientOperational } from '../ingredients/ingredient-operational';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOptionGroupDto } from './dto/create-option-group.dto';
@@ -71,16 +72,25 @@ export class ItemOptionsService {
       ),
     );
 
-    const selectedByGroup = new Map<string, Map<string, {
-      option: any;
-      action: OrderItemOptionAction;
-    }>>();
+    const selectedByGroup = new Map<
+      string,
+      Map<
+        string,
+        {
+          option: any;
+          action: OrderItemOptionAction;
+        }
+      >
+    >();
 
     for (const group of groups) {
-      const selected = new Map<string, {
-        option: any;
-        action: OrderItemOptionAction;
-      }>();
+      const selected = new Map<
+        string,
+        {
+          option: any;
+          action: OrderItemOptionAction;
+        }
+      >();
       for (const option of group.options) {
         if (option.selectedByDefault) {
           selected.set(option.id, {
@@ -96,7 +106,9 @@ export class ItemOptionsService {
       const group = groupById.get(selection.groupId);
       const resolved = optionById.get(selection.optionId);
       if (!group || !resolved || resolved.group.id !== selection.groupId) {
-        throw new BadRequestException('optionSelections contains an invalid option');
+        throw new BadRequestException(
+          'optionSelections contains an invalid option',
+        );
       }
 
       const selected = selectedByGroup.get(group.id)!;
@@ -135,10 +147,28 @@ export class ItemOptionsService {
           `Option group "${group.title}" requires at least ${minSelections} selection(s)`,
         );
       }
-      if (group.maxSelections != null && selected.length > group.maxSelections) {
+      if (
+        group.maxSelections != null &&
+        selected.length > group.maxSelections
+      ) {
         throw new BadRequestException(
           `Option group "${group.title}" allows at most ${group.maxSelections} selection(s)`,
         );
+      }
+
+      const inactiveSelection = selected.find(
+        ({ option }) =>
+          option.targetType === ItemOptionTargetType.INGREDIENT &&
+          option.ingredient != null &&
+          !isIngredientOperational(option.ingredient),
+      );
+      if (inactiveSelection) {
+        const ingredient = inactiveSelection.option.ingredient;
+        throw new BadRequestException({
+          code: 'ITEM_OPTION_REQUIRES_REVIEW',
+          message: `La opción ${inactiveSelection.option.name} utiliza un ingrediente inactivo.`,
+          inactiveIngredients: [{ id: ingredient.id, name: ingredient.name }],
+        });
       }
 
       if (group.quantityMode === ItemOptionQuantityMode.SHARED_TOTAL) {
@@ -155,12 +185,16 @@ export class ItemOptionsService {
             `Option group "${group.title}" must select ingredient options`,
           );
         }
-        const quantityPerUnit = this.decimal(group.totalQuantityLimit, 'totalQuantityLimit')
-          .div(consuming.length);
+        const quantityPerUnit = this.decimal(
+          group.totalQuantityLimit,
+          'totalQuantityLimit',
+        ).div(consuming.length);
 
         for (const { option, action } of consuming) {
           const totalQuantity = quantityPerUnit.mul(quantity);
-          optionsTotal = optionsTotal.add(this.decimal(option.priceDelta, 'priceDelta'));
+          optionsTotal = optionsTotal.add(
+            this.decimal(option.priceDelta, 'priceDelta'),
+          );
           snapshots.push(
             this.buildOptionSnapshot({
               group,
@@ -169,7 +203,10 @@ export class ItemOptionsService {
               quantityPerUnit,
               totalQuantity,
               unitId: group.totalQuantityUnitId,
-              unitLabel: group.totalQuantityUnit?.symbol ?? group.totalQuantityUnit?.name ?? null,
+              unitLabel:
+                group.totalQuantityUnit?.symbol ??
+                group.totalQuantityUnit?.name ??
+                null,
             }),
           );
         }
@@ -191,7 +228,9 @@ export class ItemOptionsService {
           }
         }
 
-        optionsTotal = optionsTotal.add(this.decimal(option.priceDelta, 'priceDelta'));
+        optionsTotal = optionsTotal.add(
+          this.decimal(option.priceDelta, 'priceDelta'),
+        );
         snapshots.push(
           this.buildOptionSnapshot({
             group,
@@ -247,7 +286,10 @@ export class ItemOptionsService {
         totalQuantityLimit:
           dto.totalQuantityLimit == null
             ? null
-            : this.positiveDecimal(dto.totalQuantityLimit, 'totalQuantityLimit'),
+            : this.positiveDecimal(
+                dto.totalQuantityLimit,
+                'totalQuantityLimit',
+              ),
         totalQuantityUnitId: dto.totalQuantityUnitId ?? null,
         sortOrder: dto.sortOrder ?? 0,
         isActive: dto.isActive ?? true,
@@ -285,7 +327,8 @@ export class ItemOptionsService {
     };
 
     const quantityModeChanged =
-      dto.quantityMode !== undefined && dto.quantityMode !== existing.quantityMode;
+      dto.quantityMode !== undefined &&
+      dto.quantityMode !== existing.quantityMode;
     if (
       quantityModeChanged &&
       dto.quantityMode === ItemOptionQuantityMode.NO_QUANTITY
@@ -295,7 +338,10 @@ export class ItemOptionsService {
       );
     }
 
-    await this.validateGroupDto(merged, existing.quantityMode === ItemOptionQuantityMode.NO_QUANTITY);
+    await this.validateGroupDto(
+      merged,
+      existing.quantityMode === ItemOptionQuantityMode.NO_QUANTITY,
+    );
     if (quantityModeChanged) {
       await this.validateExistingOptionsForQuantityMode(
         businessId,
@@ -310,7 +356,9 @@ export class ItemOptionsService {
       data: {
         title: dto.title?.trim(),
         description:
-          dto.description === undefined ? undefined : dto.description?.trim() || null,
+          dto.description === undefined
+            ? undefined
+            : dto.description?.trim() || null,
         required: dto.required,
         minSelections: dto.minSelections,
         maxSelections: dto.maxSelections,
@@ -320,7 +368,10 @@ export class ItemOptionsService {
             ? undefined
             : dto.totalQuantityLimit == null
               ? null
-              : this.positiveDecimal(dto.totalQuantityLimit, 'totalQuantityLimit'),
+              : this.positiveDecimal(
+                  dto.totalQuantityLimit,
+                  'totalQuantityLimit',
+                ),
         totalQuantityUnitId:
           dto.totalQuantityUnitId === undefined
             ? undefined
@@ -339,10 +390,7 @@ export class ItemOptionsService {
     await this.assertGroup(businessId, itemId, groupId);
     const used = await this.prisma.orderItemOption.count({
       where: {
-        OR: [
-          { groupId },
-          { option: { groupId } },
-        ],
+        OR: [{ groupId }, { option: { groupId } }],
       },
     });
 
@@ -417,7 +465,9 @@ export class ItemOptionsService {
       ...dto,
       targetType: dto.targetType ?? existing.targetType,
       ingredientId:
-        dto.ingredientId === undefined ? existing.ingredientId : dto.ingredientId,
+        dto.ingredientId === undefined
+          ? existing.ingredientId
+          : dto.ingredientId,
       itemId: dto.itemId === undefined ? existing.itemId : dto.itemId,
       quantity: dto.quantity === undefined ? existing.quantity : dto.quantity,
       unitId: dto.unitId === undefined ? existing.unitId : dto.unitId,
@@ -441,7 +491,9 @@ export class ItemOptionsService {
       data: {
         name: dto.name?.trim(),
         description:
-          dto.description === undefined ? undefined : dto.description?.trim() || null,
+          dto.description === undefined
+            ? undefined
+            : dto.description?.trim() || null,
         targetType: normalized.targetType,
         ingredientId: normalized.ingredientId,
         itemId: normalized.itemId,
@@ -516,15 +568,18 @@ export class ItemOptionsService {
     return group;
   }
 
-  private async validateGroupDto(input: {
-    title?: string;
-    required?: boolean;
-    minSelections?: number;
-    maxSelections?: number | null;
-    quantityMode?: ItemOptionQuantityMode;
-    totalQuantityLimit?: string | number | Prisma.Decimal | null;
-    totalQuantityUnitId?: string | null;
-  }, allowHistoricalNoQuantity = false) {
+  private async validateGroupDto(
+    input: {
+      title?: string;
+      required?: boolean;
+      minSelections?: number;
+      maxSelections?: number | null;
+      quantityMode?: ItemOptionQuantityMode;
+      totalQuantityLimit?: string | number | Prisma.Decimal | null;
+      totalQuantityUnitId?: string | null;
+    },
+    allowHistoricalNoQuantity = false,
+  ) {
     if (input.title !== undefined && input.title.trim().length === 0) {
       throw new BadRequestException('title is required');
     }
@@ -538,19 +593,27 @@ export class ItemOptionsService {
       throw new BadRequestException('maxSelections must be >= 1');
     }
     if (maxSelections != null && minSelections > maxSelections) {
-      throw new BadRequestException('minSelections cannot exceed maxSelections');
+      throw new BadRequestException(
+        'minSelections cannot exceed maxSelections',
+      );
     }
     if (input.required && minSelections < 1) {
-      throw new BadRequestException('required groups must have minSelections >= 1');
+      throw new BadRequestException(
+        'required groups must have minSelections >= 1',
+      );
     }
 
     if (input.quantityMode === ItemOptionQuantityMode.SHARED_TOTAL) {
       if (input.totalQuantityLimit == null) {
-        throw new BadRequestException('SHARED_TOTAL requires totalQuantityLimit');
+        throw new BadRequestException(
+          'SHARED_TOTAL requires totalQuantityLimit',
+        );
       }
       this.positiveDecimal(input.totalQuantityLimit, 'totalQuantityLimit');
       if (!input.totalQuantityUnitId) {
-        throw new BadRequestException('SHARED_TOTAL requires totalQuantityUnitId');
+        throw new BadRequestException(
+          'SHARED_TOTAL requires totalQuantityUnitId',
+        );
       }
       await this.assertUnit(input.totalQuantityUnitId);
       return;
@@ -563,7 +626,9 @@ export class ItemOptionsService {
         );
       }
       if (input.totalQuantityLimit != null || input.totalQuantityUnitId) {
-        throw new BadRequestException('NO_QUANTITY cannot have total quantity fields');
+        throw new BadRequestException(
+          'NO_QUANTITY cannot have total quantity fields',
+        );
       }
     }
   }
@@ -606,9 +671,14 @@ export class ItemOptionsService {
 
     if (targetType === ItemOptionTargetType.INGREDIENT) {
       if (!input.ingredientId || input.itemId) {
-        throw new BadRequestException('INGREDIENT options require ingredientId only');
+        throw new BadRequestException(
+          'INGREDIENT options require ingredientId only',
+        );
       }
-      const ingredient = await this.assertIngredient(businessId, input.ingredientId);
+      const ingredient = await this.assertIngredient(
+        businessId,
+        input.ingredientId,
+      );
       ingredientId = ingredient.id;
       unitId = ingredient.stockUnitId;
     }
@@ -710,7 +780,10 @@ export class ItemOptionsService {
         }
       }
 
-      if ((targetType as ItemOptionTargetType) === ItemOptionTargetType.NONE && input.name) {
+      if (
+        (targetType as ItemOptionTargetType) === ItemOptionTargetType.NONE &&
+        input.name
+      ) {
         const options = await this.prisma.itemOption.findMany({
           where: {
             groupId: group.id,
@@ -719,7 +792,8 @@ export class ItemOptionsService {
             ...(optionId ? { id: { not: optionId } } : {}),
           },
         });
-        const normalizeName = (n: string) => n.trim().toLowerCase().replace(/\s+/g, ' ');
+        const normalizeName = (n: string) =>
+          n.trim().toLowerCase().replace(/\s+/g, ' ');
         const normalizedInput = normalizeName(input.name);
         const hasDuplicate = options.some(
           (o) => normalizeName(o.name) === normalizedInput,
@@ -774,10 +848,14 @@ export class ItemOptionsService {
         typeof selection.optionId !== 'string' ||
         typeof selection.action !== 'string'
       ) {
-        throw new BadRequestException('optionSelections contains an invalid action');
+        throw new BadRequestException(
+          'optionSelections contains an invalid action',
+        );
       }
       if (!allowed.has(selection.action)) {
-        throw new BadRequestException('optionSelections contains an invalid action');
+        throw new BadRequestException(
+          'optionSelections contains an invalid action',
+        );
       }
       if (seen.has(selection.optionId)) {
         throw new BadRequestException(
@@ -797,8 +875,15 @@ export class ItemOptionsService {
     unitId: string | null;
     unitLabel: string | null;
   }): any {
-    const { group, option, action, quantityPerUnit, totalQuantity, unitId, unitLabel } =
-      input;
+    const {
+      group,
+      option,
+      action,
+      quantityPerUnit,
+      totalQuantity,
+      unitId,
+      unitLabel,
+    } = input;
 
     return {
       groupId: group.id,
@@ -832,6 +917,13 @@ export class ItemOptionsService {
       where: { id: ingredientId, businessId },
     });
     if (!ingredient) throw new BadRequestException('Ingredient is invalid');
+    if (!isIngredientOperational(ingredient)) {
+      throw new BadRequestException({
+        code: 'ITEM_OPTION_REQUIRES_REVIEW',
+        message: 'No se puede utilizar un ingrediente inactivo en una opción.',
+        inactiveIngredients: [{ id: ingredient.id, name: ingredient.name }],
+      });
+    }
     return ingredient;
   }
 
@@ -845,10 +937,13 @@ export class ItemOptionsService {
 
   private hasStructuralOptionChange(dto: UpdateItemOptionDto, existing: any) {
     return (
-      (dto.targetType !== undefined && dto.targetType !== existing.targetType) ||
-      (dto.ingredientId !== undefined && dto.ingredientId !== existing.ingredientId) ||
+      (dto.targetType !== undefined &&
+        dto.targetType !== existing.targetType) ||
+      (dto.ingredientId !== undefined &&
+        dto.ingredientId !== existing.ingredientId) ||
       (dto.itemId !== undefined && dto.itemId !== existing.itemId) ||
-      (dto.quantity !== undefined && String(dto.quantity) !== String(existing.quantity)) ||
+      (dto.quantity !== undefined &&
+        String(dto.quantity) !== String(existing.quantity)) ||
       (dto.unitId !== undefined && dto.unitId !== existing.unitId)
     );
   }
@@ -869,7 +964,11 @@ export class ItemOptionsService {
     }
   }
 
-  private async validateResourceDuplicate(groupId: string, option: any, optionId: string) {
+  private async validateResourceDuplicate(
+    groupId: string,
+    option: any,
+    optionId: string,
+  ) {
     if (option.targetType === ItemOptionTargetType.NONE) return;
     const duplicate = await this.prisma.itemOption.findFirst({
       where: {
@@ -899,9 +998,18 @@ export class ItemOptionsService {
     if (!unitId) throw new BadRequestException('SHARED_TOTAL requires a unit');
     const ingredient = await this.prisma.ingredient.findFirst({
       where: { id: ingredientId, businessId },
-      select: { stockUnitId: true },
+      select: { stockUnitId: true, status: true, deletedAt: true },
     });
     if (!ingredient) throw new BadRequestException('Ingredient is invalid');
+    if (!isIngredientOperational(ingredient)) {
+      throw new BadRequestException({
+        code: 'INGREDIENT_NOT_OPERATIONAL',
+        message: 'El ingrediente no está disponible para nuevas operaciones.',
+        ingredientId,
+        status: ingredient.status,
+        deleted: ingredient.deletedAt != null,
+      });
+    }
     if (!ingredient.stockUnitId) {
       throw new BadRequestException(
         'SHARED_TOTAL ingredients must use the Unit catalog',
@@ -918,7 +1026,9 @@ export class ItemOptionsService {
       },
     });
     if (!conversion) {
-      throw new BadRequestException('Ingredient unit is incompatible with group unit');
+      throw new BadRequestException(
+        'Ingredient unit is incompatible with group unit',
+      );
     }
   }
 
@@ -930,7 +1040,10 @@ export class ItemOptionsService {
     }
   }
 
-  private positiveDecimal(value: string | number | Prisma.Decimal, field: string) {
+  private positiveDecimal(
+    value: string | number | Prisma.Decimal,
+    field: string,
+  ) {
     const decimal = this.decimal(value, field);
     if (decimal.lte(0)) {
       throw new BadRequestException(`${field} must be greater than 0`);
@@ -954,6 +1067,10 @@ export class ItemOptionsService {
         select: {
           id: true,
           name: true,
+          status: true,
+          deletedAt: true,
+          currentStock: true,
+          averageCost: true,
           stockUnitId: true,
           customUnitLabel: true,
         },
@@ -964,6 +1081,8 @@ export class ItemOptionsService {
           name: true,
           type: true,
           inventoryMode: true,
+          status: true,
+          currentStock: true,
         },
       },
       unit: true,
@@ -974,8 +1093,12 @@ export class ItemOptionsService {
     return {
       ...group,
       totalQuantityLimit:
-        group.totalQuantityLimit == null ? null : Number(group.totalQuantityLimit),
-      options: (group.options ?? []).map((option: any) => this.mapOption(option)),
+        group.totalQuantityLimit == null
+          ? null
+          : Number(group.totalQuantityLimit),
+      options: (group.options ?? []).map((option: any) =>
+        this.mapOption(option),
+      ),
     };
   }
 

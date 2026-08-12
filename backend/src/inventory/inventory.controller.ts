@@ -95,6 +95,11 @@ export class InventoryController {
     return this.inventoryService.getSummary(req.user.businessId, query);
   }
 
+  @Get('value-summary')
+  getValueSummary(@Req() req: { user: { businessId: string } }) {
+    return this.inventoryService.getValueSummary(req.user.businessId);
+  }
+
   @Get('units')
   listUnits() {
     return this.inventoryService.listUnits();
