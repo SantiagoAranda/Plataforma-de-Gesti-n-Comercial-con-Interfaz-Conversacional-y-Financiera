@@ -456,9 +456,10 @@ export class InventoryService {
 
       return {
         ...rest,
-        stockValue: this.decimal(rest.currentStock)
-          .mul(this.decimal(rest.averageCost))
-          .toDecimalPlaces(6),
+        stockValue: this.calculateStockValue(
+          rest.currentStock,
+          rest.averageCost,
+        ).toDecimalPlaces(6),
         outOfStock: this.decimal(rest.currentStock).lte(0),
         lowStock:
           this.decimal(rest.minStock ?? 0).gt(0) &&
@@ -468,6 +469,50 @@ export class InventoryService {
         canCreateInitialInventory: movementCount === 0,
       };
     });
+  }
+
+  async getValueSummary(businessId: string) {
+    const [ingredients, simpleProducts] = await this.prisma.$transaction([
+      this.prisma.ingredient.findMany({
+        where: { businessId, deletedAt: null },
+        select: { currentStock: true, averageCost: true },
+      }),
+      this.prisma.item.findMany({
+        where: {
+          businessId,
+          type: 'PRODUCT',
+          inventoryMode: 'SIMPLE',
+        },
+        select: { currentStock: true, averageCost: true },
+      }),
+    ]);
+
+    const ingredientsValue = ingredients.reduce(
+      (total, ingredient) =>
+        total.add(
+          this.calculateStockValue(
+            ingredient.currentStock,
+            ingredient.averageCost,
+          ),
+        ),
+      this.decimal(0),
+    );
+    const simpleProductsValue = simpleProducts.reduce(
+      (total, item) =>
+        total.add(
+          this.calculateStockValue(item.currentStock, item.averageCost),
+        ),
+      this.decimal(0),
+    );
+
+    return {
+      ingredientsValue: ingredientsValue.toDecimalPlaces(6).toFixed(6),
+      simpleProductsValue: simpleProductsValue.toDecimalPlaces(6).toFixed(6),
+      inventoryTotalValue: ingredientsValue
+        .add(simpleProductsValue)
+        .toDecimalPlaces(6)
+        .toFixed(6),
+    };
   }
 
   async listUnits() {
@@ -496,7 +541,10 @@ export class InventoryService {
       itemId,
       currentStock: state.currentStock,
       averageCost: state.averageCost,
-      stockValue: state.currentStock.mul(state.averageCost).toDecimalPlaces(6),
+      stockValue: this.calculateStockValue(
+        state.currentStock,
+        state.averageCost,
+      ).toDecimalPlaces(6),
       outOfStock: state.currentStock.lte(0),
     };
   }
@@ -2185,6 +2233,13 @@ export class InventoryService {
       .add(inputTotalValue)
       .div(newStock)
       .toDecimalPlaces(6);
+  }
+
+  private calculateStockValue(
+    currentStock: number | string | Prisma.Decimal,
+    averageCost: number | string | Prisma.Decimal,
+  ) {
+    return this.decimal(currentStock).mul(this.decimal(averageCost));
   }
 
   private resolveMovementUnitCost(

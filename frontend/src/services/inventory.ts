@@ -88,6 +88,12 @@ export type InventorySummaryIngredient = Ingredient & {
   lowStock?: boolean;
 };
 
+export type InventoryValueSummary = {
+  ingredientsValue: string;
+  simpleProductsValue: string;
+  inventoryTotalValue: string;
+};
+
 export type SimpleItemInventorySummary = {
   id: string;
   name: string;
@@ -483,6 +489,10 @@ export function getInventorySummary(query: InventorySummaryQuery = {}) {
   if (query.status) qs.set("status", query.status);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<InventorySummaryIngredient[]>(`/inventory/summary${suffix}`);
+}
+
+export function getInventoryValueSummary() {
+  return api<InventoryValueSummary>(`/inventory/value-summary`);
 }
 
 export function registerInitial(dto: CreateInventoryInitialDto) {

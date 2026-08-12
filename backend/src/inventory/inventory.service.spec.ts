@@ -3051,6 +3051,151 @@ describe('InventoryService', () => {
     expect(byName.get('Salt')?.lowStock).toBe(false);
   });
 
+  it('calculates the global inventory value from ingredients and SIMPLE products', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findMany.mockResolvedValueOnce([
+      {
+        currentStock: new Prisma.Decimal(100),
+        averageCost: new Prisma.Decimal(20),
+      },
+      {
+        currentStock: new Prisma.Decimal(4),
+        averageCost: new Prisma.Decimal(2500),
+      },
+      {
+        currentStock: new Prisma.Decimal(1000),
+        averageCost: new Prisma.Decimal(6),
+      },
+      {
+        currentStock: new Prisma.Decimal(2000),
+        averageCost: new Prisma.Decimal(2),
+      },
+    ]);
+    prisma.item.findMany.mockResolvedValueOnce([
+      {
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(60000),
+      },
+      {
+        currentStock: new Prisma.Decimal(30),
+        averageCost: new Prisma.Decimal(28200),
+      },
+      {
+        currentStock: new Prisma.Decimal(20),
+        averageCost: new Prisma.Decimal(60300),
+      },
+      {
+        currentStock: new Prisma.Decimal(45),
+        averageCost: new Prisma.Decimal(5100),
+      },
+    ]);
+
+    await expect(service.getValueSummary(businessId)).resolves.toEqual({
+      ingredientsValue: '22000.000000',
+      simpleProductsValue: '2881500.000000',
+      inventoryTotalValue: '2903500.000000',
+    });
+  });
+
+  it('includes current ACTIVE and INACTIVE ingredients but excludes deleted identities', async () => {
+    const { service, prisma } = createService();
+    const rows = [
+      {
+        status: 'ACTIVE',
+        deletedAt: null,
+        currentStock: new Prisma.Decimal(100),
+        averageCost: new Prisma.Decimal(20),
+      },
+      {
+        status: 'INACTIVE',
+        deletedAt: null,
+        currentStock: new Prisma.Decimal(50),
+        averageCost: new Prisma.Decimal(10),
+      },
+      {
+        status: 'INACTIVE',
+        deletedAt: new Date(),
+        currentStock: new Prisma.Decimal(999),
+        averageCost: new Prisma.Decimal(999),
+      },
+    ];
+    prisma.ingredient.findMany.mockImplementationOnce(
+      ({ where }: { where: { deletedAt: null } }) =>
+        Promise.resolve(
+          rows.filter((row) => row.deletedAt === where.deletedAt),
+        ),
+    );
+    prisma.item.findMany.mockResolvedValueOnce([]);
+
+    const result = await service.getValueSummary(businessId);
+
+    expect(result.ingredientsValue).toBe('2500.000000');
+    expect(prisma.ingredient.findMany).toHaveBeenCalledWith({
+      where: { businessId, deletedAt: null },
+      select: { currentStock: true, averageCost: true },
+    });
+  });
+
+  it('includes ACTIVE and INACTIVE SIMPLE products and excludes recipes and services in the query', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findMany.mockResolvedValueOnce([]);
+    prisma.item.findMany.mockResolvedValueOnce([
+      {
+        status: 'ACTIVE',
+        currentStock: new Prisma.Decimal(10),
+        averageCost: new Prisma.Decimal(100),
+      },
+      {
+        status: 'INACTIVE',
+        currentStock: new Prisma.Decimal(5),
+        averageCost: new Prisma.Decimal(200),
+      },
+    ]);
+
+    const result = await service.getValueSummary(businessId);
+
+    expect(result.simpleProductsValue).toBe('2000.000000');
+    expect(prisma.item.findMany).toHaveBeenCalledWith({
+      where: {
+        businessId,
+        type: 'PRODUCT',
+        inventoryMode: 'SIMPLE',
+      },
+      select: { currentStock: true, averageCost: true },
+    });
+  });
+
+  it('uses only stock and average cost, preserving zeroes and six-decimal precision', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findMany.mockResolvedValueOnce([
+      {
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(999999),
+      },
+      {
+        currentStock: new Prisma.Decimal(25),
+        averageCost: new Prisma.Decimal(0),
+      },
+      {
+        currentStock: new Prisma.Decimal('1.234567'),
+        averageCost: new Prisma.Decimal('2.345678'),
+      },
+    ]);
+    prisma.item.findMany.mockResolvedValueOnce([
+      {
+        currentStock: new Prisma.Decimal('0.333333'),
+        averageCost: new Prisma.Decimal('0.100001'),
+        price: new Prisma.Decimal(999999),
+      },
+    ]);
+
+    await expect(service.getValueSummary(businessId)).resolves.toEqual({
+      ingredientsValue: '2.895897',
+      simpleProductsValue: '0.033334',
+      inventoryTotalValue: '2.929230',
+    });
+  });
+
   it('returns paginated global kardex movements filtered by businessId', async () => {
     const { service, prisma } = createService();
 

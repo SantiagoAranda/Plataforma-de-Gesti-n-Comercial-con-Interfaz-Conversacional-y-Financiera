@@ -46,11 +46,13 @@ import {
   createIngredient,
   createPurchasePresentation,
   getInventorySummary,
+  getInventoryValueSummary,
   getRecipesBulk,
   getSimpleItemsInventorySummary,
   listServiceConsumption,
   type CreateIngredientDto,
   type InventorySummaryIngredient,
+  type InventoryValueSummary,
   type RecipeLine,
   type SimpleItemInventorySummary,
   type ServiceConsumptionItem,
@@ -144,6 +146,8 @@ function InventarioPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<InventorySummaryIngredient[]>([]);
+  const [inventoryValueSummary, setInventoryValueSummary] =
+    useState<InventoryValueSummary | null>(null);
   const [simpleProducts, setSimpleProducts] = useState<
     SimpleItemInventorySummary[]
   >([]);
@@ -237,15 +241,22 @@ function InventarioPageContent() {
       setLoading(true);
       setError(null);
 
-      const [summaryData, itemsData, simpleProductsData, servicesData] =
-        await Promise.all([
-          getInventorySummary({ status: "ACTIVE" }),
-          api<Item[]>("/items?status=ACTIVE").catch(() => []),
-          getSimpleItemsInventorySummary().catch(() => []),
-          listServiceConsumption().catch(() => []),
-        ]);
+      const [
+        summaryData,
+        valueSummaryData,
+        itemsData,
+        simpleProductsData,
+        servicesData,
+      ] = await Promise.all([
+        getInventorySummary({ status: "ACTIVE" }),
+        getInventoryValueSummary(),
+        api<Item[]>("/items?status=ACTIVE").catch(() => []),
+        getSimpleItemsInventorySummary().catch(() => []),
+        listServiceConsumption().catch(() => []),
+      ]);
 
       setSummary(summaryData ?? []);
+      setInventoryValueSummary(valueSummaryData);
       setSimpleProducts(simpleProductsData ?? []);
       setItems((itemsData ?? []).filter((item) => item.status === "ACTIVE"));
       setServices(servicesData ?? []);
@@ -276,9 +287,8 @@ function InventarioPageContent() {
     void load();
   }, [load]);
 
-  const inventoryTotalValue = useMemo(
-    () => summary.reduce((acc, item) => acc + parseNumber(item.stockValue), 0),
-    [summary],
+  const inventoryTotalValue = parseNumber(
+    inventoryValueSummary?.inventoryTotalValue ?? "0",
   );
 
   const alertGroups = useMemo(() => {
