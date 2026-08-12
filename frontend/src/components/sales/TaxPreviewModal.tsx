@@ -145,7 +145,9 @@ export default function TaxPreviewModal({
           buyerIsRetenedor,
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
-          ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
+          buyerIsRegimenSimple: simpleRegimeEnabled
+            ? buyerIsRegimenSimple
+            : false,
           buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
           reteIcaRateOverride,
@@ -213,7 +215,9 @@ export default function TaxPreviewModal({
       buyerIsRetenedor,
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
-      ...(simpleRegimeEnabled ? { buyerIsRegimenSimple } : {}),
+      buyerIsRegimenSimple: simpleRegimeEnabled
+        ? buyerIsRegimenSimple
+        : false,
       buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,
