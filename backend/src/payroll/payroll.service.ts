@@ -2079,33 +2079,6 @@ export class PayrollService {
       : firstHalf;
   }
 
-  /**
-   * Calculates effective worked days for a contract within a payroll period,
-   * considering contract start/end dates vs period boundaries.
-   * Uses Colombian 30/360 labor day convention.
-   */
-  private calculateEffectiveWorkedDays(
-    contract: { startDate: Date; endDate?: Date | null },
-    period: PayrollPeriodRef,
-  ): number {
-    const bounds = this.periodBounds(period);
-    const maxDays =
-      period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? 15 : 30;
-
-    // bounds.to is exclusive (first day of next period); convert to inclusive
-    const periodEndInclusive = new Date(bounds.to.getTime() - 86_400_000);
-    const contractEnd = contract.endDate ?? periodEndInclusive;
-
-    const effectiveDays = this.calculateLaborDaysIntersection30_360(
-      contract.startDate,
-      contractEnd,
-      bounds.from,
-      periodEndInclusive,
-    );
-
-    return Math.min(effectiveDays, maxDays);
-  }
-
   private async buildLegalSegments(
     businessId: string,
     period: PayrollPeriodRef,
@@ -2692,7 +2665,7 @@ export class PayrollService {
     );
     const workedDays =
       dto.workedDays ??
-      this.calculateEffectiveWorkedDays(contract, period);
+      (period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? 15 : 30);
     if (workedDays > params.maxWorkedDaysMonth) {
       throw new BadRequestException('workedDays exceeds maxWorkedDaysMonth');
     }
@@ -3091,7 +3064,7 @@ export class PayrollService {
       );
       const workedDays =
         dto.workedDays ??
-        this.calculateEffectiveWorkedDays(contract, period);
+        (period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? 15 : 30);
       if (workedDays > params.maxWorkedDaysMonth) {
         throw new BadRequestException('workedDays exceeds maxWorkedDaysMonth');
       }
