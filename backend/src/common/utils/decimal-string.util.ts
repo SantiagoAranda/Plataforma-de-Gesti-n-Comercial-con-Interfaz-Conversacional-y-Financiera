@@ -1,8 +1,5 @@
-export function normalizeDecimalString(
-  value: unknown,
-): string | null | undefined {
-  if (value === null) return null;
-  if (value === undefined) return undefined;
+export function normalizeDecimalString(value: unknown) {
+  if (value === null || value === undefined) return value as any;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) return String(value);
     return String(value);
@@ -12,10 +9,7 @@ export function normalizeDecimalString(
     if (!trimmed) return '';
     return trimmed.replace(',', '.');
   }
-  if (typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value);
-  }
-  return '';
+  return String(value);
 }
 
 export function isValidDecimalString(value: string) {
@@ -23,3 +17,4 @@ export function isValidDecimalString(value: string) {
   // Rejects: negatives, empty, exponentials, commas (should be normalized), and non-numeric input.
   return /^\d+(\.\d+)?$/.test(value);
 }
+

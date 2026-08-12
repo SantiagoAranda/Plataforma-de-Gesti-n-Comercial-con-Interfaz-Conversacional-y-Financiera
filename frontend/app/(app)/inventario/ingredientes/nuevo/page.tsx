@@ -6,11 +6,7 @@ import toast from "react-hot-toast";
 
 import AppHeader from "@/src/components/layout/AppHeader";
 import { IngredientForm } from "@/src/components/inventory/IngredientForm";
-import {
-  createIngredient,
-  createPurchasePresentation,
-  type CreateIngredientDto,
-} from "@/src/services/inventory";
+import { createIngredient, createPurchasePresentation } from "@/src/services/inventory";
 import { getErrorMessage } from "@/src/lib/errors";
 
 export default function NuevoIngredientePage() {
@@ -20,11 +16,7 @@ export default function NuevoIngredientePage() {
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#F0F2F5]">
       <div className="shrink-0">
-        <AppHeader
-          title="Nuevo ingrediente"
-          showBack
-          hrefBack="/inventario/ingredientes"
-        />
+        <AppHeader title="Nuevo ingrediente" showBack hrefBack="/inventario/ingredientes" />
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto pb-24">
@@ -38,36 +30,19 @@ export default function NuevoIngredientePage() {
                 try {
                   setSubmitting(true);
                   toast.loading("Creando ingrediente...", { id: loadingId });
-
-                  const payload: CreateIngredientDto = {
+                  
+                  const payload: any = {
                     name: values.name,
                     stockUnitId: values.stockUnitId,
                     defaultPurchaseUnitId: values.defaultPurchaseUnitId,
                     consumptionUnit: values.consumptionUnit,
                     purchaseUnit: values.purchaseUnit,
-                    purchaseToConsumptionFactor:
-                      values.purchaseToConsumptionFactor,
+                    purchaseToConsumptionFactor: values.purchaseToConsumptionFactor,
                     minStock: values.minStock,
                   };
                   const created = await createIngredient(payload);
                   if (values.purchasePresentationDraft) {
-                    try {
-                      await createPurchasePresentation(
-                        created.id,
-                        values.purchasePresentationDraft,
-                      );
-                    } catch (presentationError) {
-                      console.error(presentationError);
-                      toast.dismiss(loadingId);
-                      toast.error(
-                        "El ingrediente fue creado, pero no se pudo guardar la presentación de compra. Puede completarla desde Editar ingrediente.",
-                        { duration: 6500 },
-                      );
-                      router.replace(
-                        `/inventario/ingredientes/${created.id}/editar`,
-                      );
-                      return;
-                    }
+                    await createPurchasePresentation(created.id, values.purchasePresentationDraft);
                   }
                   toast.dismiss(loadingId);
                   toast.success("Ingrediente creado");
@@ -75,9 +50,7 @@ export default function NuevoIngredientePage() {
                 } catch (err) {
                   console.error(err);
                   toast.dismiss(loadingId);
-                  toast.error(
-                    getErrorMessage(err, "No se pudo crear el ingrediente"),
-                  );
+                  toast.error(getErrorMessage(err, "No se pudo crear el ingrediente"));
                 } finally {
                   setSubmitting(false);
                 }

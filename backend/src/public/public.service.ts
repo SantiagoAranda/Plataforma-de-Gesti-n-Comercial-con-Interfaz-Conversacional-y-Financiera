@@ -8,13 +8,12 @@ import {
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
-import { IngredientStatus, Prisma, Weekday } from '@prisma/client';
+import { Prisma, Weekday } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { PushNotificationsService } from '../notifications/push-notifications.service';
-import { isIngredientOperational } from '../ingredients/ingredient-operational';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -45,8 +44,6 @@ type PublicOptionForGroup = {
   ingredient?: {
     id: string;
     name: string;
-    status: IngredientStatus;
-    deletedAt: Date | null;
     currentStock: Prisma.Decimal;
   } | null;
   item?: {
@@ -111,10 +108,7 @@ function removeFooterMeta(socials: unknown) {
     : [];
 }
 
-function getFooterColorMetaValue(
-  socials: unknown,
-  type: string,
-): string | null {
+function getFooterColorMetaValue(socials: unknown, type: string): string | null {
   const value = getFooterMetaValue(socials, type);
   return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : null;
 }
@@ -274,29 +268,15 @@ export class PublicService {
                 }
 
                 let hasStock = true;
-                let availabilityStatus:
-                  | 'AVAILABLE'
-                  | 'OUT_OF_STOCK'
-                  | 'UNAVAILABLE' = 'AVAILABLE';
                 if (option.targetType === 'INGREDIENT') {
                   const currentStock =
                     option.ingredient?.currentStock == null
                       ? 0
                       : Number(option.ingredient.currentStock);
-                  const structurallyAvailable =
-                    option.ingredient != null &&
-                    isIngredientOperational(option.ingredient);
-                  hasStock =
-                    structurallyAvailable && currentStock >= requiredQty;
-                  availabilityStatus = !structurallyAvailable
-                    ? 'UNAVAILABLE'
-                    : hasStock
-                      ? 'AVAILABLE'
-                      : 'OUT_OF_STOCK';
+                  hasStock = currentStock >= requiredQty;
                 } else if (option.targetType === 'ITEM') {
                   hasStock =
                     optionSellabilityById.get(option.id)?.sellable ?? false;
-                  availabilityStatus = hasStock ? 'AVAILABLE' : 'OUT_OF_STOCK';
                 }
 
                 return {
@@ -315,17 +295,11 @@ export class PublicService {
                   removable: option.removable,
                   sortOrder: option.sortOrder,
                   ingredient: option.ingredient
-                    ? {
-                        id: option.ingredient.id,
-                        name: option.ingredient.name,
-                        status: option.ingredient.status,
-                        deletedAt: option.ingredient.deletedAt,
-                      }
+                    ? { id: option.ingredient.id, name: option.ingredient.name }
                     : null,
                   item: option.item,
                   unit: option.unit,
                   hasStock,
-                  availabilityStatus,
                 };
               }),
           );
@@ -526,7 +500,7 @@ export class PublicService {
 
       while (cursor + duration <= window.endMinute) {
         const start = cursor;
-        const end = cursor + duration; // guaranteed not to exceed window end
+        const end   = cursor + duration; // guaranteed not to exceed window end
 
         // Skip past slots that have already elapsed today.
         if (isToday && start < currentMinutes) {
@@ -651,13 +625,7 @@ export class PublicService {
               orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
               include: {
                 ingredient: {
-                  select: {
-                    id: true,
-                    name: true,
-                    status: true,
-                    deletedAt: true,
-                    currentStock: true,
-                  },
+                  select: { id: true, name: true, currentStock: true },
                 },
                 item: {
                   select: {
@@ -1036,7 +1004,9 @@ export class PublicService {
         (item) => !Number.isInteger(item.quantity) || item.quantity <= 0,
       )
     ) {
-      throw new BadRequestException('Item quantity must be a positive integer');
+      throw new BadRequestException(
+        'Item quantity must be a positive integer',
+      );
     }
 
     const uniqueItemIds = Array.from(
@@ -1162,36 +1132,38 @@ export class PublicService {
         .join('\n') || null;
 
     const orderItemCreates: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] =
-      normalizedInputs.map(({ input, item, excludedIds, resolvedOptions }) => {
-        const quantity = input.quantity;
-        const baseUnitPrice = item.price;
-        const optionsTotal = resolvedOptions.optionsTotal;
-        const unitPrice = baseUnitPrice.add(optionsTotal);
-        const lineTotal = unitPrice.mul(quantity);
+      normalizedInputs.map(
+        ({ input, item, excludedIds, resolvedOptions }) => {
+          const quantity = input.quantity;
+          const baseUnitPrice = item.price;
+          const optionsTotal = resolvedOptions.optionsTotal;
+          const unitPrice = baseUnitPrice.add(optionsTotal);
+          const lineTotal = unitPrice.mul(quantity);
 
-        return {
-          businessId: business.id,
-          itemId: item.id,
-          quantity,
-          unitPrice,
-          lineTotal,
-          itemNameSnapshot: item.name,
-          itemTypeSnapshot: item.type,
-          inventoryModeSnapshot: item.inventoryMode,
-          durationMinutesSnapshot: item.durationMinutes,
-          excludedOptionalIngredientIds:
-            excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
-          baseUnitPriceSnapshot: baseUnitPrice,
-          optionsTotalSnapshot: optionsTotal,
-          finalUnitPriceSnapshot: unitPrice,
-          lineTotalSnapshot: lineTotal,
-          options: resolvedOptions.snapshots.length
-            ? {
-                create: resolvedOptions.snapshots,
-              }
-            : undefined,
-        };
-      });
+          return {
+            businessId: business.id,
+            itemId: item.id,
+            quantity,
+            unitPrice,
+            lineTotal,
+            itemNameSnapshot: item.name,
+            itemTypeSnapshot: item.type,
+            inventoryModeSnapshot: item.inventoryMode,
+            durationMinutesSnapshot: item.durationMinutes,
+            excludedOptionalIngredientIds:
+              excludedIds.length > 0 ? excludedIds : Prisma.DbNull,
+            baseUnitPriceSnapshot: baseUnitPrice,
+            optionsTotalSnapshot: optionsTotal,
+            finalUnitPriceSnapshot: unitPrice,
+            lineTotalSnapshot: lineTotal,
+            options: resolvedOptions.snapshots.length
+              ? {
+                  create: resolvedOptions.snapshots,
+                }
+              : undefined,
+          };
+        },
+      );
 
     const total = orderItemCreates.reduce(
       (acc, item) => acc + Number(item.lineTotal),
@@ -1280,6 +1252,7 @@ export class PublicService {
   /* =====================================================
      FIND RESERVATION BY ID (página pública de consulta)
   ===================================================== */
+
 
   async findReservationById(id: string) {
     const reservation = await this.prisma.reservation.findUnique({

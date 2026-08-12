@@ -1,20 +1,8 @@
 import { api } from "@/src/lib/api";
 
 export type IngredientStatus = "ACTIVE" | "INACTIVE";
-export type IngredientUnit =
-  "UNIT" | "PACKAGE" | "DOZEN" | "BOX" | "G" | "KG" | "LB" | "ML" | "L";
-export type UnitCode =
-  | IngredientUnit
-  | "CM"
-  | "M"
-  | "SIX_PACK"
-  | "BAG"
-  | "BUCKET"
-  | "BULTO"
-  | "BOTTLE"
-  | "GARRAFA"
-  | "BIDON"
-  | "ROLL";
+export type IngredientUnit = "UNIT" | "PACKAGE" | "DOZEN" | "BOX" | "G" | "KG" | "LB" | "ML" | "L";
+export type UnitCode = IngredientUnit | "CM" | "M" | "SIX_PACK" | "BAG" | "BUCKET" | "BULTO" | "BOTTLE" | "GARRAFA" | "BIDON" | "ROLL";
 export type UnitKind = "WEIGHT" | "VOLUME" | "LENGTH" | "COUNT" | "COMMERCIAL";
 export type InventoryPurchaseMode = "STANDARD" | "PRESENTATION" | "LEGACY";
 
@@ -28,15 +16,6 @@ export type Unit = {
   isActive: boolean;
 };
 
-export type UnitConversion = {
-  id: string;
-  fromUnitId: string;
-  toUnitId: string;
-  factor: string;
-  fromUnit: Unit;
-  toUnit: Unit;
-};
-
 export type IngredientPurchasePresentation = {
   id: string;
   businessId: string;
@@ -45,7 +24,7 @@ export type IngredientPurchasePresentation = {
   purchaseUnitId: string;
   purchaseUnit?: Unit;
   innerQuantity: string;
-  innerUnitLabel: string | null;
+  innerUnitLabel?: string | null;
   contentQuantity: string;
   contentUnitId: string;
   contentUnit?: Unit;
@@ -73,7 +52,6 @@ export type Ingredient = {
   recipeUnitLabel?: string | null;
   recipeUnitFactor?: string | null;
   status: IngredientStatus;
-  deletedAt?: string | null;
   currentStock: string;
   averageCost: string;
   hasMovements?: boolean;
@@ -86,12 +64,6 @@ export type InventorySummaryIngredient = Ingredient & {
   stockValue: number | string;
   outOfStock?: boolean;
   lowStock?: boolean;
-};
-
-export type InventoryValueSummary = {
-  ingredientsValue: string;
-  simpleProductsValue: string;
-  inventoryTotalValue: string;
 };
 
 export type SimpleItemInventorySummary = {
@@ -223,28 +195,27 @@ export type CreateInventoryPurchaseBaseDto = {
   detail?: string;
 };
 
-export type CreateInventoryPurchaseLegacyDto =
-  CreateInventoryPurchaseBaseDto & {
-    // Legacy mode: quantity + unitCost represent values in consumption units.
-    quantity: string;
-    unitCost: string;
-    purchaseQuantity?: never;
-    purchaseUnitCost?: never;
-  };
+export type CreateInventoryPurchaseLegacyDto = CreateInventoryPurchaseBaseDto & {
+  // Legacy mode: quantity + unitCost represent values in consumption units.
+  quantity: string;
+  unitCost: string;
+  purchaseQuantity?: never;
+  purchaseUnitCost?: never;
+};
 
-export type CreateInventoryPurchaseByUnitDto =
-  CreateInventoryPurchaseBaseDto & {
-    // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
-    purchaseQuantity: string;
-    purchaseUnitCost: string;
-    purchaseUnitId?: string;
-    purchasePresentationId?: string;
-    quantity?: never;
-    unitCost?: never;
-  };
+export type CreateInventoryPurchaseByUnitDto = CreateInventoryPurchaseBaseDto & {
+  // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
+  purchaseQuantity: string;
+  purchaseUnitCost: string;
+  purchaseUnitId?: string;
+  purchasePresentationId?: string;
+  quantity?: never;
+  unitCost?: never;
+};
 
 export type CreateInventoryPurchaseDto =
-  CreateInventoryPurchaseLegacyDto | CreateInventoryPurchaseByUnitDto;
+  | CreateInventoryPurchaseLegacyDto
+  | CreateInventoryPurchaseByUnitDto;
 
 export type CreateInventoryPurchaseReturnDto = {
   ingredientId?: string;
@@ -267,21 +238,6 @@ export type RecipeLine = {
   ingredientId: string;
   quantityRequired: number;
   isOptional?: boolean;
-  ingredient?: {
-    id: string;
-    name: string;
-    status: IngredientStatus;
-    currentStock?: number | string;
-    averageCost?: number | string;
-    consumptionUnit?: string;
-    customUnitLabel?: string | null;
-    stockUnit?: {
-      id?: string;
-      code?: string;
-      symbol?: string;
-      name?: string;
-    } | null;
-  };
 };
 
 export type ReplaceRecipeDto = {
@@ -290,74 +246,7 @@ export type ReplaceRecipeDto = {
 
 export type RecipeBulkResult = Record<string, RecipeLine[]>;
 
-export type InactiveIngredientReference = { id: string; name: string };
-
-export type IngredientDeactivationImpact = {
-  ingredientId: string;
-  ingredientName: string;
-  dependencies: {
-    recipes: Array<{
-      itemId: string;
-      itemName: string;
-      itemStatus: string;
-      quantity: string;
-      unitLabel: string | null;
-      isOptional: boolean;
-    }>;
-    services: Array<{
-      serviceIngredientId: string;
-      itemId: string;
-      itemName: string;
-      itemStatus: string;
-      quantity: string;
-      unitLabel: string | null;
-    }>;
-    itemOptions: Array<{
-      optionId: string;
-      optionName: string;
-      groupId: string;
-      groupName: string;
-      itemId: string;
-      itemName: string;
-      itemStatus: string;
-    }>;
-  };
-  summary: {
-    recipes: number;
-    services: number;
-    itemOptions: number;
-    total: number;
-  };
-};
-
-export type IngredientDeletionMode =
-  "HARD_DELETE" | "RESIDUAL_DECISION_REQUIRED" | "PRESERVE_REQUIRED";
-
-export type IngredientDeletionImpact = IngredientDeactivationImpact & {
-  deletionMode: IngredientDeletionMode;
-  currentStock: string;
-  averageCost: string;
-  unitLabel: string;
-  protectedRelations: {
-    inventoryMovements: number;
-    recipes: number;
-    serviceIngredients: number;
-    itemOptions: number;
-    purchasePresentations: number;
-    orderItemOptions: number;
-  };
-};
-
-export type IngredientDeletionResult = {
-  deleted: true;
-  preservedHistory: boolean;
-  ingredientId: string;
-  deletionMode: "SOFT_DELETE" | "HARD_DELETE";
-};
-
-export function listIngredients(
-  query: { status?: IngredientStatus; search?: string } = {},
-) {
+export function listIngredients(query: { status?: IngredientStatus; search?: string } = {}) {
   const qs = new URLSearchParams();
   if (query.status) qs.set("status", query.status);
   if (query.search) qs.set("search", query.search);
@@ -371,10 +260,6 @@ export function getIngredient(id: string) {
 
 export function listUnits() {
   return api<Unit[]>(`/inventory/units`);
-}
-
-export function listUnitConversions() {
-  return api<UnitConversion[]>(`/inventory/unit-conversions`);
 }
 
 export function createIngredient(dto: CreateIngredientDto) {
@@ -392,9 +277,7 @@ export function updateIngredient(id: string, dto: UpdateIngredientDto) {
 }
 
 export function listPurchasePresentations(ingredientId: string) {
-  return api<IngredientPurchasePresentation[]>(
-    `/ingredients/${ingredientId}/purchase-presentations`,
-  );
+  return api<IngredientPurchasePresentation[]>(`/ingredients/${ingredientId}/purchase-presentations`);
 }
 
 export function createPurchasePresentation(
@@ -403,20 +286,17 @@ export function createPurchasePresentation(
     name: string;
     purchaseUnitId: string;
     innerQuantity: string;
-    innerUnitLabel: string;
+    innerUnitLabel?: string;
     contentQuantity: string;
     contentUnitId: string;
     isDefault?: boolean;
     isActive?: boolean;
   },
 ) {
-  return api<IngredientPurchasePresentation>(
-    `/ingredients/${ingredientId}/purchase-presentations`,
-    {
-      method: "POST",
-      body: JSON.stringify(dto),
-    },
-  );
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations`, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
 }
 
 export function updatePurchasePresentation(
@@ -426,58 +306,27 @@ export function updatePurchasePresentation(
     name: string;
     purchaseUnitId: string;
     innerQuantity: string;
-    innerUnitLabel: string;
+    innerUnitLabel?: string;
     contentQuantity: string;
     contentUnitId: string;
     isDefault?: boolean;
     isActive?: boolean;
   },
 ) {
-  return api<IngredientPurchasePresentation>(
-    `/ingredients/${ingredientId}/purchase-presentations/${presentationId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(dto),
-    },
-  );
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations/${presentationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
 }
 
-export function deactivatePurchasePresentation(
-  ingredientId: string,
-  presentationId: string,
-) {
-  return api<IngredientPurchasePresentation>(
-    `/ingredients/${ingredientId}/purchase-presentations/${presentationId}`,
-    {
-      method: "DELETE",
-    },
-  );
+export function deactivatePurchasePresentation(ingredientId: string, presentationId: string) {
+  return api<IngredientPurchasePresentation>(`/ingredients/${ingredientId}/purchase-presentations/${presentationId}`, {
+    method: "DELETE",
+  });
 }
 
 export function deactivateIngredient(id: string) {
   return api<Ingredient>(`/ingredients/${id}/deactivate`, { method: "PATCH" });
-}
-
-export function getIngredientDeactivationImpact(id: string) {
-  return api<IngredientDeactivationImpact>(
-    `/ingredients/${id}/deactivation-impact`,
-  );
-}
-
-export function getIngredientDeletionImpact(id: string) {
-  return api<IngredientDeletionImpact>(`/ingredients/${id}/deletion-impact`);
-}
-
-export function deleteIngredient(
-  id: string,
-  residualInventoryAction?: "DELETE_PERMANENTLY" | "PRESERVE_HISTORY",
-) {
-  const query = residualInventoryAction
-    ? `?residualInventoryAction=${residualInventoryAction}`
-    : "";
-  return api<IngredientDeletionResult>(`/ingredients/${id}${query}`, {
-    method: "DELETE",
-  });
 }
 
 export function reactivateIngredient(id: string) {
@@ -489,10 +338,6 @@ export function getInventorySummary(query: InventorySummaryQuery = {}) {
   if (query.status) qs.set("status", query.status);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<InventorySummaryIngredient[]>(`/inventory/summary${suffix}`);
-}
-
-export function getInventoryValueSummary() {
-  return api<InventoryValueSummary>(`/inventory/value-summary`);
 }
 
 export function registerInitial(dto: CreateInventoryInitialDto) {
@@ -530,10 +375,7 @@ export function registerNegativeAdjustment(dto: CreateInventoryAdjustmentDto) {
   });
 }
 
-export function listKardex(
-  ingredientId: string,
-  query: InventoryKardexQuery = {},
-) {
+export function listKardex(ingredientId: string, query: InventoryKardexQuery = {}) {
   const qs = new URLSearchParams();
   if (query.from) qs.set("from", query.from);
   if (query.to) qs.set("to", query.to);
@@ -558,10 +400,7 @@ export function getSimpleItemsInventorySummary() {
   return api<SimpleItemInventorySummary[]>(`/inventory/items/summary`);
 }
 
-export function listItemKardex(
-  itemId: string,
-  query: InventoryKardexQuery = {},
-) {
+export function listItemKardex(itemId: string, query: InventoryKardexQuery = {}) {
   const qs = new URLSearchParams();
   if (query.from) qs.set("from", query.from);
   if (query.to) qs.set("to", query.to);
@@ -596,14 +435,10 @@ export function getRecipe(itemId: string) {
   return api<RecipeLine[]>(`/items/${itemId}/recipe`);
 }
 
-export function getRecipesBulk(
-  itemIds: string[],
-  options: { requiresReview?: boolean } = {},
-): Promise<RecipeBulkResult> {
+export function getRecipesBulk(itemIds: string[]): Promise<RecipeBulkResult> {
   const uniqueItemIds = Array.from(new Set(itemIds.filter(Boolean)));
   if (!uniqueItemIds.length) return Promise.resolve({});
   const qs = new URLSearchParams({ itemIds: uniqueItemIds.join(",") });
-  if (options.requiresReview) qs.set("requiresReview", "true");
   return api<RecipeBulkResult>(`/recipes/bulk?${qs.toString()}`);
 }
 
@@ -617,10 +452,8 @@ export type ServiceIngredientLine = {
   id: string;
   ingredientId: string;
   name: string;
-  status: IngredientStatus;
   quantityRequired: number;
   currentStock: number;
-  averageCost: number;
   consumptionUnit: string;
   customUnitLabel: string | null;
 };
@@ -631,7 +464,6 @@ export type ServiceConsumptionItem = {
   price: number;
   durationMinutes: number | null;
   status: string;
-  sellability?: import("@/src/types/item").ItemSellability;
   ingredients: ServiceIngredientLine[];
 };
 
@@ -673,42 +505,26 @@ export function listServiceConsumption() {
   return api<ServiceConsumptionItem[]>(`/inventory/services/consumption`);
 }
 
-export function replaceServiceConsumption(
-  serviceItemId: string,
-  dto: ReplaceServiceConsumptionDto,
-) {
-  return api<ServiceIngredientLine[]>(
-    `/inventory/services/${serviceItemId}/consumption`,
-    {
-      method: "PUT",
-      body: JSON.stringify(dto),
-    },
-  );
+export function replaceServiceConsumption(serviceItemId: string, dto: ReplaceServiceConsumptionDto) {
+  return api<ServiceIngredientLine[]>(`/inventory/services/${serviceItemId}/consumption`, {
+    method: "PUT",
+    body: JSON.stringify(dto),
+  });
 }
 
-export function getRecipeConsumptionHistory(
-  itemId: string,
-  query: { from?: string; to?: string; limit?: number } = {},
-) {
+export function getRecipeConsumptionHistory(itemId: string, query: { from?: string; to?: string; limit?: number } = {}) {
   const qs = new URLSearchParams();
   if (query.from) qs.set("from", query.from);
   if (query.to) qs.set("to", query.to);
   if (query.limit) qs.set("limit", String(query.limit));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return api<ConsumptionHistoryLine[]>(
-    `/inventory/recipes/${itemId}/consumption-history${suffix}`,
-  );
+  return api<ConsumptionHistoryLine[]>(`/inventory/recipes/${itemId}/consumption-history${suffix}`);
 }
 
-export function getServiceConsumptionHistory(
-  serviceItemId: string,
-  query: { from?: string; to?: string } = {},
-) {
+export function getServiceConsumptionHistory(serviceItemId: string, query: { from?: string; to?: string } = {}) {
   const qs = new URLSearchParams();
   if (query.from) qs.set("from", query.from);
   if (query.to) qs.set("to", query.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return api<ConsumptionHistoryLine[]>(
-    `/inventory/services/${serviceItemId}/consumption-history${suffix}`,
-  );
+  return api<ConsumptionHistoryLine[]>(`/inventory/services/${serviceItemId}/consumption-history${suffix}`);
 }

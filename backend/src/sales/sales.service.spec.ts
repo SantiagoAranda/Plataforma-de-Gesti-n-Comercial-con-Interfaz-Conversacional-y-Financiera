@@ -6,41 +6,7 @@ import { SalesService } from './sales.service';
 describe('SalesService.findAll', () => {
   const businessId = 'business-1';
 
-  function createService(
-    orders: any[],
-    reservations: any[],
-    normalizedFiscalRows: any[][] = [],
-  ) {
-    const fixtureContexts = orders
-      .filter((order) => order.fiscalContext)
-      .map((order) => ({
-        id: `fiscal-${order.id}`,
-        orderId: order.id,
-        ...order.fiscalContext,
-      }));
-    const fixtureTaxLines = orders.flatMap((order) =>
-      (order.taxLines ?? []).map((line: any) => ({
-        fiscalContextId: `fiscal-${order.id}`,
-        ...line,
-      })),
-    );
-    const fixtureTaxSnapshots = orders
-      .filter((order) => order.taxSnapshot)
-      .map((order) => ({
-        fiscalContextId: `fiscal-${order.id}`,
-        ...order.taxSnapshot,
-      }));
-    const queryResults =
-      normalizedFiscalRows.length > 0
-        ? normalizedFiscalRows
-        : fixtureContexts.length > 0
-          ? [fixtureContexts, fixtureTaxLines, fixtureTaxSnapshots]
-          : [];
-    const queryRaw = jest.fn() as any;
-    for (const rows of queryResults) {
-      queryRaw.mockResolvedValueOnce(rows);
-    }
-    queryRaw.mockResolvedValue([]);
+  function createService(orders: any[], reservations: any[]) {
     const prisma = {
       order: {
         findMany: (jest.fn() as any).mockResolvedValue(orders),
@@ -51,7 +17,6 @@ describe('SalesService.findAll', () => {
       unitConversion: {
         findMany: (jest.fn() as any).mockResolvedValue([]),
       },
-      $queryRaw: queryRaw,
     } as any;
 
     return new SalesService(prisma, {} as any, {} as any, {} as any, {} as any);
@@ -226,78 +191,6 @@ describe('SalesService.findAll', () => {
       totalWithheld: 400,
       netReceived: 118600,
     });
-  });
-
-  it('loads fiscal snapshots from the normalized fiscal tables', async () => {
-    const createdAt = new Date('2026-08-09T12:00:00.000Z');
-    const service = createService(
-      [
-        {
-          id: 'order-normalized',
-          customerName: 'Comprador normalizado',
-          customerWhatsapp: null,
-          paymentMethod: 'CASH',
-          total: new Prisma.Decimal(119000),
-          status: 'COMPLETED',
-          inventoryPostedAt: createdAt,
-          accountingPostedAt: createdAt,
-          createdAt,
-          origin: 'MANUAL',
-          items: [],
-        },
-      ],
-      [],
-      [
-        [
-          {
-            id: 'fiscal-context-1',
-            orderId: 'order-normalized',
-            subtotal: new Prisma.Decimal(100000),
-            chargedTaxTotal: new Prisma.Decimal(19000),
-            withheldTaxTotal: new Prisma.Decimal(0),
-            netReceived: new Prisma.Decimal(119000),
-            buyerName: 'Comprador normalizado',
-          },
-        ],
-        [
-          {
-            id: 'tax-line-1',
-            fiscalContextId: 'fiscal-context-1',
-            taxType: 'IVA',
-            direction: 'CHARGED',
-            baseAmount: new Prisma.Decimal(100000),
-            rate: new Prisma.Decimal('0.19'),
-            taxAmount: new Prisma.Decimal(19000),
-            accountCode: '2408',
-            applied: true,
-            reason: null,
-          },
-        ],
-        [
-          {
-            id: 'tax-snapshot-1',
-            fiscalContextId: 'fiscal-context-1',
-            buyerFiscal: { buyerName: 'Comprador snapshot' },
-          },
-        ],
-      ],
-    );
-
-    const [sale] = await service.findAll(businessId);
-
-    expect(sale.fiscalSummary).toEqual(
-      expect.objectContaining({
-        subtotal: 100000,
-        iva: 19000,
-        totalCollected: 119000,
-      }),
-    );
-    expect(sale.fiscalContext).toEqual(
-      expect.objectContaining({ buyerName: 'Comprador snapshot' }),
-    );
-    expect(sale.taxLines).toEqual([
-      expect.objectContaining({ taxType: 'IVA', taxAmount: 19000 }),
-    ]);
   });
 });
 

@@ -123,7 +123,6 @@ type PublicOption = {
   removable: boolean;
   sortOrder: number;
   hasStock?: boolean;
-  availabilityStatus?: "AVAILABLE" | "OUT_OF_STOCK" | "UNAVAILABLE";
 };
 
 type PublicOptionGroup = {
@@ -1438,8 +1437,6 @@ function ProductOptionsCustomizer({
               {group.options.map((option) => {
                 const checked = selectedSet.has(option.id);
                 const isOutOfStock = option.hasStock === false;
-                const isStructurallyUnavailable =
-                  option.availabilityStatus === "UNAVAILABLE";
                 return (
                   <button
                     key={option.id}
@@ -1473,9 +1470,7 @@ function ProductOptionsCustomizer({
                       </span>
                       {isOutOfStock ? (
                         <span className="mt-0.5 block text-[10px] font-bold text-rose-500 uppercase tracking-wider">
-                          {isStructurallyUnavailable
-                            ? "No disponible"
-                            : "Sin stock"}
+                          Sin stock
                         </span>
                       ) : option.priceDelta > 0 ? (
                         <span className="mt-0.5 block text-[11px] font-semibold text-orange-600">

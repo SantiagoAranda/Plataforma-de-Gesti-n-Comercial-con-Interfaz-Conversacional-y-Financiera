@@ -225,46 +225,6 @@ export default function SaleCreateModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6 bg-neutral-50/10">
-          {/* Items de venta */}
-          <div className="space-y-3">
-            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
-
-            <div className="space-y-2">
-              {items.map((it, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
-                  <ItemThumbnail />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
-                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-neutral-400 uppercase">
-                       {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
-                    </div>
-                  </div>
-
-                  {type === "PRODUCTO" && (
-                    <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
-                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
-                      <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
-                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => removeItem(idx)}
-                    className="p-2 text-neutral-300 hover:text-rose-500 transition"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ))}
-
-              {items.length === 0 && (
-                <div className="text-center py-10 border-2 border-dashed border-neutral-200 bg-neutral-50 rounded-2xl">
-                   <p className="text-[11px] font-medium text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Customer Data */}
           <div className="space-y-3">
             <div className="flex flex-col gap-1">
@@ -350,6 +310,45 @@ export default function SaleCreateModal({
                   Transf.
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest px-1">Items de venta</span>
+
+            <div className="space-y-2">
+              {items.map((it, idx) => (
+                <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-neutral-100 rounded-xl shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+                  <ItemThumbnail />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-neutral-800 text-sm truncate">{it.name}</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-medium text-neutral-400 uppercase">
+                       {it.qty} unidades x ${formatMoney(it.price)} = ${formatMoney(it.price * it.qty)}
+                    </div>
+                  </div>
+
+                  {type === "PRODUCTO" && (
+                    <div className="flex items-center gap-2 bg-neutral-50 px-2 py-1 rounded-lg border border-neutral-100">
+                      <button onClick={() => updateItemQty(idx, it.qty - 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">-</button>
+                      <span className="text-xs font-semibold text-neutral-700 w-3 text-center">{it.qty}</span>
+                      <button onClick={() => updateItemQty(idx, it.qty + 1)} className="text-neutral-500 hover:text-neutral-800 w-4 font-medium text-sm">+</button>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => removeItem(idx)}
+                    className="p-2 text-neutral-300 hover:text-rose-500 transition"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+
+              {items.length === 0 && (
+                <div className="text-center py-10 border-2 border-dashed border-neutral-200 bg-neutral-50 rounded-2xl">
+                   <p className="text-[11px] font-medium text-neutral-400 uppercase tracking-widest">Sin productos en la lista</p>
+                </div>
+              )}
             </div>
           </div>
 
