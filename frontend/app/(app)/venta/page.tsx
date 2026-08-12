@@ -1025,19 +1025,21 @@ function VentaPageContent() {
         onChange={setFilterStatus}
       />
 
-      <SalesChatComposer
-        expanded={salesBlockedBySimpleRegime ? false : isCreateOpen}
-        onOpenComposer={() => {
-          if (!salesBlockedBySimpleRegime) setIsCreateOpen(true);
-        }}
-        onCancelComposer={() => setIsCreateOpen(false)}
-        searchValue={q}
-        onSearchChange={setQ}
-        filterStatus={filterStatus}
-        onFilterStatusChange={setFilterStatus}
-        onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
-        taxSettingsEnabled={taxSettingsEnabled}
-      />
+      {!editingSale && (
+        <SalesChatComposer
+          expanded={salesBlockedBySimpleRegime ? false : isCreateOpen}
+          onOpenComposer={() => {
+            if (!salesBlockedBySimpleRegime) setIsCreateOpen(true);
+          }}
+          onCancelComposer={() => setIsCreateOpen(false)}
+          searchValue={q}
+          onSearchChange={setQ}
+          filterStatus={filterStatus}
+          onFilterStatusChange={setFilterStatus}
+          onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
+          taxSettingsEnabled={taxSettingsEnabled}
+        />
+      )}
     </div>
   );
 }

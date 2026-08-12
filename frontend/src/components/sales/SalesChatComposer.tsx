@@ -1093,7 +1093,7 @@ export default function SalesChatComposer({
         </div>
 
         {/* 7. Previsualización fiscal */}
-        {((simpleRegimeEnabled && taxSettingsEnabled) || Boolean(sale?.fiscalSummary)) && (
+        {(taxSettingsEnabled || Boolean(sale?.fiscalSummary)) && (
           <SaleTaxPanel
             mode={isReadonly ? "readonly" : "create"}
             value={fiscalForm}
@@ -1107,6 +1107,7 @@ export default function SalesChatComposer({
             onPreviewChange={setTaxPreview}
             fiscalSummary={sale?.fiscalSummary}
             taxLines={sale?.taxLines}
+            taxSettingsEnabled={taxSettingsEnabled}
           />
         )}
 

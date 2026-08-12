@@ -296,7 +296,7 @@ export default function SaleTaxPanel({
   const [error, setError] = useState<string | null>(null);
 
   const preview = useMemo(() => {
-    if (readonly || !simpleRegimeEnabled) {
+    if (readonly) {
       return fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null;
     }
     return livePreview;
