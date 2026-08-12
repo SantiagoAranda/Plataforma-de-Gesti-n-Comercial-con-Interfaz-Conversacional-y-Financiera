@@ -697,33 +697,38 @@ async function seedInventoryDemoData() {
       prisma.unit.findUnique({ where: { code: input.purchaseUnit } }),
     ]);
 
-    const ingredient = await prisma.ingredient.upsert({
+    const currentIngredient = await prisma.ingredient.findFirst({
       where: {
-        businessId_name: {
-          businessId: business.id,
-          name: input.name,
-        },
-      },
-      update: {
-        status: 'ACTIVE',
-        consumptionUnit: input.consumptionUnit,
-        purchaseUnit: input.purchaseUnit,
-        purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
-        minStock: input.minStock,
-        stockUnitId: stockUnit?.id,
-        defaultPurchaseUnitId: defaultPurchaseUnit?.id,
-      },
-      create: {
         businessId: business.id,
-        name: input.name,
-        consumptionUnit: input.consumptionUnit,
-        purchaseUnit: input.purchaseUnit,
-        purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
-        minStock: input.minStock,
-        stockUnitId: stockUnit?.id,
-        defaultPurchaseUnitId: defaultPurchaseUnit?.id,
+        deletedAt: null,
+        name: { equals: input.name.trim(), mode: 'insensitive' },
       },
     });
+    const ingredient = currentIngredient
+      ? await prisma.ingredient.update({
+          where: { id: currentIngredient.id },
+          data: {
+            status: 'ACTIVE',
+            consumptionUnit: input.consumptionUnit,
+            purchaseUnit: input.purchaseUnit,
+            purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
+            minStock: input.minStock,
+            stockUnitId: stockUnit?.id,
+            defaultPurchaseUnitId: defaultPurchaseUnit?.id,
+          },
+        })
+      : await prisma.ingredient.create({
+          data: {
+            businessId: business.id,
+            name: input.name.trim(),
+            consumptionUnit: input.consumptionUnit,
+            purchaseUnit: input.purchaseUnit,
+            purchaseToConsumptionFactor: input.purchaseToConsumptionFactor,
+            minStock: input.minStock,
+            stockUnitId: stockUnit?.id,
+            defaultPurchaseUnitId: defaultPurchaseUnit?.id,
+          },
+        });
 
     const existingInitial = await prisma.inventoryMovement.findFirst({
       where: {

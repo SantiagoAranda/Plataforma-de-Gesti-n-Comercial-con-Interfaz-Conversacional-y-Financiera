@@ -33,7 +33,10 @@ import { ConsumptionHistoryTab } from "./ConsumptionHistoryTab";
 import { ProfitSimulator } from "./ProfitSimulator";
 import { getStockUnitSymbol } from "@/src/components/inventory/inventoryUnits";
 import { getErrorMessage } from "@/src/lib/errors";
+import { AppApiError } from "@/src/lib/api";
 import type { Item } from "@/src/types/item";
+import { deriveRecipeReview } from "./recipeReview";
+import { getRecipeOperationalHealth } from "./inventoryOperationalHealth";
 
 type Props = {
   item: Item;
@@ -105,11 +108,23 @@ export function ExpandableRecipeCard({
   const isRecipeBased = item.inventoryMode === "RECIPE_BASED";
 
   const getIngredientDetails = (ingredientId: string) =>
-    allIngredients.find((i) => i.id === ingredientId) ?? null;
+    allIngredients.find((i) => i.id === ingredientId) ??
+    recipeLines.find((line) => line.ingredientId === ingredientId)
+      ?.ingredient ??
+    null;
 
   const getIngredientUnit = (ingredientId: string) => {
-    const ing = getIngredientDetails(ingredientId);
-    return ing ? getStockUnitSymbol(ing) : "";
+    const activeIngredient = allIngredients.find(
+      (ingredient) => ingredient.id === ingredientId,
+    );
+    if (activeIngredient) return getStockUnitSymbol(activeIngredient);
+    const ing = recipeLines.find(
+      (line) => line.ingredientId === ingredientId,
+    )?.ingredient;
+    if (!ing) return "";
+    return (
+      ing.stockUnit?.symbol ?? ing.customUnitLabel ?? ing.consumptionUnit ?? ""
+    );
   };
 
   const getIngredientName = (ingredientId: string) =>
@@ -136,6 +151,7 @@ export function ExpandableRecipeCard({
       baseQuantityRequired: base,
       stepQuantity: step,
       isOptional: !!line.isOptional,
+      ingredient: line.ingredient,
     };
   };
 
@@ -208,6 +224,16 @@ export function ExpandableRecipeCard({
       };
     }
 
+    const review = deriveRecipeReview(linesToCheck);
+    const health = getRecipeOperationalHealth(item, linesToCheck, allIngredients);
+    if (review.requiresReview || health.requiresReview) {
+      return {
+        label: "Requiere revisión",
+        tone: "bg-amber-50 text-amber-800 border border-amber-200",
+        dotColor: "bg-amber-500",
+      };
+    }
+
     const mandatory = linesToCheck.filter((line) => !line.isOptional);
     const hasInvalid = linesToCheck.some((line) => {
       const qty = getLineQuantity(line);
@@ -240,6 +266,11 @@ export function ExpandableRecipeCard({
   const status = getRecipeStatus(recipeLines);
   const currentStatus = getRecipeStatus(draftLines);
   const displayStatus = isExpanded ? currentStatus : status;
+  const operationalHealth = getRecipeOperationalHealth(
+    item,
+    isExpanded ? draftLines : recipeLines,
+    allIngredients,
+  );
   const recipeImageUrl = [...(item.images ?? [])].sort(
     (left, right) => left.order - right.order,
   )[0]?.url;
@@ -330,6 +361,9 @@ export function ExpandableRecipeCard({
 
     for (const line of draftLines) {
       if (!line.ingredientId) return "Cada línea debe tener un insumo válido.";
+      if (line.ingredient?.status === "INACTIVE") {
+        return `Corrige o elimina el ingrediente inactivo ${line.ingredient.name}.`;
+      }
       const qty = getLineQuantity(line);
       if (!Number.isFinite(qty) || qty <= 0) {
         return "La cantidad de cada insumo debe ser mayor a 0.";
@@ -373,6 +407,34 @@ export function ExpandableRecipeCard({
     } catch (error) {
       console.error(error);
       toast.dismiss(loadingId);
+      if (
+        error instanceof AppApiError &&
+        error.details?.code === "INACTIVE_RECIPE_INGREDIENT" &&
+        Array.isArray(error.details?.inactiveIngredients)
+      ) {
+        const inactiveById = new Map<string, { id: string; name: string }>(
+          error.details.inactiveIngredients.map(
+            (ingredient: { id: string; name: string }) =>
+              [ingredient.id, ingredient] as const,
+          ),
+        );
+        setDraftLines((current) =>
+          current.map((line) => {
+            const inactive = inactiveById.get(line.ingredientId);
+            return inactive
+              ? {
+                  ...line,
+                  ingredient: {
+                    ...line.ingredient,
+                    id: inactive.id,
+                    name: inactive.name,
+                    status: "INACTIVE",
+                  },
+                }
+              : line;
+          }),
+        );
+      }
       toast.error(getErrorMessage(error, "No se pudo guardar la receta"));
     } finally {
       setSubmitting(false);
@@ -428,6 +490,9 @@ export function ExpandableRecipeCard({
     }
     if (item.sellability.status === "INSUFFICIENT_RECIPE_STOCK") {
       return "Este producto no aparece en la tienda porque falta stock en insumos obligatorios.";
+    }
+    if (item.sellability.status === "RECIPE_REQUIRES_REVIEW") {
+      return "Este producto utiliza ingredientes inactivos y su receta requiere revisión.";
     }
 
     return (
@@ -603,6 +668,12 @@ export function ExpandableRecipeCard({
               />
               {displayStatus.label}
             </span>
+            {operationalHealth.stockInsufficient && (
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[9px] font-medium text-orange-800 sm:text-[10px]">
+                <AlertTriangle className="h-3 w-3" />
+                Stock insuficiente
+              </span>
+            )}
 
             <button
               type="button"
@@ -689,6 +760,20 @@ export function ExpandableRecipeCard({
             />
           ) : (
             <>
+              {deriveRecipeReview(draftLines).requiresReview && (
+                <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      Esta receta requiere revisión.
+                    </p>
+                    <p>
+                      Contiene ingredientes inactivos. Corrige o elimina los
+                      elementos marcados antes de guardar.
+                    </p>
+                  </div>
+                </div>
+              )}
               {/* Estado Vacío: Receta pendiente */}
               {draftLines.length === 0 && (
                 <section className="bg-amber-50/80 border border-amber-200 rounded-xl p-4 text-center space-y-3">
@@ -782,13 +867,24 @@ export function ExpandableRecipeCard({
                                 ? Math.floor(stock / quantity)
                                 : 0;
                             const totalCost = lineCost(line);
+                            const ingredientInactive =
+                              line.ingredient?.status === "INACTIVE";
+                            const ingredientStockInsufficient =
+                              !ingredientInactive &&
+                              !line.isOptional &&
+                              Number.isFinite(quantity) &&
+                              quantity > stock;
                             const { step, precision } =
                               getStepAndPrecisionForUnit(unit);
 
                             return (
                               <div
                                 key={`${line.ingredientId}-${idx}`}
-                                className="bg-slate-50/50 border border-slate-200 rounded-xl p-3"
+                                className={cn(
+                                  "bg-slate-50/50 border border-slate-200 rounded-xl p-3",
+                                  ingredientInactive &&
+                                    "border-amber-300 bg-amber-50/60",
+                                )}
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
@@ -796,6 +892,12 @@ export function ExpandableRecipeCard({
                                       <span className="font-medium text-xs sm:text-sm text-black">
                                         {getIngredientName(line.ingredientId)}
                                       </span>
+                                      {ingredientInactive && (
+                                        <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                                          <AlertTriangle className="h-3 w-3" />
+                                          Ingrediente inactivo
+                                        </span>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -883,6 +985,12 @@ export function ExpandableRecipeCard({
                                     </span>
                                   </div>
                                 </div>
+                                {ingredientStockInsufficient && (
+                                  <div className="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-orange-700">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Sin stock suficiente
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

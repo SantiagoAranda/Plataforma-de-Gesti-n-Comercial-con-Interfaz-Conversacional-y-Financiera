@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -7,7 +8,7 @@ import {
   ShoppingBag,
   Warehouse,
   Clock,
-  User,
+  Info,
 } from "lucide-react";
 
 import { formatMoney } from "@/src/lib/formatters";
@@ -39,7 +40,7 @@ function movementMeta(type: InventoryMovement["type"]) {
 
 function purchaseModeBadge(mode: InventoryMovement["purchaseMode"]) {
   if (mode === "STANDARD") return { label: "Estándar", class: "bg-slate-100 text-slate-700" };
-  if (mode === "PRESENTATION") return { label: "Presentación", class: "bg-indigo-50 text-indigo-700 border border-indigo-100" };
+  if (mode === "PRESENTATION") return { label: "Presentación", class: "bg-blue-50 text-blue-700 border border-blue-200" };
   return { label: "Legacy", class: "bg-sky-50 text-sky-700 border border-sky-100" };
 }
 
@@ -52,6 +53,34 @@ export function KardexList({
   layout?: "list" | "chat";
   stockUnitLabel?: string;
 }) {
+  const [openConversionId, setOpenConversionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openConversionId) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (event.target instanceof Element) {
+        const container = event.target.closest<HTMLElement>(
+          "[data-kardex-conversion-popover]",
+        );
+        if (container?.dataset.kardexConversionPopover === openConversionId) {
+          return;
+        }
+      }
+      setOpenConversionId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenConversionId(null);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openConversionId]);
+
   if (!movements.length) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-12 text-center text-slate-400 font-medium">
@@ -141,9 +170,47 @@ export function KardexList({
                     </span>
                   </div>
 
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {new Date(m.occurredAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
+                  <div
+                    className="relative flex items-center gap-1.5"
+                    data-kardex-conversion-popover={m.id}
+                  >
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {new Date(m.occurredAt).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {m.type === "PURCHASE" && m.conversionDetail ? (
+                      <>
+                        <button
+                          type="button"
+                          aria-label="Ver equivalencia histórica de compra"
+                          aria-expanded={openConversionId === m.id}
+                          aria-controls={`conversion-${m.id}`}
+                          onClick={() =>
+                            setOpenConversionId((current) =>
+                              current === m.id ? null : m.id,
+                            )
+                          }
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#0B3F64] transition hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                        {openConversionId === m.id ? (
+                          <div
+                            id={`conversion-${m.id}`}
+                            role="dialog"
+                            aria-label="Equivalencia por presentación"
+                            className="absolute right-0 top-7 z-20 w-64 max-w-[calc(100vw-3rem)] rounded-xl border border-blue-200 bg-white p-3 text-left shadow-lg"
+                          >
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#0B3F64]">
+                              Equivalencia por presentación
+                            </p>
+                            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-slate-600">
+                              {m.conversionDetail}
+                            </p>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
 
                 {/* Details / description */}
@@ -151,13 +218,6 @@ export function KardexList({
                   <p className="text-xs font-medium text-slate-600 leading-snug">
                     {m.detail}
                   </p>
-                )}
-
-                {/* Conversion specific detail */}
-                {m.type === "PURCHASE" && m.conversionDetail && (
-                  <div className="rounded-xl bg-slate-50 p-2.5 text-[10px] font-semibold text-slate-500 border border-slate-100/60 leading-relaxed">
-                    {m.conversionDetail}
-                  </div>
                 )}
 
                 {/* Values table grid */}

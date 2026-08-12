@@ -512,6 +512,10 @@ model Ingredient {
   // Operational lifecycle for stock inputs, independent from sellable Item.status.
   status IngredientStatus @default(ACTIVE)
 
+  // Null while the ingredient is a current business identity. Non-null preserves
+  // historical relations while excluding the ingredient from new operations.
+  deletedAt DateTime?
+
   // Base unit used by recipes, Kardex, sale consumption, and currentStock.
   consumptionUnit IngredientUnit
 
@@ -560,10 +564,10 @@ model Ingredient {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([businessId, name])
   @@unique([id, businessId])
   @@index([businessId])
   @@index([businessId, status])
+  @@index([businessId, deletedAt])
   @@index([stockUnitId])
   @@index([defaultPurchaseUnitId])
 }

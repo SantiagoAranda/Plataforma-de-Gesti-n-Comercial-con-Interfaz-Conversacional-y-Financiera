@@ -16,15 +16,33 @@ describe('IngredientsService (minStock)', () => {
       L: { id: 'unit-l', code: 'L', symbol: 'l', kind: 'VOLUME' },
       ML: { id: 'unit-ml', code: 'ML', symbol: 'ml', kind: 'VOLUME' },
       UNIT: { id: 'unit-unit', code: 'UNIT', symbol: 'u', kind: 'COUNT' },
-      PACKAGE: { id: 'unit-package', code: 'PACKAGE', symbol: 'paquete', kind: 'COMMERCIAL' },
-      DOZEN: { id: 'unit-dozen', code: 'DOZEN', symbol: 'docena', kind: 'COUNT' },
-      SIX_PACK: { id: 'unit-six-pack', code: 'SIX_PACK', symbol: 'six-pack', kind: 'COUNT' },
+      PACKAGE: {
+        id: 'unit-package',
+        code: 'PACKAGE',
+        symbol: 'paquete',
+        kind: 'COMMERCIAL',
+      },
+      DOZEN: {
+        id: 'unit-dozen',
+        code: 'DOZEN',
+        symbol: 'docena',
+        kind: 'COUNT',
+      },
+      SIX_PACK: {
+        id: 'unit-six-pack',
+        code: 'SIX_PACK',
+        symbol: 'six-pack',
+        kind: 'COUNT',
+      },
       BOX: { id: 'unit-box', code: 'BOX', symbol: 'caja', kind: 'COMMERCIAL' },
     };
-    const unitsById = Object.values(unitsByCode).reduce<Record<string, any>>((acc, unit: any) => {
-      acc[unit.id] = unit;
-      return acc;
-    }, {});
+    const unitsById = Object.values(unitsByCode).reduce<Record<string, any>>(
+      (acc, unit: any) => {
+        acc[unit.id] = unit;
+        return acc;
+      },
+      {},
+    );
     const conversionFactors: Record<string, string> = {
       'unit-g:unit-g': '1',
       'unit-kg:unit-kg': '1',
@@ -49,19 +67,22 @@ describe('IngredientsService (minStock)', () => {
         findFirst: mockFn(),
       },
       unit: {
-        findUnique: jest.fn(({ where }: { where: { code?: string; id?: string } }) =>
-          Promise.resolve(
-            where.id
-              ? unitsById[where.id] ?? null
-              : unitsByCode[String(where.code).toUpperCase()] ?? null,
-          ),
+        findUnique: jest.fn(
+          ({ where }: { where: { code?: string; id?: string } }) =>
+            Promise.resolve(
+              where.id
+                ? (unitsById[where.id] ?? null)
+                : (unitsByCode[String(where.code).toUpperCase()] ?? null),
+            ),
         ),
       },
       unitConversion: {
         findUnique: jest.fn(({ where }: { where: any }) => {
           const key = `${where.fromUnitId_toUnitId.fromUnitId}:${where.fromUnitId_toUnitId.toUnitId}`;
           const factor = conversionFactors[key];
-          return Promise.resolve(factor ? { factor: new Prisma.Decimal(factor) } : null);
+          return Promise.resolve(
+            factor ? { factor: new Prisma.Decimal(factor) } : null,
+          );
         }),
         findMany: jest.fn(({ where }: { where: any }) => {
           const toUnitId = where.toUnitId;
@@ -71,7 +92,10 @@ describe('IngredientsService (minStock)', () => {
               .map((code: string) => {
                 const fromUnit = unitsByCode[code];
                 const toUnit = unitsById[toUnitId];
-                const factor = fromUnit && toUnit ? conversionFactors[`${fromUnit.id}:${toUnit.id}`] : null;
+                const factor =
+                  fromUnit && toUnit
+                    ? conversionFactors[`${fromUnit.id}:${toUnit.id}`]
+                    : null;
                 return factor
                   ? {
                       factor: new Prisma.Decimal(factor),
@@ -91,6 +115,10 @@ describe('IngredientsService (minStock)', () => {
         updateMany: mockFn(),
         update: mockFn(),
       },
+      recipe: { findMany: mockFn().mockResolvedValue([]) },
+      serviceIngredient: { findMany: mockFn().mockResolvedValue([]) },
+      itemOption: { findMany: mockFn().mockResolvedValue([]) },
+      $queryRaw: mockFn().mockResolvedValue([{ id: ingredientId }]),
       $transaction: jest.fn((arg: any) => {
         if (typeof arg === 'function') return arg(prisma);
         if (Array.isArray(arg)) return Promise.all(arg);
@@ -180,27 +208,30 @@ describe('IngredientsService (minStock)', () => {
   it.each([
     ['DOZEN', 'unit-dozen', '12'],
     ['SIX_PACK', 'unit-six-pack', '6'],
-  ])('creates unit-stock ingredient with fixed default purchase unit %s without writing it to legacy enum', async (code, unitId, factor) => {
-    const { service, prisma } = createService();
-    prisma.ingredient.create.mockResolvedValue({});
+  ])(
+    'creates unit-stock ingredient with fixed default purchase unit %s without writing it to legacy enum',
+    async (code, unitId, factor) => {
+      const { service, prisma } = createService();
+      prisma.ingredient.create.mockResolvedValue({});
 
-    await service.create(businessId, {
-      name: `Coca Cola ${code}`,
-      stockUnitId: 'unit-unit',
-      defaultPurchaseUnitId: unitId,
-      minStock: '6',
-    } as any);
-
-    expect(prisma.ingredient.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
+      await service.create(businessId, {
+        name: `Coca Cola ${code}`,
         stockUnitId: 'unit-unit',
         defaultPurchaseUnitId: unitId,
-        consumptionUnit: IngredientUnit.UNIT,
-        purchaseUnit: IngredientUnit.UNIT,
-        purchaseToConsumptionFactor: new Prisma.Decimal(factor),
-      }),
-    });
-  });
+        minStock: '6',
+      } as any);
+
+      expect(prisma.ingredient.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          stockUnitId: 'unit-unit',
+          defaultPurchaseUnitId: unitId,
+          consumptionUnit: IngredientUnit.UNIT,
+          purchaseUnit: IngredientUnit.UNIT,
+          purchaseToConsumptionFactor: new Prisma.Decimal(factor),
+        }),
+      });
+    },
+  );
 
   it('creates gram-stock ingredient with default purchase unit LB without writing LB to legacy enum', async () => {
     const { service, prisma } = createService();
@@ -246,7 +277,7 @@ describe('IngredientsService (minStock)', () => {
       consumptionUnit: IngredientUnit.UNIT,
       purchaseUnit: IngredientUnit.UNIT,
       stockUnitId: 'unit-unit',
-        defaultPurchaseUnitId: 'unit-unit',
+      defaultPurchaseUnitId: 'unit-unit',
       stockUnit: { id: 'unit-unit', code: 'UNIT' },
       defaultPurchaseUnit: { id: 'unit-package', code: 'PACKAGE' },
       _count: { inventoryMovements: 0 },
@@ -416,6 +447,71 @@ describe('IngredientsService (minStock)', () => {
     });
   });
 
+  it('returns deactivation impact scoped to the ingredient business', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      name: 'Leche',
+    });
+    prisma.recipe.findMany.mockResolvedValue([
+      {
+        id: 'recipe-1',
+        item: { id: 'item-1', name: 'Café con leche', status: 'ACTIVE' },
+        ingredient: {
+          consumptionUnit: 'ML',
+          customUnitLabel: null,
+          stockUnit: { symbol: 'ml', name: 'Mililitro' },
+        },
+        quantityRequired: new Prisma.Decimal('200'),
+        isOptional: false,
+      },
+    ]);
+
+    const impact = await service.getDeactivationImpact(
+      businessId,
+      ingredientId,
+    );
+
+    expect(prisma.recipe.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { businessId, ingredientId } }),
+    );
+    expect(impact.summary).toEqual({
+      recipes: 1,
+      services: 0,
+      itemOptions: 0,
+      total: 1,
+    });
+    expect(impact.dependencies.recipes[0]).toMatchObject({
+      itemName: 'Café con leche',
+      quantity: '200',
+      unitLabel: 'ml',
+    });
+  });
+
+  it('deactivation revalidates dependencies after locking and preserves them', async () => {
+    const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      status: 'ACTIVE',
+    });
+    prisma.ingredient.update.mockResolvedValue({
+      id: ingredientId,
+      status: 'INACTIVE',
+    });
+
+    await service.deactivate(businessId, ingredientId);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.recipe.findMany).toHaveBeenCalled();
+    expect(prisma.serviceIngredient.findMany).toHaveBeenCalled();
+    expect(prisma.itemOption.findMany).toHaveBeenCalled();
+    expect(prisma.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: { status: 'INACTIVE' },
+    });
+  });
+
   it('returns active ingredient without updating when reactivate is idempotent', async () => {
     const { service, prisma } = createService();
     prisma.ingredient.findFirst.mockResolvedValue({
@@ -435,9 +531,9 @@ describe('IngredientsService (minStock)', () => {
     const { service, prisma } = createService();
     prisma.ingredient.findFirst.mockResolvedValue(null);
 
-    await expect(service.findOne('business-2', ingredientId)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.findOne('business-2', ingredientId),
+    ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       service.update('business-2', ingredientId, { minStock: '1' } as any),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -448,4 +544,3 @@ describe('IngredientsService (minStock)', () => {
     expect(prisma.ingredient.update).not.toHaveBeenCalled();
   });
 });
-
