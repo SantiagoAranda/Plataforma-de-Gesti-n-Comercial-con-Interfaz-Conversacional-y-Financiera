@@ -27,6 +27,7 @@ import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
+import { AppApiError } from "@/src/lib/api";
 
 import type { BuyerFiscalContext } from "@/src/lib/tax/api";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
@@ -137,6 +138,12 @@ function mapOrderToSale(order: ApiOrder): Sale {
   const total =
     order.total ??
     items.reduce((sum, it) => sum + it.unitPrice * it.qty, 0);
+  const fiscalContext = order.fiscalContext
+    ? {
+      ...order.fiscalContext,
+      buyerIsRegimenSimple: Boolean(order.fiscalContext.buyerIsRegimenSimple),
+    }
+    : null;
 
   return {
     id: order.id,
@@ -152,11 +159,15 @@ function mapOrderToSale(order: ApiOrder): Sale {
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
     fiscalSummary: order.fiscalSummary ?? null,
-    fiscalContext: order.fiscalContext ?? null,
+    fiscalContext,
     taxLines: order.taxLines ?? null,
     total,
     items,
   };
+}
+
+function isDeletionBlockedByPostedInventory(sale: Sale) {
+  return sale.status === "CERRADO" && sale.inventoryPostedAt != null;
 }
 
 function formatDisplayMoney(value: number) {
@@ -570,7 +581,20 @@ function VentaPageContent() {
 
       toast.loading("Confirmando venta e impuestos...", { id: loadingId });
 
-      await confirmSale(sale.id, sale.sourceType, sale.fiscalContext as BuyerFiscalContext);
+      const buyerFiscalContext = sale.fiscalContext
+        ? {
+          ...sale.fiscalContext,
+          buyerIsRegimenSimple: simpleRegimeEnabled
+            ? Boolean(sale.fiscalContext.buyerIsRegimenSimple)
+            : false,
+        }
+        : undefined;
+
+      await confirmSale(
+        sale.id,
+        sale.sourceType,
+        buyerFiscalContext as BuyerFiscalContext | undefined,
+      );
 
       invalidateCache("home:sales");
       await loadOrders();
@@ -595,7 +619,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, taxSettingsEnabled]);
+  }, [loadOrders, simpleRegimeEnabled, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -683,6 +707,11 @@ function VentaPageContent() {
   };
 
   const handleDeleteSale = useCallback(async (sale: Sale) => {
+    if (isDeletionBlockedByPostedInventory(sale)) {
+      toast.error("Esta venta ya fue confirmada e impactó inventario. No puede eliminarse.");
+      return;
+    }
+
     showConfirmation(
       "¿Deseás eliminar esta venta?",
       "Eliminar",
@@ -693,7 +722,6 @@ function VentaPageContent() {
 
         try {
           setConfirmingSaleId(sale.id);
-          setError(null);
 
           toast.dismiss(loadingId);
           toast.dismiss(successId);
@@ -723,11 +751,18 @@ function VentaPageContent() {
           }, 2100);
         } catch (err) {
           console.error(err);
-          setError("No se pudo eliminar la venta");
 
           toast.dismiss(loadingId);
 
-          toast.error("Error al eliminar venta", {
+          const isPostedInventoryDeletionError =
+            err instanceof AppApiError &&
+            err.status === 400 &&
+            err.message.toLowerCase().includes("inventario impactado");
+          const message = isPostedInventoryDeletionError
+            ? "Esta venta ya fue confirmada e impactó inventario. No puede eliminarse."
+            : getErrorMessage(err, "No se pudo eliminar la venta");
+
+          toast.error(message, {
             id: errorId,
             duration: 3000,
           });
@@ -836,7 +871,11 @@ function VentaPageContent() {
                 : undefined
             }
             editLabel="Editar"
-            onDelete={salesBlockedBySimpleRegime ? undefined : () => handleDeleteSale(selectedSale)}
+            onDelete={
+              salesBlockedBySimpleRegime || isDeletionBlockedByPostedInventory(selectedSale)
+                ? undefined
+                : () => handleDeleteSale(selectedSale)
+            }
             deleteLabel="Eliminar"
           />
         ) : (
@@ -1002,7 +1041,12 @@ function VentaPageContent() {
         onClose={() => setDetailsSale(null)}
         onConfirm={salesBlockedBySimpleRegime ? undefined : handleConfirmSale}
         onSaveOptionalIngredients={salesBlockedBySimpleRegime ? undefined : handleSaveOptionalIngredients}
-        onCancel={salesBlockedBySimpleRegime ? undefined : handleDeleteSale}
+        onCancel={
+          salesBlockedBySimpleRegime ||
+          (detailsSale != null && isDeletionBlockedByPostedInventory(detailsSale))
+            ? undefined
+            : handleDeleteSale
+        }
         onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
           setEditingSale(sale);
           setDetailsSale(null);
