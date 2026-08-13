@@ -11,8 +11,29 @@ describe('FeatureFlagsService', () => {
     expect(parseBooleanFlag(value)).toBe(expected);
   });
 
-  it('defaults Simple Regime to disabled', () => {
-    const service = new FeatureFlagsService({ get: () => undefined } as any);
-    expect(service.simpleRegimeEnabled).toBe(false);
+  it('uses the legacy flag only as a sales fallback and keeps the tax module disabled', () => {
+    const service = new FeatureFlagsService({
+      get: (key: string) => (key === 'SIMPLE_REGIME_ENABLED' ? 'true' : undefined),
+    } as any);
+
+    expect(service.simpleRegimeSalesEnabled).toBe(true);
+    expect(service.simpleRegimeTaxModuleEnabled).toBe(false);
+    expect(service.simpleRegimeEnabled).toBe(true);
+  });
+
+  it('prefers the sales-specific flag and defaults both policies to disabled', () => {
+    const service = new FeatureFlagsService({
+      get: (key: string) =>
+        key === 'SIMPLE_REGIME_SALES_ENABLED'
+          ? 'false'
+          : key === 'SIMPLE_REGIME_ENABLED'
+            ? 'true'
+            : undefined,
+    } as any);
+
+    expect(service.simpleRegimeSalesEnabled).toBe(false);
+    expect(service.simpleRegimeTaxModuleEnabled).toBe(false);
+    const defaultService = new FeatureFlagsService({ get: () => undefined } as any);
+    expect(defaultService.simpleRegimeEnabled).toBe(false);
   });
 });

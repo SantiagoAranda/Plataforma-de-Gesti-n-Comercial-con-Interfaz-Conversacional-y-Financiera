@@ -193,7 +193,7 @@ function VentaPageContent() {
   );
   const saleElementsRef = useRef(new Map<string, HTMLDivElement>());
   const { taxSettingsEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
   const [q, setQ] = useState("");
 
@@ -208,7 +208,7 @@ function VentaPageContent() {
   }, []);
 
   const salesBlockedBySimpleRegime =
-    !simpleRegimeEnabled && hasHistoricalSimpleResponsibility;
+    !simpleRegimeSalesEnabled && hasHistoricalSimpleResponsibility;
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -584,7 +584,7 @@ function VentaPageContent() {
       const buyerFiscalContext = sale.fiscalContext
         ? {
           ...sale.fiscalContext,
-          buyerIsRegimenSimple: simpleRegimeEnabled
+          buyerIsRegimenSimple: simpleRegimeSalesEnabled
             ? Boolean(sale.fiscalContext.buyerIsRegimenSimple)
             : false,
         }
@@ -619,7 +619,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, simpleRegimeEnabled, taxSettingsEnabled]);
+  }, [loadOrders, simpleRegimeSalesEnabled, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {

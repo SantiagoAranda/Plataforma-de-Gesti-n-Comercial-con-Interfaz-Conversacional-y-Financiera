@@ -177,7 +177,7 @@ function parsePerThousand(value: string) {
 export default function RutImpuestosPage() {
   const router = useRouter();
   const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
+  const { simpleRegimeSalesEnabled, simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -306,7 +306,7 @@ export default function RutImpuestosPage() {
           getTaxProfile().catch(() => null),
           listTaxResponsibilities().catch(() => []),
           listIcaRates().catch(() => []),
-          (simpleRegimeEnabled ? getSimpleTaxConfig() : Promise.resolve(null))
+          (simpleRegimeTaxModuleEnabled ? getSimpleTaxConfig() : Promise.resolve(null))
             .then((data) => ({ loaded: Boolean(data), data }))
             .catch(() => ({ loaded: false, data: null })),
         ]);
@@ -448,7 +448,7 @@ export default function RutImpuestosPage() {
       }
     }
     loadData();
-  }, [featureFlagsLoading, simpleRegimeEnabled]);
+  }, [featureFlagsLoading, simpleRegimeTaxModuleEnabled]);
 
   useEffect(() => {
     if (ciiuSearch.length < 2) {
@@ -507,7 +507,7 @@ export default function RutImpuestosPage() {
   };
 
   const handleRespChange = (code: string, checked: boolean) => {
-    if (code === "47") return;
+    if (code === "47" && !simpleRegimeSalesEnabled) return;
 
     setBusinessProfile("ADVANCED");
     setSelectedRespCodes((prev) => {
@@ -583,10 +583,14 @@ export default function RutImpuestosPage() {
     setSaving(true);
 
     try {
-      const responsibilitiesToSave = normalizeCodes([
-        ...selectedRespCodes.filter((code) => code !== "47"),
-        ...(hasHistoricalSimpleResponsibility ? ["47"] : []),
-      ]);
+      const responsibilitiesToSave = normalizeCodes(
+        simpleRegimeSalesEnabled
+          ? selectedRespCodes
+          : [
+              ...selectedRespCodes.filter((code) => code !== "47"),
+              ...(hasHistoricalSimpleResponsibility ? ["47"] : []),
+            ],
+      );
 
       await updateTaxProfile({
         personType,
@@ -607,7 +611,7 @@ export default function RutImpuestosPage() {
 
       await saveIcaRate();
 
-      if (simpleRegimeEnabled) {
+      if (simpleRegimeTaxModuleEnabled) {
         const hasSimpleTaxResponsibility = selectedRespCodes.includes("47");
         const simpleTaxPayload: Parameters<typeof updateSimpleTaxConfig>[0] = {
           enabled: hasSimpleTaxResponsibility,
@@ -921,9 +925,9 @@ export default function RutImpuestosPage() {
 
               <div className="space-y-2">
                 {visibleResponsibilities.map((responsibility) => {
-                  const isDisabledResponsibility = responsibility.code === "47";
-                  const selected =
-                    !isDisabledResponsibility && selectedRespCodes.includes(responsibility.code);
+                  const isDisabledResponsibility =
+                    responsibility.code === "47" && !simpleRegimeSalesEnabled;
+                  const selected = selectedRespCodes.includes(responsibility.code);
 
                   return (
                     <label
@@ -977,7 +981,7 @@ export default function RutImpuestosPage() {
               </div>
             </div>
 
-            {!simpleRegimeEnabled && hasHistoricalSimpleResponsibility && (
+            {!simpleRegimeSalesEnabled && hasHistoricalSimpleResponsibility && (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-medium leading-relaxed text-slate-500">
                 Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
               </div>

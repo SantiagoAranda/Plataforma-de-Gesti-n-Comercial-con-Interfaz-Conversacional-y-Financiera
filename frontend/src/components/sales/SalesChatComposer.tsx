@@ -148,7 +148,7 @@ export default function SalesChatComposer({
   onFilterStatusChange?: (status: FilterStatus) => void;
 }) {
   const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const taxSettingsEnabled = propEnabled ?? hookEnabled;
   const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
   const [taxPreview, setTaxPreview] = useState<any>(null);
@@ -336,17 +336,17 @@ export default function SalesChatComposer({
     ({ key }) =>
       key !== "buyerIsRetenedor" &&
       key !== "buyerRequiresElectronicInvoice" &&
-      (simpleRegimeEnabled || key !== "buyerIsRegimenSimple"),
+      (simpleRegimeSalesEnabled || key !== "buyerIsRegimenSimple"),
   );
 
   const buyerFiscalContext = useMemo<BuyerFiscalContext>(
     () => ({
       ...buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
-      buyerIsRegimenSimple: simpleRegimeEnabled
+      buyerIsRegimenSimple: simpleRegimeSalesEnabled
         ? Boolean(fiscalForm.buyerIsRegimenSimple)
         : false,
     }),
-    [fiscalForm, taxSettingsEnabled, simpleRegimeEnabled],
+    [fiscalForm, taxSettingsEnabled, simpleRegimeSalesEnabled],
   );
 
   const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {

@@ -97,6 +97,8 @@ export class SalesService {
     private itemOptionsService: ItemOptionsService,
     private taxService: TaxService,
     @Optional() private featureFlags: FeatureFlagsService = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) { }
@@ -128,7 +130,7 @@ export class SalesService {
     businessId: string,
     buyerFiscalContext?: { buyerIsRegimenSimple?: boolean } | null,
   ) {
-    if (this.featureFlags.simpleRegimeEnabled) return;
+    if (this.featureFlags.simpleRegimeSalesEnabled) return;
     if (buyerFiscalContext?.buyerIsRegimenSimple === true) {
       throw new SimpleRegimeNotAvailableException();
     }

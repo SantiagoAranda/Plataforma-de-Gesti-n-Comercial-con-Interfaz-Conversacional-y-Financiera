@@ -67,7 +67,7 @@ function Metric({
 }
 
 export default function RegimenSimplePage() {
-  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
+  const { simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
   const [config, setConfig] = useState<SimpleTaxConfig | null>(null);
   const [periods, setPeriods] = useState<SimpleTaxPeriod[]>([]);
   const [taxYear, setTaxYear] = useState("2026");
@@ -104,10 +104,10 @@ export default function RegimenSimplePage() {
   };
 
   useEffect(() => {
-    if (featureFlagsLoading || !simpleRegimeEnabled) return;
+    if (featureFlagsLoading || !simpleRegimeTaxModuleEnabled) return;
     loadData(Number(taxYear) || 2026);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taxYear, featureFlagsLoading, simpleRegimeEnabled]);
+  }, [taxYear, featureFlagsLoading, simpleRegimeTaxModuleEnabled]);
 
   const selectedStoredPeriod = useMemo(
     () =>
@@ -274,7 +274,7 @@ export default function RegimenSimplePage() {
     return <div className="min-h-screen bg-slate-50" />;
   }
 
-  if (!simpleRegimeEnabled) {
+  if (!simpleRegimeTaxModuleEnabled) {
     return (
       <div className="min-h-screen bg-slate-50">
         <AppHeader title="Régimen Simple" subtitle="No disponible" showBack />

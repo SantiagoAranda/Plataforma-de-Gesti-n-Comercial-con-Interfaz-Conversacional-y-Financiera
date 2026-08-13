@@ -214,7 +214,7 @@ function parseAmountQuery(query: string) {
 
 export default function ContabilidadPage() {
   const { taxSettingsEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeTaxModuleEnabled } = useFeatureFlags();
   const [movements, setMovements] = useState<AccountingMovement[]>([]);
   const [selectedMovement, setSelectedMovement] =
     useState<AccountingMovement | null>(null);
@@ -615,7 +615,7 @@ export default function ContabilidadPage() {
                 <div className="text-xs font-bold uppercase tracking-wider text-white">
                   Resumen del balance
                 </div>
-                {taxSettingsEnabled && simpleRegimeEnabled && (
+                {taxSettingsEnabled && simpleRegimeTaxModuleEnabled && (
                   <Link
                     href="/contabilidad/regimen-simple"
                     className="inline-flex h-6 items-center justify-center rounded-full bg-white/15 px-2.5 text-[10px] font-semibold leading-none text-white border border-white/20 sm:px-3 sm:text-[11px] transition hover:bg-white/25"

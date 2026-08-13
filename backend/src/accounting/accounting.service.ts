@@ -224,6 +224,8 @@ export class AccountingService {
   constructor(
     private prisma: PrismaService,
     @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeTaxModuleEnabled: true,
+      simpleRegimeSalesEnabled: true,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
@@ -1690,7 +1692,7 @@ export class AccountingService {
     netProfitBeforeSimpleTax: number,
     includedSimpleTaxExpense = 0,
   ) {
-    if (!this.featureFlags.simpleRegimeEnabled) return undefined;
+    if (!this.featureFlags.simpleRegimeTaxModuleEnabled) return undefined;
     const profile = await this.prisma.businessTaxProfile.findUnique({
       where: { businessId },
       select: { taxSettingsEnabled: true },

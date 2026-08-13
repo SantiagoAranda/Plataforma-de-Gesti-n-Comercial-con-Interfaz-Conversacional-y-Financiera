@@ -12,11 +12,34 @@ export function parseBooleanFlag(value: unknown): boolean {
 
 @Injectable()
 export class FeatureFlagsService {
+  /**
+   * RUT and sales policy. The legacy SIMPLE_REGIME_ENABLED value is used only
+   * while SIMPLE_REGIME_SALES_ENABLED is absent.
+   */
+  readonly simpleRegimeSalesEnabled: boolean;
+  /** Bimonthly/annual Simple Tax module policy. It never inherits the legacy flag. */
+  readonly simpleRegimeTaxModuleEnabled: boolean;
+  /** @deprecated Use simpleRegimeSalesEnabled. */
   readonly simpleRegimeEnabled: boolean;
 
   constructor(private readonly config: ConfigService) {
-    this.simpleRegimeEnabled = parseBooleanFlag(
-      this.config.get<string>('SIMPLE_REGIME_ENABLED'),
+    const salesFlag = this.config.get<string>('SIMPLE_REGIME_SALES_ENABLED');
+    this.simpleRegimeSalesEnabled = parseBooleanFlag(
+      salesFlag === undefined
+        ? this.config.get<string>('SIMPLE_REGIME_ENABLED')
+        : salesFlag,
     );
+    this.simpleRegimeTaxModuleEnabled = parseBooleanFlag(
+      this.config.get<string>('SIMPLE_REGIME_TAX_MODULE_ENABLED'),
+    );
+    this.simpleRegimeEnabled = this.simpleRegimeSalesEnabled;
+  }
+
+  isSimpleRegimeSalesEnabled() {
+    return this.simpleRegimeSalesEnabled;
+  }
+
+  isSimpleRegimeTaxModuleEnabled() {
+    return this.simpleRegimeTaxModuleEnabled;
   }
 }

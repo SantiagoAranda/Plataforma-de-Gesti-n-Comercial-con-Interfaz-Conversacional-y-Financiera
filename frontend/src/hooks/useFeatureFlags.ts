@@ -2,17 +2,27 @@ import { useEffect, useState } from "react";
 import { getFeatureFlags } from "@/src/lib/featureFlags";
 
 export function useFeatureFlags() {
-  const [simpleRegimeEnabled, setSimpleRegimeEnabled] = useState(false);
+  const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
+  const [simpleRegimeTaxModuleEnabled, setSimpleRegimeTaxModuleEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     getFeatureFlags()
       .then((flags) => {
-        if (!cancelled) setSimpleRegimeEnabled(flags.simpleRegimeEnabled === true);
+        if (!cancelled) {
+          setSimpleRegimeSalesEnabled(
+            flags.simpleRegimeSalesEnabled === true ||
+              (flags.simpleRegimeSalesEnabled === undefined && flags.simpleRegimeEnabled === true),
+          );
+          setSimpleRegimeTaxModuleEnabled(flags.simpleRegimeTaxModuleEnabled === true);
+        }
       })
       .catch(() => {
-        if (!cancelled) setSimpleRegimeEnabled(false);
+        if (!cancelled) {
+          setSimpleRegimeSalesEnabled(false);
+          setSimpleRegimeTaxModuleEnabled(false);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -22,5 +32,11 @@ export function useFeatureFlags() {
     };
   }, []);
 
-  return { simpleRegimeEnabled, featureFlagsLoading: loading };
+  return {
+    simpleRegimeSalesEnabled,
+    simpleRegimeTaxModuleEnabled,
+    /** @deprecated Use simpleRegimeSalesEnabled. */
+    simpleRegimeEnabled: simpleRegimeSalesEnabled,
+    featureFlagsLoading: loading,
+  };
 }

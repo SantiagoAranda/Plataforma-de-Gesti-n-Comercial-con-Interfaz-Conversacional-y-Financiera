@@ -35,6 +35,8 @@ export class SettingsService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
@@ -89,13 +91,13 @@ export class SettingsService {
     );
     const requestedCodes = [...new Set(dto.responsibilityCodes)];
     if (
-      !this.featureFlags.simpleRegimeEnabled &&
+      !this.featureFlags.simpleRegimeSalesEnabled &&
       requestedCodes.includes('47') &&
       !existingHasSimpleResponsibility
     ) {
       throw new SimpleRegimeNotAvailableException();
     }
-    const codes = !this.featureFlags.simpleRegimeEnabled && existingHasSimpleResponsibility
+    const codes = !this.featureFlags.simpleRegimeSalesEnabled && existingHasSimpleResponsibility
       ? [...new Set([...requestedCodes.filter((code) => code !== '47'), '47'])]
       : requestedCodes;
     if (codes.includes('48') && codes.includes('49')) {
@@ -217,7 +219,11 @@ export class SettingsService {
   }
 
   getFeatureFlags() {
-    return { simpleRegimeEnabled: this.featureFlags.simpleRegimeEnabled };
+    return {
+      simpleRegimeSalesEnabled: this.featureFlags.simpleRegimeSalesEnabled,
+      simpleRegimeTaxModuleEnabled: this.featureFlags.simpleRegimeTaxModuleEnabled,
+      simpleRegimeEnabled: this.featureFlags.simpleRegimeEnabled,
+    };
   }
 
   // --- ICA rates ---

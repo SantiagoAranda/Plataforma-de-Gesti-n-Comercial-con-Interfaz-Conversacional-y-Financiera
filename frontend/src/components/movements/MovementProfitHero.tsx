@@ -14,7 +14,7 @@ export function MovementProfitHero({
   title?: string;
 }) {
   const { taxSettingsEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeTaxModuleEnabled } = useFeatureFlags();
   // 1. Unificación de Valores Base (Copia fiel de la Cascada Inferior)
   const operacion = metrics?.operacionComercial || {
     ventasNetas: 0,
@@ -55,7 +55,7 @@ export function MovementProfitHero({
 
   const iva = Math.abs(Math.round(impuestos.iva || 0));
   const retenciones = Math.abs(Math.round(impuestos.retenciones || 0));
-  const simpleTaxProjection = simpleRegimeEnabled ? metrics.simpleTaxProjection : undefined;
+  const simpleTaxProjection = simpleRegimeTaxModuleEnabled ? metrics.simpleTaxProjection : undefined;
   const hasConfiguredSimpleTax =
     Boolean(taxSettingsEnabled && simpleTaxProjection?.enabled && simpleTaxProjection.configured);
   const isOpenSimpleTaxEstimate = Boolean(taxSettingsEnabled && simpleTaxProjection?.source === "MONTHLY_MIN_RATE");
