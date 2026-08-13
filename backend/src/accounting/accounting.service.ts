@@ -274,11 +274,12 @@ export class AccountingService {
   private async loadPucReferenceOrThrow(input: {
     pucCuentaCode?: string | null;
     pucSubcuentaId?: string | null;
-  }) {
+  }, tx?: Prisma.TransactionClient) {
     const { pucCuentaCode, pucSubcuentaId } = this.parsePucSelection(input);
+    const db = tx ?? this.prisma;
 
     if (pucSubcuentaId) {
-      const sub = await this.prisma.pucSubcuenta.findUnique({
+      const sub = await db.pucSubcuenta.findUnique({
         where: { code: pucSubcuentaId },
         include: {
           cuenta: {
@@ -303,7 +304,7 @@ export class AccountingService {
       };
     }
 
-    const cuenta = await this.prisma.pucCuenta.findUnique({
+    const cuenta = await db.pucCuenta.findUnique({
       where: { code: pucCuentaCode! },
       include: {
         grupo: {
@@ -323,9 +324,10 @@ export class AccountingService {
     };
   }
 
-  private async loadDefaultPucReferenceOrThrow(code: string) {
+  private async loadDefaultPucReferenceOrThrow(code: string, tx?: Prisma.TransactionClient) {
     return this.loadPucReferenceOrThrow(
       code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
+      tx,
     );
   }
 
@@ -462,12 +464,12 @@ export class AccountingService {
     return lines;
   }
 
-  private async resolveIncomeReference(itemType: AccountingItemType) {
+  private async resolveIncomeReference(itemType: AccountingItemType, tx?: Prisma.TransactionClient) {
     const preferredCode =
       ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType[itemType];
 
     try {
-      return await this.loadDefaultPucReferenceOrThrow(preferredCode);
+      return await this.loadDefaultPucReferenceOrThrow(preferredCode, tx);
     } catch (error) {
       if (
         itemType !== 'SERVICE' ||
@@ -477,12 +479,12 @@ export class AccountingService {
       }
 
       return this.loadDefaultPucReferenceOrThrow(
-        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT,
+        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT, tx,
       );
     }
   }
 
-  private async resolveAutomaticDebitReference(order: OrderForPosting) {
+  private async resolveAutomaticDebitReference(order: OrderForPosting, tx?: Prisma.TransactionClient) {
     const paymentMethod = this.resolveOrderPaymentMethod(order);
 
     const debitPucCode =
@@ -490,7 +492,7 @@ export class AccountingService {
         ? ORDER_ACCOUNTING_DEFAULTS.debitBankTransferPucCode
         : ORDER_ACCOUNTING_DEFAULTS.debitCashPucCode;
 
-    return this.loadDefaultPucReferenceOrThrow(debitPucCode);
+    return this.loadDefaultPucReferenceOrThrow(debitPucCode, tx);
   }
 
   private async resolveOrderInventoryCosts(
@@ -947,12 +949,12 @@ export class AccountingService {
       throw new BadRequestException('Order must contain billable items');
     }
 
-    const debitReference = await this.resolveAutomaticDebitReference(order);
+    const debitReference = await this.resolveAutomaticDebitReference(order, tx);
     const incomeReferences = new Map<AccountingItemType, ResolvedPucReference>();
     for (const itemType of new Set(lines.map((line) => line.type))) {
       incomeReferences.set(
         itemType,
-        await this.resolveIncomeReference(itemType),
+        await this.resolveIncomeReference(itemType, tx),
       );
     }
 
@@ -988,7 +990,7 @@ export class AccountingService {
     for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.WITHHOLD)) {
       const code = tLine.accountCode;
       const ref = await this.loadPucReferenceOrThrow(
-        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }, tx
       );
       const withholdingMov = await tx.accountingMovement.create({
         data: {
@@ -1036,7 +1038,7 @@ export class AccountingService {
     for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.CHARGE)) {
       const code = tLine.accountCode;
       const ref = await this.loadPucReferenceOrThrow(
-        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }, tx
       );
       const taxChargedMov = await tx.accountingMovement.create({
         data: {
@@ -1083,10 +1085,10 @@ export class AccountingService {
 
       if (rule && rule.postToAccounting) {
         const refCredito = await this.loadPucReferenceOrThrow(
-          tLine.accountCode.length === 4 ? { pucCuentaCode: tLine.accountCode } : { pucSubcuentaId: tLine.accountCode }
+          tLine.accountCode.length === 4 ? { pucCuentaCode: tLine.accountCode } : { pucSubcuentaId: tLine.accountCode }, tx
         );
         const debitCode = '135515';
-        const refDebito = await this.loadDefaultPucReferenceOrThrow(debitCode);
+        const refDebito = await this.loadDefaultPucReferenceOrThrow(debitCode, tx);
 
         const autoDeb = await tx.accountingMovement.create({
           data: {
@@ -1131,14 +1133,14 @@ export class AccountingService {
     if (inventoryMovements.length > 0) {
       const inventoryReference = await this.loadPucReferenceOrThrow({
         pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
-      });
+      }, tx);
       const costReferences = new Map<AccountingItemType, ResolvedPucReference>();
       for (const itemType of new Set(lines.map((line) => line.type))) {
         costReferences.set(
           itemType,
           await this.loadPucReferenceOrThrow({
             pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.costPucCodeByType[itemType],
-          }),
+          }, tx),
         );
       }
 

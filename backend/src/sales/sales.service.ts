@@ -306,11 +306,24 @@ export class SalesService {
     orderId: string,
     buyerFiscalContext: any,
     cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
+    preparedPreview?: any,
+    onStage?: (stage: 'fiscal-context' | 'tax-lines' | 'snapshot', durationMs: number) => void,
   ) {
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (!buyerFiscalContext || cartItems.length === 0) return;
 
-    const preview = await this.taxService.calculateTaxPreview(businessId, {
+    const preview = preparedPreview ?? await this.calculateOrderTaxPreview(businessId, buyerFiscalContext, cartItems, tx);
+
+    await this.taxService.freezeTaxCalculation(tx, orderId, preview, buyerFiscalContext, onStage);
+  }
+
+  private async calculateOrderTaxPreview(
+    businessId: string,
+    buyerFiscalContext: any,
+    cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
+    tx?: Prisma.TransactionClient,
+  ) {
+    return this.taxService.calculateTaxPreview(businessId, {
       buyerType: buyerFiscalContext.buyerType,
       buyerName: buyerFiscalContext.buyerName,
       buyerDocumentType: buyerFiscalContext.buyerDocumentType,
@@ -331,13 +344,6 @@ export class SalesService {
         buyerFiscalContext.icaRateOverride,
       cartItems,
     }, tx);
-
-    await this.taxService.freezeTaxCalculation(
-      tx,
-      orderId,
-      preview,
-      buyerFiscalContext,
-    );
   }
 
   private assertBuyerFiscalContextAllowed(buyerFiscalContext: any) {
@@ -700,6 +706,15 @@ export class SalesService {
   }
 
   async create(businessId: string, dto: CreateOrderDto) {
+    const createStartedAt = Date.now();
+    const logTiming = (stage: string, startedAt: number, orderId?: string) => {
+      console.log('[SalesService] sales.create.timing', {
+        stage: `sales.create.${stage}`,
+        durationMs: Date.now() - startedAt,
+        elapsedMs: Date.now() - createStartedAt,
+        ...(orderId ? { orderId } : {}),
+      });
+    };
     await this.assertSimpleRegimeAvailableForNewSale(businessId, dto.buyerFiscalContext);
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
     if (!dto.items.length) {
@@ -812,13 +827,22 @@ export class SalesService {
     }
 
     // LÓGICA PARA PRODUCTO (ORDER)
+    const resolveLinesStartedAt = Date.now();
     const { lines: orderItemsData, total } = await this.resolveOrderLines(
       businessId,
       dto.items,
       { isManual },
     );
+    logTiming('resolve-lines', resolveLinesStartedAt);
+    const fiscalCartItems = dto.buyerFiscalContext ? orderItemsData.map((item: any) => ({ itemId: item.itemId, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice ?? item.price) })) : [];
+    const fiscalPreviewStartedAt = Date.now();
+    const preparedFiscalPreview = dto.buyerFiscalContext ? await this.calculateOrderTaxPreview(businessId, dto.buyerFiscalContext, fiscalCartItems) : undefined;
+    if (dto.buyerFiscalContext) logTiming('fiscal-preview', fiscalPreviewStartedAt);
 
+    const transactionStartedAt = Date.now();
     const order = await this.prisma.$transaction(async (tx) => {
+      logTiming('tx.start', Date.now());
+      const orderWriteStartedAt = Date.now();
       const createdOrder = await tx.order.create({
       data: {
         businessId,
@@ -841,6 +865,7 @@ export class SalesService {
         },
       },
     });
+      logTiming('tx.order', orderWriteStartedAt, createdOrder.id);
 
       if (manualScheduledServiceItem && dto.scheduledAt) {
         const mirror = this.buildMirrorReservationData({
@@ -866,16 +891,15 @@ export class SalesService {
           businessId,
           createdOrder.id,
           dto.buyerFiscalContext,
-          createdOrder.items.map((item: any) => ({
-            itemId: item.itemId,
-            quantity: Number(item.quantity),
-            unitPrice: Number(item.unitPrice ?? item.price),
-          })),
+          fiscalCartItems, preparedFiscalPreview,
+          (stage, durationMs) => console.log('[SalesService] sales.create.timing', { stage: `sales.create.tx.${stage}`, durationMs, elapsedMs: Date.now() - createStartedAt, orderId: createdOrder.id }),
         );
       }
 
       return createdOrder;
-    });
+    }, { maxWait: 5000, timeout: 15000 });
+    logTiming('tx.commit', transactionStartedAt, order.id);
+    logTiming('total', createStartedAt, order.id);
 
     console.log(`[SalesService] Created order origin: ${order.origin}`);
 

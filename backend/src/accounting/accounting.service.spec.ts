@@ -64,6 +64,12 @@ describe('AccountingService automatic order postings', () => {
     } as any;
 
     const tx = {
+      pucCuenta: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(pucCuenta(where.code))),
+      },
+      pucSubcuenta: {
+        findUnique: jest.fn(({ where }: any) => Promise.resolve(pucSubcuenta(where.code))),
+      },
       inventoryMovement: {
         findMany: jest.fn(),
       },
