@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Plus, Trash2, HelpCircle, Pencil, Check, X, AlertTriangle, Eye, EyeOff, Search, ChevronDown, Layers } from "lucide-react";
 
@@ -15,6 +15,10 @@ import type {
   ItemOptionQuantityMode as QuantityMode,
   ItemOptionTargetType as TargetType,
 } from "@/src/types/item";
+import {
+  getOptionGroupHealth,
+  getOptionHealth,
+} from "./inventoryOperationalHealth";
 
 type UnitOption = { id: string; name: string; symbol: string; kind: string };
 type IngredientOption = {
@@ -23,6 +27,7 @@ type IngredientOption = {
   currentStock?: string | number;
   averageCost?: string | number;
   stockUnitId?: string | null;
+  status?: "ACTIVE" | "INACTIVE";
 };
 type ItemOptionTarget = {
   id: string;
@@ -845,9 +850,14 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
           })();
           const isExpanded = !!expandedGroupIds[group.id];
           const isOptionFormOpen = creatingOptionForGroupId === group.id;
+          const groupHealth = getOptionGroupHealth(group, allIngredients);
 
           if (editingGroupId === group.id) {
-            return renderGroupForm({ mode: "edit" });
+            return (
+              <Fragment key={`group-editor:${group.id}`}>
+                {renderGroupForm({ mode: "edit" })}
+              </Fragment>
+            );
             return (
               <div key={group.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3 shadow-xs">
                 <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar grupo</span>
@@ -883,6 +893,8 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                   {group.maxSelections !== null && <span className="rounded-full border border-orange-100 bg-[rgba(255,145,0,0.08)] px-2 py-0.5 text-[9px] font-normal text-black">Máx. {group.maxSelections}</span>}
                   <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-normal text-black", group.required ? "border-red-100 bg-[rgba(255,0,65,0.08)]" : "border-slate-200 bg-slate-100")}>{group.required ? "Obligatorio" : "Opcional"}</span>
                   {!group.isActive && <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[9px] font-normal text-black">Inactivo</span>}
+                  {groupHealth.requiresReview && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-800"><AlertTriangle className="h-3 w-3" />Requiere revisión</span>}
+                  {groupHealth.stockInsufficient && <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[9px] font-semibold text-orange-800"><AlertTriangle className="h-3 w-3" />Stock insuficiente</span>}
                   {group.quantityMode === "NO_QUANTITY" && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-normal text-amber-800">Configuración histórica</span>}
                   {group.quantityMode === "FIXED_PER_OPTION" && <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-normal text-[#0b3f64]">Cantidad por opción</span>}
                   {group.quantityMode === "SHARED_TOTAL" && <span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[9px] font-normal text-[#0b3f64]">{group.totalQuantityLimit != null && (unitObjectLabel(group.totalQuantityUnit) || unitLabel(group.totalQuantityUnitId)) ? `Total compartido · ${formatQuantity(group.totalQuantityLimit)} ${unitObjectLabel(group.totalQuantityUnit) || unitLabel(group.totalQuantityUnitId)}` : "Total compartido · Incompleto"}</span>}
@@ -900,6 +912,14 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                         const stockLabel = optionStockLabel(group, option);
                         const usesLabel = optionUsesLabel(group, option);
                         const priceDelta = toNumber(option.priceDelta);
+                        const optionHealth = getOptionHealth(
+                          group,
+                          option,
+                          allIngredients,
+                        );
+                        const ingredientInactive =
+                          option.targetType === "INGREDIENT" &&
+                          !optionHealth.structurallyAvailable;
 
                         if (option.targetType === "INGREDIENT") {
                           const ing = allIngredients.find((i) => i.id === option.ingredientId);
@@ -911,12 +931,18 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                             } else if (group.quantityMode === "FIXED_PER_OPTION") {
                               limit = option.quantity ? Number(option.quantity) : 1;
                             }
-                            lowStock = stockNum < limit;
+                            lowStock =
+                              optionHealth.structurallyAvailable &&
+                              stockNum < limit;
                           }
                         }
 
                         if (editingOptionId === option.id) {
-                          return renderOptionForm({ group, mode: "edit" });
+                          return (
+                            <Fragment key={`option-editor:${option.id}`}>
+                              {renderOptionForm({ group, mode: "edit" })}
+                            </Fragment>
+                          );
                           return (
                             <div key={option.id} className="rounded-xl border-2 border-[#0b3f64] bg-white p-3.5 space-y-3">
                               <span className="text-[10px] font-medium uppercase tracking-wide text-black">Editar opción</span>
@@ -957,6 +983,20 @@ export function ProductCustomizationManager({ item, allIngredients, hideHeader =
                                       Default
                                     </span>
                                   )}
+                                  {ingredientInactive && (
+                                    <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Ingrediente inactivo
+                                    </span>
+                                  )}
+                                  {!ingredientInactive &&
+                                    !optionHealth.hasStock &&
+                                    option.isActive !== false && (
+                                      <span className="inline-flex items-center gap-1 rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[9px] font-semibold text-orange-800">
+                                        <AlertTriangle className="h-3 w-3" />
+                                        Sin stock
+                                      </span>
+                                    )}
                                 </div>
                               </div>
                               <div className="flex items-center gap-1 shrink-0">

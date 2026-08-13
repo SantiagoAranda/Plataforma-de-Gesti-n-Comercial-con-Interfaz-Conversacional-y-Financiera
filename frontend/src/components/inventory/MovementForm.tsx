@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import toast from "react-hot-toast";
 import { Scale, FileText, Hash } from "lucide-react";
 
-import type { Ingredient, IngredientPurchasePresentation, Unit } from "@/src/services/inventory";
+import type { Ingredient, Unit } from "@/src/services/inventory";
 import { CustomSelect } from "@/src/components/ui/CustomSelect";
 import {
   listUnits,
@@ -21,6 +21,11 @@ import {
   formatUnitSymbol,
 } from "@/src/components/inventory/inventoryUnits";
 import { formatMoney } from "@/src/lib/formatters";
+import {
+  formatQuantity,
+  presentationComposition,
+  presentationFactor,
+} from "./purchasePresentation";
 
 export type MovementAction =
   | "INITIAL"
@@ -46,6 +51,8 @@ type PurchaseOption = {
   purchasePresentationId?: string;
   isDefault?: boolean;
   isLocked?: boolean;
+  composition?: string | null;
+  formula?: string | null;
 };
 
 type Props = {
@@ -70,15 +77,6 @@ function isPositiveDecimal(value: string) {
   return Number(normalized) > 0;
 }
 
-function presentationFactor(presentation: IngredientPurchasePresentation) {
-  const direct = Number(presentation.factorToBaseUnit);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-  const inner = Number(presentation.innerQuantity ?? 1);
-  const content = Number(presentation.contentQuantity ?? 1);
-  const factor = inner * content;
-  return Number.isFinite(factor) && factor > 0 ? factor : 1;
-}
-
 export function MovementForm({
   ingredient,
   onSuccess,
@@ -90,9 +88,12 @@ export function MovementForm({
   onSubmittingChange,
   formRef,
 }: Props) {
-  const canCreateInitial = ingredient.canCreateInitialInventory ?? !ingredient.hasMovements;
+  const canCreateInitial =
+    ingredient.canCreateInitialInventory ?? !ingredient.hasMovements;
   const suggestedAction = canCreateInitial ? "INITIAL" : "PURCHASE";
-  const [action, setAction] = useState<MovementAction>(initialAction ?? suggestedAction);
+  const [action, setAction] = useState<MovementAction>(
+    initialAction ?? suggestedAction,
+  );
   const [quantity, setQuantity] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [purchaseQuantity, setPurchaseQuantity] = useState("");
@@ -110,7 +111,12 @@ export function MovementForm({
       units.find((unit) => unit.id === ingredient.stockUnitId) ??
       units.find((unit) => unit.code === ingredient.consumptionUnit) ??
       null,
-    [ingredient.stockUnit, ingredient.stockUnitId, ingredient.consumptionUnit, units],
+    [
+      ingredient.stockUnit,
+      ingredient.stockUnitId,
+      ingredient.consumptionUnit,
+      units,
+    ],
   );
   const stockUnitId = ingredient.stockUnitId ?? stockUnit?.id ?? null;
   const stockUnitCode = stockUnit?.code ?? ingredient.consumptionUnit ?? "";
@@ -135,20 +141,27 @@ export function MovementForm({
     const presentationOptions = (ingredient.purchasePresentations ?? [])
       .filter((presentation) => presentation.isActive)
       .map((presentation) => {
+        const composition = presentationComposition(presentation, stockUnit);
         const unitLabel =
           presentation.purchaseUnitLabel ||
           presentation.purchaseUnit?.symbol ||
           presentation.purchaseUnit?.name ||
           presentation.name;
         return {
-          key: presentation.isLocked ? `unit:${presentation.purchaseUnitId}` : `presentation:${presentation.id}`,
+          key: presentation.isLocked
+            ? `unit:${presentation.purchaseUnitId}`
+            : `presentation:${presentation.id}`,
           label: presentation.name,
           unitLabel,
-          factorToBaseUnit: presentationFactor(presentation),
+          factorToBaseUnit: presentationFactor(presentation) ?? 0,
           purchaseUnitId: presentation.purchaseUnitId,
-          purchasePresentationId: presentation.isLocked ? undefined : presentation.id,
+          purchasePresentationId: presentation.isLocked
+            ? undefined
+            : presentation.id,
           isDefault: presentation.isDefault,
           isLocked: presentation.isLocked,
+          composition: presentation.isLocked ? null : composition.detail,
+          formula: composition.formula,
         };
       });
 
@@ -183,11 +196,14 @@ export function MovementForm({
     action === "PURCHASE_RETURN" ||
     action === "ADJUSTMENT_POSITIVE" ||
     action === "ADJUSTMENT_NEGATIVE";
-  const allowsReferenceId = action === "PURCHASE" || action === "PURCHASE_RETURN";
+  const allowsReferenceId =
+    action === "PURCHASE" || action === "PURCHASE_RETURN";
 
   useEffect(() => {
     const nextAction = initialAction ?? suggestedAction;
-    setAction(nextAction === "INITIAL" && !canCreateInitial ? "PURCHASE" : nextAction);
+    setAction(
+      nextAction === "INITIAL" && !canCreateInitial ? "PURCHASE" : nextAction,
+    );
   }, [initialAction, suggestedAction, canCreateInitial]);
 
   useEffect(() => {
@@ -212,11 +228,12 @@ export function MovementForm({
   }, [purchaseOptions]);
 
   const actions = useMemo(
-    () => ALL_ACTIONS.filter((item) => {
-      if (item.value === "INITIAL" && !canCreateInitial) return false;
-      if (disabledActions?.includes(item.value)) return false;
-      return true;
-    }),
+    () =>
+      ALL_ACTIONS.filter((item) => {
+        if (item.value === "INITIAL" && !canCreateInitial) return false;
+        if (disabledActions?.includes(item.value)) return false;
+        return true;
+      }),
     [canCreateInitial, disabledActions],
   );
 
@@ -224,7 +241,9 @@ export function MovementForm({
     if (!usesUnitModel) {
       return {
         valid: false,
-        lines: ["Este insumo requiere migración al modelo de unidades antes de registrar compras."],
+        lines: [
+          "Este insumo requiere migración al modelo de unidades antes de registrar compras.",
+        ],
         stockQuantityAdded: null,
         baseUnitCost: null,
         purchaseUnitLabel: "",
@@ -258,12 +277,26 @@ export function MovementForm({
       purchaseUnitLabel: selectedPurchaseOption.unitLabel,
       stockUnitLabel: stockLabel,
       lines: [
-        `1 ${selectedPurchaseOption.unitLabel} × ${factor} ${stockLabel} = ${factor} ${stockLabel}`,
-        stockQuantityAdded !== null ? `Ingresan: ${formatMoney(stockQuantityAdded)} ${stockLabel}` : null,
-        baseUnitCost !== null ? `Costo base: $${formatMoney(baseUnitCost)}/${stockLabel}` : null,
+        selectedPurchaseOption.formula ??
+          `1 ${selectedPurchaseOption.unitLabel} = ${formatMoney(factor)} ${stockLabel}`,
+        stockQuantityAdded !== null
+          ? `Ingresan: ${formatMoney(stockQuantityAdded)} ${stockLabel}`
+          : null,
+        purchaseQty > 0 && purchaseCost > 0
+          ? `Valor total: $${formatMoney(purchaseQty * purchaseCost)}`
+          : null,
+        baseUnitCost !== null
+          ? `Costo base: $${formatMoney(baseUnitCost)}/${stockLabel}`
+          : null,
       ].filter((line): line is string => Boolean(line)),
     };
-  }, [usesUnitModel, selectedPurchaseOption, purchaseQuantity, purchaseUnitCost, stockUnit]);
+  }, [
+    usesUnitModel,
+    selectedPurchaseOption,
+    purchaseQuantity,
+    purchaseUnitCost,
+    stockUnit,
+  ]);
 
   const canSubmit = useMemo(() => {
     if (action === "PURCHASE") {
@@ -346,7 +379,8 @@ export function MovementForm({
           purchaseUnitId: selectedPurchaseOption?.purchasePresentationId
             ? undefined
             : selectedPurchaseOption?.purchaseUnitId,
-          purchasePresentationId: selectedPurchaseOption?.purchasePresentationId,
+          purchasePresentationId:
+            selectedPurchaseOption?.purchasePresentationId,
           referenceId: referenceId.trim() || undefined,
           detail: detail.trim() || undefined,
         });
@@ -385,10 +419,13 @@ export function MovementForm({
     } catch (error) {
       console.error(error);
       toast.dismiss(loadingId);
-      toast.error(getErrorMessage(error, "No se pudo registrar el movimiento"), {
-        id: errorId,
-        duration: 4500,
-      });
+      toast.error(
+        getErrorMessage(error, "No se pudo registrar el movimiento"),
+        {
+          id: errorId,
+          duration: 4500,
+        },
+      );
     } finally {
       setSubmitting(false);
     }
@@ -396,260 +433,380 @@ export function MovementForm({
 
   return (
     <>
-    <form
-      ref={formRef}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (canSubmit && !submitting) void submit();
-      }}
-      className={cn("space-y-5", !compact && "rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5")}
-    >
-      {!compact && (
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Movimiento manual</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">{ingredient.name}</p>
+      <form
+        ref={formRef}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit && !submitting) void submit();
+        }}
+        className={cn(
+          "space-y-5",
+          !compact && "rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/5",
+        )}
+      >
+        {!compact && (
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Movimiento manual
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                {ingredient.name}
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+              {stockUnitLabel}
+            </span>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
-            {stockUnitLabel}
-          </span>
-        </div>
-      )}
+        )}
 
-      {canCreateInitial && !compact ? (
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950 shadow-sm">
-          Este insumo no tiene movimientos. La carga inicial aparece como primera acción sugerida.
-        </div>
-      ) : null}
+        {canCreateInitial && !compact ? (
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-950 shadow-sm">
+            Este insumo no tiene movimientos. La carga inicial aparece como
+            primera acción sugerida.
+          </div>
+        ) : null}
 
-      {!compact && (
-        <div className="flex rounded-full bg-slate-100 p-1 ring-1 ring-black/5">
-          {actions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setAction(opt.value)}
-              className={cn(
-                "flex-1 rounded-full py-2 text-xs font-semibold transition active:scale-[0.98]",
-                action === opt.value ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-700",
+        {!compact && (
+          <div className="flex rounded-full bg-slate-100 p-1 ring-1 ring-black/5">
+            {actions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setAction(opt.value)}
+                className={cn(
+                  "flex-1 rounded-full py-2 text-xs font-semibold transition active:scale-[0.98]",
+                  action === opt.value
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          {action === "PURCHASE" ? (
+            <>
+              {/* Purchase unit selector – shows only units convertible to stock unit */}
+              <div className="col-span-2 space-y-2">
+                <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Comprás por
+                </label>
+                <CustomSelect
+                  value={selectedPurchaseOption?.key ?? ""}
+                  onChange={(val) => setPurchaseOptionKey(val)}
+                  placeholder="Seleccionar..."
+                  options={purchaseOptions.map((option) => ({
+                    value: option.key,
+                    label: `${option.label} (${option.unitLabel})`,
+                  }))}
+                />
+                {selectedPurchaseOption?.composition ? (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2 text-[11px] text-[#0B3F64]">
+                    <p className="font-semibold">
+                      Contenido: {selectedPurchaseOption.composition}
+                    </p>
+                    <p className="mt-0.5">
+                      Equivalencia:{" "}
+                      {formatQuantity(selectedPurchaseOption.factorToBaseUnit)}{" "}
+                      {stockUnitLabel} por {selectedPurchaseOption.unitLabel}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="space-y-2 col-span-1">
+                <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Cant. comprada
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    value={purchaseQuantity}
+                    onChange={(e) =>
+                      setPurchaseQuantity(
+                        e.target.value.replace(/[^0-9.,]/g, ""),
+                      )
+                    }
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-blue-600"
+                  />
+                  <span className="absolute right-4 text-xs font-bold text-slate-400">
+                    {purchaseUnitLabel || "-"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2 col-span-1">
+                <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Costo por {purchaseUnitLabel || "unidad"}
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-4 text-xs font-bold text-slate-400">
+                    $
+                  </span>
+                  <input
+                    value={purchaseUnitCost}
+                    onChange={(e) =>
+                      setPurchaseUnitCost(
+                        e.target.value.replace(/[^0-9.,]/g, ""),
+                      )
+                    }
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-white pl-8 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-blue-600"
+                  />
+                </div>
+              </div>
+
+              {preview.valid ? (
+                <div className="col-span-2 rounded-[20px] bg-blue-50/70 border border-blue-200 p-4 shadow-sm space-y-3 transition animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-[#0B3F64]">
+                      <Scale className="h-4 w-4" />
+                    </div>
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-[#0B3F64]">
+                      Conversión a stock
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1 border-t border-blue-200/70">
+                    <div>
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
+                        Cantidad comprada
+                      </p>
+                      <p className="text-base font-bold text-[#121A28]">
+                        {purchaseQuantity || "0"} {purchaseUnitLabel}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
+                        Costo por {purchaseUnitLabel || "unidad"}
+                      </p>
+                      <p className="text-base font-bold text-[#121A28]">
+                        $
+                        {formatMoney(
+                          Number(
+                            normalizeDecimalInput(purchaseUnitCost || "0"),
+                          ),
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
+                        Costo total
+                      </p>
+                      <p className="text-base font-bold text-[#121A28]">
+                        ${formatMoney(purchaseTotal)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
+                        Ingreso a Stock
+                      </p>
+                      <p className="text-base font-bold text-[#121A28]">
+                        +
+                        {preview.stockQuantityAdded !== null
+                          ? formatMoney(preview.stockQuantityAdded)
+                          : "0"}{" "}
+                        {preview.stockUnitLabel}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-semibold text-blue-700/80 uppercase tracking-wide">
+                        Costo Kardex / {preview.stockUnitLabel}
+                      </p>
+                      <p className="text-base font-bold text-[#121A28]">
+                        $
+                        {preview.baseUnitCost !== null
+                          ? formatMoney(preview.baseUnitCost)
+                          : "0"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-white/60 p-2.5 text-[11px] font-semibold text-[#0B3F64] space-y-1">
+                    {preview.lines.map((line, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />
+                        <span>{line}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="col-span-2 rounded-[20px] bg-rose-50 border border-rose-100 p-4 shadow-sm text-xs font-semibold text-rose-800">
+                  {preview.lines.join(". ")}
+                </div>
               )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+            </>
+          ) : (
+            <>
+              <div className="space-y-2 col-span-1">
+                <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Cantidad
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    value={quantity}
+                    onChange={(e) =>
+                      setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))
+                    }
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
+                  />
+                  <span className="absolute right-4 text-xs font-bold text-slate-400">
+                    {stockUnitLabel || formatUnitSymbol(stockUnitCode)}
+                  </span>
+                </div>
+              </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {action === "PURCHASE" ? (
-          <>
-            {/* Purchase unit selector – shows only units convertible to stock unit */}
-            <div className="col-span-2 space-y-2">
-              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Comprás por</label>
-              <CustomSelect
-                value={selectedPurchaseOption?.key ?? ""}
-                onChange={(val) => setPurchaseOptionKey(val)}
-                placeholder="Seleccionar..."
-                options={purchaseOptions.map((option) => ({
-                  value: option.key,
-                  label: `${option.label} (${option.unitLabel})`,
-                }))}
+              <div className="space-y-2 col-span-1">
+                <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  Costo unit.
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-4 text-xs font-bold text-slate-400">
+                    $
+                  </span>
+                  <input
+                    value={unitCost}
+                    onChange={(e) =>
+                      setUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))
+                    }
+                    inputMode="decimal"
+                    placeholder={needsUnitCost ? "0" : "No aplica"}
+                    disabled={!needsUnitCost}
+                    className={cn(
+                      "w-full rounded-2xl border pl-8 pr-4 py-3 text-sm font-semibold outline-none shadow-sm",
+                      needsUnitCost
+                        ? "border-slate-200 bg-white text-slate-800 focus:border-emerald-500"
+                        : "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed",
+                    )}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {allowsReferenceId && (
+          <div className="space-y-2">
+            <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              Nro factura
+            </label>
+            <div className="relative flex items-center">
+              <span className="absolute left-4 text-slate-400">
+                <FileText className="h-4 w-4" />
+              </span>
+              <input
+                value={referenceId}
+                onChange={(e) => setReferenceId(e.target.value)}
+                placeholder="Ej: 0001-000123"
+                className="w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
               />
             </div>
-
-            <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Cant. comprada
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  value={purchaseQuantity}
-                  onChange={(e) => setPurchaseQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
-                />
-                <span className="absolute right-4 text-xs font-bold text-slate-400">
-                  {purchaseUnitLabel || "-"}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Costo por {purchaseUnitLabel || "unidad"}
-              </label>
-              <div className="relative flex items-center">
-                <span className="absolute left-4 text-xs font-bold text-slate-400">$</span>
-                <input
-                  value={purchaseUnitCost}
-                  onChange={(e) => setPurchaseUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="w-full rounded-2xl border border-slate-200 bg-white pl-8 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
-                />
-              </div>
-            </div>
-
-            {preview.valid ? (
-              <div className="col-span-2 rounded-[20px] bg-emerald-50/90 border border-emerald-100 p-4 shadow-sm space-y-3 transition animate-in fade-in duration-200">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-800">
-                    <Scale className="h-4 w-4" />
-                  </div>
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-800">Conversión a stock</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-emerald-200/40">
-                  <div>
-                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Cantidad comprada</p>
-                    <p className="text-base font-bold text-emerald-900">{purchaseQuantity || "0"} {purchaseUnitLabel}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo por {purchaseUnitLabel || "unidad"}</p>
-                    <p className="text-base font-bold text-emerald-900">${formatMoney(Number(normalizeDecimalInput(purchaseUnitCost || "0")))}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo total</p>
-                    <p className="text-base font-bold text-emerald-900">${formatMoney(purchaseTotal)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Ingreso a Stock</p>
-                    <p className="text-base font-bold text-emerald-900">
-                      +{preview.stockQuantityAdded !== null ? formatMoney(preview.stockQuantityAdded) : "0"} {preview.stockUnitLabel}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-semibold text-emerald-600/80 uppercase tracking-wide">Costo Kardex / {preview.stockUnitLabel}</p>
-                    <p className="text-base font-bold text-emerald-900">
-                      ${preview.baseUnitCost !== null ? formatMoney(preview.baseUnitCost) : "0"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-xl bg-white/60 p-2.5 text-[11px] font-semibold text-emerald-950/90 space-y-1">
-                  {preview.lines.map((line, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>{line}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="col-span-2 rounded-[20px] bg-rose-50 border border-rose-100 p-4 shadow-sm text-xs font-semibold text-rose-800">
-                {preview.lines.join(". ")}
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Cantidad
-              </label>
-              <div className="relative flex items-center">
-                <input
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="w-full rounded-2xl border border-slate-200 bg-white pl-4 pr-12 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
-                />
-                <span className="absolute right-4 text-xs font-bold text-slate-400">
-                  {stockUnitLabel || formatUnitSymbol(stockUnitCode)}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2 col-span-1">
-              <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Costo unit.</label>
-              <div className="relative flex items-center">
-                <span className="absolute left-4 text-xs font-bold text-slate-400">$</span>
-                <input
-                  value={unitCost}
-                  onChange={(e) => setUnitCost(e.target.value.replace(/[^0-9.,]/g, ""))}
-                  inputMode="decimal"
-                  placeholder={needsUnitCost ? "0" : "No aplica"}
-                  disabled={!needsUnitCost}
-                  className={cn(
-                    "w-full rounded-2xl border pl-8 pr-4 py-3 text-sm font-semibold outline-none shadow-sm",
-                    needsUnitCost
-                      ? "border-slate-200 bg-white text-slate-800 focus:border-emerald-500"
-                      : "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed",
-                  )}
-                />
-              </div>
-            </div>
-          </>
+          </div>
         )}
-      </div>
 
-      {allowsReferenceId && (
         <div className="space-y-2">
-          <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Nro factura</label>
+          <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+            Detalle {needsDetail ? "(requerido)" : "(opcional)"}
+          </label>
           <div className="relative flex items-center">
             <span className="absolute left-4 text-slate-400">
-              <FileText className="h-4 w-4" />
+              <Hash className="h-4 w-4" />
             </span>
             <input
-              value={referenceId}
-              onChange={(e) => setReferenceId(e.target.value)}
-              placeholder="Ej: 0001-000123"
-              className="w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500"
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+              placeholder="Ej: reposición semanal"
+              className={cn(
+                "w-full rounded-2xl border pl-10 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500",
+                needsDetail && !detail.trim()
+                  ? "border-rose-200"
+                  : "border-slate-200",
+              )}
             />
           </div>
         </div>
-      )}
 
-      <div className="space-y-2">
-        <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-          Detalle {needsDetail ? "(requerido)" : "(opcional)"}
-        </label>
-        <div className="relative flex items-center">
-          <span className="absolute left-4 text-slate-400">
-            <Hash className="h-4 w-4" />
-          </span>
-          <input
-            value={detail}
-            onChange={(e) => setDetail(e.target.value)}
-            placeholder="Ej: reposición semanal"
-            className={cn(
-              "w-full rounded-2xl border pl-10 pr-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-emerald-500",
-              needsDetail && !detail.trim() ? "border-rose-200" : "border-slate-200",
-            )}
-          />
-        </div>
-      </div>
-
-      {!hideSubmitButton && (
-        <button
-          type="submit"
-          disabled={!canSubmit || submitting}
-          className="h-12 w-full rounded-2xl bg-slate-900 text-sm font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+        {!hideSubmitButton && (
+          <button
+            type="submit"
+            disabled={!canSubmit || submitting}
+            className="h-12 w-full rounded-2xl bg-slate-900 text-sm font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-50"
+          >
+            {submitting ? "Enviando..." : "Confirmar movimiento"}
+          </button>
+        )}
+      </form>
+      {showPurchaseWarning && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="purchase-warning-title"
         >
-          {submitting ? "Enviando..." : "Confirmar movimiento"}
-        </button>
-      )}
-    </form>
-    {showPurchaseWarning && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true" aria-labelledby="purchase-warning-title">
-        <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-          <h2 id="purchase-warning-title" className="text-base font-bold text-slate-900">Revisá los datos de la compra</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">El costo ingresado presenta una diferencia importante respecto del costo promedio actual.</p>
-          <div className="mt-4 space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-slate-800">
-            <p><span className="font-semibold">Costo por unidad ingresado:</span> ${formatMoney(preview.baseUnitCost ?? 0)}</p>
-            <p><span className="font-semibold">Costo de referencia:</span> ${formatMoney(purchaseReferenceCost)}</p>
-            <p><span className="font-semibold">Diferencia:</span> {purchaseVariationPercent}%</p>
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-slate-500">Verificá que no hayas ingresado el costo total en lugar del costo por unidad.</p>
-          <div className="mt-5 flex gap-3">
-            <button type="button" onClick={() => setShowPurchaseWarning(false)} disabled={submitting} className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700">Volver y revisar</button>
-            <button type="button" onClick={() => { setShowPurchaseWarning(false); void submit(true); }} disabled={submitting} className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? "Guardando..." : "Confirmar de todos modos"}</button>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h2
+              id="purchase-warning-title"
+              className="text-base font-bold text-slate-900"
+            >
+              Revisá los datos de la compra
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              El costo ingresado presenta una diferencia importante respecto del
+              costo promedio actual.
+            </p>
+            <div className="mt-4 space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-slate-800">
+              <p>
+                <span className="font-semibold">
+                  Costo por unidad ingresado:
+                </span>{" "}
+                ${formatMoney(preview.baseUnitCost ?? 0)}
+              </p>
+              <p>
+                <span className="font-semibold">Costo de referencia:</span> $
+                {formatMoney(purchaseReferenceCost)}
+              </p>
+              <p>
+                <span className="font-semibold">Diferencia:</span>{" "}
+                {purchaseVariationPercent}%
+              </p>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-500">
+              Verificá que no hayas ingresado el costo total en lugar del costo
+              por unidad.
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPurchaseWarning(false)}
+                disabled={submitting}
+                className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700"
+              >
+                Volver y revisar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPurchaseWarning(false);
+                  void submit(true);
+                }}
+                disabled={submitting}
+                className="flex-1 rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {submitting ? "Guardando..." : "Confirmar de todos modos"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
     </>
   );
 }

@@ -6,7 +6,10 @@ import { SalesService } from './sales.service';
 describe('SalesService.findAll', () => {
   const businessId = 'business-1';
 
-  function createService(orders: any[], reservations: any[]) {
+  function createService(
+    orders: any[],
+    reservations: any[],
+  ) {
     const prisma = {
       order: {
         findMany: (jest.fn() as any).mockResolvedValue(orders),
@@ -191,6 +194,31 @@ describe('SalesService.findAll', () => {
       totalWithheld: 400,
       netReceived: 118600,
     });
+  });
+
+  it('returns null fiscal data for a legacy order without an OrderFiscalContext', async () => {
+    const createdAt = new Date('2026-08-09T12:00:00.000Z');
+    const service = createService(
+      [{
+        id: 'legacy-order', customerName: null, customerWhatsapp: null,
+        paymentMethod: 'CASH', total: new Prisma.Decimal(100), status: 'SENT',
+        inventoryPostedAt: null, accountingPostedAt: null, createdAt, origin: 'MANUAL',
+        fiscalContext: null, taxLines: [], taxSnapshot: null, items: [],
+      }],
+      [],
+    );
+
+    const [sale] = await service.findAll(businessId);
+
+    expect(sale.fiscalSummary).toBeNull();
+    expect(sale.fiscalContext).toBeNull();
+    expect(sale.taxLines).toEqual([]);
+  });
+
+  it('returns an empty list when there are no orders or reservations', async () => {
+    const service = createService([], []);
+
+    await expect(service.findAll(businessId)).resolves.toEqual([]);
   });
 });
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import {
   ArrowLeft,
   ArrowRight,
@@ -123,6 +124,7 @@ type PublicOption = {
   removable: boolean;
   sortOrder: number;
   hasStock?: boolean;
+  availabilityStatus?: "AVAILABLE" | "OUT_OF_STOCK" | "UNAVAILABLE";
 };
 
 type PublicOptionGroup = {
@@ -1015,10 +1017,12 @@ export default function PublicStoreClient() {
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-transparent text-slate-700 shadow-none ring-0 relative">
                 {businessLogoUrl ? (
-                  <img
+                  <Image
                     src={businessLogoUrl}
                     alt={`Logo de ${businessName || "Tienda"}`}
-                    className="h-full w-full object-cover rounded-full"
+                    width={40}
+                    height={40}
+                    className="h-full w-full object-contain rounded-full"
                   />
                 ) : (
                   <Store className="h-5 w-5" />
@@ -1437,6 +1441,8 @@ function ProductOptionsCustomizer({
               {group.options.map((option) => {
                 const checked = selectedSet.has(option.id);
                 const isOutOfStock = option.hasStock === false;
+                const isStructurallyUnavailable =
+                  option.availabilityStatus === "UNAVAILABLE";
                 return (
                   <button
                     key={option.id}
@@ -1470,7 +1476,9 @@ function ProductOptionsCustomizer({
                       </span>
                       {isOutOfStock ? (
                         <span className="mt-0.5 block text-[10px] font-bold text-rose-500 uppercase tracking-wider">
-                          Sin stock
+                          {isStructurallyUnavailable
+                            ? "No disponible"
+                            : "Sin stock"}
                         </span>
                       ) : option.priceDelta > 0 ? (
                         <span className="mt-0.5 block text-[11px] font-semibold text-orange-600">

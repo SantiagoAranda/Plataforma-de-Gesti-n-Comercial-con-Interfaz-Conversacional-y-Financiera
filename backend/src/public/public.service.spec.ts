@@ -548,6 +548,25 @@ describe('PublicService', () => {
     expect(result.data[0].optionGroups[0].options[0].hasStock).toBe(true);
   });
 
+  it('excludes an item whose required option group requires review', async () => {
+    const catalogItem = {
+      ...baseItem,
+      images: [],
+      optionGroups: [],
+    };
+    const { service, getItemsSellabilityBulk } = createService([catalogItem]);
+    getItemsSellabilityBulk.mockResolvedValueOnce([
+      {
+        sellable: false,
+        status: 'ITEM_OPTION_REQUIRES_REVIEW',
+      },
+    ]);
+
+    const result = await service.listPublicItems('demo');
+
+    expect(result.data).toEqual([]);
+  });
+
   it('marks an item-target option without stock as unavailable', async () => {
     const catalogItem = {
       ...baseItem,
@@ -621,6 +640,52 @@ describe('PublicService', () => {
     const result = await service.listPublicItems('demo');
 
     expect(result.data[0].optionGroups[0].options[0].hasStock).toBe(false);
+    expect(result.data[0].optionGroups[0].options[0].availabilityStatus).toBe(
+      'OUT_OF_STOCK',
+    );
+  });
+
+  it('distinguishes a non-operational option from a stock shortage', async () => {
+    const catalogItem = {
+      ...baseItem,
+      images: [],
+      recipes: [],
+      optionGroups: [
+        {
+          id: 'group-1',
+          isActive: true,
+          title: 'Extras',
+          quantityMode: 'FIXED_PER_OPTION',
+          options: [
+            {
+              id: 'option-1',
+              isActive: true,
+              groupId: 'group-1',
+              name: 'Pineapple',
+              targetType: 'INGREDIENT',
+              ingredientId: 'ingredient-pineapple',
+              ingredient: {
+                id: 'ingredient-pineapple',
+                name: 'Pineapple',
+                status: 'INACTIVE',
+                deletedAt: null,
+                currentStock: new Prisma.Decimal(10),
+              },
+              quantity: new Prisma.Decimal(1),
+              priceDelta: new Prisma.Decimal(0),
+            },
+          ],
+        },
+      ],
+    };
+    const { service } = createService([catalogItem]);
+
+    const result = await service.listPublicItems('demo');
+
+    expect(result.data[0].optionGroups[0].options[0]).toMatchObject({
+      hasStock: false,
+      availabilityStatus: 'UNAVAILABLE',
+    });
   });
 
   it('does not expose inactive option groups or options', async () => {

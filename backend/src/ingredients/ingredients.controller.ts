@@ -38,9 +38,25 @@ export class IngredientsController {
     return this.ingredientsService.findOne(req.user.businessId, id);
   }
 
+  @Get(':id/deactivation-impact')
+  getDeactivationImpact(@Req() req: any, @Param('id') id: string) {
+    return this.ingredientsService.getDeactivationImpact(
+      req.user.businessId,
+      id,
+    );
+  }
+
+  @Get(':id/deletion-impact')
+  getDeletionImpact(@Req() req: any, @Param('id') id: string) {
+    return this.ingredientsService.getDeletionImpact(req.user.businessId, id);
+  }
+
   @Get(':id/purchase-presentations')
   listPresentations(@Req() req: any, @Param('id') id: string) {
-    return this.ingredientsService.listPurchasePresentations(req.user.businessId, id);
+    return this.ingredientsService.listPurchasePresentations(
+      req.user.businessId,
+      id,
+    );
   }
 
   @Post(':id/purchase-presentations')
@@ -49,7 +65,11 @@ export class IngredientsController {
     @Param('id') id: string,
     @Body() dto: UpsertPurchasePresentationDto,
   ) {
-    return this.ingredientsService.createPurchasePresentation(req.user.businessId, id, dto);
+    return this.ingredientsService.createPurchasePresentation(
+      req.user.businessId,
+      id,
+      dto,
+    );
   }
 
   @Patch(':id/purchase-presentations/:presentationId')
@@ -59,7 +79,12 @@ export class IngredientsController {
     @Param('presentationId') presentationId: string,
     @Body() dto: UpsertPurchasePresentationDto,
   ) {
-    return this.ingredientsService.updatePurchasePresentation(req.user.businessId, id, presentationId, dto);
+    return this.ingredientsService.updatePurchasePresentation(
+      req.user.businessId,
+      id,
+      presentationId,
+      dto,
+    );
   }
 
   @Delete(':id/purchase-presentations/:presentationId')
@@ -68,7 +93,11 @@ export class IngredientsController {
     @Param('id') id: string,
     @Param('presentationId') presentationId: string,
   ) {
-    return this.ingredientsService.deactivatePurchasePresentation(req.user.businessId, id, presentationId);
+    return this.ingredientsService.deactivatePurchasePresentation(
+      req.user.businessId,
+      id,
+      presentationId,
+    );
   }
 
   @Patch(':id')
@@ -88,5 +117,18 @@ export class IngredientsController {
   @Patch(':id/reactivate')
   reactivate(@Req() req: any, @Param('id') id: string) {
     return this.ingredientsService.reactivate(req.user.businessId, id);
+  }
+
+  @Delete(':id')
+  remove(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('residualInventoryAction') residualInventoryAction?: string,
+  ) {
+    return this.ingredientsService.remove(
+      req.user.businessId,
+      id,
+      residualInventoryAction,
+    );
   }
 }

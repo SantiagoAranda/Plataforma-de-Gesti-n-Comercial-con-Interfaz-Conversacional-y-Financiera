@@ -1,3 +1,4 @@
+
 import {
   BadRequestException,
   ConflictException,
@@ -99,6 +100,29 @@ export class SalesService {
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) { }
+
+  private async runSerializableTransaction<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          timeout: 20000,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        const retryable =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          (error.code === 'P2034' ||
+            (error.code === 'P2010' &&
+              String((error.meta as { code?: unknown } | undefined)?.code) ===
+                '40001'));
+        if (!retryable || attempt === maxAttempts) throw error;
+      }
+    }
+    throw new ConflictException('Could not serialize sale confirmation');
+  }
 
   private async assertSimpleRegimeAvailableForNewSale(
     businessId: string,
@@ -336,6 +360,7 @@ export class SalesService {
     if (order.inventoryPostedAt) {
       throw new ConflictException('Order inventory has already been posted');
     }
+
     if (order.accountingPostedAt) {
       throw new ConflictException('Order accounting has already been posted');
     }
@@ -736,6 +761,7 @@ export class SalesService {
       const endMinute = startMinute + duration;
 
       await this.assertReservationSlotAvailable(
+
         businessId,
         item.id,
         dateOnly,
@@ -894,7 +920,6 @@ export class SalesService {
         },
       }),
     ]);
-
     const conversions = await this.prisma.unitConversion.findMany();
     const orderIds = new Set(orders.map((order) => order.id));
     const mirrorReservations = await this.findMirrorReservationsForOrders(
@@ -1135,6 +1160,7 @@ export class SalesService {
         date: dateOnly,
         startMinute,
         endMinute,
+
         status: 'PENDING' as const,
         origin: 'MANUAL' as const,
       },
@@ -1187,7 +1213,7 @@ export class SalesService {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.runSerializableTransaction(async (tx) => {
       // ... (KEEP EXISTING Order logic but use id instead of orderId)
       const order = await tx.order.findFirst({
         where: { id, businessId },
@@ -1343,9 +1369,6 @@ export class SalesService {
         inventoryMovements,
         movements,
       };
-    }, {
-      timeout: 20000, // P2028 fix: accounting + inventory posting needs extra time
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     });
   }
 
@@ -1534,6 +1557,7 @@ export class SalesService {
           availableDates.push(this.formatDateOnly(cursor));
         }
       }
+
 
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
@@ -1935,6 +1959,7 @@ export class SalesService {
   }
 
   async reverseConfirmedOrder(businessId: string, id: string, dto: ReverseOrderDto) {
+
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findFirst({
         where: { id, businessId },
