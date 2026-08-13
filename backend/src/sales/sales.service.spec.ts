@@ -513,13 +513,17 @@ describe('SalesService personalized order lines', () => {
         requirements: [],
       }),
     } as any;
+    const taxService = {
+      calculateTaxPreview: (jest.fn() as any).mockResolvedValue({ taxLines: [] }),
+      freezeTaxCalculation: (jest.fn() as any).mockResolvedValue(null),
+    } as any;
     return {
       service: new SalesService(
         prisma,
         {} as any,
         inventoryService,
         itemOptionsService,
-        {} as any,
+        taxService,
       ),
       prisma,
       tx,

@@ -379,7 +379,7 @@ export class TaxService {
         const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
         let icaRateObj = null;
         if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -389,7 +389,7 @@ export class TaxService {
           });
         }
         if (!icaRateObj && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -419,7 +419,7 @@ export class TaxService {
       if (reteIcaRateOverridePerThousand === undefined || reteIcaRateOverridePerThousand === null) {
         const sellerCiiuCode = sellerProfile.mainCiiuCode?.trim();
         if (sellerCiiuCode && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -429,7 +429,7 @@ export class TaxService {
           });
         }
         if (!icaRateObj && dto.fiscalMunicipalityCode) {
-          icaRateObj = await this.prisma.municipalityIcaRate.findFirst({
+          icaRateObj = await db.municipalityIcaRate.findFirst({
             where: {
               businessId,
               municipalityCode: dto.fiscalMunicipalityCode,
@@ -557,6 +557,7 @@ export class TaxService {
     orderId: string,
     preview: any,
     buyerData: any,
+    onStage?: (stage: 'fiscal-context' | 'tax-lines' | 'snapshot', durationMs: number) => void,
   ) {
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -608,6 +609,7 @@ export class TaxService {
       .add(new Prisma.Decimal(preview.reteIvaTotal))
       .add(new Prisma.Decimal(preview.reteIcaTotal));
 
+    const fiscalContextStartedAt = Date.now();
     await tx.orderFiscalContext.upsert({
       where: { orderId },
       update: {
@@ -674,7 +676,9 @@ export class TaxService {
         uvtValue: preview.uvtValue,
       },
     });
+    onStage?.('fiscal-context', Date.now() - fiscalContextStartedAt);
 
+    const taxLinesStartedAt = Date.now();
     await tx.saleTaxLine.deleteMany({
       where: { orderId },
     });
@@ -694,7 +698,9 @@ export class TaxService {
         })),
       });
     }
+    onStage?.('tax-lines', Date.now() - taxLinesStartedAt);
 
+    const snapshotStartedAt = Date.now();
     await tx.taxCalculationSnapshot.upsert({
       where: { orderId },
       update: {
@@ -753,6 +759,7 @@ export class TaxService {
         },
       },
     });
+    onStage?.('snapshot', Date.now() - snapshotStartedAt);
 
     return tx.orderFiscalContext.findUnique({
       where: { orderId },
