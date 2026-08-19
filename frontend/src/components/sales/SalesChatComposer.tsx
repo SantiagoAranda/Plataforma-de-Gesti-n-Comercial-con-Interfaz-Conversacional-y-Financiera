@@ -342,11 +342,9 @@ export default function SalesChatComposer({
   const buyerFiscalContext = useMemo<BuyerFiscalContext>(
     () => ({
       ...buildBuyerFiscalContext(fiscalForm, taxSettingsEnabled),
-      buyerIsRegimenSimple: simpleRegimeSalesEnabled
-        ? Boolean(fiscalForm.buyerIsRegimenSimple)
-        : false,
+      buyerIsRegimenSimple: Boolean(fiscalForm.buyerIsRegimenSimple),
     }),
-    [fiscalForm, taxSettingsEnabled, simpleRegimeSalesEnabled],
+    [fiscalForm, taxSettingsEnabled],
   );
 
   const updateFiscalForm = (updater: (prev: SaleFiscalFormState) => SaleFiscalFormState) => {

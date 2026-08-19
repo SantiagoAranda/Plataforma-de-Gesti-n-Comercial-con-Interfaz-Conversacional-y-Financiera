@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsArray, ValidateNested, IsBoolean, IsNumber, Min, IsEmail } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsArray, ValidateNested, IsBoolean, IsDefined, IsNumber, Min, IsEmail } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PersonType, DocumentType, SaleConcept } from '@prisma/client';
 
@@ -48,6 +48,7 @@ export class TaxPreviewDto {
   @IsBoolean()
   buyerIsAutorretenedor!: boolean;
 
+  @IsDefined()
   @IsBoolean()
   buyerIsRegimenSimple!: boolean;
 

@@ -366,9 +366,7 @@ export default function SaleTaxPanel({
           buyerIsRetenedor: context.buyerIsRetenedor,
           buyerIsGranContribuyente: context.buyerIsGranContribuyente,
           buyerIsAutorretenedor: context.buyerIsAutorretenedor,
-          buyerIsRegimenSimple: simpleRegimeSalesEnabled
-            ? context.buyerIsRegimenSimple
-            : false,
+          buyerIsRegimenSimple: context.buyerIsRegimenSimple,
           buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
           reteIcaRateOverride: context.reteIcaRateOverride,
@@ -386,7 +384,7 @@ export default function SaleTaxPanel({
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [context, items, readonly, simpleRegimeSalesEnabled]);
+  }, [context, items, readonly]);
 
   const chargedTotal = preview
     ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)

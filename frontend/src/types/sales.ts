@@ -19,7 +19,11 @@ export type SaleFiscalContext = {
   buyerIsRetenedor?: boolean | null;
   buyerIsGranContribuyente?: boolean | null;
   buyerIsAutorretenedor?: boolean | null;
-  buyerIsRegimenSimple?: boolean | null;
+  /**
+   * Operational sales contract. Legacy API responses are normalized to false
+   * when they are mapped into this state.
+   */
+  buyerIsRegimenSimple: boolean;
   buyerRequiresElectronicInvoice?: boolean | null;
   withholdingSubjectIsDeclarante?: boolean | null;
   fiscalMunicipalityCode?: string | null;

@@ -584,9 +584,7 @@ function VentaPageContent() {
       const buyerFiscalContext = sale.fiscalContext
         ? {
           ...sale.fiscalContext,
-          buyerIsRegimenSimple: simpleRegimeSalesEnabled
-            ? Boolean(sale.fiscalContext.buyerIsRegimenSimple)
-            : false,
+          buyerIsRegimenSimple: Boolean(sale.fiscalContext.buyerIsRegimenSimple),
         }
         : undefined;
 
@@ -619,7 +617,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, simpleRegimeSalesEnabled, taxSettingsEnabled]);
+  }, [loadOrders, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {

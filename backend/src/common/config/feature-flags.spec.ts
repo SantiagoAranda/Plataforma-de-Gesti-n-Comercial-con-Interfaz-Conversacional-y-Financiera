@@ -36,4 +36,18 @@ describe('FeatureFlagsService', () => {
     const defaultService = new FeatureFlagsService({ get: () => undefined } as any);
     expect(defaultService.simpleRegimeEnabled).toBe(false);
   });
+
+  it('supports sales while keeping the bimonthly tax module disabled', () => {
+    const service = new FeatureFlagsService({
+      get: (key: string) =>
+        key === 'SIMPLE_REGIME_SALES_ENABLED'
+          ? 'true'
+          : key === 'SIMPLE_REGIME_TAX_MODULE_ENABLED'
+            ? 'false'
+            : undefined,
+    } as any);
+
+    expect(service.simpleRegimeSalesEnabled).toBe(true);
+    expect(service.simpleRegimeTaxModuleEnabled).toBe(false);
+  });
 });

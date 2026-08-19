@@ -671,4 +671,44 @@ describe('TaxService', () => {
     expect(autoRetencion?.rate.toString()).toBe('0.025');
     expect(autoRetencion?.taxAmount.toNumber()).toBe(25000);
   });
+
+  it.each([
+    ['normal seller / normal buyer', ['48'], false, 25000, 10000, 28500, 0, 1126500],
+    ['RST seller / normal buyer', ['47', '48'], false, 0, 0, 28500, 0, 1161500],
+    ['normal seller / RST buyer', ['48'], true, 0, 0, 28500, 0, 1161500],
+    ['RST seller / RST buyer', ['47', '48'], true, 0, 0, 28500, 0, 1161500],
+  ])(
+    'preserves the fiscal matrix for %s',
+    async (
+      _caseName,
+      sellerCodes,
+      buyerIsRegimenSimple,
+      reteFuente,
+      reteIca,
+      reteIva,
+      autoRetencion,
+      netReceived,
+    ) => {
+      mockSeller(sellerCodes);
+      mockItems([{ price: 1000000 }]);
+
+      const result = await service.calculateTaxPreview(
+        businessId,
+        baseDto({
+          buyerIsGranContribuyente: true,
+          buyerIsRegimenSimple,
+          fiscalMunicipalityCode: '11001',
+          reteIcaRateOverride: 10,
+        }),
+      );
+
+      expect(result.vatTotal.toNumber()).toBe(190000);
+      expect(result.impoconsumoTotal.toNumber()).toBe(0);
+      expect(result.reteFuenteTotal.toNumber()).toBe(reteFuente);
+      expect(result.reteIcaTotal.toNumber()).toBe(reteIca);
+      expect(result.reteIvaTotal.toNumber()).toBe(reteIva);
+      expect(result.autoRetencionTotal.toNumber()).toBe(autoRetencion);
+      expect(result.netReceived.toNumber()).toBe(netReceived);
+    },
+  );
 });
