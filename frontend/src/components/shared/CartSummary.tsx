@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { type ReactNode } from "react";
 import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
 import PhoneSelector from "./PhoneSelector";
 import toast from "react-hot-toast";
@@ -24,12 +24,18 @@ type Props = {
   onRemove?: (id: string) => void;
   customerName: string;
   onCustomerNameChange: (val: string) => void;
+  documentNumber: string;
+  onDocumentNumberChange: (val: string) => void;
+  buyerEmail: string;
+  onBuyerEmailChange: (val: string) => void;
   countryCode: string;
   onCountryCodeChange: (val: string) => void;
   phoneNumber: string;
   onPhoneNumberChange: (val: string) => void;
   onConfirm: (documentVal?: string) => void;
   onClose: () => void;
+  taxPreviewContent?: ReactNode;
+  fiscalContent?: ReactNode;
 };
 
 export default function CartSummary({
@@ -40,14 +46,19 @@ export default function CartSummary({
   onRemove,
   customerName,
   onCustomerNameChange,
+  documentNumber,
+  onDocumentNumberChange,
+  buyerEmail,
+  onBuyerEmailChange,
   countryCode,
   onCountryCodeChange,
   phoneNumber,
   onPhoneNumberChange,
   onConfirm,
   onClose,
+  taxPreviewContent,
+  fiscalContent,
 }: Props) {
-  const [document, setDocument] = useState("");
   const total = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
 
   const formatPrice = (value: number) => {
@@ -77,12 +88,11 @@ export default function CartSummary({
       return;
     }
 
-    // Pasa la cédula opcional al confirmar
-    onConfirm(document);
+    onConfirm(documentNumber);
   };
 
   return (
-    <div className="relative bg-white rounded-3xl shadow-2xl border border-neutral-100/50 overflow-hidden w-full max-w-md">
+    <div className="relative flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-neutral-100/50 bg-white shadow-2xl sm:max-h-[92dvh]">
       {/* Close Button */}
       <button
         type="button"
@@ -94,7 +104,7 @@ export default function CartSummary({
       </button>
 
       {/* Header Banner - Fondo Blanco e Iconografía Lineal Verde */}
-      <div className="px-6 pt-6 pb-4 border-b border-neutral-100 flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-neutral-100 px-5 pb-4 pt-5 sm:px-6 sm:pt-6">
         <ShoppingBag className="h-5 w-5 text-emerald-500" />
         <div>
           <h2 className="text-[17px] font-semibold text-neutral-800 leading-tight">Resumen de Pedido</h2>
@@ -103,9 +113,9 @@ export default function CartSummary({
       </div>
 
       {/* Content Area */}
-      <div className="p-6 space-y-6">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
         {/* Products List */}
-        <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+        <div className="space-y-3">
           {items.map((item) => (
             <div
               key={item.cartKey ?? item.id}
@@ -173,8 +183,10 @@ export default function CartSummary({
         </div>
 
         {/* Contact Form */}
-        <div className="space-y-3 pt-4 border-t border-neutral-100">
+        <div className="space-y-3 border-t border-neutral-100 pt-4">
+          <label htmlFor="public-order-customer-name" className="sr-only">Nombre completo</label>
           <input
+            id="public-order-customer-name"
             type="text"
             placeholder="Nombre completo"
             value={customerName}
@@ -182,12 +194,24 @@ export default function CartSummary({
             className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
           />
 
+          <label htmlFor="public-order-document" className="sr-only">Cédula o NIT opcional</label>
           <input
+            id="public-order-document"
             type="text"
             placeholder="Cédula / NIT (Opcional)"
-            value={document}
-            onChange={(e) => setDocument(e.target.value)}
+            value={documentNumber}
+            onChange={(e) => onDocumentNumberChange(e.target.value)}
             className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+          />
+
+          <label htmlFor="public-order-email" className="sr-only">Correo opcional</label>
+          <input
+            id="public-order-email"
+            type="email"
+            placeholder="Correo (Opcional)"
+            value={buyerEmail}
+            onChange={(e) => onBuyerEmailChange(e.target.value)}
+            className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
           />
 
           <PhoneSelector
@@ -203,18 +227,22 @@ export default function CartSummary({
           </p>
         </div>
 
-        {/* Total Final */}
-        <div className="flex items-center justify-between pt-4 border-t border-neutral-100">
+        {taxPreviewContent}
+        {fiscalContent}
+
+      </div>
+
+      <div className="shrink-0 border-t border-neutral-100 bg-white px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
+        <div className="flex items-center justify-between">
           <span className="text-base font-medium text-neutral-800">Total a pagar</span>
           <span className="text-2xl font-semibold text-neutral-900">${formatPrice(total)}</span>
         </div>
 
-        {/* Action Button - Verde corporativo y estilo integrado */}
         <button
           type="button"
           onClick={handleConfirm}
           disabled={items.length === 0}
-          className={`w-full h-12 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium text-sm shadow-md transition flex items-center justify-center gap-2 mt-4 ${!isFormValid ? "opacity-50 cursor-not-allowed" : ""
+          className={`mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-medium text-white shadow-md transition hover:bg-emerald-600 ${!isFormValid ? "cursor-not-allowed opacity-50" : ""
             }`}
         >
           <ShoppingBag size={16} />
