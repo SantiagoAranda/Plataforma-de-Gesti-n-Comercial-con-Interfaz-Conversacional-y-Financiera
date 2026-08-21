@@ -252,8 +252,8 @@ export default function ManualPaidOutflowSheet({
             onClick={closeSheet}
           />
 
-          <section className="absolute inset-x-0 bottom-0 max-h-[94vh] overflow-hidden rounded-t-[28px] bg-white shadow-[0_-18px_40px_rgba(0,0,0,0.18)] lg:left-1/2 lg:right-auto lg:top-1/2 lg:bottom-auto lg:w-[480px] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px]">
-            <div className="flex items-start justify-between border-b border-neutral-100 px-5 py-4">
+          <section className="absolute inset-x-0 bottom-0 flex max-h-[94vh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_-18px_40px_rgba(0,0,0,0.18)] lg:left-1/2 lg:right-auto lg:top-1/2 lg:bottom-auto lg:w-[480px] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px]">
+            <div className="flex shrink-0 items-start justify-between border-b border-neutral-100 px-5 py-4">
               <div>
                 <h2 className="text-base font-semibold text-neutral-950">
                   Registrar gasto
@@ -271,7 +271,7 @@ export default function ManualPaidOutflowSheet({
               </button>
             </div>
 
-            <div className="max-h-[calc(94vh-142px)] space-y-4 overflow-y-auto px-5 py-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
               {success && (
                 <div className="flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -490,9 +490,9 @@ export default function ManualPaidOutflowSheet({
             </div>
 
             <div
-              className="flex gap-3 border-t border-neutral-100 bg-white px-5 pt-4"
+              className="flex shrink-0 gap-3 border-t border-neutral-100 bg-white px-5 pt-4"
               style={{
-                paddingBottom: "calc(env(safe-area-inset-bottom) + 24px)",
+                paddingBottom: "calc(2.5rem + env(safe-area-inset-bottom))",
               }}
             >
               <button

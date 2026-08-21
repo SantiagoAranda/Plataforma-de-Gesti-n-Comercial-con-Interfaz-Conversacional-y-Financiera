@@ -9,6 +9,9 @@ import {
   WalletCards,
 } from "lucide-react";
 import type { AccountingMovement } from "@/src/services/accounting";
+import {
+  getAccountingMovementDisplayName,
+} from "@/src/lib/accountingMovementDisplay";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
 
 type MovementKind =
@@ -241,6 +244,7 @@ export function AccountingMovementCard({
   const amount = Number(movement.amount);
   const iconStyle = getIconStyles(kind);
   const detailText = getReadableDetail(movement.detail, movement.originType);
+  const displayName = getAccountingMovementDisplayName(movement);
 
   return (
     <div
@@ -284,7 +288,7 @@ export function AccountingMovementCard({
           </div>
 
           <div className="text-sm font-semibold text-neutral-900 leading-snug">
-            {movement.pucName}
+            {displayName}
           </div>
           {detailText ? (
             <div className="text-xs text-neutral-500 leading-normal">

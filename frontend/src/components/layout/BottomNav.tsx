@@ -21,7 +21,7 @@ export default function BottomNav({ active }: BottomNavProps) {
   const inactiveItem = "text-neutral-400";
 
   return (
-    <nav
+    <div
       className={cn(
         "lg:hidden",
         `
@@ -34,37 +34,35 @@ export default function BottomNav({ active }: BottomNavProps) {
       }}
     >
       <div className="mx-auto max-w-md px-4 pb-3 pointer-events-auto">
-        <div
-          className="
-            flex justify-between
-            px-3 py-3
-            bg-white/90 backdrop-blur
-            rounded-2xl
-            shadow-[0_8px_24px_rgba(0,0,0,0.12)]
-            border border-neutral-200
-          "
-        >
-          {BOTTOM_NAV_ITEMS.map(({ key, href, label, Icon }) => (
-            <div
-              key={key}
-              className={cn(baseItem, active === key ? activeItem : inactiveItem)}
-              onClick={() => router.push(href)}
-            >
-              <Icon className="h-5 w-5" />
-              <span>{label}</span>
-            </div>
-          ))}
+        <div className="flex items-stretch gap-3">
+          <nav
+            aria-label="Navegación principal"
+            className="flex min-w-0 flex-1 justify-between rounded-2xl border border-neutral-200 bg-white/90 px-3 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.12)] backdrop-blur"
+          >
+            {BOTTOM_NAV_ITEMS.map(({ key, href, label, Icon }) => (
+              <div
+                key={key}
+                className={cn(
+                  baseItem,
+                  active === key ? activeItem : inactiveItem,
+                )}
+                onClick={() => router.push(href)}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{label}</span>
+              </div>
+            ))}
+          </nav>
           <button
             type="button"
             aria-label="Registrar gasto"
             onClick={openManualPaidOutflow}
-            className={cn(baseItem, "text-[#0B3F64]")}
+            className="flex w-[60px] shrink-0 items-center justify-center rounded-2xl border border-[#CEE0EC] bg-[#EAF2F8] text-[#0B3F64] shadow-[0_8px_24px_rgba(11,63,100,0.14)] transition active:scale-[0.98]"
           >
-            <ReceiptText className="h-5 w-5" />
-            <span>Registrar gasto</span>
+            <ReceiptText className="h-6 w-6" />
           </button>
         </div>
       </div>
-    </nav>
+    </div>
   );
 }
