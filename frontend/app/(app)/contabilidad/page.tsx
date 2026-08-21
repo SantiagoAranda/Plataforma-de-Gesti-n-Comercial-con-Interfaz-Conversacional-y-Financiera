@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
 import Link from "next/link";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
@@ -15,7 +22,10 @@ import {
   type UpdateAccountingMovementDto,
 } from "@/src/services/accounting";
 
-import { AccountingChatComposer, type SearchFilters } from "@/src/components/accounting/AccountingChatComposer";
+import {
+  AccountingChatComposer,
+  type SearchFilters,
+} from "@/src/components/accounting/AccountingChatComposer";
 import { AccountingMovementList } from "@/src/components/accounting/AccountingMovementList";
 import { AccountingEmptyState } from "@/src/components/accounting/AccountingEmptyState";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
@@ -119,7 +129,7 @@ function formatCurrency(value: number) {
 }
 
 function movementTimestamp(movement: AccountingMovement) {
-  return new Date(movement.createdAt ?? movement.date).getTime();
+  return new Date(movement.date).getTime();
 }
 
 function normalizeSearchText(value?: string | null) {
@@ -300,26 +310,29 @@ export default function ContabilidadPage() {
     };
   }, []);
 
-  const handleFormChange = useCallback((updater: SetStateAction<AccountingFormState>) => {
-    setForm((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
+  const handleFormChange = useCallback(
+    (updater: SetStateAction<AccountingFormState>) => {
+      setForm((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
 
-      setFormErrors((current) => ({
-        puc:
-          next.selectedPuc || next.pucCuentaCode || next.pucSubcuentaId
-            ? undefined
-            : current.puc,
-        date: next.date?.trim() ? undefined : current.date,
-        amount:
-          Number.isFinite(Number(next.amount)) && Number(next.amount) > 0
-            ? undefined
-            : current.amount,
-        nature: next.nature ? undefined : current.nature,
-      }));
+        setFormErrors((current) => ({
+          puc:
+            next.selectedPuc || next.pucCuentaCode || next.pucSubcuentaId
+              ? undefined
+              : current.puc,
+          date: next.date?.trim() ? undefined : current.date,
+          amount:
+            Number.isFinite(Number(next.amount)) && Number(next.amount) > 0
+              ? undefined
+              : current.amount,
+          nature: next.nature ? undefined : current.nature,
+        }));
 
-      return next;
-    });
-  }, []);
+        return next;
+      });
+    },
+    [],
+  );
 
   const clearSelection = useCallback(() => {
     setSelectedMovement(null);
@@ -371,11 +384,11 @@ export default function ContabilidadPage() {
         setError(
           Array.isArray(err?.message)
             ? err.message.join(", ")
-            : err?.message || "No se pudo eliminar el movimiento"
+            : err?.message || "No se pudo eliminar el movimiento",
         );
       }
     },
-    [refresh]
+    [refresh],
   );
 
   const handleComposerSubmit = useCallback(async () => {
@@ -414,7 +427,6 @@ export default function ContabilidadPage() {
               };
 
         await updateMovement(form.id, payload);
-
       } else {
         const payload = {
           ...pucPayload,
@@ -441,19 +453,23 @@ export default function ContabilidadPage() {
       setError(
         Array.isArray(err?.message)
           ? err.message.join(", ")
-          : err?.message || "No se pudo guardar el movimiento"
+          : err?.message || "No se pudo guardar el movimiento",
       );
     }
   }, [composerOpen, form, refresh, resetForm, validateForm]);
 
-
   const displayMovements = useMemo(() => {
     const query = normalizeSearchText(searchFilters.query?.trim());
     const amountQuery =
-      searchFilters.mode === "AMOUNT" ? parseAmountQuery(searchFilters.query) : null;
+      searchFilters.mode === "AMOUNT"
+        ? parseAmountQuery(searchFilters.query)
+        : null;
 
     return movements.filter((movement) => {
-      if (searchFilters.nature !== "ALL" && movement.nature !== searchFilters.nature) {
+      if (
+        searchFilters.nature !== "ALL" &&
+        movement.nature !== searchFilters.nature
+      ) {
         return false;
       }
 
@@ -473,7 +489,9 @@ export default function ContabilidadPage() {
           const amountAsText = String(amount);
           const queryAsText = String(amountQuery.amount);
 
-          return amount === amountQuery.amount || amountAsText.includes(queryAsText);
+          return (
+            amount === amountQuery.amount || amountAsText.includes(queryAsText)
+          );
         }
 
         return amount >= amountQuery.min && amount <= amountQuery.max;
@@ -534,16 +552,20 @@ export default function ContabilidadPage() {
 
   const isEmpty = useMemo(
     () => !loading && displayMovements.length === 0,
-    [loading, displayMovements.length]
+    [loading, displayMovements.length],
   );
 
   const balanceSummary = useMemo(() => {
     const totalDebit = movements.reduce((acc, movement) => {
-      return movement.nature === "DEBIT" ? acc + Number(movement.amount || 0) : acc;
+      return movement.nature === "DEBIT"
+        ? acc + Number(movement.amount || 0)
+        : acc;
     }, 0);
 
     const totalCredit = movements.reduce((acc, movement) => {
-      return movement.nature === "CREDIT" ? acc + Number(movement.amount || 0) : acc;
+      return movement.nature === "CREDIT"
+        ? acc + Number(movement.amount || 0)
+        : acc;
     }, 0);
 
     const difference = totalDebit - totalCredit;
@@ -590,10 +612,7 @@ export default function ContabilidadPage() {
             deleteLabel="Eliminar"
           />
         ) : (
-          <AppHeader
-            title="Contabilidad"
-            showBack
-          />
+          <AppHeader title="Contabilidad" showBack />
         )}
       </div>
 
@@ -658,40 +677,41 @@ export default function ContabilidadPage() {
       <main className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col px-3 pt-1 sm:px-4">
           <div className="min-h-0 flex-1 overflow-y-auto pb-32">
-          {error && (
-            <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className="mb-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
 
-          {loading && (
-            <div className="text-sm text-neutral-500">
-              Cargando movimientos...
-            </div>
-          )}
+            {loading && (
+              <div className="text-sm text-neutral-500">
+                Cargando movimientos...
+              </div>
+            )}
 
-          {isEditing && isSalesOriginEditing && (
-            <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Este movimiento proviene de una venta. Solo podes editar PUC y descripcion.
-            </div>
-          )}
+            {isEditing && isSalesOriginEditing && (
+              <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Este movimiento proviene de una venta. Solo podes editar PUC y
+                descripcion.
+              </div>
+            )}
 
-          {isEmpty ? (
-            <AccountingEmptyState
-              onCreate={() => {
-                setComposerOpen(true);
-                resetForm();
-                setError(null);
-              }}
-            />
-          ) : (
-            <AccountingMovementList
-              movements={displayMovements}
-              selectedId={selectedMovement?.id ?? null}
-              onSelect={handleSelectMovement}
-            />
-          )}
-          <div ref={bottomRef} className="h-px" />
+            {isEmpty ? (
+              <AccountingEmptyState
+                onCreate={() => {
+                  setComposerOpen(true);
+                  resetForm();
+                  setError(null);
+                }}
+              />
+            ) : (
+              <AccountingMovementList
+                movements={displayMovements}
+                selectedId={selectedMovement?.id ?? null}
+                onSelect={handleSelectMovement}
+              />
+            )}
+            <div ref={bottomRef} className="h-px" />
           </div>
         </div>
       </main>
