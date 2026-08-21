@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { ReceiptText } from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 import { BOTTOM_NAV_ITEMS, type BottomNavKey } from "./navItems";
+import { useManualPaidOutflow } from "./ManualPaidOutflowProvider";
 
 type BottomNavProps = {
   active: BottomNavKey;
@@ -11,9 +13,10 @@ type BottomNavProps = {
 
 export default function BottomNav({ active }: BottomNavProps) {
   const router = useRouter();
+  const { openManualPaidOutflow } = useManualPaidOutflow();
 
   const baseItem =
-    "flex flex-col items-center text-xs cursor-pointer transition-colors select-none";
+    "flex min-w-0 flex-1 flex-col items-center text-center text-[11px] leading-tight cursor-pointer transition-colors select-none";
   const activeItem = "text-[#0B3F64] font-medium";
   const inactiveItem = "text-neutral-400";
 
@@ -34,7 +37,7 @@ export default function BottomNav({ active }: BottomNavProps) {
         <div
           className="
             flex justify-between
-            px-6 py-3
+            px-3 py-3
             bg-white/90 backdrop-blur
             rounded-2xl
             shadow-[0_8px_24px_rgba(0,0,0,0.12)]
@@ -51,6 +54,15 @@ export default function BottomNav({ active }: BottomNavProps) {
               <span>{label}</span>
             </div>
           ))}
+          <button
+            type="button"
+            aria-label="Registrar gasto"
+            onClick={openManualPaidOutflow}
+            className={cn(baseItem, "text-[#0B3F64]")}
+          >
+            <ReceiptText className="h-5 w-5" />
+            <span>Registrar gasto</span>
+          </button>
         </div>
       </div>
     </nav>

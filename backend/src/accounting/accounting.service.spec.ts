@@ -606,9 +606,10 @@ describe('AccountingService manual paid expense postings', () => {
     );
   });
 
-  it('persists occurredAt as the exact shared accounting date', async () => {
+  it('persists an explicit Bogota accounting time as the exact shared date', async () => {
     const { service, tx } = createManualService();
-    const occurredAt = '2026-08-18T12:00:00.000Z';
+    // 2026-08-19 09:45 in America/Bogota is UTC-05:00.
+    const occurredAt = '2026-08-19T14:45:00.000Z';
 
     await service.createManualPaidOutflow(
       businessId,

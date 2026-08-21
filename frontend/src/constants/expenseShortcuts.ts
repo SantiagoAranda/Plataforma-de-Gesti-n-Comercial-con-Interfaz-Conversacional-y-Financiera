@@ -1,5 +1,6 @@
 export type ExpenseShortcutIcon =
   | "Building2"
+  | "BriefcaseBusiness"
   | "Bus"
   | "Car"
   | "CircleDollarSign"
@@ -53,13 +54,6 @@ export const EXPENSE_SHORTCUT_GROUPS = [
         icon: "ShieldCheck",
       },
       {
-        id: "services-data",
-        label: "Procesamiento de datos",
-        pucCode: "513520",
-        pucName: "Procesamiento electrónico de datos",
-        icon: "Laptop",
-      },
-      {
         id: "services-water",
         label: "Acueducto",
         pucCode: "513525",
@@ -96,38 +90,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     shortcuts: [
       {
         id: "rent-premises",
-        label: "Local / oficina",
+        label: "Alquiler de espacio",
         pucCode: "512010",
         pucName: "Construcciones y edificaciones",
         icon: "Building2",
-      },
-      {
-        id: "rent-machinery",
-        label: "Maquinaria",
-        pucCode: "512015",
-        pucName: "Maquinaria y equipo",
-        icon: "Wrench",
-      },
-      {
-        id: "rent-office",
-        label: "Equipo de oficina",
-        pucCode: "512020",
-        pucName: "Equipo de oficina",
-        icon: "FileText",
-      },
-      {
-        id: "rent-computers",
-        label: "Equipo de cómputo",
-        pucCode: "512025",
-        pucName: "Equipo de computación y comunicación",
-        icon: "Laptop",
-      },
-      {
-        id: "rent-other",
-        label: "Otros alquileres",
-        pucCode: "512095",
-        pucName: "Otros",
-        icon: "MoreHorizontal",
       },
     ],
   },
@@ -153,52 +119,16 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     ],
   },
   {
-    id: "payroll",
-    label: "Nómina",
-    icon: "Users",
-    helperText: "Registro manual de gastos de personal",
+    id: "honorarios",
+    label: "Honorarios",
+    icon: "BriefcaseBusiness",
     shortcuts: [
       {
-        id: "payroll-salaries",
-        label: "Sueldos",
-        pucCode: "510506",
-        pucName: "Sueldos",
-        icon: "Users",
-      },
-      {
-        id: "payroll-wages",
-        label: "Jornales",
-        pucCode: "510512",
-        pucName: "Jornales",
-        icon: "Users",
-      },
-      {
-        id: "payroll-commissions",
-        label: "Comisiones",
-        pucCode: "510518",
-        pucName: "Comisiones",
-        icon: "CircleDollarSign",
-      },
-      {
-        id: "payroll-transport",
-        label: "Auxilio de transporte",
-        pucCode: "510527",
-        pucName: "Auxilio de transporte",
-        icon: "Bus",
-      },
-      {
-        id: "payroll-bonuses",
-        label: "Bonificaciones",
-        pucCode: "510548",
-        pucName: "Bonificaciones",
-        icon: "CircleDollarSign",
-      },
-      {
-        id: "payroll-equipment",
-        label: "Dotación",
-        pucCode: "510551",
-        pucName: "Dotación y suministro a trabajadores",
-        icon: "Package",
+        id: "honorarios-general",
+        label: "Honorarios",
+        pucCode: "511095",
+        pucName: "Otros",
+        icon: "BriefcaseBusiness",
       },
     ],
   },
@@ -209,16 +139,9 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     shortcuts: [
       {
         id: "food-restaurant",
-        label: "Comidas / restaurante",
+        label: "Comida",
         pucCode: "519560",
         pucName: "Casino y restaurante",
-        icon: "Utensils",
-      },
-      {
-        id: "food-cafeteria",
-        label: "Elementos de aseo / cafetería",
-        pucCode: "519525",
-        pucName: "Elementos de aseo y cafetería",
         icon: "Utensils",
       },
     ],

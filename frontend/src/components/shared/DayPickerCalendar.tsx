@@ -121,6 +121,8 @@ type Props = {
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
   markedDateKeys?: Set<string>;
+  todayDate?: Date;
+  tone?: "emerald" | "blue";
   id?: string;
   className?: string;
 };
@@ -129,6 +131,8 @@ export default function DayPickerCalendar({
   selectedDate,
   onSelectDate,
   markedDateKeys,
+  todayDate = new Date(),
+  tone = "emerald",
   id = "day-picker-calendar",
   className,
 }: Props) {
@@ -160,8 +164,16 @@ export default function DayPickerCalendar({
       setCalendarOpen(false);
     }
 
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setCalendarOpen(false);
+    }
+
     document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [calendarOpen]);
 
   function moveSelectedDay(deltaDays: number) {
@@ -180,7 +192,7 @@ export default function DayPickerCalendar({
       <div className="flex h-10 items-center justify-between gap-3 rounded-full bg-slate-100 px-4 shadow-none ring-1 ring-black/5">
         <button
           onClick={() => moveSelectedDay(-1)}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 outline-none transition hover:bg-white/60 focus-visible:ring-2 focus-visible:ring-[#0B3F64] active:scale-95"
           aria-label="Dia anterior"
           type="button"
         >
@@ -189,7 +201,7 @@ export default function DayPickerCalendar({
 
         <button
           onClick={() => setCalendarOpen((v) => !v)}
-          className="flex h-9 flex-1 items-center justify-center gap-2 rounded-full px-2 text-sm text-[#0f172a] outline-none transition hover:bg-white/60 active:scale-95"
+          className="flex h-9 flex-1 items-center justify-center gap-2 rounded-full px-2 text-sm text-[#0f172a] outline-none transition hover:bg-white/60 focus-visible:ring-2 focus-visible:ring-[#0B3F64] active:scale-95"
           aria-expanded={calendarOpen}
           aria-controls={id}
           type="button"
@@ -200,7 +212,7 @@ export default function DayPickerCalendar({
 
         <button
           onClick={() => moveSelectedDay(1)}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 transition hover:bg-white/60 active:scale-95"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-slate-500 outline-none transition hover:bg-white/60 focus-visible:ring-2 focus-visible:ring-[#0B3F64] active:scale-95"
           aria-label="Dia siguiente"
           type="button"
         >
@@ -211,7 +223,7 @@ export default function DayPickerCalendar({
       {calendarOpen && (
         <div
           id={id}
-          className="absolute left-0 right-0 top-full z-30 mt-2 rounded-3xl border border-black/5 bg-white p-4 shadow-[0_16px_40px_rgba(0,0,0,0.10)]"
+          className="absolute left-0 right-0 top-full z-30 mt-2 max-h-[min(420px,60vh)] max-w-[calc(100vw-2.5rem)] overflow-y-auto rounded-3xl border border-black/5 bg-white p-4 shadow-[0_16px_40px_rgba(0,0,0,0.10)]"
         >
           <div className="flex items-center justify-between">
             <button
@@ -222,7 +234,7 @@ export default function DayPickerCalendar({
                   ),
                 )
               }
-              className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100"
+              className="rounded-full p-2 text-neutral-500 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-[#0B3F64]"
               aria-label="Mes anterior"
               type="button"
             >
@@ -241,7 +253,7 @@ export default function DayPickerCalendar({
                   ),
                 )
               }
-              className="rounded-full p-2 text-neutral-500 hover:bg-neutral-100"
+              className="rounded-full p-2 text-neutral-500 outline-none hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-[#0B3F64]"
               aria-label="Mes siguiente"
               type="button"
             >
@@ -258,6 +270,7 @@ export default function DayPickerCalendar({
           <div className="mt-3 grid grid-cols-7 gap-2">
             {monthGrid.map(({ date, inMonth }, idx) => {
               const isSelected = sameDay(selectedDate, date);
+              const isToday = sameDay(todayDate, date);
               const key = formatLocalDateKey(date);
               const hasDot = markedDateKeys?.has(key);
 
@@ -266,19 +279,34 @@ export default function DayPickerCalendar({
                   key={`${key}-${idx}`}
                   onClick={() => selectDate(date)}
                   className={cn(
-                    "relative h-10 rounded-full text-sm",
+                    "relative h-10 rounded-full text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]",
                     isSelected
-                      ? "bg-emerald-500 text-white"
+                      ? tone === "blue"
+                        ? "bg-[#0B3F64] text-white"
+                        : "bg-emerald-500 text-white"
                       : inMonth
-                        ? "bg-white text-neutral-900 hover:bg-emerald-50"
+                        ? cn(
+                            "bg-white text-neutral-900",
+                            tone === "blue"
+                              ? "hover:bg-[#EAF2F8]"
+                              : "hover:bg-emerald-50",
+                            isToday &&
+                              "ring-1 ring-inset ring-[#0B3F64] font-semibold text-[#0B3F64]",
+                          )
                         : "bg-white text-neutral-300 hover:bg-neutral-50",
                   )}
                   aria-label={date.toLocaleDateString("es-AR")}
+                  aria-current={isToday ? "date" : undefined}
                   type="button"
                 >
                   {date.getDate()}
                   {hasDot && !isSelected && (
-                    <span className="absolute left-1/2 top-[30px] h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-emerald-500" />
+                    <span
+                      className={cn(
+                        "absolute left-1/2 top-[30px] h-1.5 w-1.5 -translate-x-1/2 rounded-full",
+                        tone === "blue" ? "bg-[#0B3F64]" : "bg-emerald-500",
+                      )}
+                    />
                   )}
                 </button>
               );

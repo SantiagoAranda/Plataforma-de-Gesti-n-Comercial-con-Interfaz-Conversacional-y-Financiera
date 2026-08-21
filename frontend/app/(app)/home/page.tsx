@@ -22,7 +22,6 @@ import { readBusinessProfile } from "../../../src/lib/businessProfile";
 import { getBusinessProfile } from "../../../src/lib/businessLogo";
 import { cn } from "../../../src/lib/utils";
 import HomeAgenda from "../../../src/components/home/HomeAgenda";
-import ManualPaidOutflowSheet from "../../../src/components/home/ManualPaidOutflowSheet";
 import PushInviteCard from "../../../src/components/notifications/PushInviteCard";
 
 const MODULE_ICONS: Record<ModuleActivitySummary["module"], ReactNode> = {
@@ -184,7 +183,6 @@ export default function HomePage() {
       </main>
 
       <BottomNav active="home" />
-      <ManualPaidOutflowSheet />
     </div>
   );
 }

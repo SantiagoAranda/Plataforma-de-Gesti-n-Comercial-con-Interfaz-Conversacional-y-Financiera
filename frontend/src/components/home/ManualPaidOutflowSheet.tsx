@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Building2,
+  BriefcaseBusiness,
   Bus,
   Car,
   CheckCircle2,
@@ -28,12 +29,18 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import DayPickerCalendar from "@/src/components/shared/DayPickerCalendar";
 import {
   EXPENSE_SHORTCUT_GROUPS,
   type ExpenseShortcutGroup,
   type ExpenseShortcutIcon,
 } from "@/src/constants/expenseShortcuts";
-import { getBusinessDayKey } from "@/src/lib/businessDate";
+import {
+  businessDateTimeToISOString,
+  getBusinessDayKey,
+  getBusinessTimeKey,
+} from "@/src/lib/businessDate";
+import { formatLocalDateKey } from "@/src/lib/datetime";
 import { cn } from "@/src/lib/utils";
 import {
   createManualPaidOutflow,
@@ -47,10 +54,12 @@ type FormState = {
   paymentMethod: ManualPaidOutflowPaymentMethod | "";
   categoryId: string;
   occurredOn: string;
+  occurredTime: string;
 };
 
 const SHORTCUT_ICONS: Record<ExpenseShortcutIcon, LucideIcon> = {
   Building2,
+  BriefcaseBusiness,
   Bus,
   Car,
   CircleDollarSign,
@@ -87,6 +96,7 @@ function createInitialForm(): FormState {
     paymentMethod: "",
     categoryId: "",
     occurredOn: getBusinessDayKey(new Date()),
+    occurredTime: "",
   };
 }
 
@@ -100,37 +110,51 @@ function formatAmount(value: string) {
   return amount > 0 ? copFormatter.format(amount) : "";
 }
 
-function toOccurredAt(value: string) {
+function calendarDateFromKey(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-
-  const date = new Date(`${value}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const [, year, month, day] = match;
-  if (
-    date.getUTCFullYear() !== Number(year) ||
-    date.getUTCMonth() + 1 !== Number(month) ||
-    date.getUTCDate() !== Number(day)
-  ) {
-    return null;
-  }
-
-  return date.toISOString();
+  if (!match) return new Date();
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
 }
 
-export default function ManualPaidOutflowSheet() {
-  const [open, setOpen] = useState(false);
+type ManualPaidOutflowSheetProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
+export default function ManualPaidOutflowSheet({
+  open,
+  onOpenChange,
+}: ManualPaidOutflowSheetProps) {
   const [form, setForm] = useState<FormState>(createInitialForm);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  useEffect(() => {
+    if (!open) return;
+    setForm(createInitialForm());
+    setSelectedGroupId(null);
+    setError("");
+    setSuccess("");
+  }, [open]);
+
   const amount = useMemo(() => parseAmount(form.amount), [form.amount]);
-  const occurredAt = useMemo(
-    () => toOccurredAt(form.occurredOn),
+  const validAccountingDateTime = useMemo(
+    () =>
+      businessDateTimeToISOString(
+        form.occurredOn,
+        form.occurredTime || "00:00",
+      ),
+    [form.occurredOn, form.occurredTime],
+  );
+  const selectedCalendarDate = useMemo(
+    () => calendarDateFromKey(form.occurredOn),
     [form.occurredOn],
+  );
+  const todayCalendarDate = useMemo(
+    () => calendarDateFromKey(getBusinessDayKey(new Date())),
+    [open],
   );
   const selectedGroup = useMemo<ExpenseShortcutGroup | null>(
     () =>
@@ -141,7 +165,7 @@ export default function ManualPaidOutflowSheet() {
 
   const canSubmit = Boolean(
     amount > 0 &&
-    occurredAt &&
+    validAccountingDateTime &&
     form.paymentMethod &&
     form.categoryId &&
     !saving,
@@ -152,16 +176,9 @@ export default function ManualPaidOutflowSheet() {
     setSelectedGroupId(null);
   };
 
-  const openSheet = () => {
-    resetForm();
-    setError("");
-    setSuccess("");
-    setOpen(true);
-  };
-
   const closeSheet = () => {
     if (saving) return;
-    setOpen(false);
+    onOpenChange(false);
     resetForm();
     setError("");
     setSuccess("");
@@ -181,7 +198,18 @@ export default function ManualPaidOutflowSheet() {
   };
 
   const submit = async () => {
-    if (!canSubmit || !form.paymentMethod || !occurredAt) return;
+    if (!canSubmit || !form.paymentMethod) return;
+
+    const submittedAt = new Date();
+    const accountingTime = form.occurredTime || getBusinessTimeKey(submittedAt);
+    const occurredAt = businessDateTimeToISOString(
+      form.occurredOn,
+      accountingTime,
+    );
+    if (!occurredAt) {
+      setError("La fecha u hora del gasto no es válida");
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -215,17 +243,8 @@ export default function ManualPaidOutflowSheet() {
 
   return (
     <>
-      <button
-        type="button"
-        aria-label="Registrar gasto"
-        onClick={openSheet}
-        className="fixed bottom-24 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0B3F64] text-white shadow-[0_12px_30px_rgba(11,63,100,0.25)] transition active:scale-95 lg:hidden"
-      >
-        <FileText className="h-6 w-6" />
-      </button>
-
       {open && (
-        <div className="fixed inset-0 z-[70] lg:hidden">
+        <div className="fixed inset-0 z-[70]">
           <button
             type="button"
             aria-label="Cerrar formulario"
@@ -233,7 +252,7 @@ export default function ManualPaidOutflowSheet() {
             onClick={closeSheet}
           />
 
-          <section className="absolute inset-x-0 bottom-0 max-h-[94vh] overflow-hidden rounded-t-[28px] bg-white shadow-[0_-18px_40px_rgba(0,0,0,0.18)]">
+          <section className="absolute inset-x-0 bottom-0 max-h-[94vh] overflow-hidden rounded-t-[28px] bg-white shadow-[0_-18px_40px_rgba(0,0,0,0.18)] lg:left-1/2 lg:right-auto lg:top-1/2 lg:bottom-auto lg:w-[480px] lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-[28px]">
             <div className="flex items-start justify-between border-b border-neutral-100 px-5 py-4">
               <div>
                 <h2 className="text-base font-semibold text-neutral-950">
@@ -275,7 +294,7 @@ export default function ManualPaidOutflowSheet() {
                     <button
                       type="button"
                       onClick={() => setSelectedGroupId(null)}
-                      className="text-xs font-medium text-emerald-700"
+                      className="text-xs font-medium text-[#0B3F64] outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]"
                     >
                       ← Volver
                     </button>
@@ -302,7 +321,7 @@ export default function ManualPaidOutflowSheet() {
                               : "border-neutral-200 bg-white text-neutral-800 active:bg-neutral-50",
                           )}
                         >
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EAF2F8] text-[#0B3F64]">
                             <Icon className="h-4 w-4" />
                           </span>
                           <span className="text-sm font-medium leading-tight">
@@ -348,7 +367,7 @@ export default function ManualPaidOutflowSheet() {
                             )}
                           >
                             <span className="flex items-start gap-2">
-                              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#0B3F64]" />
                               <span className="text-xs font-medium leading-tight text-neutral-900">
                                 {shortcut.label}
                               </span>
@@ -362,6 +381,24 @@ export default function ManualPaidOutflowSheet() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-neutral-500">
+                  Fecha del gasto
+                </span>
+                <DayPickerCalendar
+                  id="expense-date-picker"
+                  selectedDate={selectedCalendarDate}
+                  todayDate={todayCalendarDate}
+                  tone="blue"
+                  onSelectDate={(date) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      occurredOn: formatLocalDateKey(date),
+                    }))
+                  }
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -385,15 +422,15 @@ export default function ManualPaidOutflowSheet() {
 
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-medium text-neutral-500">
-                    Fecha del gasto
+                    Hora <span className="font-normal">(opcional)</span>
                   </span>
                   <input
-                    type="date"
-                    value={form.occurredOn}
+                    type="time"
+                    value={form.occurredTime}
                     onChange={(event) =>
                       setForm((previous) => ({
                         ...previous,
-                        occurredOn: event.target.value,
+                        occurredTime: event.target.value,
                       }))
                     }
                     className="h-12 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-emerald-300"
