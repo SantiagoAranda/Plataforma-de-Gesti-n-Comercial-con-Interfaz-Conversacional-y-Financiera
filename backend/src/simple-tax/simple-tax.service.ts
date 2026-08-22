@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { parseAccountingDate } from '../common/date/accounting-date';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
 import {
@@ -443,8 +444,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 
@@ -1380,8 +1381,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 

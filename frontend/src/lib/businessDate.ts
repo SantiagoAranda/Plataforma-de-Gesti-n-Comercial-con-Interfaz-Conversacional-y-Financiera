@@ -132,6 +132,16 @@ export function businessDateTimeToISOString(dateKey: string, timeKey: string) {
   return isExactRoundTrip ? result.toISOString() : null;
 }
 
+export function businessDateAtCurrentTimeToISOString(
+  dateKey: string,
+  submittedAt: DateInput = new Date(),
+) {
+  return businessDateTimeToISOString(
+    dateKey,
+    getBusinessTimeKey(submittedAt),
+  );
+}
+
 export function getBusinessDayKey(value: DateInput) {
   const date = toDate(value);
   const parts = getFormatter("en-CA", {

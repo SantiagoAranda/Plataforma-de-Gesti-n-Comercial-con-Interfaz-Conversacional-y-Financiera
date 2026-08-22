@@ -15,6 +15,10 @@ import {
   type SimpleTaxPeriod,
 } from "@/src/lib/simple-tax/api";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
+import {
+  businessDateAtCurrentTimeToISOString,
+  getBusinessDayKey,
+} from "@/src/lib/businessDate";
 
 const ENABLE_SIMPLE_TAX_MANUAL_ADJUSTMENTS = false;
 const ENABLE_SIMPLE_TAX_ANNUAL_UI = false;
@@ -80,7 +84,7 @@ export default function RegimenSimplePage() {
   const [paying, setPaying] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK">("BANK");
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(() => getBusinessDayKey(new Date()));
   const [paymentNotes, setPaymentNotes] = useState("");
 
   const loadData = async (year = Number(taxYear) || 2026) => {
@@ -249,11 +253,17 @@ export default function RegimenSimplePage() {
 
   const handlePayPeriod = async () => {
     if (!calculation?.id) return;
+    const accountingPaymentDate =
+      businessDateAtCurrentTimeToISOString(paymentDate);
+    if (!accountingPaymentDate) {
+      setError("La fecha de pago no es válida.");
+      return;
+    }
     setPaying(true);
     setError(null);
     try {
       const paid = await paySimpleTaxPeriod(calculation.id, {
-        paymentDate,
+        paymentDate: accountingPaymentDate,
         paymentMethod,
         paymentAccountCode,
         paidAmount: netSimpleTax,

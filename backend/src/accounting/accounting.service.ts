@@ -18,6 +18,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { parseAccountingDate } from '../common/date/accounting-date';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
@@ -574,13 +575,16 @@ export class AccountingService {
       pucSubcuentaId: dto.pucSubcuentaId,
     });
 
+    const accountingDate = parseAccountingDate(dto.date);
+    if (!accountingDate) throw new BadRequestException('Fecha invalida');
+
     const movement = await this.prisma.accountingMovement.create({
       data: {
         businessId,
         ...this.movementPucData(reference),
         amount: dto.amount,
         nature: dto.nature,
-        date: new Date(dto.date),
+        date: accountingDate,
         detail: this.normalizeDetail(dto.detail),
         originType: dto.originType,
         originId: dto.originId ?? null,
@@ -1398,7 +1402,7 @@ export class AccountingService {
 
     const movements = await this.prisma.accountingMovement.findMany({
       where,
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      orderBy: { date: 'desc' },
       include: this.movementInclude(),
     });
 
@@ -1464,7 +1468,11 @@ export class AccountingService {
     if (isManual) {
       if (dto.amount !== undefined) data.amount = dto.amount;
       if (dto.nature !== undefined) data.nature = dto.nature;
-      if (dto.date !== undefined) data.date = new Date(dto.date);
+      if (dto.date !== undefined) {
+        const accountingDate = parseAccountingDate(dto.date);
+        if (!accountingDate) throw new BadRequestException('Fecha invalida');
+        data.date = accountingDate;
+      }
       if (dto.originType !== undefined) data.originType = dto.originType;
       if (dto.originId !== undefined) data.originId = dto.originId;
     }

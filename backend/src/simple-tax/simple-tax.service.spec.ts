@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import {
   Prisma,
   SimpleTaxFilingMode,
@@ -180,6 +180,10 @@ describe('SimpleTaxService', () => {
     mockActivityGroupMapping('2');
     mockRates('2');
     mockSales(0);
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('calculates group 2 first bimonthly range for 50,000,000', async () => {
@@ -788,6 +792,8 @@ describe('SimpleTaxService', () => {
   });
 
   it('pays a posted period with BANK using 111005', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-20T20:30:00.000Z'));
     prisma.simpleTaxPeriod.findFirst.mockResolvedValue({
       id: 'period-1',
       businessId,
@@ -840,6 +846,9 @@ describe('SimpleTaxService', () => {
         }),
       }),
     ]);
+    const dates = createManyArg.data.map((movement: any) => movement.date);
+    expect(dates[0].toISOString()).toBe('2026-03-15T20:30:00.000Z');
+    expect(dates[1]).toBe(dates[0]);
   });
 
   it('pays a posted period with CASH using 110505', async () => {

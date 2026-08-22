@@ -31,7 +31,10 @@ import { AccountingEmptyState } from "@/src/components/accounting/AccountingEmpt
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 
 import type { AccountingFormState } from "@/src/types/accounting-form";
-import { getBusinessDayKey } from "@/src/lib/businessDate";
+import {
+  businessDateAtCurrentTimeToISOString,
+  getBusinessDayKey,
+} from "@/src/lib/businessDate";
 
 const todayISO = () => getBusinessDayKey(new Date());
 
@@ -405,6 +408,12 @@ export default function ContabilidadPage() {
     }
 
     const detail = form.detail.trim() || null;
+    const accountingDate = businessDateAtCurrentTimeToISOString(form.date);
+
+    if (!accountingDate) {
+      setError("La fecha contable no es válida.");
+      return;
+    }
 
     try {
       setError(null);
@@ -416,7 +425,7 @@ export default function ContabilidadPage() {
                 ...pucPayload,
                 amount: parsedAmount,
                 nature: form.nature,
-                date: form.date,
+                date: accountingDate,
                 detail,
                 originType: "MANUAL",
                 originId: form.originId ?? undefined,
@@ -432,7 +441,7 @@ export default function ContabilidadPage() {
           ...pucPayload,
           amount: parsedAmount,
           nature: form.nature,
-          date: form.date,
+          date: accountingDate,
           detail,
           originType: "MANUAL" as const,
         };
