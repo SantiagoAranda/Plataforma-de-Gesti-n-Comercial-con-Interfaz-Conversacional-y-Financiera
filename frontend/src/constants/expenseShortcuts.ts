@@ -30,11 +30,18 @@ export type ExpenseShortcut = {
   icon?: ExpenseShortcutIcon;
 };
 
+export type ExpenseShortcutSearch = {
+  endpointGroupId?: string;
+  allowedPucPrefixes: readonly string[];
+  nameIncludes?: readonly string[];
+};
+
 export type ExpenseShortcutGroup = {
   id: string;
   label: string;
   icon: ExpenseShortcutIcon;
   helperText?: string;
+  search: ExpenseShortcutSearch;
   shortcuts: readonly ExpenseShortcut[];
 };
 
@@ -45,6 +52,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "services",
     label: "Servicios",
     icon: "Zap",
+    search: {
+      endpointGroupId: "services",
+      allowedPucPrefixes: ["5135", "5235"],
+    },
     shortcuts: [
       {
         id: "services-security",
@@ -87,12 +98,16 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "rent",
     label: "Alquiler",
     icon: "Building2",
+    search: {
+      endpointGroupId: "rent",
+      allowedPucPrefixes: ["5120", "5220"],
+    },
     shortcuts: [
       {
-        id: "rent-premises",
-        label: "Alquiler de espacio",
-        pucCode: "512010",
-        pucName: "Construcciones y edificaciones",
+        id: "rent-general",
+        label: "Alquiler / Arrendamientos",
+        pucCode: "512095",
+        pucName: "Otros",
         icon: "Building2",
       },
     ],
@@ -101,6 +116,16 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "marketing",
     label: "Marketing",
     icon: "Megaphone",
+    search: {
+      allowedPucPrefixes: ["5195", "5235", "5295"],
+      nameIncludes: [
+        "publicidad",
+        "propaganda",
+        "promocion",
+        "representacion",
+        "relaciones publicas",
+      ],
+    },
     shortcuts: [
       {
         id: "marketing-advertising",
@@ -122,6 +147,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "honorarios",
     label: "Honorarios",
     icon: "BriefcaseBusiness",
+    search: {
+      endpointGroupId: "honorarios",
+      allowedPucPrefixes: ["5110", "5210"],
+    },
     shortcuts: [
       {
         id: "honorarios-general",
@@ -136,6 +165,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "food",
     label: "Comida",
     icon: "Utensils",
+    search: {
+      allowedPucPrefixes: ["5195", "5295"],
+      nameIncludes: ["alimentacion", "casino", "restaurante"],
+    },
     shortcuts: [
       {
         id: "food-restaurant",
@@ -150,6 +183,28 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "transport",
     label: "Transporte",
     icon: "Truck",
+    search: {
+      allowedPucPrefixes: [
+        "5135",
+        "5235",
+        "5155",
+        "5255",
+        "5195",
+        "5295",
+      ],
+      nameIncludes: [
+        "transporte",
+        "flete",
+        "acarreo",
+        "pasaje",
+        "taxi",
+        "bus",
+        "combustible",
+        "lubricante",
+        "parqueadero",
+        "peaje",
+      ],
+    },
     shortcuts: [
       {
         id: "transport-fuel",
@@ -192,6 +247,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "maintenance",
     label: "Mantenimiento",
     icon: "Wrench",
+    search: {
+      endpointGroupId: "maintenance",
+      allowedPucPrefixes: ["5145", "5245"],
+    },
     shortcuts: [
       {
         id: "maintenance-premises",
@@ -227,6 +286,10 @@ export const EXPENSE_SHORTCUT_GROUPS = [
     id: "other",
     label: "Otros",
     icon: "MoreHorizontal",
+    search: {
+      endpointGroupId: "other",
+      allowedPucPrefixes: ["5195", "5295", "5305", "5315", "5395"],
+    },
     shortcuts: [
       {
         id: "other-subscriptions",
@@ -272,6 +335,15 @@ export function assertValidExpenseShortcutGroups(
     }
     groupIds.add(group.id);
 
+    if (group.search.allowedPucPrefixes.length === 0) {
+      throw new Error(`El grupo ${group.id} no tiene familias PUC de búsqueda`);
+    }
+    for (const prefix of group.search.allowedPucPrefixes) {
+      if (!/^\d{4}$/.test(prefix)) {
+        throw new Error(`Familia PUC inválida en ${group.id}: ${prefix}`);
+      }
+    }
+
     const groupPucCodes = new Set<string>();
     for (const shortcut of group.shortcuts) {
       if (shortcutIds.has(shortcut.id)) {
@@ -284,6 +356,15 @@ export function assertValidExpenseShortcutGroups(
           `Código PUC inválido para ${shortcut.id}: ${shortcut.pucCode}`,
         );
       }
+      if (
+        !group.search.allowedPucPrefixes.some((prefix) =>
+          shortcut.pucCode.startsWith(prefix),
+        )
+      ) {
+        throw new Error(
+          `El PUC ${shortcut.pucCode} no pertenece a las familias de ${group.id}`,
+        );
+      }
       if (groupPucCodes.has(shortcut.pucCode)) {
         throw new Error(
           `Código PUC duplicado en ${group.id}: ${shortcut.pucCode}`,
@@ -293,9 +374,14 @@ export function assertValidExpenseShortcutGroups(
     }
   }
 
-  const fuelShortcut = groups
-    .find((group) => group.id === "transport")
-    ?.shortcuts.find((shortcut) => shortcut.id === "transport-fuel");
+  const transportGroup = groups.find((group) => group.id === "transport");
+  if (transportGroup?.search.allowedPucPrefixes.includes("5130")) {
+    throw new Error("Transporte no puede incluir la familia PUC 5130");
+  }
+
+  const fuelShortcut = transportGroup?.shortcuts.find(
+    (shortcut) => shortcut.id === "transport-fuel",
+  );
   if (fuelShortcut?.pucCode !== TRANSPORT_FUEL_PUC_CODE) {
     throw new Error(
       `Transporte → Combustibles debe usar PUC ${TRANSPORT_FUEL_PUC_CODE}`,

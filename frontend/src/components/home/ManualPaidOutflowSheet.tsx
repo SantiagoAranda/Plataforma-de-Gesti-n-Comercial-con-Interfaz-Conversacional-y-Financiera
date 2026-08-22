@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   BriefcaseBusiness,
@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Package,
   Phone,
+  Search,
   ShieldCheck,
   Truck,
   Users,
@@ -30,6 +31,10 @@ import {
 } from "lucide-react";
 
 import DayPickerCalendar from "@/src/components/shared/DayPickerCalendar";
+import {
+  SearchSelect,
+  type SearchSelectOption,
+} from "@/src/components/shared/SearchSelect";
 import {
   EXPENSE_SHORTCUT_GROUPS,
   type ExpenseShortcutGroup,
@@ -44,6 +49,9 @@ import { formatLocalDateKey } from "@/src/lib/datetime";
 import { cn } from "@/src/lib/utils";
 import {
   createManualPaidOutflow,
+  listExpenseGroupAccounts,
+  listManualPaidOutflowCategories,
+  type ManualPaidOutflowCategory,
   type ManualPaidOutflowPaymentMethod,
 } from "@/src/services/accounting";
 
@@ -56,6 +64,11 @@ type FormState = {
   occurredOn: string;
   occurredTime: string;
 };
+
+type ExpensePucSearchOption = SearchSelectOption &
+  ManualPaidOutflowCategory & {
+    expenseGroupId: string;
+  };
 
 const SHORTCUT_ICONS: Record<ExpenseShortcutIcon, LucideIcon> = {
   Building2,
@@ -116,6 +129,13 @@ function calendarDateFromKey(value: string) {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12);
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 type ManualPaidOutflowSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -127,6 +147,9 @@ export default function ManualPaidOutflowSheet({
 }: ManualPaidOutflowSheetProps) {
   const [form, setForm] = useState<FormState>(createInitialForm);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [selectedPucOption, setSelectedPucOption] =
+    useState<ExpensePucSearchOption | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -135,6 +158,8 @@ export default function ManualPaidOutflowSheet({
     if (!open) return;
     setForm(createInitialForm());
     setSelectedGroupId(null);
+    setSearchOpen(false);
+    setSelectedPucOption(null);
     setError("");
     setSuccess("");
   }, [open]);
@@ -163,6 +188,45 @@ export default function ManualPaidOutflowSheet({
     [selectedGroupId],
   );
 
+  const searchExpenseAccounts = useCallback(
+    async (query: string): Promise<ExpensePucSearchOption[]> => {
+      if (!selectedGroup) return [];
+
+      const searchConfig = selectedGroup.search;
+      const accounts = searchConfig.endpointGroupId
+        ? await listExpenseGroupAccounts(searchConfig.endpointGroupId, query)
+        : await listManualPaidOutflowCategories("EXPENSE", query);
+      const normalizedNameIncludes = searchConfig.nameIncludes?.map(
+        normalizeSearchText,
+      );
+
+      return accounts
+        .filter((account) => {
+          const belongsToAllowedFamily =
+            searchConfig.allowedPucPrefixes.some((prefix) =>
+              account.code.startsWith(prefix),
+            );
+          if (!belongsToAllowedFamily) return false;
+          if (!normalizedNameIncludes?.length) return true;
+
+          const searchableName = normalizeSearchText(
+            `${account.name} ${account.parentName ?? ""}`,
+          );
+          return normalizedNameIncludes.some((needle) =>
+            searchableName.includes(needle),
+          );
+        })
+        .map((account) => ({
+          ...account,
+          expenseGroupId: selectedGroup.id,
+          title: account.code,
+          subtitle: account.name,
+          meta: account.parentName ?? undefined,
+        }));
+    },
+    [selectedGroup],
+  );
+
   const canSubmit = Boolean(
     amount > 0 &&
     validAccountingDateTime &&
@@ -174,6 +238,8 @@ export default function ManualPaidOutflowSheet({
   const resetForm = () => {
     setForm(createInitialForm());
     setSelectedGroupId(null);
+    setSearchOpen(false);
+    setSelectedPucOption(null);
   };
 
   const closeSheet = () => {
@@ -185,16 +251,27 @@ export default function ManualPaidOutflowSheet({
   };
 
   const selectGroup = (groupId: string) => {
-    setSelectedGroupId(groupId);
-    setForm((previous) => {
-      const selectedBelongsToGroup = EXPENSE_SHORTCUT_GROUPS.find(
-        (group) => group.id === groupId,
-      )?.shortcuts.some((shortcut) => shortcut.pucCode === previous.categoryId);
+    const group = EXPENSE_SHORTCUT_GROUPS.find(
+      (candidate) => candidate.id === groupId,
+    );
+    const selectedShortcutBelongsToGroup = group?.shortcuts.some(
+      (shortcut) => shortcut.pucCode === form.categoryId,
+    );
+    const selectedSearchBelongsToGroup = Boolean(
+      selectedPucOption?.expenseGroupId === groupId &&
+        selectedPucOption.id === form.categoryId,
+    );
 
-      return selectedBelongsToGroup
-        ? previous
-        : { ...previous, categoryId: "" };
-    });
+    setSelectedGroupId(groupId);
+    if (selectedSearchBelongsToGroup) {
+      setSearchOpen(true);
+      return;
+    }
+    if (selectedShortcutBelongsToGroup) return;
+
+    setForm((previous) => ({ ...previous, categoryId: "" }));
+    setSelectedPucOption(null);
+    setSearchOpen(false);
   };
 
   const submit = async () => {
@@ -305,9 +382,14 @@ export default function ManualPaidOutflowSheet({
                   <div className="grid grid-cols-2 gap-2">
                     {EXPENSE_SHORTCUT_GROUPS.map((group) => {
                       const Icon = SHORTCUT_ICONS[group.icon];
-                      const selected = group.shortcuts.some(
+                      const hasSelectedShortcut = group.shortcuts.some(
                         (shortcut) => shortcut.pucCode === form.categoryId,
                       );
+                      const hasSelectedSearch =
+                        (selectedPucOption?.expenseGroupId === group.id &&
+                          selectedPucOption.id === form.categoryId);
+                      const selected =
+                        hasSelectedShortcut || hasSelectedSearch;
 
                       return (
                         <button
@@ -353,12 +435,14 @@ export default function ManualPaidOutflowSheet({
                           <button
                             key={shortcut.id}
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
+                              setSelectedPucOption(null);
+                              setSearchOpen(false);
                               setForm((previous) => ({
                                 ...previous,
                                 categoryId: shortcut.pucCode,
-                              }))
-                            }
+                              }));
+                            }}
                             className={cn(
                               "min-h-[76px] rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.98]",
                               selected
@@ -378,7 +462,78 @@ export default function ManualPaidOutflowSheet({
                           </button>
                         );
                       })}
+                      <button
+                        type="button"
+                        onClick={() => setSearchOpen(true)}
+                        className={cn(
+                          "col-span-2 flex min-h-12 items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.99]",
+                          selectedPucOption?.expenseGroupId === selectedGroup.id
+                            ? "border-emerald-400 bg-emerald-50"
+                            : "border-dashed border-[#9CB9CC] bg-[#F5F9FC]",
+                        )}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EAF2F8] text-[#0B3F64]">
+                          <Search className="h-4 w-4" />
+                        </span>
+                        <span className="text-xs font-medium text-[#0B3F64]">
+                          Buscar otro gasto...
+                        </span>
+                      </button>
                     </div>
+
+                    {searchOpen && (
+                      <div className="mt-3">
+                        <SearchSelect<ExpensePucSearchOption>
+                          label="Buscar gasto..."
+                          value={
+                            selectedPucOption?.expenseGroupId ===
+                            selectedGroup.id
+                              ? selectedPucOption
+                              : null
+                          }
+                          placeholder="Buscar cuenta PUC..."
+                          emptyText="No se encontraron gastos en esta categoría."
+                          buttonLabel="Buscar"
+                          buttonColorClassName="bg-[#0B3F64] hover:bg-[#0B3F64]/90"
+                          selectedLabel="Seleccionado"
+                          search={searchExpenseAccounts}
+                          onSelect={(account) => {
+                            setSelectedPucOption(account);
+                            setForm((previous) => ({
+                              ...previous,
+                              categoryId: account.id,
+                            }));
+                          }}
+                          renderOption={(account) => (
+                            <>
+                              <span className="shrink-0 text-sm font-semibold text-neutral-800">
+                                {account.code}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="break-words text-sm leading-5 text-neutral-600">
+                                  {account.name}
+                                </div>
+                                {account.parentName && (
+                                  <div className="mt-1 text-[11px] font-medium text-neutral-400">
+                                    {account.parentName}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                          renderSelected={(account) => (
+                            <>
+                              <div className="font-semibold text-emerald-800">
+                                {account.code}
+                              </div>
+                              <div className="break-words leading-5 text-emerald-700/90">
+                                {account.name}
+                              </div>
+                            </>
+                          )}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
