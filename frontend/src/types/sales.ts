@@ -53,6 +53,27 @@ export type SaleFiscalSummary = {
   netReceived: number;
 };
 
+export type SaleTaxType =
+  | "IVA"
+  | "IMPOCONSUMO"
+  | "RETEFUENTE"
+  | "RETEIVA"
+  | "RETEICA"
+  | "AUTORRETENCION";
+
+export type SaleTaxDirection = "CHARGE" | "WITHHOLD" | "SELF";
+
+export type SaleTaxLine = {
+  taxType: SaleTaxType;
+  direction: SaleTaxDirection;
+  baseAmount: number;
+  rate: number;
+  taxAmount: number;
+  accountCode: string;
+  applied: boolean;
+  reason: string | null;
+};
+
 export interface SaleItem {
   orderItemId?: string;
   itemId?: string;
@@ -113,7 +134,7 @@ export interface Sale {
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;
-  taxLines?: any[] | null;
+  taxLines?: SaleTaxLine[] | null;
 
   items: SaleItem[];
 
