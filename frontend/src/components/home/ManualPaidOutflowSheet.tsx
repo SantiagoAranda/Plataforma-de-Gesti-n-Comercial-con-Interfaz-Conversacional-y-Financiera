@@ -264,7 +264,7 @@ export default function ManualPaidOutflowSheet({
 
     setSelectedGroupId(groupId);
     if (selectedSearchBelongsToGroup) {
-      setSearchOpen(true);
+      setSearchOpen(false);
       return;
     }
     if (selectedShortcutBelongsToGroup) return;
@@ -464,38 +464,46 @@ export default function ManualPaidOutflowSheet({
                       })}
                       <button
                         type="button"
-                        onClick={() => setSearchOpen(true)}
+                        onClick={() => setSearchOpen((previous) => !previous)}
                         className={cn(
-                          "col-span-2 flex min-h-12 items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.99]",
-                          selectedPucOption?.expenseGroupId === selectedGroup.id
-                            ? "border-emerald-400 bg-emerald-50"
-                            : "border-dashed border-[#9CB9CC] bg-[#F5F9FC]",
+                          "min-h-[76px] rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.98]",
+                          selectedPucOption?.expenseGroupId ===
+                            selectedGroup.id &&
+                            selectedPucOption.id === form.categoryId
+                            ? "border-emerald-400 bg-emerald-50 shadow-[0_6px_18px_rgba(5,150,105,0.12)]"
+                            : "border-neutral-200 bg-white active:bg-neutral-50",
                         )}
                       >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EAF2F8] text-[#0B3F64]">
-                          <Search className="h-4 w-4" />
+                        <span className="flex items-start gap-2">
+                          <Search className="mt-0.5 h-4 w-4 shrink-0 text-[#0B3F64]" />
+                          <span className="text-xs font-medium leading-tight text-neutral-900">
+                            {selectedPucOption?.expenseGroupId ===
+                              selectedGroup.id &&
+                            selectedPucOption.id === form.categoryId
+                              ? selectedPucOption.name
+                              : "Buscar otro gasto..."}
+                          </span>
                         </span>
-                        <span className="text-xs font-medium text-[#0B3F64]">
-                          Buscar otro gasto...
-                        </span>
+                        {selectedPucOption?.expenseGroupId ===
+                          selectedGroup.id &&
+                          selectedPucOption.id === form.categoryId && (
+                          <span className="mt-2 block text-[10px] font-medium tracking-wide text-neutral-400">
+                            PUC {selectedPucOption.code}
+                          </span>
+                        )}
                       </button>
                     </div>
 
                     {searchOpen && (
-                      <div className="mt-3">
+                      <div className="mt-2">
                         <SearchSelect<ExpensePucSearchOption>
-                          label="Buscar gasto..."
-                          value={
-                            selectedPucOption?.expenseGroupId ===
-                            selectedGroup.id
-                              ? selectedPucOption
-                              : null
-                          }
+                          label="Buscar gasto"
+                          labelClassName="sr-only"
+                          value={null}
                           placeholder="Buscar cuenta PUC..."
                           emptyText="No se encontraron gastos en esta categoría."
                           buttonLabel="Buscar"
                           buttonColorClassName="bg-[#0B3F64] hover:bg-[#0B3F64]/90"
-                          selectedLabel="Seleccionado"
                           search={searchExpenseAccounts}
                           onSelect={(account) => {
                             setSelectedPucOption(account);
@@ -503,6 +511,7 @@ export default function ManualPaidOutflowSheet({
                               ...previous,
                               categoryId: account.id,
                             }));
+                            setSearchOpen(false);
                           }}
                           renderOption={(account) => (
                             <>
@@ -518,16 +527,6 @@ export default function ManualPaidOutflowSheet({
                                     {account.parentName}
                                   </div>
                                 )}
-                              </div>
-                            </>
-                          )}
-                          renderSelected={(account) => (
-                            <>
-                              <div className="font-semibold text-emerald-800">
-                                {account.code}
-                              </div>
-                              <div className="break-words leading-5 text-emerald-700/90">
-                                {account.name}
                               </div>
                             </>
                           )}
