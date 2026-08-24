@@ -1,6 +1,7 @@
 "use client";
 
 import { X, Clock, ChevronDown, Check } from "lucide-react";
+import { CustomSelect, CustomSelectOption } from "@/src/components/ui/CustomSelect";
 import { useState } from "react";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import {
@@ -27,6 +28,15 @@ const BADGE_PRESET_COLORS = [
   { hex: "#FBBF24", name: "Amarillo" },
   { hex: "#F97316", name: "Naranja" },
   { hex: "#EC4899", name: "Rosa" },
+];
+
+const SALE_CONCEPT_OPTIONS: CustomSelectOption[] = [
+  { value: "GOODS", label: "Bienes / Productos" },
+  { value: "SERVICES", label: "Servicios Generales" },
+  { value: "HONORARIOS", label: "Honorarios" },
+  { value: "ARRENDAMIENTOS", label: "Arrendamientos" },
+  { value: "FOOD_BEVERAGES", label: "Consumo (Comidas/Bebidas)" },
+  { value: "OTHER", label: "Otros Conceptos" },
 ];
 
 function BadgeColorSelect({
@@ -490,18 +500,11 @@ export function ItemFormContent(props: ItemFormContentProps) {
               <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">
                 Concepto fiscal
               </label>
-              <select
+              <CustomSelect
                 value={saleConcept}
-                onChange={(e) => setSaleConcept(e.target.value as any)}
-                className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold outline-none focus:border-[#0B3F64] transition text-slate-700 font-medium"
-              >
-                <option value="GOODS">Bienes / Productos</option>
-                <option value="SERVICES">Servicios Generales</option>
-                <option value="HONORARIOS">Honorarios</option>
-                <option value="ARRENDAMIENTOS">Arrendamientos</option>
-                <option value="FOOD_BEVERAGES">Consumo (Comidas/Bebidas)</option>
-                <option value="OTHER">Otros Conceptos</option>
-              </select>
+                onChange={(val) => setSaleConcept(val as any)}
+                options={SALE_CONCEPT_OPTIONS}
+              />
             </div>
 
             {type === "PRODUCT" && (
