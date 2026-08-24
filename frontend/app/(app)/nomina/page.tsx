@@ -291,13 +291,6 @@ function payrollRunViewModel(run: PayrollRun) {
   const connectivityAllowance = toNumber(run.connectivityAllowance);
   const allowanceValue = run.contract?.isRemote ? connectivityAllowance : transportAllowance;
   const allowanceLabel = run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte";
-  const employeeHealth = toNumber(run.employeeHealth);
-  const employeePension = toNumber(run.employeePension);
-  const deductions =
-    employeeHealth +
-    employeePension +
-    toNumber(run.solidarityFund) +
-    toNumber(run.withholdingTax);
   const salaryPayments = (run.payments ?? [])
     .filter((payment) => payment.type === "SALARY_PAYMENT")
     .sort((a, b) => (a.installmentNumber ?? 1) - (b.installmentNumber ?? 1));
@@ -306,9 +299,6 @@ function payrollRunViewModel(run: PayrollRun) {
   return {
     allowanceLabel,
     allowanceValue,
-    employeeHealth,
-    employeePension,
-    deductions,
     salaryPayments,
     allPaid,
     paymentStatusLabel: allPaid ? "Pagada" : "Pendiente pago",
@@ -709,11 +699,48 @@ function MoneyLine({
   sign?: "+" | "-";
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-3 text-[13px]", indent && "pl-4")}>
-      <span className={cn("font-normal", color)}>{label}</span>
-      <span className={cn("tabular-nums", valueColor, medium ? "font-medium" : "font-normal")}>
+    <div className={cn("flex items-start justify-between gap-3 text-[13px]", indent && "pl-4")}>
+      <span className={cn("min-w-0 flex-1 font-normal leading-5", color)}>{label}</span>
+      <span className={cn("shrink-0 tabular-nums leading-5", valueColor, medium ? "font-medium" : "font-normal")}>
         {sign ? `${sign} ${money(value)}` : money(value)}
       </span>
+    </div>
+  );
+}
+
+function PayrollDeductionsBreakdown({
+  run,
+  showNetPay = false,
+  compact = false,
+}: {
+  run: PayrollRun;
+  showNetPay?: boolean;
+  compact?: boolean;
+}) {
+  const otherDeductions = runOtherDeductionsValue(run);
+  const loanDeduction = runLoanDeductionValue(run);
+
+  return (
+    <div className={cn("space-y-1.5", compact && "space-y-1")}>
+      <MoneyLine label="Deducción salud" value={run.employeeHealth} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      <MoneyLine label="Deducción pensión" value={run.employeePension} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      {toNumber(run.solidarityFund) > 0 && (
+        <MoneyLine label="Fondo de Solidaridad Pensional" value={run.solidarityFund} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      {toNumber(loanDeduction) > 0 && (
+        <MoneyLine label="Préstamos" value={loanDeduction} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      {toNumber(otherDeductions) > 0 && (
+        <MoneyLine label="Otras deducciones" value={otherDeductions} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      <div className={cn("border-t border-slate-100 pt-2", compact && "pt-1.5")}>
+        <MoneyLine label="Total deducciones" value={run.totalEmployeeDeductions} color="text-slate-700" valueColor="text-[#C80237]" medium sign="-" />
+      </div>
+      {showNetPay && (
+        <div className={cn("border-t border-slate-200 pt-2", compact && "pt-1.5")}>
+          <MoneyLine label="Neto a pagar" value={run.netPay} color="text-slate-800" valueColor="text-[#0fb18f]" medium />
+        </div>
+      )}
     </div>
   );
 }
@@ -2435,20 +2462,9 @@ function PayrollSummaryPanel({
             valueColor="text-[#0fb18f]"
             sign="+"
           />
-          <MoneyLine
-            label="Deducción salud"
-            value={viewModel.employeeHealth}
-            color="text-[#C80237]"
-            valueColor="text-[#C80237]"
-            sign="-"
-          />
-          <MoneyLine
-            label="Deducción pensión"
-            value={viewModel.employeePension}
-            color="text-[#C80237]"
-            valueColor="text-[#C80237]"
-            sign="-"
-          />
+          <div>
+            <PayrollDeductionsBreakdown run={run} showNetPay />
+          </div>
 
         </div>
 
@@ -5807,7 +5823,31 @@ export default function PayrollPage() {
             {paymentModalRuns.length > 0 && <>
               <div className="flex items-center justify-between text-xs text-slate-600"><span>{batchSelectedRows.length} seleccionados / {batchEligibleRows.length} pagables</span><button type="button" onClick={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds(batchSelectedRows.length === batchEligibleRows.length ? [] : batchEligibleRows.map((row) => row.run.id)); }} className="font-semibold text-[#0B3F64]">{batchSelectedRows.length === batchEligibleRows.length ? "Limpiar" : "Seleccionar todos"}</button></div>
               <div className="max-h-64 space-y-2 overflow-y-auto">
-                {batchRows.map(({ run, eligible, reason }) => <label key={run.id} className={cn("flex items-center gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}><input type="checkbox" disabled={!eligible} checked={batchSelectedRunIds.includes(run.id)} onChange={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]); }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p><p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>{reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}</div><span className="text-sm font-semibold text-slate-800">{money(run.netPay)}</span></label>)}
+                {batchRows.map(({ run, eligible, reason }) => (
+                  <label
+                    key={run.id}
+                    className={cn("flex items-start gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      disabled={!eligible}
+                      checked={batchSelectedRunIds.includes(run.id)}
+                      onChange={() => {
+                        batchIdempotencyKeyRef.current = null;
+                        setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]);
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p>
+                      <p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>
+                      {reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}
+                      <div className="mt-2">
+                        <PayrollDeductionsBreakdown run={run} showNetPay compact />
+                      </div>
+                    </div>
+                  </label>
+                ))}
               </div>
               <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Total seleccionado: <strong>{money(batchSelectedTotal)}</strong></div>
               <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={batchPaymentMethod} onChange={(event) => { batchIdempotencyKeyRef.current = null; setBatchPaymentMethod(event.target.value as "CASH" | "BANK_TRANSFER"); }} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option></select></label>
