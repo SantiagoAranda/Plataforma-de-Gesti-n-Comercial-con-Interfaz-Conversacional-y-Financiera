@@ -582,6 +582,45 @@ describe('TaxService', () => {
     expect(result.reteIvaTotal.toNumber()).toBe(57000);
   });
 
+  it('applies ReteIVA to an IVA-responsible Simple seller when the buyer matches the current modelled agent', async () => {
+    mockSeller(['47', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({ buyerIsGranContribuyente: true }),
+    );
+    const reteIva = result.taxLines.find((line) => line.taxType === TaxType.RETEIVA);
+
+    expect(result.vatTotal.toNumber()).toBe(190000);
+    expect(result.reteIvaTotal.toNumber()).toBe(28500);
+    expect(reteIva).toMatchObject({ applied: true, baseAmount: result.vatTotal });
+    expect(reteIva?.rate.toString()).toBe('0.15');
+    expect(reteIva?.reason).toContain('Gran Contribuyente');
+  });
+
+  it.each([
+    ['seller RST', ['47', '48'], false],
+    ['buyer RST', ['48'], true],
+  ])('does not let a ReteICA override bypass the RST exclusion for %s', async (_caseName, codes, buyerIsRegimenSimple) => {
+    mockSeller(codes);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerIsRetenedor: true,
+        buyerIsRegimenSimple,
+        reteIcaRateOverride: 10,
+      }),
+    );
+    const reteIca = result.taxLines.find((line) => line.taxType === TaxType.RETEICA);
+
+    expect(result.reteIcaTotal.toNumber()).toBe(0);
+    expect(reteIca).toMatchObject({ applied: false, taxAmount: expect.anything() });
+    expect(reteIca?.taxAmount.toNumber()).toBe(0);
+  });
+
   it('calculates net received as subtotal plus charged taxes minus withholdings', async () => {
     mockSeller(['48']);
     mockItems([{ price: 1000000 }]);
@@ -610,4 +649,66 @@ describe('TaxService', () => {
     expect(result.autoRetencionTotal.toNumber()).toBe(25000);
     expect(result.netReceived.toNumber()).toBe(1190000);
   });
+
+  it('characterizes the existing autorretention behavior when responsibilities 15 and 47 coexist', async () => {
+    mockSeller(['15', '47', '48']);
+    mockItems([{ price: 1000000 }]);
+
+    const result = await service.calculateTaxPreview(businessId, baseDto());
+    const autoRetencion = result.taxLines.find(
+      (line) => line.taxType === TaxType.AUTORRETENCION,
+    );
+
+    expect(result.sellerIsSimpleRegime).toBe(true);
+    expect(result.autoRetencionTotal.toNumber()).toBe(25000);
+    expect(autoRetencion).toMatchObject({
+      applied: true,
+      baseAmount: expect.anything(),
+      rate: expect.anything(),
+      taxAmount: expect.anything(),
+    });
+    expect(autoRetencion?.baseAmount.toNumber()).toBe(1000000);
+    expect(autoRetencion?.rate.toString()).toBe('0.025');
+    expect(autoRetencion?.taxAmount.toNumber()).toBe(25000);
+  });
+
+  it.each([
+    ['normal seller / normal buyer', ['48'], false, 25000, 10000, 28500, 0, 1126500],
+    ['RST seller / normal buyer', ['47', '48'], false, 0, 0, 28500, 0, 1161500],
+    ['normal seller / RST buyer', ['48'], true, 0, 0, 28500, 0, 1161500],
+    ['RST seller / RST buyer', ['47', '48'], true, 0, 0, 28500, 0, 1161500],
+  ])(
+    'preserves the fiscal matrix for %s',
+    async (
+      _caseName,
+      sellerCodes,
+      buyerIsRegimenSimple,
+      reteFuente,
+      reteIca,
+      reteIva,
+      autoRetencion,
+      netReceived,
+    ) => {
+      mockSeller(sellerCodes);
+      mockItems([{ price: 1000000 }]);
+
+      const result = await service.calculateTaxPreview(
+        businessId,
+        baseDto({
+          buyerIsGranContribuyente: true,
+          buyerIsRegimenSimple,
+          fiscalMunicipalityCode: '11001',
+          reteIcaRateOverride: 10,
+        }),
+      );
+
+      expect(result.vatTotal.toNumber()).toBe(190000);
+      expect(result.impoconsumoTotal.toNumber()).toBe(0);
+      expect(result.reteFuenteTotal.toNumber()).toBe(reteFuente);
+      expect(result.reteIcaTotal.toNumber()).toBe(reteIca);
+      expect(result.reteIvaTotal.toNumber()).toBe(reteIva);
+      expect(result.autoRetencionTotal.toNumber()).toBe(autoRetencion);
+      expect(result.netReceived.toNumber()).toBe(netReceived);
+    },
+  );
 });

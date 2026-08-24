@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
+import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 
 @Controller('public')
 export class PublicController {
@@ -70,5 +71,15 @@ export class PublicController {
     @Body() dto: CreatePublicOrderDto,
   ) {
     return this.publicService.createOrder(slug, dto);
+  }
+
+  @Get(':slug/fiscal-settings')
+  getFiscalSettings(@Param('slug') slug: string) {
+    return this.publicService.getFiscalSettings(slug);
+  }
+
+  @Post(':slug/tax-preview')
+  calculateTaxPreview(@Param('slug') slug: string, @Body() dto: TaxPreviewDto) {
+    return this.publicService.calculateTaxPreview(slug, dto);
   }
 }

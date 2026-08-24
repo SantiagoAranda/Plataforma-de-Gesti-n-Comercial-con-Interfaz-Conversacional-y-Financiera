@@ -16,11 +16,11 @@ type Props = {
 };
 
 function movementTimestamp(movement: AccountingMovement) {
-  return new Date(movement.createdAt ?? movement.date).getTime();
+  return new Date(movement.date).getTime();
 }
 
 function movementDayKey(movement: AccountingMovement) {
-  return getBusinessDayKey(movement.createdAt ?? movement.date);
+  return getBusinessDayKey(movement.date);
 }
 
 function groupLabel(dateISO: string) {
@@ -58,7 +58,7 @@ export function AccountingMovementList({
       acc[dateISO].push(movement);
       return acc;
     },
-    {}
+    {},
   );
 
   const sortedDates = Object.keys(grouped).sort((a, b) => (a > b ? 1 : -1));

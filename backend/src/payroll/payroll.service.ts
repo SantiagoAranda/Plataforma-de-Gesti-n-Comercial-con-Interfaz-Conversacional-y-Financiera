@@ -30,6 +30,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../prisma/prisma.service';
+import { businessDateAtCurrentTime } from '../common/date/accounting-date';
 import { UpdateGlobalConfigDto } from './dto/update-global-config.dto';
 import { UpdateBusinessConfigDto } from './dto/update-business-config.dto';
 import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
@@ -5608,11 +5609,15 @@ export class PayrollService {
       string,
       unknown
     >;
-    const settlementAccountingDate = this.startOfUtcDay(
-      settlementParams.settlementDate
-        ? new Date(String(settlementParams.settlementDate))
-        : (settlement.endDate ?? new Date(0)),
+    const settlementDate = settlementParams.settlementDate
+      ? new Date(String(settlementParams.settlementDate))
+      : (settlement.endDate ?? new Date(0));
+    const settlementAccountingDate = businessDateAtCurrentTime(
+      settlementDate.toISOString().slice(0, 10),
     );
+    if (!settlementAccountingDate) {
+      throw new BadRequestException('Settlement accounting date is invalid');
+    }
     for (const line of settlement.lines) {
       if (this.decimal(line.amount).equals(0)) continue;
       const lineMappings = mappings.filter(

@@ -1,5 +1,5 @@
 import { api } from "@/src/lib/api";
-import type { SaleFiscalContext, SaleFiscalSummary } from "@/src/types/sales";
+import type { SaleFiscalContext, SaleFiscalSummary, SaleTaxLine } from "@/src/types/sales";
 
 export type ApiOrderItem = {
   quantity: number;
@@ -29,7 +29,7 @@ export interface ApiOrder {
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;
-  taxLines?: any[] | null;
+  taxLines?: SaleTaxLine[] | null;
   items: Array<{
     orderItemId?: string;
     name: string;

@@ -85,7 +85,14 @@ describe('SettingsService tax profile normalization', () => {
     responsibilityCodes,
   });
 
-  const makeService = (existingProfile: any = null) => {
+  const makeService = (
+    existingProfile: any = null,
+    featureFlags: any = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
+      simpleRegimeEnabled: true,
+    },
+  ) => {
     const tx = {
       businessTaxProfile: {
         findUnique: jest.fn().mockResolvedValue(existingProfile),
@@ -128,10 +135,31 @@ describe('SettingsService tax profile normalization', () => {
     };
 
     return {
-      service: new SettingsService(prisma as any),
+      service: new SettingsService(prisma as any, featureFlags),
       tx,
     };
   };
+
+  it('allows adding and removing responsibility 47 when sales are enabled and the tax module is disabled', async () => {
+    const { service, tx } = makeService(null, {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
+      simpleRegimeEnabled: true,
+    });
+
+    await service.upsertTaxProfile('business-1', baseDto(['47']) as any);
+
+    expect(tx.businessTaxResponsibility.createMany).toHaveBeenCalledWith({
+      data: [{ taxProfileId: 'profile-1', taxResponsibilityId: 'tax-responsibility-47' }],
+    });
+
+    await service.upsertTaxProfile('business-1', baseDto([]) as any);
+
+    expect(tx.businessTaxResponsibility.deleteMany).toHaveBeenCalledWith({
+      where: { taxProfileId: 'profile-1' },
+    });
+    expect(tx.businessTaxResponsibility.createMany).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     [['49'], false],

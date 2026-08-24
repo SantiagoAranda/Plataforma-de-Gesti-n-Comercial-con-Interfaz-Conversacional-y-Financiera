@@ -25,7 +25,7 @@ import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
-import { invalidateCache } from "@/src/lib/cache";
+import { getCached, invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import { AppApiError } from "@/src/lib/api";
 
@@ -35,6 +35,7 @@ import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/Da
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 import { getTaxProfile } from "@/src/lib/settings/api";
+import { getBusinessProfile, type BusinessLogoProfile } from "@/src/lib/businessLogo";
 
 // ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
 function MonthPickerPopover({
@@ -193,7 +194,7 @@ function VentaPageContent() {
   );
   const saleElementsRef = useRef(new Map<string, HTMLDivElement>());
   const { taxSettingsEnabled } = useTaxSettings();
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
   const [q, setQ] = useState("");
 
@@ -208,7 +209,7 @@ function VentaPageContent() {
   }, []);
 
   const salesBlockedBySimpleRegime =
-    !simpleRegimeEnabled && hasHistoricalSimpleResponsibility;
+    !simpleRegimeSalesEnabled && hasHistoricalSimpleResponsibility;
 
   // ── Lazy initializers para consistencia con el Dashboard ──────────────────
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
@@ -226,6 +227,7 @@ function VentaPageContent() {
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [receiptBusiness, setReceiptBusiness] = useState<BusinessLogoProfile | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [pendingDeepLinkSaleId, setPendingDeepLinkSaleId] = useState<
@@ -241,6 +243,22 @@ function VentaPageContent() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDone = useRef(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    getCached("business-profile", 5 * 60 * 1000, getBusinessProfile)
+      .then((profile) => {
+        if (active) setReceiptBusiness(profile);
+      })
+      .catch(() => {
+        if (active) setReceiptBusiness(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     bottomRef.current?.scrollIntoView({
@@ -584,9 +602,7 @@ function VentaPageContent() {
       const buyerFiscalContext = sale.fiscalContext
         ? {
           ...sale.fiscalContext,
-          buyerIsRegimenSimple: simpleRegimeEnabled
-            ? Boolean(sale.fiscalContext.buyerIsRegimenSimple)
-            : false,
+          buyerIsRegimenSimple: Boolean(sale.fiscalContext.buyerIsRegimenSimple),
         }
         : undefined;
 
@@ -619,7 +635,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, simpleRegimeEnabled, taxSettingsEnabled]);
+  }, [loadOrders, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -1059,7 +1075,7 @@ function VentaPageContent() {
         open={!!receiptSale}
         sale={receiptSale}
         onClose={() => setReceiptSale(null)}
-        taxSettingsEnabled={taxSettingsEnabled}
+        business={receiptBusiness}
       />
 
       <SalesFilterModal

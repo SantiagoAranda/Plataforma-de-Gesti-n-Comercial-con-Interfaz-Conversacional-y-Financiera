@@ -1,33 +1,35 @@
 "use client";
 
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { AlertTriangle, Download, Loader2, Printer, ReceiptText, Share2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import html2canvas from "html2canvas-pro";
 
-import type { Sale } from "@/src/types/sales";
-import { readBusinessProfile } from "@/src/lib/businessProfile";
+import type { Sale, SaleTaxLine } from "@/src/types/sales";
+import type { BusinessLogoProfile } from "@/src/lib/businessLogo";
 import { getStatusStyles } from "@/src/lib/statusStyles";
-
-type BusinessReceiptProfile = {
-  name: string;
-  subtitle: string;
-  phone: string;
-  logoUrl: string;
-  identification: string;
-  address: string;
-};
 
 type ReceiptViewProps = {
   sale: Sale;
+  business: BusinessLogoProfile | null;
   receiptRef: RefObject<HTMLDivElement | null>;
   isExporting: boolean;
   onClose: () => void;
   onPrint: () => void;
   onDownload: () => void;
   onShare: () => void;
-  taxSettingsEnabled?: boolean;
 };
+
+const consumerTaxLabels: Record<"IVA" | "IMPOCONSUMO", string> = {
+  IVA: "IVA",
+  IMPOCONSUMO: "Impoconsumo",
+};
+
+function isConsumerTaxLine(
+  line: SaleTaxLine,
+): line is SaleTaxLine & { taxType: "IVA" | "IMPOCONSUMO" } {
+  return line.applied && (line.taxType === "IVA" || line.taxType === "IMPOCONSUMO");
+}
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("es-AR", {
@@ -84,53 +86,6 @@ function statusBadgeClass(status: Sale["status"]) {
   return getStatusStyles(status).badge;
 }
 
-function readReceiptBusinessProfile(): BusinessReceiptProfile {
-  const profile = readBusinessProfile();
-
-  if (typeof window === "undefined") {
-    return {
-      ...profile,
-      logoUrl: "",
-      identification: "",
-      address: "",
-    };
-  }
-
-  return {
-    ...profile,
-    logoUrl:
-      localStorage.getItem("businessLogoUrl") ||
-      localStorage.getItem("businessLogo") ||
-      "",
-    identification:
-      localStorage.getItem("businessNit") ||
-      localStorage.getItem("businessIdentification") ||
-      "",
-    address:
-      localStorage.getItem("businessAddress") ||
-      localStorage.getItem("businessDireccion") ||
-      "",
-  };
-}
-
-function copyComputedStyles(source: Element, target: Element) {
-  if (!(source instanceof HTMLElement) || !(target instanceof HTMLElement)) return;
-
-  const computed = window.getComputedStyle(source);
-  Array.from(computed).forEach((property) => {
-    target.style.setProperty(
-      property,
-      computed.getPropertyValue(property),
-      computed.getPropertyPriority(property),
-    );
-  });
-
-  Array.from(source.children).forEach((child, index) => {
-    const targetChild = target.children.item(index);
-    if (targetChild) copyComputedStyles(child, targetChild);
-  });
-}
-
 function downloadFile(file: File) {
   const url = URL.createObjectURL(file);
   const a = document.createElement("a");
@@ -142,33 +97,42 @@ function downloadFile(file: File) {
   URL.revokeObjectURL(url);
 }
 
+async function waitForReceiptImages(root: HTMLElement) {
+  const images = Array.from(root.querySelectorAll("img"));
+
+  await Promise.all(
+    images.map((image) => {
+      if (image.complete) return Promise.resolve();
+
+      return new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      });
+    }),
+  );
+}
+
 function SaleReceiptView({
   sale,
+  business,
   receiptRef,
   isExporting,
   onClose,
   onPrint,
   onDownload,
   onShare,
-  taxSettingsEnabled = false,
 }: ReceiptViewProps) {
-  const business = readReceiptBusinessProfile();
-  const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
-    taxSettingsEnabled || 
-    Number(sale.fiscalSummary?.iva ?? 0) > 0 ||
-    Number(sale.fiscalSummary?.impoconsumo ?? 0) > 0 ||
-    Number(sale.fiscalSummary?.reteFuente ?? 0) > 0 ||
-    Number(sale.fiscalSummary?.reteIva ?? 0) > 0 ||
-    Number(sale.fiscalSummary?.reteIca ?? 0) > 0
-  );
+  const [logoFailed, setLogoFailed] = useState(false);
+  const consumerTaxLines = (sale.taxLines ?? []).filter(isConsumerTaxLine);
   const total = calcTotal(sale);
-  const subtotal = hasFiscalSummary && sale.fiscalSummary ? Number(sale.fiscalSummary.subtotal) : total;
+  const subtotal = sale.fiscalSummary ? Number(sale.fiscalSummary.subtotal) : total;
   const discounts = 0;
-  const taxes = hasFiscalSummary && sale.fiscalSummary
-    ? Number(sale.fiscalSummary.iva ?? 0) + Number(sale.fiscalSummary.impoconsumo ?? 0)
-    : 0;
-  const displayTotal = hasFiscalSummary ? (subtotal + taxes) : total;
   const statusStyles = getStatusStyles(sale.status);
+  const logoUrl = logoFailed ? null : business?.logoUrl;
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [business?.logoUrl]);
 
   return (
     <article className="max-w-md mx-auto bg-white rounded-3xl shadow-lg border border-slate-200 overflow-hidden">
@@ -178,23 +142,13 @@ function SaleReceiptView({
         className="max-h-[86dvh] overflow-y-auto bg-white"
       >
         <header className="px-6 pb-5 pt-6 text-center">
-          {business.logoUrl && !isExporting ? (
+          {logoUrl ? (
             <img
-              src={business.logoUrl}
+              src={logoUrl}
               crossOrigin="anonymous"
-              alt={business.name}
+              alt={business?.name ?? "Logo del negocio"}
+              onError={() => setLogoFailed(true)}
               className="mx-auto mb-3 h-16 w-16 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50 object-cover"
-            />
-          ) : business.logoUrl && isExporting ? (
-            <div
-              className="mx-auto mb-3 border"
-              style={{
-                backgroundColor: "#e2e8f0",
-                width: "64px",
-                height: "64px",
-                borderRadius: "1rem",
-                borderColor: "#f1f5f9",
-              }}
             />
           ) : (
             <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
@@ -203,21 +157,16 @@ function SaleReceiptView({
           )}
 
           <h2 className="text-lg font-semibold text-slate-900">
-            {business.name}
+            {business?.name || "Mi Negocio"}
           </h2>
-          {business.identification && (
+          {business?.fiscalId && (
             <p className="mt-1 text-xs font-semibold text-slate-500">
-              NIT/ID: {business.identification}
+              NIT/ID: {business.fiscalId}
             </p>
           )}
-          {business.address && (
+          {business?.phoneWhatsapp && (
             <p className="mt-1 text-xs font-medium text-slate-500">
-              {business.address}
-            </p>
-          )}
-          {business.phone && (
-            <p className="mt-1 text-xs font-medium text-slate-500">
-              Tel: {business.phone}
+              Tel: {business.phoneWhatsapp}
             </p>
           )}
 
@@ -264,7 +213,9 @@ function SaleReceiptView({
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Documento:</span>
-                <span className="text-right font-medium text-slate-800">-</span>
+                <span className="text-right font-medium text-slate-800">
+                  {sale.fiscalContext?.buyerDocumentNumber || "-"}
+                </span>
               </div>
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Teléfono:</span>
@@ -326,12 +277,14 @@ function SaleReceiptView({
                   ${formatMoney(discounts)}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Impuestos</span>
-                <span className="font-medium tabular-nums text-slate-700">
-                  ${formatMoney(taxes)}
-                </span>
-              </div>
+              {consumerTaxLines.map((line) => (
+                <div key={`${line.taxType}-${line.direction}`} className="flex justify-between text-slate-500">
+                  <span>{consumerTaxLabels[line.taxType]}</span>
+                  <span className="font-medium tabular-nums text-slate-700">
+                    ${formatMoney(Number(line.taxAmount))}
+                  </span>
+                </div>
+              ))}
             </div>
 
             <div className="mt-4 flex items-end justify-between border-t border-slate-200 pt-4">
@@ -339,7 +292,7 @@ function SaleReceiptView({
                 Total
               </span>
               <span className="text-2xl font-semibold text-slate-900 tabular-nums">
-                ${formatMoney(displayTotal)}
+                ${formatMoney(sale.fiscalSummary ? Number(sale.fiscalSummary.totalCollected) : total)}
               </span>
             </div>
           </div>
@@ -428,19 +381,19 @@ export default function SaleReceiptModal({
   open,
   sale,
   onClose,
-  taxSettingsEnabled = false,
+  business,
 }: {
   open: boolean;
   sale: Sale | null;
   onClose: () => void;
-  taxSettingsEnabled?: boolean;
+  business: BusinessLogoProfile | null;
 }) {
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   if (!open || !sale) return null;
 
-  async function exportReceiptAsPng(): Promise<File | null> {
+  async function captureReceipt(): Promise<File | null> {
     if (typeof window === "undefined" || typeof document === "undefined" || !sale) {
       return null;
     }
@@ -449,15 +402,51 @@ export default function SaleReceiptModal({
     if (!source) return null;
 
     setIsExporting(true);
-    // Dar un breve respiro a React para renderizar el DOM sin elementos externos
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    let exportContainer: HTMLDivElement | null = null;
 
     try {
-      const canvas = await html2canvas(source, {
+      const sourceWidth = Math.ceil(source.getBoundingClientRect().width);
+      if (sourceWidth <= 0) throw new Error("El comprobante no tiene un ancho válido");
+
+      exportContainer = document.createElement("div");
+      exportContainer.style.position = "fixed";
+      exportContainer.style.left = "-10000px";
+      exportContainer.style.top = "0";
+      exportContainer.style.width = `${sourceWidth}px`;
+      exportContainer.style.height = "auto";
+      exportContainer.style.maxHeight = "none";
+      exportContainer.style.overflow = "visible";
+      exportContainer.style.pointerEvents = "none";
+
+      const clone = source.cloneNode(true) as HTMLDivElement;
+      clone.removeAttribute("id");
+      clone.style.width = `${sourceWidth}px`;
+      clone.style.height = "auto";
+      clone.style.maxHeight = "none";
+      clone.style.overflow = "visible";
+
+      exportContainer.appendChild(clone);
+      document.body.appendChild(exportContainer);
+
+      await Promise.all([
+        waitForReceiptImages(clone),
+        document.fonts?.ready ?? Promise.resolve(),
+      ]);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      const width = Math.ceil(clone.scrollWidth);
+      const height = Math.ceil(clone.scrollHeight);
+      const canvas = await html2canvas(clone, {
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: "#ffffff",
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+        scrollX: 0,
+        scrollY: 0,
       });
 
       const blob = await new Promise<Blob | null>((resolve) => {
@@ -473,6 +462,7 @@ export default function SaleReceiptModal({
       toast.error("No se pudo generar el ticket.");
       return null;
     } finally {
+      exportContainer?.remove();
       setIsExporting(false);
     }
   }
@@ -483,7 +473,7 @@ export default function SaleReceiptModal({
   }
 
   async function handleDownload() {
-    const file = await exportReceiptAsPng();
+    const file = await captureReceipt();
     if (!file) return;
     downloadFile(file);
   }
@@ -491,7 +481,7 @@ export default function SaleReceiptModal({
   async function handleShare() {
     if (typeof navigator === "undefined") return;
 
-    const file = await exportReceiptAsPng();
+    const file = await captureReceipt();
     if (!file) return;
 
     const nav = navigator as Navigator & {
@@ -558,13 +548,13 @@ export default function SaleReceiptModal({
         </div>
         <SaleReceiptView
           sale={sale}
+          business={business}
           receiptRef={receiptRef}
           isExporting={isExporting}
           onClose={onClose}
           onPrint={handlePrint}
           onDownload={handleDownload}
           onShare={handleShare}
-          taxSettingsEnabled={taxSettingsEnabled}
         />
       </div>
     </div>

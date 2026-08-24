@@ -11,15 +11,17 @@ export enum ManualPaidOutflowPaymentMethod {
 }
 
 export class CreateManualPaidOutflowDto {
+  @IsOptional()
   @IsString()
-  counterpartyName: string;
+  counterpartyName?: string;
 
   @IsNumber()
   @Min(0.0000001)
   amount: number;
 
+  @IsOptional()
   @IsString()
-  description: string;
+  description?: string;
 
   @IsEnum(ManualPaidOutflowPaymentMethod)
   paymentMethod: ManualPaidOutflowPaymentMethod;

@@ -18,6 +18,8 @@ export class TaxService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
@@ -43,7 +45,7 @@ export class TaxService {
       sellerProfile?.responsibilities.some((item) => item.responsibility.code === '47'),
     );
     if (
-      !this.featureFlags.simpleRegimeEnabled &&
+      !this.featureFlags.simpleRegimeSalesEnabled &&
       (dto.buyerIsRegimenSimple === true || sellerHasSimpleResponsibility)
     ) {
       throw new SimpleRegimeNotAvailableException();
@@ -336,7 +338,6 @@ export class TaxService {
     if (
       dto.buyerIsGranContribuyente &&
       vatTotal.gt(0) &&
-      !sellerIsRegimenSimple &&
       !sellerIsGranContribuyente
     ) {
       reteIvaTotal = vatTotal.mul(reteIvaRate);
@@ -369,7 +370,11 @@ export class TaxService {
     // Determinar la tarifa de ReteICA y si aplica
     if (reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null) {
       reteIcaRate = new Prisma.Decimal(reteIcaRateOverridePerThousand).div(1000);
-      if (reteIcaRate.gt(0) && !dto.buyerIsRegimenSimple) {
+      if (
+        reteIcaRate.gt(0) &&
+        !dto.buyerIsRegimenSimple &&
+        !sellerIsRegimenSimple
+      ) {
         useReteIca = true;
       }
     } else {
@@ -478,15 +483,15 @@ export class TaxService {
         taxAmount: new Prisma.Decimal(0),
         accountCode: '135518',
         applied: false,
-        reason: reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null
-          ? 'Tarifa ReteICA configurada en 0 por mil.'
-          : sellerIsGranContribuyente
-            ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
-            : sellerIsRegimenSimple
-              ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
-              : dto.buyerIsRegimenSimple
-                ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteICA.'
-                : buyerIsPersonaNatural
+        reason: sellerIsGranContribuyente
+          ? 'El vendedor es Gran Contribuyente; no aplica ReteICA.'
+          : sellerIsRegimenSimple
+            ? 'El vendedor pertenece al Regimen Simple (47) y esta exento de ReteICA.'
+            : dto.buyerIsRegimenSimple
+              ? 'El comprador pertenece al Regimen Simple (RST); no practica ReteICA.'
+              : reteIcaRateOverridePerThousand !== undefined && reteIcaRateOverridePerThousand !== null
+                ? 'Tarifa ReteICA configurada en 0 por mil.'
+              : buyerIsPersonaNatural
                   ? 'El comprador es Persona Natural; no practica ReteICA.'
                   : 'Falta configurar municipio fiscal del comprador o este no es retenedor.',
       });

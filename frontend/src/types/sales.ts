@@ -19,7 +19,11 @@ export type SaleFiscalContext = {
   buyerIsRetenedor?: boolean | null;
   buyerIsGranContribuyente?: boolean | null;
   buyerIsAutorretenedor?: boolean | null;
-  buyerIsRegimenSimple?: boolean | null;
+  /**
+   * Operational sales contract. Legacy API responses are normalized to false
+   * when they are mapped into this state.
+   */
+  buyerIsRegimenSimple: boolean;
   buyerRequiresElectronicInvoice?: boolean | null;
   withholdingSubjectIsDeclarante?: boolean | null;
   fiscalMunicipalityCode?: string | null;
@@ -47,6 +51,27 @@ export type SaleFiscalSummary = {
   totalCharged: number;
   totalWithheld: number;
   netReceived: number;
+};
+
+export type SaleTaxType =
+  | "IVA"
+  | "IMPOCONSUMO"
+  | "RETEFUENTE"
+  | "RETEIVA"
+  | "RETEICA"
+  | "AUTORRETENCION";
+
+export type SaleTaxDirection = "CHARGE" | "WITHHOLD" | "SELF";
+
+export type SaleTaxLine = {
+  taxType: SaleTaxType;
+  direction: SaleTaxDirection;
+  baseAmount: number;
+  rate: number;
+  taxAmount: number;
+  accountCode: string;
+  applied: boolean;
+  reason: string | null;
 };
 
 export interface SaleItem {
@@ -109,7 +134,7 @@ export interface Sale {
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;
-  taxLines?: any[] | null;
+  taxLines?: SaleTaxLine[] | null;
 
   items: SaleItem[];
 

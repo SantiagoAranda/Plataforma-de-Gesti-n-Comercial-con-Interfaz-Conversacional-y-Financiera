@@ -10,6 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { BuyerFiscalContextDto } from '../../sales/dto/create-order.dto';
 
 class OptionSelectionInput {
   @IsUUID()
@@ -58,6 +59,11 @@ export class CreatePublicOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => BuyerFiscalContextDto)
+  buyerFiscalContext?: BuyerFiscalContextDto;
 
   @IsArray()
   @ValidateNested({ each: true })

@@ -1,4 +1,9 @@
-import { Prisma, SimpleTaxFilingMode, TaxDirection, TaxType } from '@prisma/client';
+import {
+  Prisma,
+  SimpleTaxFilingMode,
+  TaxDirection,
+  TaxType,
+} from '@prisma/client';
 import { describe, expect, it, jest } from '@jest/globals';
 import { AccountingService } from './accounting.service';
 import {
@@ -65,10 +70,14 @@ describe('AccountingService automatic order postings', () => {
 
     const tx = {
       pucCuenta: {
-        findUnique: jest.fn(({ where }: any) => Promise.resolve(pucCuenta(where.code))),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(pucCuenta(where.code)),
+        ),
       },
       pucSubcuenta: {
-        findUnique: jest.fn(({ where }: any) => Promise.resolve(pucSubcuenta(where.code))),
+        findUnique: jest.fn(({ where }: any) =>
+          Promise.resolve(pucSubcuenta(where.code)),
+        ),
       },
       inventoryMovement: {
         findMany: jest.fn(),
@@ -87,7 +96,9 @@ describe('AccountingService automatic order postings', () => {
           Promise.resolve({
             id: `movement-${data.pucCuentaCode ?? data.pucSubcuentaId}-${data.nature}`,
             ...data,
-            pucCuenta: data.pucCuentaCode ? pucCuenta(data.pucCuentaCode) : null,
+            pucCuenta: data.pucCuentaCode
+              ? pucCuenta(data.pucCuentaCode)
+              : null,
             pucSubcuenta: data.pucSubcuentaId
               ? pucSubcuenta(data.pucSubcuentaId)
               : null,
@@ -297,7 +308,9 @@ describe('AccountingService automatic order postings', () => {
     );
 
     const lines = createdLines(tx);
-    expect(lines.map((line) => [line.code, line.nature, line.amount, line.taxType])).toEqual([
+    expect(
+      lines.map((line) => [line.code, line.nature, line.amount, line.taxType]),
+    ).toEqual([
       ['110505', 'DEBIT', '105500', 'NET_RECEIVED'],
       ['135515', 'DEBIT', '2500', 'RETEFUENTE'],
       ['413595', 'CREDIT', '100000', undefined],
@@ -328,7 +341,11 @@ describe('AccountingService manual paid expense postings', () => {
       code,
       name,
       grupoCode: code.slice(0, 2),
-      grupo: grupo(code.slice(0, 2), claseCode === '5' ? 'Gastos operacionales' : 'Costo de ventas', claseCode),
+      grupo: grupo(
+        code.slice(0, 2),
+        claseCode === '5' ? 'Gastos operacionales' : 'Costo de ventas',
+        claseCode,
+      ),
     };
   }
 
@@ -355,7 +372,12 @@ describe('AccountingService manual paid expense postings', () => {
       'Servicios',
       '5',
     );
-    const energySub = subcuenta('513530', 'Energia electrica', 'Servicios', '5');
+    const energySub = subcuenta(
+      '513530',
+      'Energia electrica',
+      'Servicios',
+      '5',
+    );
     const costSub = subcuenta(
       '613520',
       'Venta de productos en almacenes no especializados',
@@ -479,9 +501,7 @@ describe('AccountingService manual paid expense postings', () => {
         where: expect.objectContaining({
           active: true,
           cuenta: { grupo: { claseCode: '5' } },
-          OR: expect.arrayContaining([
-            { code: { startsWith: '5135' } },
-          ]),
+          OR: expect.arrayContaining([{ code: { startsWith: '5135' } }]),
         }),
         take: 120,
       }),
@@ -503,7 +523,13 @@ describe('AccountingService manual paid expense postings', () => {
     const calls = tx.accountingMovement.create.mock.calls.map(
       ([call]: any[]) => call.data,
     );
-    expect(calls.map((line: any) => [line.pucSubcuentaId, line.nature, line.amount.toString()])).toEqual([
+    expect(
+      calls.map((line: any) => [
+        line.pucSubcuentaId,
+        line.nature,
+        line.amount.toString(),
+      ]),
+    ).toEqual([
       ['513525', 'DEBIT', '100000'],
       ['110505', 'CREDIT', '100000'],
     ]);
@@ -519,6 +545,124 @@ describe('AccountingService manual paid expense postings', () => {
     );
     expect(totals.debit.toString()).toBe('100000');
     expect(totals.credit.toString()).toBe('100000');
+    expect(calls[0].detail).toBe('Pago de acueducto - Empresa de servicios');
+    expect(calls[1].detail).toBe('Pago en efectivo - Empresa de servicios');
+    expect(calls[0].metadata.counterpartyName).toBe('Empresa de servicios');
+  });
+
+  it('creates an expense without description', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(
+      businessId,
+      userId,
+      expenseDto({ description: undefined }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls[0].detail).toBe('Empresa de servicios');
+    expect(calls[1].detail).toBe('Pago en efectivo - Empresa de servicios');
+  });
+
+  it('creates an expense without beneficiary', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(
+      businessId,
+      userId,
+      expenseDto({ counterpartyName: undefined }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls[0].detail).toBe('Pago de acueducto');
+    expect(calls[1].detail).toBe('Pago en efectivo');
+    expect(calls[0].metadata).not.toHaveProperty('counterpartyName');
+  });
+
+  it('creates an expense without description or beneficiary and omits empty metadata', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(
+      businessId,
+      userId,
+      expenseDto({ description: '   ', counterpartyName: '   ' }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls[0].detail).toBeNull();
+    expect(calls[1].detail).toBe('Pago en efectivo');
+    expect(calls[0].metadata).not.toHaveProperty('counterpartyName');
+    expect(calls.map((call: any) => String(call.detail))).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('undefined'),
+        expect.stringContaining(' - '),
+      ]),
+    );
+  });
+
+  it('persists an explicit Bogota accounting time as the exact shared date', async () => {
+    const { service, tx } = createManualService();
+    // 2026-08-19 09:45 in America/Bogota is UTC-05:00.
+    const occurredAt = '2026-08-19T14:45:00.000Z';
+
+    await service.createManualPaidOutflow(
+      businessId,
+      userId,
+      expenseDto({ occurredAt }),
+    );
+
+    const dates = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data.date,
+    );
+    expect(dates).toHaveLength(2);
+    expect(dates[0]).toEqual(new Date(occurredAt));
+    expect(dates[1]).toBe(dates[0]);
+  });
+
+  it('uses the current date when occurredAt is omitted', async () => {
+    jest.useFakeTimers();
+    const now = new Date('2026-08-21T16:45:00.000Z');
+    jest.setSystemTime(now);
+
+    try {
+      const { service, tx } = createManualService();
+      await service.createManualPaidOutflow(businessId, userId, expenseDto());
+
+      const dates = tx.accountingMovement.create.mock.calls.map(
+        ([call]: any[]) => call.data.date,
+      );
+      expect(dates).toEqual([now, now]);
+      expect(dates[1]).toBe(dates[0]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('credits bank account 111005 for transfer payments', async () => {
+    const { service, tx } = createManualService();
+
+    await service.createManualPaidOutflow(
+      businessId,
+      userId,
+      expenseDto({ paymentMethod: ManualPaidOutflowPaymentMethod.TRANSFER }),
+    );
+
+    const calls = tx.accountingMovement.create.mock.calls.map(
+      ([call]: any[]) => call.data,
+    );
+    expect(calls[1]).toEqual(
+      expect.objectContaining({
+        pucSubcuentaId: '111005',
+        nature: 'CREDIT',
+        detail: 'Pago por transferencia - Empresa de servicios',
+      }),
+    );
   });
 
   it('rejects costs in the paid expense flow', async () => {
@@ -622,11 +766,10 @@ describe('AccountingService simple tax dashboard projection', () => {
               ? null
               : {
                   mainCiiuCode: overrides.mainCiiuCode ?? '4711',
-                  mainCiiuDescription: overrides.mainCiiuDescription ?? 'Comercio al por menor',
+                  mainCiiuDescription:
+                    overrides.mainCiiuDescription ?? 'Comercio al por menor',
                   taxSettingsEnabled: overrides.taxSettingsEnabled !== false,
-                  responsibilities: [
-                    { responsibility: { code: '47' } },
-                  ],
+                  responsibilities: [{ responsibility: { code: '47' } }],
                 },
           ),
         ),
@@ -638,12 +781,14 @@ describe('AccountingService simple tax dashboard projection', () => {
       },
       businessSimpleTaxConfig: {
         findUnique: jest.fn(() =>
-          Promise.resolve(overrides.config ?? {
-            enabled: true,
-            taxYear: 2026,
-            groupCode: '2',
-            filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
-          }),
+          Promise.resolve(
+            overrides.config ?? {
+              enabled: true,
+              taxYear: 2026,
+              groupCode: '2',
+              filingMode: SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
+            },
+          ),
         ),
       },
       simpleTaxPeriod: {
@@ -653,13 +798,15 @@ describe('AccountingService simple tax dashboard projection', () => {
       },
       simpleTaxRateBracket: {
         findFirst: jest.fn(() =>
-          Promise.resolve(overrides.bracket ?? {
-            groupCode: '2',
-            groupName: 'Grupo 2',
-            lowerUvt: new Prisma.Decimal(0),
-            upperUvt: new Prisma.Decimal(1000),
-            rate: new Prisma.Decimal('0.016'),
-          }),
+          Promise.resolve(
+            overrides.bracket ?? {
+              groupCode: '2',
+              groupName: 'Grupo 2',
+              lowerUvt: new Prisma.Decimal(0),
+              upperUvt: new Prisma.Decimal(1000),
+              rate: new Prisma.Decimal('0.016'),
+            },
+          ),
         ),
       },
     } as any;
@@ -794,7 +941,13 @@ describe('AccountingService simple tax dashboard projection', () => {
         movement('519595', 'DEBIT', 800000),
         movement('219595', 'CREDIT', 800000),
       ],
-      orders: [completedOrder(50000000, 50000000, new Date('2026-03-15T10:00:00.000Z'))],
+      orders: [
+        completedOrder(
+          50000000,
+          50000000,
+          new Date('2026-03-15T10:00:00.000Z'),
+        ),
+      ],
       period: {
         status: 'POSTED',
         groupCode: '2',
@@ -837,7 +990,13 @@ describe('AccountingService simple tax dashboard projection', () => {
         movement('219595', 'DEBIT', 800000),
         movement('111005', 'CREDIT', 800000),
       ],
-      orders: [completedOrder(50000000, 50000000, new Date('2026-03-15T10:00:00.000Z'))],
+      orders: [
+        completedOrder(
+          50000000,
+          50000000,
+          new Date('2026-03-15T10:00:00.000Z'),
+        ),
+      ],
       period: {
         status: 'PAID',
         groupCode: '2',
@@ -871,10 +1030,30 @@ describe('AccountingService simple tax dashboard projection', () => {
       movements: [
         saleMovement(3000000),
         movement('6135', 'DEBIT', 10920, new Date('2026-07-09T00:00:00.000Z')),
-        movement('519595', 'DEBIT', 36000, new Date('2026-08-31T23:59:59.999Z')),
-        movement('219595', 'CREDIT', 36000, new Date('2026-08-31T23:59:59.999Z')),
-        movement('219595', 'DEBIT', 36000, new Date('2026-07-09T00:00:00.000Z')),
-        movement('111005', 'CREDIT', 36000, new Date('2026-07-09T00:00:00.000Z')),
+        movement(
+          '519595',
+          'DEBIT',
+          36000,
+          new Date('2026-08-31T23:59:59.999Z'),
+        ),
+        movement(
+          '219595',
+          'CREDIT',
+          36000,
+          new Date('2026-08-31T23:59:59.999Z'),
+        ),
+        movement(
+          '219595',
+          'DEBIT',
+          36000,
+          new Date('2026-07-09T00:00:00.000Z'),
+        ),
+        movement(
+          '111005',
+          'CREDIT',
+          36000,
+          new Date('2026-07-09T00:00:00.000Z'),
+        ),
       ],
       orders: [
         completedOrder(3000000, 3000000, new Date('2026-07-09T10:00:00.000Z')),
@@ -953,7 +1132,12 @@ describe('AccountingService simple tax dashboard projection', () => {
     const { service } = createSummaryService({
       movements: [
         saleMovement(1000000),
-        movement('519595', 'DEBIT', 12000, new Date('2026-08-31T23:59:59.999Z')),
+        movement(
+          '519595',
+          'DEBIT',
+          12000,
+          new Date('2026-08-31T23:59:59.999Z'),
+        ),
       ],
       orders: [
         completedOrder(3000000, 3000000, new Date('2026-07-09T10:00:00.000Z')),

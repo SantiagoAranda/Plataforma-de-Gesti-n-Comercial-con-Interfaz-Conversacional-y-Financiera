@@ -6,6 +6,8 @@ import { StorageModule } from '../storage/storage.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { TaxModule } from '../tax/tax.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     InventoryModule,
     ItemOptionsModule,
     NotificationsModule,
+    TaxModule,
+    CommonModule,
   ],
   controllers: [PublicController],
   providers: [PublicService, PrismaService],

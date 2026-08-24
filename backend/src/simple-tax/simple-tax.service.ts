@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { parseAccountingDate } from '../common/date/accounting-date';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
 import {
@@ -92,17 +93,20 @@ export class SimpleTaxService {
   constructor(
     private readonly prisma: PrismaService,
     @Optional() private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeTaxModuleEnabled: true,
+      simpleRegimeSalesEnabled: true,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
 
   private assertSimpleRegimeAvailable() {
-    if (!this.featureFlags.simpleRegimeEnabled) {
+    if (!this.featureFlags.simpleRegimeTaxModuleEnabled) {
       throw new SimpleRegimeNotAvailableException();
     }
   }
 
   async getConfig(businessId: string) {
+    this.assertSimpleRegimeAvailable();
     const existing = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
     });
@@ -162,6 +166,7 @@ export class SimpleTaxService {
   }
 
   async listRates(taxYear: number, periodType: SimpleTaxPeriodType = SimpleTaxPeriodType.BIMONTHLY) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxRateBracket.findMany({
       where: { taxYear, periodType, active: true },
       orderBy: [{ groupCode: 'asc' }, { lowerUvt: 'asc' }],
@@ -169,6 +174,7 @@ export class SimpleTaxService {
   }
 
   async listPeriods(businessId: string, taxYear: number) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxPeriod.findMany({
       where: { businessId, taxYear },
       orderBy: { periodNumber: 'asc' },
@@ -176,6 +182,7 @@ export class SimpleTaxService {
   }
 
   async getPeriod(businessId: string, id: string) {
+    this.assertSimpleRegimeAvailable();
     const period = await this.prisma.simpleTaxPeriod.findFirst({
       where: { id, businessId },
     });
@@ -437,8 +444,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 
@@ -1246,12 +1253,14 @@ export class SimpleTaxService {
   }
 
   async getAnnualReturn(businessId: string, taxYear: number) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxAnnualReturn.findUnique({
       where: { businessId_taxYear: { businessId, taxYear } },
     });
   }
 
   async listAnnualReturns(businessId: string) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxAnnualReturn.findMany({
       where: { businessId },
       orderBy: { taxYear: 'desc' },
@@ -1372,8 +1381,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 

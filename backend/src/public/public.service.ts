@@ -15,6 +15,9 @@ import { InventoryService } from '../inventory/inventory.service';
 import { ItemOptionsService } from '../item-options/item-options.service';
 import { PushNotificationsService } from '../notifications/push-notifications.service';
 import { isIngredientOperational } from '../ingredients/ingredient-operational';
+import { TaxService } from '../tax/tax.service';
+import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
+import { FeatureFlagsService } from '../common/config/feature-flags';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -154,7 +157,79 @@ export class PublicService {
     private itemOptionsService: ItemOptionsService,
     @Optional()
     private pushNotificationsService?: PushNotificationsService,
+    @Optional()
+    private taxService?: TaxService,
+    @Optional()
+    private featureFlags: FeatureFlagsService = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
+    } as FeatureFlagsService,
   ) {}
+
+  private async findActiveBusiness(slug: string) {
+    let business = await this.prisma.business.findFirst({
+      where: { slug, status: 'ACTIVE' },
+    });
+    if (!business) {
+      const normalized = await generateSlug(slug);
+      business = await this.prisma.business.findFirst({
+        where: { slug: normalized, status: 'ACTIVE' },
+      });
+    }
+    if (!business) throw new BadRequestException('Business not found');
+    return business;
+  }
+
+  private normalizeBuyerFiscalContext(
+    value: CreatePublicOrderDto['buyerFiscalContext'] | undefined,
+    customerName: string,
+  ) {
+    return {
+      buyerType: value?.buyerType ?? 'NATURAL',
+      buyerName: value?.buyerName?.trim() || customerName.trim() || null,
+      buyerDocumentType: value?.buyerDocumentType,
+      buyerDocumentNumber: value?.buyerDocumentNumber?.trim() || null,
+      buyerEmail: value?.buyerEmail?.trim() || null,
+      buyerIsIvaResponsable: Boolean(value?.buyerIsIvaResponsable),
+      buyerIsRetenedor: Boolean(value?.buyerIsRetenedor),
+      buyerIsGranContribuyente: Boolean(value?.buyerIsGranContribuyente),
+      buyerIsAutorretenedor: Boolean(value?.buyerIsAutorretenedor),
+      buyerIsRegimenSimple: Boolean(value?.buyerIsRegimenSimple),
+      buyerRequiresElectronicInvoice: Boolean(value?.buyerRequiresElectronicInvoice),
+      withholdingSubjectIsDeclarante:
+        value?.withholdingSubjectIsDeclarante ?? true,
+      fiscalMunicipalityCode: value?.fiscalMunicipalityCode ?? null,
+      reteIcaRateOverride:
+        value?.reteIcaRateOverride ?? value?.icaRateOverride,
+      saleConcept: value?.saleConcept ?? 'GOODS',
+    };
+  }
+
+  private async getFiscalSettingsForBusiness(businessId: string) {
+    const profile = await this.prisma.businessTaxProfile.findUnique({
+      where: { businessId },
+      select: { taxSettingsEnabled: true },
+    });
+
+    return {
+      fiscalContextEnabled: profile?.taxSettingsEnabled === true,
+      simpleRegimeSalesEnabled:
+        this.featureFlags.simpleRegimeSalesEnabled === true,
+    };
+  }
+
+  async getFiscalSettings(slug: string) {
+    const business = await this.findActiveBusiness(slug);
+    return this.getFiscalSettingsForBusiness(business.id);
+  }
+
+  async calculateTaxPreview(slug: string, dto: TaxPreviewDto) {
+    const business = await this.findActiveBusiness(slug);
+    if (!this.taxService) {
+      throw new BadRequestException('Tax preview is not available');
+    }
+    return this.taxService.calculateTaxPreview(business.id, dto);
+  }
 
   private publicOrderFingerprint(dto: CreatePublicOrderDto) {
     const normalized = {
@@ -773,18 +848,7 @@ export class PublicService {
   ===================================================== */
 
   async getAvailability(slug: string, itemId: string, date: string) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
-    }
-
-    if (!business) throw new BadRequestException('Business not found');
+    const business = await this.findActiveBusiness(slug);
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -1198,6 +1262,21 @@ export class PublicService {
       0,
     );
 
+    const fiscalSettings = await this.getFiscalSettingsForBusiness(business.id);
+    const buyerFiscalContext = fiscalSettings.fiscalContextEnabled
+      ? this.normalizeBuyerFiscalContext(dto.buyerFiscalContext, dto.customerName)
+      : undefined;
+    const fiscalPreview = this.taxService && buyerFiscalContext
+      ? await this.taxService.calculateTaxPreview(business.id, {
+          ...buyerFiscalContext,
+          cartItems: orderItemCreates.map((item) => ({
+            itemId: item.itemId,
+            quantity: Number(item.quantity),
+            unitPrice: Number(item.unitPrice),
+          })),
+        })
+      : undefined;
+
     let order: {
       id: string;
       businessId: string;
@@ -1207,7 +1286,9 @@ export class PublicService {
       total: Prisma.Decimal;
     };
     try {
-      order = await this.prisma.order.create({
+      const createOrder = async (
+        db: Prisma.TransactionClient | PrismaService,
+      ) => db.order.create({
         data: {
           businessId: business.id,
           publicRequestId: dto.idempotencyKey,
@@ -1232,6 +1313,18 @@ export class PublicService {
           total: true,
         },
       });
+      order = this.taxService && fiscalPreview && buyerFiscalContext
+        ? await this.prisma.$transaction(async (tx) => {
+            const created = await createOrder(tx);
+            await this.taxService!.freezeTaxCalculation(
+              tx,
+              created.id,
+              fiscalPreview,
+              buyerFiscalContext,
+            );
+            return created;
+          }, { maxWait: 5000, timeout: 15000 })
+        : await createOrder(this.prisma);
     } catch (error) {
       if (!this.isPublicOrderIdempotencyConflict(error)) throw error;
       const concurrentOrder = await this.prisma.order.findUnique({

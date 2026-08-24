@@ -129,12 +129,13 @@ export type ExpenseGroup = {
 };
 
 export type CreateManualPaidOutflowDto = {
-  counterpartyName: string;
+  counterpartyName?: string;
   amount: number;
-  description: string;
+  description?: string;
   paymentMethod: ManualPaidOutflowPaymentMethod;
   type: ManualPaidOutflowType;
   categoryId: string;
+  occurredAt?: string;
 };
 
 export async function listMovements(filters: AccountingMovementsFilters = {}) {
@@ -144,14 +145,18 @@ export async function listMovements(filters: AccountingMovementsFilters = {}) {
   if (filters.pucSubcuentaId) qs.set("pucSubcuentaId", filters.pucSubcuentaId);
   if (filters.originType) qs.set("originType", filters.originType);
   if (filters.search) qs.set("search", filters.search);
-  if (filters.priceMin !== undefined) qs.set("priceMin", filters.priceMin.toString());
-  if (filters.priceMax !== undefined) qs.set("priceMax", filters.priceMax.toString());
+  if (filters.priceMin !== undefined)
+    qs.set("priceMin", filters.priceMin.toString());
+  if (filters.priceMax !== undefined)
+    qs.set("priceMax", filters.priceMax.toString());
 
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   return api<AccountingMovement[]>(`/accounting/movements${suffix}`);
 }
 
-export async function getAccountingSummary(filters: { from?: string; to?: string } = {}) {
+export async function getAccountingSummary(
+  filters: { from?: string; to?: string } = {},
+) {
   const qs = new URLSearchParams();
   if (filters.from) qs.set("from", filters.from);
   if (filters.to) qs.set("to", filters.to);
@@ -188,7 +193,10 @@ export async function listExpenseGroups() {
   return api<ExpenseGroup[]>(`/accounting/expense-groups`);
 }
 
-export async function listExpenseGroupAccounts(groupId: string, search?: string) {
+export async function listExpenseGroupAccounts(
+  groupId: string,
+  search?: string,
+) {
   const qs = new URLSearchParams();
   if (search?.trim()) qs.set("q", search.trim());
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
@@ -209,7 +217,10 @@ export async function createMovement(payload: CreateAccountingMovementDto) {
   });
 }
 
-export async function updateMovement(id: string, payload: UpdateAccountingMovementDto) {
+export async function updateMovement(
+  id: string,
+  payload: UpdateAccountingMovementDto,
+) {
   return api<AccountingMovement>(`/accounting/movements/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),

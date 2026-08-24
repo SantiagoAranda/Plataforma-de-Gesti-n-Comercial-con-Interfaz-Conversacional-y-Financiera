@@ -50,6 +50,9 @@ describe('PublicService', () => {
       business: {
         findFirst: mockFn().mockResolvedValue(business),
       },
+      businessTaxProfile: {
+        findUnique: mockFn().mockResolvedValue({ taxSettingsEnabled: true }),
+      },
       item: {
         findMany: mockFn().mockResolvedValue(items),
       },
@@ -746,5 +749,138 @@ describe('PublicService', () => {
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0].optionGroups).toEqual([]);
+  });
+
+  it('recalculates and freezes the buyer fiscal context for a public order before committing it', async () => {
+    const { service, prisma } = createService();
+    const preview = {
+      subtotal: 10000,
+      vatTotal: 1900,
+      impoconsumoTotal: 0,
+      reteFuenteTotal: 0,
+      reteIvaTotal: 0,
+      reteIcaTotal: 0,
+      autoRetencionTotal: 0,
+      netReceived: 11900,
+      taxLines: [],
+    };
+    const taxService = {
+      calculateTaxPreview: (jest.fn() as any).mockResolvedValue(preview),
+      freezeTaxCalculation: (jest.fn() as any).mockResolvedValue(undefined),
+    };
+    const transactionOrder = {
+      ...prisma.order,
+      create: (jest.fn() as any).mockResolvedValue({
+        id: 'order-fiscal-1',
+        businessId: business.id,
+        publicToken: 'public-token',
+        origin: 'PUBLIC_STORE',
+        customerName: 'Fiscal customer',
+        total: new Prisma.Decimal(10000),
+      }),
+    };
+    const tx = { order: transactionOrder } as any;
+    prisma.$transaction = (jest.fn() as any).mockImplementation(
+      (callback: (client: unknown) => unknown) => callback(tx),
+    );
+    (service as any).taxService = taxService;
+
+    const endpointPreview = await service.calculateTaxPreview('demo', {
+      buyerIsIvaResponsable: false,
+      buyerIsRetenedor: false,
+      buyerIsGranContribuyente: true,
+      buyerIsAutorretenedor: false,
+      buyerIsRegimenSimple: true,
+      cartItems: [{ itemId: 'item-1', quantity: 1, unitPrice: 10000 }],
+    } as any);
+
+    await service.createOrder('demo', {
+      idempotencyKey: '00000000-0000-4000-8000-000000000099',
+      customerName: 'Fiscal customer',
+      customerWhatsapp: '573001112233',
+      buyerFiscalContext: {
+        buyerType: 'JURIDICA',
+        buyerName: 'Fiscal customer SAS',
+        buyerDocumentType: 'NIT',
+        buyerDocumentNumber: '900123456',
+        buyerEmail: 'compras@example.com',
+        buyerIsIvaResponsable: false,
+        buyerIsRetenedor: false,
+        buyerIsGranContribuyente: true,
+        buyerIsAutorretenedor: false,
+        buyerIsRegimenSimple: true,
+        buyerRequiresElectronicInvoice: false,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 9.66,
+        saleConcept: 'GOODS',
+      },
+      items: [{ itemId: 'item-1', quantity: 1 }],
+    });
+
+    expect(taxService.calculateTaxPreview).toHaveBeenCalledWith(
+      business.id,
+      expect.objectContaining({
+        buyerIsGranContribuyente: true,
+        buyerIsRegimenSimple: true,
+        fiscalMunicipalityCode: '11001',
+        reteIcaRateOverride: 9.66,
+        cartItems: [{ itemId: 'item-1', quantity: 1, unitPrice: 10000 }],
+      }),
+    );
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      { maxWait: 5000, timeout: 15000 },
+    );
+    expect(taxService.freezeTaxCalculation).toHaveBeenCalledWith(
+      tx,
+      'order-fiscal-1',
+      endpointPreview,
+      expect.objectContaining({
+        buyerDocumentNumber: '900123456',
+        buyerIsRegimenSimple: true,
+        buyerIsAutorretenedor: false,
+      }),
+    );
+  });
+
+  it('exposes the sales flag independently from the disabled bimonthly tax module', async () => {
+    const { service } = createService();
+    (service as any).featureFlags = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
+    };
+
+    await expect(service.getFiscalSettings('demo')).resolves.toEqual({
+      fiscalContextEnabled: true,
+      simpleRegimeSalesEnabled: true,
+    });
+  });
+
+  it('does not calculate or persist buyer fiscal data when the business has no enabled tax profile', async () => {
+    const { service, prisma } = createService();
+    const taxService = {
+      calculateTaxPreview: jest.fn(),
+      freezeTaxCalculation: jest.fn(),
+    };
+    prisma.businessTaxProfile.findUnique.mockResolvedValue(null);
+    (service as any).taxService = taxService;
+
+    await service.createOrder('demo', {
+      idempotencyKey: '00000000-0000-4000-8000-000000000100',
+      customerName: 'Customer',
+      customerWhatsapp: '573001112233',
+      buyerFiscalContext: {
+        buyerIsIvaResponsable: false,
+        buyerIsRetenedor: false,
+        buyerIsGranContribuyente: true,
+        buyerIsAutorretenedor: false,
+        buyerIsRegimenSimple: true,
+      },
+      items: [{ itemId: 'item-1', quantity: 1 }],
+    });
+
+    expect(taxService.calculateTaxPreview).not.toHaveBeenCalled();
+    expect(taxService.freezeTaxCalculation).not.toHaveBeenCalled();
+    expect(prisma.order.create).toHaveBeenCalled();
   });
 });

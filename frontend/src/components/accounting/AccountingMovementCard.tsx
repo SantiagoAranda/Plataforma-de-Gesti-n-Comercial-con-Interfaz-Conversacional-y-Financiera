@@ -8,9 +8,10 @@ import {
   Wallet,
   WalletCards,
 } from "lucide-react";
-import type {
-  AccountingMovement,
-} from "@/src/services/accounting";
+import type { AccountingMovement } from "@/src/services/accounting";
+import {
+  getAccountingMovementDisplayName,
+} from "@/src/lib/accountingMovementDisplay";
 import { formatBusinessDateTime } from "@/src/lib/businessDate";
 
 type MovementKind =
@@ -143,38 +144,48 @@ function badgeForNature(nature?: "DEBIT" | "CREDIT") {
   return null;
 }
 
-function getReadableDetail(detailStr: string | null | undefined, originType?: string): string {
+function getReadableDetail(
+  detailStr: string | null | undefined,
+  originType?: string,
+): string {
   if (!detailStr) return "";
   const trimmed = detailStr.trim();
-  
+
   const jsonStart = trimmed.indexOf("{");
   const prefix = jsonStart >= 0 ? trimmed.slice(0, jsonStart).trim() : "";
-  const jsonCandidate = jsonStart >= 0 ? trimmed.slice(jsonStart).trim() : trimmed;
+  const jsonCandidate =
+    jsonStart >= 0 ? trimmed.slice(jsonStart).trim() : trimmed;
 
   if (jsonCandidate.startsWith("{") && jsonCandidate.endsWith("}")) {
     try {
       const data = JSON.parse(jsonCandidate);
 
-      const isRegularization = data.type === "INITIAL_BENEFIT_REGULARIZATION" || originType === "PAYROLL_INITIAL_BALANCE";
-      
+      const isRegularization =
+        data.type === "INITIAL_BENEFIT_REGULARIZATION" ||
+        originType === "PAYROLL_INITIAL_BALANCE";
+
       if (isRegularization && data.benefitType === "PRIMA") {
         const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
         const yearText = data.year || "";
         const nameText = data.employeeName || data.employee || "";
-        
+
         if (nameText) {
           return `Regularización inicial de prima ${semesterText} ${yearText} - ${nameText}`;
         }
         return `Regularización inicial de prima ${semesterText} ${yearText}`;
       }
 
-      if (originType === "PAYROLL_BENEFIT_PAYMENT" || data.type === "PAYROLL_BENEFIT_PAYMENT" || data.type === "BENEFIT_PAYMENT") {
+      if (
+        originType === "PAYROLL_BENEFIT_PAYMENT" ||
+        data.type === "PAYROLL_BENEFIT_PAYMENT" ||
+        data.type === "BENEFIT_PAYMENT"
+      ) {
         const benefitType = data.benefitType || data.type || "PRIMA";
         const benefitLabel = benefitType === "PRIMA" ? "prima" : benefitType;
         const semesterText = data.semester === 2 ? "semestre II" : "semestre I";
         const yearText = data.year || "";
         const nameText = data.employeeName || data.employee || "";
-        
+
         if (nameText) {
           return `Pago de prima ${semesterText} ${yearText} - ${nameText}`;
         }
@@ -188,7 +199,7 @@ function getReadableDetail(detailStr: string | null | undefined, originType?: st
       if (data.benefitType || data.type) {
         const typeStr = data.benefitType || data.type;
         const typeLabel = typeStr === "PRIMA" ? "Prima de Servicios" : typeStr;
-        
+
         let periodStr = "";
         if (data.year && data.semester) {
           periodStr = ` (${data.year}-S${data.semester})`;
@@ -208,11 +219,11 @@ function getReadableDetail(detailStr: string | null | undefined, originType?: st
         }
         parts.push(`Regularización (${reasonLabel})`);
       }
-      
+
       if (parts.length > 0) {
         return parts.join(" - ");
       }
-      
+
       return Object.entries(data)
         .map(([k, v]) => `${k}: ${v}`)
         .join(", ");
@@ -233,6 +244,7 @@ export function AccountingMovementCard({
   const amount = Number(movement.amount);
   const iconStyle = getIconStyles(kind);
   const detailText = getReadableDetail(movement.detail, movement.originType);
+  const displayName = getAccountingMovementDisplayName(movement);
 
   return (
     <div
@@ -256,7 +268,9 @@ export function AccountingMovementCard({
             </span>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              <span className={`text-sm font-bold tracking-tight ${kindStyle.amount}`}>
+              <span
+                className={`text-sm font-bold tracking-tight ${kindStyle.amount}`}
+              >
                 {formatCurrency(amount)}
               </span>
               <button
@@ -274,7 +288,7 @@ export function AccountingMovementCard({
           </div>
 
           <div className="text-sm font-semibold text-neutral-900 leading-snug">
-            {movement.pucName}
+            {displayName}
           </div>
           {detailText ? (
             <div className="text-xs text-neutral-500 leading-normal">
@@ -287,10 +301,14 @@ export function AccountingMovementCard({
       <div className="border-t border-neutral-100 pt-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <div className="w-[64px] shrink-0">
-            {movement.nature === "DEBIT" ? badgeForNature(movement.nature) : null}
+            {movement.nature === "DEBIT"
+              ? badgeForNature(movement.nature)
+              : null}
           </div>
           <div className="w-[68px] shrink-0">
-            {movement.nature === "CREDIT" ? badgeForNature(movement.nature) : null}
+            {movement.nature === "CREDIT"
+              ? badgeForNature(movement.nature)
+              : null}
           </div>
           <span
             className={`inline-flex h-6 w-fit items-center justify-center whitespace-nowrap rounded-full px-2.5 text-[10px] font-semibold leading-none sm:px-3 sm:text-[11px] ${kindStyle.badge}`}
@@ -301,7 +319,7 @@ export function AccountingMovementCard({
         </div>
 
         <span className="whitespace-nowrap text-[11px] font-medium text-neutral-400 shrink-0">
-          {formatBusinessDateTime(movement.createdAt || movement.date, "es-AR", {
+          {formatBusinessDateTime(movement.date, "es-AR", {
             hour: "2-digit",
             minute: "2-digit",
           })}

@@ -18,6 +18,7 @@ import {
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { parseAccountingDate } from '../common/date/accounting-date';
 import { AccountingMovementsQueryDto } from './dto/accounting-movements-query.dto';
 import { CreateAccountingMovementDto } from './dto/create-accounting-movement.dto';
 import { UpdateAccountingMovementDto } from './dto/update-accounting-movement.dto';
@@ -154,7 +155,12 @@ const EXPENSE_GROUPS: ExpenseGroupDefinition[] = [
     icon: 'Megaphone',
     description: 'Promocion, relaciones publicas y presencia comercial',
     prefixes: ['5195', '5295'],
-    nameIncludes: ['publicidad', 'propaganda', 'representacion', 'relaciones publicas'],
+    nameIncludes: [
+      'publicidad',
+      'propaganda',
+      'representacion',
+      'relaciones publicas',
+    ],
   },
   {
     id: 'other',
@@ -169,10 +175,10 @@ type OrderForPosting = Prisma.OrderGetPayload<{
   include: {
     items: {
       include: {
-        item: true,
-      },
-    },
-  },
+        item: true;
+      };
+    };
+  };
 }>;
 
 type MovementWithPucRelations = Prisma.AccountingMovementGetPayload<{
@@ -181,25 +187,25 @@ type MovementWithPucRelations = Prisma.AccountingMovementGetPayload<{
       include: {
         grupo: {
           include: {
-            clase: true,
-          },
-        },
-      },
-    },
+            clase: true;
+          };
+        };
+      };
+    };
     pucSubcuenta: {
       include: {
         cuenta: {
           include: {
             grupo: {
               include: {
-                clase: true,
-              },
-            },
-          },
-        },
-      },
-    },
-  },
+                clase: true;
+              };
+            };
+          };
+        };
+      };
+    };
+  };
 }>;
 
 type ResolvedPucReference = {
@@ -223,7 +229,10 @@ type PostingLine = {
 export class AccountingService {
   constructor(
     private prisma: PrismaService,
-    @Optional() private readonly featureFlags: FeatureFlagsService = {
+    @Optional()
+    private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeTaxModuleEnabled: true,
+      simpleRegimeSalesEnabled: true,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
@@ -271,10 +280,13 @@ export class AccountingService {
         };
   }
 
-  private async loadPucReferenceOrThrow(input: {
-    pucCuentaCode?: string | null;
-    pucSubcuentaId?: string | null;
-  }, tx?: Prisma.TransactionClient) {
+  private async loadPucReferenceOrThrow(
+    input: {
+      pucCuentaCode?: string | null;
+      pucSubcuentaId?: string | null;
+    },
+    tx?: Prisma.TransactionClient,
+  ) {
     const { pucCuentaCode, pucSubcuentaId } = this.parsePucSelection(input);
     const db = tx ?? this.prisma;
 
@@ -324,7 +336,10 @@ export class AccountingService {
     };
   }
 
-  private async loadDefaultPucReferenceOrThrow(code: string, tx?: Prisma.TransactionClient) {
+  private async loadDefaultPucReferenceOrThrow(
+    code: string,
+    tx?: Prisma.TransactionClient,
+  ) {
     return this.loadPucReferenceOrThrow(
       code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
       tx,
@@ -348,13 +363,16 @@ export class AccountingService {
     const selectedGrupo =
       movement.pucSubcuenta?.cuenta?.grupo ?? movement.pucCuenta?.grupo;
     const selectedClase =
-      movement.pucSubcuenta?.cuenta?.grupo?.clase ?? movement.pucCuenta?.grupo?.clase;
+      movement.pucSubcuenta?.cuenta?.grupo?.clase ??
+      movement.pucCuenta?.grupo?.clase;
 
     return {
       ...movement,
       pucCode: selectedPuc?.code ?? '',
       pucName: selectedPuc?.name ?? '',
-      pucKind: movement.pucSubcuenta ? ('SUBCUENTA' as const) : ('CUENTA' as const),
+      pucKind: movement.pucSubcuenta
+        ? ('SUBCUENTA' as const)
+        : ('CUENTA' as const),
       pucMeta: {
         clase: selectedClase
           ? { code: selectedClase.code, name: selectedClase.name }
@@ -411,7 +429,9 @@ export class AccountingService {
     return movement;
   }
 
-  private resolveOrderPaymentMethod(order: OrderForPosting | Record<string, any>) {
+  private resolveOrderPaymentMethod(
+    order: OrderForPosting | Record<string, any>,
+  ) {
     const rawValue = String(
       (order as any)?.paymentMethod ?? (order as any)?.paymentType ?? 'CASH',
     ).toUpperCase();
@@ -429,27 +449,29 @@ export class AccountingService {
     order: OrderForPosting | Record<string, any>,
   ): PostingLine[] {
     const orderTotal = new Prisma.Decimal((order as any).total ?? 0);
-    const lines = ((order as any).items ?? []).map((item: any, index: number) => {
-      const quantity = new Prisma.Decimal(item.quantity ?? 1);
-      const rawAmount =
-        item.lineTotalSnapshot ??
-        item.lineTotal ??
-        item.price ??
-        new Prisma.Decimal(item.unitPrice ?? 0).mul(quantity);
+    const lines = ((order as any).items ?? []).map(
+      (item: any, index: number) => {
+        const quantity = new Prisma.Decimal(item.quantity ?? 1);
+        const rawAmount =
+          item.lineTotalSnapshot ??
+          item.lineTotal ??
+          item.price ??
+          new Prisma.Decimal(item.unitPrice ?? 0).mul(quantity);
 
-      return {
-        id: item.id ?? `accounting-line-${index}`,
-        itemId: item.itemId ?? item.item?.id ?? null,
-        name:
-          item.itemNameSnapshot ??
-          item.item?.name ??
-          (this.resolveAccountingItemType(item) === 'SERVICE'
-            ? 'Servicio'
-            : 'Producto'),
-        type: this.resolveAccountingItemType(item),
-        amount: new Prisma.Decimal(rawAmount ?? 0).toDecimalPlaces(2),
-      };
-    });
+        return {
+          id: item.id ?? `accounting-line-${index}`,
+          itemId: item.itemId ?? item.item?.id ?? null,
+          name:
+            item.itemNameSnapshot ??
+            item.item?.name ??
+            (this.resolveAccountingItemType(item) === 'SERVICE'
+              ? 'Servicio'
+              : 'Producto'),
+          type: this.resolveAccountingItemType(item),
+          amount: new Prisma.Decimal(rawAmount ?? 0).toDecimalPlaces(2),
+        };
+      },
+    );
 
     const lineTotal = lines.reduce(
       (total: Prisma.Decimal, line: PostingLine) => total.add(line.amount),
@@ -458,13 +480,17 @@ export class AccountingService {
     const difference = orderTotal.sub(lineTotal).toDecimalPlaces(2);
 
     if (lines.length > 0 && !difference.isZero()) {
-      lines[lines.length - 1].amount = lines[lines.length - 1].amount.add(difference);
+      lines[lines.length - 1].amount =
+        lines[lines.length - 1].amount.add(difference);
     }
 
     return lines;
   }
 
-  private async resolveIncomeReference(itemType: AccountingItemType, tx?: Prisma.TransactionClient) {
+  private async resolveIncomeReference(
+    itemType: AccountingItemType,
+    tx?: Prisma.TransactionClient,
+  ) {
     const preferredCode =
       ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType[itemType];
 
@@ -473,18 +499,23 @@ export class AccountingService {
     } catch (error) {
       if (
         itemType !== 'SERVICE' ||
-        preferredCode === ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT
+        preferredCode ===
+          ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT
       ) {
         throw error;
       }
 
       return this.loadDefaultPucReferenceOrThrow(
-        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT, tx,
+        ORDER_ACCOUNTING_DEFAULTS.creditIncomePucCodeByType.PRODUCT,
+        tx,
       );
     }
   }
 
-  private async resolveAutomaticDebitReference(order: OrderForPosting, tx?: Prisma.TransactionClient) {
+  private async resolveAutomaticDebitReference(
+    order: OrderForPosting,
+    tx?: Prisma.TransactionClient,
+  ) {
     const paymentMethod = this.resolveOrderPaymentMethod(order);
 
     const debitPucCode =
@@ -544,13 +575,16 @@ export class AccountingService {
       pucSubcuentaId: dto.pucSubcuentaId,
     });
 
+    const accountingDate = parseAccountingDate(dto.date);
+    if (!accountingDate) throw new BadRequestException('Fecha invalida');
+
     const movement = await this.prisma.accountingMovement.create({
       data: {
         businessId,
         ...this.movementPucData(reference),
         amount: dto.amount,
         nature: dto.nature,
-        date: new Date(dto.date),
+        date: accountingDate,
         detail: this.normalizeDetail(dto.detail),
         originType: dto.originType,
         originId: dto.originId ?? null,
@@ -690,8 +724,8 @@ export class AccountingService {
       take: 120,
     });
 
-    const normalizedNameIncludes = (group as any).nameIncludes?.map((value: string) =>
-      this.normalizeSearchText(value),
+    const normalizedNameIncludes = (group as any).nameIncludes?.map(
+      (value: string) => this.normalizeSearchText(value),
     );
     const query = this.normalizeSearchText(q ?? '');
 
@@ -716,9 +750,9 @@ export class AccountingService {
       return matchesGroupNames && matchesQuery;
     });
 
-    return filtered.slice(0, 80).map((subcuenta) =>
-      this.serializeExpenseAccount(subcuenta),
-    );
+    return filtered
+      .slice(0, 80)
+      .map((subcuenta) => this.serializeExpenseAccount(subcuenta));
   }
 
   async createManualPaidOutflow(
@@ -739,15 +773,8 @@ export class AccountingService {
       throw new ForbiddenException('El usuario no pertenece al negocio');
     }
 
-    const counterpartyName = dto.counterpartyName?.trim();
-    const description = dto.description?.trim();
-
-    if (!counterpartyName) {
-      throw new BadRequestException('Beneficiario obligatorio');
-    }
-    if (!description) {
-      throw new BadRequestException('Descripcion obligatoria');
-    }
+    const counterpartyName = dto.counterpartyName?.trim() || undefined;
+    const description = dto.description?.trim() || undefined;
 
     const amount = new Prisma.Decimal(dto.amount ?? 0).toDecimalPlaces(2);
     if (!amount.isPositive()) {
@@ -870,7 +897,7 @@ export class AccountingService {
         kind: 'MANUAL_PAID_OUTFLOW',
         source: 'MANUAL',
         type: dto.type,
-        counterpartyName,
+        ...(counterpartyName ? { counterpartyName } : {}),
         paymentMethod: dto.paymentMethod,
         accountingCategoryId: categoryCode,
         debitPucCode: debitReference.code,
@@ -887,12 +914,27 @@ export class AccountingService {
         metadata,
       };
 
+      const debitDetailParts = [description, counterpartyName].filter(
+        (part): part is string => Boolean(part),
+      );
+      const debitDetail = debitDetailParts.length
+        ? debitDetailParts.join(' - ')
+        : null;
+      const paymentDetail = `Pago ${
+        dto.paymentMethod === ManualPaidOutflowPaymentMethod.CASH
+          ? 'en efectivo'
+          : 'por transferencia'
+      }`;
+      const creditDetail = counterpartyName
+        ? `${paymentDetail} - ${counterpartyName}`
+        : paymentDetail;
+
       const debitMovement = await tx.accountingMovement.create({
         data: {
           ...commonData,
           ...this.movementPucData(debitReference),
           nature: MovementNature.DEBIT,
-          detail: `${description} - ${counterpartyName}`,
+          detail: debitDetail,
         },
         include: this.movementInclude(),
       });
@@ -902,7 +944,7 @@ export class AccountingService {
           ...commonData,
           ...this.movementPucData(creditReference),
           nature: MovementNature.CREDIT,
-          detail: `Pago ${dto.paymentMethod === ManualPaidOutflowPaymentMethod.CASH ? 'en efectivo' : 'por transferencia'} - ${counterpartyName}`,
+          detail: creditDetail,
         },
         include: this.movementInclude(),
       });
@@ -937,7 +979,9 @@ export class AccountingService {
 
     // 2. Determinar montos
     // El débito de Caja/Banco es netReceived si existe contexto fiscal, sino el total de la orden
-    const debitAmount = fiscalContext ? fiscalContext.netReceived : new Prisma.Decimal(order.total);
+    const debitAmount = fiscalContext
+      ? fiscalContext.netReceived
+      : new Prisma.Decimal(order.total);
     if (!debitAmount.isPositive() && !fiscalContext) {
       throw new BadRequestException('Order total must be greater than zero');
     }
@@ -950,7 +994,10 @@ export class AccountingService {
     }
 
     const debitReference = await this.resolveAutomaticDebitReference(order, tx);
-    const incomeReferences = new Map<AccountingItemType, ResolvedPucReference>();
+    const incomeReferences = new Map<
+      AccountingItemType,
+      ResolvedPucReference
+    >();
     for (const itemType of new Set(lines.map((line) => line.type))) {
       incomeReferences.set(
         itemType,
@@ -987,10 +1034,13 @@ export class AccountingService {
     }
 
     // B. Anticipos de Retenciones (RETEFUENTE, RETEIVA, RETEICA) que son débitos
-    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.WITHHOLD)) {
+    for (const tLine of taxLines.filter(
+      (l) => l.direction === TaxDirection.WITHHOLD,
+    )) {
       const code = tLine.accountCode;
       const ref = await this.loadPucReferenceOrThrow(
-        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }, tx
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
+        tx,
       );
       const withholdingMov = await tx.accountingMovement.create({
         data: {
@@ -1035,10 +1085,13 @@ export class AccountingService {
     );
 
     // B. Impuestos cobrados (IVA, IMPOCONSUMO) que son créditos (pasivos por pagar)
-    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.CHARGE)) {
+    for (const tLine of taxLines.filter(
+      (l) => l.direction === TaxDirection.CHARGE,
+    )) {
       const code = tLine.accountCode;
       const ref = await this.loadPucReferenceOrThrow(
-        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code }, tx
+        code.length === 4 ? { pucCuentaCode: code } : { pucSubcuentaId: code },
+        tx,
       );
       const taxChargedMov = await tx.accountingMovement.create({
         data: {
@@ -1058,7 +1111,9 @@ export class AccountingService {
     }
 
     // --- AUTORRETENCIONES (Cuentas Espejo, solo si postToAccounting = true) ---
-    for (const tLine of taxLines.filter((l) => l.direction === TaxDirection.SELF)) {
+    for (const tLine of taxLines.filter(
+      (l) => l.direction === TaxDirection.SELF,
+    )) {
       let rule = null;
       if (fiscalContext?.saleConcept) {
         rule = await tx.salesTaxRule.findFirst({
@@ -1085,10 +1140,16 @@ export class AccountingService {
 
       if (rule && rule.postToAccounting) {
         const refCredito = await this.loadPucReferenceOrThrow(
-          tLine.accountCode.length === 4 ? { pucCuentaCode: tLine.accountCode } : { pucSubcuentaId: tLine.accountCode }, tx
+          tLine.accountCode.length === 4
+            ? { pucCuentaCode: tLine.accountCode }
+            : { pucSubcuentaId: tLine.accountCode },
+          tx,
         );
         const debitCode = '135515';
-        const refDebito = await this.loadDefaultPucReferenceOrThrow(debitCode, tx);
+        const refDebito = await this.loadDefaultPucReferenceOrThrow(
+          debitCode,
+          tx,
+        );
 
         const autoDeb = await tx.accountingMovement.create({
           data: {
@@ -1131,33 +1192,40 @@ export class AccountingService {
     );
 
     if (inventoryMovements.length > 0) {
-      const inventoryReference = await this.loadPucReferenceOrThrow({
-        pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
-      }, tx);
-      const costReferences = new Map<AccountingItemType, ResolvedPucReference>();
+      const inventoryReference = await this.loadPucReferenceOrThrow(
+        {
+          pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
+        },
+        tx,
+      );
+      const costReferences = new Map<
+        AccountingItemType,
+        ResolvedPucReference
+      >();
       for (const itemType of new Set(lines.map((line) => line.type))) {
         costReferences.set(
           itemType,
-          await this.loadPucReferenceOrThrow({
-            pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.costPucCodeByType[itemType],
-          }, tx),
+          await this.loadPucReferenceOrThrow(
+            {
+              pucCuentaCode:
+                ORDER_ACCOUNTING_DEFAULTS.costPucCodeByType[itemType],
+            },
+            tx,
+          ),
         );
       }
 
       const costByLineId = new Map<string, Prisma.Decimal>();
-      const unassignedCost = inventoryMovements.reduce(
-        (total, movement) => {
-          const value = new Prisma.Decimal(movement.totalValue);
-          if (movement.orderItemId) {
-            const current =
-              costByLineId.get(movement.orderItemId) ?? new Prisma.Decimal(0);
-            costByLineId.set(movement.orderItemId, current.add(value));
-            return total;
-          }
-          return total.add(value);
-        },
-        new Prisma.Decimal(0),
-      );
+      const unassignedCost = inventoryMovements.reduce((total, movement) => {
+        const value = new Prisma.Decimal(movement.totalValue);
+        if (movement.orderItemId) {
+          const current =
+            costByLineId.get(movement.orderItemId) ?? new Prisma.Decimal(0);
+          costByLineId.set(movement.orderItemId, current.add(value));
+          return total;
+        }
+        return total.add(value);
+      }, new Prisma.Decimal(0));
 
       if (unassignedCost.gt(0)) {
         const reservationLine =
@@ -1229,7 +1297,7 @@ export class AccountingService {
     const difference = sumDebits.sub(sumCredits).abs();
     if (difference.gt(new Prisma.Decimal(1.0))) {
       throw new BadRequestException(
-        `Desbalance contable detectado en la venta: Débitos ($${sumDebits.toFixed(2)}) y Créditos ($${sumCredits.toFixed(2)}) no coinciden. Diferencia: $${difference.toFixed(2)}`
+        `Desbalance contable detectado en la venta: Débitos ($${sumDebits.toFixed(2)}) y Créditos ($${sumCredits.toFixed(2)}) no coinciden. Diferencia: $${difference.toFixed(2)}`,
       );
     }
 
@@ -1293,7 +1361,7 @@ export class AccountingService {
 
       let amountMatchIds: string[] = [];
       if (isNumeric) {
-        const rawMatches = await this.prisma.$queryRaw<{id: string}[]>`
+        const rawMatches = await this.prisma.$queryRaw<{ id: string }[]>`
           SELECT id FROM "AccountingMovement"
           WHERE "businessId" = ${businessId}
           AND CAST(amount AS TEXT) LIKE ${'%' + search + '%'}
@@ -1318,8 +1386,14 @@ export class AccountingService {
         : {
             OR: [
               { detail: { contains: search, mode: 'insensitive' } },
-              { pucCuenta: { name: { contains: search, mode: 'insensitive' } } },
-              { pucSubcuenta: { name: { contains: search, mode: 'insensitive' } } },
+              {
+                pucCuenta: { name: { contains: search, mode: 'insensitive' } },
+              },
+              {
+                pucSubcuenta: {
+                  name: { contains: search, mode: 'insensitive' },
+                },
+              },
             ],
           };
 
@@ -1328,7 +1402,7 @@ export class AccountingService {
 
     const movements = await this.prisma.accountingMovement.findMany({
       where,
-      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      orderBy: { date: 'desc' },
       include: this.movementInclude(),
     });
 
@@ -1346,7 +1420,8 @@ export class AccountingService {
     dto: UpdateAccountingMovementDto,
   ) {
     const existing = await this.loadMovementOrThrow(businessId, id);
-    const isManual = existing.originType === AccountingMovementOriginType.MANUAL;
+    const isManual =
+      existing.originType === AccountingMovementOriginType.MANUAL;
 
     if (!isManual) {
       const hasForbiddenChange =
@@ -1374,7 +1449,9 @@ export class AccountingService {
       };
       const reference = await this.loadPucReferenceOrThrow({
         pucCuentaCode:
-          dto.pucCuentaCode === undefined ? currentPuc.pucCuentaCode : dto.pucCuentaCode,
+          dto.pucCuentaCode === undefined
+            ? currentPuc.pucCuentaCode
+            : dto.pucCuentaCode,
         pucSubcuentaId:
           dto.pucSubcuentaId === undefined
             ? currentPuc.pucSubcuentaId
@@ -1391,7 +1468,11 @@ export class AccountingService {
     if (isManual) {
       if (dto.amount !== undefined) data.amount = dto.amount;
       if (dto.nature !== undefined) data.nature = dto.nature;
-      if (dto.date !== undefined) data.date = new Date(dto.date);
+      if (dto.date !== undefined) {
+        const accountingDate = parseAccountingDate(dto.date);
+        if (!accountingDate) throw new BadRequestException('Fecha invalida');
+        data.date = accountingDate;
+      }
       if (dto.originType !== undefined) data.originType = dto.originType;
       if (dto.originId !== undefined) data.originId = dto.originId;
     }
@@ -1601,7 +1682,7 @@ export class AccountingService {
 
       const amount = Number(r.amount ?? 0);
       const first = code.charAt(0);
-      
+
       let signedValue = 0;
       if (first === '4') {
         signedValue = r.nature === 'CREDIT' ? amount : -amount;
@@ -1632,8 +1713,9 @@ export class AccountingService {
     const netSales = grossSales - returns;
     const grossProfit = netSales - costs;
     const operatingProfit = grossProfit - operatingExpenses;
-    const profitBeforeTax = operatingProfit + nonOperatingIncome - nonOperatingExpenses;
-    
+    const profitBeforeTax =
+      operatingProfit + nonOperatingIncome - nonOperatingExpenses;
+
     const simpleTaxProjection = await this.buildSimpleTaxProjection(
       businessId,
       q,
@@ -1652,13 +1734,13 @@ export class AccountingService {
       : hasConfiguredSimpleTaxProjection
         ? 0
         : profitBeforeTax > 0
-        ? profitBeforeTax * 0.35
-        : 0;
+          ? profitBeforeTax * 0.35
+          : 0;
     const netIncome = profitBeforeTax - taxProvision;
     const legalReserve = hasConfiguredSimpleTaxProjection
       ? 0
       : netIncome > 0
-        ? netIncome * 0.10
+        ? netIncome * 0.1
         : 0;
     const netProfit = netIncome - legalReserve;
     return {
@@ -1671,15 +1753,17 @@ export class AccountingService {
         devoluciones: Math.round(returns),
       },
       gastosAdministrativos: {
-        nominaSueldos: Math.round(operatingExpenses * 0.60),
+        nominaSueldos: Math.round(operatingExpenses * 0.6),
         insumosOperativos: Math.round(operatingExpenses * 0.25),
-        serviciosFijos: Math.round(operatingExpenses * 0.15 + nonOperatingExpenses),
+        serviciosFijos: Math.round(
+          operatingExpenses * 0.15 + nonOperatingExpenses,
+        ),
       },
       impuestosReservas: {
-        iva: isOpenSimpleTaxEstimate ? 0 : Math.round(taxProvision * 0.50),
+        iva: isOpenSimpleTaxEstimate ? 0 : Math.round(taxProvision * 0.5),
         retenciones: isOpenSimpleTaxEstimate
           ? Math.round(taxProvision)
-          : Math.round(taxProvision * 0.50),
+          : Math.round(taxProvision * 0.5),
         fondosReserva: Math.round(legalReserve),
       },
       simpleTaxProjection,
@@ -1692,14 +1776,15 @@ export class AccountingService {
     netProfitBeforeSimpleTax: number,
     includedSimpleTaxExpense = 0,
   ) {
-    if (!this.featureFlags.simpleRegimeEnabled) return undefined;
+    if (!this.featureFlags.simpleRegimeTaxModuleEnabled) return undefined;
     const profile = await this.prisma.businessTaxProfile.findUnique({
       where: { businessId },
       select: { taxSettingsEnabled: true },
     });
     if (!profile?.taxSettingsEnabled) return undefined;
 
-    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const hasSimpleResponsibility =
+      await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) return undefined;
 
     const projectionRange = this.resolveSimpleTaxProjectionRange(q);
@@ -1708,7 +1793,10 @@ export class AccountingService {
     });
 
     const periodNumber = this.getBimonthlyPeriodNumber(projectionRange.month);
-    const periodRange = this.getBimonthlyRange(projectionRange.taxYear, periodNumber);
+    const periodRange = this.getBimonthlyRange(
+      projectionRange.taxYear,
+      periodNumber,
+    );
     const base = {
       enabled: true,
       configured: Boolean(config?.enabled && config.groupCode),
@@ -1724,8 +1812,11 @@ export class AccountingService {
       groupCode: config?.groupCode ?? '',
       groupName: undefined as string | undefined,
       filingMode: config?.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE,
-      informativeOnly: config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION,
-      groupResolution: undefined as SimpleTaxDashboardGroupResolution | undefined,
+      informativeOnly:
+        config?.filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION,
+      groupResolution: undefined as
+        | SimpleTaxDashboardGroupResolution
+        | undefined,
       estimatedRate: 0,
       grossIncomeBase: 0,
       estimatedSimpleTax: 0,
@@ -1747,8 +1838,8 @@ export class AccountingService {
     });
 
     if (
-      (existingPeriod?.status === SimpleTaxPeriodStatus.POSTED ||
-        existingPeriod?.status === SimpleTaxPeriodStatus.PAID)
+      existingPeriod?.status === SimpleTaxPeriodStatus.POSTED ||
+      existingPeriod?.status === SimpleTaxPeriodStatus.PAID
     ) {
       const actualTax = Number(existingPeriod.netSimpleTax ?? 0);
       const periodAllocation = await this.allocateSimpleTaxPeriodToMonth(
@@ -1771,7 +1862,8 @@ export class AccountingService {
         estimatedRate: Number(existingPeriod.appliedRate ?? 0),
         grossIncomeBase: Math.round(Number(periodAllocation.monthGrossIncome)),
         estimatedSimpleTax: Math.round(periodAllocation.allocatedTax),
-        netProfitAfterSimpleTax: netProfitBeforeSimpleTax - Math.round(extraTaxToDiscount),
+        netProfitAfterSimpleTax:
+          netProfitBeforeSimpleTax - Math.round(extraTaxToDiscount),
         source: 'POSTED_ACTUAL' as const,
         periodStatus: existingPeriod.status,
         message:
@@ -1797,7 +1889,10 @@ export class AccountingService {
       };
     }
 
-    const postedMovementTax = await this.sumPostedSimpleTaxMovements(businessId, q);
+    const postedMovementTax = await this.sumPostedSimpleTaxMovements(
+      businessId,
+      q,
+    );
     if (postedMovementTax.gt(0)) {
       const postedMovementTaxNumber = Math.round(Number(postedMovementTax));
       return {
@@ -1809,7 +1904,8 @@ export class AccountingService {
         estimatedSimpleTax: postedMovementTaxNumber,
         netProfitAfterSimpleTax: netProfitBeforeSimpleTax,
         source: 'POSTED_ACTUAL' as const,
-        message: 'Impuesto historico Regimen Simple ya reflejado en Contabilidad.',
+        message:
+          'Impuesto historico Regimen Simple ya reflejado en Contabilidad.',
       };
     }
 
@@ -1830,7 +1926,8 @@ export class AccountingService {
         groupCode: groupResolution.groupCode,
         groupName: groupResolution.groupName ?? undefined,
         groupResolution,
-        message: 'No hay tarifas del Regimen Simple configuradas para este grupo y ano.',
+        message:
+          'No hay tarifas del Regimen Simple configuradas para este grupo y ano.',
       };
     }
 
@@ -1852,7 +1949,8 @@ export class AccountingService {
       estimatedRate,
       grossIncomeBase: Math.round(Number(grossIncomeBase)),
       estimatedSimpleTax: estimatedSimpleTaxNumber,
-      netProfitAfterSimpleTax: netProfitBeforeSimpleTax - estimatedSimpleTaxNumber,
+      netProfitAfterSimpleTax:
+        netProfitBeforeSimpleTax - estimatedSimpleTaxNumber,
       source: 'MONTHLY_MIN_RATE' as const,
       periodStatus: existingPeriod?.status,
       message:
@@ -1943,7 +2041,9 @@ export class AccountingService {
     return {
       periodGrossIncome,
       monthGrossIncome,
-      allocatedTax: Number(monthGrossIncome.div(periodGrossIncome).mul(periodTax)),
+      allocatedTax: Number(
+        monthGrossIncome.div(periodGrossIncome).mul(periodTax),
+      ),
     };
   }
 
@@ -1976,7 +2076,9 @@ export class AccountingService {
       };
     }
 
-    const mappings = await this.prisma.$queryRaw<SimpleTaxActivityGroupMappingRow[]>(
+    const mappings = await this.prisma.$queryRaw<
+      SimpleTaxActivityGroupMappingRow[]
+    >(
       Prisma.sql`
         SELECT
           "id",
