@@ -83,12 +83,22 @@ export class SimpleTaxController {
 
   @Get('annual/:year')
   getAnnual(@Req() req: any, @Param('year') year: string) {
-    return this.simpleTaxService.getAnnualReturn(req.user.businessId, Number(year));
+    return this.simpleTaxService.getAnnualReturn(
+      req.user.businessId,
+      Number(year),
+    );
   }
 
   @Post('annual/calculate')
-  calculateAnnual(@Req() req: any, @Body() dto: CalculateSimpleTaxAnnualReturnDto) {
-    return this.simpleTaxService.calculateAnnualReturn(req.user.businessId, Number(dto.taxYear), dto);
+  calculateAnnual(
+    @Req() req: any,
+    @Body() dto: CalculateSimpleTaxAnnualReturnDto,
+  ) {
+    return this.simpleTaxService.calculateAnnualReturn(
+      req.user.businessId,
+      Number(dto.taxYear),
+      dto,
+    );
   }
 
   @Patch('annual/:id/post')

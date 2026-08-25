@@ -917,7 +917,7 @@ export class InventoryService {
     const itemById = new Map(items.map((item) => [item.id, item]));
 
     return normalizedRequests.map((request) => {
-      const item = itemById.get(request.itemId)!;
+      const item = itemById.get(request.itemId);
       const requiredQuantity = this.decimal(request.quantity);
 
       if (item.status !== 'ACTIVE') {
@@ -1153,9 +1153,9 @@ export class InventoryService {
     );
     const itemRequirements = consolidated.filter((item) => item.itemId);
     const ingredientIds = ingredientRequirements.map(
-      (item) => item.ingredientId!,
+      (item) => item.ingredientId,
     );
-    const itemIds = itemRequirements.map((item) => item.itemId!);
+    const itemIds = itemRequirements.map((item) => item.itemId);
 
     if (ingredientIds.length === 0 && itemIds.length === 0) {
       return { ok: true, requirements: consolidated };
@@ -1186,7 +1186,7 @@ export class InventoryService {
     );
 
     for (const requirement of ingredientRequirements) {
-      const ingredient = ingredientById.get(requirement.ingredientId!);
+      const ingredient = ingredientById.get(requirement.ingredientId);
       if (!ingredient) {
         throw new BadRequestException('One or more ingredients are invalid');
       }
@@ -1202,7 +1202,7 @@ export class InventoryService {
       const state = await this.getItemStockState(
         tx,
         businessId,
-        requirement.itemId!,
+        requirement.itemId,
       );
       if (!state.item) {
         throw new BadRequestException('One or more items are invalid');
@@ -1435,7 +1435,7 @@ export class InventoryService {
     for (const movement of saleMovements) {
       const state = movement.ingredientId
         ? ingredientState.get(movement.ingredientId)
-        : itemStates.get(movement.itemId!);
+        : itemStates.get(movement.itemId);
       if (!state) {
         throw new NotFoundException(
           `Inventory target not found for return movement (${movement.id})`,
@@ -2179,7 +2179,7 @@ export class InventoryService {
       };
     }
 
-    const state = await this.getItemStockState(tx, businessId, input.itemId!);
+    const state = await this.getItemStockState(tx, businessId, input.itemId);
     if (state.item.status === 'INACTIVE') {
       throw new BadRequestException(
         'Cannot create inventory movements for an inactive item',
@@ -2205,7 +2205,7 @@ export class InventoryService {
         businessId,
         ...(target.ingredientId
           ? { ingredientId: target.ingredientId }
-          : { itemId: target.itemId! }),
+          : { itemId: target.itemId }),
       },
       select: { id: true },
     });
@@ -3181,7 +3181,7 @@ export class InventoryService {
 
     const created = [];
     for (const movement of saleMovements) {
-      const state = ingredientState.get(movement.ingredientId!);
+      const state = ingredientState.get(movement.ingredientId);
       if (!state) {
         throw new NotFoundException(
           `Inventory target not found for return movement (${movement.id})`,
@@ -3208,7 +3208,7 @@ export class InventoryService {
       });
 
       await tx.ingredient.update({
-        where: { id: movement.ingredientId! },
+        where: { id: movement.ingredientId },
         data: {
           currentStock: stockAfter,
         },

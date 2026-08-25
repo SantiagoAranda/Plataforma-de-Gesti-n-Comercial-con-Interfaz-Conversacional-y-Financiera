@@ -116,12 +116,16 @@ export class ItemsService {
             name: dto.name,
             price: dto.price,
             appliesImpoconsumo:
-              dto.type === 'PRODUCT' ? (dto.appliesImpoconsumo ?? false) : false,
+              dto.type === 'PRODUCT'
+                ? (dto.appliesImpoconsumo ?? false)
+                : false,
             impoconsumoRate:
               dto.type === 'PRODUCT' && dto.appliesImpoconsumo
                 ? dto.impoconsumoRate
                 : null,
-            saleConcept: dto.saleConcept ?? (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS'),
+            saleConcept:
+              dto.saleConcept ??
+              (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS'),
             description: dto.description?.trim() || null,
             minStock:
               dto.minStock === undefined
@@ -453,9 +457,7 @@ export class ItemsService {
           name: dto.name,
           price: dto.price,
           appliesImpoconsumo:
-            nextType === 'PRODUCT'
-              ? dto.appliesImpoconsumo
-              : false,
+            nextType === 'PRODUCT' ? dto.appliesImpoconsumo : false,
           impoconsumoRate:
             nextType !== 'PRODUCT'
               ? null
@@ -464,11 +466,14 @@ export class ItemsService {
                 : dto.impoconsumoRate === undefined
                   ? undefined
                   : dto.impoconsumoRate,
-          saleConcept: dto.saleConcept !== undefined 
-            ? dto.saleConcept 
-            : dto.type !== undefined
-              ? (dto.type === 'SERVICE' ? 'SERVICES' : 'GOODS')
-              : undefined,
+          saleConcept:
+            dto.saleConcept !== undefined
+              ? dto.saleConcept
+              : dto.type !== undefined
+                ? dto.type === 'SERVICE'
+                  ? 'SERVICES'
+                  : 'GOODS'
+                : undefined,
           description:
             dto.description === undefined
               ? undefined
@@ -640,7 +645,9 @@ export class ItemsService {
     }
 
     if (file.size > 15 * 1024 * 1024) {
-      throw new BadRequestException('La imagen original no puede superar los 15 MB');
+      throw new BadRequestException(
+        'La imagen original no puede superar los 15 MB',
+      );
     }
 
     const mime = (file.mimetype || '').toLowerCase();
@@ -657,7 +664,9 @@ export class ItemsService {
     ]);
 
     if (!allowedMimeTypes.has(mime) && !mime.startsWith('image/')) {
-      throw new BadRequestException('El archivo debe ser una imagen (JPG, PNG, WEBP, HEIC)');
+      throw new BadRequestException(
+        'El archivo debe ser una imagen (JPG, PNG, WEBP, HEIC)',
+      );
     }
 
     const optimized = await sharp(file.buffer)

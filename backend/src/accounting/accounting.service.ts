@@ -317,7 +317,7 @@ export class AccountingService {
     }
 
     const cuenta = await db.pucCuenta.findUnique({
-      where: { code: pucCuentaCode! },
+      where: { code: pucCuentaCode },
       include: {
         grupo: {
           include: { clase: true },
@@ -865,9 +865,9 @@ export class AccountingService {
 
       const debitReference: ResolvedPucReference = {
         kind: 'SUBCUENTA',
-        code: categorySubcuenta!.code,
-        name: categorySubcuenta!.name,
-        cuentaCode: categorySubcuenta!.cuentaCode,
+        code: categorySubcuenta.code,
+        name: categorySubcuenta.name,
+        cuentaCode: categorySubcuenta.cuentaCode,
       };
 
       const creditReference: ResolvedPucReference | null = creditSubcuenta
@@ -1067,7 +1067,7 @@ export class AccountingService {
           tx.accountingMovement.create({
             data: {
               businessId,
-              ...this.movementPucData(incomeReferences.get(line.type)!),
+              ...this.movementPucData(incomeReferences.get(line.type)),
               amount: line.amount,
               nature: MovementNature.CREDIT,
               date,
@@ -1248,7 +1248,7 @@ export class AccountingService {
               tx.accountingMovement.create({
                 data: {
                   businessId,
-                  ...this.movementPucData(costReferences.get(line.type)!),
+                  ...this.movementPucData(costReferences.get(line.type)),
                   amount: lineCost,
                   nature: MovementNature.DEBIT,
                   date,

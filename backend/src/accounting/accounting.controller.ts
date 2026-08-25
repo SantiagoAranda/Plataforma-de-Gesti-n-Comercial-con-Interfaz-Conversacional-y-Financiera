@@ -23,7 +23,7 @@ import { CreateManualPaidOutflowDto } from './dto/create-manual-paid-outflow.dto
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
 @Controller('accounting')
 export class AccountingController {
-  constructor(private readonly accountingService: AccountingService) { }
+  constructor(private readonly accountingService: AccountingService) {}
 
   // ---- MOVEMENTS (nuevo modelo) ----
   @Post('movements')

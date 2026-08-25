@@ -1,5 +1,11 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+} from 'class-validator';
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 
 export class CreateInventoryPurchaseReturnDto {
@@ -16,13 +22,17 @@ export class CreateInventoryPurchaseReturnDto {
   // Quantity returned in Ingredient.consumptionUnit.
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'quantity must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'quantity must be a valid decimal number',
+  })
   quantity!: string;
 
   // Cost per consumption unit used to recalculate weighted average on return.
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'unitCost must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'unitCost must be a valid decimal number',
+  })
   unitCost!: string;
 
   @IsOptional()
@@ -35,4 +45,3 @@ export class CreateInventoryPurchaseReturnDto {
   @IsNotEmpty()
   detail?: string;
 }
-

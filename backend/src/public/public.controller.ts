@@ -32,10 +32,7 @@ export class PublicController {
   }
 
   @Get(':slug/items')
-  listPublicItems(
-    @Param('slug') slug: string,
-    @Query('type') type?: string,
-  ) {
+  listPublicItems(@Param('slug') slug: string, @Query('type') type?: string) {
     return this.publicService.listPublicItems(slug, type);
   }
 
@@ -58,18 +55,12 @@ export class PublicController {
   }
 
   @Post(':slug/reserve')
-  createReservation(
-    @Param('slug') slug: string,
-    @Body() body: any,
-  ) {
+  createReservation(@Param('slug') slug: string, @Body() body: any) {
     return this.publicService.createReservation(slug, body);
   }
 
   @Post(':slug/order')
-  createOrder(
-    @Param('slug') slug: string,
-    @Body() dto: CreatePublicOrderDto,
-  ) {
+  createOrder(@Param('slug') slug: string, @Body() dto: CreatePublicOrderDto) {
     return this.publicService.createOrder(slug, dto);
   }
 

@@ -564,14 +564,17 @@ export default function ContabilidadPage() {
     [loading, displayMovements.length],
   );
 
+  const hasActiveDisplayFilters =
+    searchFilters.nature !== "ALL" || searchFilters.query.trim().length > 0;
+
   const balanceSummary = useMemo(() => {
-    const totalDebit = movements.reduce((acc, movement) => {
+    const totalDebit = displayMovements.reduce((acc, movement) => {
       return movement.nature === "DEBIT"
         ? acc + Number(movement.amount || 0)
         : acc;
     }, 0);
 
-    const totalCredit = movements.reduce((acc, movement) => {
+    const totalCredit = displayMovements.reduce((acc, movement) => {
       return movement.nature === "CREDIT"
         ? acc + Number(movement.amount || 0)
         : acc;
@@ -586,7 +589,7 @@ export default function ContabilidadPage() {
       difference,
       isBalanced,
     };
-  }, [movements]);
+  }, [displayMovements]);
 
   useEffect(() => {
     scrollToBottom();
@@ -640,8 +643,15 @@ export default function ContabilidadPage() {
 
             <div className="relative z-10">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-bold uppercase tracking-wider text-white">
-                  Resumen del balance
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-white">
+                    Resumen del balance
+                  </div>
+                  {hasActiveDisplayFilters && (
+                    <div className="mt-0.5 text-[10px] font-medium text-white/70">
+                      Según resultados visibles
+                    </div>
+                  )}
                 </div>
                 {taxSettingsEnabled && simpleRegimeTaxModuleEnabled && (
                   <Link

@@ -41,7 +41,7 @@ function getBusinessId(req: AuthenticatedRequest) {
 
 @Controller('businesses')
 export class BusinessesController {
-  constructor(private readonly businessesService: BusinessesService) { }
+  constructor(private readonly businessesService: BusinessesService) {}
 
   // Obtener información del usuario logueado
   @Get('me')

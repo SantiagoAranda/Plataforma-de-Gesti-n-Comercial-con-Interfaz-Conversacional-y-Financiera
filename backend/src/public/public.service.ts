@@ -195,12 +195,13 @@ export class PublicService {
       buyerIsGranContribuyente: Boolean(value?.buyerIsGranContribuyente),
       buyerIsAutorretenedor: Boolean(value?.buyerIsAutorretenedor),
       buyerIsRegimenSimple: Boolean(value?.buyerIsRegimenSimple),
-      buyerRequiresElectronicInvoice: Boolean(value?.buyerRequiresElectronicInvoice),
+      buyerRequiresElectronicInvoice: Boolean(
+        value?.buyerRequiresElectronicInvoice,
+      ),
       withholdingSubjectIsDeclarante:
         value?.withholdingSubjectIsDeclarante ?? true,
       fiscalMunicipalityCode: value?.fiscalMunicipalityCode ?? null,
-      reteIcaRateOverride:
-        value?.reteIcaRateOverride ?? value?.icaRateOverride,
+      reteIcaRateOverride: value?.reteIcaRateOverride ?? value?.icaRateOverride,
       saleConcept: value?.saleConcept ?? 'GOODS',
     };
   }
@@ -773,7 +774,7 @@ export class PublicService {
                 quantity =
                   option.quantity == null ? 1 : Number(option.quantity);
               }
-              return { optionId: option.id, itemId: option.itemId!, quantity };
+              return { optionId: option.id, itemId: option.itemId, quantity };
             }),
         ),
     );
@@ -1137,7 +1138,7 @@ export class PublicService {
     const visibleCustomizationNotes: string[] = [];
     const normalizedInputs = await Promise.all(
       dto.items.map(async (input) => {
-        const item = dbItemById.get(input.itemId)!;
+        const item = dbItemById.get(input.itemId);
         const hasOptionGroups = item.optionGroups.length > 0;
         const excludedIds = hasOptionGroups
           ? []
@@ -1264,18 +1265,22 @@ export class PublicService {
 
     const fiscalSettings = await this.getFiscalSettingsForBusiness(business.id);
     const buyerFiscalContext = fiscalSettings.fiscalContextEnabled
-      ? this.normalizeBuyerFiscalContext(dto.buyerFiscalContext, dto.customerName)
+      ? this.normalizeBuyerFiscalContext(
+          dto.buyerFiscalContext,
+          dto.customerName,
+        )
       : undefined;
-    const fiscalPreview = this.taxService && buyerFiscalContext
-      ? await this.taxService.calculateTaxPreview(business.id, {
-          ...buyerFiscalContext,
-          cartItems: orderItemCreates.map((item) => ({
-            itemId: item.itemId,
-            quantity: Number(item.quantity),
-            unitPrice: Number(item.unitPrice),
-          })),
-        })
-      : undefined;
+    const fiscalPreview =
+      this.taxService && buyerFiscalContext
+        ? await this.taxService.calculateTaxPreview(business.id, {
+            ...buyerFiscalContext,
+            cartItems: orderItemCreates.map((item) => ({
+              itemId: item.itemId,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+            })),
+          })
+        : undefined;
 
     let order: {
       id: string;
@@ -1288,43 +1293,48 @@ export class PublicService {
     try {
       const createOrder = async (
         db: Prisma.TransactionClient | PrismaService,
-      ) => db.order.create({
-        data: {
-          businessId: business.id,
-          publicRequestId: dto.idempotencyKey,
-          publicRequestFingerprint: requestFingerprint,
-          status: 'SENT',
-          origin: 'PUBLIC_STORE',
-          customerName: dto.customerName.trim(),
-          customerWhatsapp: dto.customerWhatsapp.trim(),
-          note: visibleNote,
-          sentAt: new Date(),
-          total,
-          items: {
-            create: orderItemCreates,
+      ) =>
+        db.order.create({
+          data: {
+            businessId: business.id,
+            publicRequestId: dto.idempotencyKey,
+            publicRequestFingerprint: requestFingerprint,
+            status: 'SENT',
+            origin: 'PUBLIC_STORE',
+            customerName: dto.customerName.trim(),
+            customerWhatsapp: dto.customerWhatsapp.trim(),
+            note: visibleNote,
+            sentAt: new Date(),
+            total,
+            items: {
+              create: orderItemCreates,
+            },
           },
-        },
-        select: {
-          id: true,
-          businessId: true,
-          publicToken: true,
-          origin: true,
-          customerName: true,
-          total: true,
-        },
-      });
-      order = this.taxService && fiscalPreview && buyerFiscalContext
-        ? await this.prisma.$transaction(async (tx) => {
-            const created = await createOrder(tx);
-            await this.taxService!.freezeTaxCalculation(
-              tx,
-              created.id,
-              fiscalPreview,
-              buyerFiscalContext,
-            );
-            return created;
-          }, { maxWait: 5000, timeout: 15000 })
-        : await createOrder(this.prisma);
+          select: {
+            id: true,
+            businessId: true,
+            publicToken: true,
+            origin: true,
+            customerName: true,
+            total: true,
+          },
+        });
+      order =
+        this.taxService && fiscalPreview && buyerFiscalContext
+          ? await this.prisma.$transaction(
+              async (tx) => {
+                const created = await createOrder(tx);
+                await this.taxService.freezeTaxCalculation(
+                  tx,
+                  created.id,
+                  fiscalPreview,
+                  buyerFiscalContext,
+                );
+                return created;
+              },
+              { maxWait: 5000, timeout: 15000 },
+            )
+          : await createOrder(this.prisma);
     } catch (error) {
       if (!this.isPublicOrderIdempotencyConflict(error)) throw error;
       const concurrentOrder = await this.prisma.order.findUnique({

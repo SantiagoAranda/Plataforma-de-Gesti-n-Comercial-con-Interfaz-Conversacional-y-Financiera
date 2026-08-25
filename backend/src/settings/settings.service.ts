@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertTaxProfileDto } from './dto/upsert-tax-profile.dto';
 import { CreateIcaRateDto } from './dto/create-ica-rate.dto';
@@ -13,7 +18,11 @@ export function deriveIncomeTaxDeclarant(
 ): boolean | undefined {
   const codes = new Set(responsibilityCodes);
 
-  if (personType === PersonType.NATURAL && codes.has('49') && !codes.has('05')) {
+  if (
+    personType === PersonType.NATURAL &&
+    codes.has('49') &&
+    !codes.has('05')
+  ) {
     return false;
   }
 
@@ -34,7 +43,8 @@ export function deriveIncomeTaxDeclarant(
 export class SettingsService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly featureFlags: FeatureFlagsService = {
+    @Optional()
+    private readonly featureFlags: FeatureFlagsService = {
       simpleRegimeSalesEnabled: true,
       simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
@@ -87,7 +97,9 @@ export class SettingsService {
         })
       : null;
     const existingHasSimpleResponsibility = Boolean(
-      existingProfile?.responsibilities.some((item) => item.responsibility.code === '47'),
+      existingProfile?.responsibilities.some(
+        (item) => item.responsibility.code === '47',
+      ),
     );
     const requestedCodes = [...new Set(dto.responsibilityCodes)];
     if (
@@ -97,11 +109,20 @@ export class SettingsService {
     ) {
       throw new SimpleRegimeNotAvailableException();
     }
-    const codes = !this.featureFlags.simpleRegimeSalesEnabled && existingHasSimpleResponsibility
-      ? [...new Set([...requestedCodes.filter((code) => code !== '47'), '47'])]
-      : requestedCodes;
+    const codes =
+      !this.featureFlags.simpleRegimeSalesEnabled &&
+      existingHasSimpleResponsibility
+        ? [
+            ...new Set([
+              ...requestedCodes.filter((code) => code !== '47'),
+              '47',
+            ]),
+          ]
+        : requestedCodes;
     if (codes.includes('48') && codes.includes('49')) {
-      throw new BadRequestException('Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.');
+      throw new BadRequestException(
+        'Un perfil fiscal no puede ser Responsable de IVA (48) y No responsable de IVA (49) simultáneamente.',
+      );
     }
 
     if (codes.includes('13') && codes.includes('15')) {
@@ -152,7 +173,10 @@ export class SettingsService {
         profile = await tx.businessTaxProfile.update({
           where: { businessId },
           data: {
-            taxSettingsEnabled: dto.taxSettingsEnabled !== undefined ? dto.taxSettingsEnabled : undefined,
+            taxSettingsEnabled:
+              dto.taxSettingsEnabled !== undefined
+                ? dto.taxSettingsEnabled
+                : undefined,
             personType: dto.personType,
             documentType: dto.documentType,
             nit: dto.nit,
@@ -184,7 +208,7 @@ export class SettingsService {
 
         await tx.businessTaxResponsibility.createMany({
           data: dbResponsibilities.map((r) => ({
-            taxProfileId: profile!.id,
+            taxProfileId: profile.id,
             taxResponsibilityId: r.id,
           })),
         });
@@ -221,7 +245,8 @@ export class SettingsService {
   getFeatureFlags() {
     return {
       simpleRegimeSalesEnabled: this.featureFlags.simpleRegimeSalesEnabled,
-      simpleRegimeTaxModuleEnabled: this.featureFlags.simpleRegimeTaxModuleEnabled,
+      simpleRegimeTaxModuleEnabled:
+        this.featureFlags.simpleRegimeTaxModuleEnabled,
       simpleRegimeEnabled: this.featureFlags.simpleRegimeEnabled,
     };
   }
@@ -246,7 +271,9 @@ export class SettingsService {
     });
 
     if (existing) {
-      throw new BadRequestException('Ya existe una tarifa ICA para este municipio y actividad económica.');
+      throw new BadRequestException(
+        'Ya existe una tarifa ICA para este municipio y actividad económica.',
+      );
     }
 
     return this.prisma.municipalityIcaRate.create({
@@ -262,7 +289,11 @@ export class SettingsService {
     });
   }
 
-  async updateIcaRate(businessId: string, id: string, dto: Partial<CreateIcaRateDto>) {
+  async updateIcaRate(
+    businessId: string,
+    id: string,
+    dto: Partial<CreateIcaRateDto>,
+  ) {
     const existing = await this.prisma.municipalityIcaRate.findFirst({
       where: { id, businessId },
     });
@@ -321,11 +352,16 @@ export class SettingsService {
     });
   }
 
-  async updateTaxRule(businessId: string, id: string, dto: Partial<CreateTaxRuleDto>) {
+  async updateTaxRule(
+    businessId: string,
+    id: string,
+    dto: Partial<CreateTaxRuleDto>,
+  ) {
     const existing = await this.prisma.salesTaxRule.findFirst({
       where: { id, businessId },
     });
-    if (!existing) throw new NotFoundException('Regla tributaria no encontrada');
+    if (!existing)
+      throw new NotFoundException('Regla tributaria no encontrada');
 
     return this.prisma.salesTaxRule.update({
       where: { id },
@@ -346,7 +382,8 @@ export class SettingsService {
     const existing = await this.prisma.salesTaxRule.findFirst({
       where: { id, businessId },
     });
-    if (!existing) throw new NotFoundException('Regla tributaria no encontrada');
+    if (!existing)
+      throw new NotFoundException('Regla tributaria no encontrada');
 
     await this.prisma.salesTaxRule.delete({ where: { id } });
     return { ok: true };
@@ -371,7 +408,10 @@ export class SettingsService {
     });
   }
 
-  async toggleTaxSettings(businessId: string, dto: { taxSettingsEnabled: boolean }) {
+  async toggleTaxSettings(
+    businessId: string,
+    dto: { taxSettingsEnabled: boolean },
+  ) {
     let profile = await this.prisma.businessTaxProfile.findUnique({
       where: { businessId },
     });

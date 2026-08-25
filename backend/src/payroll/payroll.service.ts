@@ -28,8 +28,8 @@ import {
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { parse } from 'csv-parse/sync';
 import { PrismaService } from '../prisma/prisma.service';
+import { parsePayrollAccountingMappingTemplate } from '../common/payroll/payroll-accounting-mapping-template';
 import { businessDateAtCurrentTime } from '../common/date/accounting-date';
 import { UpdateGlobalConfigDto } from './dto/update-global-config.dto';
 import { UpdateBusinessConfigDto } from './dto/update-business-config.dto';
@@ -69,6 +69,17 @@ type PayrollPeriodRef = {
   month: number;
   paymentCycle?: PayrollPaymentCycle;
   installmentNumber?: number | null;
+};
+
+type SolidarityPreviousInstallment = {
+  ibcAmount: Prisma.Decimal;
+  solidarityFund: Prisma.Decimal;
+  source: 'PERSISTED_Q1' | 'PREVIEW_Q1' | 'NOT_APPLICABLE_Q1';
+};
+
+type PreviewPayrollOptions = {
+  /** Only monthly overview may supply Q1 preview history instead of persisted Q1. */
+  usePreviewQ1History?: boolean;
 };
 
 const PERIODIC_PAYROLL_MINIMUM = { year: 2026, month: 7 } as const;
@@ -113,14 +124,6 @@ const SUPPLEMENTARY_ADJUSTMENT_TYPES = new Set<PayrollAdjustmentType>([
   PayrollAdjustmentType.SUNDAY_HOLIDAY_NIGHT,
   PayrollAdjustmentType.SUNDAY_HOLIDAY_EXTRA_NIGHT,
 ]);
-type PayrollAccountingMappingTemplateRow = {
-  concept_code: string;
-  concept_name: string;
-  account_code: string;
-  account_name: string;
-  side: PayrollAccountingSide;
-};
-
 type PayrollAccountingMappingRequirement = {
   role: string;
   requiredSide: PayrollAccountingSide;
@@ -158,24 +161,33 @@ export class PayrollService {
   private operationalPaymentDate(value?: string) {
     if (!value) {
       const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
       }).formatToParts(new Date());
-      const valueFor = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-      return new Date(Date.UTC(valueFor('year'), valueFor('month') - 1, valueFor('day'), 12));
+      const valueFor = (type: string) =>
+        Number(parts.find((part) => part.type === type)?.value);
+      return new Date(
+        Date.UTC(valueFor('year'), valueFor('month') - 1, valueFor('day'), 12),
+      );
     }
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) throw new BadRequestException('paidAt is invalid');
     const [, year, month, day] = match;
-    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), 12));
+    const date = new Date(
+      Date.UTC(Number(year), Number(month) - 1, Number(day), 12),
+    );
     if (
       date.getUTCFullYear() !== Number(year) ||
       date.getUTCMonth() !== Number(month) - 1 ||
       date.getUTCDate() !== Number(day)
-    ) throw new BadRequestException('paidAt is invalid');
+    )
+      throw new BadRequestException('paidAt is invalid');
     return date;
   }
 
-  private parsePayrollAccountingMappingTemplate() {
+  private loadPayrollAccountingMappingTemplate() {
     const filePath = path.join(
       process.cwd(),
       'prisma',
@@ -189,13 +201,7 @@ export class PayrollService {
       );
     }
 
-    return parse(fs.readFileSync(filePath, 'utf8'), {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-      bom: true,
-      record_delimiter: '\n',
-    }) as PayrollAccountingMappingTemplateRow[];
+    return parsePayrollAccountingMappingTemplate(fs.readFileSync(filePath, 'utf8'));
   }
 
   private async assertPayrollPucAccountExists(
@@ -229,7 +235,7 @@ export class PayrollService {
     businessId: string,
     tx: PayrollTx = this.prisma,
   ) {
-    const rows = this.parsePayrollAccountingMappingTemplate();
+    const rows = this.loadPayrollAccountingMappingTemplate();
 
     for (const row of rows) {
       await this.assertPayrollPucAccountExists(tx, row.account_code);
@@ -312,7 +318,9 @@ export class PayrollService {
     return year * 12 + month - 1;
   }
 
-  private assertPeriodicPayrollEnabled(period: Pick<PayrollPeriodRef, 'year' | 'month'>) {
+  private assertPeriodicPayrollEnabled(
+    period: Pick<PayrollPeriodRef, 'year' | 'month'>,
+  ) {
     if (
       this.payrollMonthIndex(period.year, period.month) <
       this.payrollMonthIndex(
@@ -320,9 +328,7 @@ export class PayrollService {
         PERIODIC_PAYROLL_MINIMUM.month,
       )
     ) {
-      throw new BadRequestException(
-        PERIODIC_PAYROLL_DAILY_VALIDITY_MESSAGE,
-      );
+      throw new BadRequestException(PERIODIC_PAYROLL_DAILY_VALIDITY_MESSAGE);
     }
   }
 
@@ -943,7 +949,9 @@ export class PayrollService {
     stage: 'ACCRUAL' | 'PAYMENT' | 'BOTH',
     tx: PayrollTx = this.prisma,
   ) {
-    const conceptCodes = Array.from(new Set(requirements.map((item) => item.role)));
+    const conceptCodes = Array.from(
+      new Set(requirements.map((item) => item.role)),
+    );
     const mappings = await tx.payrollAccountingMapping.findMany({
       where: { businessId, conceptCode: { in: conceptCodes } },
     });
@@ -1026,20 +1034,22 @@ export class PayrollService {
     if (existing.length) return existing;
 
     await tx.payrollPayment.createMany({
-      data: [{
-        businessId: run.businessId,
-        payrollRunId: run.id,
-        employeeId: run.employeeId,
-        contractId: run.contractId,
-        installmentNumber:
-          run.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
-            ? run.period.installmentNumber
-            : null,
-        paymentCycle: run.period.paymentCycle,
-        type: PayrollPaymentType.SALARY_PAYMENT,
-        status: PayrollPaymentStatus.PENDING,
-        amount: this.money(this.decimal(run.netPay)),
-      }],
+      data: [
+        {
+          businessId: run.businessId,
+          payrollRunId: run.id,
+          employeeId: run.employeeId,
+          contractId: run.contractId,
+          installmentNumber:
+            run.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+              ? run.period.installmentNumber
+              : null,
+          paymentCycle: run.period.paymentCycle,
+          type: PayrollPaymentType.SALARY_PAYMENT,
+          status: PayrollPaymentStatus.PENDING,
+          amount: this.money(this.decimal(run.netPay)),
+        },
+      ],
     });
 
     return tx.payrollPayment.findMany({
@@ -1105,10 +1115,12 @@ export class PayrollService {
       'PAYMENT',
       tx,
     );
-    const debitMapping = resolvedMappings.get(`NET_PAY:${PayrollAccountingSide.DEBIT}`)!;
+    const debitMapping = resolvedMappings.get(
+      `NET_PAY:${PayrollAccountingSide.DEBIT}`,
+    );
     const creditMapping = resolvedMappings.get(
       `${this.paymentMethodCreditConcept(paymentMethod)}:${PayrollAccountingSide.CREDIT}`,
-    )!;
+    );
 
     const existingMovements = await tx.accountingMovement.findMany({
       where: {
@@ -1127,16 +1139,30 @@ export class PayrollService {
       const expectedAmount = this.money(payment.amount);
       const valid =
         existingMovements.length === 2 &&
-        new Set(existingMovements.map((movement) => movement.accountingRole ?? (movement.metadata as any)?.accountingRole)).size === 2 &&
+        new Set(
+          existingMovements.map(
+            (movement) =>
+              movement.accountingRole ??
+              (movement.metadata as any)?.accountingRole,
+          ),
+        ).size === 2 &&
         existingMovements.every((movement) => {
-          const role = movement.accountingRole ?? (movement.metadata as any)?.accountingRole;
-          const expectedMapping = role === 'NET_PAY_DEBIT' ? debitMapping : creditMapping;
+          const role =
+            movement.accountingRole ??
+            (movement.metadata as any)?.accountingRole;
+          const expectedMapping =
+            role === 'NET_PAY_DEBIT' ? debitMapping : creditMapping;
           const accountCode = expectedMapping.accountCode.trim();
           return (
             expectedPaymentRoles.includes(role) &&
-            movement.nature === (role === 'NET_PAY_DEBIT' ? MovementNature.DEBIT : MovementNature.CREDIT) &&
+            movement.nature ===
+              (role === 'NET_PAY_DEBIT'
+                ? MovementNature.DEBIT
+                : MovementNature.CREDIT) &&
             this.decimal(movement.amount).equals(expectedAmount) &&
-            (accountCode.length === 4 ? movement.pucCuentaCode === accountCode : movement.pucSubcuentaId === accountCode)
+            (accountCode.length === 4
+              ? movement.pucCuentaCode === accountCode
+              : movement.pucSubcuentaId === accountCode)
           );
         });
       if (!valid) {
@@ -1147,7 +1173,9 @@ export class PayrollService {
 
     const employeeName = `${payment.payrollRun.employee.firstName} ${payment.payrollRun.employee.lastName}`;
     if (!payment.paidAt) {
-      throw new BadRequestException('Payroll payment requires an effective payment date');
+      throw new BadRequestException(
+        'Payroll payment requires an effective payment date',
+      );
     }
     const date = payment.paidAt;
     const movements: Prisma.AccountingMovementCreateManyInput[] = [];
@@ -1660,6 +1688,23 @@ export class PayrollService {
         'Closed payroll periods cannot be modified',
       );
     }
+    // Posting is the explicit, irreversible accounting confirmation.  A
+    // retry is intentionally a no-op: it must not recreate causation or move
+    // postedAt while the caller is retrying the same confirmation.
+    if (
+      dto.status === PayrollPeriodStatus.POSTED &&
+      period.status === PayrollPeriodStatus.POSTED
+    ) {
+      return period;
+    }
+    if (
+      dto.status === PayrollPeriodStatus.POSTED &&
+      period.status !== PayrollPeriodStatus.CALCULATED
+    ) {
+      throw new BadRequestException(
+        'Solo una liquidaciÃ³n calculada puede confirmarse contablemente.',
+      );
+    }
     if (
       dto.status === PayrollPeriodStatus.CLOSED &&
       period.status !== PayrollPeriodStatus.POSTED
@@ -1801,35 +1846,64 @@ export class PayrollService {
     return { ok: true };
   }
 
-  async listPayrollEvents(businessId: string, periodId: string, employeeId?: string) {
+  async listPayrollEvents(
+    businessId: string,
+    periodId: string,
+    employeeId?: string,
+  ) {
     await this.getPeriodForBusiness(businessId, periodId);
     return this.prisma.payrollEvent.findMany({
-      where: { businessId, payrollPeriodId: periodId, ...(employeeId ? { employeeId } : {}) },
+      where: {
+        businessId,
+        payrollPeriodId: periodId,
+        ...(employeeId ? { employeeId } : {}),
+      },
       orderBy: [{ startDate: 'asc' }, { createdAt: 'asc' }],
-      include: { employee: { select: { id: true, firstName: true, lastName: true } } },
+      include: {
+        employee: { select: { id: true, firstName: true, lastName: true } },
+      },
     });
   }
 
   private validatePayrollEvent(
     event: Pick<
       CreatePayrollEventDto,
-      'type' | 'startDate' | 'endDate' | 'quantity' | 'unit' | 'overtimeCode' | 'status'
+      | 'type'
+      | 'startDate'
+      | 'endDate'
+      | 'quantity'
+      | 'unit'
+      | 'overtimeCode'
+      | 'status'
     >,
   ) {
-    const startDate = this.startOfUtcDay(this.parseDate(event.startDate, 'startDate'));
+    const startDate = this.startOfUtcDay(
+      this.parseDate(event.startDate, 'startDate'),
+    );
     const endDate = event.endDate
       ? this.startOfUtcDay(this.parseDate(event.endDate, 'endDate'))
       : null;
     if (endDate && endDate < startDate) {
-      throw new BadRequestException('endDate must be greater than or equal to startDate');
+      throw new BadRequestException(
+        'endDate must be greater than or equal to startDate',
+      );
     }
     if (event.type === PayrollEventType.OVERTIME) {
-      if (event.unit !== PayrollEventUnit.HOURS || !event.quantity || event.quantity <= 0) {
-        throw new BadRequestException('OVERTIME requires unit HOURS and a positive quantity');
+      if (
+        event.unit !== PayrollEventUnit.HOURS ||
+        !event.quantity ||
+        event.quantity <= 0
+      ) {
+        throw new BadRequestException(
+          'OVERTIME requires unit HOURS and a positive quantity',
+        );
       }
-      if (!event.overtimeCode) throw new BadRequestException('OVERTIME requires overtimeCode');
+      if (!event.overtimeCode)
+        throw new BadRequestException('OVERTIME requires overtimeCode');
       if (endDate && endDate.getTime() !== startDate.getTime()) {
-        throw new BadRequestException('OVERTIME cannot span multiple operational days');
+        throw new BadRequestException(
+          'OVERTIME cannot span multiple operational days',
+        );
       }
     }
     return { startDate, endDate };
@@ -1844,50 +1918,133 @@ export class PayrollService {
     return this.prisma.$transaction(async (tx) => {
       const period = await this.getPeriodForBusiness(businessId, periodId, tx);
       await this.assertPeriodIsEditable(period.id, tx);
-      const paid = await tx.payrollPayment.count({ where: { status: PayrollPaymentStatus.PAID, payrollRun: { payrollPeriodId: period.id } } });
-      if (paid) throw new ConflictException('La nómina tiene pagos realizados y no permite novedades.');
-      await this.assertEmployeeBelongsToBusiness(businessId, dto.employeeId, tx);
+      const paid = await tx.payrollPayment.count({
+        where: {
+          status: PayrollPaymentStatus.PAID,
+          payrollRun: { payrollPeriodId: period.id },
+        },
+      });
+      if (paid)
+        throw new ConflictException(
+          'La nómina tiene pagos realizados y no permite novedades.',
+        );
+      await this.assertEmployeeBelongsToBusiness(
+        businessId,
+        dto.employeeId,
+        tx,
+      );
       const { startDate, endDate } = this.validatePayrollEvent(dto);
       const bounds = this.periodBounds(period);
-      if (startDate < bounds.from || startDate >= bounds.to || (endDate && endDate >= bounds.to)) {
-        throw new BadRequestException('La novedad debe estar dentro del período de nómina.');
+      if (
+        startDate < bounds.from ||
+        startDate >= bounds.to ||
+        (endDate && endDate >= bounds.to)
+      ) {
+        throw new BadRequestException(
+          'La novedad debe estar dentro del período de nómina.',
+        );
       }
       if (dto.type === PayrollEventType.OVERTIME) {
-        const params = await this.resolveLegalParametersForDate(businessId, startDate, tx);
-        this.findOvertimeRate(params.overtimeRates, this.normalizeOvertimeCode(dto.overtimeCode) ?? '');
+        const params = await this.resolveLegalParametersForDate(
+          businessId,
+          startDate,
+          tx,
+        );
+        this.findOvertimeRate(
+          params.overtimeRates,
+          this.normalizeOvertimeCode(dto.overtimeCode) ?? '',
+        );
       }
       await this.invalidateCalculatedPeriodForEvents(businessId, period, tx);
       return tx.payrollEvent.create({
         data: {
-          businessId, employeeId: dto.employeeId, payrollPeriodId: period.id,
-          type: dto.type, status: dto.status ?? PayrollEventStatus.DRAFT,
-          startDate, endDate, quantity: dto.quantity, unit: dto.unit,
-          overtimeCode: this.normalizeOvertimeCode(dto.overtimeCode), amountOverride: dto.amountOverride,
-          notes: this.normalizeNullableText(dto.notes), createdById,
+          businessId,
+          employeeId: dto.employeeId,
+          payrollPeriodId: period.id,
+          type: dto.type,
+          status: dto.status ?? PayrollEventStatus.DRAFT,
+          startDate,
+          endDate,
+          quantity: dto.quantity,
+          unit: dto.unit,
+          overtimeCode: this.normalizeOvertimeCode(dto.overtimeCode),
+          amountOverride: dto.amountOverride,
+          notes: this.normalizeNullableText(dto.notes),
+          createdById,
         },
       });
     });
   }
 
-  async updatePayrollEvent(businessId: string, eventId: string, dto: UpdatePayrollEventDto) {
-    const current = await this.prisma.payrollEvent.findFirst({ where: { id: eventId, businessId } });
-    if (!current || !current.payrollPeriodId) throw new NotFoundException('Payroll event not found');
-    const currentPeriod = await this.getPeriodForBusiness(businessId, current.payrollPeriodId);
+  async updatePayrollEvent(
+    businessId: string,
+    eventId: string,
+    dto: UpdatePayrollEventDto,
+  ) {
+    const current = await this.prisma.payrollEvent.findFirst({
+      where: { id: eventId, businessId },
+    });
+    if (!current || !current.payrollPeriodId)
+      throw new NotFoundException('Payroll event not found');
+    const currentPeriod = await this.getPeriodForBusiness(
+      businessId,
+      current.payrollPeriodId,
+    );
     await this.assertPeriodIsEditable(current.payrollPeriodId, this.prisma);
     const paid = await this.prisma.payrollPayment.count({
-      where: { status: PayrollPaymentStatus.PAID, payrollRun: { payrollPeriodId: current.payrollPeriodId } },
+      where: {
+        status: PayrollPaymentStatus.PAID,
+        payrollRun: { payrollPeriodId: current.payrollPeriodId },
+      },
     });
-    if (paid) throw new ConflictException('La nómina tiene pagos realizados y no permite novedades.');
-    const merged = { ...current, ...dto, startDate: dto.startDate ?? current.startDate.toISOString(), endDate: dto.endDate === undefined ? current.endDate?.toISOString() : dto.endDate } as CreatePayrollEventDto;
+    if (paid)
+      throw new ConflictException(
+        'La nómina tiene pagos realizados y no permite novedades.',
+      );
+    const merged = {
+      ...current,
+      ...dto,
+      startDate: dto.startDate ?? current.startDate.toISOString(),
+      endDate:
+        dto.endDate === undefined
+          ? current.endDate?.toISOString()
+          : dto.endDate,
+    } as CreatePayrollEventDto;
     const { startDate, endDate } = this.validatePayrollEvent(merged);
-    const period = await this.getPeriodForBusiness(businessId, current.payrollPeriodId);
+    const period = await this.getPeriodForBusiness(
+      businessId,
+      current.payrollPeriodId,
+    );
     const bounds = this.periodBounds(period);
-    if (startDate < bounds.from || startDate >= bounds.to || (endDate && endDate >= bounds.to)) throw new BadRequestException('La novedad debe estar dentro del período de nómina.');
+    if (
+      startDate < bounds.from ||
+      startDate >= bounds.to ||
+      (endDate && endDate >= bounds.to)
+    )
+      throw new BadRequestException(
+        'La novedad debe estar dentro del período de nómina.',
+      );
     return this.prisma.$transaction(async (tx) => {
-      await this.invalidateCalculatedPeriodForEvents(businessId, currentPeriod, tx);
+      await this.invalidateCalculatedPeriodForEvents(
+        businessId,
+        currentPeriod,
+        tx,
+      );
       return tx.payrollEvent.update({
         where: { id: eventId },
-        data: { ...dto, startDate, endDate, overtimeCode: dto.overtimeCode === undefined ? undefined : this.normalizeOvertimeCode(dto.overtimeCode), notes: dto.notes === undefined ? undefined : this.normalizeNullableText(dto.notes) },
+        data: {
+          ...dto,
+          startDate,
+          endDate,
+          overtimeCode:
+            dto.overtimeCode === undefined
+              ? undefined
+              : this.normalizeOvertimeCode(dto.overtimeCode),
+          notes:
+            dto.notes === undefined
+              ? undefined
+              : this.normalizeNullableText(dto.notes),
+        },
       });
     });
   }
@@ -1904,24 +2061,39 @@ export class PayrollService {
   ) {
     if (period.status !== PayrollPeriodStatus.CALCULATED) return;
     const runs = await tx.payrollRun.findMany({
-      where: { businessId, payrollPeriodId: period.id }, select: { id: true },
+      where: { businessId, payrollPeriodId: period.id },
+      select: { id: true },
     });
     if (!runs.length) return;
     const runIds = runs.map((run) => run.id);
     const paid = await tx.payrollPayment.count({
-      where: { payrollRunId: { in: runIds }, status: PayrollPaymentStatus.PAID },
+      where: {
+        payrollRunId: { in: runIds },
+        status: PayrollPaymentStatus.PAID,
+      },
     });
-    if (paid) throw new ConflictException('La nómina tiene pagos realizados y no permite novedades.');
+    if (paid)
+      throw new ConflictException(
+        'La nómina tiene pagos realizados y no permite novedades.',
+      );
     await tx.payrollEvent.updateMany({
-      where: { payrollRunId: { in: runIds }, status: PayrollEventStatus.APPLIED },
+      where: {
+        payrollRunId: { in: runIds },
+        status: PayrollEventStatus.APPLIED,
+      },
       data: { status: PayrollEventStatus.APPROVED, payrollRunId: null },
     });
     await tx.accountingMovement.deleteMany({
-      where: { businessId, originType: AccountingMovementOriginType.PAYROLL_RUN, originId: { in: runIds } },
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.PAYROLL_RUN,
+        originId: { in: runIds },
+      },
     });
     await tx.payrollRun.deleteMany({ where: { id: { in: runIds } } });
     await tx.payrollPeriod.update({
-      where: { id: period.id }, data: { status: PayrollPeriodStatus.OPEN, calculatedAt: null },
+      where: { id: period.id },
+      data: { status: PayrollPeriodStatus.OPEN, calculatedAt: null },
     });
   }
 
@@ -2053,10 +2225,16 @@ export class PayrollService {
       period.paymentCycle === PayrollPaymentCycle.BIWEEKLY &&
       period.installmentNumber === 1
     ) {
-      return { from, to: new Date(Date.UTC(period.year, period.month - 1, 16)) };
+      return {
+        from,
+        to: new Date(Date.UTC(period.year, period.month - 1, 16)),
+      };
     }
     if (period.paymentCycle === PayrollPaymentCycle.BIWEEKLY) {
-      return { from: new Date(Date.UTC(period.year, period.month - 1, 16)), to };
+      return {
+        from: new Date(Date.UTC(period.year, period.month - 1, 16)),
+        to,
+      };
     }
     return { from, to };
   }
@@ -2072,7 +2250,8 @@ export class PayrollService {
       period.paymentCycle !== PayrollPaymentCycle.BIWEEKLY ||
       !workedDays.equals(15) ||
       !maxDays.equals(30)
-    ) return proportional;
+    )
+      return proportional;
 
     const firstHalf = this.money(monthlyAllowance.div(2));
     return period.installmentNumber === 2
@@ -2107,6 +2286,183 @@ export class PayrollService {
     return Math.min(effectiveDays, maxDays);
   }
 
+  /**
+   * Calculates the solidarity fund as a monthly obligation. BIWEEKLY Q1 uses
+   * the contractual fixed monthly component plus known Q1 variables to select
+   * a provisional bracket; Q2 closes the month using Q1's persisted IBC.
+   */
+  private async calculateSolidarityFund(input: {
+    businessId: string;
+    employeeId: string;
+    contract: {
+      id: string;
+      salaryMonthly: Prisma.Decimal;
+      startDate: Date;
+      endDate?: Date | null;
+    };
+    period: PayrollPeriodRef;
+    params: Awaited<ReturnType<PayrollService['resolvePayrollParameters']>>;
+    ibcAmount: Prisma.Decimal;
+    commissions: Prisma.Decimal;
+    overtimeAmount: Prisma.Decimal;
+    tx: PayrollTx;
+    previousInstallment?: SolidarityPreviousInstallment;
+    monthlyOverviewPreview?: boolean;
+  }) {
+    const contributionBase = input.ibcAmount;
+    const zero = this.decimal(0);
+    const selectBracket = (thresholdBase: Prisma.Decimal) => {
+      const salaryInSmmlv = input.params.smmlv.equals(0)
+        ? zero
+        : thresholdBase.div(input.params.smmlv);
+      const bracket = input.params.solidarityBrackets.find((item) => {
+        const from = this.decimal(item.fromSmmlv);
+        const to = item.toSmmlv ? this.decimal(item.toSmmlv) : null;
+        return (
+          salaryInSmmlv.greaterThanOrEqualTo(from) &&
+          (!to || salaryInSmmlv.lessThan(to))
+        );
+      });
+      return {
+        salaryInSmmlv,
+        bracket,
+        rate: bracket ? this.decimal(bracket.rate) : zero,
+      };
+    };
+
+    if (input.period.paymentCycle !== PayrollPaymentCycle.BIWEEKLY) {
+      const selected = selectBracket(contributionBase);
+      return {
+        thresholdBase: contributionBase,
+        contributionBase,
+        monthlyIbc: contributionBase,
+        monthlyAmount: input.params.applySolidarityFund
+          ? contributionBase.mul(selected.rate)
+          : zero,
+        previousInstallmentAmount: zero,
+        amount: input.params.applySolidarityFund
+          ? contributionBase.mul(selected.rate)
+          : zero,
+        ...selected,
+        status: 'MONTHLY_FINAL',
+        warning: null as string | null,
+        previousInstallmentSource: null as
+          | SolidarityPreviousInstallment['source']
+          | null,
+      };
+    }
+
+    if (input.period.installmentNumber === 1) {
+      const monthlyPeriod: PayrollPeriodRef = {
+        year: input.period.year,
+        month: input.period.month,
+        paymentCycle: PayrollPaymentCycle.MONTHLY,
+        installmentNumber: 1,
+      };
+      const contractualMonthlyDays = this.calculateEffectiveWorkedDays(
+        input.contract,
+        monthlyPeriod,
+      );
+      const fixedMonthlyComponent = this.decimal(input.contract.salaryMonthly)
+        .mul(contractualMonthlyDays)
+        .div(input.params.maxWorkedDaysMonth);
+      const thresholdBase = fixedMonthlyComponent
+        .add(input.commissions)
+        .add(input.overtimeAmount);
+      const selected = selectBracket(thresholdBase);
+      const amount = input.params.applySolidarityFund
+        ? contributionBase.mul(selected.rate)
+        : zero;
+      return {
+        thresholdBase,
+        contributionBase,
+        monthlyIbc: null as Prisma.Decimal | null,
+        monthlyAmount: null as Prisma.Decimal | null,
+        previousInstallmentAmount: zero,
+        amount,
+        ...selected,
+        status: 'BIWEEKLY_Q1_PROVISIONAL',
+        warning: null as string | null,
+        previousInstallmentSource: null as
+          | SolidarityPreviousInstallment['source']
+          | null,
+      };
+    }
+
+    let previous = input.previousInstallment;
+    if (!previous) {
+      const q1Period: PayrollPeriodRef = {
+        year: input.period.year,
+        month: input.period.month,
+        paymentCycle: PayrollPaymentCycle.BIWEEKLY,
+        installmentNumber: 1,
+      };
+      const effectiveQ1Days = this.calculateEffectiveWorkedDays(
+        input.contract,
+        q1Period,
+      );
+      if (effectiveQ1Days === 0) {
+        previous = {
+          ibcAmount: zero,
+          solidarityFund: zero,
+          source: 'NOT_APPLICABLE_Q1',
+        };
+      } else if (input.monthlyOverviewPreview) {
+        throw new BadRequestException(
+          'BIWEEKLY monthly overview is missing its applicable Q1 preview result.',
+        );
+      } else {
+      const q1 = await input.tx.payrollRun.findFirst({
+        where: {
+          businessId: input.businessId,
+          employeeId: input.employeeId,
+          contractId: input.contract.id,
+          period: {
+            year: input.period.year,
+            month: input.period.month,
+            paymentCycle: PayrollPaymentCycle.BIWEEKLY,
+            installmentNumber: 1,
+          },
+        },
+        select: { ibcAmount: true, solidarityFund: true },
+      });
+      if (!q1?.ibcAmount || q1.solidarityFund == null) {
+        throw new BadRequestException(
+          'BIWEEKLY Q2 requires the persisted Q1 IBC and solidarity fund to close the monthly solidarity obligation.',
+        );
+      }
+      previous = {
+        ibcAmount: this.decimal(q1.ibcAmount),
+        solidarityFund: this.decimal(q1.solidarityFund),
+        source: 'PERSISTED_Q1',
+      };
+      }
+    }
+    const monthlyIbc = previous.ibcAmount.add(contributionBase);
+    const selected = selectBracket(monthlyIbc);
+    const monthlyAmount = input.params.applySolidarityFund
+      ? monthlyIbc.mul(selected.rate)
+      : zero;
+    const rawAmount = monthlyAmount.sub(previous.solidarityFund);
+    const overDeducted = rawAmount.lessThan(0);
+    return {
+      thresholdBase: monthlyIbc,
+      contributionBase,
+      monthlyIbc,
+      monthlyAmount,
+      previousInstallmentAmount: previous.solidarityFund,
+      amount: overDeducted ? zero : rawAmount,
+      ...selected,
+      status: overDeducted
+        ? 'BIWEEKLY_Q2_OVERDEDUCTION_NO_REFUND'
+        : 'BIWEEKLY_Q2_MONTHLY_CLOSE',
+      warning: overDeducted
+        ? 'Q1 solidarity deduction exceeds the definitive monthly amount; Q2 solidarity fund was set to zero and no refund was created.'
+        : null,
+      previousInstallmentSource: previous.source,
+    };
+  }
+
   private async buildLegalSegments(
     businessId: string,
     period: PayrollPeriodRef,
@@ -2114,7 +2470,11 @@ export class PayrollService {
   ) {
     const bounds = this.periodBounds(period);
     if (typeof tx.payrollGlobalParameter.findMany !== 'function') {
-      const params = await this.resolveLegalParametersForDate(businessId, bounds.from, tx);
+      const params = await this.resolveLegalParametersForDate(
+        businessId,
+        bounds.from,
+        tx,
+      );
       return [{ from: bounds.from, to: bounds.to, params }];
     }
     const candidates = await tx.payrollGlobalParameter.findMany({
@@ -2128,16 +2488,24 @@ export class PayrollService {
     });
     const points = [bounds.from];
     for (const candidate of candidates) {
-      if (candidate.effectiveFrom > bounds.from && candidate.effectiveFrom < bounds.to) {
+      if (
+        candidate.effectiveFrom > bounds.from &&
+        candidate.effectiveFrom < bounds.to
+      ) {
         points.push(candidate.effectiveFrom);
       }
-      if (candidate.effectiveTo && candidate.effectiveTo > bounds.from && candidate.effectiveTo < bounds.to) {
+      if (
+        candidate.effectiveTo &&
+        candidate.effectiveTo > bounds.from &&
+        candidate.effectiveTo < bounds.to
+      ) {
         points.push(candidate.effectiveTo);
       }
     }
     points.push(bounds.to);
-    const ordered = [...new Map(points.map((date) => [date.getTime(), date])).values()]
-      .sort((a, b) => a.getTime() - b.getTime());
+    const ordered = [
+      ...new Map(points.map((date) => [date.getTime(), date])).values(),
+    ].sort((a, b) => a.getTime() - b.getTime());
     return Promise.all(
       ordered.slice(0, -1).map(async (from, index) => ({
         from,
@@ -2165,41 +2533,69 @@ export class PayrollService {
     // this delegate after the formal migration.
     const events = tx.payrollEvent
       ? await tx.payrollEvent.findMany({
-      where: {
-        businessId, payrollPeriodId: period.id, employeeId,
-        type: PayrollEventType.OVERTIME,
-        status: { in: [PayrollEventStatus.APPROVED, PayrollEventStatus.APPLIED] },
-        startDate: { gte: bounds.from, lt: bounds.to },
-      },
-      orderBy: { startDate: 'asc' },
+          where: {
+            businessId,
+            payrollPeriodId: period.id,
+            employeeId,
+            type: PayrollEventType.OVERTIME,
+            status: {
+              in: [PayrollEventStatus.APPROVED, PayrollEventStatus.APPLIED],
+            },
+            startDate: { gte: bounds.from, lt: bounds.to },
+          },
+          orderBy: { startDate: 'asc' },
         })
       : [];
     let amount = this.decimal(0);
     const snapshots: any[] = [];
     const adjustments: Prisma.PayrollAdjustmentCreateManyInput[] = [];
     for (const event of events) {
-      const params = await this.resolveLegalParametersForDate(businessId, event.startDate, tx);
-      const rate = this.findOvertimeRate(params.overtimeRates, event.overtimeCode ?? '');
+      const params = await this.resolveLegalParametersForDate(
+        businessId,
+        event.startDate,
+        tx,
+      );
+      const rate = this.findOvertimeRate(
+        params.overtimeRates,
+        event.overtimeCode ?? '',
+      );
       const quantity = this.decimal(event.quantity ?? 0);
       if (quantity.lessThanOrEqualTo(0)) continue;
       const multiplier = this.getPayableOvertimeMultiplier(rate);
       const hourlyRate = salaryMonthly.div(params.monthlyHours);
-      const eventAmount = event.amountOverride == null
-        ? hourlyRate.mul(quantity).mul(multiplier)
-        : this.decimal(event.amountOverride);
+      const eventAmount =
+        event.amountOverride == null
+          ? hourlyRate.mul(quantity).mul(multiplier)
+          : this.decimal(event.amountOverride);
       amount = amount.add(eventAmount);
       snapshots.push({
-        eventId: event.id, type: event.type, occurredAt: event.startDate.toISOString(),
-        startDate: event.startDate.toISOString(), endDate: event.endDate?.toISOString() ?? null,
-        legalCode: params.legalCode, legalVersion: params.legalVersion,
+        eventId: event.id,
+        type: event.type,
+        occurredAt: event.startDate.toISOString(),
+        startDate: event.startDate.toISOString(),
+        endDate: event.endDate?.toISOString() ?? null,
+        legalCode: params.legalCode,
+        legalVersion: params.legalVersion,
         monthlyHours: params.monthlyHours.toString(),
-        quantity: quantity.toString(), unit: event.unit, overtimeCode: rate.code,
-        legalPercentage: rate.legalPercentage.toString(), totalFactor: rate.totalFactor.toString(),
-        payableMultiplier: multiplier.toString(), calculationMode: rate.calculationMode,
-        hourlyRate: hourlyRate.toString(), amount: this.money(eventAmount).toString(),
+        quantity: quantity.toString(),
+        unit: event.unit,
+        overtimeCode: rate.code,
+        legalPercentage: rate.legalPercentage.toString(),
+        totalFactor: rate.totalFactor.toString(),
+        payableMultiplier: multiplier.toString(),
+        calculationMode: rate.calculationMode,
+        hourlyRate: hourlyRate.toString(),
+        amount: this.money(eventAmount).toString(),
         amountOverride: event.amountOverride?.toString() ?? null,
       });
-      adjustments.push({ payrollRunId: '', type: this.adjustmentTypeForOvertimeRateCode(rate.code), quantity, rate: multiplier, amount: this.money(eventAmount), description: rate.name });
+      adjustments.push({
+        payrollRunId: '',
+        type: this.adjustmentTypeForOvertimeRateCode(rate.code),
+        quantity,
+        rate: multiplier,
+        amount: this.money(eventAmount),
+        description: rate.name,
+      });
     }
     return { events, amount, snapshots, adjustments };
   }
@@ -2536,7 +2932,11 @@ export class PayrollService {
               ? MovementNature.DEBIT
               : MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: this.payrollMovementDescription('Nómina', period, employeeName),
+          detail: this.payrollMovementDescription(
+            'Nómina',
+            period,
+            employeeName,
+          ),
           originType,
           originId: run.id,
           accountingRole: `${concept.code}_${mapping.side}`,
@@ -2546,7 +2946,10 @@ export class PayrollService {
             payrollRunId: run.id,
             payrollPeriodId: run.payrollPeriodId,
             paymentCycle: period.paymentCycle ?? PayrollPaymentCycle.MONTHLY,
-            installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+            installmentNumber:
+              period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+                ? period.installmentNumber
+                : null,
             accountingStage: 'ACCRUAL',
             accountingRole: `${concept.code}_${mapping.side}`,
           },
@@ -2578,7 +2981,11 @@ export class PayrollService {
           amount: this.money(netPay),
           nature: MovementNature.CREDIT,
           date: this.periodAccountingDate(period.year, period.month),
-          detail: this.payrollMovementDescription('Nómina', period, employeeName),
+          detail: this.payrollMovementDescription(
+            'Nómina',
+            period,
+            employeeName,
+          ),
           originType,
           originId: run.id,
           accountingRole: 'NET_PAY_CREDIT',
@@ -2588,7 +2995,10 @@ export class PayrollService {
             payrollRunId: run.id,
             payrollPeriodId: run.payrollPeriodId,
             paymentCycle: period.paymentCycle ?? PayrollPaymentCycle.MONTHLY,
-            installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+            installmentNumber:
+              period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+                ? period.installmentNumber
+                : null,
             accountingStage: 'ACCRUAL',
             accountingRole: 'NET_PAY_CREDIT',
           },
@@ -2600,19 +3010,18 @@ export class PayrollService {
 
     if (missingMappings.size) {
       const missingRoles = Array.from(missingMappings).sort();
-      throw new BadRequestException(
-        {
-          code: 'MISSING_PAYROLL_ACCOUNTING_MAPPINGS',
-          message: `No hay cuentas contables configuradas para nomina: ${missingRoles.join(', ')}`,
-          stage: 'ACCRUAL',
-          missingMappings: missingRoles.map((role) => ({
-            role,
-            requiredSide: role === 'NET_PAY' ? PayrollAccountingSide.CREDIT : null,
-            paymentMethod: null,
-            reason: 'MISSING',
-          })),
-        },
-      );
+      throw new BadRequestException({
+        code: 'MISSING_PAYROLL_ACCOUNTING_MAPPINGS',
+        message: `No hay cuentas contables configuradas para nomina: ${missingRoles.join(', ')}`,
+        stage: 'ACCRUAL',
+        missingMappings: missingRoles.map((role) => ({
+          role,
+          requiredSide:
+            role === 'NET_PAY' ? PayrollAccountingSide.CREDIT : null,
+          paymentMethod: null,
+          reason: 'MISSING',
+        })),
+      });
     }
 
     const balanced = this.balanceAccountingMovementsForRounding(
@@ -2634,12 +3043,19 @@ export class PayrollService {
       const isConsistent =
         existingMovements.length === movements.length &&
         existingMovements.every((movement) => {
-          const expected = expectedByRole.get(movement.accountingRole ?? (movement.metadata as any)?.accountingRole);
-          return !!expected &&
+          const expected = expectedByRole.get(
+            movement.accountingRole ??
+              (movement.metadata as any)?.accountingRole,
+          );
+          return (
+            !!expected &&
             movement.nature === expected.nature &&
-            this.decimal(movement.amount).equals(this.decimal(expected.amount)) &&
+            this.decimal(movement.amount).equals(
+              this.decimal(expected.amount),
+            ) &&
             movement.pucCuentaCode === expected.pucCuentaCode &&
-            movement.pucSubcuentaId === expected.pucSubcuentaId;
+            movement.pucSubcuentaId === expected.pucSubcuentaId
+          );
         });
       if (!isConsistent) {
         throw new ConflictException('PAYROLL_ACCRUAL_ACCOUNTING_INCONSISTENT');
@@ -2658,8 +3074,11 @@ export class PayrollService {
     employeeId: string,
     dto: CalculatePayrollDto = {},
     periodOverride?: any,
+    previousSolidarityInstallment?: SolidarityPreviousInstallment,
+    monthlyOverviewPreview = false,
   ) {
-    const period = periodOverride ?? await this.getPeriodForBusiness(businessId, periodId);
+    const period =
+      periodOverride ?? (await this.getPeriodForBusiness(businessId, periodId));
     this.assertPeriodicPayrollEnabled(period);
     const employee = await this.assertEmployeeBelongsToBusiness(
       businessId,
@@ -2692,8 +3111,7 @@ export class PayrollService {
       this.prisma,
     );
     const workedDays =
-      dto.workedDays ??
-      this.calculateEffectiveWorkedDays(contract, period);
+      dto.workedDays ?? this.calculateEffectiveWorkedDays(contract, period);
     if (workedDays > params.maxWorkedDaysMonth) {
       throw new BadRequestException('workedDays exceeds maxWorkedDaysMonth');
     }
@@ -2706,7 +3124,12 @@ export class PayrollService {
       params.smmlv.mul(params.transportLimitSmmlv),
     );
     const proportionalAllowance = qualifiesForTransport
-      ? this.biweeklyFullAllowance(period, params.transportAllowance, workedDaysDecimal, maxDays)
+      ? this.biweeklyFullAllowance(
+          period,
+          params.transportAllowance,
+          workedDaysDecimal,
+          maxDays,
+        )
       : this.decimal(0);
     const transportAllowance = contract.isRemote
       ? this.decimal(0)
@@ -2720,11 +3143,19 @@ export class PayrollService {
     const otherDeductions = this.decimal(dto.otherDeductions);
     this.assertNoLegacyOvertime(dto);
     const datedOvertime = await this.calculateDatedOvertime(
-      businessId, period, employeeId, salaryMonthly, this.prisma,
+      businessId,
+      period,
+      employeeId,
+      salaryMonthly,
+      this.prisma,
     );
     const overtimeAmount = datedOvertime.amount;
     const overtimeHoursSnapshot = datedOvertime.snapshots;
-    const legalSegments = await this.buildLegalSegments(businessId, period, this.prisma);
+    const legalSegments = await this.buildLegalSegments(
+      businessId,
+      period,
+      this.prisma,
+    );
 
     const grossIncome = salaryEarned
       .add(transportAllowance)
@@ -2735,21 +3166,20 @@ export class PayrollService {
     const ibcAmount = salaryEarned.add(commissions).add(overtimeAmount);
     const employeeHealth = ibcAmount.mul(params.healthEmployeeRate);
     const employeePension = ibcAmount.mul(params.pensionEmployeeRate);
-    const salaryInSmmlv = params.smmlv.equals(0)
-      ? this.decimal(0)
-      : ibcAmount.div(params.smmlv);
-    const bracket = params.solidarityBrackets.find((item) => {
-      const from = this.decimal(item.fromSmmlv);
-      const to = item.toSmmlv ? this.decimal(item.toSmmlv) : null;
-      return (
-        salaryInSmmlv.greaterThanOrEqualTo(from) &&
-        (!to || salaryInSmmlv.lessThan(to))
-      );
+    const solidarity = await this.calculateSolidarityFund({
+      businessId,
+      employeeId,
+      contract,
+      period,
+      params,
+      ibcAmount,
+      commissions,
+      overtimeAmount,
+      tx: this.prisma,
+      previousInstallment: previousSolidarityInstallment,
+      monthlyOverviewPreview,
     });
-    const solidarityFund =
-      params.applySolidarityFund && bracket
-        ? ibcAmount.mul(bracket.rate)
-        : this.decimal(0);
+    const solidarityFund = solidarity.amount;
     const withholdingTax = this.decimal(0);
     const totalEmployeeDeductions = employeeHealth
       .add(employeePension)
@@ -2877,7 +3307,8 @@ export class PayrollService {
         legalSegments: legalSegments.map((segment) => ({
           legalCode: segment.params.legalCode,
           legalVersion: segment.params.legalVersion,
-          from: segment.from.toISOString(), to: segment.to.toISOString(),
+          from: segment.from.toISOString(),
+          to: segment.to.toISOString(),
           weeklyHours: segment.params.weeklyHours.toString(),
           monthlyHours: segment.params.monthlyHours.toString(),
         })),
@@ -2909,6 +3340,27 @@ export class PayrollService {
         ibcBasePolicy:
           'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',
         ibcBase: ibcAmount.toString(),
+        solidarityThresholdBase: solidarity.thresholdBase.toString(),
+        solidarityContributionBase: solidarity.contributionBase.toString(),
+        solidarityMonthlyIbc: solidarity.monthlyIbc?.toString() ?? null,
+        solidaritySalaryInSmmlv: solidarity.salaryInSmmlv.toString(),
+        solidarityRate: solidarity.rate.toString(),
+        solidarityMonthlyAmount: solidarity.monthlyAmount?.toString() ?? null,
+        solidarityPreviousInstallmentAmount:
+          solidarity.previousInstallmentAmount.toString(),
+        solidarityBracket: solidarity.bracket
+          ? {
+              fromSmmlv: String(solidarity.bracket.fromSmmlv),
+              toSmmlv:
+                solidarity.bracket.toSmmlv == null
+                  ? null
+                  : String(solidarity.bracket.toSmmlv),
+              rate: solidarity.rate.toString(),
+            }
+          : null,
+        solidarityStatus: solidarity.status,
+        solidarityPreviousInstallmentSource:
+          solidarity.previousInstallmentSource ?? null,
         overtimeIncludedInIbc: true,
         overtimeIncludedInBenefits: true,
         overtimeIncludedInVacation: false,
@@ -2927,57 +3379,199 @@ export class PayrollService {
         exemptEmployerHealthLaw1819: params.exemptEmployerHealthLaw1819,
       },
       preview: true,
-      warnings:
-        period.status === PayrollPeriodStatus.POSTED ||
+      warnings: [
+        ...(period.status === PayrollPeriodStatus.POSTED ||
         period.status === PayrollPeriodStatus.CLOSED
           ? ['Vista previa, no modifica el periodo posteado.']
-          : [],
+          : []),
+        ...(solidarity.warning ? [solidarity.warning] : []),
+      ],
     };
   }
 
-  async previewPayroll(businessId: string, dto: PreviewPayrollDto) {
+  async previewPayroll(
+    businessId: string,
+    dto: PreviewPayrollDto,
+    previousSolidarityByEmployee = new Map<
+      string,
+      SolidarityPreviousInstallment
+    >(),
+    options: PreviewPayrollOptions = {},
+  ) {
     const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
     const installmentNumber = isMonthly ? 1 : dto.installmentNumber;
-    if ((isMonthly && dto.installmentNumber !== null) || (!isMonthly && ![1, 2].includes(installmentNumber ?? 0))) {
-      throw new BadRequestException('MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.');
+    if (
+      (isMonthly && dto.installmentNumber !== null) ||
+      (!isMonthly && ![1, 2].includes(installmentNumber ?? 0))
+    ) {
+      throw new BadRequestException(
+        'MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.',
+      );
     }
-    const period: any = { id: `preview:${dto.year}:${dto.month}:${dto.paymentCycle}:${installmentNumber}`, businessId, year: dto.year, month: dto.month, paymentCycle: dto.paymentCycle, installmentNumber, status: PayrollPeriodStatus.OPEN };
+    const period: any = {
+      id: `preview:${dto.year}:${dto.month}:${dto.paymentCycle}:${installmentNumber}`,
+      businessId,
+      year: dto.year,
+      month: dto.month,
+      paymentCycle: dto.paymentCycle,
+      installmentNumber,
+      status: PayrollPeriodStatus.OPEN,
+    };
     const bounds = this.periodBounds(period);
-    const employees = await this.prisma.employee.findMany({ where: { businessId, isActive: true, contracts: { some: { isActive: true, paymentCycle: dto.paymentCycle, startDate: { lte: bounds.to }, OR: [{ endDate: null }, { endDate: { gte: bounds.from } }] } } } });
-    const runs = await Promise.all(employees.map((employee) => this.previewEmployeePayroll(businessId, period.id, employee.id, {}, period)));
-    return { year: dto.year, month: dto.month, paymentCycle: dto.paymentCycle, installmentNumber: isMonthly ? null : installmentNumber, status: 'PREVIEW', runs, totals: { netPay: this.money(runs.reduce((total, run: any) => total.add(this.decimal(run.netPay)), this.decimal(0))), realEmployerCost: this.money(runs.reduce((total, run: any) => total.add(this.decimal(run.realEmployerCost)), this.decimal(0))) } };
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        businessId,
+        isActive: true,
+        contracts: {
+          some: {
+            isActive: true,
+            paymentCycle: dto.paymentCycle,
+            startDate: { lte: bounds.to },
+            OR: [{ endDate: null }, { endDate: { gte: bounds.from } }],
+          },
+        },
+      },
+    });
+    const runs = await Promise.all(
+      employees.map((employee) =>
+        this.previewEmployeePayroll(
+          businessId,
+          period.id,
+          employee.id,
+          {},
+          period,
+          previousSolidarityByEmployee.get(employee.id),
+          options.usePreviewQ1History ?? false,
+        ),
+      ),
+    );
+    return {
+      year: dto.year,
+      month: dto.month,
+      paymentCycle: dto.paymentCycle,
+      installmentNumber: isMonthly ? null : installmentNumber,
+      status: 'PREVIEW',
+      runs,
+      totals: {
+        netPay: this.money(
+          runs.reduce(
+            (total, run: any) => total.add(this.decimal(run.netPay)),
+            this.decimal(0),
+          ),
+        ),
+        realEmployerCost: this.money(
+          runs.reduce(
+            (total, run: any) => total.add(this.decimal(run.realEmployerCost)),
+            this.decimal(0),
+          ),
+        ),
+      },
+    };
   }
 
-  async previewMonthlyOverview(businessId: string, dto: MonthlyPayrollOverviewDto) {
-    const [monthly, firstHalf, secondHalf] = await Promise.all([
-      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.MONTHLY, installmentNumber: null }),
-      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 1 }),
-      this.previewPayroll(businessId, { ...dto, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 }),
+  async previewMonthlyOverview(
+    businessId: string,
+    dto: MonthlyPayrollOverviewDto,
+  ) {
+    const [monthly, firstHalf] = await Promise.all([
+      this.previewPayroll(businessId, {
+        ...dto,
+        paymentCycle: PayrollPaymentCycle.MONTHLY,
+        installmentNumber: null,
+      }),
+      this.previewPayroll(businessId, {
+        ...dto,
+        paymentCycle: PayrollPaymentCycle.BIWEEKLY,
+        installmentNumber: 1,
+      }),
     ]);
-    const secondByEmployee = new Map(secondHalf.runs.map((run: any) => [run.employeeId, run]));
-    const monetaryFields = ['salaryEarned', 'grossIncome', 'transportAllowance', 'connectivityAllowance', 'commissions', 'overtimeAmount', 'employeeHealth', 'employeePension', 'solidarityFund', 'withholdingTax', 'totalEmployeeDeductions', 'employerHealth', 'employerPension', 'employerArl', 'compensationFund', 'sena', 'icbf', 'severance', 'severanceInterest', 'serviceBonus', 'vacation', 'totalBenefits', 'netPay', 'realEmployerCost'];
-    const biweeklyRuns = firstHalf.runs.map((first: any) => {
-      const second: any = secondByEmployee.get(first.employeeId);
-      if (!second || second.contractId !== first.contractId) {
-        throw new BadRequestException(`Inconsistent BIWEEKLY preview for employee ${first.employeeId}.`);
+    const q1History = new Map<string, SolidarityPreviousInstallment>(
+      firstHalf.runs.map((run: any) => [
+        run.employeeId,
+        {
+          ibcAmount: this.decimal(run.ibcAmount),
+          solidarityFund: this.decimal(run.solidarityFund),
+          source: 'PREVIEW_Q1' as const,
+        },
+      ]),
+    );
+    const secondHalf = await this.previewPayroll(
+      businessId,
+      {
+        ...dto,
+        paymentCycle: PayrollPaymentCycle.BIWEEKLY,
+        installmentNumber: 2,
+      },
+      q1History,
+      { usePreviewQ1History: true },
+    );
+    const secondByEmployee = new Map(
+      secondHalf.runs.map((run: any) => [run.employeeId, run]),
+    );
+    const firstByEmployee = new Map(
+      firstHalf.runs.map((run: any) => [run.employeeId, run]),
+    );
+    const monetaryFields = [
+      'salaryEarned',
+      'grossIncome',
+      'transportAllowance',
+      'connectivityAllowance',
+      'commissions',
+      'overtimeAmount',
+      'employeeHealth',
+      'employeePension',
+      'solidarityFund',
+      'withholdingTax',
+      'totalEmployeeDeductions',
+      'employerHealth',
+      'employerPension',
+      'employerArl',
+      'compensationFund',
+      'sena',
+      'icbf',
+      'severance',
+      'severanceInterest',
+      'serviceBonus',
+      'vacation',
+      'totalBenefits',
+      'netPay',
+      'realEmployerCost',
+    ];
+    const biweeklyRuns = secondHalf.runs.map((second: any) => {
+      const first: any = firstByEmployee.get(second.employeeId);
+      if (first && second.contractId !== first.contractId) {
+        throw new BadRequestException(
+          `Inconsistent BIWEEKLY preview for employee ${second.employeeId}.`,
+        );
       }
       const consolidated: any = {
-        ...first,
-        id: `preview:${first.employeeId}:monthly-overview`,
+        ...(first ?? second),
+        id: `preview:${second.employeeId}:monthly-overview`,
         preview: true,
         contractPaymentCycle: PayrollPaymentCycle.BIWEEKLY,
+        q1Applicable: Boolean(first),
         installments: [
-          { installmentNumber: 1, netPay: first.netPay },
+          { installmentNumber: 1, netPay: first?.netPay ?? '0' },
           { installmentNumber: 2, netPay: second.netPay },
         ],
       };
-      for (const field of monetaryFields) {
-        consolidated[field] = this.money(this.decimal(first[field]).add(this.decimal(second[field]))).toString();
+      if (first) {
+        for (const field of monetaryFields) {
+          consolidated[field] = this.money(
+            this.decimal(first[field]).add(this.decimal(second[field])),
+          ).toString();
+        }
       }
       return consolidated;
     });
     const runs = [
-      ...monthly.runs.map((run: any) => ({ ...run, id: `preview:${run.employeeId}:monthly-overview`, preview: true, contractPaymentCycle: PayrollPaymentCycle.MONTHLY, installments: [] })),
+      ...monthly.runs.map((run: any) => ({
+        ...run,
+        id: `preview:${run.employeeId}:monthly-overview`,
+        preview: true,
+        contractPaymentCycle: PayrollPaymentCycle.MONTHLY,
+        installments: [],
+      })),
       ...biweeklyRuns,
     ];
     return {
@@ -2986,24 +3580,80 @@ export class PayrollService {
       status: 'PREVIEW',
       runs,
       totals: {
-        netPay: this.money(runs.reduce((total: Prisma.Decimal, run: any) => total.add(this.decimal(run.netPay)), this.decimal(0))).toString(),
-        realEmployerCost: this.money(runs.reduce((total: Prisma.Decimal, run: any) => total.add(this.decimal(run.realEmployerCost)), this.decimal(0))).toString(),
+        netPay: this.money(
+          runs.reduce(
+            (total: Prisma.Decimal, run: any) =>
+              total.add(this.decimal(run.netPay)),
+            this.decimal(0),
+          ),
+        ).toString(),
+        realEmployerCost: this.money(
+          runs.reduce(
+            (total: Prisma.Decimal, run: any) =>
+              total.add(this.decimal(run.realEmployerCost)),
+            this.decimal(0),
+          ),
+        ).toString(),
       },
     };
   }
 
-  async confirmPayrollPayment(businessId: string, dto: ConfirmPayrollPaymentDto) {
-    // Validate the cash/bank leg before preparation can create a new period.
-    // This keeps configuration failures free of payroll side effects.
+  async confirmPayrollPayment(
+    businessId: string,
+    dto: ConfirmPayrollPaymentDto,
+  ) {
+    // Payment is deliberately separate from calculation and accrual. It must
+    // never prepare or publish a period as a side effect.
     await this.resolvePayrollAccountingMappings(
       businessId,
       this.paymentMappingRequirements(dto.paymentMethod as PaymentMethod),
       'PAYMENT',
     );
-    const prepared = await this.preparePayrollPeriod(businessId, dto);
-    const payrollRunIds = prepared.runs.filter((run: any) => dto.employeeIds.includes(run.employeeId)).map((run: any) => run.payrollRunId);
-    if (!payrollRunIds.length) throw new BadRequestException('No applicable employees selected');
-    return this.createPayrollPaymentBatch(businessId, prepared.payrollPeriodId, { payrollRunIds, paymentMethod: dto.paymentMethod, paidAt: this.operationalPaymentDate().toISOString().slice(0, 10), idempotencyKey: dto.idempotencyKey });
+    const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
+    const period = await this.prisma.payrollPeriod.findUnique({
+      where: {
+        businessId_year_month_paymentCycle_installmentNumber: {
+          businessId,
+          year: dto.year,
+          month: dto.month,
+          paymentCycle: dto.paymentCycle,
+          installmentNumber: isMonthly ? 1 : dto.installmentNumber,
+        },
+      },
+    });
+    if (!period) {
+      throw new BadRequestException(
+        'Primero debes calcular y confirmar la liquidación de nómina.',
+      );
+    }
+    if (period.status !== PayrollPeriodStatus.POSTED) {
+      throw new BadRequestException(
+        period.status === PayrollPeriodStatus.CALCULATED
+          ? 'Primero debes confirmar la liquidación de nómina.'
+          : 'La nómina debe estar liquidada y contabilizada antes de pagar.',
+      );
+    }
+    const runs = await this.prisma.payrollRun.findMany({
+      where: {
+        businessId,
+        payrollPeriodId: period.id,
+        employeeId: { in: dto.employeeIds },
+      },
+      select: { id: true },
+    });
+    const payrollRunIds = runs.map((run) => run.id);
+    if (!payrollRunIds.length)
+      throw new BadRequestException('No applicable employees selected');
+    return this.createPayrollPaymentBatch(
+      businessId,
+      period.id,
+      {
+        payrollRunIds,
+        paymentMethod: dto.paymentMethod,
+        paidAt: this.operationalPaymentDate().toISOString().slice(0, 10),
+        idempotencyKey: dto.idempotencyKey,
+      },
+    );
   }
 
   async calculateEmployeePayroll(
@@ -3091,8 +3741,7 @@ export class PayrollService {
         tx,
       );
       const workedDays =
-        dto.workedDays ??
-        this.calculateEffectiveWorkedDays(contract, period);
+        dto.workedDays ?? this.calculateEffectiveWorkedDays(contract, period);
       if (workedDays > params.maxWorkedDaysMonth) {
         throw new BadRequestException('workedDays exceeds maxWorkedDaysMonth');
       }
@@ -3105,7 +3754,12 @@ export class PayrollService {
         params.smmlv.mul(params.transportLimitSmmlv),
       );
       const proportionalAllowance = qualifiesForTransport
-        ? this.biweeklyFullAllowance(period, params.transportAllowance, workedDaysDecimal, maxDays)
+        ? this.biweeklyFullAllowance(
+            period,
+            params.transportAllowance,
+            workedDaysDecimal,
+            maxDays,
+          )
         : this.decimal(0);
       const transportAllowance = contract.isRemote
         ? this.decimal(0)
@@ -3119,12 +3773,20 @@ export class PayrollService {
       const otherDeductions = this.decimal(dto.otherDeductions);
       this.assertNoLegacyOvertime(dto);
       const datedOvertime = await this.calculateDatedOvertime(
-        businessId, period, employeeId, salaryMonthly, tx,
+        businessId,
+        period,
+        employeeId,
+        salaryMonthly,
+        tx,
       );
       const overtimeAmount = datedOvertime.amount;
       const overtimeHoursSnapshot = datedOvertime.snapshots;
       const overtimeAdjustments = datedOvertime.adjustments;
-      const legalSegments = await this.buildLegalSegments(businessId, period, tx);
+      const legalSegments = await this.buildLegalSegments(
+        businessId,
+        period,
+        tx,
+      );
       const hourlyRate = salaryMonthly.div(params.monthlyHours);
 
       const grossIncome = salaryEarned
@@ -3136,21 +3798,18 @@ export class PayrollService {
       const ibcAmount = salaryEarned.add(commissions).add(overtimeAmount);
       const employeeHealth = ibcAmount.mul(params.healthEmployeeRate);
       const employeePension = ibcAmount.mul(params.pensionEmployeeRate);
-      const salaryInSmmlv = params.smmlv.equals(0)
-        ? this.decimal(0)
-        : ibcAmount.div(params.smmlv);
-      const bracket = params.solidarityBrackets.find((item) => {
-        const from = this.decimal(item.fromSmmlv);
-        const to = item.toSmmlv ? this.decimal(item.toSmmlv) : null;
-        return (
-          salaryInSmmlv.greaterThanOrEqualTo(from) &&
-          (!to || salaryInSmmlv.lessThan(to))
-        );
+      const solidarity = await this.calculateSolidarityFund({
+        businessId,
+        employeeId,
+        contract,
+        period,
+        params,
+        ibcAmount,
+        commissions,
+        overtimeAmount,
+        tx,
       });
-      const solidarityFund =
-        params.applySolidarityFund && bracket
-          ? ibcAmount.mul(bracket.rate)
-          : this.decimal(0);
+      const solidarityFund = solidarity.amount;
       const withholdingTax = this.decimal(0);
       const totalEmployeeDeductions = employeeHealth
         .add(employeePension)
@@ -3270,7 +3929,8 @@ export class PayrollService {
           legalSegments: legalSegments.map((segment) => ({
             legalCode: segment.params.legalCode,
             legalVersion: segment.params.legalVersion,
-            from: segment.from.toISOString(), to: segment.to.toISOString(),
+            from: segment.from.toISOString(),
+            to: segment.to.toISOString(),
             weeklyHours: segment.params.weeklyHours.toString(),
             monthlyHours: segment.params.monthlyHours.toString(),
           })),
@@ -3326,6 +3986,27 @@ export class PayrollService {
           ibcBasePolicy:
             'SALARY_EARNED_PLUS_COMMISSIONS_PLUS_OVERTIME_EXCLUDES_TRANSPORT_AND_NON_SALARY_BONUS',
           ibcBase: ibcAmount.toString(),
+          solidarityThresholdBase: solidarity.thresholdBase.toString(),
+          solidarityContributionBase: solidarity.contributionBase.toString(),
+          solidarityMonthlyIbc: solidarity.monthlyIbc?.toString() ?? null,
+          solidaritySalaryInSmmlv: solidarity.salaryInSmmlv.toString(),
+          solidarityRate: solidarity.rate.toString(),
+          solidarityMonthlyAmount: solidarity.monthlyAmount?.toString() ?? null,
+          solidarityPreviousInstallmentAmount:
+            solidarity.previousInstallmentAmount.toString(),
+          solidarityBracket: solidarity.bracket
+            ? {
+                fromSmmlv: String(solidarity.bracket.fromSmmlv),
+                toSmmlv:
+                  solidarity.bracket.toSmmlv == null
+                    ? null
+                    : String(solidarity.bracket.toSmmlv),
+                rate: solidarity.rate.toString(),
+              }
+            : null,
+          solidarityStatus: solidarity.status,
+          solidarityPreviousInstallmentSource:
+            solidarity.previousInstallmentSource ?? null,
           overtimeIncludedInIbc: true,
           overtimeIncludedInBenefits: true,
           overtimeIncludedInVacation: false,
@@ -3472,7 +4153,21 @@ export class PayrollService {
           'Solidarity fund',
           PayrollConceptCategory.EMPLOYEE_DEDUCTION,
           solidarityFund,
-          { baseAmount: ibcAmount, rate: bracket?.rate },
+          {
+            baseAmount: ibcAmount,
+            rate: solidarity.rate,
+            metadata: {
+              thresholdBase: solidarity.thresholdBase.toString(),
+              contributionBase: solidarity.contributionBase.toString(),
+              monthlyIbc: solidarity.monthlyIbc?.toString() ?? null,
+              monthlyAmount: solidarity.monthlyAmount?.toString() ?? null,
+              previousInstallmentAmount:
+                solidarity.previousInstallmentAmount.toString(),
+              status: solidarity.status,
+              previousInstallmentSource:
+                solidarity.previousInstallmentSource ?? null,
+            },
+          },
         ),
         this.concept(
           'WITHHOLDING_TAX',
@@ -3634,7 +4329,12 @@ export class PayrollService {
 
     for (const employee of employees) {
       const activeContract = await this.prisma.employeeContract.findFirst({
-        where: { businessId, employeeId: employee.id, isActive: true, paymentCycle: period.paymentCycle },
+        where: {
+          businessId,
+          employeeId: employee.id,
+          isActive: true,
+          paymentCycle: period.paymentCycle,
+        },
       });
       if (!activeContract) {
         skippedEmployees.push({
@@ -3669,11 +4369,9 @@ export class PayrollService {
         'La nomina de este periodo ya fue liquidada.',
       );
     }
-
-    const calculation = await this.calculatePeriodPayroll(businessId, periodId);
-    if (calculation.calculatedRuns === 0) {
+    if (period.status !== PayrollPeriodStatus.CALCULATED) {
       throw new BadRequestException(
-        'No hay empleados activos con contrato vigente para liquidar.',
+        'Primero debes calcular la nÃ³mina antes de confirmar la liquidaciÃ³n.',
       );
     }
 
@@ -3687,7 +4385,6 @@ export class PayrollService {
     return {
       period: postedPeriod,
       runs,
-      ...calculation,
     };
   }
 
@@ -3838,10 +4535,14 @@ export class PayrollService {
       });
       if (!existing) throw new NotFoundException('Payroll payment not found');
       if (existing.batchId) {
-        throw new ConflictException('Este pago pertenece a un lote y no puede modificarse individualmente.');
+        throw new ConflictException(
+          'Este pago pertenece a un lote y no puede modificarse individualmente.',
+        );
       }
       if (existing.status === PayrollPaymentStatus.PAID) {
-        throw new ConflictException('Este pago ya fue registrado y no puede modificarse.');
+        throw new ConflictException(
+          'Este pago ya fue registrado y no puede modificarse.',
+        );
       }
       if (existing.status === PayrollPaymentStatus.CANCELLED) {
         throw new BadRequestException(
@@ -3852,19 +4553,32 @@ export class PayrollService {
       if (
         dto.status === PayrollPaymentStatus.PAID &&
         (existing.payrollRun.period.status !== PayrollPeriodStatus.POSTED ||
-          (!existing.payrollRun.postedAt && !existing.payrollRun.period.postedAt))
+          (!existing.payrollRun.postedAt &&
+            !existing.payrollRun.period.postedAt))
       ) {
-        throw new BadRequestException('El pago solo puede registrarse para una nómina contabilizada.');
+        throw new BadRequestException(
+          'El pago solo puede registrarse para una nómina contabilizada.',
+        );
       }
-      const paidAt = dto.status === PayrollPaymentStatus.PAID
-        ? this.operationalPaymentDate(dto.paidAt)
-        : null;
-      if (paidAt && paidAt < this.periodBounds(existing.payrollRun.period).from) {
-        throw new BadRequestException('La fecha de pago no puede ser anterior al inicio del período.');
+      const paidAt =
+        dto.status === PayrollPaymentStatus.PAID
+          ? this.operationalPaymentDate(dto.paidAt)
+          : null;
+      if (
+        paidAt &&
+        paidAt < this.periodBounds(existing.payrollRun.period).from
+      ) {
+        throw new BadRequestException(
+          'La fecha de pago no puede ser anterior al inicio del período.',
+        );
       }
 
       const updateResult = await tx.payrollPayment.updateMany({
-        where: { id: paymentId, status: PayrollPaymentStatus.PENDING, batchId: null },
+        where: {
+          id: paymentId,
+          status: PayrollPaymentStatus.PENDING,
+          batchId: null,
+        },
         data: {
           status: dto.status,
           paidAt,
@@ -3873,7 +4587,9 @@ export class PayrollService {
         },
       });
       if (updateResult.count !== 1) {
-        throw new ConflictException('Este pago ya fue procesado por otra operación.');
+        throw new ConflictException(
+          'Este pago ya fue procesado por otra operación.',
+        );
       }
       const payment = await tx.payrollPayment.findUniqueOrThrow({
         where: { id: paymentId },
@@ -3906,8 +4622,12 @@ export class PayrollService {
    */
   async preparePayrollPeriod(businessId: string, dto: PreparePayrollPeriodDto) {
     const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
-    if ((isMonthly && dto.installmentNumber !== null && dto.installmentNumber !== undefined) ||
-        (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))) {
+    if (
+      (isMonthly &&
+        dto.installmentNumber !== null &&
+        dto.installmentNumber !== undefined) ||
+      (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))
+    ) {
       throw new BadRequestException(
         'MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.',
       );
@@ -3915,22 +4635,33 @@ export class PayrollService {
 
     // PayrollPeriod persists MONTHLY with installmentNumber=1 for backwards
     // compatibility; the public contract normalizes it to null.
-    const storedInstallment = isMonthly ? 1 : dto.installmentNumber!;
-    const requestHash = createHash('sha256').update(JSON.stringify({
-      businessId,
-      year: dto.year,
-      month: dto.month,
-      paymentCycle: dto.paymentCycle,
-      installmentNumber: isMonthly ? null : storedInstallment,
-    })).digest('hex');
+    const storedInstallment = isMonthly ? 1 : dto.installmentNumber;
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          businessId,
+          year: dto.year,
+          month: dto.month,
+          paymentCycle: dto.paymentCycle,
+          installmentNumber: isMonthly ? null : storedInstallment,
+        }),
+      )
+      .digest('hex');
 
     const previous = await this.prisma.payrollPeriodPreparation.findUnique({
-      where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
+      where: {
+        businessId_idempotencyKey: {
+          businessId,
+          idempotencyKey: dto.idempotencyKey,
+        },
+      },
       include: { period: true },
     });
     if (previous) {
       if (previous.requestHash !== requestHash) {
-        throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
+        throw new ConflictException(
+          'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        );
       }
       return this.buildPayrollPreparationResponse(businessId, previous.period);
     }
@@ -3949,11 +4680,15 @@ export class PayrollService {
     }
 
     let period = await this.prisma.payrollPeriod.findUnique({
-      where: { businessId_year_month_paymentCycle_installmentNumber: {
-        businessId, year: dto.year, month: dto.month,
-        paymentCycle: dto.paymentCycle as PayrollPaymentCycle,
-        installmentNumber: storedInstallment,
-      } },
+      where: {
+        businessId_year_month_paymentCycle_installmentNumber: {
+          businessId,
+          year: dto.year,
+          month: dto.month,
+          paymentCycle: dto.paymentCycle as PayrollPaymentCycle,
+          installmentNumber: storedInstallment,
+        },
+      },
     });
     if (!period) {
       period = await this.createPayrollPeriod(businessId, {
@@ -3964,8 +4699,8 @@ export class PayrollService {
       });
     }
 
-    if (period.status !== PayrollPeriodStatus.POSTED) {
-      await this.liquidatePeriodPayroll(businessId, period.id);
+    if (period.status === PayrollPeriodStatus.OPEN) {
+      await this.calculatePeriodPayroll(businessId, period.id);
       period = await this.getPeriodForBusiness(businessId, period.id);
     }
 
@@ -3982,12 +4717,20 @@ export class PayrollService {
       });
     } catch (error) {
       if (!this.isUniqueError(error)) throw error;
-      const raced = await this.prisma.payrollPeriodPreparation.findUniqueOrThrow({
-        where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
-        include: { period: true },
-      });
+      const raced =
+        await this.prisma.payrollPeriodPreparation.findUniqueOrThrow({
+          where: {
+            businessId_idempotencyKey: {
+              businessId,
+              idempotencyKey: dto.idempotencyKey,
+            },
+          },
+          include: { period: true },
+        });
       if (raced.requestHash !== requestHash) {
-        throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
+        throw new ConflictException(
+          'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        );
       }
       period = raced.period;
     }
@@ -3999,8 +4742,12 @@ export class PayrollService {
     dto: QueryPayrollPreparationCandidatesDto,
   ) {
     const isMonthly = dto.paymentCycle === PayrollPaymentCycle.MONTHLY;
-    if ((isMonthly && dto.installmentNumber !== null && dto.installmentNumber !== undefined) ||
-      (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))) {
+    if (
+      (isMonthly &&
+        dto.installmentNumber !== null &&
+        dto.installmentNumber !== undefined) ||
+      (!isMonthly && ![1, 2].includes(dto.installmentNumber ?? 0))
+    ) {
       throw new BadRequestException(
         'MONTHLY exige installmentNumber null y BIWEEKLY exige installmentNumber 1 o 2.',
       );
@@ -4037,15 +4784,23 @@ export class PayrollService {
     };
   }
 
-  private async buildPayrollPreparationResponse(businessId: string, period: any) {
+  private async buildPayrollPreparationResponse(
+    businessId: string,
+    period: any,
+  ) {
     const runs = await this.listPayrollRuns(businessId, period.id);
     return {
       payrollPeriodId: period.id,
       status: period.status,
       paymentCycle: period.paymentCycle,
-      installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
+      installmentNumber:
+        period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+          ? period.installmentNumber
+          : null,
       runs: runs.map((run: any) => {
-        const salaries = (run.payments ?? []).filter((payment: any) => payment.type === PayrollPaymentType.SALARY_PAYMENT);
+        const salaries = (run.payments ?? []).filter(
+          (payment: any) => payment.type === PayrollPaymentType.SALARY_PAYMENT,
+        );
         const payment = salaries[0];
         const blockedReason = !run.postedAt
           ? 'Pendiente de contabilizar'
@@ -4081,120 +4836,197 @@ export class PayrollService {
     dto: CreatePayrollPaymentBatchDto,
   ) {
     const notes = this.normalizeNullableText(dto.notes);
-    const requestHash = createHash('sha256').update(JSON.stringify({
-      periodId,
-      payrollRunIds: [...dto.payrollRunIds].sort(),
-      paymentMethod: dto.paymentMethod,
-      paidAt: dto.paidAt,
-      notes: notes ?? null,
-    })).digest('hex');
-
-    return this.prisma.$transaction(async (tx) => {
-      const previous = await tx.payrollPaymentBatch.findUnique({
-        where: { businessId_idempotencyKey: { businessId, idempotencyKey: dto.idempotencyKey } },
-        include: { payments: true, period: true },
-      });
-      if (previous) {
-        if (previous.requestHash !== requestHash) {
-          throw new ConflictException('IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD');
-        }
-        return this.serializePayrollPaymentBatch(previous);
-      }
-
-      const period = await this.getPeriodForBusiness(businessId, periodId, tx);
-      if (period.status !== PayrollPeriodStatus.POSTED) {
-        throw new BadRequestException('El período debe estar contabilizado antes de pagar la nómina.');
-      }
-      const paidAt = this.operationalPaymentDate(dto.paidAt);
-      if (paidAt < this.periodBounds(period).from) {
-        throw new BadRequestException('La fecha de pago no puede ser anterior al inicio del período.');
-      }
-
-      const runs = await tx.payrollRun.findMany({
-        where: { businessId, payrollPeriodId: periodId, id: { in: dto.payrollRunIds } },
-        include: { payments: true, period: true, employee: true },
-      });
-      if (runs.length !== dto.payrollRunIds.length) {
-        throw new BadRequestException('Uno o más runs no pertenecen al período seleccionado.');
-      }
-      if (runs.some((run) => !run.postedAt)) {
-        throw new BadRequestException('Todos los runs deben tener causación contabilizada.');
-      }
-
-      const paymentRows = runs.map((run) => {
-        const salaries = run.payments.filter((payment) => payment.type === PayrollPaymentType.SALARY_PAYMENT);
-        if (salaries.length !== 1) {
-          throw new BadRequestException(`El run ${run.id} no tiene exactamente un pago salarial.`);
-        }
-        const payment = salaries[0];
-        if (payment.status !== PayrollPaymentStatus.PENDING || payment.batchId) {
-          throw new ConflictException(`El pago del run ${run.id} no está disponible.`);
-        }
-        return payment;
-      });
-
-      const causationCount = await tx.accountingMovement.count({
-        where: {
-          businessId,
-          originType: AccountingMovementOriginType.PAYROLL_RUN,
-          originId: { in: runs.map((run) => run.id) },
-        },
-      });
-      if (causationCount < runs.length) {
-        throw new BadRequestException('Falta el asiento de causación de uno o más runs.');
-      }
-
-      const creditConcept = this.paymentMethodCreditConcept(dto.paymentMethod);
-      await this.resolvePayrollAccountingMappings(
-        businessId,
-        this.paymentMappingRequirements(dto.paymentMethod),
-        'PAYMENT',
-        tx,
-      );
-      const mappings = await tx.payrollAccountingMapping.findMany({
-        where: { businessId, isActive: true, conceptCode: { in: ['NET_PAY', creditConcept] } },
-      });
-      if (!mappings.some((item) => item.conceptCode === 'NET_PAY' && item.side === PayrollAccountingSide.DEBIT) ||
-          !mappings.some((item) => item.conceptCode === creditConcept && item.side === PayrollAccountingSide.CREDIT)) {
-        throw new BadRequestException('Faltan mapeos contables requeridos para el pago de nómina.');
-      }
-
-      const totalPaid = paymentRows.reduce((total, payment) => total.add(this.decimal(payment.amount)), this.decimal(0));
-      const batch = await tx.payrollPaymentBatch.create({
-        data: {
-          businessId,
-          payrollPeriodId: periodId,
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          periodId,
+          payrollRunIds: [...dto.payrollRunIds].sort(),
           paymentMethod: dto.paymentMethod,
-          paidAt,
-          notes,
-          totalPaid: this.money(totalPaid),
-          paymentCount: paymentRows.length,
-          idempotencyKey: dto.idempotencyKey,
-          requestHash,
-        },
-      });
+          paidAt: dto.paidAt,
+          notes: notes ?? null,
+        }),
+      )
+      .digest('hex');
 
-      const updatedPayments = [];
-      for (const payment of paymentRows) {
-        const updated = await tx.payrollPayment.update({
-          where: { id: payment.id },
-          data: { status: PayrollPaymentStatus.PAID, paidAt, paymentMethod: dto.paymentMethod, notes, batchId: batch.id },
-          include: { payrollRun: { include: { period: true, employee: true } } },
+    return this.prisma.$transaction(
+      async (tx) => {
+        const previous = await tx.payrollPaymentBatch.findUnique({
+          where: {
+            businessId_idempotencyKey: {
+              businessId,
+              idempotencyKey: dto.idempotencyKey,
+            },
+          },
+          include: { payments: true, period: true },
         });
-        await this.recreatePayrollPaymentAccountingMovements(businessId, updated, tx);
-        updatedPayments.push(updated);
-      }
+        if (previous) {
+          if (previous.requestHash !== requestHash) {
+            throw new ConflictException(
+              'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+            );
+          }
+          return this.serializePayrollPaymentBatch(previous);
+        }
 
-      return {
-        batchId: batch.id,
-        payrollPeriodId: period.id,
-        paymentCycle: period.paymentCycle,
-        installmentNumber: period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? period.installmentNumber : null,
-        paymentCount: updatedPayments.length,
-        totalPaid: this.money(totalPaid).toString(),
-        payments: updatedPayments,
-      };
-    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        const period = await this.getPeriodForBusiness(
+          businessId,
+          periodId,
+          tx,
+        );
+        if (period.status !== PayrollPeriodStatus.POSTED) {
+          throw new BadRequestException(
+            'El período debe estar contabilizado antes de pagar la nómina.',
+          );
+        }
+        const paidAt = this.operationalPaymentDate(dto.paidAt);
+        if (paidAt < this.periodBounds(period).from) {
+          throw new BadRequestException(
+            'La fecha de pago no puede ser anterior al inicio del período.',
+          );
+        }
+
+        const runs = await tx.payrollRun.findMany({
+          where: {
+            businessId,
+            payrollPeriodId: periodId,
+            id: { in: dto.payrollRunIds },
+          },
+          include: { payments: true, period: true, employee: true },
+        });
+        if (runs.length !== dto.payrollRunIds.length) {
+          throw new BadRequestException(
+            'Uno o más runs no pertenecen al período seleccionado.',
+          );
+        }
+        if (runs.some((run) => !run.postedAt)) {
+          throw new BadRequestException(
+            'Todos los runs deben tener causación contabilizada.',
+          );
+        }
+
+        const paymentRows = runs.map((run) => {
+          const salaries = run.payments.filter(
+            (payment) => payment.type === PayrollPaymentType.SALARY_PAYMENT,
+          );
+          if (salaries.length !== 1) {
+            throw new BadRequestException(
+              `El run ${run.id} no tiene exactamente un pago salarial.`,
+            );
+          }
+          const payment = salaries[0];
+          if (
+            payment.status !== PayrollPaymentStatus.PENDING ||
+            payment.batchId
+          ) {
+            throw new ConflictException(
+              `El pago del run ${run.id} no está disponible.`,
+            );
+          }
+          return payment;
+        });
+
+        const causationCount = await tx.accountingMovement.count({
+          where: {
+            businessId,
+            originType: AccountingMovementOriginType.PAYROLL_RUN,
+            originId: { in: runs.map((run) => run.id) },
+          },
+        });
+        if (causationCount < runs.length) {
+          throw new BadRequestException(
+            'Falta el asiento de causación de uno o más runs.',
+          );
+        }
+
+        const creditConcept = this.paymentMethodCreditConcept(
+          dto.paymentMethod,
+        );
+        await this.resolvePayrollAccountingMappings(
+          businessId,
+          this.paymentMappingRequirements(dto.paymentMethod),
+          'PAYMENT',
+          tx,
+        );
+        const mappings = await tx.payrollAccountingMapping.findMany({
+          where: {
+            businessId,
+            isActive: true,
+            conceptCode: { in: ['NET_PAY', creditConcept] },
+          },
+        });
+        if (
+          !mappings.some(
+            (item) =>
+              item.conceptCode === 'NET_PAY' &&
+              item.side === PayrollAccountingSide.DEBIT,
+          ) ||
+          !mappings.some(
+            (item) =>
+              item.conceptCode === creditConcept &&
+              item.side === PayrollAccountingSide.CREDIT,
+          )
+        ) {
+          throw new BadRequestException(
+            'Faltan mapeos contables requeridos para el pago de nómina.',
+          );
+        }
+
+        const totalPaid = paymentRows.reduce(
+          (total, payment) => total.add(this.decimal(payment.amount)),
+          this.decimal(0),
+        );
+        const batch = await tx.payrollPaymentBatch.create({
+          data: {
+            businessId,
+            payrollPeriodId: periodId,
+            paymentMethod: dto.paymentMethod,
+            paidAt,
+            notes,
+            totalPaid: this.money(totalPaid),
+            paymentCount: paymentRows.length,
+            idempotencyKey: dto.idempotencyKey,
+            requestHash,
+          },
+        });
+
+        const updatedPayments = [];
+        for (const payment of paymentRows) {
+          const updated = await tx.payrollPayment.update({
+            where: { id: payment.id },
+            data: {
+              status: PayrollPaymentStatus.PAID,
+              paidAt,
+              paymentMethod: dto.paymentMethod,
+              notes,
+              batchId: batch.id,
+            },
+            include: {
+              payrollRun: { include: { period: true, employee: true } },
+            },
+          });
+          await this.recreatePayrollPaymentAccountingMovements(
+            businessId,
+            updated,
+            tx,
+          );
+          updatedPayments.push(updated);
+        }
+
+        return {
+          batchId: batch.id,
+          payrollPeriodId: period.id,
+          paymentCycle: period.paymentCycle,
+          installmentNumber:
+            period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+              ? period.installmentNumber
+              : null,
+          paymentCount: updatedPayments.length,
+          totalPaid: this.money(totalPaid).toString(),
+          payments: updatedPayments,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
   private serializePayrollPaymentBatch(batch: any) {
@@ -4202,7 +5034,10 @@ export class PayrollService {
       batchId: batch.id,
       payrollPeriodId: batch.payrollPeriodId,
       paymentCycle: batch.period.paymentCycle,
-      installmentNumber: batch.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY ? batch.period.installmentNumber : null,
+      installmentNumber:
+        batch.period.paymentCycle === PayrollPaymentCycle.BIWEEKLY
+          ? batch.period.installmentNumber
+          : null,
       paymentCount: batch.paymentCount,
       totalPaid: this.decimal(batch.totalPaid).toString(),
       payments: batch.payments,
@@ -4304,14 +5139,14 @@ export class PayrollService {
           regularizationOriginId = this.initialBenefitRegularizationOriginId(
             contractId,
             dto.type,
-            dto.year!,
-            dto.semester!,
+            dto.year,
+            dto.semester,
           );
           roundingOriginId = this.roundingBenefitRegularizationOriginId(
             contractId,
             dto.type,
-            dto.year!,
-            dto.semester!,
+            dto.year,
+            dto.semester,
           );
 
           const dbRegularization = await tx.accountingMovement.findFirst({
@@ -4936,12 +5771,18 @@ export class PayrollService {
       },
       select: { semester: true, amount: true },
     });
-    const paidPrimaForSemester = (semester: number) => paidPrima
-      .filter((payment) => payment.semester === semester)
-      .reduce((total, payment) => total.add(this.decimal(payment.amount)), this.decimal(0));
+    const paidPrimaForSemester = (semester: number) =>
+      paidPrima
+        .filter((payment) => payment.semester === semester)
+        .reduce(
+          (total, payment) => total.add(this.decimal(payment.amount)),
+          this.decimal(0),
+        );
     const serviceBonusPaidSemesterOne = paidPrimaForSemester(1);
     const serviceBonusPaidSemesterTwo = paidPrimaForSemester(2);
-    const serviceBonusPaid = serviceBonusPaidSemesterOne.add(serviceBonusPaidSemesterTwo);
+    const serviceBonusPaid = serviceBonusPaidSemesterOne.add(
+      serviceBonusPaidSemesterTwo,
+    );
     const severancePaid = this.decimal(0);
     const severanceInterestPaid = this.decimal(0);
     const vacationPaid = this.decimal(0);
@@ -4950,10 +5791,16 @@ export class PayrollService {
     const severance = this.money(severanceCaused);
     const severanceInterest = this.money(severanceInterestCaused);
     const serviceBonusSemesterOne = this.money(
-      Prisma.Decimal.max(serviceBonusSemesterOneCaused.sub(serviceBonusPaidSemesterOne), 0),
+      Prisma.Decimal.max(
+        serviceBonusSemesterOneCaused.sub(serviceBonusPaidSemesterOne),
+        0,
+      ),
     );
     const serviceBonusSemesterTwo = this.money(
-      Prisma.Decimal.max(serviceBonusSemesterTwoCaused.sub(serviceBonusPaidSemesterTwo), 0),
+      Prisma.Decimal.max(
+        serviceBonusSemesterTwoCaused.sub(serviceBonusPaidSemesterTwo),
+        0,
+      ),
     );
     const serviceBonus = serviceBonusSemesterOne.add(serviceBonusSemesterTwo);
     const vacation = this.money(vacationCaused);
@@ -5130,11 +5977,15 @@ export class PayrollService {
       rawSeveranceInterest: severanceInterestCaused.toString(),
       roundedSeveranceInterest: severanceInterest.toString(),
       rawServiceBonusSemester1: serviceBonusSemesterOneCaused.toString(),
-      roundedServiceBonusSemester1: this.money(serviceBonusSemesterOneCaused).toString(),
+      roundedServiceBonusSemester1: this.money(
+        serviceBonusSemesterOneCaused,
+      ).toString(),
       paidServiceBonusSemester1: serviceBonusPaidSemesterOne.toString(),
       pendingServiceBonusSemester1: serviceBonusSemesterOne.toString(),
       rawServiceBonusSemester2: serviceBonusSemesterTwoCaused.toString(),
-      roundedServiceBonusSemester2: this.money(serviceBonusSemesterTwoCaused).toString(),
+      roundedServiceBonusSemester2: this.money(
+        serviceBonusSemesterTwoCaused,
+      ).toString(),
       paidServiceBonusSemester2: serviceBonusPaidSemesterTwo.toString(),
       pendingServiceBonusSemester2: serviceBonusSemesterTwo.toString(),
       rawVacation: vacationCaused.toString(),

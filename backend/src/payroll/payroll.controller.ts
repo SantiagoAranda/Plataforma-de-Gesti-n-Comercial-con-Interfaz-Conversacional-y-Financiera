@@ -385,7 +385,9 @@ export class PayrollController {
     @Query('employeeId') employeeId?: string,
   ) {
     return this.payrollService.listPayrollEvents(
-      this.getBusinessId(req), periodId, employeeId,
+      this.getBusinessId(req),
+      periodId,
+      employeeId,
     );
   }
 
@@ -397,7 +399,10 @@ export class PayrollController {
     @Body() dto: CreatePayrollEventDto,
   ) {
     return this.payrollService.createPayrollEvent(
-      this.getBusinessId(req), periodId, dto, req.user?.userId,
+      this.getBusinessId(req),
+      periodId,
+      dto,
+      req.user?.userId,
     );
   }
 
@@ -408,7 +413,11 @@ export class PayrollController {
     @Param('id') id: string,
     @Body() dto: UpdatePayrollEventDto,
   ) {
-    return this.payrollService.updatePayrollEvent(this.getBusinessId(req), id, dto);
+    return this.payrollService.updatePayrollEvent(
+      this.getBusinessId(req),
+      id,
+      dto,
+    );
   }
 
   @Post('runs/:runId/adjustments')
@@ -478,7 +487,10 @@ export class PayrollController {
   @Post('periods/prepare')
   @Roles('BUSINESS')
   preparePayrollPeriod(@Req() req: any, @Body() dto: PreparePayrollPeriodDto) {
-    return this.payrollService.preparePayrollPeriod(this.getBusinessId(req), dto);
+    return this.payrollService.preparePayrollPeriod(
+      this.getBusinessId(req),
+      dto,
+    );
   }
 
   @Post('preview')
@@ -489,14 +501,26 @@ export class PayrollController {
 
   @Post('preview/monthly-overview')
   @Roles('BUSINESS')
-  previewMonthlyOverview(@Req() req: any, @Body() dto: MonthlyPayrollOverviewDto) {
-    return this.payrollService.previewMonthlyOverview(this.getBusinessId(req), dto);
+  previewMonthlyOverview(
+    @Req() req: any,
+    @Body() dto: MonthlyPayrollOverviewDto,
+  ) {
+    return this.payrollService.previewMonthlyOverview(
+      this.getBusinessId(req),
+      dto,
+    );
   }
 
   @Post('payments/confirm')
   @Roles('BUSINESS')
-  confirmPayrollPayment(@Req() req: any, @Body() dto: ConfirmPayrollPaymentDto) {
-    return this.payrollService.confirmPayrollPayment(this.getBusinessId(req), dto);
+  confirmPayrollPayment(
+    @Req() req: any,
+    @Body() dto: ConfirmPayrollPaymentDto,
+  ) {
+    return this.payrollService.confirmPayrollPayment(
+      this.getBusinessId(req),
+      dto,
+    );
   }
 
   @Post('periods/:periodId/runs')

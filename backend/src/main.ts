@@ -8,7 +8,7 @@ async function bootstrap() {
 
   app.use(bodyParser.json({ limit: '10mb' }));
   app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-  
+
   // 🔥 Habilitar CORS
   // app.enableCors({
   //   origin: [
@@ -17,7 +17,6 @@ async function bootstrap() {
   //   ],
   //   credentials: true,
   // });
-
 
   app.enableCors({
     origin: true,

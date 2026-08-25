@@ -79,10 +79,6 @@ export class ReservationsController {
     @Param('id') id: string,
     @Body() dto: RescheduleReservationDto,
   ) {
-    return this.reservationsService.reschedule(
-      req.user.businessId,
-      id,
-      dto,
-    );
+    return this.reservationsService.reschedule(req.user.businessId, id, dto);
   }
 }

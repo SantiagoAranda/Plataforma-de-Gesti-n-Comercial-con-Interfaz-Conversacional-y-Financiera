@@ -111,8 +111,8 @@ export class ItemOptionsService {
         );
       }
 
-      const selected = selectedByGroup.get(group.id)!;
-      const action = selection.action as OrderItemOptionAction;
+      const selected = selectedByGroup.get(group.id);
+      const action = selection.action;
 
       if (
         action === OrderItemOptionAction.SELECT ||
@@ -136,7 +136,7 @@ export class ItemOptionsService {
     const snapshots: Prisma.OrderItemOptionCreateWithoutOrderItemInput[] = [];
 
     for (const group of groups) {
-      const selected = Array.from(selectedByGroup.get(group.id)!.values());
+      const selected = Array.from(selectedByGroup.get(group.id).values());
       const minSelections = Math.max(
         group.required ? 1 : 0,
         group.minSelections,
@@ -728,7 +728,7 @@ export class ItemOptionsService {
       }
       await this.assertIngredientCompatibleWithUnit(
         businessId,
-        ingredientId!,
+        ingredientId,
         group.totalQuantityUnitId,
       );
       // SHARED_TOTAL options always have null quantity

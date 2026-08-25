@@ -425,6 +425,233 @@ function createPrismaMock(overrides: Record<string, any> = {}) {
 
 describe('PayrollService payroll history rules', () => {
   it.each([
+    [3.99, '0'], [4, '0.01'], [15.99, '0.01'], [16, '0.012'],
+    [17, '0.014'], [18, '0.016'], [19, '0.018'], [20, '0.02'],
+  ])('uses the monthly solidarity bracket for both BIWEEKLY installments at %s SMMLV', async (smmlvMultiple, expectedRate) => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const smmlv = new Prisma.Decimal(1_750_905);
+    const salary = smmlv.mul(smmlvMultiple);
+    const params: any = {
+      smmlv,
+      maxWorkedDaysMonth: 30,
+      applySolidarityFund: true,
+      solidarityBrackets: [
+        [4, 16, '0.01'], [16, 17, '0.012'], [17, 18, '0.014'],
+        [18, 19, '0.016'], [19, 20, '0.018'], [20, null, '0.02'],
+      ].map(([fromSmmlv, toSmmlv, rate], index) => ({
+        id: String(index), globalParameterId: 'global', fromSmmlv,
+        toSmmlv, rate,
+      })),
+    };
+    const contract: any = {
+      id: contractId, salaryMonthly: salary,
+      startDate: new Date('2026-01-01T00:00:00.000Z'), endDate: null,
+    };
+    const q1Ibc = salary.div(2);
+    const q1: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId, contract,
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 1 },
+      params, ibcAmount: q1Ibc, commissions: new Prisma.Decimal(0),
+      overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    });
+    const q2: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId, contract,
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params, ibcAmount: q1Ibc, commissions: new Prisma.Decimal(0),
+      overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+      previousInstallment: { ibcAmount: q1Ibc, solidarityFund: q1.amount, source: 'PREVIEW_Q1' },
+    });
+    const monthly: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId, contract,
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.MONTHLY, installmentNumber: 1 },
+      params, ibcAmount: salary, commissions: new Prisma.Decimal(0),
+      overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    });
+
+    expect(q1.rate.toString()).toBe(expectedRate);
+    expect(q2.rate.toString()).toBe(expectedRate);
+    expect(q1.amount.add(q2.amount).equals(monthly.amount)).toBe(true);
+    expect(q2.monthlyIbc.equals(salary)).toBe(true);
+  });
+
+  it('closes Q2 from persisted Q1 IBC and fund without reconstructing the first installment', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const smmlv = new Prisma.Decimal(1_750_905);
+    const params: any = {
+      smmlv, maxWorkedDaysMonth: 30, applySolidarityFund: true,
+      solidarityBrackets: [{ id: 'four', globalParameterId: 'global', fromSmmlv: 4, toSmmlv: 16, rate: '0.01' }],
+    };
+    const q1Ibc = smmlv.mul(3.8).div(2);
+    const q2Ibc = smmlv.mul(0.5).add(smmlv.mul(3.8).div(2));
+    const q1Fund = new Prisma.Decimal(0);
+    prisma.payrollRun.findFirst.mockResolvedValue({ ibcAmount: q1Ibc, solidarityFund: q1Fund });
+    const result: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId,
+      contract: { id: contractId, salaryMonthly: smmlv.mul(99), startDate: new Date('2026-01-01T00:00:00.000Z') },
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params, ibcAmount: q2Ibc, commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    });
+    expect(result.monthlyIbc.equals(q1Ibc.add(q2Ibc))).toBe(true);
+    expect(result.rate.toString()).toBe('0.01');
+    expect(result.amount.equals(result.monthlyIbc.mul('0.01'))).toBe(true);
+    expect(prisma.payrollRun.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ contractId, period: expect.objectContaining({ installmentNumber: 1 }) }),
+    }));
+  });
+
+  it('regularizes a threshold crossed only by Q2 variables and keeps partial/reduced IBCs unprojected', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const smmlv = new Prisma.Decimal(1_750_905);
+    const params: any = {
+      smmlv, maxWorkedDaysMonth: 30, applySolidarityFund: true,
+      solidarityBrackets: [{ id: 'four', globalParameterId: 'global', fromSmmlv: 4, toSmmlv: null, rate: '0.01' }],
+    };
+    const q1Ibc = smmlv.mul(1.9);
+    const q2IbcWithCommission = smmlv.mul(2.4);
+    const q2: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId,
+      contract: { id: contractId, salaryMonthly: smmlv.mul(3.8), startDate: new Date('2026-01-01T00:00:00.000Z') },
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params, ibcAmount: q2IbcWithCommission, commissions: smmlv.mul(0.5), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+      previousInstallment: { ibcAmount: q1Ibc, solidarityFund: new Prisma.Decimal(0), source: 'PERSISTED_Q1' },
+    });
+    expect(q2.monthlyIbc.equals(smmlv.mul(4.3))).toBe(true);
+    expect(q2.amount.equals(smmlv.mul(4.3).mul('0.01'))).toBe(true);
+
+    const reduced: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId,
+      contract: { id: contractId, salaryMonthly: smmlv.mul(20), startDate: new Date('2026-08-16T00:00:00.000Z') },
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params, ibcAmount: smmlv, commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+      previousInstallment: { ibcAmount: smmlv, solidarityFund: new Prisma.Decimal(0), source: 'PERSISTED_Q1' },
+    });
+    expect(reduced.monthlyIbc.equals(smmlv.mul(2))).toBe(true);
+    expect(reduced.rate.toString()).toBe('0');
+    expect(reduced.amount.toString()).toBe('0');
+  });
+
+  it('blocks a direct Q2 close when no persisted Q1 history exists', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    await expect((service as any).calculateSolidarityFund({
+      businessId, employeeId,
+      contract: { id: contractId, salaryMonthly: new Prisma.Decimal(1_000_000), startDate: new Date('2026-01-01T00:00:00.000Z') },
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params: { smmlv: new Prisma.Decimal(1), maxWorkedDaysMonth: 30, applySolidarityFund: true, solidarityBrackets: [] },
+      ibcAmount: new Prisma.Decimal(1), commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it.each([
+    ['2026-08-16', 15],
+    ['2026-08-24', 7],
+  ])('allows direct Q2 without Q1 when the contract starts on %s and Q1 was not applicable', async (startDate, expectedQ2Days) => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const salaryMonthly = new Prisma.Decimal(7_003_620);
+    const contract: any = { id: contractId, salaryMonthly, startDate: new Date(`${startDate}T00:00:00.000Z`) };
+    const q1Period = { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 1 };
+    const q2Period = { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 };
+    expect((service as any).calculateEffectiveWorkedDays(contract, q1Period)).toBe(0);
+    expect((service as any).calculateEffectiveWorkedDays(contract, q2Period)).toBe(expectedQ2Days);
+    const q2Ibc = salaryMonthly.mul(expectedQ2Days).div(30);
+    const result: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId, contract, period: q2Period,
+      params: { smmlv: new Prisma.Decimal(1_750_905), maxWorkedDaysMonth: 30, applySolidarityFund: true, solidarityBrackets: [] },
+      ibcAmount: q2Ibc, commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    });
+    expect(result.monthlyIbc.equals(q2Ibc)).toBe(true);
+    expect(result.previousInstallmentAmount.toString()).toBe('0');
+    expect(result.previousInstallmentSource).toBe('NOT_APPLICABLE_Q1');
+    expect(prisma.payrollRun.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('still blocks Q2 without Q1 when a contract starting on August 10 had applicable Q1 days', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const contract: any = { id: contractId, salaryMonthly: new Prisma.Decimal(7_003_620), startDate: new Date('2026-08-10T00:00:00.000Z') };
+    const q1Period = { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 1 };
+    const q2Period = { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 };
+    expect((service as any).calculateEffectiveWorkedDays(contract, q1Period)).toBeGreaterThan(0);
+    await expect((service as any).calculateSolidarityFund({
+      businessId, employeeId, contract, period: q2Period,
+      params: { smmlv: new Prisma.Decimal(1_750_905), maxWorkedDaysMonth: 30, applySolidarityFund: true, solidarityBrackets: [] },
+      ibcAmount: new Prisma.Decimal(1), commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+    })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('uses in-memory Q1 history for BIWEEKLY Q2 in monthly overview without querying a persisted run', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const q1 = {
+      employeeId,
+      contractId,
+      ibcAmount: '200',
+      solidarityFund: '2',
+      salaryEarned: '200', grossIncome: '200', transportAllowance: '0', connectivityAllowance: '0', commissions: '0', overtimeAmount: '0',
+      employeeHealth: '0', employeePension: '0', withholdingTax: '0', totalEmployeeDeductions: '2', employerHealth: '0', employerPension: '0', employerArl: '0', compensationFund: '0', sena: '0', icbf: '0', severance: '0', severanceInterest: '0', serviceBonus: '0', vacation: '0', totalBenefits: '0', netPay: '198', realEmployerCost: '200',
+    };
+    const q2 = { ...q1, ibcAmount: '230', solidarityFund: '2.3', salaryEarned: '230', grossIncome: '230', totalEmployeeDeductions: '2.3', netPay: '227.7', realEmployerCost: '230' };
+    jest.spyOn(service, 'previewPayroll').mockImplementation(async (_businessId, dto: any, history: any, options: any) => {
+      if (dto.paymentCycle === PayrollPaymentCycle.MONTHLY) return { runs: [], totals: { netPay: '0', realEmployerCost: '0' } } as any;
+      if (dto.installmentNumber === 1) return { runs: [q1], totals: { netPay: q1.netPay, realEmployerCost: q1.realEmployerCost } } as any;
+      expect(history.get(employeeId)).toEqual(expect.objectContaining({ ibcAmount: expect.any(Prisma.Decimal), solidarityFund: expect.any(Prisma.Decimal), source: 'PREVIEW_Q1' }));
+      expect(options).toEqual({ usePreviewQ1History: true });
+      return { runs: [q2], totals: { netPay: q2.netPay, realEmployerCost: q2.realEmployerCost } } as any;
+    });
+
+    const overview: any = await service.previewMonthlyOverview(businessId, { year: 2026, month: 8 } as any);
+
+    expect(overview.runs[0].solidarityFund).toBe('4');
+    expect(prisma.payrollRun.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('includes a Q2-only employee as a partial BIWEEKLY monthly overview run', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const q2 = {
+      employeeId, contractId, ibcAmount: '1634178', solidarityFund: '0',
+      salaryEarned: '1634178', grossIncome: '1634178', transportAllowance: '0', connectivityAllowance: '0', commissions: '0', overtimeAmount: '0',
+      employeeHealth: '0', employeePension: '0', withholdingTax: '0', totalEmployeeDeductions: '0', employerHealth: '0', employerPension: '0', employerArl: '0', compensationFund: '0', sena: '0', icbf: '0', severance: '0', severanceInterest: '0', serviceBonus: '0', vacation: '0', totalBenefits: '0', netPay: '1634178', realEmployerCost: '1634178',
+    };
+    jest.spyOn(service, 'previewPayroll').mockImplementation(async (_businessId, dto: any) => {
+      if (dto.paymentCycle === PayrollPaymentCycle.MONTHLY) return { runs: [], totals: { netPay: '0', realEmployerCost: '0' } } as any;
+      if (dto.installmentNumber === 1) return { runs: [], totals: { netPay: '0', realEmployerCost: '0' } } as any;
+      return { runs: [q2], totals: { netPay: q2.netPay, realEmployerCost: q2.realEmployerCost } } as any;
+    });
+
+    const overview: any = await service.previewMonthlyOverview(businessId, { year: 2026, month: 8 } as any);
+
+    expect(overview.runs).toHaveLength(1);
+    expect(overview.runs[0]).toEqual(expect.objectContaining({
+      employeeId,
+      salaryEarned: '1634178',
+      q1Applicable: false,
+      installments: [{ installmentNumber: 1, netPay: '0' }, { installmentNumber: 2, netPay: '1634178' }],
+    }));
+  });
+
+  it('sets Q2 solidarity to zero when the persisted provisional fund exceeds the final monthly due', async () => {
+    const prisma = createPrismaMock();
+    const service = new PayrollService(prisma as any);
+    const params: any = { smmlv: new Prisma.Decimal(100), maxWorkedDaysMonth: 30, applySolidarityFund: true,
+      solidarityBrackets: [{ id: 'four', globalParameterId: 'global', fromSmmlv: 4, toSmmlv: null, rate: '0.01' }] };
+    const result: any = await (service as any).calculateSolidarityFund({
+      businessId, employeeId,
+      contract: { id: contractId, salaryMonthly: new Prisma.Decimal(400), startDate: new Date('2026-01-01T00:00:00.000Z') },
+      period: { year: 2026, month: 8, paymentCycle: PayrollPaymentCycle.BIWEEKLY, installmentNumber: 2 },
+      params, ibcAmount: new Prisma.Decimal(100), commissions: new Prisma.Decimal(0), overtimeAmount: new Prisma.Decimal(0), tx: prisma,
+      previousInstallment: { ibcAmount: new Prisma.Decimal(100), solidarityFund: new Prisma.Decimal(10), source: 'PERSISTED_Q1' },
+    });
+    expect(result.amount.toString()).toBe('0');
+    expect(result.status).toBe('BIWEEKLY_Q2_OVERDEDUCTION_NO_REFUND');
+    expect(result.warning).toContain('set to zero');
+  });
+
+  it.each([
     ['2026-06-30', 1, 44, 220, '1.8', '0.8'],
     ['2026-07-01', 2, 44, 220, '1.9', '0.9'],
     ['2026-07-14', 2, 44, 220, '1.9', '0.9'],
@@ -3142,9 +3369,99 @@ describe('PayrollService payroll history rules', () => {
     expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
   });
 
-  it('liquidates monthly payroll and creates balanced accounting movements with seed mappings', async () => {
+  it('prepares an OPEN period by calculating it without posting or creating PAYROLL_RUN accounting', async () => {
     const prisma = createPrismaMock();
-    const period = enabledPeriodicPayrollPeriod();
+    const openPeriod = enabledPeriodicPayrollPeriod(PayrollPeriodStatus.OPEN);
+    const calculatedPeriod = {
+      ...openPeriod,
+      status: PayrollPeriodStatus.CALCULATED,
+    };
+    prisma.employeeContract.count.mockResolvedValue(1);
+    prisma.payrollPeriod.findUnique.mockResolvedValue(openPeriod);
+    prisma.payrollPeriod.findFirst.mockResolvedValue(calculatedPeriod);
+    const service = new PayrollService(prisma as any);
+    const calculateSpy = jest
+      .spyOn(service, 'calculatePeriodPayroll')
+      .mockResolvedValue({ totalEmployees: 1, calculatedRuns: 1, skippedEmployees: [] });
+    const liquidateSpy = jest.spyOn(service, 'liquidatePeriodPayroll');
+
+    const result = await service.preparePayrollPeriod(businessId, {
+      year: 2026,
+      month: 8,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentNumber: null,
+      idempotencyKey: 'prepare-calculates-only',
+    });
+
+    expect(result.status).toBe(PayrollPeriodStatus.CALCULATED);
+    expect(calculateSpy).toHaveBeenCalledWith(businessId, periodId);
+    expect(liquidateSpy).not.toHaveBeenCalled();
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('does not silently post a CALCULATED period when a payment is requested', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollPeriod.findUnique.mockResolvedValue(
+      enabledPeriodicPayrollPeriod(PayrollPeriodStatus.CALCULATED),
+    );
+    const service = new PayrollService(prisma as any);
+    jest
+      .spyOn(service as any, 'resolvePayrollAccountingMappings')
+      .mockResolvedValue([]);
+    const prepareSpy = jest.spyOn(service, 'preparePayrollPeriod');
+
+    await expect(
+      service.confirmPayrollPayment(businessId, {
+        year: 2026,
+        month: 8,
+        paymentCycle: PayrollPaymentCycle.MONTHLY,
+        installmentNumber: null,
+        employeeIds: [employeeId],
+        paymentMethod: PaymentMethod.BANK_TRANSFER,
+        idempotencyKey: 'payment-must-not-post',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prepareSpy).not.toHaveBeenCalled();
+    expect(prisma.accountingMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('pays a POSTED period through its pending payment flow without preparing or reposting it', async () => {
+    const prisma = createPrismaMock();
+    prisma.payrollPeriod.findUnique.mockResolvedValue(
+      enabledPeriodicPayrollPeriod(PayrollPeriodStatus.POSTED),
+    );
+    prisma.payrollRun.findMany.mockResolvedValue([{ id: 'run-1' }]);
+    const service = new PayrollService(prisma as any);
+    jest
+      .spyOn(service as any, 'resolvePayrollAccountingMappings')
+      .mockResolvedValue([]);
+    const prepareSpy = jest.spyOn(service, 'preparePayrollPeriod');
+    const batchSpy = jest
+      .spyOn(service, 'createPayrollPaymentBatch')
+      .mockResolvedValue({ id: 'batch-1' } as any);
+
+    await service.confirmPayrollPayment(businessId, {
+      year: 2026,
+      month: 8,
+      paymentCycle: PayrollPaymentCycle.MONTHLY,
+      installmentNumber: null,
+      employeeIds: [employeeId],
+      paymentMethod: PaymentMethod.BANK_TRANSFER,
+      idempotencyKey: 'pay-posted-pending',
+    });
+
+    expect(prepareSpy).not.toHaveBeenCalled();
+    expect(batchSpy).toHaveBeenCalledWith(
+      businessId,
+      periodId,
+      expect.objectContaining({ payrollRunIds: ['run-1'] }),
+    );
+  });
+
+  it('confirms a calculated monthly payroll and creates balanced accounting movements with seed mappings', async () => {
+    const prisma = createPrismaMock();
+    const period = enabledPeriodicPayrollPeriod(PayrollPeriodStatus.CALCULATED);
     const employee = defaultEmployee();
     const contract = defaultContract();
     const mappings = seedPayrollAccountingMappingsFixture();
@@ -3154,7 +3471,10 @@ describe('PayrollService payroll history rules', () => {
     let runRecord: any;
     let conceptResults: any[] = [];
 
-    prisma.payrollPeriod.findFirst.mockResolvedValue(period);
+    let currentStatus = PayrollPeriodStatus.OPEN;
+    prisma.payrollPeriod.findFirst.mockImplementation(() =>
+      Promise.resolve({ ...period, status: currentStatus }),
+    );
     prisma.payrollPeriod.findUnique.mockResolvedValue(period);
     prisma.employee.findMany.mockResolvedValue([employee]);
     prisma.employee.findFirst.mockResolvedValue(employee);
@@ -3202,16 +3522,19 @@ describe('PayrollService payroll history rules', () => {
         },
       ]),
     );
-    prisma.payrollPeriod.update.mockImplementation(({ data }: any) =>
-      Promise.resolve({ ...period, ...data }),
-    );
+    prisma.payrollPeriod.update.mockImplementation(({ data }: any) => {
+      currentStatus = data.status ?? currentStatus;
+      return Promise.resolve({ ...period, ...data, status: currentStatus });
+    });
     const service = new PayrollService(prisma as any);
 
+    const calculation = await service.calculatePeriodPayroll(businessId, periodId);
     const result = await service.liquidatePeriodPayroll(businessId, periodId);
 
     const movements =
       prisma.accountingMovement.createMany.mock.calls[0][0].data;
-    expect(result.calculatedRuns).toBe(1);
+    expect(calculation.calculatedRuns).toBe(1);
+    expect(result.runs).toHaveLength(1);
     expect(prisma.payrollRun.upsert).toHaveBeenCalled();
     expect(prisma.payrollAccountingMapping.upsert).toHaveBeenCalled();
     const upsertArgs = prisma.payrollRun.upsert.mock.calls[0][0];
@@ -3459,7 +3782,10 @@ describe('PayrollService payroll history rules', () => {
     let runRecord: any;
     let conceptResults: any[] = [];
 
-    prisma.payrollPeriod.findFirst.mockResolvedValue(period);
+    let currentStatus = PayrollPeriodStatus.OPEN;
+    prisma.payrollPeriod.findFirst.mockImplementation(() =>
+      Promise.resolve({ ...period, status: currentStatus }),
+    );
     prisma.payrollPeriod.findUnique.mockResolvedValue(period);
     prisma.employee.findMany.mockResolvedValue([employee]);
     prisma.employee.findFirst.mockResolvedValue(employee);
@@ -3502,10 +3828,13 @@ describe('PayrollService payroll history rules', () => {
         },
       ]),
     );
-    prisma.payrollPeriod.update.mockImplementation(({ data }: any) =>
-      Promise.resolve({ ...period, ...data }),
-    );
+    prisma.payrollPeriod.update.mockImplementation(({ data }: any) => {
+      currentStatus = data.status ?? currentStatus;
+      return Promise.resolve({ ...period, ...data, status: currentStatus });
+    });
     const service = new PayrollService(prisma as any);
+
+    await service.calculatePeriodPayroll(businessId, periodId);
 
     await expect(
       service.liquidatePeriodPayroll(businessId, periodId),

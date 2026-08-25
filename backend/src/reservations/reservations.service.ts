@@ -20,7 +20,7 @@ export class ReservationsService {
         0,
         0,
         0,
-      )
+      ),
     );
   }
 
@@ -42,7 +42,9 @@ export class ReservationsService {
   }
 
   private formatTime(minutes: number) {
-    const h = Math.floor(minutes / 60).toString().padStart(2, '0');
+    const h = Math.floor(minutes / 60)
+      .toString()
+      .padStart(2, '0');
     const m = (minutes % 60).toString().padStart(2, '0');
     return `${h}:${m}`;
   }
@@ -91,7 +93,9 @@ export class ReservationsService {
           itemId: item.id,
           date,
           status: { not: 'CANCELLED' },
-          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+          ...(excludeReservationId
+            ? { id: { not: excludeReservationId } }
+            : {}),
         },
         select: { startMinute: true, endMinute: true },
       }),
@@ -116,7 +120,10 @@ export class ReservationsService {
       if (last && last.endMinute >= w.startMinute) {
         last.endMinute = Math.max(last.endMinute, w.endMinute);
       } else {
-        mergedWindows.push({ startMinute: w.startMinute, endMinute: w.endMinute });
+        mergedWindows.push({
+          startMinute: w.startMinute,
+          endMinute: w.endMinute,
+        });
       }
     }
 
@@ -127,7 +134,9 @@ export class ReservationsService {
 
     // Compute "today" and current time in the business timezone (America/Bogota).
     // Use a YYYY-MM-DD string key comparison — avoids getTime() drift from toLocaleString parsing.
-    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
     const todayKey = [
       nowInBusiness.getFullYear(),
       String(nowInBusiness.getMonth() + 1).padStart(2, '0'),
@@ -135,7 +144,8 @@ export class ReservationsService {
     ].join('-');
     const isToday = dateKey === todayKey;
     // Use < (not <=) so a slot that starts exactly at the current minute is still offered.
-    const currentMinutes = nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
+    const currentMinutes =
+      nowInBusiness.getHours() * 60 + nowInBusiness.getMinutes();
 
     for (const window of mergedWindows) {
       // Align cursor to the next full-hour boundary (slots are always HH:00).
@@ -154,12 +164,16 @@ export class ReservationsService {
         }
 
         const overlap = reservations.some(
-          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
+          (res) =>
+            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
         const blocked = blocks.some((block) => {
-          if (block.startMinute === null && block.endMinute === null) return true;
-          return start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0);
+          if (block.startMinute === null && block.endMinute === null)
+            return true;
+          return (
+            start < (block.endMinute ?? 0) && end > (block.startMinute ?? 0)
+          );
         });
 
         if (!overlap && !blocked) slots.push(this.formatTime(start));
@@ -170,7 +184,6 @@ export class ReservationsService {
 
     return slots;
   }
-
 
   private async getBusinessService(businessId: string, itemId: string) {
     const item = await this.prisma.item.findFirst({
@@ -266,16 +279,27 @@ export class ReservationsService {
       where: { businessId, itemId: item.id },
     });
     const hasSpecificWindows = specificWindowsCount > 0;
-    return this.getAvailabilitySlotsForItem(businessId, item, dateOnly, hasSpecificWindows);
+    return this.getAvailabilitySlotsForItem(
+      businessId,
+      item,
+      dateOnly,
+      hasSpecificWindows,
+    );
   }
 
-  async getAvailabilityCalendar(businessId: string, itemId: string, month: string) {
+  async getAvailabilityCalendar(
+    businessId: string,
+    itemId: string,
+    month: string,
+  ) {
     const item = await this.getBusinessService(businessId, itemId);
     const { year, monthIndex } = this.parseMonth(month);
     const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
     const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-    
-    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
     const today = new Date(
       Date.UTC(
         nowInBusiness.getFullYear(),
@@ -285,7 +309,7 @@ export class ReservationsService {
         0,
         0,
         0,
-      )
+      ),
     );
 
     const specificWindowsCount = await this.prisma.serviceScheduleWindow.count({
