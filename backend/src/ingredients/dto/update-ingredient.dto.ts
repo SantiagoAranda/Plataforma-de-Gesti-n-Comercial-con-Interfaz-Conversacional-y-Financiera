@@ -1,5 +1,11 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { IngredientStatus, IngredientUnit } from '@prisma/client';
 import { normalizeDecimalString } from '../../common/utils/decimal-string.util';
 import { normalizeIngredientUnit } from '../ingredient-unit.util';
@@ -36,12 +42,14 @@ export class UpdateIngredientDto {
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   customUnitLabel?: string;
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
+  @Transform(({ value }) =>
+    !value || value === '' ? undefined : normalizeDecimalString(value),
+  )
   @Matches(/^\d+(\.\d+)?$/, {
     message: 'purchaseToConsumptionFactor must be a valid decimal number',
   })
@@ -49,18 +57,24 @@ export class UpdateIngredientDto {
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  @Transform(({ value }) =>
+    !value || value === '' ? undefined : normalizeDecimalString(value),
+  )
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'minStock must be a valid decimal number',
+  })
   minStock?: string;
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   recipeUnitLabel?: string;
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => (!value || value === '') ? undefined : normalizeDecimalString(value))
+  @Transform(({ value }) =>
+    !value || value === '' ? undefined : normalizeDecimalString(value),
+  )
   @Matches(/^\d+(\.\d+)?$/, {
     message: 'recipeUnitFactor must be a valid decimal number',
   })

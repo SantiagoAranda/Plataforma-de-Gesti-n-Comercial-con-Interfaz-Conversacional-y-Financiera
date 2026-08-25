@@ -39,7 +39,6 @@ import {
   type PayrollEvent,
   type PayrollLegalParameter,
   type PayrollPayment,
-  type PayrollPreparationCandidate,
   type PayrollRun,
   type Settlement,
   type PayrollBenefitPayment,
@@ -291,13 +290,6 @@ function payrollRunViewModel(run: PayrollRun) {
   const connectivityAllowance = toNumber(run.connectivityAllowance);
   const allowanceValue = run.contract?.isRemote ? connectivityAllowance : transportAllowance;
   const allowanceLabel = run.contract?.isRemote ? "Auxilio de conectividad" : "Auxilio transporte";
-  const employeeHealth = toNumber(run.employeeHealth);
-  const employeePension = toNumber(run.employeePension);
-  const deductions =
-    employeeHealth +
-    employeePension +
-    toNumber(run.solidarityFund) +
-    toNumber(run.withholdingTax);
   const salaryPayments = (run.payments ?? [])
     .filter((payment) => payment.type === "SALARY_PAYMENT")
     .sort((a, b) => (a.installmentNumber ?? 1) - (b.installmentNumber ?? 1));
@@ -306,9 +298,6 @@ function payrollRunViewModel(run: PayrollRun) {
   return {
     allowanceLabel,
     allowanceValue,
-    employeeHealth,
-    employeePension,
-    deductions,
     salaryPayments,
     allPaid,
     paymentStatusLabel: allPaid ? "Pagada" : "Pendiente pago",
@@ -349,6 +338,14 @@ function payrollErrorMessage(error: unknown, fallback: string) {
     ? error.details.message.join(" | ")
     : error.details?.message;
   return translatePayrollError(detailsMessage || error.message || fallback);
+}
+
+const duplicateEmployeeDocumentMessage = "Ya existe un empleado registrado con este número de documento.";
+
+function isDuplicateEmployeeDocumentError(error: unknown) {
+  if (!(error instanceof AppApiError) || error.status !== 409) return false;
+  return error.message === "Employee documentNumber already exists"
+    || error.details?.message === "Employee documentNumber already exists";
 }
 
 function runLoanDeductionValue(run?: PayrollRun | null) {
@@ -709,11 +706,48 @@ function MoneyLine({
   sign?: "+" | "-";
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-3 text-[13px]", indent && "pl-4")}>
-      <span className={cn("font-normal", color)}>{label}</span>
-      <span className={cn("tabular-nums", valueColor, medium ? "font-medium" : "font-normal")}>
+    <div className={cn("flex items-start justify-between gap-3 text-[13px]", indent && "pl-4")}>
+      <span className={cn("min-w-0 flex-1 font-normal leading-5", color)}>{label}</span>
+      <span className={cn("shrink-0 tabular-nums leading-5", valueColor, medium ? "font-medium" : "font-normal")}>
         {sign ? `${sign} ${money(value)}` : money(value)}
       </span>
+    </div>
+  );
+}
+
+function PayrollDeductionsBreakdown({
+  run,
+  showNetPay = false,
+  compact = false,
+}: {
+  run: PayrollRun;
+  showNetPay?: boolean;
+  compact?: boolean;
+}) {
+  const otherDeductions = runOtherDeductionsValue(run);
+  const loanDeduction = runLoanDeductionValue(run);
+
+  return (
+    <div className={cn("space-y-1.5", compact && "space-y-1")}>
+      <MoneyLine label="Deducción salud" value={run.employeeHealth} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      <MoneyLine label="Deducción pensión" value={run.employeePension} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      {toNumber(run.solidarityFund) > 0 && (
+        <MoneyLine label="Fondo de Solidaridad Pensional" value={run.solidarityFund} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      {toNumber(loanDeduction) > 0 && (
+        <MoneyLine label="Préstamos" value={loanDeduction} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      {toNumber(otherDeductions) > 0 && (
+        <MoneyLine label="Otras deducciones" value={otherDeductions} color="text-[#C80237]" valueColor="text-[#C80237]" sign="-" />
+      )}
+      <div className={cn("border-t border-slate-100 pt-2", compact && "pt-1.5")}>
+        <MoneyLine label="Total deducciones" value={run.totalEmployeeDeductions} color="text-slate-700" valueColor="text-[#C80237]" medium sign="-" />
+      </div>
+      {showNetPay && (
+        <div className={cn("border-t border-slate-200 pt-2", compact && "pt-1.5")}>
+          <MoneyLine label="Neto a pagar" value={run.netPay} color="text-slate-800" valueColor="text-[#0fb18f]" medium />
+        </div>
+      )}
     </div>
   );
 }
@@ -886,6 +920,21 @@ function HeaderCalendar({ selectedYear, selectedMonth, onChange }: {
 }
 
 type PayrollSheetMode = "editEmployee" | "createEmployee" | "createContract" | "createContractForEmployee";
+
+type ActivePayrollCycle = {
+  paymentCycle: "MONTHLY" | "BIWEEKLY";
+  installmentNumber: 1 | 2 | null;
+};
+
+const MONTHLY_PAYROLL_CYCLE: ActivePayrollCycle = {
+  paymentCycle: "MONTHLY",
+  installmentNumber: null,
+};
+
+function activePayrollCycleLabel(cycle: ActivePayrollCycle) {
+  if (cycle.paymentCycle === "MONTHLY") return "Mensualidad";
+  return cycle.installmentNumber === 1 ? "Primera quincena" : "Segunda quincena";
+}
 
 type PayrollSheetTab<T extends string = string> = {
   id: T;
@@ -1101,11 +1150,18 @@ function PayrollEmployeeSheetShell<T extends string>({
 function EmployeeFormSection({
   value,
   onChange,
+  documentNumberError,
+  onDocumentNumberChange,
 }: {
   value: EmployeeDraft;
   onChange: (value: EmployeeDraft) => void;
+  documentNumberError?: string | null;
+  onDocumentNumberChange?: () => void;
 }) {
-  const update = (patch: Partial<EmployeeDraft>) => onChange({ ...value, ...patch });
+  const update = (patch: Partial<EmployeeDraft>) => {
+    if (patch.documentNumber !== undefined) onDocumentNumberChange?.();
+    onChange({ ...value, ...patch });
+  };
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
@@ -1115,8 +1171,15 @@ function EmployeeFormSection({
         <FieldBlock label="Apellido">
           <BigInput value={value.lastName} onChange={(event) => update({ lastName: event.target.value })} placeholder="Perez" />
         </FieldBlock>
-        <FieldBlock label="Documento">
-          <BigInput value={value.documentNumber} onChange={(event) => update({ documentNumber: event.target.value })} placeholder="123456789" />
+        <FieldBlock label="Número de documento">
+          <BigInput
+            value={value.documentNumber}
+            onChange={(event) => update({ documentNumber: event.target.value })}
+            placeholder="123456789"
+            aria-invalid={Boolean(documentNumberError)}
+            className={documentNumberError ? "border-rose-400 focus:border-rose-500" : undefined}
+          />
+          {documentNumberError && <p className="mt-1 px-1 text-xs font-medium text-rose-600">{documentNumberError}</p>}
         </FieldBlock>
         <FieldBlock label="Cargo">
           <BigInput value={value.position} onChange={(event) => update({ position: event.target.value })} placeholder="Auxiliar" />
@@ -1354,7 +1417,9 @@ function PayrollQuickEmployeeSheet({
     paymentCycle: "MONTHLY",
   });
   const [submitting, setSubmitting] = useState(false);
+  const mutationRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [documentNumberError, setDocumentNumberError] = useState<string | null>(null);
 
   const selectedEmployee = employees.find((employee) => employee.id === employeeId)
     ?? (createdEmployee?.id === employeeId ? createdEmployee : null)
@@ -1368,6 +1433,7 @@ function PayrollQuickEmployeeSheet({
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setDocumentNumberError(null);
     setSubmitting(false);
     setActiveTab(mode === "createContractForEmployee" ? "contrato" : "empleado");
     setEmployeeId(initialEmployee?.id ?? "");
@@ -1453,8 +1519,11 @@ function PayrollQuickEmployeeSheet({
         setActiveTab("empleado");
         return setError(employeeValidation);
       }
+      if (mutationRef.current) return;
+      mutationRef.current = true;
       setSubmitting(true);
       setError(null);
+      setDocumentNumberError(null);
       try {
         const employee = await payrollApi.createEmployee({
           firstName: employeeDraft.firstName.trim(),
@@ -1470,8 +1539,13 @@ function PayrollQuickEmployeeSheet({
         onChanged();
         setActiveTab("contrato");
       } catch (err) {
-        setError(err instanceof AppApiError ? err.message : "No se pudo crear el empleado.");
+        if (isDuplicateEmployeeDocumentError(err)) {
+          setDocumentNumberError(duplicateEmployeeDocumentMessage);
+        } else {
+          setError(err instanceof AppApiError ? err.message : "No se pudo crear el empleado.");
+        }
       } finally {
+        mutationRef.current = false;
         setSubmitting(false);
       }
       return;
@@ -1491,6 +1565,8 @@ function PayrollQuickEmployeeSheet({
       return setError("Este empleado ya tiene un contrato activo. Para crear uno nuevo, primero debes inactivar el contrato actual.");
     }
 
+    if (mutationRef.current) return;
+    mutationRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -1501,6 +1577,7 @@ function PayrollQuickEmployeeSheet({
     } catch (err) {
       setError(err instanceof AppApiError ? err.message : "No se pudo crear el contrato.");
     } finally {
+      mutationRef.current = false;
       setSubmitting(false);
     }
   };
@@ -1607,7 +1684,12 @@ function PayrollQuickEmployeeSheet({
               </div>
             </div>
           ) : (
-            <EmployeeFormSection value={employeeDraft} onChange={setEmployeeDraft} />
+            <EmployeeFormSection
+              value={employeeDraft}
+              onChange={setEmployeeDraft}
+              documentNumberError={documentNumberError}
+              onDocumentNumberChange={() => setDocumentNumberError(null)}
+            />
           )
         )}
         {activeTab === "contrato" && (
@@ -1801,6 +1883,7 @@ function EmployeePayrollEditorSheet({
   const [activeTab, setActiveTab] = useState<"horas" | "contrato" | "empleado">("horas");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const mutationRef = useRef(false);
   const [hasPostedHistoryError, setHasPostedHistoryError] = useState(false);
 
   // Tab 1: Horas/Ajustes State
@@ -1831,12 +1914,14 @@ function EmployeePayrollEditorSheet({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [active, setActive] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+  const [documentNumberError, setDocumentNumberError] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [initialSnapshot, setInitialSnapshot] = useState("");
 
   useEffect(() => {
     if (!open || !run) return;
     setError(null);
+    setDocumentNumberError(null);
     setActiveTab("horas");
 
     // Initialize Tab 1 (Novedades)
@@ -1958,6 +2043,8 @@ function EmployeePayrollEditorSheet({
     if (!Number.isInteger(parsedWorkedDays) || parsedWorkedDays < 1 || parsedWorkedDays > 30) {
       return setError("Los dias trabajados deben estar entre 1 y 30.");
     }
+    if (mutationRef.current) return;
+    mutationRef.current = true;
     setSubmitting(true);
     try {
       const payload = buildPayload();
@@ -1971,6 +2058,7 @@ function EmployeePayrollEditorSheet({
       setError(message);
       toast.error(message);
     } finally {
+      mutationRef.current = false;
       setSubmitting(false);
     }
   };
@@ -1980,6 +2068,8 @@ function EmployeePayrollEditorSheet({
     if (numberValue(salaryMonthly) <= 0) return setError("El salario mensual debe ser mayor a 0.");
     if (!startDate) return setError("La fecha de ingreso es obligatoria.");
     if (!arlRiskClassId) return setError("Selecciona ARL.");
+    if (mutationRef.current) return;
+    mutationRef.current = true;
     setSubmitting(true);
     try {
       const payload = {
@@ -2004,6 +2094,7 @@ function EmployeePayrollEditorSheet({
       setError(message);
       toast.error(message);
     } finally {
+      mutationRef.current = false;
       setSubmitting(false);
     }
   };
@@ -2012,7 +2103,10 @@ function EmployeePayrollEditorSheet({
     if (!firstName.trim()) return setError("El nombre es obligatorio.");
     if (!lastName.trim()) return setError("El apellido es obligatorio.");
     if (!documentNumber.trim()) return setError("El documento es obligatorio.");
+    if (mutationRef.current) return;
+    mutationRef.current = true;
     setSubmitting(true);
+    setDocumentNumberError(null);
     try {
       const payload = {
         firstName: firstName.trim(),
@@ -2027,8 +2121,13 @@ function EmployeePayrollEditorSheet({
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el empleado.");
+      if (isDuplicateEmployeeDocumentError(err)) {
+        setDocumentNumberError(duplicateEmployeeDocumentMessage);
+      } else {
+        setError(err instanceof AppApiError ? err.message : "No se pudo guardar el empleado.");
+      }
     } finally {
+      mutationRef.current = false;
       setSubmitting(false);
     }
   };
@@ -2291,8 +2390,18 @@ function EmployeePayrollEditorSheet({
                 <FieldBlock label="Apellido">
                   <BigInput value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Perez" />
                 </FieldBlock>
-                <FieldBlock label="Documento">
-                  <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
+                <FieldBlock label="Número de documento">
+                  <BigInput
+                    value={documentNumber}
+                    onChange={(event) => {
+                      setDocumentNumber(event.target.value);
+                      setDocumentNumberError(null);
+                    }}
+                    placeholder="123456789"
+                    aria-invalid={Boolean(documentNumberError)}
+                    className={documentNumberError ? "border-rose-400 focus:border-rose-500" : undefined}
+                  />
+                  {documentNumberError && <p className="mt-1 px-1 text-xs font-medium text-rose-600">{documentNumberError}</p>}
                 </FieldBlock>
                 <FieldBlock label="Cargo">
                   <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
@@ -2435,20 +2544,9 @@ function PayrollSummaryPanel({
             valueColor="text-[#0fb18f]"
             sign="+"
           />
-          <MoneyLine
-            label="Deducción salud"
-            value={viewModel.employeeHealth}
-            color="text-[#C80237]"
-            valueColor="text-[#C80237]"
-            sign="-"
-          />
-          <MoneyLine
-            label="Deducción pensión"
-            value={viewModel.employeePension}
-            color="text-[#C80237]"
-            valueColor="text-[#C80237]"
-            sign="-"
-          />
+          <div>
+            <PayrollDeductionsBreakdown run={run} showNetPay />
+          </div>
 
         </div>
 
@@ -3419,6 +3517,7 @@ function EmployeeFormSheet({
   const [active, setActive] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [documentNumberError, setDocumentNumberError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -3429,6 +3528,7 @@ function EmployeeFormSheet({
     setPhone(employee?.phone ?? "");
     setActive(employee?.isActive === false ? "INACTIVE" : "ACTIVE");
     setError(null);
+    setDocumentNumberError(null);
   }, [employee, open]);
 
   const save = async () => {
@@ -3439,6 +3539,7 @@ function EmployeeFormSheet({
     if (!documentNumber.trim()) return setError("El documento es obligatorio.");
     setSubmitting(true);
     setError(null);
+    setDocumentNumberError(null);
     try {
       const payload = {
         firstName,
@@ -3458,7 +3559,11 @@ function EmployeeFormSheet({
       onChanged();
       onClose();
     } catch (err) {
-      setError(err instanceof AppApiError ? err.message : "No se pudo guardar el empleado.");
+      if (isDuplicateEmployeeDocumentError(err)) {
+        setDocumentNumberError(duplicateEmployeeDocumentMessage);
+      } else {
+        setError(err instanceof AppApiError ? err.message : "No se pudo guardar el empleado.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -3488,8 +3593,18 @@ function EmployeeFormSheet({
               <BigInput value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Juan Perez" />
             </FieldBlock>
             <div className="grid grid-cols-2 gap-3">
-              <FieldBlock label="Documento">
-                <BigInput value={documentNumber} onChange={(event) => setDocumentNumber(event.target.value)} placeholder="123456789" />
+              <FieldBlock label="Número de documento">
+                <BigInput
+                  value={documentNumber}
+                  onChange={(event) => {
+                    setDocumentNumber(event.target.value);
+                    setDocumentNumberError(null);
+                  }}
+                  placeholder="123456789"
+                  aria-invalid={Boolean(documentNumberError)}
+                  className={documentNumberError ? "border-rose-400 focus:border-rose-500" : undefined}
+                />
+                {documentNumberError && <p className="mt-1 px-1 text-xs font-medium text-rose-600">{documentNumberError}</p>}
               </FieldBlock>
               <FieldBlock label="Cargo">
                 <BigInput value={position} onChange={(event) => setPosition(event.target.value)} placeholder="Auxiliar" />
@@ -4670,9 +4785,9 @@ export default function PayrollPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [arlRisks, setArlRisks] = useState<ArlRiskClass[]>([]);
 
-  const [selectedPeriodId, setSelectedPeriodId] = useState("");
   const [selectedYear, setSelectedYear] = useState(() => new Date().getUTCFullYear());
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getUTCMonth() + 1);
+  const [activeCycle, setActiveCycle] = useState<ActivePayrollCycle>(MONTHLY_PAYROLL_CYCLE);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [pagePreviewRuns, setPagePreviewRuns] = useState<PayrollRun[]>([]);
   const [pagePreviewTotals, setPagePreviewTotals] = useState<PayrollPreviewTotals | null>(null);
@@ -4711,21 +4826,18 @@ export default function PayrollPage() {
     notes: string;
   } | null>(null);
   const [batchPaymentOpen, setBatchPaymentOpen] = useState(false);
-  const [paymentModalCycle, setPaymentModalCycle] = useState<"MONTHLY" | "BIWEEKLY_1" | "BIWEEKLY_2">("MONTHLY");
   const [paymentModalPeriod, setPaymentModalPeriod] = useState<PayrollPeriod | null>(null);
   const [paymentModalRuns, setPaymentModalRuns] = useState<PayrollRun[]>([]);
-  const [paymentModalCandidates, setPaymentModalCandidates] = useState<PayrollPreparationCandidate[]>([]);
   const [paymentModalLoading, setPaymentModalLoading] = useState(false);
+  const [batchPreparing, setBatchPreparing] = useState(false);
   const [batchSelectedRunIds, setBatchSelectedRunIds] = useState<string[]>([]);
   const [batchPaymentMethod, setBatchPaymentMethod] = useState<"CASH" | "BANK_TRANSFER">("BANK_TRANSFER");
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const batchSubmittingRef = useRef(false);
   const batchIdempotencyKeyRef = useRef<string | null>(null);
-  const batchSelectionPeriodRef = useRef<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<
     | { type: "visual-payment"; run: PayrollRun; paid: boolean }
-    | { type: "post-period" }
     | { type: "post-settlement"; run: PayrollRun; settlement: Settlement }
     | { type: "complementary-run"; employee: Employee }
     | null
@@ -4737,22 +4849,18 @@ export default function PayrollPage() {
   const pagePreviewRequestRef = useRef(0);
 
   const selectedPeriod = useMemo(
-    () => periods.find((period) => period.id === selectedPeriodId),
-    [periods, selectedPeriodId],
+    () => choosePayrollPeriod(periods, selectedYear, selectedMonth, "MONTHLY"),
+    [periods, selectedMonth, selectedYear],
   );
+  const selectedPeriodId = selectedPeriod?.id ?? "";
 
-  const persistedMonthlyPeriod = selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED"
-    ? selectedPeriod
-    : null;
-  const summaryPeriod = persistedMonthlyPeriod;
-
-  // The calendar owns only the month.  The detail panel may display the
-  // monthly period for that month, but payment-cycle selection stays local to
-  // the payment modal.
-  useEffect(() => {
+  const persistedMonthlyPeriod = useMemo(() => {
     const monthly = choosePayrollPeriod(periods, selectedYear, selectedMonth, "MONTHLY");
-    setSelectedPeriodId(monthly?.id ?? "");
+    return monthly?.status === "POSTED" || monthly?.status === "CLOSED"
+      ? monthly
+      : null;
   }, [periods, selectedMonth, selectedYear]);
+  const summaryPeriod = persistedMonthlyPeriod;
 
   useEffect(() => {
     const payload = { year: selectedYear, month: selectedMonth };
@@ -4779,7 +4887,7 @@ export default function PayrollPage() {
       })
       .finally(() => { if (requestId === pagePreviewRequestRef.current) setPagePreviewLoading(false); });
     return () => { if (requestId === pagePreviewRequestRef.current) pagePreviewRequestRef.current += 1; };
-  }, [selectedMonth, selectedYear]);
+  }, [periodRefreshKey, selectedMonth, selectedYear]);
 
   useEffect(() => {
     if (!selectedPeriod) {
@@ -4808,7 +4916,6 @@ export default function PayrollPage() {
     try {
       const nextPeriods = await payrollApi.listPeriods();
       setPeriods(nextPeriods);
-      setSelectedPeriodId((current) => current && nextPeriods.some((period) => period.id === current) ? current : "");
     } catch (err) {
       console.error(err);
       setError("No se pudo cargar nomina");
@@ -4835,6 +4942,14 @@ export default function PayrollPage() {
     }
   }, []);
 
+  const refreshPayrollData = useCallback(async () => {
+    // Employee/contract mutations affect both the active-cycle planilla and
+    // the monthly overview.  Refresh the source collections once, then let
+    // the dependent effects reload their own data from the same revision.
+    await Promise.all([loadPeriods(), loadEmployees()]);
+    setPeriodRefreshKey((value) => value + 1);
+  }, [loadEmployees, loadPeriods]);
+
   const loadCatalogs = useCallback(async () => {
     const [risks] = await Promise.allSettled([
       payrollApi.listArlRisks(),
@@ -4851,21 +4966,9 @@ export default function PayrollPage() {
   }, [loadCatalogs, loadEmployees, loadPeriods]);
 
   useEffect(() => {
-    if (!selectedPeriodId) {
-      setRuns([]);
-      setSettlements({});
-      setSettlementPreviewByContract({});
-      setSelectedRunId(null);
-      setRunsLoading(false);
-      setSettlementsLoading(false);
-      return;
-    }
-
     let alive = true;
     setRuns([]);
-    setSettlements({});
-    setSettlementPreviewByContract({});
-    setSelectedRunId(null);
+    if (!selectedPeriodId) setSelectedRunId(null);
     setVisualPaidRuns({});
     setRunsLoading(true);
     setSettlementsLoading(true);
@@ -4873,7 +4976,7 @@ export default function PayrollPage() {
     const periodId = selectedPeriodId;
 
     Promise.all([
-      payrollApi.listRuns(periodId),
+      periodId ? payrollApi.listRuns(periodId) : Promise.resolve([]),
       payrollApi.listSettlements(),
     ])
       .then(async ([runData, settlementList]) => {
@@ -4889,7 +4992,11 @@ export default function PayrollPage() {
         if (!alive) return;
         const periodRuns = runsWithPayments.filter((run) => !run.payrollPeriodId || run.payrollPeriodId === periodId);
         setRuns(periodRuns);
-        setSelectedRunId((current) => current ?? periodRuns[0]?.id ?? null);
+        setSelectedRunId((current) =>
+          current && periodRuns.some((run) => run.id === current)
+            ? current
+            : periodRuns[0]?.id ?? null,
+        );
 
         const latestByEmployee = new Map<string, Settlement>();
         for (const settlement of settlementList) {
@@ -4928,18 +5035,12 @@ export default function PayrollPage() {
     };
   }, [selectedPeriodId, periodRefreshKey]);
 
-  const persistedMonthlyRuns = useMemo(
-    () => persistedMonthlyPeriod ? runs.filter((run) => run.payrollPeriodId === persistedMonthlyPeriod.id) : [],
-    [persistedMonthlyPeriod, runs],
-  );
-
   const displayPayrollRuns = useMemo(() => {
-    const persisted = persistedMonthlyRuns;
-    const persistedByEmployeeId = new Map(persisted.map((run) => [run.employeeId, run]));
+    const persistedByEmployeeId = new Map(runs.map((run) => [run.employeeId, run]));
     const resolved = pagePreviewRuns.map((previewRun) => persistedByEmployeeId.get(previewRun.employeeId) ?? previewRun);
     const previewEmployeeIds = new Set(pagePreviewRuns.map((run) => run.employeeId));
-    return [...resolved, ...persisted.filter((run) => !previewEmployeeIds.has(run.employeeId))];
-  }, [pagePreviewRuns, persistedMonthlyRuns]);
+    return [...resolved, ...runs.filter((run) => !previewEmployeeIds.has(run.employeeId))];
+  }, [pagePreviewRuns, runs]);
 
   const employeeRows = useMemo(() => {
     const employeeIds = new Set(employees.map((employee) => employee.id));
@@ -4997,11 +5098,9 @@ export default function PayrollPage() {
     [filteredRows],
   );
 
-  const summaryTotals = persistedMonthlyRuns.length > 0
-    ? totals
-    : pagePreviewTotals
-      ? { cost: toNumber(pagePreviewTotals.realEmployerCost), net: toNumber(pagePreviewTotals.netPay) }
-      : totals;
+  const summaryTotals = pagePreviewTotals
+    ? { cost: toNumber(pagePreviewTotals.realEmployerCost), net: toNumber(pagePreviewTotals.netPay) }
+    : totals;
 
   const selectedRun = useMemo(() => {
     if (selectedRunId) {
@@ -5155,9 +5254,8 @@ export default function PayrollPage() {
   }, []);
 
   const refreshPeople = useCallback(async () => {
-    await loadEmployees();
-    setPeriodRefreshKey((value) => value + 1);
-  }, [loadEmployees]);
+    await refreshPayrollData();
+  }, [refreshPayrollData]);
 
   const handleInactivateContract = useCallback((contract: Contract) => {
     toast((t) => (
@@ -5236,8 +5334,10 @@ export default function PayrollPage() {
       const existingPeriods = await payrollApi.findPeriods(year, month);
       const existingPeriod = choosePayrollPeriod(existingPeriods, year, month, paymentCycle, installmentNumber);
       if (existingPeriod) {
-        setSelectedPeriodId(existingPeriod.id);
-        return;
+        setSelectedYear(year);
+        setSelectedMonth(month);
+        setActiveCycle({ paymentCycle, installmentNumber: paymentCycle === "MONTHLY" ? null : installmentNumber ?? 1 });
+        return existingPeriod;
       }
 
       const newPeriod = await payrollApi.createPeriod({
@@ -5258,32 +5358,16 @@ export default function PayrollPage() {
           ? prev
           : [...prev, newPeriod]
       ));
-      setSelectedPeriodId(newPeriod.id);
+      setSelectedYear(year);
+      setSelectedMonth(month);
+      setActiveCycle({ paymentCycle, installmentNumber: paymentCycle === "MONTHLY" ? null : installmentNumber ?? 1 });
+      return newPeriod;
     } catch (err) {
       console.error(err);
       const message = payrollErrorMessage(err, "No se pudo crear el periodo seleccionado.");
       toast.error(message);
       setNotice(message);
       window.setTimeout(() => setNotice(null), 3500);
-    }
-  };
-
-  const handlePostPeriod = async () => {
-    if (!selectedPeriodId) return;
-    if (selectedPeriod?.status === "POSTED" || selectedPeriod?.status === "CLOSED") {
-      toast("Este periodo ya fue liquidado.");
-      return;
-    }
-    try {
-      await payrollApi.liquidatePeriod(selectedPeriodId);
-      toast.success("Nomina liquidada.");
-      await loadPeriods();
-      setPeriodRefreshKey((value) => value + 1);
-    } catch (err) {
-      const message = payrollErrorMessage(err, "No se pudo liquidar la nomina.");
-      toast.error(message);
-      setNotice(message);
-      window.setTimeout(() => setNotice(null), 2800);
     }
   };
 
@@ -5302,12 +5386,6 @@ export default function PayrollPage() {
 
     setConfirmLoading(true);
     try {
-      if (confirmAction.type === "post-period") {
-        await handlePostPeriod();
-        setConfirmAction(null);
-        return;
-      }
-
       if (confirmAction.type === "complementary-run") {
         if (!selectedPeriodId) {
           toast.error("Selecciona un periodo.");
@@ -5322,8 +5400,7 @@ export default function PayrollPage() {
         setRuns((current) => (
           current.some((item) => item.id === run.id) ? current : [run, ...current]
         ));
-        await refreshPeople();
-        setPeriodRefreshKey((value) => value + 1);
+        await refreshPayrollData();
         setSelectedRunId(run.id);
         toast.success("Nómina complementaria generada.");
         setConfirmAction(null);
@@ -5401,15 +5478,15 @@ export default function PayrollPage() {
   const batchRows = useMemo(() => paymentModalRuns.map((run) => {
     const salaries = (run.payments ?? []).filter((payment) => payment.type === "SALARY_PAYMENT");
     const payment = salaries[0];
-    const reason = !paymentModalPeriod ? null : !run.postedAt
-      ? "Pendiente de contabilizar"
-      : salaries.length !== 1
+    const reason = paymentModalPeriod?.status === "CLOSED"
+      ? "Período cerrado"
+      : paymentModalPeriod?.status === "POSTED" && salaries.length !== 1
         ? "Pago salarial inconsistente"
-        : payment?.status === "PAID"
+        : paymentModalPeriod?.status === "POSTED" && payment?.status === "PAID"
           ? "Pagado"
-          : payment?.status === "CANCELLED"
+          : paymentModalPeriod?.status === "POSTED" && payment?.status === "CANCELLED"
             ? "Cancelado"
-            : payment?.status !== "PENDING"
+            : paymentModalPeriod?.status === "POSTED" && payment?.status !== "PENDING"
               ? "No elegible"
               : null;
     return { run, payment, eligible: !reason, reason };
@@ -5423,96 +5500,119 @@ export default function PayrollPage() {
     () => batchSelectedRows.reduce((total, row) => total + toNumber(row.run.netPay), 0),
     [batchSelectedRows],
   );
-  const openBatchPayment = useCallback(() => {
-    setPaymentModalCycle("MONTHLY");
-    setPaymentModalPeriod(null);
-    setPaymentModalRuns([]);
-    setPaymentModalCandidates([]);
-    setBatchSelectedRunIds([]);
-    batchSelectionPeriodRef.current = null;
+  const resolvePaymentModalCycle = useCallback(async (cycle: ActivePayrollCycle) => {
     batchIdempotencyKeyRef.current = null;
-    setBatchPaymentOpen(true);
-  }, []);
-
-  const selectBatchPeriod = useCallback((cycle: "MONTHLY" | "BIWEEKLY", installmentNumber?: 1 | 2) => {
-    if (!selectedPeriod) return;
-    const target = choosePayrollPeriod(periods, selectedPeriod.year, selectedPeriod.month, cycle, installmentNumber);
-    if (!target) {
-      toast.error("No existe un período calculado para esta opción.");
-      return;
-    }
-    setBatchSelectedRunIds([]);
-    batchSelectionPeriodRef.current = null;
-    setSelectedPeriodId(target.id);
-  }, [periods, selectedPeriod]);
-
-  const resolvePaymentModalCycle = useCallback(async (cycle: "MONTHLY" | "BIWEEKLY_1" | "BIWEEKLY_2") => {
-    batchIdempotencyKeyRef.current = null;
-    setPaymentModalCycle(cycle);
-    setBatchSelectedRunIds([]);
-    batchSelectionPeriodRef.current = null;
-    setPaymentModalRuns([]);
-    setPaymentModalPeriod(null);
-    const paymentCycle = cycle === "MONTHLY" ? "MONTHLY" : "BIWEEKLY";
-    const installmentNumber = cycle === "BIWEEKLY_1" ? 1 : cycle === "BIWEEKLY_2" ? 2 : null;
-    const target = choosePayrollPeriod(periods, selectedYear, selectedMonth, paymentCycle, installmentNumber ?? undefined);
+    setActiveCycle(cycle);
     setPaymentModalLoading(true);
+    setPaymentModalPeriod(null);
+    setPaymentModalRuns([]);
+    setBatchSelectedRunIds([]);
     try {
-      if (target?.status === "POSTED" || target?.status === "CLOSED") {
-        const persistedRuns = (await payrollApi.listRuns(target.id)).filter((run) => run.contract?.paymentCycle === paymentCycle);
-        setPaymentModalPeriod(target);
-        setPaymentModalRuns(persistedRuns);
-        setBatchSelectedRunIds(persistedRuns
-          .filter((run) => (run.payments ?? []).some((payment) => payment.type === "SALARY_PAYMENT" && payment.status === "PENDING"))
-          .map((run) => run.id));
-      } else {
-        const preview = await payrollApi.previewPayroll({ year: selectedYear, month: selectedMonth, paymentCycle, installmentNumber });
-        setPaymentModalRuns(preview.runs);
-        setBatchSelectedRunIds(preview.runs.map((run) => run.id));
+      const availablePeriods = await payrollApi.findPeriods(selectedYear, selectedMonth);
+      const target = choosePayrollPeriod(
+        availablePeriods,
+        selectedYear,
+        selectedMonth,
+        cycle.paymentCycle,
+        cycle.installmentNumber ?? undefined,
+      ) ?? null;
+      const loadedRuns = target && target.status !== "OPEN"
+        ? await payrollApi.listRuns(target.id)
+        : normalizePayrollPreviewResponse(await payrollApi.previewPayroll({
+            year: selectedYear,
+            month: selectedMonth,
+            paymentCycle: cycle.paymentCycle,
+            installmentNumber: cycle.installmentNumber,
+          })).runs;
+      setPaymentModalPeriod(target);
+      setPaymentModalRuns(loadedRuns);
+      setBatchSelectedRunIds(
+        loadedRuns
+          .filter((run) => {
+            if (target?.status !== "POSTED") return true;
+            return (run.payments ?? []).some(
+              (payment) => payment.type === "SALARY_PAYMENT" && payment.status === "PENDING",
+            );
+          })
+          .map((run) => run.id),
+      );
+    } catch (err) {
+      toast.error(payrollErrorMessage(err, "No se pudieron cargar los empleados del ciclo."));
+    } finally {
+      setPaymentModalLoading(false);
+    }
+  }, [selectedMonth, selectedYear]);
+
+  const openBatchPayment = useCallback(() => {
+    setBatchPaymentOpen(true);
+    void resolvePaymentModalCycle(MONTHLY_PAYROLL_CYCLE);
+  }, [resolvePaymentModalCycle]);
+
+  const preparePaymentCycle = useCallback(async () => {
+    if (batchPreparing) return;
+    setBatchPreparing(true);
+    try {
+      let period = paymentModalPeriod;
+      if (!period) {
+        period = await handleCreateOrSelectPeriod(
+          selectedYear,
+          selectedMonth,
+          activeCycle.paymentCycle,
+          activeCycle.installmentNumber ?? undefined,
+        ) ?? null;
       }
-    } catch (err) { toast.error(payrollErrorMessage(err, "No se pudieron cargar los candidatos.")); }
-    finally { setPaymentModalLoading(false); }
-  }, [periods, selectedMonth, selectedYear]);
-
-  useEffect(() => {
-    if (!batchPaymentOpen || paymentModalPeriod || runsLoading || !selectedPeriodId || batchSelectionPeriodRef.current === selectedPeriodId) return;
-    setBatchSelectedRunIds(batchEligibleRows.map((row) => row.run.id));
-    batchSelectionPeriodRef.current = selectedPeriodId;
-  }, [batchEligibleRows, batchPaymentOpen, runsLoading, selectedPeriodId]);
-
-  useEffect(() => { if (batchPaymentOpen) void resolvePaymentModalCycle(paymentModalCycle); }, [batchPaymentOpen, paymentModalCycle, resolvePaymentModalCycle]);
+      if (!period) return;
+      if (period.status === "OPEN") await payrollApi.calculatePeriod(period.id);
+      await refreshPayrollData();
+      await resolvePaymentModalCycle(activeCycle);
+      toast.success("Nómina preparada. Ya puedes revisar y seleccionar los pagos.");
+    } catch (err) {
+      toast.error(payrollErrorMessage(err, "No se pudo preparar la nómina."));
+    } finally {
+      setBatchPreparing(false);
+    }
+  }, [activeCycle, batchPreparing, paymentModalPeriod, refreshPayrollData, resolvePaymentModalCycle, selectedMonth, selectedYear]);
 
   const submitBatchPayment = useCallback(async () => {
     if (!batchSelectedRows.length || batchSubmittingRef.current) return;
     batchSubmittingRef.current = true;
     setBatchSubmitting(true);
     try {
+      if (!paymentModalPeriod) throw new Error("El ciclo todavía no está preparado.");
+      if (paymentModalPeriod.status === "CALCULATED") {
+        await payrollApi.updatePeriodStatus(paymentModalPeriod.id, "POSTED");
+        await refreshPayrollData();
+      } else if (paymentModalPeriod.status !== "POSTED") {
+        throw new Error("La nómina debe estar preparada antes de registrar el pago.");
+      }
       const key = batchIdempotencyKeyRef.current ?? createIdempotencyKey("payroll-payment");
       batchIdempotencyKeyRef.current = key;
-      const paymentCycle = paymentModalCycle === "MONTHLY" ? "MONTHLY" : "BIWEEKLY";
-      const installmentNumber = paymentModalCycle === "BIWEEKLY_1" ? 1 : paymentModalCycle === "BIWEEKLY_2" ? 2 : null;
       await payrollApi.confirmPayrollPayment({
         year: selectedYear,
         month: selectedMonth,
-        paymentCycle,
-        installmentNumber,
+        paymentCycle: activeCycle.paymentCycle,
+        installmentNumber: activeCycle.installmentNumber,
         employeeIds: batchSelectedRows.map((row) => row.run.employeeId),
         paymentMethod: batchPaymentMethod,
         idempotencyKey: key,
       });
       batchIdempotencyKeyRef.current = null;
       setBatchConfirmOpen(false);
-      await loadPeriods();
-      await resolvePaymentModalCycle(paymentModalCycle);
+      setBatchPaymentOpen(false);
+      await refreshPayrollData();
       setBatchSelectedRunIds([]);
       toast.success("Nómina pagada y asientos contables registrados.");
     } catch (err) {
       toast.error(payrollErrorMessage(err, "No se pudo pagar la nómina."));
+      const retryKey = batchIdempotencyKeyRef.current;
+      await refreshPayrollData();
+      await resolvePaymentModalCycle(activeCycle);
+      batchIdempotencyKeyRef.current = retryKey;
     } finally {
       batchSubmittingRef.current = false;
       setBatchSubmitting(false);
     }
-  }, [batchPaymentMethod, batchSelectedRows, loadPeriods, paymentModalCycle, resolvePaymentModalCycle, selectedMonth, selectedYear]);
+  }, [activeCycle, batchPaymentMethod, batchSelectedRows, paymentModalPeriod, refreshPayrollData, resolvePaymentModalCycle, selectedMonth, selectedYear]);
 
   const totalRowsInfo = useMemo(
     () => ({
@@ -5576,16 +5676,10 @@ export default function PayrollPage() {
                       <h2 className="text-base font-medium text-slate-900">Planilla de pagos</h2>
                       <p className="text-xs text-slate-500">{filteredRows.length} empleados activos</p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={openBatchPayment}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-[#0fb18f] px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0d987b] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                      >
-                        <Wallet className="h-3.5 w-3.5" />
-                        Pagar nómina
-                      </button>
-                    </div>
+                    <button type="button" onClick={openBatchPayment} disabled={filteredRows.length === 0} className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#0fb18f] px-3.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-[#0d987b] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">
+                      <Wallet className="h-3.5 w-3.5" />
+                      Pagar nómina
+                    </button>
                   </div>
                 </div>
               </div>
@@ -5723,10 +5817,8 @@ export default function PayrollPage() {
           selectedPeriod={selectedPeriod}
           onSettlementPreview={handleSettlementPreview}
           onFinished={(periodId) => {
-            loadEmployees();
-            loadPeriods();
-            setSelectedPeriodId(periodId);
-            setPeriodRefreshKey((value) => value + 1);
+            void periodId;
+            void refreshPayrollData();
           }}
         />
         <EmployeePayrollEditorSheet
@@ -5739,8 +5831,7 @@ export default function PayrollPage() {
           arlRisks={arlRisks}
           selectedPeriod={selectedPeriod}
           onChanged={() => {
-            loadEmployees();
-            loadPeriods();
+            void refreshPayrollData();
           }}
           onCreateContract={(employee) => {
             setQuickInitialEmployee(employee);
@@ -5762,9 +5853,7 @@ export default function PayrollPage() {
             setQuickInitialEmployee(null);
           }}
           onChanged={() => {
-            loadEmployees();
-            loadPeriods();
-            setPeriodRefreshKey((value) => value + 1);
+            void refreshPayrollData();
           }}
         />
         <EmployeeFormSheet
@@ -5774,7 +5863,7 @@ export default function PayrollPage() {
             setEmployeeToEdit(null);
           }}
           employee={employeeToEdit}
-          onChanged={loadEmployees}
+          onChanged={() => { void refreshPayrollData(); }}
         />
 
         <SettlementSimulationSheet
@@ -5793,21 +5882,56 @@ export default function PayrollPage() {
             setBatchPaymentOpen(false);
           }}
           title="Pagar nómina"
-          subtitle={`${monthNames[selectedMonth - 1]} ${selectedYear}`}
-          footer={paymentModalRuns.length > 0 ? <button type="button" onClick={() => setBatchConfirmOpen(true)} disabled={!batchSelectedRows.length || batchSubmitting} className="flex w-full items-center justify-between rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500"><span>{batchSelectedRows.length} empleado{batchSelectedRows.length === 1 ? "" : "s"} · {money(batchSelectedTotal)}</span><ChevronRight className="h-5 w-5" /></button> : null}
+          subtitle={`${monthNames[selectedMonth - 1]} ${selectedYear} · ${activePayrollCycleLabel(activeCycle)}`}
+          footer={paymentModalLoading ? null : (!paymentModalPeriod || paymentModalPeriod.status === "OPEN")
+            ? <button type="button" onClick={preparePaymentCycle} disabled={batchPreparing || paymentModalRuns.length === 0} className="w-full rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500">{batchPreparing ? "Preparando…" : "Preparar nómina"}</button>
+            : paymentModalRuns.length > 0
+              ? <button type="button" onClick={() => setBatchConfirmOpen(true)} disabled={!batchSelectedRows.length || batchSubmitting || paymentModalPeriod.status === "CLOSED"} className="flex w-full items-center justify-between rounded-2xl bg-[#0B3F64] px-4 py-3 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-500"><span>{batchSelectedRows.length} empleado{batchSelectedRows.length === 1 ? "" : "s"} · {money(batchSelectedTotal)}</span><ChevronRight className="h-5 w-5" /></button>
+              : null}
         >
           <div className="space-y-4 pt-4">
-            <div aria-label="Ciclo de nómina" className="flex flex-wrap gap-2 text-[11px] font-semibold">
-              <button aria-pressed={paymentModalCycle === "MONTHLY"} onClick={() => resolvePaymentModalCycle("MONTHLY")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "MONTHLY" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Mensualidad</button>
-              <button aria-pressed={paymentModalCycle === "BIWEEKLY_1"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_1")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_1" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Primera quincena</button>
-              <button aria-pressed={paymentModalCycle === "BIWEEKLY_2"} onClick={() => resolvePaymentModalCycle("BIWEEKLY_2")} className={cn("rounded-full px-3 py-2", paymentModalCycle === "BIWEEKLY_2" ? "bg-[#0B3F64] text-white shadow-sm" : "bg-slate-100 text-slate-600")}>Segunda quincena</button>
+            <div aria-label="Ciclo de nómina" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 text-[10px] font-semibold">
+              {([
+                { label: "Mensualidad", paymentCycle: "MONTHLY", installmentNumber: null },
+                { label: "Primera quincena", paymentCycle: "BIWEEKLY", installmentNumber: 1 },
+                { label: "Segunda quincena", paymentCycle: "BIWEEKLY", installmentNumber: 2 },
+              ] as const).map((cycle) => {
+                const active = activeCycle.paymentCycle === cycle.paymentCycle && activeCycle.installmentNumber === cycle.installmentNumber;
+                return <button key={cycle.label} type="button" aria-pressed={active} disabled={paymentModalLoading || batchPreparing || batchSubmitting} onClick={() => void resolvePaymentModalCycle({ paymentCycle: cycle.paymentCycle, installmentNumber: cycle.installmentNumber })} className={cn("rounded-lg px-1 py-2 transition disabled:opacity-50", active ? "bg-white text-[#0B3F64] shadow-sm" : "text-slate-500")}>{cycle.label}</button>;
+              })}
             </div>
+            {paymentModalPeriod?.status === "CALCULATED" && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">La liquidación será confirmada antes de registrar los pagos seleccionados.</p>}
+            {paymentModalPeriod?.status === "POSTED" && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">Liquidación confirmada. Selecciona los empleados pendientes de pago.</p>}
+            {paymentModalLoading && <p className="py-6 text-center text-xs text-slate-500">Cargando empleados…</p>}
             {!paymentModalLoading && paymentModalRuns.length === 0 && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"><p>No hay empleados aplicables para este ciclo.</p></div>}
-            {paymentModalLoading && <p className="text-center text-xs text-slate-500">Cargando candidatos…</p>}
             {paymentModalRuns.length > 0 && <>
               <div className="flex items-center justify-between text-xs text-slate-600"><span>{batchSelectedRows.length} seleccionados / {batchEligibleRows.length} pagables</span><button type="button" onClick={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds(batchSelectedRows.length === batchEligibleRows.length ? [] : batchEligibleRows.map((row) => row.run.id)); }} className="font-semibold text-[#0B3F64]">{batchSelectedRows.length === batchEligibleRows.length ? "Limpiar" : "Seleccionar todos"}</button></div>
               <div className="max-h-64 space-y-2 overflow-y-auto">
-                {batchRows.map(({ run, eligible, reason }) => <label key={run.id} className={cn("flex items-center gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}><input type="checkbox" disabled={!eligible} checked={batchSelectedRunIds.includes(run.id)} onChange={() => { batchIdempotencyKeyRef.current = null; setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]); }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p><p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>{reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}</div><span className="text-sm font-semibold text-slate-800">{money(run.netPay)}</span></label>)}
+                {batchRows.map(({ run, eligible, reason }) => (
+                  <label
+                    key={run.id}
+                    className={cn("flex items-start gap-3 rounded-xl border p-3", eligible ? "border-slate-200" : "border-slate-100 bg-slate-50 opacity-70")}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      disabled={!eligible}
+                      checked={batchSelectedRunIds.includes(run.id)}
+                      onChange={() => {
+                        batchIdempotencyKeyRef.current = null;
+                        setBatchSelectedRunIds((current) => current.includes(run.id) ? current.filter((id) => id !== run.id) : [...current, run.id]);
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800">{employeeName(run.employee)}</p>
+                      <p className="truncate text-xs text-slate-500">{run.employee.documentNumber ?? "Sin documento"} · {employeeRole(run.employee, run.contract)}</p>
+                      {reason && <p className="mt-1 text-[11px] text-amber-700">{reason}</p>}
+                      <div className="mt-2">
+                        <PayrollDeductionsBreakdown run={run} showNetPay compact />
+                      </div>
+                    </div>
+                  </label>
+                ))}
               </div>
               <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">Total seleccionado: <strong>{money(batchSelectedTotal)}</strong></div>
               <label className="block text-xs font-semibold text-slate-600">Método de pago<select value={batchPaymentMethod} onChange={(event) => { batchIdempotencyKeyRef.current = null; setBatchPaymentMethod(event.target.value as "CASH" | "BANK_TRANSFER"); }} className="mt-1 w-full rounded-xl border p-3 text-sm"><option value="BANK_TRANSFER">Transferencia bancaria</option><option value="CASH">Efectivo</option></select></label>
@@ -5817,7 +5941,7 @@ export default function PayrollPage() {
         <PayrollConfirmDialog
           open={batchConfirmOpen}
           title="Confirmar pago de nómina"
-          description={`Se pagarán ${batchSelectedRows.length} empleados por ${money(batchSelectedTotal)} mediante ${batchPaymentMethod === "CASH" ? "efectivo" : "transferencia"}. La fecha de registro será hoy. Esta acción formalizará la nómina, registrará los pagos seleccionados y generará los asientos contables correspondientes con la fecha operativa actual.`}
+          description={`Se pagará a ${batchSelectedRows.length} empleado${batchSelectedRows.length === 1 ? "" : "s"} por ${money(batchSelectedTotal)} mediante ${batchPaymentMethod === "CASH" ? "efectivo" : "transferencia bancaria"}.${paymentModalPeriod?.status === "CALCULATED" ? " La liquidación de este período será confirmada antes de registrar el pago." : ""}`}
           confirmLabel="Confirmar pago"
           intent="payroll"
           loading={batchSubmitting}
@@ -5843,9 +5967,7 @@ export default function PayrollPage() {
           title={
             confirmAction?.type === "visual-payment"
               ? (confirmAction.paid ? "Marcar esta nomina como pagada?" : "Marcar esta nomina como pendiente?")
-              : confirmAction?.type === "post-period"
-                ? "Pagar la nomina mensual de este periodo?"
-                : confirmAction?.type === "complementary-run"
+              : confirmAction?.type === "complementary-run"
                   ? "¿Pagar nómina complementaria?"
                   : "Pagar este contrato?"
           }
@@ -5854,27 +5976,21 @@ export default function PayrollPage() {
               ? (confirmAction.paid
                 ? "Esta accion solo cambia el estado visual de pago. No crea asientos ni pagos de prestaciones."
                 : "Esta accion solo devuelve el estado visual a pendiente. No modifica contabilidad.")
-              : confirmAction?.type === "post-period"
-                ? "Esta accion generara la liquidacion del periodo y los asientos contables correspondientes. No uses este boton si solo quieres marcar el pago como realizado."
-                : confirmAction?.type === "complementary-run"
+              : confirmAction?.type === "complementary-run"
                   ? "Se generará una liquidación adicional solo para este empleado y se registrará un asiento contable independiente. No se modificará la nómina original del período."
                   : "Esta accion registrara la liquidacion del contrato y generara los asientos contables correspondientes. La estimacion contempla unicamente prestaciones causadas desde el ultimo corte anual."
           }
           confirmLabel={
             confirmAction?.type === "visual-payment"
               ? (confirmAction.paid ? "Marcar pagada" : "Marcar pendiente")
-              : confirmAction?.type === "post-period"
-                ? "Confirmar liquidacion"
-                : confirmAction?.type === "complementary-run"
+              : confirmAction?.type === "complementary-run"
                   ? "Confirmar"
                   : "Confirmar liquidacion"
           }
           intent={
             confirmAction?.type === "visual-payment"
               ? "visual"
-              : confirmAction?.type === "post-period"
-                ? "payroll"
-                : confirmAction?.type === "complementary-run"
+              : confirmAction?.type === "complementary-run"
                   ? "payroll"
                   : "settlement"
           }

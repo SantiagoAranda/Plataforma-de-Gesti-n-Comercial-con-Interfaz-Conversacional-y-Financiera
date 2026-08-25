@@ -54,7 +54,9 @@ export class AuthService {
     );
 
     console.log(`[AuthService] Register result - Name: "${business.name}"`);
-    console.log(`[AuthService] Name Hex: ${Buffer.from(business.name).toString('hex')}`);
+    console.log(
+      `[AuthService] Name Hex: ${Buffer.from(business.name).toString('hex')}`,
+    );
 
     return {
       accessToken,
@@ -113,7 +115,9 @@ export class AuthService {
     );
 
     console.log(`[AuthService] Login result - Name: "${user.business.name}"`);
-    console.log(`[AuthService] Name Hex: ${Buffer.from(user.business.name).toString('hex')}`);
+    console.log(
+      `[AuthService] Name Hex: ${Buffer.from(user.business.name).toString('hex')}`,
+    );
 
     return {
       accessToken,

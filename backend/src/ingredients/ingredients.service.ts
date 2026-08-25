@@ -487,7 +487,7 @@ export class IngredientsService {
             this.formatPurchasePresentation(
               this.prisma,
               presentation,
-              ingredient.stockUnitId!,
+              ingredient.stockUnitId,
             ),
           ),
         )
@@ -956,7 +956,7 @@ export class IngredientsService {
         this.formatPurchasePresentation(
           this.prisma,
           presentation,
-          ingredient.stockUnitId!,
+          ingredient.stockUnitId,
         ),
       ),
     );
@@ -1199,7 +1199,7 @@ export class IngredientsService {
         return this.reloadPurchasePresentation(
           tx,
           updated.id,
-          validated.ingredient.stockUnitId!,
+          validated.ingredient.stockUnitId,
         );
       }
 
@@ -1228,7 +1228,7 @@ export class IngredientsService {
       return this.reloadPurchasePresentation(
         tx,
         created.id,
-        validated.ingredient.stockUnitId!,
+        validated.ingredient.stockUnitId,
       );
     });
   }
@@ -1296,7 +1296,7 @@ export class IngredientsService {
       return this.reloadPurchasePresentation(
         tx,
         updated.id,
-        validated.ingredient.stockUnitId!,
+        validated.ingredient.stockUnitId,
       );
     });
   }

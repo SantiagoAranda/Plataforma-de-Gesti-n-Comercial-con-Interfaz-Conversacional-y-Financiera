@@ -1,4 +1,11 @@
-import { IsString, IsOptional, IsEnum, IsArray, IsEmail, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsArray,
+  IsEmail,
+  IsBoolean,
+} from 'class-validator';
 import { PersonType, DocumentType } from '@prisma/client';
 
 export class UpsertTaxProfileDto {

@@ -1,5 +1,21 @@
 import { Transform } from 'class-transformer';
-import { ArrayNotEmpty, ArrayUnique, IsArray, IsBoolean, IsDateString, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import {
   PaymentMethod,
   PayrollBenefitPaymentType,
@@ -71,7 +87,6 @@ export class ConfirmPayrollPaymentDto extends PreparePayrollPeriodDto {
 
   @IsIn(['CASH', 'BANK_TRANSFER'])
   paymentMethod: 'CASH' | 'BANK_TRANSFER';
-
 }
 
 export class CreatePayrollPaymentDto {
@@ -99,7 +114,6 @@ export class CreatePayrollPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
-
 }
 
 export class UpdatePayrollPaymentStatusDto {
@@ -117,7 +131,6 @@ export class UpdatePayrollPaymentStatusDto {
   @IsOptional()
   @IsString()
   notes?: string;
-
 }
 
 export class CreatePayrollPaymentBatchDto {

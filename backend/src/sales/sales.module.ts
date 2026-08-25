@@ -9,7 +9,14 @@ import { TaxModule } from '../tax/tax.module';
 import { CommonModule } from '../common/common.module';
 
 @Module({
-  imports: [PrismaModule, AccountingModule, InventoryModule, ItemOptionsModule, TaxModule, CommonModule],
+  imports: [
+    PrismaModule,
+    AccountingModule,
+    InventoryModule,
+    ItemOptionsModule,
+    TaxModule,
+    CommonModule,
+  ],
   controllers: [SalesController],
   providers: [SalesService],
 })

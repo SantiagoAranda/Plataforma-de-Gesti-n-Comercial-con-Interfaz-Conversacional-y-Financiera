@@ -51,7 +51,7 @@ export default function TaxPreviewModal({
   initialContext?: BuyerFiscalContext | null;
   actionLabel?: string;
 }) {
-  const { simpleRegimeEnabled } = useFeatureFlags();
+  const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [buyerType, setBuyerType] = useState<"NATURAL" | "JURIDICA">("NATURAL");
   const [buyerDocumentType, setBuyerDocumentType] = useState<"CC" | "NIT" | "CE" | "PASAPORTE" | "TI">("CC");
   const [buyerDocumentNumber, setBuyerDocumentNumber] = useState("");
@@ -118,7 +118,7 @@ export default function TaxPreviewModal({
 
   // Automatically update preview when fields change
   useEffect(() => {
-    if (!open || !sale || !simpleRegimeEnabled) return;
+    if (!open || !sale || !simpleRegimeSalesEnabled) return;
 
     const fetchPreview = async () => {
       try {
@@ -145,9 +145,7 @@ export default function TaxPreviewModal({
           buyerIsRetenedor,
           buyerIsGranContribuyente,
           buyerIsAutorretenedor,
-          buyerIsRegimenSimple: simpleRegimeEnabled
-            ? buyerIsRegimenSimple
-            : false,
+          buyerIsRegimenSimple,
           buyerRequiresElectronicInvoice,
           fiscalMunicipalityCode: fiscalMunicipalityCode || undefined,
           reteIcaRateOverride,
@@ -186,12 +184,11 @@ export default function TaxPreviewModal({
     fiscalMunicipalityCode,
     reteIcaRateOverride,
     saleConcept,
-    simpleRegimeEnabled,
   ]);
 
   if (!open || !sale) return null;
 
-  if (!simpleRegimeEnabled) {
+  if (!simpleRegimeSalesEnabled) {
     return (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
         <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
@@ -215,9 +212,7 @@ export default function TaxPreviewModal({
       buyerIsRetenedor,
       buyerIsGranContribuyente,
       buyerIsAutorretenedor,
-      buyerIsRegimenSimple: simpleRegimeEnabled
-        ? buyerIsRegimenSimple
-        : false,
+      buyerIsRegimenSimple,
       buyerRequiresElectronicInvoice,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,

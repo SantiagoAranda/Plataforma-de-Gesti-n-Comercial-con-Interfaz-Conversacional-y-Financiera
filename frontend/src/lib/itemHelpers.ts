@@ -1,4 +1,4 @@
-import { WeeklySchedule } from "../types/item";
+import type { WeeklySchedule } from "../types/item";
 
 export function timeToMinutes(time: string) {
   const [h, m] = time.split(":").map(Number);

@@ -441,6 +441,7 @@ describe('SalesService personalized order lines', () => {
   };
 
   function createService(orderOverrides: Record<string, any> = {}) {
+    const executionOrder: string[] = [];
     const tx: any = {
       order: {
         create: (jest.fn() as any).mockResolvedValue({
@@ -482,7 +483,10 @@ describe('SalesService personalized order lines', () => {
           ...orderOverrides,
         }),
       },
-      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => {
+        executionOrder.push('tx');
+        return fn(tx);
+      }),
     };
     const itemOptionsService = {
       resolveSelectionsForOrderLine: jest
@@ -514,7 +518,10 @@ describe('SalesService personalized order lines', () => {
       }),
     } as any;
     const taxService = {
-      calculateTaxPreview: (jest.fn() as any).mockResolvedValue({ taxLines: [] }),
+      calculateTaxPreview: (jest.fn() as any).mockImplementation(async () => {
+        executionOrder.push('preview');
+        return { taxLines: [] };
+      }),
       freezeTaxCalculation: (jest.fn() as any).mockResolvedValue(null),
     } as any;
     return {
@@ -528,8 +535,34 @@ describe('SalesService personalized order lines', () => {
       prisma,
       tx,
       itemOptionsService,
+      taxService,
+      executionOrder,
     };
   }
+
+  it('calculates the RST fiscal preview before the create transaction', async () => {
+    const { service, taxService, executionOrder } = createService();
+
+    await service.create(businessId, {
+      type: 'PRODUCTO',
+      status: 'PENDIENTE',
+      origin: 'MANUAL',
+      items: [{ itemId: item.id, quantity: 1 }],
+      buyerFiscalContext: {
+        buyerType: 'JURIDICA',
+        buyerIsRegimenSimple: true,
+        buyerIsGranContribuyente: true,
+        fiscalMunicipalityCode: '11001',
+      },
+    });
+
+    expect(executionOrder).toEqual(['preview', 'tx']);
+    expect(taxService.calculateTaxPreview).toHaveBeenCalledWith(
+      businessId,
+      expect.objectContaining({ buyerIsRegimenSimple: true }),
+      undefined,
+    );
+  });
 
   it('creates repeated personalized manual lines with backend snapshots', async () => {
     const { service, tx, itemOptionsService } = createService();

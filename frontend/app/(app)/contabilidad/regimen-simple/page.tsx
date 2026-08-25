@@ -15,6 +15,10 @@ import {
   type SimpleTaxPeriod,
 } from "@/src/lib/simple-tax/api";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
+import {
+  businessDateAtCurrentTimeToISOString,
+  getBusinessDayKey,
+} from "@/src/lib/businessDate";
 
 const ENABLE_SIMPLE_TAX_MANUAL_ADJUSTMENTS = false;
 const ENABLE_SIMPLE_TAX_ANNUAL_UI = false;
@@ -67,7 +71,7 @@ function Metric({
 }
 
 export default function RegimenSimplePage() {
-  const { simpleRegimeEnabled, featureFlagsLoading } = useFeatureFlags();
+  const { simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
   const [config, setConfig] = useState<SimpleTaxConfig | null>(null);
   const [periods, setPeriods] = useState<SimpleTaxPeriod[]>([]);
   const [taxYear, setTaxYear] = useState("2026");
@@ -80,7 +84,7 @@ export default function RegimenSimplePage() {
   const [paying, setPaying] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK">("BANK");
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(() => getBusinessDayKey(new Date()));
   const [paymentNotes, setPaymentNotes] = useState("");
 
   const loadData = async (year = Number(taxYear) || 2026) => {
@@ -104,10 +108,10 @@ export default function RegimenSimplePage() {
   };
 
   useEffect(() => {
-    if (featureFlagsLoading || !simpleRegimeEnabled) return;
+    if (featureFlagsLoading || !simpleRegimeTaxModuleEnabled) return;
     loadData(Number(taxYear) || 2026);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taxYear, featureFlagsLoading, simpleRegimeEnabled]);
+  }, [taxYear, featureFlagsLoading, simpleRegimeTaxModuleEnabled]);
 
   const selectedStoredPeriod = useMemo(
     () =>
@@ -249,11 +253,17 @@ export default function RegimenSimplePage() {
 
   const handlePayPeriod = async () => {
     if (!calculation?.id) return;
+    const accountingPaymentDate =
+      businessDateAtCurrentTimeToISOString(paymentDate);
+    if (!accountingPaymentDate) {
+      setError("La fecha de pago no es válida.");
+      return;
+    }
     setPaying(true);
     setError(null);
     try {
       const paid = await paySimpleTaxPeriod(calculation.id, {
-        paymentDate,
+        paymentDate: accountingPaymentDate,
         paymentMethod,
         paymentAccountCode,
         paidAmount: netSimpleTax,
@@ -274,7 +284,7 @@ export default function RegimenSimplePage() {
     return <div className="min-h-screen bg-slate-50" />;
   }
 
-  if (!simpleRegimeEnabled) {
+  if (!simpleRegimeTaxModuleEnabled) {
     return (
       <div className="min-h-screen bg-slate-50">
         <AppHeader title="Régimen Simple" subtitle="No disponible" showBack />

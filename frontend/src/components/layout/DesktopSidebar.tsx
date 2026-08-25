@@ -2,11 +2,12 @@
 
 import { useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, Settings, UserCircle } from "lucide-react";
+import { LogOut, ReceiptText, Settings, UserCircle } from "lucide-react";
 
 import { cn } from "@/src/lib/utils";
 import { logoutAndRedirect } from "@/src/lib/auth/logout";
 import { BOTTOM_NAV_ITEMS, type BottomNavKey } from "./navItems";
+import { useManualPaidOutflow } from "./ManualPaidOutflowProvider";
 
 function getActiveKey(pathname: string): BottomNavKey {
   if (pathname.startsWith("/movimientos")) return "movimientos";
@@ -17,6 +18,7 @@ function getActiveKey(pathname: string): BottomNavKey {
 export default function DesktopSidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const { openManualPaidOutflow } = useManualPaidOutflow();
 
   const active = useMemo(() => getActiveKey(pathname ?? "/home"), [pathname]);
   const isProfile = !!pathname?.startsWith("/perfil");
@@ -43,6 +45,15 @@ export default function DesktopSidebar() {
             </button>
           );
         })}
+        <button
+          type="button"
+          aria-label="Registrar gasto"
+          title="Registrar gasto"
+          onClick={openManualPaidOutflow}
+          className="grid h-12 w-12 place-items-center rounded-2xl text-[#0B3F64] transition hover:bg-[#EAF2F8] active:scale-[0.98]"
+        >
+          <ReceiptText className="h-5 w-5" />
+        </button>
       </div>
 
       <div className="mb-2 flex flex-col gap-2">

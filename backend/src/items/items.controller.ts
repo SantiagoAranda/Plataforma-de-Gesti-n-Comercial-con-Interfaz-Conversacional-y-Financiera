@@ -11,20 +11,20 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 
-import { ItemsService } from "./items.service";
-import { CreateItemDto } from "./dto/create-item.dto";
-import { UpdateItemDto } from "./dto/update-item.dto";
-import { UpdateItemStatusDto } from "./dto/update-item-status.dto";
-import { AddItemImageDto } from "./dto/add-item-image.dto";
+import { ItemsService } from './items.service';
+import { CreateItemDto } from './dto/create-item.dto';
+import { UpdateItemDto } from './dto/update-item.dto';
+import { UpdateItemStatusDto } from './dto/update-item-status.dto';
+import { AddItemImageDto } from './dto/add-item-image.dto';
 
-import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
-import { BusinessActiveGuard } from "../common/guards/business-active.guard";
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
-@Controller("items")
+@Controller('items')
 export class ItemsController {
   constructor(private readonly itemsService: ItemsService) {}
 
@@ -51,87 +51,67 @@ export class ItemsController {
   }
 
   // 🔹 Última actividad (Para Home)
-  @Get("latest-activity")
+  @Get('latest-activity')
   getLatestActivity(@Req() req: any) {
     return this.itemsService.getLatestActivity(req.user.businessId);
   }
 
   // 🔹 Obtener item específico
-  @Get(":id")
-  getOne(@Req() req: any, @Param("id") id: string) {
+  @Get(':id')
+  getOne(@Req() req: any, @Param('id') id: string) {
     return this.itemsService.findOne(req.user.businessId, id);
   }
 
   // 🔹 Editar item
-  @Patch(":id")
-  update(
-    @Req() req: any,
-    @Param("id") id: string,
-    @Body() dto: UpdateItemDto
-  ) {
+  @Patch(':id')
+  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateItemDto) {
     return this.itemsService.update(req.user.businessId, id, dto);
   }
 
   // 🔹 Cambiar estado (ACTIVE / INACTIVE)
-  @Patch(":id/status")
+  @Patch(':id/status')
   setStatus(
     @Req() req: any,
-    @Param("id") id: string,
-    @Body() dto: UpdateItemStatusDto
+    @Param('id') id: string,
+    @Body() dto: UpdateItemStatusDto,
   ) {
-    return this.itemsService.setStatus(
-      req.user.businessId,
-      id,
-      dto.status
-    );
+    return this.itemsService.setStatus(req.user.businessId, id, dto.status);
   }
 
   // 🔹 Eliminar item
-  @Delete(":id")
-  remove(@Req() req: any, @Param("id") id: string) {
+  @Delete(':id')
+  remove(@Req() req: any, @Param('id') id: string) {
     return this.itemsService.remove(req.user.businessId, id);
   }
 
   // 🔹 Agregar imagen legacy
-  @Post(":id/images")
+  @Post(':id/images')
   addImage(
     @Req() req: any,
-    @Param("id") id: string,
-    @Body() dto: AddItemImageDto
+    @Param('id') id: string,
+    @Body() dto: AddItemImageDto,
   ) {
-    return this.itemsService.addImage(
-      req.user.businessId,
-      id,
-      dto
-    );
+    return this.itemsService.addImage(req.user.businessId, id, dto);
   }
 
   // 🔹 Agregar imagen multipart a R2
-  @Post(":id/images/upload")
+  @Post(':id/images/upload')
   @UseInterceptors(FileInterceptor('file'))
   uploadImage(
     @Req() req: any,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
-    return this.itemsService.uploadImage(
-      req.user.businessId,
-      id,
-      file
-    );
+    return this.itemsService.uploadImage(req.user.businessId, id, file);
   }
 
   // 🔹 Eliminar imagen
-  @Delete(":id/images/:imageId")
+  @Delete(':id/images/:imageId')
   deleteImage(
     @Req() req: any,
-    @Param("id") id: string,
-    @Param("imageId") imageId: string
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
   ) {
-    return this.itemsService.deleteImage(
-      req.user.businessId,
-      id,
-      imageId
-    );
+    return this.itemsService.deleteImage(req.user.businessId, id, imageId);
   }
 }

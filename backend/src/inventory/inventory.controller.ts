@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto';
@@ -30,7 +40,8 @@ export class InventoryController {
   registerItemMovement(
     @Req() req: any,
     @Param('itemId') itemId: string,
-    @Body() dto: (CreateInventoryInitialDto | CreateInventoryPurchaseDto) & {
+    @Body()
+    dto: (CreateInventoryInitialDto | CreateInventoryPurchaseDto) & {
       type: 'INVENTORY_INITIAL' | 'PURCHASE';
     },
   ) {
@@ -54,7 +65,10 @@ export class InventoryController {
     @Req() req: any,
     @Body() dto: CreateInventoryPurchaseReturnDto,
   ) {
-    return this.inventoryService.registerPurchaseReturn(req.user.businessId, dto);
+    return this.inventoryService.registerPurchaseReturn(
+      req.user.businessId,
+      dto,
+    );
   }
 
   @Post('reconcile/:ingredientId')
@@ -116,7 +130,10 @@ export class InventoryController {
   }
 
   @Get('kardex')
-  listGlobalKardex(@Req() req: any, @Query() query: InventoryKardexGlobalQueryDto) {
+  listGlobalKardex(
+    @Req() req: any,
+    @Query() query: InventoryKardexGlobalQueryDto,
+  ) {
     return this.inventoryService.listGlobalKardex(req.user.businessId, query);
   }
 

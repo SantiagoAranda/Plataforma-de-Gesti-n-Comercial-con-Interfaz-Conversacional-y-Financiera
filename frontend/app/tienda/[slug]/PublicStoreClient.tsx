@@ -19,9 +19,12 @@ import {
 import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
-import { formatPriceInput } from "@/src/lib/itemHelpers";
+import { formatPriceInput, generateCreationId } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
+import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import type { BuyerFiscalContext, TaxPreviewResponse } from "@/src/lib/tax/api";
+import { normalizePublicTaxPreview } from "@/src/lib/tax/publicPreview";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { cn } from "@/src/lib/utils";
@@ -340,6 +343,19 @@ export default function PublicStoreClient() {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [buyerNit, setBuyerNit] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerIsLegalEntity, setBuyerIsLegalEntity] = useState(false);
+  const [buyerIsLargeTaxpayer, setBuyerIsLargeTaxpayer] = useState(false);
+  const [buyerIsSelfWithholder, setBuyerIsSelfWithholder] = useState(false);
+  const [buyerIsRegimenSimple, setBuyerIsRegimenSimple] = useState(false);
+  const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
+  const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
+  const [fiscalOpen, setFiscalOpen] = useState(false);
+  const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
+  const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
+  const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
+  const [publicTaxPreviewStatus, setPublicTaxPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   const [category, setCategory] = useState<string>("");
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -882,6 +898,91 @@ export default function PublicStoreClient() {
     [cart]
   );
 
+  const buyerFiscalContext = useMemo<BuyerFiscalContext>(() => ({
+    buyerType: buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
+    buyerName: customerName.trim() || null,
+    buyerDocumentType: "NIT",
+    buyerDocumentNumber: buyerNit.trim() || null,
+    buyerEmail: buyerEmail.trim() || null,
+    buyerIsIvaResponsable: false,
+    buyerIsRetenedor: false,
+    buyerIsGranContribuyente: buyerIsLargeTaxpayer,
+    buyerIsAutorretenedor: buyerIsSelfWithholder,
+    buyerIsRegimenSimple,
+    buyerRequiresElectronicInvoice: false,
+    fiscalMunicipalityCode: fiscalMunicipalityCode || null,
+    reteIcaRateOverride,
+    saleConcept: "GOODS",
+  }), [
+    buyerEmail,
+    buyerIsLargeTaxpayer,
+    buyerIsLegalEntity,
+    buyerIsRegimenSimple,
+    buyerIsSelfWithholder,
+    buyerNit,
+    customerName,
+    fiscalMunicipalityCode,
+    reteIcaRateOverride,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/public/${slug}/fiscal-settings`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((settings) => {
+        if (!cancelled) {
+          setHasFiscalConfiguration(settings?.fiscalContextEnabled === true);
+          setSimpleRegimeSalesEnabled(settings?.simpleRegimeSalesEnabled === true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasFiscalConfiguration(false);
+          setSimpleRegimeSalesEnabled(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  useEffect(() => {
+    if (!hasFiscalConfiguration || cartItems.length === 0) {
+      setPublicTaxPreview(null);
+      setPublicTaxPreviewStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setPublicTaxPreviewStatus("loading");
+      try {
+        const res = await fetch(`${API_URL}/public/${slug}/tax-preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...buyerFiscalContext,
+            cartItems: cartItems.map((item) => ({
+              itemId: item.id,
+              quantity: item.quantity,
+              unitPrice: item.price,
+            })),
+          }),
+        });
+        if (!res.ok) throw new Error("Public tax preview failed");
+        const preview = normalizePublicTaxPreview(await res.json());
+        if (!preview) throw new Error("Invalid public tax preview response");
+        if (!cancelled) {
+          setPublicTaxPreview(preview);
+          setPublicTaxPreviewStatus("ready");
+        }
+      } catch {
+        if (!cancelled) setPublicTaxPreviewStatus("error");
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [buyerFiscalContext, cartItems, hasFiscalConfiguration, slug]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
@@ -929,12 +1030,13 @@ export default function PublicStoreClient() {
           ),
         })),
         note,
+        ...(hasFiscalConfiguration ? { buyerFiscalContext } : {}),
       };
       const fingerprint = JSON.stringify(checkoutPayload);
       if (checkoutAttemptRef.current?.fingerprint !== fingerprint) {
         checkoutAttemptRef.current = {
           fingerprint,
-          key: crypto.randomUUID(),
+          key: generateCreationId(),
         };
       }
 
@@ -962,6 +1064,14 @@ export default function PublicStoreClient() {
       setShowCartModal(false);
       setCustomerName("");
       setPhoneNumber("");
+      setBuyerNit("");
+      setBuyerEmail("");
+      setBuyerIsLegalEntity(false);
+      setBuyerIsLargeTaxpayer(false);
+      setBuyerIsSelfWithholder(false);
+      setBuyerIsRegimenSimple(false);
+      setFiscalMunicipalityCode("");
+      setReteIcaRateOverride(undefined);
     } catch (error) {
       console.error("Order error:", error);
       toast.error("Error al enviar pedido");
@@ -1175,12 +1285,139 @@ export default function PublicStoreClient() {
                 }}
                 customerName={customerName}
                 onCustomerNameChange={setCustomerName}
+                documentNumber={buyerNit}
+                onDocumentNumberChange={setBuyerNit}
+                buyerEmail={buyerEmail}
+                onBuyerEmailChange={setBuyerEmail}
                 countryCode={countryCode}
                 onCountryCodeChange={setCountryCode}
                 phoneNumber={phoneNumber}
                 onPhoneNumberChange={setPhoneNumber}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
                 onClose={() => setShowCartModal(false)}
+                taxPreviewContent={hasFiscalConfiguration ? (
+                  <section className="rounded-xl border border-slate-200 bg-white px-4 py-3" aria-live="polite">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700">Resumen fiscal</span>
+                      {publicTaxPreviewStatus === "loading" && (
+                        <span className="text-[11px] text-slate-500">Calculando…</span>
+                      )}
+                    </div>
+                    {publicTaxPreview ? (
+                      <div className="space-y-1 text-xs text-neutral-600">
+                        <div className="flex justify-between"><span>IVA</span><span>{formatCop(publicTaxPreview.vatTotal)}</span></div>
+                        <div className="flex justify-between"><span>Impoconsumo</span><span>{formatCop(publicTaxPreview.impoconsumoTotal)}</span></div>
+                        <div className="flex justify-between"><span>ReteFuente</span><span>-{formatCop(publicTaxPreview.reteFuenteTotal)}</span></div>
+                        <div className="flex justify-between"><span>ReteIVA</span><span>-{formatCop(publicTaxPreview.reteIvaTotal)}</span></div>
+                        <div className="flex justify-between"><span>ReteICA</span><span>-{formatCop(publicTaxPreview.reteIcaTotal)}</span></div>
+                        <div className="mt-2 flex justify-between border-t border-slate-100 pt-2 font-semibold text-neutral-800"><span>Neto recibido</span><span>{formatCop(publicTaxPreview.netReceived)}</span></div>
+                      </div>
+                    ) : publicTaxPreviewStatus === "error" ? (
+                      <p className="text-xs text-amber-700">No se pudo actualizar el resumen fiscal.</p>
+                    ) : (
+                      <p className="text-xs text-slate-500">Calculando impuestos…</p>
+                    )}
+                  </section>
+                ) : undefined}
+                fiscalContent={hasFiscalConfiguration ? (
+                  <details
+                    className="rounded-xl border border-slate-200 bg-slate-50/70"
+                    open={fiscalOpen}
+                    onToggle={(event) => setFiscalOpen(event.currentTarget.open)}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-800 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]">
+                      Datos fiscales del comprador
+                      <span className="ml-2 text-xs font-normal text-neutral-500">
+                        Opcional
+                      </span>
+                    </summary>
+                    <div className="space-y-3 border-t border-slate-200 px-4 pb-4 pt-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBuyerIsLegalEntity(false);
+                            setBuyerIsLargeTaxpayer(false);
+                            setBuyerIsSelfWithholder(false);
+                            setBuyerIsRegimenSimple(false);
+                          }}
+                          className={`h-10 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${!buyerIsLegalEntity ? "border-[#0B3F64] bg-[#0B3F64] text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-sky-50"}`}
+                        >
+                          Persona
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBuyerIsLegalEntity(true)}
+                          className={`h-10 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsLegalEntity ? "border-[#0B3F64] bg-[#0B3F64] text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-sky-50"}`}
+                        >
+                          Jurídica
+                        </button>
+                      </div>
+
+                      {buyerIsLegalEntity && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {simpleRegimeSalesEnabled && (
+                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={buyerIsRegimenSimple}
+                                onChange={(event) => setBuyerIsRegimenSimple(event.target.checked)}
+                              />
+                              Régimen Simple
+                            </label>
+                          )}
+                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={buyerIsLargeTaxpayer}
+                              disabled={buyerIsSelfWithholder}
+                              onChange={(event) => setBuyerIsLargeTaxpayer(event.target.checked)}
+                            />
+                            Gran contribuyente
+                          </label>
+                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={buyerIsSelfWithholder}
+                              disabled={buyerIsLargeTaxpayer}
+                              onChange={(event) => setBuyerIsSelfWithholder(event.target.checked)}
+                            />
+                            Autorretenedor
+                          </label>
+                        </div>
+                      )}
+
+                      <label htmlFor="public-order-ica-municipality" className="sr-only">Municipio ICA</label>
+                      <select
+                        id="public-order-ica-municipality"
+                        value={fiscalMunicipalityCode}
+                        onChange={(event) => setFiscalMunicipalityCode(event.target.value)}
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
+                      >
+                        <option value="">Municipio ICA</option>
+                        {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                          <option key={municipality.code} value={municipality.code}>
+                            {municipality.name}
+                          </option>
+                        ))}
+                      </select>
+                      <label htmlFor="public-order-reteica" className="sr-only">ReteICA o ICA retenido por mil</label>
+                      <input
+                        id="public-order-reteica"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={reteIcaRateOverride ?? ""}
+                        onChange={(event) => setReteIcaRateOverride(
+                          event.target.value === "" ? undefined : Number(event.target.value),
+                        )}
+                        placeholder="ReteICA / ICA retenido (por mil)"
+                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
+                      />
+
+                    </div>
+                  </details>
+                ) : undefined}
               />
             </div>
           </div>

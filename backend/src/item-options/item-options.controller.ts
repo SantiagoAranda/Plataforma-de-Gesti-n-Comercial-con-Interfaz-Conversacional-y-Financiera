@@ -34,7 +34,11 @@ export class ItemOptionsController {
     @Param('itemId') itemId: string,
     @Body() dto: CreateOptionGroupDto,
   ) {
-    return this.itemOptionsService.createGroup(req.user.businessId, itemId, dto);
+    return this.itemOptionsService.createGroup(
+      req.user.businessId,
+      itemId,
+      dto,
+    );
   }
 
   @Patch(':groupId')

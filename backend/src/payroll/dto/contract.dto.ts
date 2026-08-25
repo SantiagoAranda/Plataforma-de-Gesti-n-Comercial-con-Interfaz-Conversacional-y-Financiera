@@ -44,7 +44,6 @@ export class CreateEmployeeContractDto {
   @IsOptional()
   @IsString()
   arlRiskClassId?: string;
-
 }
 
 export class UpdateEmployeeContractDto {

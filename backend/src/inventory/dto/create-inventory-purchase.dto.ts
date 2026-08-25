@@ -23,28 +23,36 @@ export class CreateInventoryPurchaseDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'quantity must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'quantity must be a valid decimal number',
+  })
   quantity?: string;
 
   // Legacy mode: unitCost is cost per consumption unit.
   @IsOptional()
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'unitCost must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'unitCost must be a valid decimal number',
+  })
   unitCost?: string;
 
   // New mode: purchaseQuantity + purchaseUnitCost represent values in purchase units.
   @IsOptional()
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'purchaseQuantity must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'purchaseQuantity must be a valid decimal number',
+  })
   purchaseQuantity?: string;
 
   // New mode: purchaseUnitCost is cost per purchase unit.
   @IsOptional()
   @IsString()
   @Transform(({ value }) => normalizeDecimalString(value))
-  @Matches(/^\d+(\.\d+)?$/, { message: 'purchaseUnitCost must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'purchaseUnitCost must be a valid decimal number',
+  })
   purchaseUnitCost?: string;
 
   @IsOptional()

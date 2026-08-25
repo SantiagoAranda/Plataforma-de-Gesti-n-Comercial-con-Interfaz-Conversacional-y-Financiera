@@ -1,5 +1,12 @@
 import { LegalPersonType } from '@prisma/client';
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Min,
+} from 'class-validator';
 
 export class UpdateBusinessConfigDto {
   @IsOptional()

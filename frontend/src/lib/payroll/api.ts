@@ -643,6 +643,11 @@ export const payrollApi = {
       method: "POST",
     });
   },
+  calculatePeriod(periodId: string) {
+    return payrollRequest(`/payroll/periods/${periodId}/calculate`, {
+      method: "POST",
+    });
+  },
   createComplementaryRun(periodId: string, employeeId: string, payload: { reason?: string } = {}) {
     return payrollRequest<PayrollRun>(
       `/payroll/periods/${periodId}/runs/complementary/${employeeId}`,

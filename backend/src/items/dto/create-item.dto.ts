@@ -75,7 +75,9 @@ export class CreateItemDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'minStock must be a valid decimal number',
+  })
   minStock?: string;
 
   @IsOptional()

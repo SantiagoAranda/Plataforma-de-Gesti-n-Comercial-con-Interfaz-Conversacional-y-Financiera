@@ -15,9 +15,9 @@ import { SalesService } from './sales.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
-import { AddOrderItemDto } from "./dto/add-order-item.dto";
-import { UpdateOrderItemDto } from "./dto/update-order-item.dto";
-import { UpdateOrderDto } from "./dto/update-order.dto";
+import { AddOrderItemDto } from './dto/add-order-item.dto';
+import { UpdateOrderItemDto } from './dto/update-order-item.dto';
+import { UpdateOrderDto } from './dto/update-order.dto';
 import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
@@ -68,46 +68,63 @@ export class SalesController {
     );
   }
 
-  @Get(":id")
-  getOne(@Req() req: any, @Param("id") id: string) {
+  @Get(':id')
+  getOne(@Req() req: any, @Param('id') id: string) {
     return this.salesService.getOne(req.user.businessId, id);
   }
 
-  @Patch(":id/cancel")
+  @Patch(':id/cancel')
   cancel(
     @Req() req: any,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Query('sourceType') sourceType?: any,
   ) {
     return this.salesService.cancel(req.user.businessId, id, sourceType);
   }
 
   @Post(':id/reverse')
-  reverse(@Req() req: any, @Param('id') id: string, @Body() dto: ReverseOrderDto) {
-    return this.salesService.reverseConfirmedOrder(req.user.businessId, id, dto);
+  reverse(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: ReverseOrderDto,
+  ) {
+    return this.salesService.reverseConfirmedOrder(
+      req.user.businessId,
+      id,
+      dto,
+    );
   }
 
-  @Post(":id/items")
-  addItem(@Req() req: any, @Param("id") id: string, @Body() dto: AddOrderItemDto) {
+  @Post(':id/items')
+  addItem(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: AddOrderItemDto,
+  ) {
     return this.salesService.addItem(req.user.businessId, id, dto);
   }
 
-  @Patch(":id/items/:orderItemId")
+  @Patch(':id/items/:orderItemId')
   updateItem(
     @Req() req: any,
-    @Param("id") id: string,
-    @Param("orderItemId") orderItemId: string,
-    @Body() dto: UpdateOrderItemDto
+    @Param('id') id: string,
+    @Param('orderItemId') orderItemId: string,
+    @Body() dto: UpdateOrderItemDto,
   ) {
-    return this.salesService.updateItem(req.user.businessId, id, orderItemId, dto);
+    return this.salesService.updateItem(
+      req.user.businessId,
+      id,
+      orderItemId,
+      dto,
+    );
   }
 
-  @Patch("orders/:id/items/:orderItemId/optional-ingredients")
+  @Patch('orders/:id/items/:orderItemId/optional-ingredients')
   updateItemOptionalIngredients(
     @Req() req: any,
-    @Param("id") id: string,
-    @Param("orderItemId") orderItemId: string,
-    @Body() dto: UpdateOrderItemOptionalsDto
+    @Param('id') id: string,
+    @Param('orderItemId') orderItemId: string,
+    @Body() dto: UpdateOrderItemOptionalsDto,
   ) {
     return this.salesService.updateOrderItemOptionalIngredients(
       req.user.businessId,
@@ -117,29 +134,29 @@ export class SalesController {
     );
   }
 
-  @Delete(":id/items/:orderItemId")
+  @Delete(':id/items/:orderItemId')
   removeItem(
     @Req() req: any,
-    @Param("id") id: string,
-    @Param("orderItemId") orderItemId: string
+    @Param('id') id: string,
+    @Param('orderItemId') orderItemId: string,
   ) {
     return this.salesService.removeItem(req.user.businessId, id, orderItemId);
   }
 
-  @Patch(":id")
+  @Patch(':id')
   update(
     @Req() req: any,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateOrderDto,
     @Query('sourceType') sourceType?: any,
   ) {
     return this.salesService.update(req.user.businessId, id, dto, sourceType);
   }
 
-  @Delete(":id")
+  @Delete(':id')
   remove(
     @Req() req: any,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Query('sourceType') sourceType?: any,
   ) {
     return this.salesService.remove(req.user.businessId, id, sourceType);

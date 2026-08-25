@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
+import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 
 @Controller('public')
 export class PublicController {
@@ -31,10 +32,7 @@ export class PublicController {
   }
 
   @Get(':slug/items')
-  listPublicItems(
-    @Param('slug') slug: string,
-    @Query('type') type?: string,
-  ) {
+  listPublicItems(@Param('slug') slug: string, @Query('type') type?: string) {
     return this.publicService.listPublicItems(slug, type);
   }
 
@@ -57,18 +55,22 @@ export class PublicController {
   }
 
   @Post(':slug/reserve')
-  createReservation(
-    @Param('slug') slug: string,
-    @Body() body: any,
-  ) {
+  createReservation(@Param('slug') slug: string, @Body() body: any) {
     return this.publicService.createReservation(slug, body);
   }
 
   @Post(':slug/order')
-  createOrder(
-    @Param('slug') slug: string,
-    @Body() dto: CreatePublicOrderDto,
-  ) {
+  createOrder(@Param('slug') slug: string, @Body() dto: CreatePublicOrderDto) {
     return this.publicService.createOrder(slug, dto);
+  }
+
+  @Get(':slug/fiscal-settings')
+  getFiscalSettings(@Param('slug') slug: string) {
+    return this.publicService.getFiscalSettings(slug);
+  }
+
+  @Post(':slug/tax-preview')
+  calculateTaxPreview(@Param('slug') slug: string, @Body() dto: TaxPreviewDto) {
+    return this.publicService.calculateTaxPreview(slug, dto);
   }
 }

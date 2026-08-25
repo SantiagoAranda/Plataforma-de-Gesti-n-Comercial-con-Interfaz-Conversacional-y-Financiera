@@ -1,4 +1,11 @@
-import { IsString, IsNumber, IsOptional, IsEnum, Min, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  IsEnum,
+  Min,
+  IsBoolean,
+} from 'class-validator';
 import { TaxType, TaxDirection, SaleConcept } from '@prisma/client';
 
 export class CreateTaxRuleDto {

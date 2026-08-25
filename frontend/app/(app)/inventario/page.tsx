@@ -68,6 +68,12 @@ type SaveBarContext = {
   onDiscard: () => void;
 } | null;
 
+const formatInventoryTotal = new Intl.NumberFormat("es-CO", {
+  style: "decimal",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
 function recipeStatus(item: Item, lines: RecipeLine[]) {
   const mandatory = lines.filter((line) => !line.isOptional);
   const invalid = lines.some(
@@ -438,7 +444,7 @@ function InventarioPageContent() {
                   INVENTARIO TOTAL
                 </p>
                 <p className="mt-1 truncate text-2xl font-bold text-white">
-                  ${formatMoney(inventoryTotalValue)} COP
+                  ${formatInventoryTotal.format(inventoryTotalValue)}
                 </p>
               </div>
               <div className="space-y-1.5 border-l border-white/20 pl-4 min-w-[120px]">

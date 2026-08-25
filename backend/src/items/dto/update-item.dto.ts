@@ -11,10 +11,10 @@ import {
   Min,
   Max,
   ValidateNested,
-} from "class-validator";
-import { Transform, Type } from "class-transformer";
-import { InventoryMode, ItemType, SaleConcept } from "@prisma/client";
-import { ScheduleInput } from "./create-item.dto";
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { InventoryMode, ItemType, SaleConcept } from '@prisma/client';
+import { ScheduleInput } from './create-item.dto';
 
 class BadgeInput {
   @IsString()
@@ -66,9 +66,13 @@ export class UpdateItemDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) =>
-    value === null || value === undefined || value === "" ? undefined : String(value).replace(",", ".").trim()
+    value === null || value === undefined || value === ''
+      ? undefined
+      : String(value).replace(',', '.').trim(),
   )
-  @Matches(/^\d+(\.\d+)?$/, { message: 'minStock must be a valid decimal number' })
+  @Matches(/^\d+(\.\d+)?$/, {
+    message: 'minStock must be a valid decimal number',
+  })
   minStock?: string;
 
   @IsOptional()
@@ -89,7 +93,9 @@ export class UpdateItemDto {
   @IsInt()
   @Min(0)
   @Transform(({ value }) =>
-    value === null || value === undefined || value === "" ? undefined : Number(value)
+    value === null || value === undefined || value === ''
+      ? undefined
+      : Number(value),
   )
   durationMinutes?: number;
 

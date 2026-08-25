@@ -6,13 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Business, PayrollAccountingSide, Prisma } from '@prisma/client';
+import { Business, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import fs from 'node:fs';
 import path from 'node:path';
-import { parse } from 'csv-parse/sync';
 import sharp from 'sharp';
 import { StorageService } from '../storage/storage.service';
+import { parsePayrollAccountingMappingTemplate } from '../common/payroll/payroll-accounting-mapping-template';
 
 type FooterPhone = {
   label: string;
@@ -36,14 +36,6 @@ type StoreFooterSettingsPayload = {
   googleMapsUrl?: string | null;
   footerBackgroundColor?: string | null;
   footerTextColor?: string | null;
-};
-
-type PayrollAccountingMappingTemplateRow = {
-  concept_code: string;
-  concept_name: string;
-  account_code: string;
-  account_name: string;
-  side: PayrollAccountingSide;
 };
 
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
@@ -175,9 +167,7 @@ function extractFooterLogoFlag(socials: unknown) {
     ? socials.some((social) => {
         if (!social || typeof social !== 'object') return false;
         const record = social as Record<string, unknown>;
-        return (
-          record.type === FOOTER_LOGO_META_TYPE && record.value === 'true'
-        );
+        return record.type === FOOTER_LOGO_META_TYPE && record.value === 'true';
       })
     : false;
 }
@@ -186,7 +176,9 @@ function removeFooterLogoMeta(socials: unknown) {
   return Array.isArray(socials)
     ? socials.filter((social) => {
         if (!social || typeof social !== 'object') return true;
-        return (social as Record<string, unknown>).type !== FOOTER_LOGO_META_TYPE;
+        return (
+          (social as Record<string, unknown>).type !== FOOTER_LOGO_META_TYPE
+        );
       })
     : [];
 }
@@ -218,7 +210,10 @@ function removeFooterColorMeta(socials: unknown) {
     : [];
 }
 
-function withFooterLogoMeta(socials: FooterSocial[] | undefined, showLogo?: boolean) {
+function withFooterLogoMeta(
+  socials: FooterSocial[] | undefined,
+  showLogo?: boolean,
+) {
   const publicSocials = socials ?? [];
   if (!showLogo) return publicSocials;
 
@@ -343,7 +338,7 @@ function withFooterColorMeta(
   return [...publicSocials, ...meta];
 }
 
-function parsePayrollAccountingMappingTemplate() {
+function loadPayrollAccountingMappingTemplate() {
   const filePath = path.join(
     process.cwd(),
     'prisma',
@@ -357,13 +352,7 @@ function parsePayrollAccountingMappingTemplate() {
     );
   }
 
-  return parse(fs.readFileSync(filePath, 'utf8'), {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-    bom: true,
-    record_delimiter: '\n',
-  }) as PayrollAccountingMappingTemplateRow[];
+  return parsePayrollAccountingMappingTemplate(fs.readFileSync(filePath, 'utf8'));
 }
 
 @Injectable()
@@ -459,7 +448,7 @@ export class BusinessesService {
     tx: Prisma.TransactionClient,
     businessId: string,
   ) {
-    const rows = parsePayrollAccountingMappingTemplate();
+    const rows = loadPayrollAccountingMappingTemplate();
 
     for (const row of rows) {
       await this.assertPucAccountExists(tx, row.account_code);
@@ -717,7 +706,9 @@ export class BusinessesService {
     }
 
     if (file.size > 15 * 1024 * 1024) {
-      throw new BadRequestException('El logo original no puede superar los 15 MB');
+      throw new BadRequestException(
+        'El logo original no puede superar los 15 MB',
+      );
     }
 
     const previous = await this.prisma.business.findUnique({

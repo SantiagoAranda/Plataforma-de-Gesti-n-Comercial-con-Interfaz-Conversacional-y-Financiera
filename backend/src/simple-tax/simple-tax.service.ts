@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import {
   AccountingMovementOriginType,
   MovementNature,
@@ -11,6 +16,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { parseAccountingDate } from '../common/date/accounting-date';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { UpsertSimpleTaxConfigDto } from './dto/simple-tax-config.dto';
 import {
@@ -91,18 +97,22 @@ type SimpleTaxActivityGroupMappingRow = {
 export class SimpleTaxService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly featureFlags: FeatureFlagsService = {
+    @Optional()
+    private readonly featureFlags: FeatureFlagsService = {
+      simpleRegimeTaxModuleEnabled: true,
+      simpleRegimeSalesEnabled: true,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
 
   private assertSimpleRegimeAvailable() {
-    if (!this.featureFlags.simpleRegimeEnabled) {
+    if (!this.featureFlags.simpleRegimeTaxModuleEnabled) {
       throw new SimpleRegimeNotAvailableException();
     }
   }
 
   async getConfig(businessId: string) {
+    this.assertSimpleRegimeAvailable();
     const existing = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
     });
@@ -161,7 +171,11 @@ export class SimpleTaxService {
     });
   }
 
-  async listRates(taxYear: number, periodType: SimpleTaxPeriodType = SimpleTaxPeriodType.BIMONTHLY) {
+  async listRates(
+    taxYear: number,
+    periodType: SimpleTaxPeriodType = SimpleTaxPeriodType.BIMONTHLY,
+  ) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxRateBracket.findMany({
       where: { taxYear, periodType, active: true },
       orderBy: [{ groupCode: 'asc' }, { lowerUvt: 'asc' }],
@@ -169,6 +183,7 @@ export class SimpleTaxService {
   }
 
   async listPeriods(businessId: string, taxYear: number) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxPeriod.findMany({
       where: { businessId, taxYear },
       orderBy: { periodNumber: 'asc' },
@@ -176,6 +191,7 @@ export class SimpleTaxService {
   }
 
   async getPeriod(businessId: string, id: string) {
+    this.assertSimpleRegimeAvailable();
     const period = await this.prisma.simpleTaxPeriod.findFirst({
       where: { id, businessId },
     });
@@ -212,10 +228,16 @@ export class SimpleTaxService {
           periodNumber: dto.periodNumber,
         },
       },
-      update: this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
+      update: this.periodPersistenceData(
+        calculation,
+        SimpleTaxPeriodStatus.CALCULATED,
+      ),
       create: {
         businessId,
-        ...this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
+        ...this.periodPersistenceData(
+          calculation,
+          SimpleTaxPeriodStatus.CALCULATED,
+        ),
       },
     });
 
@@ -230,7 +252,11 @@ export class SimpleTaxService {
     return this.calculateAndPersist(businessId, dto);
   }
 
-  async updatePeriod(businessId: string, id: string, dto: SimpleTaxUpdatePeriodDto) {
+  async updatePeriod(
+    businessId: string,
+    id: string,
+    dto: SimpleTaxUpdatePeriodDto,
+  ) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const existing = await this.getPeriod(businessId, id);
@@ -249,13 +275,17 @@ export class SimpleTaxService {
       electronicPaymentsIncome:
         dto.electronicPaymentsIncome ?? existing.electronicPaymentsIncome,
       pensionContributionsDiscount:
-        dto.pensionContributionsDiscount ?? existing.pensionContributionsDiscount,
+        dto.pensionContributionsDiscount ??
+        existing.pensionContributionsDiscount,
       notes: dto.notes ?? existing.notes,
     });
 
     const updated = await this.prisma.simpleTaxPeriod.update({
       where: { id: existing.id },
-      data: this.periodPersistenceData(calculation, SimpleTaxPeriodStatus.CALCULATED),
+      data: this.periodPersistenceData(
+        calculation,
+        SimpleTaxPeriodStatus.CALCULATED,
+      ),
     });
 
     return {
@@ -268,7 +298,8 @@ export class SimpleTaxService {
   async postPeriod(businessId: string, id: string) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
-    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const hasSimpleResponsibility =
+      await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
         'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
@@ -296,12 +327,16 @@ export class SimpleTaxService {
       }
 
       if (period.status !== SimpleTaxPeriodStatus.CALCULATED) {
-        throw new BadRequestException('Solo se pueden presentar periodos calculados.');
+        throw new BadRequestException(
+          'Solo se pueden presentar periodos calculados.',
+        );
       }
 
       const netSimpleTax = new Prisma.Decimal(period.netSimpleTax);
       if (netSimpleTax.lt(0)) {
-        throw new BadRequestException('El impuesto neto RST no puede ser negativo.');
+        throw new BadRequestException(
+          'El impuesto neto RST no puede ser negativo.',
+        );
       }
 
       const accountingEntryId = `simple-tax-post-${period.id}`;
@@ -380,7 +415,8 @@ export class SimpleTaxService {
   async payPeriod(businessId: string, id: string, dto: SimpleTaxPayPeriodDto) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
-    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const hasSimpleResponsibility =
+      await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
         'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
@@ -401,23 +437,33 @@ export class SimpleTaxService {
       );
 
       if (period.status === SimpleTaxPeriodStatus.CALCULATED) {
-        throw new BadRequestException('El periodo RST debe estar presentado antes de pagar.');
+        throw new BadRequestException(
+          'El periodo RST debe estar presentado antes de pagar.',
+        );
       }
       if (period.status === SimpleTaxPeriodStatus.PAID) {
         throw new BadRequestException('El periodo RST ya fue pagado.');
       }
       if (period.status !== SimpleTaxPeriodStatus.POSTED) {
-        throw new BadRequestException('El periodo RST no esta listo para pago.');
+        throw new BadRequestException(
+          'El periodo RST no esta listo para pago.',
+        );
       }
 
-      const netSimpleTax = new Prisma.Decimal(period.netSimpleTax).toDecimalPlaces(2);
+      const netSimpleTax = new Prisma.Decimal(
+        period.netSimpleTax,
+      ).toDecimalPlaces(2);
       if (netSimpleTax.lte(0)) {
-        throw new BadRequestException('Los periodos con impuesto cero no requieren pago.');
+        throw new BadRequestException(
+          'Los periodos con impuesto cero no requieren pago.',
+        );
       }
 
       const paidAmount = new Prisma.Decimal(dto.paidAmount).toDecimalPlaces(2);
       if (!paidAmount.eq(netSimpleTax)) {
-        throw new BadRequestException('Solo se permite pago total del impuesto RST.');
+        throw new BadRequestException(
+          'Solo se permite pago total del impuesto RST.',
+        );
       }
 
       const paymentAccountCode =
@@ -429,7 +475,9 @@ export class SimpleTaxService {
         dto.paymentMethod === SimpleTaxPaymentMethod.BANK &&
         paymentAccountCode !== SIMPLE_TAX_BANK_PUC_CODE
       ) {
-        throw new BadRequestException('La cuenta bancaria permitida es 111005.');
+        throw new BadRequestException(
+          'La cuenta bancaria permitida es 111005.',
+        );
       }
 
       await this.assertSimpleTaxPucAccounts(tx, [
@@ -437,8 +485,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 
@@ -456,7 +504,9 @@ export class SimpleTaxService {
       });
 
       if (existingMovements > 0) {
-        throw new BadRequestException('El pago RST ya tiene movimientos contables.');
+        throw new BadRequestException(
+          'El pago RST ya tiene movimientos contables.',
+        );
       }
 
       const detail = `Pago Régimen Simple ${period.taxYear} bimestre ${period.periodNumber}`;
@@ -529,7 +579,8 @@ export class SimpleTaxService {
       );
     }
 
-    const hasSimpleResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const hasSimpleResponsibility =
+      await this.businessHasSimpleResponsibility(businessId);
     if (!hasSimpleResponsibility) {
       throw new BadRequestException(
         'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
@@ -546,17 +597,24 @@ export class SimpleTaxService {
       where: { year: input.taxYear },
     });
     if (!globalParams) {
-      throw new BadRequestException(`No existe UVT configurada para ${input.taxYear}.`);
+      throw new BadRequestException(
+        `No existe UVT configurada para ${input.taxYear}.`,
+      );
     }
 
-    const periodRange = this.getBimonthlyRange(input.taxYear, input.periodNumber);
+    const periodRange = this.getBimonthlyRange(
+      input.taxYear,
+      input.periodNumber,
+    );
     const salesSummary = await this.calculateSalesGrossIncome(
       businessId,
       periodRange.start,
       periodRange.endExclusive,
     );
     const salesGrossIncome = salesSummary.total;
-    const manualGrossIncome = this.toNonNegativeDecimal(input.manualGrossIncome);
+    const manualGrossIncome = this.toNonNegativeDecimal(
+      input.manualGrossIncome,
+    );
     const excludedIncome = this.toNonNegativeDecimal(input.excludedIncome);
     const electronicPaymentsIncome = this.toNonNegativeDecimal(
       input.electronicPaymentsIncome,
@@ -586,12 +644,15 @@ export class SimpleTaxService {
     const electronicPaymentsDiscount = electronicPaymentsIncome.mul(
       ELECTRONIC_PAYMENTS_DISCOUNT_RATE,
     );
-    const totalDiscounts = electronicPaymentsDiscount.add(pensionContributionsDiscount);
+    const totalDiscounts = electronicPaymentsDiscount.add(
+      pensionContributionsDiscount,
+    );
     const netSimpleTax = Prisma.Decimal.max(
       grossSimpleTax.sub(totalDiscounts),
       new Prisma.Decimal(0),
     );
-    const filingMode = config.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE;
+    const filingMode =
+      config.filingMode ?? SimpleTaxFilingMode.BIMONTHLY_ADVANCE;
     const warnings: string[] = [];
     if (filingMode === SimpleTaxFilingMode.ANNUAL_EXCEPTION) {
       warnings.push(
@@ -698,7 +759,9 @@ export class SimpleTaxService {
       };
     }
 
-    const mappings = await this.prisma.$queryRaw<SimpleTaxActivityGroupMappingRow[]>(
+    const mappings = await this.prisma.$queryRaw<
+      SimpleTaxActivityGroupMappingRow[]
+    >(
       Prisma.sql`
         SELECT
           "id",
@@ -788,9 +851,14 @@ export class SimpleTaxService {
     });
 
     const hasSimpleTaxResponsibility = Boolean(
-      profile?.responsibilities.some((item) => item.responsibility.code === '47'),
+      profile?.responsibilities.some(
+        (item) => item.responsibility.code === '47',
+      ),
     );
-    const groupResolution = await this.resolveSimpleTaxGroupFromRut(businessId, taxYear);
+    const groupResolution = await this.resolveSimpleTaxGroupFromRut(
+      businessId,
+      taxYear,
+    );
 
     const ciiuCode = profile?.mainCiiuCode ?? null;
 
@@ -868,7 +936,11 @@ export class SimpleTaxService {
     return order.accountingPostedAt ?? order.createdAt;
   }
 
-  private async findBracket(taxYear: number, groupCode: string, baseUvt: Prisma.Decimal) {
+  private async findBracket(
+    taxYear: number,
+    groupCode: string,
+    baseUvt: Prisma.Decimal,
+  ) {
     const brackets = await this.prisma.simpleTaxRateBracket.findMany({
       where: {
         taxYear,
@@ -881,7 +953,8 @@ export class SimpleTaxService {
 
     const bracket = brackets.find((candidate) => {
       const lowerMatches = baseUvt.gte(candidate.lowerUvt);
-      const upperMatches = !candidate.upperUvt || baseUvt.lt(candidate.upperUvt);
+      const upperMatches =
+        !candidate.upperUvt || baseUvt.lt(candidate.upperUvt);
       return lowerMatches && upperMatches;
     });
 
@@ -907,7 +980,9 @@ export class SimpleTaxService {
     });
 
     return Boolean(
-      profile?.responsibilities.some((item) => item.responsibility.code === '47'),
+      profile?.responsibilities.some(
+        (item) => item.responsibility.code === '47',
+      ),
     );
   }
 
@@ -937,7 +1012,9 @@ export class SimpleTaxService {
     if (groupResolution.status === 'RESOLVED') return groupResolution;
 
     if (groupResolution.status === 'NO_RUT_ACTIVITY') {
-      throw new BadRequestException('No hay actividad economica configurada en el RUT.');
+      throw new BadRequestException(
+        'No hay actividad economica configurada en el RUT.',
+      );
     }
 
     if (action === 'presentar') {
@@ -974,7 +1051,9 @@ export class SimpleTaxService {
     const foundCodes = new Set(accounts.map((account) => account.code));
     const missing = codes.filter((code) => !foundCodes.has(code));
     if (missing.length > 0) {
-      throw new BadRequestException(`Cuentas PUC RST no configuradas: ${missing.join(', ')}`);
+      throw new BadRequestException(
+        `Cuentas PUC RST no configuradas: ${missing.join(', ')}`,
+      );
     }
   }
 
@@ -1026,13 +1105,19 @@ export class SimpleTaxService {
       appliedRate: this.toRateNumber(value.appliedRate),
       grossSimpleTax: this.toNumber(value.grossSimpleTax),
       electronicPaymentsIncome: this.toNumber(value.electronicPaymentsIncome),
-      electronicPaymentsDiscount: this.toNumber(value.electronicPaymentsDiscount),
-      pensionContributionsDiscount: this.toNumber(value.pensionContributionsDiscount),
+      electronicPaymentsDiscount: this.toNumber(
+        value.electronicPaymentsDiscount,
+      ),
+      pensionContributionsDiscount: this.toNumber(
+        value.pensionContributionsDiscount,
+      ),
       totalDiscounts: this.toNumber(value.totalDiscounts),
       netSimpleTax: this.toNumber(value.netSimpleTax),
       bracket: {
         lowerUvt: this.toNumber(value.bracket.lowerUvt),
-        upperUvt: value.bracket.upperUvt ? this.toNumber(value.bracket.upperUvt) : null,
+        upperUvt: value.bracket.upperUvt
+          ? this.toNumber(value.bracket.upperUvt)
+          : null,
         rate: this.toRateNumber(value.bracket.rate),
       },
       includedSales: value.includedSales ?? [],
@@ -1051,22 +1136,31 @@ export class SimpleTaxService {
     this.assertPeriodNumber(periodNumber);
     const startMonth = (periodNumber - 1) * 2;
     const start = new Date(Date.UTC(taxYear, startMonth, 1, 0, 0, 0, 0));
-    const endExclusive = new Date(Date.UTC(taxYear, startMonth + 2, 1, 0, 0, 0, 0));
+    const endExclusive = new Date(
+      Date.UTC(taxYear, startMonth + 2, 1, 0, 0, 0, 0),
+    );
     const end = new Date(endExclusive.getTime() - 1);
     return { start, end, endExclusive };
   }
 
   private assertPeriodNumber(periodNumber: number) {
-    if (!Number.isInteger(periodNumber) || periodNumber < 1 || periodNumber > 6) {
+    if (
+      !Number.isInteger(periodNumber) ||
+      periodNumber < 1 ||
+      periodNumber > 6
+    ) {
       throw new BadRequestException('periodNumber debe estar entre 1 y 6.');
     }
   }
 
   private toNonNegativeDecimal(value: unknown) {
-    if (value === undefined || value === null || value === '') return new Prisma.Decimal(0);
+    if (value === undefined || value === null || value === '')
+      return new Prisma.Decimal(0);
     const decimal = new Prisma.Decimal(value as any);
     if (decimal.lt(0)) {
-      throw new BadRequestException('Los valores del calculo RST no pueden ser negativos.');
+      throw new BadRequestException(
+        'Los valores del calculo RST no pueden ser negativos.',
+      );
     }
     return decimal;
   }
@@ -1079,19 +1173,28 @@ export class SimpleTaxService {
     return Number(value.toDecimalPlaces(6).toString());
   }
 
-  async calculateAnnualReturn(businessId: string, taxYear: number, payload: CalculateSimpleTaxAnnualReturnDto) {
+  async calculateAnnualReturn(
+    businessId: string,
+    taxYear: number,
+    payload: CalculateSimpleTaxAnnualReturnDto,
+  ) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     const config = await this.prisma.businessSimpleTaxConfig.findUnique({
       where: { businessId },
     });
     if (!config?.enabled || !config.groupCode) {
-      throw new BadRequestException('Configura el grupo del Regimen Simple antes de calcular.');
+      throw new BadRequestException(
+        'Configura el grupo del Regimen Simple antes de calcular.',
+      );
     }
 
-    const hasResponsibility = await this.businessHasSimpleResponsibility(businessId);
+    const hasResponsibility =
+      await this.businessHasSimpleResponsibility(businessId);
     if (!hasResponsibility) {
-      throw new BadRequestException('El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.');
+      throw new BadRequestException(
+        'El negocio no tiene la responsabilidad 47 - Regimen Simple configurada.',
+      );
     }
 
     // Verify annual brackets exist for the year
@@ -1105,25 +1208,39 @@ export class SimpleTaxService {
     });
 
     if (annualBrackets.length === 0) {
-      throw new BadRequestException('Falta parametrizar tabla anual RST para este año fiscal.');
+      throw new BadRequestException(
+        'Falta parametrizar tabla anual RST para este año fiscal.',
+      );
     }
 
     const globalParams = await this.prisma.taxGlobalParameter.findUnique({
       where: { year: taxYear },
     });
     if (!globalParams) {
-      throw new BadRequestException(`No existe UVT configurada para ${taxYear}.`);
+      throw new BadRequestException(
+        `No existe UVT configurada para ${taxYear}.`,
+      );
     }
 
     const start = new Date(Date.UTC(taxYear, 0, 1, 0, 0, 0, 0));
     const endExclusive = new Date(Date.UTC(taxYear + 1, 0, 1, 0, 0, 0, 0));
-    const salesSummary = await this.calculateSalesGrossIncome(businessId, start, endExclusive);
+    const salesSummary = await this.calculateSalesGrossIncome(
+      businessId,
+      start,
+      endExclusive,
+    );
 
     const grossIncome = salesSummary.total;
-    const manualGrossIncome = this.toNonNegativeDecimal(payload.manualGrossIncome);
+    const manualGrossIncome = this.toNonNegativeDecimal(
+      payload.manualGrossIncome,
+    );
     const excludedIncome = this.toNonNegativeDecimal(payload.excludedIncome);
-    const electronicPaymentsIncome = this.toNonNegativeDecimal(payload.electronicPaymentsIncome);
-    const pensionContributionsDiscount = this.toNonNegativeDecimal(payload.pensionContributionsDiscount);
+    const electronicPaymentsIncome = this.toNonNegativeDecimal(
+      payload.electronicPaymentsIncome,
+    );
+    const pensionContributionsDiscount = this.toNonNegativeDecimal(
+      payload.pensionContributionsDiscount,
+    );
 
     const taxableGrossIncome = Prisma.Decimal.max(
       grossIncome.add(manualGrossIncome).sub(excludedIncome),
@@ -1140,7 +1257,8 @@ export class SimpleTaxService {
 
     const bracket = annualBrackets.find((candidate) => {
       const lowerMatches = taxableGrossIncomeUvt.gte(candidate.lowerUvt);
-      const upperMatches = !candidate.upperUvt || taxableGrossIncomeUvt.lt(candidate.upperUvt);
+      const upperMatches =
+        !candidate.upperUvt || taxableGrossIncomeUvt.lt(candidate.upperUvt);
       return lowerMatches && upperMatches;
     });
 
@@ -1151,16 +1269,25 @@ export class SimpleTaxService {
     }
 
     const grossSimpleTax = taxableGrossIncome.mul(bracket.rate);
-    const electronicPaymentsDiscount = electronicPaymentsIncome.mul(ELECTRONIC_PAYMENTS_DISCOUNT_RATE);
-    const totalDiscounts = electronicPaymentsDiscount.add(pensionContributionsDiscount);
-    const netAnnualTax = Prisma.Decimal.max(grossSimpleTax.sub(totalDiscounts), new Prisma.Decimal(0));
+    const electronicPaymentsDiscount = electronicPaymentsIncome.mul(
+      ELECTRONIC_PAYMENTS_DISCOUNT_RATE,
+    );
+    const totalDiscounts = electronicPaymentsDiscount.add(
+      pensionContributionsDiscount,
+    );
+    const netAnnualTax = Prisma.Decimal.max(
+      grossSimpleTax.sub(totalDiscounts),
+      new Prisma.Decimal(0),
+    );
 
     // Sum netSimpleTax from bimonthly periods of the same year with status POSTED or PAID
     const bimonthlyPeriods = await this.prisma.simpleTaxPeriod.findMany({
       where: {
         businessId,
         taxYear,
-        status: { in: [SimpleTaxPeriodStatus.POSTED, SimpleTaxPeriodStatus.PAID] },
+        status: {
+          in: [SimpleTaxPeriodStatus.POSTED, SimpleTaxPeriodStatus.PAID],
+        },
       },
     });
 
@@ -1169,14 +1296,25 @@ export class SimpleTaxService {
       new Prisma.Decimal(0),
     );
 
-    const balanceDue = Prisma.Decimal.max(netAnnualTax.sub(bimonthlyAdvancesTotal), new Prisma.Decimal(0));
-    const balanceInFavor = Prisma.Decimal.max(bimonthlyAdvancesTotal.sub(netAnnualTax), new Prisma.Decimal(0));
+    const balanceDue = Prisma.Decimal.max(
+      netAnnualTax.sub(bimonthlyAdvancesTotal),
+      new Prisma.Decimal(0),
+    );
+    const balanceInFavor = Prisma.Decimal.max(
+      bimonthlyAdvancesTotal.sub(netAnnualTax),
+      new Prisma.Decimal(0),
+    );
 
     const existing = await this.prisma.simpleTaxAnnualReturn.findUnique({
       where: { businessId_taxYear: { businessId, taxYear } },
     });
-    if (existing && existing.status !== SimpleTaxAnnualReturnStatus.CALCULATED) {
-      throw new BadRequestException('La declaracion anual RST ya esta presentada o pagada.');
+    if (
+      existing &&
+      existing.status !== SimpleTaxAnnualReturnStatus.CALCULATED
+    ) {
+      throw new BadRequestException(
+        'La declaracion anual RST ya esta presentada o pagada.',
+      );
     }
 
     const snapshot = {
@@ -1246,12 +1384,14 @@ export class SimpleTaxService {
   }
 
   async getAnnualReturn(businessId: string, taxYear: number) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxAnnualReturn.findUnique({
       where: { businessId_taxYear: { businessId, taxYear } },
     });
   }
 
   async listAnnualReturns(businessId: string) {
+    this.assertSimpleRegimeAvailable();
     return this.prisma.simpleTaxAnnualReturn.findMany({
       where: { businessId },
       orderBy: { taxYear: 'desc' },
@@ -1266,13 +1406,18 @@ export class SimpleTaxService {
       const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
         where: { id, businessId },
       });
-      if (!annualReturn) throw new NotFoundException('Declaracion anual RST no encontrada.');
+      if (!annualReturn)
+        throw new NotFoundException('Declaracion anual RST no encontrada.');
 
       if (annualReturn.status !== SimpleTaxAnnualReturnStatus.CALCULATED) {
-        throw new BadRequestException('La declaracion anual RST ya esta presentada.');
+        throw new BadRequestException(
+          'La declaracion anual RST ya esta presentada.',
+        );
       }
 
-      const balanceDue = new Prisma.Decimal(annualReturn.balanceDue).toDecimalPlaces(2);
+      const balanceDue = new Prisma.Decimal(
+        annualReturn.balanceDue,
+      ).toDecimalPlaces(2);
       const accountingEntryId = `simple-tax-annual-post-${annualReturn.id}`;
 
       if (balanceDue.gt(0)) {
@@ -1289,7 +1434,9 @@ export class SimpleTaxService {
               pucSubcuentaId: SIMPLE_TAX_EXPENSE_PUC_CODE,
               amount: balanceDue,
               nature: MovementNature.DEBIT,
-              date: new Date(Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999)),
+              date: new Date(
+                Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999),
+              ),
               detail: `${detail} - Gasto Impuesto régimen simple`,
               originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
               originId: annualReturn.id,
@@ -1304,7 +1451,9 @@ export class SimpleTaxService {
               pucSubcuentaId: SIMPLE_TAX_PAYABLE_PUC_CODE,
               amount: balanceDue,
               nature: MovementNature.CREDIT,
-              date: new Date(Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999)),
+              date: new Date(
+                Date.UTC(annualReturn.taxYear, 11, 31, 23, 59, 59, 999),
+              ),
               detail: `${detail} - Impuesto simple por pagar`,
               originType: AccountingMovementOriginType.SIMPLE_TAX_ANNUAL_RETURN,
               originId: annualReturn.id,
@@ -1329,30 +1478,45 @@ export class SimpleTaxService {
     });
   }
 
-  async payAnnualReturn(businessId: string, id: string, dto: PaySimpleTaxAnnualReturnDto) {
+  async payAnnualReturn(
+    businessId: string,
+    id: string,
+    dto: PaySimpleTaxAnnualReturnDto,
+  ) {
     this.assertSimpleRegimeAvailable();
     await this.assertTaxSettingsEnabled(businessId);
     return this.prisma.$transaction(async (tx) => {
       const annualReturn = await tx.simpleTaxAnnualReturn.findFirst({
         where: { id, businessId },
       });
-      if (!annualReturn) throw new NotFoundException('Declaracion anual RST no encontrada.');
+      if (!annualReturn)
+        throw new NotFoundException('Declaracion anual RST no encontrada.');
 
       if (annualReturn.status === SimpleTaxAnnualReturnStatus.CALCULATED) {
-        throw new BadRequestException('La declaracion anual RST debe estar presentada antes de pagar.');
+        throw new BadRequestException(
+          'La declaracion anual RST debe estar presentada antes de pagar.',
+        );
       }
       if (annualReturn.status === SimpleTaxAnnualReturnStatus.PAID) {
-        throw new BadRequestException('La declaracion anual RST ya fue pagada.');
+        throw new BadRequestException(
+          'La declaracion anual RST ya fue pagada.',
+        );
       }
 
-      const balanceDue = new Prisma.Decimal(annualReturn.balanceDue).toDecimalPlaces(2);
+      const balanceDue = new Prisma.Decimal(
+        annualReturn.balanceDue,
+      ).toDecimalPlaces(2);
       if (balanceDue.lte(0)) {
-        throw new BadRequestException('Las declaraciones con saldo a pagar cero no requieren pago.');
+        throw new BadRequestException(
+          'Las declaraciones con saldo a pagar cero no requieren pago.',
+        );
       }
 
       const paidAmount = new Prisma.Decimal(dto.paidAmount).toDecimalPlaces(2);
       if (!paidAmount.eq(balanceDue)) {
-        throw new BadRequestException('Solo se permite pago total del impuesto RST.');
+        throw new BadRequestException(
+          'Solo se permite pago total del impuesto RST.',
+        );
       }
 
       const paymentAccountCode =
@@ -1364,7 +1528,9 @@ export class SimpleTaxService {
         dto.paymentMethod === SimpleTaxPaymentMethod.BANK &&
         paymentAccountCode !== SIMPLE_TAX_BANK_PUC_CODE
       ) {
-        throw new BadRequestException('La cuenta bancaria permitida es 111005.');
+        throw new BadRequestException(
+          'La cuenta bancaria permitida es 111005.',
+        );
       }
 
       await this.assertSimpleTaxPucAccounts(tx, [
@@ -1372,8 +1538,8 @@ export class SimpleTaxService {
         paymentAccountCode,
       ]);
 
-      const paymentDate = new Date(dto.paymentDate);
-      if (Number.isNaN(paymentDate.getTime())) {
+      const paymentDate = parseAccountingDate(dto.paymentDate);
+      if (!paymentDate) {
         throw new BadRequestException('Fecha de pago invalida.');
       }
 
@@ -1391,7 +1557,9 @@ export class SimpleTaxService {
         },
       });
       if (existingMovements > 0) {
-        throw new BadRequestException('El pago RST ya tiene movimientos contables.');
+        throw new BadRequestException(
+          'El pago RST ya tiene movimientos contables.',
+        );
       }
 
       const detail = `Pago declaración anual Régimen Simple ${annualReturn.taxYear}`;

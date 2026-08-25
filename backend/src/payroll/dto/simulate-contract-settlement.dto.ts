@@ -1,4 +1,10 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Min,
+} from 'class-validator';
 
 export class SimulateContractSettlementDto {
   @IsOptional()

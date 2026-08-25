@@ -75,8 +75,21 @@ export class BuyerFiscalContextDto {
   reteIcaRateOverride?: number;
 
   @IsOptional()
-  @IsIn(['GOODS', 'SERVICES', 'HONORARIOS', 'ARRENDAMIENTOS', 'FOOD_BEVERAGES', 'OTHER'])
-  saleConcept?: 'GOODS' | 'SERVICES' | 'HONORARIOS' | 'ARRENDAMIENTOS' | 'FOOD_BEVERAGES' | 'OTHER';
+  @IsIn([
+    'GOODS',
+    'SERVICES',
+    'HONORARIOS',
+    'ARRENDAMIENTOS',
+    'FOOD_BEVERAGES',
+    'OTHER',
+  ])
+  saleConcept?:
+    | 'GOODS'
+    | 'SERVICES'
+    | 'HONORARIOS'
+    | 'ARRENDAMIENTOS'
+    | 'FOOD_BEVERAGES'
+    | 'OTHER';
 }
 
 export class CreateOrderDto {

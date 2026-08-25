@@ -11,6 +11,7 @@ import {
   type PushStatusResponse,
 } from "@/src/lib/push/api";
 import { getToken } from "@/src/lib/auth";
+import { generateCreationId } from "@/src/lib/itemHelpers";
 
 export type PushState =
   "unsupported" | "default" | "granted" | "denied" | "registered" | "error";
@@ -146,7 +147,7 @@ function deviceIdForUser(userId: string) {
   const key = `push-device-id:v1:${userId}`;
   const existing = localStorage.getItem(key);
   if (existing) return existing;
-  const created = crypto.randomUUID();
+  const created = generateCreationId();
   localStorage.setItem(key, created);
   return created;
 }

@@ -1,4 +1,3 @@
-
 import {
   BadRequestException,
   ConflictException,
@@ -96,10 +95,13 @@ export class SalesService {
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
     private taxService: TaxService,
-    @Optional() private featureFlags: FeatureFlagsService = {
+    @Optional()
+    private featureFlags: FeatureFlagsService = {
+      simpleRegimeSalesEnabled: true,
+      simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
-  ) { }
+  ) {}
 
   private async runSerializableTransaction<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -128,7 +130,7 @@ export class SalesService {
     businessId: string,
     buyerFiscalContext?: { buyerIsRegimenSimple?: boolean } | null,
   ) {
-    if (this.featureFlags.simpleRegimeEnabled) return;
+    if (this.featureFlags.simpleRegimeSalesEnabled) return;
     if (buyerFiscalContext?.buyerIsRegimenSimple === true) {
       throw new SimpleRegimeNotAvailableException();
     }
@@ -137,7 +139,11 @@ export class SalesService {
       where: { businessId },
       include: { responsibilities: { include: { responsibility: true } } },
     });
-    if (profile?.responsibilities.some((item) => item.responsibility.code === '47')) {
+    if (
+      profile?.responsibilities.some(
+        (item) => item.responsibility.code === '47',
+      )
+    ) {
       throw new SimpleRegimeNotAvailableException();
     }
   }
@@ -174,7 +180,9 @@ export class SalesService {
     },
   } satisfies Prisma.OrderItemInclude;
 
-  private parseExcludedOptionalIngredientIdsForResponse(value: unknown): string[] {
+  private parseExcludedOptionalIngredientIdsForResponse(
+    value: unknown,
+  ): string[] {
     if (!Array.isArray(value)) return [];
     return value.filter((id): id is string => typeof id === 'string');
   }
@@ -182,13 +190,19 @@ export class SalesService {
   private normalizeExcludedOptionalIngredientIds(value: unknown): string[] {
     if (value === null || value === undefined) return [];
     if (!Array.isArray(value)) {
-      throw new BadRequestException('excludedOptionalIngredientIds must be an array');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must be an array',
+      );
     }
     if (!value.every((id) => typeof id === 'string')) {
-      throw new BadRequestException('excludedOptionalIngredientIds must contain only strings');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds must contain only strings',
+      );
     }
     if (new Set(value).size !== value.length) {
-      throw new BadRequestException('excludedOptionalIngredientIds contains duplicates');
+      throw new BadRequestException(
+        'excludedOptionalIngredientIds contains duplicates',
+      );
     }
     return value;
   }
@@ -254,7 +268,9 @@ export class SalesService {
         order.fiscalContext?.buyerDocumentNumber ??
         null,
       buyerEmail:
-        snapshotBuyerFiscal.buyerEmail ?? order.fiscalContext?.buyerEmail ?? null,
+        snapshotBuyerFiscal.buyerEmail ??
+        order.fiscalContext?.buyerEmail ??
+        null,
       buyerIsIvaResponsable:
         snapshotBuyerFiscal.buyerIsIvaResponsable ??
         order.fiscalContext?.buyerIsIvaResponsable ??
@@ -286,7 +302,9 @@ export class SalesService {
         order.fiscalContext?.fiscalMunicipalityCode ??
         null,
       saleConcept:
-        snapshotBuyerFiscal.saleConcept ?? order.fiscalContext?.saleConcept ?? null,
+        snapshotBuyerFiscal.saleConcept ??
+        order.fiscalContext?.saleConcept ??
+        null,
       reteIcaRateOverride:
         snapshotBuyerFiscal.reteIcaRateOverride ??
         snapshotBuyerFiscal.icaRateOverride ??
@@ -307,14 +325,30 @@ export class SalesService {
     buyerFiscalContext: any,
     cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
     preparedPreview?: any,
-    onStage?: (stage: 'fiscal-context' | 'tax-lines' | 'snapshot', durationMs: number) => void,
+    onStage?: (
+      stage: 'fiscal-context' | 'tax-lines' | 'snapshot',
+      durationMs: number,
+    ) => void,
   ) {
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (!buyerFiscalContext || cartItems.length === 0) return;
 
-    const preview = preparedPreview ?? await this.calculateOrderTaxPreview(businessId, buyerFiscalContext, cartItems, tx);
+    const preview =
+      preparedPreview ??
+      (await this.calculateOrderTaxPreview(
+        businessId,
+        buyerFiscalContext,
+        cartItems,
+        tx,
+      ));
 
-    await this.taxService.freezeTaxCalculation(tx, orderId, preview, buyerFiscalContext, onStage);
+    await this.taxService.freezeTaxCalculation(
+      tx,
+      orderId,
+      preview,
+      buyerFiscalContext,
+      onStage,
+    );
   }
 
   private async calculateOrderTaxPreview(
@@ -323,27 +357,33 @@ export class SalesService {
     cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
     tx?: Prisma.TransactionClient,
   ) {
-    return this.taxService.calculateTaxPreview(businessId, {
-      buyerType: buyerFiscalContext.buyerType,
-      buyerName: buyerFiscalContext.buyerName,
-      buyerDocumentType: buyerFiscalContext.buyerDocumentType,
-      buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
-      buyerEmail: buyerFiscalContext.buyerEmail,
-      buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
-      buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
-      buyerIsGranContribuyente:
-        buyerFiscalContext.buyerIsGranContribuyente || false,
-      buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
-      buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-      buyerRequiresElectronicInvoice:
-        buyerFiscalContext.buyerRequiresElectronicInvoice || false,
-      fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
-      saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
-      reteIcaRateOverride:
-        buyerFiscalContext.reteIcaRateOverride ??
-        buyerFiscalContext.icaRateOverride,
-      cartItems,
-    }, tx);
+    return this.taxService.calculateTaxPreview(
+      businessId,
+      {
+        buyerType: buyerFiscalContext.buyerType,
+        buyerName: buyerFiscalContext.buyerName,
+        buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+        buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+        buyerEmail: buyerFiscalContext.buyerEmail,
+        buyerIsIvaResponsable:
+          buyerFiscalContext.buyerIsIvaResponsable || false,
+        buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+        buyerIsGranContribuyente:
+          buyerFiscalContext.buyerIsGranContribuyente || false,
+        buyerIsAutorretenedor:
+          buyerFiscalContext.buyerIsAutorretenedor || false,
+        buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
+        buyerRequiresElectronicInvoice:
+          buyerFiscalContext.buyerRequiresElectronicInvoice || false,
+        fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+        saleConcept: buyerFiscalContext.saleConcept || 'GOODS',
+        reteIcaRateOverride:
+          buyerFiscalContext.reteIcaRateOverride ??
+          buyerFiscalContext.icaRateOverride,
+        cartItems,
+      },
+      tx,
+    );
   }
 
   private assertBuyerFiscalContextAllowed(buyerFiscalContext: any) {
@@ -384,11 +424,17 @@ export class SalesService {
     if (!inputs.length) {
       throw new BadRequestException('Order must contain at least one item');
     }
-    if (inputs.some((input) => !Number.isInteger(input.quantity) || input.quantity <= 0)) {
+    if (
+      inputs.some(
+        (input) => !Number.isInteger(input.quantity) || input.quantity <= 0,
+      )
+    ) {
       throw new BadRequestException('Item quantity must be a positive integer');
     }
 
-    const uniqueItemIds = Array.from(new Set(inputs.map((input) => input.itemId)));
+    const uniqueItemIds = Array.from(
+      new Set(inputs.map((input) => input.itemId)),
+    );
     const dbItems = await this.prisma.item.findMany({
       where: {
         businessId,
@@ -417,7 +463,7 @@ export class SalesService {
     const itemById = new Map(dbItems.map((item) => [item.id, item]));
     const resolved = await Promise.all(
       inputs.map(async (input) => {
-        const item = itemById.get(input.itemId)!;
+        const item = itemById.get(input.itemId);
         const excludedIds = item.optionGroups.length
           ? []
           : this.normalizeExcludedOptionalIngredientIds(
@@ -449,7 +495,11 @@ export class SalesService {
         const optionsTotal = resolvedOptions.optionsTotal;
         let unitPrice: Prisma.Decimal;
 
-        if (options?.isManual && input.unitPrice !== undefined && input.unitPrice !== null) {
+        if (
+          options?.isManual &&
+          input.unitPrice !== undefined &&
+          input.unitPrice !== null
+        ) {
           const parsedUnitPrice = new Prisma.Decimal(input.unitPrice);
           if (parsedUnitPrice.isNaN() || !parsedUnitPrice.isFinite()) {
             throw new BadRequestException('Invalid unitPrice');
@@ -514,7 +564,10 @@ export class SalesService {
     return {
       itemType: resolved[0].item.type,
       lines,
-      total: resolved.reduce((sum, { data }) => sum + Number(data.lineTotal), 0),
+      total: resolved.reduce(
+        (sum, { data }) => sum + Number(data.lineTotal),
+        0,
+      ),
     };
   }
 
@@ -533,7 +586,7 @@ export class SalesService {
         0,
         0,
         0,
-      )
+      ),
     );
   }
 
@@ -579,7 +632,7 @@ export class SalesService {
         0,
         0,
         0,
-      )
+      ),
     );
     const startMinute = Number(match[4]) * 60 + Number(match[5]);
 
@@ -628,7 +681,9 @@ export class SalesService {
           itemId,
           date,
           status: { not: 'CANCELLED' },
-          ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
+          ...(excludeReservationId
+            ? { id: { not: excludeReservationId } }
+            : {}),
         },
         select: { startMinute: true, endMinute: true },
       }),
@@ -660,7 +715,8 @@ export class SalesService {
         });
 
         const overlapping = reservations.some(
-          (res) => Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
+          (res) =>
+            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
         );
 
         if (!blocked && !overlapping) {
@@ -715,7 +771,10 @@ export class SalesService {
         ...(orderId ? { orderId } : {}),
       });
     };
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, dto.buyerFiscalContext);
+    await this.assertSimpleRegimeAvailableForNewSale(
+      businessId,
+      dto.buyerFiscalContext,
+    );
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
     if (!dto.items.length) {
       throw new BadRequestException('Order must contain at least one item');
@@ -753,14 +812,18 @@ export class SalesService {
         itemId: manualScheduledServiceItem.id,
         scheduledAt: dto.scheduledAt,
         durationMinutes:
-          manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+          manualScheduledServiceItem.durationMinutes ??
+          dto.durationMinutes ??
+          60,
       });
     }
 
     // BIFURCACIÓN SEGÚN TIPO
     if (!isManual && itemType === 'SERVICE') {
       if (dto.items.length !== 1) {
-        throw new BadRequestException('Services with appointment must be registered separately');
+        throw new BadRequestException(
+          'Services with appointment must be registered separately',
+        );
       }
 
       const item = itemsFromDb[0];
@@ -768,7 +831,9 @@ export class SalesService {
         throw new BadRequestException('Selected item is not a service');
       }
       if (!dto.scheduledAt) {
-        throw new BadRequestException('scheduledAt is required for service sales');
+        throw new BadRequestException(
+          'scheduledAt is required for service sales',
+        );
       }
 
       const { dateOnly, startMinute } = this.parseScheduledAt(dto.scheduledAt);
@@ -776,7 +841,6 @@ export class SalesService {
       const endMinute = startMinute + duration;
 
       await this.assertReservationSlotAvailable(
-
         businessId,
         item.id,
         dateOnly,
@@ -806,12 +870,17 @@ export class SalesService {
         sourceType: 'RESERVATION' as const,
         customerName: reservation.customerName,
         customerWhatsapp: reservation.customerWhatsapp,
-        paymentMethod: (reservation.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
+        paymentMethod: (reservation.paymentMethod ?? 'CASH') as
+          | 'CASH'
+          | 'BANK_TRANSFER',
         total: Number(reservation.item.price),
         status: this.mapReservationStatus(reservation.status),
         createdAt: reservation.createdAt,
         origin: reservation.origin as 'MANUAL' | 'PUBLIC_STORE',
-        scheduledAt: this.toScheduledAt(reservation.date, reservation.startMinute),
+        scheduledAt: this.toScheduledAt(
+          reservation.date,
+          reservation.startMinute,
+        ),
         type: 'SERVICIO' as const,
         items: [
           {
@@ -834,70 +903,96 @@ export class SalesService {
       { isManual },
     );
     logTiming('resolve-lines', resolveLinesStartedAt);
-    const fiscalCartItems = dto.buyerFiscalContext ? orderItemsData.map((item: any) => ({ itemId: item.itemId, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice ?? item.price) })) : [];
+    const fiscalCartItems = dto.buyerFiscalContext
+      ? orderItemsData.map((item: any) => ({
+          itemId: item.itemId,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice ?? item.price),
+        }))
+      : [];
     const fiscalPreviewStartedAt = Date.now();
-    const preparedFiscalPreview = dto.buyerFiscalContext ? await this.calculateOrderTaxPreview(businessId, dto.buyerFiscalContext, fiscalCartItems) : undefined;
-    if (dto.buyerFiscalContext) logTiming('fiscal-preview', fiscalPreviewStartedAt);
+    const preparedFiscalPreview = dto.buyerFiscalContext
+      ? await this.calculateOrderTaxPreview(
+          businessId,
+          dto.buyerFiscalContext,
+          fiscalCartItems,
+        )
+      : undefined;
+    if (dto.buyerFiscalContext)
+      logTiming('fiscal-preview', fiscalPreviewStartedAt);
 
     const transactionStartedAt = Date.now();
-    const order = await this.prisma.$transaction(async (tx) => {
-      logTiming('tx.start', Date.now());
-      const orderWriteStartedAt = Date.now();
-      const createdOrder = await tx.order.create({
-      data: {
-        businessId,
-        customerName: dto.origin === 'PUBLIC_STORE'
-          ? (dto.customerName?.trim() || null)
-          : (dto.customerName?.trim() || 'Consumidor final'),
-        customerWhatsapp: dto.customerWhatsapp?.trim() || null,
-        note: dto.note,
-        paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
-        origin: dto.origin ?? 'MANUAL',
-        total,
-        status: 'SENT', // Estado inicial para órdenes manuales
-        items: {
-          create: orderItemsData,
-        },
-      },
-      include: {
-        items: {
-          include: this.orderItemRecipeInclude,
-        },
-      },
-    });
-      logTiming('tx.order', orderWriteStartedAt, createdOrder.id);
-
-      if (manualScheduledServiceItem && dto.scheduledAt) {
-        const mirror = this.buildMirrorReservationData({
-          businessId,
-          orderId: createdOrder.id,
-          itemId: manualScheduledServiceItem.id,
-          customerName: createdOrder.customerName,
-          customerWhatsapp: createdOrder.customerWhatsapp,
-          paymentMethod: createdOrder.paymentMethod as any,
-          scheduledAt: dto.scheduledAt,
-          durationMinutes:
-            manualScheduledServiceItem.durationMinutes ?? dto.durationMinutes ?? 60,
+    const order = await this.prisma.$transaction(
+      async (tx) => {
+        logTiming('tx.start', Date.now());
+        const orderWriteStartedAt = Date.now();
+        const createdOrder = await tx.order.create({
+          data: {
+            businessId,
+            customerName:
+              dto.origin === 'PUBLIC_STORE'
+                ? dto.customerName?.trim() || null
+                : dto.customerName?.trim() || 'Consumidor final',
+            customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+            note: dto.note,
+            paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+            origin: dto.origin ?? 'MANUAL',
+            total,
+            status: 'SENT', // Estado inicial para órdenes manuales
+            items: {
+              create: orderItemsData,
+            },
+          },
+          include: {
+            items: {
+              include: this.orderItemRecipeInclude,
+            },
+          },
         });
+        logTiming('tx.order', orderWriteStartedAt, createdOrder.id);
 
-        await tx.reservation.create({
-          data: mirror.create,
-        });
-      }
+        if (manualScheduledServiceItem && dto.scheduledAt) {
+          const mirror = this.buildMirrorReservationData({
+            businessId,
+            orderId: createdOrder.id,
+            itemId: manualScheduledServiceItem.id,
+            customerName: createdOrder.customerName,
+            customerWhatsapp: createdOrder.customerWhatsapp,
+            paymentMethod: createdOrder.paymentMethod as any,
+            scheduledAt: dto.scheduledAt,
+            durationMinutes:
+              manualScheduledServiceItem.durationMinutes ??
+              dto.durationMinutes ??
+              60,
+          });
 
-      if (dto.buyerFiscalContext) {
-        await this.persistOrderFiscalPreview(
-          tx,
-          businessId,
-          createdOrder.id,
-          dto.buyerFiscalContext,
-          fiscalCartItems, preparedFiscalPreview,
-          (stage, durationMs) => console.log('[SalesService] sales.create.timing', { stage: `sales.create.tx.${stage}`, durationMs, elapsedMs: Date.now() - createStartedAt, orderId: createdOrder.id }),
-        );
-      }
+          await tx.reservation.create({
+            data: mirror.create,
+          });
+        }
 
-      return createdOrder;
-    }, { maxWait: 5000, timeout: 15000 });
+        if (dto.buyerFiscalContext) {
+          await this.persistOrderFiscalPreview(
+            tx,
+            businessId,
+            createdOrder.id,
+            dto.buyerFiscalContext,
+            fiscalCartItems,
+            preparedFiscalPreview,
+            (stage, durationMs) =>
+              console.log('[SalesService] sales.create.timing', {
+                stage: `sales.create.tx.${stage}`,
+                durationMs,
+                elapsedMs: Date.now() - createStartedAt,
+                orderId: createdOrder.id,
+              }),
+          );
+        }
+
+        return createdOrder;
+      },
+      { maxWait: 5000, timeout: 15000 },
+    );
     logTiming('tx.commit', transactionStartedAt, order.id);
     logTiming('total', createStartedAt, order.id);
 
@@ -909,14 +1004,17 @@ export class SalesService {
     };
   }
 
-  async findAll(businessId: string, options?: { includeArchived?: boolean }): Promise<UnifiedSaleDto[]> {
+  async findAll(
+    businessId: string,
+    options?: { includeArchived?: boolean },
+  ): Promise<UnifiedSaleDto[]> {
     const includeArchived = options?.includeArchived ?? false;
     const [orders, reservations] = await Promise.all([
       this.prisma.order.findMany({
-        where: { 
+        where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' }
+          status: { not: 'CANCELLED' },
         },
         include: {
           items: {
@@ -931,10 +1029,10 @@ export class SalesService {
         },
       }),
       this.prisma.reservation.findMany({
-        where: { 
+        where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' }
+          status: { not: 'CANCELLED' },
         },
         include: {
           item: true,
@@ -957,18 +1055,23 @@ export class SalesService {
         .map((order) => order.id),
     );
 
-    console.log(`[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`);
-    if (orders.length > 0) console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
-    if (reservations.length > 0) console.log(`[SalesService] sample reservation[0] origin: ${reservations[0].origin}`);
+    console.log(
+      `[SalesService] findAll found ${orders.length} orders and ${reservations.length} reservations`,
+    );
+    if (orders.length > 0)
+      console.log(`[SalesService] sample order[0] origin: ${orders[0].origin}`);
+    if (reservations.length > 0)
+      console.log(
+        `[SalesService] sample reservation[0] origin: ${reservations[0].origin}`,
+      );
 
     const mappedOrders: UnifiedSaleDto[] = orders.map((o) => {
       const fiscalSummary = o.fiscalContext
         ? {
             subtotal: Number(o.fiscalContext.subtotal),
             iva: Number(
-              o.taxLines.find(
-                (line) => line.taxType === 'IVA' && line.applied,
-              )?.taxAmount ?? 0,
+              o.taxLines.find((line) => line.taxType === 'IVA' && line.applied)
+                ?.taxAmount ?? 0,
             ),
             impoconsumo: Number(
               o.taxLines.find(
@@ -1002,84 +1105,100 @@ export class SalesService {
       const mirrorReservation = mirrorReservations.get(o.id);
 
       return {
-      id: o.id,
-      sourceType: 'ORDER',
-      customerName: o.customerName,
-      customerWhatsapp: o.customerWhatsapp,
-      paymentMethod: ((o as any).paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
-      total: Number(o.total),
-      status: this.mapOrderStatus(o.status),
-      inventoryPostedAt: o.inventoryPostedAt,
-      accountingPostedAt: o.accountingPostedAt,
-      createdAt: o.createdAt,
-      origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
-      scheduledAt: mirrorReservation
-        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
-        : undefined,
-      type: o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
-      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(o, conversions),
-      fiscalSummary,
-      fiscalContext: this.mapFiscalContextForSales(o),
-      taxLines: o.taxLines ? o.taxLines.map((line) => ({
-        taxType: line.taxType,
-        direction: line.direction,
-        baseAmount: Number(line.baseAmount),
-        rate: Number(line.rate),
-        taxAmount: Number(line.taxAmount),
-        accountCode: line.accountCode,
-        applied: line.applied,
-        reason: line.reason,
-      })) : null,
-      items: o.items.map((it) => ({
-        orderItemId: it.id,
-        name: it.itemNameSnapshot,
-        qty: it.quantity,
-        unitPrice: Number(it.unitPrice),
-        price: Number(it.lineTotal),
-        itemId: it.itemId,
-        itemInventoryMode: it.inventoryModeSnapshot ?? it.item?.inventoryMode ?? null,
-        excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
-          it.excludedOptionalIngredientIds,
+        id: o.id,
+        sourceType: 'ORDER',
+        customerName: o.customerName,
+        customerWhatsapp: o.customerWhatsapp,
+        paymentMethod: ((o as any).paymentMethod ?? 'CASH') as
+          | 'CASH'
+          | 'BANK_TRANSFER',
+        total: Number(o.total),
+        status: this.mapOrderStatus(o.status),
+        inventoryPostedAt: o.inventoryPostedAt,
+        accountingPostedAt: o.accountingPostedAt,
+        createdAt: o.createdAt,
+        origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
+        scheduledAt: mirrorReservation
+          ? this.toScheduledAt(
+              mirrorReservation.date,
+              mirrorReservation.startMinute,
+            )
+          : undefined,
+        type:
+          o.items[0]?.itemTypeSnapshot === 'SERVICE' ? 'SERVICIO' : 'PRODUCTO',
+        hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(
+          o,
+          conversions,
         ),
-        options: this.mapOptionsForSales(it),
-        recipe: this.mapRecipeForSales(it.item),
-        durationMin: it.durationMinutesSnapshot ?? null,
-      })),
-    };
+        fiscalSummary,
+        fiscalContext: this.mapFiscalContextForSales(o),
+        taxLines: o.taxLines
+          ? o.taxLines.map((line) => ({
+              taxType: line.taxType,
+              direction: line.direction,
+              baseAmount: Number(line.baseAmount),
+              rate: Number(line.rate),
+              taxAmount: Number(line.taxAmount),
+              accountCode: line.accountCode,
+              applied: line.applied,
+              reason: line.reason,
+            }))
+          : null,
+        items: o.items.map((it) => ({
+          orderItemId: it.id,
+          name: it.itemNameSnapshot,
+          qty: it.quantity,
+          unitPrice: Number(it.unitPrice),
+          price: Number(it.lineTotal),
+          itemId: it.itemId,
+          itemInventoryMode:
+            it.inventoryModeSnapshot ?? it.item?.inventoryMode ?? null,
+          excludedOptionalIngredientIds:
+            this.parseExcludedOptionalIngredientIdsForResponse(
+              it.excludedOptionalIngredientIds,
+            ),
+          options: this.mapOptionsForSales(it),
+          recipe: this.mapRecipeForSales(it.item),
+          durationMin: it.durationMinutesSnapshot ?? null,
+        })),
+      };
     });
 
     const mappedReservations: UnifiedSaleDto[] = reservations
       .filter((r) => !orderIds.has(r.id))
       .map((r) => {
-      const item = (r as any).item;
-      const price = Number(item?.price ?? 0);
+        const item = (r as any).item;
+        const price = Number(item?.price ?? 0);
 
-      return {
-        id: r.id,
-        sourceType: 'RESERVATION',
-        customerName: r.customerName ?? null,
-        customerWhatsapp: r.customerWhatsapp ?? null,
-        paymentMethod: (r.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER',
-        total: Number.isFinite(price) ? price : 0,
-        status: this.mapReservationStatus(r.status),
-        inventoryPostedAt: r.inventoryPostedAt ?? null,
-        accountingPostedAt: r.status === 'CONFIRMED' ? (r.updatedAt ?? null) : null,
-        createdAt: r.createdAt,
-        origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
-        scheduledAt: this.toScheduledAt(r.date, r.startMinute),
-        type: 'SERVICIO',
-        items: [
-          {
-            name: item?.name ?? 'Servicio no disponible',
-            qty: 1,
-            unitPrice: Number.isFinite(price) ? price : 0,
-            price: Number.isFinite(price) ? price : 0,
-            itemId: r.itemId,
-            durationMin: item?.durationMinutes ?? null,
-          },
-        ],
-      };
-    });
+        return {
+          id: r.id,
+          sourceType: 'RESERVATION',
+          customerName: r.customerName ?? null,
+          customerWhatsapp: r.customerWhatsapp ?? null,
+          paymentMethod: (r.paymentMethod ?? 'CASH') as
+            | 'CASH'
+            | 'BANK_TRANSFER',
+          total: Number.isFinite(price) ? price : 0,
+          status: this.mapReservationStatus(r.status),
+          inventoryPostedAt: r.inventoryPostedAt ?? null,
+          accountingPostedAt:
+            r.status === 'CONFIRMED' ? (r.updatedAt ?? null) : null,
+          createdAt: r.createdAt,
+          origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
+          scheduledAt: this.toScheduledAt(r.date, r.startMinute),
+          type: 'SERVICIO',
+          items: [
+            {
+              name: item?.name ?? 'Servicio no disponible',
+              qty: 1,
+              unitPrice: Number.isFinite(price) ? price : 0,
+              price: Number.isFinite(price) ? price : 0,
+              itemId: r.itemId,
+              durationMin: item?.durationMinutes ?? null,
+            },
+          ],
+        };
+      });
 
     return [...mappedOrders, ...mappedReservations].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -1106,10 +1225,12 @@ export class SalesService {
             continue;
           }
           const direct = conversions.some(
-            (c) => c.fromUnitId === unitId && c.toUnitId === ingredient.stockUnitId,
+            (c) =>
+              c.fromUnitId === unitId && c.toUnitId === ingredient.stockUnitId,
           );
           const reverse = conversions.some(
-            (c) => c.fromUnitId === ingredient.stockUnitId && c.toUnitId === unitId,
+            (c) =>
+              c.fromUnitId === ingredient.stockUnitId && c.toUnitId === unitId,
           );
           if (!direct && !reverse) {
             return true;
@@ -1139,7 +1260,9 @@ export class SalesService {
         status: { not: 'CANCELLED' },
       },
     });
-    return new Map(reservations.map((reservation) => [reservation.id, reservation]));
+    return new Map(
+      reservations.map((reservation) => [reservation.id, reservation]),
+    );
   }
 
   private buildMirrorReservationData(input: {
@@ -1231,7 +1354,10 @@ export class SalesService {
       sourceType = buyerFiscalContext as UnifiedSourceType;
       buyerFiscalContext = undefined;
     }
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, buyerFiscalContext);
+    await this.assertSimpleRegimeAvailableForNewSale(
+      businessId,
+      buyerFiscalContext,
+    );
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
     if (sourceType === 'RESERVATION') {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
@@ -1316,28 +1442,41 @@ export class SalesService {
           unitPrice: Number(it.unitPrice ?? it.price),
         }));
 
-        const preview = await this.taxService.calculateTaxPreview(businessId, {
-          buyerType: fiscalContextToUse.buyerType,
-          buyerName: fiscalContextToUse.buyerName,
-          buyerDocumentType: fiscalContextToUse.buyerDocumentType,
-          buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
-          buyerEmail: fiscalContextToUse.buyerEmail,
-          buyerIsIvaResponsable: fiscalContextToUse.buyerIsIvaResponsable || false,
-          buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
-          buyerIsGranContribuyente: fiscalContextToUse.buyerIsGranContribuyente || false,
-          buyerIsAutorretenedor: fiscalContextToUse.buyerIsAutorretenedor || false,
-          buyerIsRegimenSimple: fiscalContextToUse.buyerIsRegimenSimple || false,
-          buyerRequiresElectronicInvoice:
-            fiscalContextToUse.buyerRequiresElectronicInvoice || false,
-          fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
-          saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
-          reteIcaRateOverride:
-            fiscalContextToUse.reteIcaRateOverride ??
-            fiscalContextToUse.icaRateOverride,
-          cartItems,
-        }, tx);
+        const preview = await this.taxService.calculateTaxPreview(
+          businessId,
+          {
+            buyerType: fiscalContextToUse.buyerType,
+            buyerName: fiscalContextToUse.buyerName,
+            buyerDocumentType: fiscalContextToUse.buyerDocumentType,
+            buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
+            buyerEmail: fiscalContextToUse.buyerEmail,
+            buyerIsIvaResponsable:
+              fiscalContextToUse.buyerIsIvaResponsable || false,
+            buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
+            buyerIsGranContribuyente:
+              fiscalContextToUse.buyerIsGranContribuyente || false,
+            buyerIsAutorretenedor:
+              fiscalContextToUse.buyerIsAutorretenedor || false,
+            buyerIsRegimenSimple:
+              fiscalContextToUse.buyerIsRegimenSimple || false,
+            buyerRequiresElectronicInvoice:
+              fiscalContextToUse.buyerRequiresElectronicInvoice || false,
+            fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
+            saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
+            reteIcaRateOverride:
+              fiscalContextToUse.reteIcaRateOverride ??
+              fiscalContextToUse.icaRateOverride,
+            cartItems,
+          },
+          tx,
+        );
 
-        await this.taxService.freezeTaxCalculation(tx, id, preview, fiscalContextToUse);
+        await this.taxService.freezeTaxCalculation(
+          tx,
+          id,
+          preview,
+          fiscalContextToUse,
+        );
       }
 
       if (
@@ -1396,99 +1535,118 @@ export class SalesService {
     });
   }
 
-  private async confirmReservation(businessId: string, id: string, buyerFiscalContext?: any) {
-    return this.prisma.$transaction(async (tx) => {
-      const res = await tx.reservation.findFirst({
-        where: { id, businessId },
-        include: { item: true },
-      });
+  private async confirmReservation(
+    businessId: string,
+    id: string,
+    buyerFiscalContext?: any,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const res = await tx.reservation.findFirst({
+          where: { id, businessId },
+          include: { item: true },
+        });
 
-      if (!res) throw new NotFoundException('Reservation not found');
-      if (res.status === 'CANCELLED')
-        throw new BadRequestException('Cancelled reservations cannot be confirmed');
-
-      const existingMovements = await tx.accountingMovement.findMany({
-        where: {
-          businessId,
-          originType: 'ORDER',
-          originId: id,
-        },
-      });
-
-      const updated =
-        res.status === 'CONFIRMED'
-          ? res
-          : await tx.reservation.update({
-              where: { id },
-              data: { status: 'CONFIRMED' },
-              include: { item: true },
-            });
-
-      console.log(`[SalesService] confirmReservation res origin: ${res.origin}`);
-
-      if (buyerFiscalContext) {
-        this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
-        const cartItems = [
-          {
-            itemId: res.itemId,
-            quantity: 1,
-          },
-        ];
-
-        const preview = await this.taxService.calculateTaxPreview(businessId, {
-          buyerType: buyerFiscalContext.buyerType,
-          buyerName: buyerFiscalContext.buyerName,
-          buyerDocumentType: buyerFiscalContext.buyerDocumentType,
-          buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
-          buyerEmail: buyerFiscalContext.buyerEmail,
-          buyerIsIvaResponsable: buyerFiscalContext.buyerIsIvaResponsable || false,
-          buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
-          buyerIsGranContribuyente: buyerFiscalContext.buyerIsGranContribuyente || false,
-          buyerIsAutorretenedor: buyerFiscalContext.buyerIsAutorretenedor || false,
-          buyerIsRegimenSimple: buyerFiscalContext.buyerIsRegimenSimple || false,
-          buyerRequiresElectronicInvoice:
-            buyerFiscalContext.buyerRequiresElectronicInvoice || false,
-          fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
-          saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
-          reteIcaRateOverride:
-            buyerFiscalContext.reteIcaRateOverride ??
-            buyerFiscalContext.icaRateOverride,
-          cartItems,
-        }, tx);
-
-        // Omitir congelamiento fiscal en reservas por ahora
-        // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
-      }
-
-      const virtualOrder = this.mapReservationToVirtualOrder(updated);
-      const inventoryMovements = res.inventoryPostedAt
-        ? []
-        : await this.inventoryService.applyInventoryConsumptionForReservation(
-            tx,
-            businessId,
-            updated,
+        if (!res) throw new NotFoundException('Reservation not found');
+        if (res.status === 'CANCELLED')
+          throw new BadRequestException(
+            'Cancelled reservations cannot be confirmed',
           );
 
-      const shouldPostAccounting = existingMovements.length === 0;
-      const movements = shouldPostAccounting
-        ? await this.accountingService.postOrderMovements(
-            tx,
+        const existingMovements = await tx.accountingMovement.findMany({
+          where: {
             businessId,
-            virtualOrder as any,
-          )
-        : existingMovements;
+            originType: 'ORDER',
+            originId: id,
+          },
+        });
 
-      return {
-        order: virtualOrder, // Frontend expects something that looks like an order/sale
-        accountingCreated: shouldPostAccounting,
-        alreadyPosted: !shouldPostAccounting && res.inventoryPostedAt != null,
-        movements,
-        inventoryMovements,
-        isReservation: true,
-      };
-    }, {
-      timeout: 20000, // P2028 fix: accounting posting for reservation confirmation needs extra time
-    });
+        const updated =
+          res.status === 'CONFIRMED'
+            ? res
+            : await tx.reservation.update({
+                where: { id },
+                data: { status: 'CONFIRMED' },
+                include: { item: true },
+              });
+
+        console.log(
+          `[SalesService] confirmReservation res origin: ${res.origin}`,
+        );
+
+        if (buyerFiscalContext) {
+          this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
+          const cartItems = [
+            {
+              itemId: res.itemId,
+              quantity: 1,
+            },
+          ];
+
+          const preview = await this.taxService.calculateTaxPreview(
+            businessId,
+            {
+              buyerType: buyerFiscalContext.buyerType,
+              buyerName: buyerFiscalContext.buyerName,
+              buyerDocumentType: buyerFiscalContext.buyerDocumentType,
+              buyerDocumentNumber: buyerFiscalContext.buyerDocumentNumber,
+              buyerEmail: buyerFiscalContext.buyerEmail,
+              buyerIsIvaResponsable:
+                buyerFiscalContext.buyerIsIvaResponsable || false,
+              buyerIsRetenedor: buyerFiscalContext.buyerIsRetenedor || false,
+              buyerIsGranContribuyente:
+                buyerFiscalContext.buyerIsGranContribuyente || false,
+              buyerIsAutorretenedor:
+                buyerFiscalContext.buyerIsAutorretenedor || false,
+              buyerIsRegimenSimple:
+                buyerFiscalContext.buyerIsRegimenSimple || false,
+              buyerRequiresElectronicInvoice:
+                buyerFiscalContext.buyerRequiresElectronicInvoice || false,
+              fiscalMunicipalityCode: buyerFiscalContext.fiscalMunicipalityCode,
+              saleConcept: buyerFiscalContext.saleConcept || 'SERVICES',
+              reteIcaRateOverride:
+                buyerFiscalContext.reteIcaRateOverride ??
+                buyerFiscalContext.icaRateOverride,
+              cartItems,
+            },
+            tx,
+          );
+
+          // Omitir congelamiento fiscal en reservas por ahora
+          // await this.taxService.freezeTaxCalculation(tx, id, preview, buyerFiscalContext);
+        }
+
+        const virtualOrder = this.mapReservationToVirtualOrder(updated);
+        const inventoryMovements = res.inventoryPostedAt
+          ? []
+          : await this.inventoryService.applyInventoryConsumptionForReservation(
+              tx,
+              businessId,
+              updated,
+            );
+
+        const shouldPostAccounting = existingMovements.length === 0;
+        const movements = shouldPostAccounting
+          ? await this.accountingService.postOrderMovements(
+              tx,
+              businessId,
+              virtualOrder as any,
+            )
+          : existingMovements;
+
+        return {
+          order: virtualOrder, // Frontend expects something that looks like an order/sale
+          accountingCreated: shouldPostAccounting,
+          alreadyPosted: !shouldPostAccounting && res.inventoryPostedAt != null,
+          movements,
+          inventoryMovements,
+          isReservation: true,
+        };
+      },
+      {
+        timeout: 20000, // P2028 fix: accounting posting for reservation confirmation needs extra time
+      },
+    );
   }
 
   async getReservationAvailability(
@@ -1521,11 +1679,14 @@ export class SalesService {
       throw new NotFoundException('Reservation not found');
     }
 
-    const itemId = reservation?.itemId ?? legacyServiceLine!.itemId;
+    const itemId = reservation?.itemId ?? legacyServiceLine.itemId;
     const duration =
       reservation?.item.durationMinutes ??
       legacyServiceLine?.durationMinutesSnapshot ??
-      Math.max(1, (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0));
+      Math.max(
+        1,
+        (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0),
+      );
     const excludeReservationId = reservation?.id ?? reservationId;
 
     if (query.date) {
@@ -1546,8 +1707,10 @@ export class SalesService {
     const { year, monthIndex } = this.parseMonth(query.month);
     const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
     const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-    
-    const nowInBusiness = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+
+    const nowInBusiness = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
+    );
     const today = new Date(
       Date.UTC(
         nowInBusiness.getFullYear(),
@@ -1557,7 +1720,7 @@ export class SalesService {
         0,
         0,
         0,
-      )
+      ),
     );
 
     const cursor = new Date(firstDay);
@@ -1581,7 +1744,6 @@ export class SalesService {
           availableDates.push(this.formatDateOnly(cursor));
         }
       }
-
 
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
@@ -1688,7 +1850,9 @@ export class SalesService {
 
     for (const ingredientId of excludedIds) {
       if (mandatoryIds.has(ingredientId)) {
-        throw new BadRequestException('Mandatory ingredients cannot be excluded');
+        throw new BadRequestException(
+          'Mandatory ingredients cannot be excluded',
+        );
       }
       if (!optionalIds.has(ingredientId)) {
         throw new BadRequestException(
@@ -1709,9 +1873,10 @@ export class SalesService {
     return {
       id: updated.id,
       itemId: updated.itemId,
-      excludedOptionalIngredientIds: this.parseExcludedOptionalIngredientIdsForResponse(
-        updated.excludedOptionalIngredientIds,
-      ),
+      excludedOptionalIngredientIds:
+        this.parseExcludedOptionalIngredientIdsForResponse(
+          updated.excludedOptionalIngredientIds,
+        ),
       recipe: this.mapRecipeForSales(updated.item),
     };
   }
@@ -1720,7 +1885,9 @@ export class SalesService {
     await this.assertSimpleRegimeAvailableForNewSale(businessId);
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
-    const resolved = await this.resolveOrderLines(businessId, [dto], { isManual: order.origin === 'MANUAL' });
+    const resolved = await this.resolveOrderLines(businessId, [dto], {
+      isManual: order.origin === 'MANUAL',
+    });
     const item = await this.prisma.item.findFirstOrThrow({
       where: { id: dto.itemId, businessId },
     });
@@ -1904,21 +2071,29 @@ export class SalesService {
     return {
       ...order,
       scheduledAt: mirrorReservation
-        ? this.toScheduledAt(mirrorReservation.date, mirrorReservation.startMinute)
+        ? this.toScheduledAt(
+            mirrorReservation.date,
+            mirrorReservation.startMinute,
+          )
         : undefined,
       fiscalSummary,
       fiscalContext: this.mapFiscalContextForSales(order),
-      taxLines: order.taxLines ? order.taxLines.map((line) => ({
-        taxType: line.taxType,
-        direction: line.direction,
-        baseAmount: Number(line.baseAmount),
-        rate: Number(line.rate),
-        taxAmount: Number(line.taxAmount),
-        accountCode: line.accountCode,
-        applied: line.applied,
-        reason: line.reason,
-      })) : null,
-      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(order, conversions),
+      taxLines: order.taxLines
+        ? order.taxLines.map((line) => ({
+            taxType: line.taxType,
+            direction: line.direction,
+            baseAmount: Number(line.baseAmount),
+            rate: Number(line.rate),
+            taxAmount: Number(line.taxAmount),
+            accountCode: line.accountCode,
+            applied: line.applied,
+            reason: line.reason,
+          }))
+        : null,
+      hasInvalidOptionSnapshot: this.checkInvalidOptionSnapshot(
+        order,
+        conversions,
+      ),
     };
   }
 
@@ -1936,7 +2111,11 @@ export class SalesService {
         if (!res) throw new NotFoundException('Reservation not found');
 
         if (res.inventoryPostedAt) {
-          await this.inventoryService.reverseInventoryConsumptionForReservation(tx, businessId, res.id);
+          await this.inventoryService.reverseInventoryConsumptionForReservation(
+            tx,
+            businessId,
+            res.id,
+          );
         }
 
         return tx.reservation.update({
@@ -1982,67 +2161,75 @@ export class SalesService {
     });
   }
 
-  async reverseConfirmedOrder(businessId: string, id: string, dto: ReverseOrderDto) {
+  async reverseConfirmedOrder(
+    businessId: string,
+    id: string,
+    dto: ReverseOrderDto,
+  ) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const order = await tx.order.findFirst({
+          where: { id, businessId },
+          include: {
+            items: { include: { item: true } },
+          },
+        });
 
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findFirst({
-        where: { id, businessId },
-        include: {
-          items: { include: { item: true } },
-        },
-      });
+        if (!order) throw new NotFoundException('Order not found');
 
-      if (!order) throw new NotFoundException('Order not found');
+        const existingReturn = await tx.inventoryMovement.findMany({
+          where: {
+            businessId,
+            orderId: id,
+            type: 'SALE_RETURN',
+          },
+          take: 1,
+          select: { id: true },
+        });
 
-      const existingReturn = await tx.inventoryMovement.findMany({
-        where: {
-          businessId,
-          orderId: id,
-          type: 'SALE_RETURN',
-        },
-        take: 1,
-        select: { id: true },
-      });
+        if (existingReturn.length) {
+          throw new ConflictException('Order inventory already reversed');
+        }
 
-      if (existingReturn.length) {
-        throw new ConflictException('Order inventory already reversed');
-      }
+        if (order.status === 'CANCELLED') {
+          throw new BadRequestException('Cancelled orders cannot be reversed');
+        }
+        if (order.status !== 'COMPLETED') {
+          throw new BadRequestException(
+            'Only completed orders can be reversed',
+          );
+        }
+        if (!order.inventoryPostedAt) {
+          throw new BadRequestException('Order inventory was not posted');
+        }
 
-      if (order.status === 'CANCELLED') {
-        throw new BadRequestException('Cancelled orders cannot be reversed');
-      }
-      if (order.status !== 'COMPLETED') {
-        throw new BadRequestException('Only completed orders can be reversed');
-      }
-      if (!order.inventoryPostedAt) {
-        throw new BadRequestException('Order inventory was not posted');
-      }
+        const reversalMovements =
+          await this.inventoryService.reverseInventoryConsumptionForOrder(
+            tx,
+            businessId,
+            { orderId: id, reason: dto.reason },
+          );
 
-      const reversalMovements =
-        await this.inventoryService.reverseInventoryConsumptionForOrder(
-          tx,
-          businessId,
-          { orderId: id, reason: dto.reason },
-        );
+        const updatedOrder = await tx.order.update({
+          where: { id },
+          data: {
+            status: 'CANCELLED',
+          },
+          include: {
+            items: { include: { item: true } },
+          },
+        });
 
-      const updatedOrder = await tx.order.update({
-        where: { id },
-        data: {
-          status: 'CANCELLED',
-        },
-        include: {
-          items: { include: { item: true } },
-        },
-      });
-
-      return {
-        order: updatedOrder,
-        inventoryReversed: reversalMovements.length > 0,
-        reversalMovements,
-      };
-    }, {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    });
+        return {
+          order: updatedOrder,
+          inventoryReversed: reversalMovements.length > 0,
+          reversalMovements,
+        };
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
   }
 
   async remove(
@@ -2107,7 +2294,10 @@ export class SalesService {
     dto: UpdateOrderDto,
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
-    await this.assertSimpleRegimeAvailableForNewSale(businessId, dto.buyerFiscalContext);
+    await this.assertSimpleRegimeAvailableForNewSale(
+      businessId,
+      dto.buyerFiscalContext,
+    );
     this.assertBuyerFiscalContextAllowed(dto.buyerFiscalContext);
     if (sourceType === 'RESERVATION') {
       return this.updateReservation(businessId, orderId, dto);
@@ -2116,7 +2306,9 @@ export class SalesService {
     const order = await this.getOrderOrThrow(businessId, orderId);
     this.assertOrderEditable(order);
     const resolvedItems = dto.items
-      ? await this.resolveOrderLines(businessId, dto.items, { isManual: order.origin === 'MANUAL' })
+      ? await this.resolveOrderLines(businessId, dto.items, {
+          isManual: order.origin === 'MANUAL',
+        })
       : null;
     const finalLines = resolvedItems?.lines ?? order.items;
     const finalSingleManualService =
@@ -2136,7 +2328,8 @@ export class SalesService {
         itemId: finalServiceItemId,
         scheduledAt: dto.scheduledAt,
         durationMinutes: finalServiceDuration,
-        excludeReservationId: this.getMirrorReservationIdForManualServiceOrder(orderId),
+        excludeReservationId:
+          this.getMirrorReservationIdForManualServiceOrder(orderId),
       });
     }
 
@@ -2144,9 +2337,14 @@ export class SalesService {
       await tx.order.update({
         where: { id: orderId },
         data: {
-          customerName: order.origin === 'PUBLIC_STORE'
-            ? (dto.customerName !== undefined ? (dto.customerName?.trim() || null) : undefined)
-            : (dto.customerName !== undefined ? (dto.customerName?.trim() || 'Consumidor final') : undefined),
+          customerName:
+            order.origin === 'PUBLIC_STORE'
+              ? dto.customerName !== undefined
+                ? dto.customerName?.trim() || null
+                : undefined
+              : dto.customerName !== undefined
+                ? dto.customerName?.trim() || 'Consumidor final'
+                : undefined,
           customerWhatsapp: dto.customerWhatsapp,
           note: dto.note,
           paymentMethod: dto.paymentMethod as any,
@@ -2197,7 +2395,11 @@ export class SalesService {
           create: mirror.create,
           update: mirror.update,
         });
-      } else if (order.origin === 'MANUAL' && resolvedItems && !finalSingleManualService) {
+      } else if (
+        order.origin === 'MANUAL' &&
+        resolvedItems &&
+        !finalSingleManualService
+      ) {
         await tx.reservation.updateMany({
           where: {
             id: this.getMirrorReservationIdForManualServiceOrder(orderId),
@@ -2258,7 +2460,9 @@ export class SalesService {
     }
 
     if (reservation.status !== 'PENDING') {
-      throw new BadRequestException('Reservation not editable in current status');
+      throw new BadRequestException(
+        'Reservation not editable in current status',
+      );
     }
 
     const data: any = {
@@ -2283,7 +2487,9 @@ export class SalesService {
       );
 
       if (!availableSlots.includes(this.formatTime(startMinute))) {
-        throw new BadRequestException('Selected time is outside service availability');
+        throw new BadRequestException(
+          'Selected time is outside service availability',
+        );
       }
 
       data.date = dateOnly;
@@ -2321,20 +2527,25 @@ export class SalesService {
   }
 
   private ensureSingleItemType(
-    items: Array<{ type?: 'PRODUCT' | 'SERVICE'; itemTypeSnapshot?: 'PRODUCT' | 'SERVICE' }>,
+    items: Array<{
+      type?: 'PRODUCT' | 'SERVICE';
+      itemTypeSnapshot?: 'PRODUCT' | 'SERVICE';
+    }>,
   ) {
     const types = new Set(
       items.map((i) => i.type ?? i.itemTypeSnapshot).filter(Boolean),
     );
 
     if (types.size === 0) {
-      throw new BadRequestException('Order must contain at least one item type');
+      throw new BadRequestException(
+        'Order must contain at least one item type',
+      );
     }
 
     if (types.size > 1) {
       throw new BadRequestException('Order cannot mix products and services');
     }
 
-    return Array.from(types)[0] as 'PRODUCT' | 'SERVICE';
+    return Array.from(types)[0];
   }
 }
