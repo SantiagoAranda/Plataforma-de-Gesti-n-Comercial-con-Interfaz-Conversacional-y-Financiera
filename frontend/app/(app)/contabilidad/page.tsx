@@ -273,6 +273,14 @@ export default function ContabilidadPage() {
 
   useEffect(() => {
     refresh();
+
+    const handleCreated = () => {
+      refresh();
+    };
+    window.addEventListener("accounting:movement-created", handleCreated);
+    return () => {
+      window.removeEventListener("accounting:movement-created", handleCreated);
+    };
   }, [refresh]);
 
   const resetForm = useCallback(() => {
@@ -524,6 +532,7 @@ export default function ContabilidadPage() {
           [
             movement.pucCode,
             movement.pucName,
+            movement.detail,
             extraFields.accountCode,
             extraFields.accountName,
             extraFields.account?.code,

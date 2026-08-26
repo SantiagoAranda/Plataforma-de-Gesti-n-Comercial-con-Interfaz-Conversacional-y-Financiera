@@ -1280,8 +1280,16 @@ export class PayrollService {
     return adjustmentType;
   }
 
-  private periodAccountingDate(year: number, month: number) {
-    return new Date(Date.UTC(year, month, 0, 12, 0, 0));
+  private periodAccountingDate(year: number, month: number, referenceDate?: Date) {
+    const periodEnd = new Date(Date.UTC(year, month, 0, 12, 0, 0));
+    if (referenceDate && referenceDate < periodEnd) {
+      return referenceDate;
+    }
+    const now = new Date();
+    if (now < periodEnd) {
+      return now;
+    }
+    return periodEnd;
   }
 
   private startOfUtcDay(date: Date) {

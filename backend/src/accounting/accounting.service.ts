@@ -548,7 +548,7 @@ export class AccountingService {
   }
 
   private parseDateBoundary(value: string, boundary: 'start' | 'end') {
-    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
 
     if (dateOnlyMatch) {
       const year = Number(dateOnlyMatch[1]);
@@ -1675,6 +1675,9 @@ export class AccountingService {
     let includedSimpleTaxExpense = 0;
     let nonOperatingIncome = 0;
     let nonOperatingExpenses = 0;
+    let nominaExpenses = 0;
+    let serviciosExpenses = 0;
+    let insumosExpenses = 0;
 
     for (const r of movements) {
       const code = (r.pucSubcuentaId || r.pucCuentaCode || '').trim();
@@ -1686,7 +1689,7 @@ export class AccountingService {
       let signedValue = 0;
       if (first === '4') {
         signedValue = r.nature === 'CREDIT' ? amount : -amount;
-      } else if (first === '5' || first === '6') {
+      } else if (first === '5' || first === '6' || first === '7') {
         signedValue = r.nature === 'DEBIT' ? amount : -amount;
       } else {
         continue;
@@ -1698,15 +1701,23 @@ export class AccountingService {
         grossSales += signedValue;
       } else if (code.startsWith('42')) {
         nonOperatingIncome += signedValue;
-      } else if (code.startsWith('61')) {
+      } else if (code.startsWith('6') || code.startsWith('7')) {
         costs += signedValue;
-      } else if (code.startsWith('51') || code.startsWith('52')) {
+      } else if (code.startsWith('53')) {
+        nonOperatingExpenses += signedValue;
+        serviciosExpenses += signedValue;
+      } else if (first === '5') {
         operatingExpenses += signedValue;
         if (code === SIMPLE_TAX_EXPENSE_PUC_CODE) {
           includedSimpleTaxExpense += signedValue;
         }
-      } else if (code.startsWith('53')) {
-        nonOperatingExpenses += signedValue;
+        if (code.startsWith('5105') || code.startsWith('5205')) {
+          nominaExpenses += signedValue;
+        } else if (code.startsWith('5135') || code.startsWith('5235')) {
+          serviciosExpenses += signedValue;
+        } else {
+          insumosExpenses += signedValue;
+        }
       }
     }
 
@@ -1753,11 +1764,9 @@ export class AccountingService {
         devoluciones: Math.round(returns),
       },
       gastosAdministrativos: {
-        nominaSueldos: Math.round(operatingExpenses * 0.6),
-        insumosOperativos: Math.round(operatingExpenses * 0.25),
-        serviciosFijos: Math.round(
-          operatingExpenses * 0.15 + nonOperatingExpenses,
-        ),
+        nominaSueldos: Math.round(nominaExpenses),
+        insumosOperativos: Math.round(insumosExpenses),
+        serviciosFijos: Math.round(serviciosExpenses),
       },
       impuestosReservas: {
         iva: isOpenSimpleTaxEstimate ? 0 : Math.round(taxProvision * 0.5),
