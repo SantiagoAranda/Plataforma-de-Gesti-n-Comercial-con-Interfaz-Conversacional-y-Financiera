@@ -237,6 +237,7 @@ export class PublicService {
       customerName: dto.customerName.trim(),
       customerWhatsapp: dto.customerWhatsapp.trim(),
       note: dto.note?.trim() || null,
+      paymentMethod: dto.paymentMethod ?? 'CASH',
       items: dto.items
         .map((item) => ({
           itemId: item.itemId,
@@ -1304,6 +1305,7 @@ export class PublicService {
             customerName: dto.customerName.trim(),
             customerWhatsapp: dto.customerWhatsapp.trim(),
             note: visibleNote,
+            paymentMethod: dto.paymentMethod ?? 'CASH',
             sentAt: new Date(),
             total,
             items: {

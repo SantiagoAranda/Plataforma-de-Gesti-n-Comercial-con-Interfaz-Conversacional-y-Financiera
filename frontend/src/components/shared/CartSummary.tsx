@@ -32,6 +32,8 @@ type Props = {
   onCountryCodeChange: (val: string) => void;
   phoneNumber: string;
   onPhoneNumberChange: (val: string) => void;
+  paymentMethod: "CASH" | "BANK_TRANSFER";
+  onPaymentMethodChange: (val: "CASH" | "BANK_TRANSFER") => void;
   onConfirm: (documentVal?: string) => void;
   onClose: () => void;
   taxPreviewContent?: ReactNode;
@@ -54,6 +56,8 @@ export default function CartSummary({
   onCountryCodeChange,
   phoneNumber,
   onPhoneNumberChange,
+  paymentMethod,
+  onPaymentMethodChange,
   onConfirm,
   onClose,
   taxPreviewContent,
@@ -229,6 +233,34 @@ export default function CartSummary({
 
         {taxPreviewContent}
         {fiscalContent}
+
+        <div>
+          <span className="sr-only">Medio de pago</span>
+          <div className="grid h-11 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+            <button
+              type="button"
+              aria-pressed={paymentMethod === "CASH"}
+              onClick={() => onPaymentMethodChange("CASH")}
+              className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all ${paymentMethod === "CASH"
+                ? "border-transparent bg-[#0B3F64] text-white shadow-sm"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Efectivo
+            </button>
+            <button
+              type="button"
+              aria-pressed={paymentMethod === "BANK_TRANSFER"}
+              onClick={() => onPaymentMethodChange("BANK_TRANSFER")}
+              className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all ${paymentMethod === "BANK_TRANSFER"
+                ? "border-transparent bg-[#0B3F64] text-white shadow-sm"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Transferencia
+            </button>
+          </div>
+        </div>
 
       </div>
 

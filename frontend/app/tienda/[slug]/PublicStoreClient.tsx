@@ -8,10 +8,13 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  FileText,
   Store,
+  Building2,
   Plus,
   Search,
   ShoppingBag,
+  User,
   X,
   MapPin,
   Share2,
@@ -25,6 +28,7 @@ import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 import type { BuyerFiscalContext, TaxPreviewResponse } from "@/src/lib/tax/api";
 import { normalizePublicTaxPreview } from "@/src/lib/tax/publicPreview";
+import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
 
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { cn } from "@/src/lib/utils";
@@ -343,8 +347,10 @@ export default function PublicStoreClient() {
   const [customerName, setCustomerName] = useState("");
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "BANK_TRANSFER">("CASH");
   const [buyerNit, setBuyerNit] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerUiType, setBuyerUiType] = useState<"PERSON" | "COMPANY">("PERSON");
   const [buyerIsLegalEntity, setBuyerIsLegalEntity] = useState(false);
   const [buyerIsLargeTaxpayer, setBuyerIsLargeTaxpayer] = useState(false);
   const [buyerIsSelfWithholder, setBuyerIsSelfWithholder] = useState(false);
@@ -898,31 +904,47 @@ export default function PublicStoreClient() {
     [cart]
   );
 
-  const buyerFiscalContext = useMemo<BuyerFiscalContext>(() => ({
-    buyerType: buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
-    buyerName: customerName.trim() || null,
-    buyerDocumentType: "NIT",
-    buyerDocumentNumber: buyerNit.trim() || null,
-    buyerEmail: buyerEmail.trim() || null,
-    buyerIsIvaResponsable: false,
-    buyerIsRetenedor: false,
-    buyerIsGranContribuyente: buyerIsLargeTaxpayer,
-    buyerIsAutorretenedor: buyerIsSelfWithholder,
-    buyerIsRegimenSimple,
-    buyerRequiresElectronicInvoice: false,
-    fiscalMunicipalityCode: fiscalMunicipalityCode || null,
-    reteIcaRateOverride,
-    saleConcept: "GOODS",
-  }), [
+  const handleBuyerUiTypeChange = (nextType: "PERSON" | "COMPANY") => {
+    if (nextType === "PERSON") {
+      setBuyerIsLegalEntity(false);
+      setBuyerIsLargeTaxpayer(false);
+      setBuyerIsSelfWithholder(false);
+      setBuyerIsRegimenSimple(false);
+    }
+    setBuyerUiType(nextType);
+  };
+
+  const buyerFiscalContext = useMemo<BuyerFiscalContext>(() => {
+    const isCompany = buyerUiType === "COMPANY";
+    return {
+      buyerType: isCompany && buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
+      buyerName: customerName.trim() || null,
+      buyerDocumentType: "NIT",
+      buyerDocumentNumber: buyerNit.trim() || null,
+      buyerEmail: buyerEmail.trim() || null,
+      buyerIsIvaResponsable: false,
+      buyerIsRetenedor: false,
+      buyerIsGranContribuyente: isCompany && buyerIsLargeTaxpayer,
+      buyerIsAutorretenedor: isCompany && buyerIsSelfWithholder,
+      buyerIsRegimenSimple:
+        isCompany && simpleRegimeSalesEnabled && buyerIsRegimenSimple,
+      buyerRequiresElectronicInvoice: false,
+      fiscalMunicipalityCode: fiscalMunicipalityCode || null,
+      reteIcaRateOverride,
+      saleConcept: "GOODS",
+    };
+  }, [
     buyerEmail,
     buyerIsLargeTaxpayer,
     buyerIsLegalEntity,
     buyerIsRegimenSimple,
     buyerIsSelfWithholder,
     buyerNit,
+    buyerUiType,
     customerName,
     fiscalMunicipalityCode,
     reteIcaRateOverride,
+    simpleRegimeSalesEnabled,
   ]);
 
   useEffect(() => {
@@ -932,13 +954,16 @@ export default function PublicStoreClient() {
       .then((settings) => {
         if (!cancelled) {
           setHasFiscalConfiguration(settings?.fiscalContextEnabled === true);
-          setSimpleRegimeSalesEnabled(settings?.simpleRegimeSalesEnabled === true);
+          const regimenSimpleEnabled = settings?.simpleRegimeSalesEnabled === true;
+          setSimpleRegimeSalesEnabled(regimenSimpleEnabled);
+          if (!regimenSimpleEnabled) setBuyerIsRegimenSimple(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setHasFiscalConfiguration(false);
           setSimpleRegimeSalesEnabled(false);
+          setBuyerIsRegimenSimple(false);
         }
       });
     return () => { cancelled = true; };
@@ -1019,6 +1044,7 @@ export default function PublicStoreClient() {
       const checkoutPayload = {
         customerName,
         customerWhatsapp: `${countryCode}${phoneNumber}`,
+        paymentMethod,
         items: cartItems.map((item) => ({
           itemId: item.id,
           quantity: item.quantity,
@@ -1064,14 +1090,18 @@ export default function PublicStoreClient() {
       setShowCartModal(false);
       setCustomerName("");
       setPhoneNumber("");
+      setPaymentMethod("CASH");
       setBuyerNit("");
       setBuyerEmail("");
+      setBuyerUiType("PERSON");
       setBuyerIsLegalEntity(false);
       setBuyerIsLargeTaxpayer(false);
       setBuyerIsSelfWithholder(false);
       setBuyerIsRegimenSimple(false);
       setFiscalMunicipalityCode("");
       setReteIcaRateOverride(undefined);
+      setPublicTaxPreview(null);
+      setPublicTaxPreviewStatus("idle");
     } catch (error) {
       console.error("Order error:", error);
       toast.error("Error al enviar pedido");
@@ -1293,6 +1323,8 @@ export default function PublicStoreClient() {
                 onCountryCodeChange={setCountryCode}
                 phoneNumber={phoneNumber}
                 onPhoneNumberChange={setPhoneNumber}
+                paymentMethod={paymentMethod}
+                onPaymentMethodChange={setPaymentMethod}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
                 onClose={() => setShowCartModal(false)}
                 taxPreviewContent={hasFiscalConfiguration ? (
@@ -1321,69 +1353,101 @@ export default function PublicStoreClient() {
                 ) : undefined}
                 fiscalContent={hasFiscalConfiguration ? (
                   <details
-                    className="rounded-xl border border-slate-200 bg-slate-50/70"
+                    className="rounded-2xl border border-sky-200 bg-sky-50/60"
                     open={fiscalOpen}
                     onToggle={(event) => setFiscalOpen(event.currentTarget.open)}
                   >
-                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-800 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]">
-                      Datos fiscales del comprador
-                      <span className="ml-2 text-xs font-normal text-neutral-500">
-                        Opcional
-                      </span>
+                    <summary className="cursor-pointer list-none px-4 pt-4 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]">
+                      <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
+                        <FileText className="h-4 w-4 text-[#0B3F64]" aria-hidden="true" />
+                        <span>Datos del comprador</span>
+                        <span className="font-normal normal-case tracking-normal text-neutral-500">
+                          Opcional
+                        </span>
+                      </div>
                     </summary>
-                    <div className="space-y-3 border-t border-slate-200 px-4 pb-4 pt-3">
-                      <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-3 px-4 pb-4">
+                      <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
                         <button
                           type="button"
-                          onClick={() => {
-                            setBuyerIsLegalEntity(false);
-                            setBuyerIsLargeTaxpayer(false);
-                            setBuyerIsSelfWithholder(false);
-                            setBuyerIsRegimenSimple(false);
-                          }}
-                          className={`h-10 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${!buyerIsLegalEntity ? "border-[#0B3F64] bg-[#0B3F64] text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-sky-50"}`}
+                          aria-pressed={buyerUiType === "PERSON"}
+                          onClick={() => handleBuyerUiTypeChange("PERSON")}
+                          className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerUiType === "PERSON" ? "border-white bg-white text-slate-900 shadow-sm" : "border-transparent text-slate-500 hover:text-slate-700"}`}
                         >
+                          <User className="h-3.5 w-3.5" aria-hidden="true" />
                           Persona
                         </button>
                         <button
                           type="button"
-                          onClick={() => setBuyerIsLegalEntity(true)}
-                          className={`h-10 rounded-xl border text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsLegalEntity ? "border-[#0B3F64] bg-[#0B3F64] text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-sky-50"}`}
+                          aria-pressed={buyerUiType === "COMPANY"}
+                          onClick={() => handleBuyerUiTypeChange("COMPANY")}
+                          className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerUiType === "COMPANY" ? "border-white bg-white text-slate-900 shadow-sm" : "border-transparent text-slate-500 hover:text-slate-700"}`}
                         >
-                          Jurídica
+                          <Building2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          Empresa
                         </button>
                       </div>
 
-                      {buyerIsLegalEntity && (
+                      {buyerUiType === "COMPANY" && (
                         <div className="grid grid-cols-2 gap-2">
-                          {simpleRegimeSalesEnabled && (
-                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
-                              <input
-                                type="checkbox"
-                                checked={buyerIsRegimenSimple}
-                                onChange={(event) => setBuyerIsRegimenSimple(event.target.checked)}
-                              />
-                              Régimen Simple
-                            </label>
-                          )}
-                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={buyerIsLargeTaxpayer}
-                              disabled={buyerIsSelfWithholder}
-                              onChange={(event) => setBuyerIsLargeTaxpayer(event.target.checked)}
-                            />
+                          <button
+                            type="button"
+                            aria-pressed={buyerIsLegalEntity}
+                            onClick={() => setBuyerIsLegalEntity((current) => !current)}
+                            className={`min-h-10 rounded-xl border px-2.5 py-2 text-center text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsLegalEntity ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm" : "border-slate-200 bg-white/70 text-slate-600 hover:border-[#0B3F64]"}`}
+                          >
+                            Jurídica
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={buyerIsLargeTaxpayer}
+                            aria-disabled={buyerIsSelfWithholder}
+                            disabled={buyerIsSelfWithholder}
+                            onClick={() => {
+                              const flags = toggleBuyerFiscalFlag(
+                                {
+                                  isGranContribuyente: buyerIsLargeTaxpayer,
+                                  isAutorretenedor: buyerIsSelfWithholder,
+                                },
+                                "GRAN",
+                              );
+                              setBuyerIsLargeTaxpayer(flags.isGranContribuyente);
+                              setBuyerIsSelfWithholder(flags.isAutorretenedor);
+                            }}
+                            className={`min-h-10 rounded-xl border px-2.5 py-2 text-center text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsLargeTaxpayer ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm" : "border-slate-200 bg-white/70 text-slate-600 hover:border-[#0B3F64]"} ${buyerIsSelfWithholder ? "cursor-not-allowed opacity-45" : ""}`}
+                          >
                             Gran contribuyente
-                          </label>
-                            <label className="flex min-h-10 items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={buyerIsSelfWithholder}
-                              disabled={buyerIsLargeTaxpayer}
-                              onChange={(event) => setBuyerIsSelfWithholder(event.target.checked)}
-                            />
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={buyerIsSelfWithholder}
+                            aria-disabled={buyerIsLargeTaxpayer}
+                            disabled={buyerIsLargeTaxpayer}
+                            onClick={() => {
+                              const flags = toggleBuyerFiscalFlag(
+                                {
+                                  isGranContribuyente: buyerIsLargeTaxpayer,
+                                  isAutorretenedor: buyerIsSelfWithholder,
+                                },
+                                "AUTORRETENEDOR",
+                              );
+                              setBuyerIsLargeTaxpayer(flags.isGranContribuyente);
+                              setBuyerIsSelfWithholder(flags.isAutorretenedor);
+                            }}
+                            className={`min-h-10 rounded-xl border px-2.5 py-2 text-center text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsSelfWithholder ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm" : "border-slate-200 bg-white/70 text-slate-600 hover:border-[#0B3F64]"} ${buyerIsLargeTaxpayer ? "cursor-not-allowed opacity-45" : ""}`}
+                          >
                             Autorretenedor
-                          </label>
+                          </button>
+                          {simpleRegimeSalesEnabled && (
+                            <button
+                              type="button"
+                              aria-pressed={buyerIsRegimenSimple}
+                              onClick={() => setBuyerIsRegimenSimple((current) => !current)}
+                              className={`min-h-10 rounded-xl border px-2.5 py-2 text-center text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64] ${buyerIsRegimenSimple ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm" : "border-slate-200 bg-white/70 text-slate-600 hover:border-[#0B3F64]"}`}
+                            >
+                              Régimen Simple
+                            </button>
+                          )}
                         </div>
                       )}
 
