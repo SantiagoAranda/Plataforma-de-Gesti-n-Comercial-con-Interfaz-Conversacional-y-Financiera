@@ -2,7 +2,6 @@
 
 import { type ReactNode } from "react";
 import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
-import PhoneSelector from "./PhoneSelector";
 import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
 
@@ -23,15 +22,11 @@ type Props = {
   onEdit?: (id: string) => void;
   onRemove?: (id: string) => void;
   customerName: string;
-  onCustomerNameChange: (val: string) => void;
   documentNumber: string;
-  onDocumentNumberChange: (val: string) => void;
-  buyerEmail: string;
-  onBuyerEmailChange: (val: string) => void;
   countryCode: string;
-  onCountryCodeChange: (val: string) => void;
   phoneNumber: string;
-  onPhoneNumberChange: (val: string) => void;
+  paymentMethod: "CASH" | "BANK_TRANSFER";
+  onPaymentMethodChange: (val: "CASH" | "BANK_TRANSFER") => void;
   onConfirm: (documentVal?: string) => void;
   onClose: () => void;
   taxPreviewContent?: ReactNode;
@@ -45,15 +40,11 @@ export default function CartSummary({
   onEdit,
   onRemove,
   customerName,
-  onCustomerNameChange,
   documentNumber,
-  onDocumentNumberChange,
-  buyerEmail,
-  onBuyerEmailChange,
   countryCode,
-  onCountryCodeChange,
   phoneNumber,
-  onPhoneNumberChange,
+  paymentMethod,
+  onPaymentMethodChange,
   onConfirm,
   onClose,
   taxPreviewContent,
@@ -182,53 +173,37 @@ export default function CartSummary({
           )}
         </div>
 
-        {/* Contact Form */}
-        <div className="space-y-3 border-t border-neutral-100 pt-4">
-          <label htmlFor="public-order-customer-name" className="sr-only">Nombre completo</label>
-          <input
-            id="public-order-customer-name"
-            type="text"
-            placeholder="Nombre completo"
-            value={customerName}
-            onChange={(e) => onCustomerNameChange(e.target.value)}
-            className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-          />
+        {fiscalContent}
 
-          <label htmlFor="public-order-document" className="sr-only">Cédula o NIT opcional</label>
-          <input
-            id="public-order-document"
-            type="text"
-            placeholder="Cédula / NIT (Opcional)"
-            value={documentNumber}
-            onChange={(e) => onDocumentNumberChange(e.target.value)}
-            className="w-full h-11 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
-          />
-
-          <label htmlFor="public-order-email" className="sr-only">Correo opcional</label>
-          <input
-            id="public-order-email"
-            type="email"
-            placeholder="Correo (Opcional)"
-            value={buyerEmail}
-            onChange={(e) => onBuyerEmailChange(e.target.value)}
-            className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 placeholder:text-neutral-400 outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
-          />
-
-          <PhoneSelector
-            countryCode={countryCode}
-            onCountryCodeChange={onCountryCodeChange}
-            phoneNumber={phoneNumber}
-            onPhoneNumberChange={onPhoneNumberChange}
-            dropdownPosition="top"
-          />
-
-          <p className="text-[11px] font-medium text-emerald-600 px-1 italic">
-            * Coordinamos envío y comunicación por este medio.
-          </p>
+        <div>
+          <span className="sr-only">Medio de pago</span>
+          <div className="grid h-11 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
+            <button
+              type="button"
+              aria-pressed={paymentMethod === "CASH"}
+              onClick={() => onPaymentMethodChange("CASH")}
+              className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all ${paymentMethod === "CASH"
+                ? "border-transparent bg-[#0B3F64] text-white shadow-sm"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Efectivo
+            </button>
+            <button
+              type="button"
+              aria-pressed={paymentMethod === "BANK_TRANSFER"}
+              onClick={() => onPaymentMethodChange("BANK_TRANSFER")}
+              className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all ${paymentMethod === "BANK_TRANSFER"
+                ? "border-transparent bg-[#0B3F64] text-white shadow-sm"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+            >
+              Transferencia
+            </button>
+          </div>
         </div>
 
         {taxPreviewContent}
-        {fiscalContent}
 
       </div>
 

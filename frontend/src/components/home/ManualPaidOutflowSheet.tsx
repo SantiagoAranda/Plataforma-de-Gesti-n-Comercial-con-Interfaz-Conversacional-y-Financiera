@@ -47,6 +47,7 @@ import {
 } from "@/src/lib/businessDate";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { cn } from "@/src/lib/utils";
+import { invalidateCache } from "@/src/lib/cache";
 import {
   createManualPaidOutflow,
   listExpenseGroupAccounts,
@@ -305,6 +306,10 @@ export default function ManualPaidOutflowSheet({
         categoryId: form.categoryId,
         occurredAt,
       });
+      invalidateCache("home:movements");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("accounting:movement-created"));
+      }
       setSuccess("Gasto registrado correctamente.");
       resetForm();
     } catch (err) {

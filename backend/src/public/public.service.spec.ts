@@ -128,6 +128,53 @@ describe('PublicService', () => {
     );
   });
 
+  it.each([
+    ['omitted', undefined, 'CASH'],
+    ['cash', 'CASH', 'CASH'],
+    ['bank transfer', 'BANK_TRANSFER', 'BANK_TRANSFER'],
+  ] as const)(
+    'persists the normalized public payment method when %s',
+    async (_caseName, paymentMethod, expected) => {
+      const { service, prisma } = createService();
+
+      await service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000021',
+        customerName: 'Customer',
+        customerWhatsapp: '573001112233',
+        ...(paymentMethod ? { paymentMethod } : {}),
+        items: [{ itemId: 'item-1', quantity: 1 }],
+      });
+
+      expect(prisma.order.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ paymentMethod: expected }),
+        }),
+      );
+    },
+  );
+
+  it('normalizes omitted and explicit cash equally in the public order fingerprint', () => {
+    const { service } = createService();
+    const base = {
+      customerName: 'Customer',
+      customerWhatsapp: '573001112233',
+      items: [{ itemId: 'item-1', quantity: 1 }],
+    };
+
+    const omitted = (service as any).publicOrderFingerprint(base);
+    const cash = (service as any).publicOrderFingerprint({
+      ...base,
+      paymentMethod: 'CASH',
+    });
+    const transfer = (service as any).publicOrderFingerprint({
+      ...base,
+      paymentMethod: 'BANK_TRANSFER',
+    });
+
+    expect(omitted).toBe(cash);
+    expect(transfer).not.toBe(cash);
+  });
+
   it('returns the existing order for the same idempotency key and fingerprint', async () => {
     const { service, prisma, notifyAutomaticSaleCreated } = createService();
     const dto = {

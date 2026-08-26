@@ -87,17 +87,22 @@ export function MovementProfitHero({
   const isZero = ventasBrutas <= 0;
 
   // Re-mapeo Lógico de los Tramos del Gráfico
+  // Cada segmento se calcula como porcentaje sobre ventasBrutas (el 100% base)
+  // y se garantiza que la suma de segmentos no supere 100%.
+  const rawPctVerde = isZero ? 0 : Math.max((utilidadDelEjercicioFinal / ventasBrutas) * 100, 0);
+  const rawPctAmarillo = isZero ? 0 : Math.max((reservaLegal / ventasBrutas) * 100, 0);
+  // El rojo ocupa lo que no es ganancia ni reserva (lo gastado real)
+  // pero jamás supera el espacio restante en la barra (100% - verde - amarillo)
   const totalDeduccionesYGastos = devoluciones + costos + totalGastosOperacionales + gastosNoOperacionales + provisionesImpuesto;
-  const pctVerde = isZero ? 0 : Math.max((utilidadDelEjercicioFinal / ventasBrutas) * 100, 0);
-  const pctRojo = isZero ? 0 : Math.max((totalDeduccionesYGastos / ventasBrutas) * 100, 0);
-  const pctAmarillo = isZero ? 0 : Math.max((reservaLegal / ventasBrutas) * 100, 0);
+  const rawPctRojo = isZero ? 0 : Math.max((totalDeduccionesYGastos / ventasBrutas) * 100, 0);
 
-  const widthVerde = isZero ? 0 : Math.min(Math.round(pctVerde), 100);
-  const widthRojo = isZero ? 0 : Math.min(Math.round(pctRojo), 100);
-  const widthAmarillo = isZero ? 0 : Math.min(Math.round(pctAmarillo), 100);
+  // Clampear cada segmento y luego asegurar que la suma no supere 100
+  const widthVerde = isZero ? 0 : Math.min(Math.round(rawPctVerde), 100);
+  const widthAmarillo = isZero ? 0 : Math.min(Math.round(rawPctAmarillo), Math.max(0, 100 - widthVerde));
+  const widthRojo = isZero ? 0 : Math.min(Math.round(rawPctRojo), Math.max(0, 100 - widthVerde - widthAmarillo));
 
-  const eficienciaReal = ventasBrutas > 0 
-    ? Math.round((utilidadDelEjercicioFinal / ventasBrutas) * 100) 
+  const eficienciaReal = ventasBrutas > 0
+    ? Math.round((utilidadDelEjercicioFinal / ventasBrutas) * 100)
     : 0;
 
   return (

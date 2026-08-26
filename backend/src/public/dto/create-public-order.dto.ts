@@ -61,6 +61,10 @@ export class CreatePublicOrderDto {
   note?: string;
 
   @IsOptional()
+  @IsIn(['CASH', 'BANK_TRANSFER'])
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER';
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => BuyerFiscalContextDto)
   buyerFiscalContext?: BuyerFiscalContextDto;

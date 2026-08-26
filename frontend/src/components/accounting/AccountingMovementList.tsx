@@ -48,6 +48,9 @@ export function AccountingMovementList({
   const sortedMovements = [...movements].sort((a, b) => {
     const timeDiff = movementTimestamp(a) - movementTimestamp(b);
     if (timeDiff !== 0) return timeDiff;
+    if (a.nature !== b.nature) {
+      return a.nature === "DEBIT" ? -1 : 1;
+    }
     return a.id.localeCompare(b.id);
   });
 

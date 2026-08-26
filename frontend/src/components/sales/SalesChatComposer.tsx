@@ -20,7 +20,7 @@ import SaleTaxPanel, {
   saleFiscalStateFromSale,
   type SaleFiscalFormState,
 } from "@/src/components/sales/SaleTaxPanel";
-import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import { api } from "@/src/lib/api";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
@@ -785,62 +785,20 @@ export default function SalesChatComposer({
           </div>
         )}
 
-        {/* 3. Switch Persona / Empresa */}
-        {taxSettingsEnabled && (
-          <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
-            <button
-              type="button"
-              disabled={isReadonly}
-              onClick={() => {
-                setFiscalForm(prev => ({
-                  ...prev,
-                  buyerType: "NATURAL" as const,
-                  buyerDocumentType: "CC" as const,
-                  buyerIsIvaResponsable: false,
-                  buyerIsRetenedor: false,
-                  buyerIsGranContribuyente: false,
-                  buyerIsAutorretenedor: false,
-                  buyerIsRegimenSimple: false,
-                  buyerRequiresElectronicInvoice: false,
-                }));
-              }}
-              className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "NATURAL")}`}
-            >
-              <User className="h-3.5 w-3.5" />
-              Persona
-            </button>
-            <button
-              type="button"
-              disabled={isReadonly}
-              onClick={() => {
-                setFiscalForm(prev => ({
-                  ...prev,
-                  buyerType: "JURIDICA" as const,
-                  buyerDocumentType: "NIT" as const,
-                  buyerIsIvaResponsable: true,
-                  buyerIsRetenedor: false,
-                  buyerRequiresElectronicInvoice: false,
-                }));
-              }}
-              className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "JURIDICA")}`}
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              Empresa
-            </button>
+        {/* 3. Datos del cliente y contexto fiscal */}
+        <div className="space-y-3 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
+            <FileText className="h-4 w-4 text-[#0B3F64]" />
+            {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
           </div>
-        )}
 
-        {/* 4. Datos del cliente (Nombre, Teléfono, Facturación electrónica) */}
-        <div className="space-y-3">
-          <div className="flex flex-col gap-1">
-            <input
-              value={fiscalForm.buyerName}
-              disabled={isReadonly}
-              onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
-              placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
-              className={panelInputClass()}
-            />
-          </div>
+          <input
+            value={fiscalForm.buyerName}
+            disabled={isReadonly}
+            onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
+            placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
+            className={panelInputClass()}
+          />
 
           <PhoneSelector
             countryCode={countryCode}
@@ -851,31 +809,50 @@ export default function SalesChatComposer({
           />
 
           {taxSettingsEnabled && (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
-              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
-                <FileText className="h-4 w-4 text-[#0B3F64]" />
-                {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
+            <>
+              <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  disabled={isReadonly}
+                  onClick={() => {
+                    setFiscalForm(prev => ({
+                      ...prev,
+                      buyerType: "NATURAL" as const,
+                      buyerDocumentType: "CC" as const,
+                      buyerIsIvaResponsable: false,
+                      buyerIsRetenedor: false,
+                      buyerIsGranContribuyente: false,
+                      buyerIsAutorretenedor: false,
+                      buyerIsRegimenSimple: false,
+                      buyerRequiresElectronicInvoice: false,
+                    }));
+                  }}
+                  className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "NATURAL")}`}
+                >
+                  <User className="h-3.5 w-3.5" />
+                  Persona
+                </button>
+                <button
+                  type="button"
+                  disabled={isReadonly}
+                  onClick={() => {
+                    setFiscalForm(prev => ({
+                      ...prev,
+                      buyerType: "JURIDICA" as const,
+                      buyerDocumentType: "NIT" as const,
+                      buyerIsIvaResponsable: true,
+                      buyerIsRetenedor: false,
+                      buyerRequiresElectronicInvoice: false,
+                    }));
+                  }}
+                  className={`flex h-8 items-center justify-center gap-2 rounded-lg border text-xs font-bold transition ${segmentClass(fiscalForm.buyerType === "JURIDICA")}`}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  Empresa
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-2 w-full min-w-0">
-                <div className="hidden min-w-0">
-                  <select
-                    value={fiscalForm.buyerDocumentType}
-                    disabled={isReadonly}
-                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-2.5 text-xs outline-none focus:border-[#0B3F64] transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    {fiscalForm.buyerType === "JURIDICA" ? (
-                      <option value="NIT">NIT / RUT</option>
-                    ) : (
-                      <>
-                        <option value="CC">Cédula</option>
-                        <option value="CE">Cédula Extr.</option>
-                        <option value="PASAPORTE">Pasaporte</option>
-                        <option value="TI">T. Identidad</option>
-                      </>
-                    )}
-                  </select>
-                </div>
+
+              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="min-w-0">
                   <input
                     value={fiscalForm.buyerDocumentNumber}
@@ -896,143 +873,87 @@ export default function SalesChatComposer({
                   />
                 </div>
               </div>
+
               {fiscalForm.buyerType === "JURIDICA" && (
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {visibleResponsibilities.map(({ key, label }) => {
-                    const granContribuyenteDisabled =
-                      key === "buyerIsGranContribuyente" &&
-                      fiscalForm.buyerType === "JURIDICA" &&
-                      fiscalForm.buyerIsAutorretenedor;
-                    const autorretenedorDisabled =
-                      key === "buyerIsAutorretenedor" &&
-                      fiscalForm.buyerType === "JURIDICA" &&
-                      fiscalForm.buyerIsGranContribuyente;
-                    const disabled = granContribuyenteDisabled || autorretenedorDisabled;
-                    const active =
-                      key === "buyerType"
-                        ? fiscalForm.buyerType === "JURIDICA"
-                        : disabled ? false : Boolean(fiscalForm[key]);
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        disabled={isReadonly || disabled}
-                        aria-disabled={isReadonly || disabled}
-                        onClick={() => {
-                          if (disabled) return;
-                          toggleBuyerFiscalFlag(key, active);
-                        }}
-                        className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${active
-                            ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
-                            : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
-                          } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {visibleResponsibilities.map(({ key, label }) => {
+                      const granContribuyenteDisabled =
+                        key === "buyerIsGranContribuyente" &&
+                        fiscalForm.buyerType === "JURIDICA" &&
+                        fiscalForm.buyerIsAutorretenedor;
+                      const autorretenedorDisabled =
+                        key === "buyerIsAutorretenedor" &&
+                        fiscalForm.buyerType === "JURIDICA" &&
+                        fiscalForm.buyerIsGranContribuyente;
+                      const disabled = granContribuyenteDisabled || autorretenedorDisabled;
+                      const active =
+                        key === "buyerType"
+                          ? fiscalForm.buyerType === "JURIDICA"
+                          : disabled ? false : Boolean(fiscalForm[key]);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={isReadonly || disabled}
+                          aria-disabled={isReadonly || disabled}
+                          onClick={() => {
+                            if (disabled) return;
+                            toggleBuyerFiscalFlag(key, active);
+                          }}
+                          className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${active
+                              ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
+                              : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
+                            } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <MunicipalitySelect
+                    value={fiscalForm.fiscalMunicipalityCode}
+                    disabled={isReadonly}
+                    onChange={(value) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: value }))}
+                    className="h-11 rounded-xl border-sky-200 px-3 py-0 shadow-none"
+                  />
+
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Defecto (RUT)"
+                      value={fiscalForm.reteIcaRateOverride !== undefined ? fiscalForm.reteIcaRateOverride : ""}
+                      disabled={isReadonly}
+                      onChange={(e) => {
+                        const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                        setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
+                      }}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#0B3F64] placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500"
+                    />
+                  </div>
+
+                  {taxPreview && (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
+                      <div className={`flex h-11 items-center justify-center rounded-xl border text-xs font-medium ${taxPreview.sellerIsSimpleRegime
+                          ? "border-sky-200 bg-sky-50 text-[#0B3F64]"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                        }`}>
+                        {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
-            </div>
+            </>
           )}
         </div>
 
-        {/* 5. Datos fiscales adicionales para Empresa */}
-        {taxSettingsEnabled && fiscalForm.buyerType === "JURIDICA" && (
-          <>
-            <div className="space-y-1.5 rounded-2xl border border-sky-100 bg-sky-50 p-3">
-              <span className="sr-only">
-                Datos fiscales de la venta
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <select
-                  value={fiscalForm.fiscalMunicipalityCode}
-                  disabled={isReadonly}
-                  onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-[#0B3F64] transition disabled:bg-slate-50 disabled:text-slate-400"
-                >
-                  <option value="">Municipio ICA</option>
-                  {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
-                    <option key={municipality.code} value={municipality.code}>
-                      {municipality.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="Defecto (RUT)"
-                    value={fiscalForm.reteIcaRateOverride !== undefined ? fiscalForm.reteIcaRateOverride : ""}
-                    disabled={isReadonly}
-                    onChange={(e) => {
-                      const val = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                      setFiscalForm(prev => ({ ...prev, reteIcaRateOverride: val }));
-                    }}
-                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
-                  />
-                </div>
-
-                {taxPreview && (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
-                    <div className={`h-11 rounded-xl border flex items-center justify-center text-xs font-medium ${taxPreview.sellerIsSimpleRegime
-                        ? "border-sky-200 bg-sky-50 text-[#0B3F64]"
-                        : "border-slate-200 bg-slate-50 text-slate-600"
-                      }`}>
-                      {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="hidden">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Contexto fiscal del comprador
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                {visibleResponsibilities.map(({ key, label }) => {
-                  const granContribuyenteDisabled =
-                    key === "buyerIsGranContribuyente" &&
-                    fiscalForm.buyerType === "JURIDICA" &&
-                    fiscalForm.buyerIsAutorretenedor;
-                  const autorretenedorDisabled =
-                    key === "buyerIsAutorretenedor" &&
-                    fiscalForm.buyerType === "JURIDICA" &&
-                    fiscalForm.buyerIsGranContribuyente;
-                  const disabled = granContribuyenteDisabled || autorretenedorDisabled;
-                  const active =
-                    key === "buyerType"
-                      ? fiscalForm.buyerType === "JURIDICA"
-                      : disabled ? false : Boolean(fiscalForm[key]);
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={isReadonly || disabled}
-                      aria-disabled={isReadonly || disabled}
-                      onClick={() => {
-                        if (disabled) return;
-                        toggleBuyerFiscalFlag(key, active);
-                      }}
-                      className={`min-h-9 rounded-xl border px-2.5 py-1.5 text-[10px] font-semibold transition-all text-center flex items-center justify-center ${chipClass(active)} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* 6. Estado de venta & Medio de pago */}
+        {/* 4. Estado de venta & Medio de pago */}
         <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)] gap-2 w-full min-w-0">
           <div>
             <span className="sr-only">
