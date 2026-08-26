@@ -103,13 +103,13 @@ export function AccountingChatComposer({
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] lg:left-[408px] lg:right-0">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] bg-transparent px-3 py-3 lg:left-[408px] lg:right-0">
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
           {/* OVERLAY BACKDROP */}
           {expanded && (
             <div
-              className="fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
+              className="pointer-events-auto fixed inset-0 -z-10 bg-black/40 transition-opacity duration-300"
               onClick={onCancel}
             />
           )}
@@ -125,7 +125,7 @@ export function AccountingChatComposer({
             </div>
           )}
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="pointer-events-auto rounded-3xl border border-slate-200 bg-white p-2">
             <form
               className="flex min-w-0 items-center gap-2"
               onSubmit={(e) => {

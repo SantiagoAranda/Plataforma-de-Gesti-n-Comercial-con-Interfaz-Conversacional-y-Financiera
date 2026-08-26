@@ -17,6 +17,9 @@ import {
   TriangleAlert,
   Layers3,
   ChefHat,
+  Plus,
+  Search,
+  Send,
 } from "lucide-react";
 
 import { api } from "@/src/lib/api";
@@ -40,7 +43,6 @@ import {
 } from "@/src/components/inventory/inventoryOperationalHealth";
 import { SimpleProductList } from "@/src/components/inventory/SimpleProductList";
 import { SimpleProductDetailSheet } from "@/src/components/inventory/SimpleProductDetailSheet";
-import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 
 import {
   createIngredient,
@@ -637,16 +639,14 @@ function InventarioPageContent() {
       </ItemPanelLayout>
 
       {/* Floating Chat & Expandable Form Architecture (Identical to Sales / Accounting / Mi Negocio) */}
-      <div
-        className="fixed inset-x-0 bottom-0 z-50 px-3 py-3 lg:left-[408px] lg:right-0"
-        style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
-      >
-        <div className="mx-auto w-full max-w-md relative">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] bg-transparent px-3 py-3 lg:left-[408px] lg:right-0">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="relative">
           {ingredientSheetOpen && (
             <>
               {/* Overlay Backdrop - Dark without blur */}
               <div
-                className="fixed inset-0 z-40 bg-black/40 transition-opacity"
+                className="pointer-events-auto fixed inset-0 z-40 bg-black/40 transition-opacity"
                 onClick={() => {
                   setIngredientSheetOpen(false);
                   setIsFormValid(false);
@@ -655,7 +655,7 @@ function InventarioPageContent() {
               />
 
               {/* Expandable Form Panel Floating Above Chat Bar */}
-              <div className="pointer-events-auto absolute bottom-[calc(100%+12px)] left-0 right-0 z-50 flex max-h-[min(70vh,580px)] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+              <div className="pointer-events-auto absolute bottom-[calc(100%+8px)] left-0 right-0 z-50 flex max-h-[min(70vh,580px)] flex-col overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-[0_12px_32px_rgba(0,0,0,0.08)] animate-in slide-in-from-bottom-4 duration-300">
                 {/* Header */}
                 <div className="shrink-0 bg-white px-5 pt-5 pb-3 border-b border-slate-100/60">
                   <h2 className="text-base font-semibold text-slate-900">
@@ -746,76 +746,100 @@ function InventarioPageContent() {
           )}
 
           {/* Floating Action / Chat Composer Bar */}
-          <div className="relative z-50">
-            {saveBarContext ? (
-              <WhatsappComposer
-                leftAction={saveBarContext.onDiscard}
-                leftIconVariant="x"
-                rightAction={() => {
+          <div className="pointer-events-auto rounded-3xl border border-slate-200 bg-white p-2">
+            <form
+              className="flex min-w-0 items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (saveBarContext) {
                   void saveBarContext.onSave();
-                }}
-                isSubmitting={saveBarContext.isSaving}
-                rightIconVariant="send"
-                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-                centerContent={
-                  <div className="flex h-full w-full items-center justify-between px-2">
-                    <span className="truncate text-sm font-medium text-slate-700">
-                      {saveBarContext.message}
-                    </span>
-                  </div>
-                }
-                plusAriaLabel="Descartar cambios"
-                submitAriaLabel={saveBarContext.saveLabel}
-              />
-            ) : ingredientSheetOpen ? (
-              <WhatsappComposer
-                leftAction={() => {
-                  setIngredientSheetOpen(false);
-                  setSearchQuery("");
-                  setIsFormValid(false);
-                }}
-                leftIconVariant="x"
-                rightAction={() => {
+                } else if (ingredientSheetOpen) {
                   formRef.current?.requestSubmit();
+                }
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (saveBarContext) {
+                    saveBarContext.onDiscard();
+                  } else if (ingredientSheetOpen) {
+                    setIngredientSheetOpen(false);
+                    setSearchQuery("");
+                    setIsFormValid(false);
+                  } else {
+                    toggleIngredientSheetFromBar();
+                  }
                 }}
-                submitDisabled={!isFormValid}
-                isSubmitting={creatingIngredient}
-                rightIconVariant="send"
-                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-                centerContent={
-                  <div className="flex h-full w-full items-center justify-center pt-0.5">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Nuevo insumo
-                    </span>
-                  </div>
+                disabled={saveBarContext?.isSaving || creatingIngredient}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100/80 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/30 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                aria-label={
+                  saveBarContext
+                    ? "Descartar cambios"
+                    : ingredientSheetOpen
+                      ? "Cancelar nuevo ingrediente"
+                      : "Nuevo ingrediente"
                 }
-              />
-            ) : (
-              <WhatsappComposer
-                value={searchQuery}
-                onChange={setSearchQuery}
-                leftAction={toggleIngredientSheetFromBar}
-                leftIconVariant="plus"
-                rightIconVariant="search"
-                placeholder={
-                  activeTab === "ingredients"
-                    ? "Buscar insumo..."
-                    : activeTab === "products"
-                      ? "Buscar producto..."
-                      : activeTab === "services"
-                        ? "Buscar servicio..."
-                        : "Buscar receta..."
+              >
+                <Plus
+                  className={cn(
+                    "h-5 w-5 transition-transform duration-300 ease-in-out",
+                    saveBarContext || ingredientSheetOpen
+                      ? "rotate-[135deg]"
+                      : "rotate-0",
+                  )}
+                />
+              </button>
+
+              {saveBarContext ? (
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">
+                  {saveBarContext.message}
+                </span>
+              ) : ingredientSheetOpen ? (
+                <span className="min-w-0 flex-1 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Nuevo insumo
+                </span>
+              ) : (
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={
+                    activeTab === "ingredients"
+                      ? "Buscar insumo..."
+                      : activeTab === "products"
+                        ? "Buscar producto..."
+                        : activeTab === "services"
+                          ? "Buscar servicio..."
+                          : "Buscar receta..."
+                  }
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                />
+              )}
+
+              <button
+                type="submit"
+                disabled={
+                  saveBarContext?.isSaving ||
+                  creatingIngredient ||
+                  (ingredientSheetOpen && !isFormValid)
                 }
-                className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
-                plusAriaLabel="Nuevo ingrediente"
-                submitAriaLabel="Buscar"
-              />
-            )}
-          </div>
-          {!saveBarContext &&
-            !ingredientSheetOpen &&
-            (activeTab === "recipes" || activeTab === "services") && (
-              <div className="relative z-50 mt-2 flex items-center gap-2 px-1">
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0B3F64] text-white transition hover:bg-[#0B3F64]/90 focus:outline-none focus:ring-2 focus:ring-[#0B3F64]/35 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+                aria-label={
+                  saveBarContext?.saveLabel ??
+                  (ingredientSheetOpen ? "Guardar ingrediente" : "Buscar")
+                }
+              >
+                {saveBarContext || ingredientSheetOpen ? (
+                  <Send className="h-4 w-4" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+              </button>
+            </form>
+            {!saveBarContext &&
+              !ingredientSheetOpen &&
+              (activeTab === "recipes" || activeTab === "services") && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:pl-12 sm:pr-2">
                 {[
                   { label: "Todas", value: false },
                   { label: "Requieren revisión", value: true },
@@ -834,10 +858,10 @@ function InventarioPageContent() {
                           : setServiceReviewOnly(option.value)
                       }
                       className={cn(
-                        "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                        "rounded-full border px-3 py-1.5 text-xs font-medium transition",
                         selected
-                          ? "bg-[#0B3F64] text-white"
-                          : "border border-slate-200 bg-white text-slate-600 hover:bg-blue-50",
+                          ? "border-[#0B3F64] bg-[#E6EFF5] font-semibold text-[#0B3F64]"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                       )}
                     >
                       {option.label}
@@ -846,6 +870,8 @@ function InventarioPageContent() {
                 })}
               </div>
             )}
+          </div>
+          </div>
         </div>
       </div>
 

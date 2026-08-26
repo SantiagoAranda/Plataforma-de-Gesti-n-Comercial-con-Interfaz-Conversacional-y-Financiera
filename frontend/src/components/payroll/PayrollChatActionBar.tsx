@@ -23,8 +23,8 @@ export function PayrollChatActionBar({
 }: Props) {
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-[80] border-t border-slate-100 bg-white/95 px-3 py-3 shadow-[0_-8px_30px_rgb(0,0,0,0.02)] backdrop-blur lg:left-[408px] lg:right-0"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-x-0 bottom-0 z-[80] px-3 py-3 lg:left-[408px] lg:right-0"
+      style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
     >
       <div className="mx-auto w-full max-w-3xl">
         <div className="relative">
