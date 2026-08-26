@@ -25,7 +25,6 @@ import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput, generateCreationId } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
-import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
 import type { BuyerFiscalContext, TaxPreviewResponse } from "@/src/lib/tax/api";
 import { normalizePublicTaxPreview } from "@/src/lib/tax/publicPreview";
 import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
@@ -33,6 +32,7 @@ import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { cn } from "@/src/lib/utils";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
+import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import CartSummary from "@/src/components/shared/CartSummary";
 import LoginReturnHint from "@/src/components/store/LoginReturnHint";
 import NavigationTransitionBackdrop from "@/src/components/shared/NavigationTransitionBackdrop";
@@ -357,7 +357,6 @@ export default function PublicStoreClient() {
   const [buyerIsRegimenSimple, setBuyerIsRegimenSimple] = useState(false);
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
-  const [fiscalOpen, setFiscalOpen] = useState(false);
   const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
@@ -1314,15 +1313,9 @@ export default function PublicStoreClient() {
                   setShowCartModal(false);
                 }}
                 customerName={customerName}
-                onCustomerNameChange={setCustomerName}
                 documentNumber={buyerNit}
-                onDocumentNumberChange={setBuyerNit}
-                buyerEmail={buyerEmail}
-                onBuyerEmailChange={setBuyerEmail}
                 countryCode={countryCode}
-                onCountryCodeChange={setCountryCode}
                 phoneNumber={phoneNumber}
-                onPhoneNumberChange={setPhoneNumber}
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
@@ -1351,22 +1344,33 @@ export default function PublicStoreClient() {
                     )}
                   </section>
                 ) : undefined}
-                fiscalContent={hasFiscalConfiguration ? (
-                  <details
-                    className="rounded-2xl border border-sky-200 bg-sky-50/60"
-                    open={fiscalOpen}
-                    onToggle={(event) => setFiscalOpen(event.currentTarget.open)}
-                  >
-                    <summary className="cursor-pointer list-none px-4 pt-4 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B3F64]">
-                      <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
-                        <FileText className="h-4 w-4 text-[#0B3F64]" aria-hidden="true" />
-                        <span>Datos del comprador</span>
-                        <span className="font-normal normal-case tracking-normal text-neutral-500">
-                          Opcional
-                        </span>
-                      </div>
-                    </summary>
-                    <div className="space-y-3 px-4 pb-4">
+                fiscalContent={(
+                  <section className="space-y-3 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+                    <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
+                      <FileText className="h-4 w-4 text-[#0B3F64]" aria-hidden="true" />
+                      <span>Datos del comprador</span>
+                      <span className="font-normal normal-case tracking-normal text-neutral-500">
+                        Opcional
+                      </span>
+                    </div>
+
+                    <label htmlFor="public-order-customer-name" className="sr-only">Nombre completo</label>
+                    <input
+                      id="public-order-customer-name"
+                      type="text"
+                      placeholder="Nombre completo"
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm font-semibold text-neutral-800 outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10"
+                    />
+
+                    <PhoneSelector
+                      countryCode={countryCode}
+                      onCountryCodeChange={setCountryCode}
+                      phoneNumber={phoneNumber}
+                      onPhoneNumberChange={setPhoneNumber}
+                    />
+
                       <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
                         <button
                           type="button"
@@ -1388,7 +1392,32 @@ export default function PublicStoreClient() {
                         </button>
                       </div>
 
-                      {buyerUiType === "COMPANY" && (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <label htmlFor="public-order-document" className="sr-only">Cédula o NIT opcional</label>
+                        <input
+                          id="public-order-document"
+                          type="text"
+                          placeholder="Cédula / NIT (Opcional)"
+                          value={buyerNit}
+                          onChange={(event) => setBuyerNit(event.target.value)}
+                          className="h-11 w-full min-w-0 rounded-xl border border-sky-200 bg-white px-3 text-sm font-semibold text-neutral-800 outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label htmlFor="public-order-email" className="sr-only">Correo opcional</label>
+                        <input
+                          id="public-order-email"
+                          type="email"
+                          placeholder="Correo (Opcional)"
+                          value={buyerEmail}
+                          onChange={(event) => setBuyerEmail(event.target.value)}
+                          className="h-11 w-full min-w-0 rounded-xl border border-sky-200 bg-white px-3 text-sm font-semibold text-neutral-800 outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10"
+                        />
+                      </div>
+                    </div>
+
+                    {hasFiscalConfiguration && buyerUiType === "COMPANY" && (
                         <div className="grid grid-cols-2 gap-2">
                           <button
                             type="button"
@@ -1449,22 +1478,17 @@ export default function PublicStoreClient() {
                             </button>
                           )}
                         </div>
-                      )}
+                    )}
 
+                    {hasFiscalConfiguration && (
+                      <>
                       <label htmlFor="public-order-ica-municipality" className="sr-only">Municipio ICA</label>
-                      <select
+                      <MunicipalitySelect
                         id="public-order-ica-municipality"
                         value={fiscalMunicipalityCode}
-                        onChange={(event) => setFiscalMunicipalityCode(event.target.value)}
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
-                      >
-                        <option value="">Municipio ICA</option>
-                        {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
-                          <option key={municipality.code} value={municipality.code}>
-                            {municipality.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setFiscalMunicipalityCode}
+                        className="h-11 rounded-xl border-sky-200 px-3 py-0 shadow-none"
+                      />
                       <label htmlFor="public-order-reteica" className="sr-only">ReteICA o ICA retenido por mil</label>
                       <input
                         id="public-order-reteica"
@@ -1478,10 +1502,10 @@ export default function PublicStoreClient() {
                         placeholder="ReteICA / ICA retenido (por mil)"
                         className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#0B3F64] focus:ring-1 focus:ring-[#0B3F64]"
                       />
-
-                    </div>
-                  </details>
-                ) : undefined}
+                      </>
+                    )}
+                  </section>
+                )}
               />
             </div>
           </div>

@@ -20,7 +20,7 @@ import SaleTaxPanel, {
   saleFiscalStateFromSale,
   type SaleFiscalFormState,
 } from "@/src/components/sales/SaleTaxPanel";
-import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import { api } from "@/src/lib/api";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
@@ -785,17 +785,20 @@ export default function SalesChatComposer({
           </div>
         )}
 
-        {/* 3. Datos del cliente (Nombre, Teléfono, Facturación electrónica) */}
-        <div className="space-y-3">
-          <div className="flex flex-col gap-1">
-            <input
-              value={fiscalForm.buyerName}
-              disabled={isReadonly}
-              onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
-              placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
-              className={panelInputClass()}
-            />
+        {/* 3. Datos del cliente y contexto fiscal */}
+        <div className="space-y-3 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
+            <FileText className="h-4 w-4 text-[#0B3F64]" />
+            {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
           </div>
+
+          <input
+            value={fiscalForm.buyerName}
+            disabled={isReadonly}
+            onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerName: e.target.value }))}
+            placeholder={fiscalForm.buyerType === "JURIDICA" ? "Razón social" : "Nombre del cliente"}
+            className={panelInputClass()}
+          />
 
           <PhoneSelector
             countryCode={countryCode}
@@ -806,12 +809,8 @@ export default function SalesChatComposer({
           />
 
           {taxSettingsEnabled && (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
-              <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
-                <FileText className="h-4 w-4 text-[#0B3F64]" />
-                {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
-              </div>
-              <div className="mb-3 grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
+            <>
+              <div className="grid h-10 grid-cols-2 rounded-xl bg-slate-100 p-1">
                 <button
                   type="button"
                   disabled={isReadonly}
@@ -852,26 +851,8 @@ export default function SalesChatComposer({
                   Empresa
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-2 w-full min-w-0">
-                <div className="hidden min-w-0">
-                  <select
-                    value={fiscalForm.buyerDocumentType}
-                    disabled={isReadonly}
-                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerDocumentType: e.target.value as any }))}
-                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-2.5 text-xs outline-none focus:border-[#0B3F64] transition text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    {fiscalForm.buyerType === "JURIDICA" ? (
-                      <option value="NIT">NIT / RUT</option>
-                    ) : (
-                      <>
-                        <option value="CC">Cédula</option>
-                        <option value="CE">Cédula Extr.</option>
-                        <option value="PASAPORTE">Pasaporte</option>
-                        <option value="TI">T. Identidad</option>
-                      </>
-                    )}
-                  </select>
-                </div>
+
+              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="min-w-0">
                   <input
                     value={fiscalForm.buyerDocumentNumber}
@@ -892,9 +873,10 @@ export default function SalesChatComposer({
                   />
                 </div>
               </div>
+
               {fiscalForm.buyerType === "JURIDICA" && (
                 <>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {visibleResponsibilities.map(({ key, label }) => {
                       const granContribuyenteDisabled =
                         key === "buyerIsGranContribuyente" &&
@@ -929,20 +911,14 @@ export default function SalesChatComposer({
                       );
                     })}
                   </div>
-                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <select
+
+                  <MunicipalitySelect
                     value={fiscalForm.fiscalMunicipalityCode}
                     disabled={isReadonly}
-                    onChange={(e) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: e.target.value }))}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-[#0B3F64] disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    <option value="">Municipio ICA</option>
-                    {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
-                      <option key={municipality.code} value={municipality.code}>
-                        {municipality.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => setFiscalForm(prev => ({ ...prev, fiscalMunicipalityCode: value }))}
+                    className="h-11 rounded-xl border-sky-200 px-3 py-0 shadow-none"
+                  />
+
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">ReteICA / ICA retenido (por mil)</span>
                     <input
@@ -959,6 +935,7 @@ export default function SalesChatComposer({
                       className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#0B3F64] placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500"
                     />
                   </div>
+
                   {taxPreview && (
                     <div className="flex flex-col gap-1">
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
@@ -970,10 +947,9 @@ export default function SalesChatComposer({
                       </div>
                     </div>
                   )}
-                  </div>
                 </>
               )}
-            </div>
+            </>
           )}
         </div>
 
