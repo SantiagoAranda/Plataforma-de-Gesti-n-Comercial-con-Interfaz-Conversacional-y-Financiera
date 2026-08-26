@@ -184,7 +184,7 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             />
           </div>
           <span className="text-slate-400 text-xs font-medium text-right shrink-0 min-w-[40px]">
-            {pct}%
+            {pct < 0 ? "--" : `${pct}%`}
           </span>
         </div>
       </div>
@@ -239,10 +239,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.max(rawPctUtilidadBruta, 0)}%` }}
+                style={{ width: `${Math.min(Math.max(rawPctUtilidadBruta, 0), 100)}%` }}
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadBruta}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadBruta < 0 ? "--" : `${rawPctUtilidadBruta}%`}</span>
           </div>
         </div>
       </div>
@@ -281,10 +281,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.max(rawPctUtilidadAntesDeImpuestos, 0)}%` }} 
+                style={{ width: `${Math.min(Math.max(rawPctUtilidadAntesDeImpuestos, 0), 100)}%` }} 
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadAntesDeImpuestos}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadAntesDeImpuestos < 0 ? "--" : `${rawPctUtilidadAntesDeImpuestos}%`}</span>
           </div>
         </div>
       </div>
@@ -330,10 +330,10 @@ export function MovementSummaryList({ metrics }: MovementSummaryListProps) {
             <div className="w-full bg-neutral-100 h-1 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                style={{ width: `${Math.max(rawPctUtilidadDelEjercicio, 0)}%` }} 
+                style={{ width: `${Math.min(Math.max(rawPctUtilidadDelEjercicio, 0), 100)}%` }} 
               />
             </div>
-            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadDelEjercicio}%</span>
+            <span className="text-[10px] font-medium text-neutral-400 w-8 text-right">{rawPctUtilidadDelEjercicio < 0 ? "--" : `${rawPctUtilidadDelEjercicio}%`}</span>
           </div>
         </div>
       </div>

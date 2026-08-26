@@ -68,10 +68,10 @@ export function MovementPercentBarChart({
         {items.map((item) => {
           const rawPct = Math.abs(item.percentage ?? 0);
 
-          const width =
-            rawPct < 1
-              ? 0
-              : Math.min(100, (rawPct / maxPct) * 100);
+          // Si el valor es 0 exacto la barra queda vacía.
+          // Si hay algún valor (aunque sea menor a 1%) se muestra al menos 2% para que sea visible.
+          const barPct = rawPct === 0 ? 0 : Math.min(100, (rawPct / maxPct) * 100);
+          const width = rawPct === 0 ? 0 : Math.max(barPct, 2);
 
           const tone =
             item.tone ?? (item.value >= 0 ? "green" : "red");

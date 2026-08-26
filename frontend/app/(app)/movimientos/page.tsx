@@ -214,8 +214,14 @@ export default function MovimientosPage() {
 
     run();
 
+    const handleCreated = () => {
+      run();
+    };
+    window.addEventListener("accounting:movement-created", handleCreated);
+
     return () => {
       active = false;
+      window.removeEventListener("accounting:movement-created", handleCreated);
     };
   }, [dateRange]);
 
