@@ -746,7 +746,7 @@ function InventarioPageContent() {
           )}
 
           {/* Floating Action / Chat Composer Bar */}
-          <div className="pointer-events-auto rounded-3xl border border-slate-200 bg-white p-2">
+          <div className="pointer-events-auto relative z-50 rounded-3xl border border-slate-200 bg-white p-2">
             <form
               className="flex min-w-0 items-center gap-2"
               onSubmit={(event) => {
