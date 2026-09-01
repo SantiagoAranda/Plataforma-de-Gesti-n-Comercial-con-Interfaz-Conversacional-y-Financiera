@@ -68,8 +68,7 @@ function KardexPageContent() {
 
   useEffect(() => {
     void loadIngredients();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadIngredients]);
 
   const selectedIngredient = useMemo(
     () => ingredients.find((i) => i.id === ingredientId) ?? null,

@@ -740,21 +740,24 @@ export function IngredientDetailSheet({
                 ) : (
                   <>
                     {activeTab === "compras" && (
-                      <MovementForm
-                        formRef={movementFormRef}
-                        ingredient={ingredient}
-                        initialAction="PURCHASE"
-                        disabledActions={[
-                          "PURCHASE_RETURN",
-                          "ADJUSTMENT_POSITIVE",
-                          "ADJUSTMENT_NEGATIVE",
-                        ]}
-                        onSuccess={handleMovementSuccess}
-                        compact
-                        hideSubmitButton
-                        onValidationChange={setMovementFormValid}
-                        onSubmittingChange={setMovementFormSubmitting}
-                      />
+                      <>
+                        {false && (
+                          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                            Este ingrediente estÃ¡ archivado. Solo podÃ©s registrar ajustes trazables de stock.
+                          </div>
+                        )}
+                        <MovementForm
+                          formRef={movementFormRef}
+                          ingredient={ingredient}
+                          initialAction="PURCHASE"
+                          disabledActions={["PURCHASE_RETURN", "ADJUSTMENT_POSITIVE", "ADJUSTMENT_NEGATIVE"]}
+                          onSuccess={handleMovementSuccess}
+                          compact
+                          hideSubmitButton
+                          onValidationChange={setMovementFormValid}
+                          onSubmittingChange={setMovementFormSubmitting}
+                        />
+                      </>
                     )}
 
                     {activeTab === "kardex" &&
@@ -1096,7 +1099,7 @@ export function IngredientDetailSheet({
                     activeTab === "compras"
                       ? "Confirmar movimiento"
                       : activeTab === "insumo"
-                        ? "Guardar cambios"
+                        ? "Guardar insumo"
                         : "Kardex"
                   }
                   value=""
@@ -1141,7 +1144,7 @@ export function IngredientDetailSheet({
                     activeTab === "compras"
                       ? "Confirmar movimiento"
                       : activeTab === "insumo"
-                        ? "Guardar cambios"
+                        ? "Guardar insumo"
                         : "Enviar"
                   }
                   className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-md"
@@ -1151,7 +1154,7 @@ export function IngredientDetailSheet({
                         {activeTab === "compras"
                           ? "Confirmar movimiento"
                           : activeTab === "insumo"
-                            ? "Guardar cambios"
+                            ? "Guardar insumo"
                             : "Historial Kardex"}
                       </span>
                     </div>

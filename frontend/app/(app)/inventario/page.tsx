@@ -51,6 +51,7 @@ import {
   getInventoryValueSummary,
   getRecipesBulk,
   getSimpleItemsInventorySummary,
+  listIngredients,
   listServiceConsumption,
   type CreateIngredientDto,
   type InventorySummaryIngredient,
@@ -180,6 +181,11 @@ function InventarioPageContent() {
     null,
   );
   const [saveBarContext, setSaveBarContext] = useState<SaveBarContext>(null);
+  // Detail sheets own their footers. Do not leave the page-level composer
+  // mounted above either fixed detail surface.
+  const ingredientDetailOpen = selectedIngredientId !== null;
+  const productDetailOpen = selectedProductId !== null;
+  const inventoryDetailOpen = ingredientDetailOpen || productDetailOpen;
 
   // Sync selectedIngredientId with searchParams if present
   useEffect(() => {
@@ -639,9 +645,10 @@ function InventarioPageContent() {
       </ItemPanelLayout>
 
       {/* Floating Chat & Expandable Form Architecture (Identical to Sales / Accounting / Mi Negocio) */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] bg-transparent px-3 py-3 lg:left-[408px] lg:right-0">
-        <div className="mx-auto w-full max-w-3xl">
-          <div className="relative">
+      {!inventoryDetailOpen && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] bg-transparent px-3 py-3 lg:left-[408px] lg:right-0">
+          <div className="mx-auto w-full max-w-3xl">
+            <div className="relative">
           {ingredientSheetOpen && (
             <>
               {/* Overlay Backdrop - Dark without blur */}
@@ -871,13 +878,14 @@ function InventarioPageContent() {
               </div>
             )}
           </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <IngredientDetailSheet
         ingredientId={selectedIngredientId}
-        open={!!selectedIngredientId}
+        open={ingredientDetailOpen}
         onClose={handleCloseIngredientSheet}
         onChanged={load}
       />
@@ -885,7 +893,7 @@ function InventarioPageContent() {
         product={
           simpleProducts.find((item) => item.id === selectedProductId) ?? null
         }
-        open={!!selectedProductId}
+        open={productDetailOpen}
         onClose={handleCloseProductSheet}
         onChanged={load}
       />

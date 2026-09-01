@@ -177,6 +177,9 @@ function MiNegocioPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  // Detail and confirmation dialogs own their interaction surface and footer.
+  // The fixed catalog composer must be unmounted while either is open.
+  const hasModalSurfaceOpen = Boolean(itemForDetail || deleteId);
 
   const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
   const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
@@ -192,7 +195,7 @@ function MiNegocioPageContent() {
       }
 
       const data = await getCached(key, 60_000, () =>
-        api<Item[]>(`/items?status=ACTIVE&lightweight=true`),
+        api<Item[]>(`/items?status=${dbStatus}&lightweight=true`),
       );
 
       const sorted = [...data].sort(
@@ -867,7 +870,7 @@ function MiNegocioPageContent() {
         )}
       </main>
 
-      <MiNegocioChatComposer
+      {!hasModalSurfaceOpen && <MiNegocioChatComposer
         mode={composerMode}
         onToggle={handleToggleComposer}
         searchValue={searchQuery}
@@ -922,7 +925,7 @@ function MiNegocioPageContent() {
           saleConcept={saleConcept}
           setSaleConcept={setSaleConcept}
         />
-      </MiNegocioChatComposer>
+      </MiNegocioChatComposer>}
 
       <ItemDetailModal
         item={itemForDetail}
@@ -948,8 +951,7 @@ function MiNegocioPageContent() {
               ¿Eliminar item?
             </h3>
             <p className="text-xs text-neutral-500 mb-6 font-medium leading-relaxed">
-              Esta acción ocultará el item de tu catálogo activo. Podrás
-              recuperarlo luego si es necesario.
+              Esta acción ocultará el item de tu catálogo activo.
             </p>
             <div className="flex flex-col gap-2">
               <button
@@ -960,7 +962,7 @@ function MiNegocioPageContent() {
                 }}
                 className="w-full py-3 rounded-xl bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-100 active:scale-95 transition"
               >
-                Eliminar definitivamente
+                Eliminar
               </button>
               <button
                 onClick={() => setDeleteId(null)}

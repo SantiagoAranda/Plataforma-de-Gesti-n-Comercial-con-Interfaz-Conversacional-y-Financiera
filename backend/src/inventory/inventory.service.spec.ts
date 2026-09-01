@@ -328,6 +328,43 @@ describe('InventoryService', () => {
     expect(tx.inventoryMovement.create).not.toHaveBeenCalled();
   });
 
+  it('allows an archived ingredient only in explicit inventory adjustments', async () => {
+    const { service, tx } = createService();
+    tx.ingredient.findFirst.mockResolvedValue({
+      id: ingredientId,
+      businessId,
+      name: 'Flour',
+      status: 'INACTIVE',
+      deletedAt: new Date(),
+      currentStock: new Prisma.Decimal(8),
+      averageCost: new Prisma.Decimal(3),
+    });
+    tx.inventoryMovement.create.mockImplementation(({ data }: { data: any }) =>
+      Promise.resolve({ id: 'movement-1', ...data }),
+    );
+
+    const movement = await service.applyInventoryMovement(
+      tx as any,
+      businessId,
+      {
+        ingredientId,
+        type: 'ADJUSTMENT_NEGATIVE',
+        quantity: 8,
+        referenceType: 'MANUAL',
+        detail: 'Physical stock correction',
+      },
+    );
+
+    expect(movement.stockAfter.toString()).toBe('0');
+    expect(tx.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredientId },
+      data: {
+        currentStock: new Prisma.Decimal(0),
+        averageCost: new Prisma.Decimal(3),
+      },
+    });
+  });
+
   it('rejects movements for an inactive SIMPLE item', async () => {
     const { service, tx } = createService();
     tx.item.findFirst.mockResolvedValue({
@@ -3097,7 +3134,7 @@ describe('InventoryService', () => {
     });
   });
 
-  it('includes current ACTIVE and INACTIVE ingredients but excludes deleted identities', async () => {
+  it('includes archived ingredients with a non-zero residual balance in valuation', async () => {
     const { service, prisma } = createService();
     const rows = [
       {
@@ -3115,23 +3152,23 @@ describe('InventoryService', () => {
       {
         status: 'INACTIVE',
         deletedAt: new Date(),
-        currentStock: new Prisma.Decimal(999),
-        averageCost: new Prisma.Decimal(999),
+        currentStock: new Prisma.Decimal(8),
+        averageCost: new Prisma.Decimal(25),
       },
     ];
     prisma.ingredient.findMany.mockImplementationOnce(
-      ({ where }: { where: { deletedAt: null } }) =>
-        Promise.resolve(
-          rows.filter((row) => row.deletedAt === where.deletedAt),
-        ),
+      () => Promise.resolve(rows),
     );
     prisma.item.findMany.mockResolvedValueOnce([]);
 
     const result = await service.getValueSummary(businessId);
 
-    expect(result.ingredientsValue).toBe('2500.000000');
+    expect(result.ingredientsValue).toBe('2700.000000');
     expect(prisma.ingredient.findMany).toHaveBeenCalledWith({
-      where: { businessId, deletedAt: null },
+      where: {
+        businessId,
+        OR: [{ deletedAt: null }, { currentStock: { not: 0 } }],
+      },
       select: { currentStock: true, averageCost: true },
     });
   });
@@ -3255,6 +3292,12 @@ describe('InventoryService', () => {
 
   it('applies ingredientId, type and date filters to global kardex query', async () => {
     const { service, prisma } = createService();
+    prisma.ingredient.findFirst.mockResolvedValue({
+      id: 'ingredient-1',
+      businessId,
+      status: 'INACTIVE',
+      deletedAt: new Date(),
+    });
     prisma.inventoryMovement.count.mockResolvedValue(0);
     prisma.inventoryMovement.findMany.mockResolvedValue([]);
 

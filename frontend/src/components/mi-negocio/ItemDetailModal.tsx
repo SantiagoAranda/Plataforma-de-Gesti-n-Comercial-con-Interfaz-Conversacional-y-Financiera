@@ -146,23 +146,23 @@ export default function ItemDetailModal({ item, open, onClose, onEdit, onDelete,
   // regardless of whether a product image is present or not.
   const actionFooter = (
     <div className="space-y-2">
-      <button
+      {displayItem.status !== "INACTIVE" && <button
         type="button"
         onClick={() => onEdit(displayItem)}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-neutral-900 text-xs font-bold uppercase tracking-widest text-white shadow-sm transition active:scale-[0.99] hover:bg-neutral-800"
       >
         <Edit size={14} />
         <span>{displayItem.type === "PRODUCT" ? "Editar Producto" : "Editar Servicio"}</span>
-      </button>
+      </button>}
 
-      <button
+      {displayItem.status !== "INACTIVE" && <button
         type="button"
         onClick={() => onDelete(displayItem)}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-bold uppercase tracking-widest text-rose-600 shadow-sm transition active:scale-[0.99] hover:bg-rose-100"
       >
         <Trash2 size={14} />
         <span>{displayItem.type === "PRODUCT" ? "Eliminar Producto" : "Eliminar Servicio"}</span>
-      </button>
+      </button>}
     </div>
   );
 

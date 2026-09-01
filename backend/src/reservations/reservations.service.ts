@@ -191,6 +191,7 @@ export class ReservationsService {
         id: itemId,
         businessId,
         type: 'SERVICE',
+        status: 'ACTIVE',
       },
       select: {
         id: true,
@@ -198,7 +199,18 @@ export class ReservationsService {
       },
     });
 
-    if (!item) throw new BadRequestException('Invalid service');
+    if (!item) {
+      const service = await this.prisma.item.findFirst({
+        where: { id: itemId, businessId, type: 'SERVICE' },
+        select: { id: true },
+      });
+      if (service) {
+        throw new BadRequestException(
+          'El servicio no estÃ¡ disponible para nuevas reservas.',
+        );
+      }
+      throw new BadRequestException('Invalid service');
+    }
 
     return item;
   }
@@ -208,17 +220,7 @@ export class ReservationsService {
       throw new BadRequestException('Invalid time range');
     }
 
-    const item = await this.prisma.item.findFirst({
-      where: {
-        id: dto.itemId,
-        businessId,
-        type: 'SERVICE',
-      },
-    });
-
-    if (!item) {
-      throw new BadRequestException('Invalid service');
-    }
+    await this.getBusinessService(businessId, dto.itemId);
 
     const dateOnly = this.parseDateOnly(dto.date);
 

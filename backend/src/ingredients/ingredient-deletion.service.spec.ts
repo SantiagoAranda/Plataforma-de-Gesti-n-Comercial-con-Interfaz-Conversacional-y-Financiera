@@ -1,4 +1,3 @@
-import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { IngredientsService } from './ingredients.service';
 
@@ -49,7 +48,7 @@ describe('IngredientsService smart deletion', () => {
   it('always preserves an ingredient with a purchase presentation', async () => {
     const { service, prisma } = setup({ purchasePresentations: 1 });
     await expect(
-      service.remove('business-1', ingredient.id, 'DELETE_PERMANENTLY'),
+      service.remove('business-1', ingredient.id),
     ).resolves.toMatchObject({
       deletionMode: 'SOFT_DELETE',
       preservedHistory: true,
@@ -61,7 +60,7 @@ describe('IngredientsService smart deletion', () => {
     expect(prisma.ingredient.delete).not.toHaveBeenCalled();
   });
 
-  it('requires an explicit decision for an isolated residual balance', async () => {
+  it('soft deletes an ingredient with a residual balance without changing stock', async () => {
     const { service, prisma } = setup();
     prisma.ingredient.findFirst.mockResolvedValue({
       ...ingredient,
@@ -69,18 +68,11 @@ describe('IngredientsService smart deletion', () => {
     });
     await expect(
       service.remove('business-1', ingredient.id),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('can preserve an isolated residual balance', async () => {
-    const { service, prisma } = setup();
-    prisma.ingredient.findFirst.mockResolvedValue({
-      ...ingredient,
-      averageCost: new Prisma.Decimal(4),
-    });
-    await expect(
-      service.remove('business-1', ingredient.id, 'PRESERVE_HISTORY'),
-    ).resolves.toMatchObject({ deletionMode: 'SOFT_DELETE' });
+    ).resolves.toMatchObject({ deletionMode: 'SOFT_DELETE', preservedHistory: true });
     expect(prisma.ingredient.delete).not.toHaveBeenCalled();
+    expect(prisma.ingredient.update).toHaveBeenCalledWith({
+      where: { id: ingredient.id },
+      data: { status: 'INACTIVE', deletedAt: expect.any(Date) },
+    });
   });
 });

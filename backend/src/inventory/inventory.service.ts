@@ -378,6 +378,13 @@ export class InventoryService {
     businessId: string,
     query: InventoryKardexGlobalQueryDto,
   ) {
+    if (query.ingredientId) {
+      await this.loadIngredientOrThrow(
+        this.prisma,
+        businessId,
+        query.ingredientId,
+      );
+    }
     const page = query.page ?? 1;
     const limit = query.limit ?? 25;
     const skip = (page - 1) * limit;
@@ -474,7 +481,10 @@ export class InventoryService {
   async getValueSummary(businessId: string) {
     const [ingredients, simpleProducts] = await this.prisma.$transaction([
       this.prisma.ingredient.findMany({
-        where: { businessId, deletedAt: null },
+        where: {
+          businessId,
+          OR: [{ deletedAt: null }, { currentStock: { not: 0 } }],
+        },
         select: { currentStock: true, averageCost: true },
       }),
       this.prisma.item.findMany({
@@ -2147,7 +2157,7 @@ export class InventoryService {
   private async resolveMovementTarget(
     tx: Prisma.TransactionClient,
     businessId: string,
-    input: Pick<ApplyInventoryMovementInput, 'ingredientId' | 'itemId'>,
+    input: Pick<ApplyInventoryMovementInput, 'ingredientId' | 'itemId' | 'type'>,
   ): Promise<StockTarget> {
     const hasIngredient = Boolean(input.ingredientId);
     const hasItem = Boolean(input.itemId);
@@ -2164,7 +2174,11 @@ export class InventoryService {
         businessId,
         input.ingredientId,
       );
-      if (!isIngredientOperational(ingredient)) {
+      const isArchivedAdjustment =
+        !isIngredientOperational(ingredient) &&
+        (input.type === 'ADJUSTMENT_POSITIVE' ||
+          input.type === 'ADJUSTMENT_NEGATIVE');
+      if (!isIngredientOperational(ingredient) && !isArchivedAdjustment) {
         throw new BadRequestException({
           code: 'INGREDIENT_NOT_OPERATIONAL',
           message: 'El ingrediente no está disponible para nuevas operaciones.',
@@ -2198,7 +2212,10 @@ export class InventoryService {
     businessId: string,
     target: { ingredientId?: string | null; itemId?: string | null },
   ) {
-    await this.resolveMovementTarget(tx, businessId, target);
+    await this.resolveMovementTarget(tx, businessId, {
+      ...target,
+      type: 'INVENTORY_INITIAL',
+    });
 
     const existingMovement = await tx.inventoryMovement.findFirst({
       where: {

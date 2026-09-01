@@ -57,10 +57,7 @@ export class IngredientsService {
 
     throw new ConflictException({
       code: 'INGREDIENT_NAME_ALREADY_EXISTS',
-      message:
-        existing.status === 'INACTIVE'
-          ? 'Ya existe un ingrediente inactivo con este nombre. Puedes reactivarlo o eliminarlo antes de crear uno nuevo.'
-          : 'Ya existe un ingrediente con este nombre.',
+      message: 'Ya existe un ingrediente con este nombre.',
     });
   }
 
@@ -438,7 +435,6 @@ export class IngredientsService {
 
   async findAll(businessId: string, query: ListIngredientsQueryDto) {
     const search = query.search?.trim();
-
     const ingredients = await this.prisma.ingredient.findMany({
       where: {
         businessId,
@@ -459,7 +455,11 @@ export class IngredientsService {
 
   async findOne(businessId: string, id: string) {
     const ingredient = await this.prisma.ingredient.findFirst({
-      where: { id, businessId, deletedAt: null },
+      where: {
+        id,
+        businessId,
+        deletedAt: null,
+      },
       include: {
         _count: { select: { inventoryMovements: true } },
         stockUnit: true,
@@ -606,7 +606,7 @@ export class IngredientsService {
 
       return tx.ingredient.update({
         where: { id },
-        data: { status: 'INACTIVE' },
+        data: { status: 'INACTIVE', deletedAt: new Date() },
       });
     });
   }
@@ -733,19 +733,6 @@ export class IngredientsService {
     };
   }
 
-  async reactivate(businessId: string, id: string) {
-    const ingredient = await this.findOne(businessId, id);
-
-    if (ingredient.status === 'ACTIVE') {
-      return ingredient;
-    }
-
-    return this.prisma.ingredient.update({
-      where: { id },
-      data: { status: 'ACTIVE' },
-    });
-  }
-
   private async loadDeletionState(
     tx: Prisma.TransactionClient | PrismaService,
     businessId: string,
@@ -791,11 +778,9 @@ export class IngredientsService {
     protectedRelationCount: number,
   ) {
     if (protectedRelationCount > 0) return 'PRESERVE_REQUIRED' as const;
-    if (
-      !new Prisma.Decimal(ingredient.currentStock).isZero() ||
-      !new Prisma.Decimal(ingredient.averageCost).isZero()
-    ) {
-      return 'RESIDUAL_DECISION_REQUIRED' as const;
+    if (!new Prisma.Decimal(ingredient.currentStock).isZero() ||
+      !new Prisma.Decimal(ingredient.averageCost).isZero()) {
+      return 'PRESERVE_REQUIRED' as const;
     }
     return 'HARD_DELETE' as const;
   }
@@ -838,20 +823,7 @@ export class IngredientsService {
     };
   }
 
-  async remove(
-    businessId: string,
-    id: string,
-    residualInventoryAction?: string,
-  ) {
-    const allowedActions = [
-      undefined,
-      'DELETE_PERMANENTLY',
-      'PRESERVE_HISTORY',
-    ];
-    if (!allowedActions.includes(residualInventoryAction)) {
-      throw new BadRequestException('Invalid residualInventoryAction');
-    }
-
+  async remove(businessId: string, id: string) {
     return this.runSerializableTransaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "Ingredient" WHERE "businessId" = ${businessId} AND "id" = ${id} AND "deletedAt" IS NULL FOR UPDATE`,
@@ -867,11 +839,7 @@ export class IngredientsService {
         deletionState.protectedRelationCount,
       );
 
-      if (
-        mode === 'PRESERVE_REQUIRED' ||
-        (mode === 'RESIDUAL_DECISION_REQUIRED' &&
-          residualInventoryAction === 'PRESERVE_HISTORY')
-      ) {
+      if (mode === 'PRESERVE_REQUIRED') {
         await tx.ingredient.update({
           where: { id },
           data: { status: 'INACTIVE', deletedAt: new Date() },
@@ -884,10 +852,7 @@ export class IngredientsService {
         };
       }
 
-      if (
-        mode === 'RESIDUAL_DECISION_REQUIRED' &&
-        residualInventoryAction !== 'DELETE_PERMANENTLY'
-      ) {
+      if (false) {
         throw new ConflictException({
           code: 'INGREDIENT_DELETION_DECISION_REQUIRED',
           message:

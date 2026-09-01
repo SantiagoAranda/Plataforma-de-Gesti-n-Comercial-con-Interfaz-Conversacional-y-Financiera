@@ -539,6 +539,14 @@ export class ItemsService {
   }
 
   async setStatus(businessId: string, id: string, status: ItemStatus) {
+    if (status === ItemStatus.INACTIVE) {
+      return this.archiveItem(businessId, id);
+    }
+
+    return this.reactivateItem(businessId, id);
+  }
+
+  private async archiveItem(businessId: string, id: string) {
     const existing = await this.prisma.item.findFirst({
       where: { id, businessId },
     });
@@ -547,21 +555,25 @@ export class ItemsService {
 
     return this.prisma.item.update({
       where: { id },
-      data: { status },
+      data: { status: ItemStatus.INACTIVE },
     });
   }
 
-  async remove(businessId: string, id: string) {
+  private async reactivateItem(businessId: string, id: string) {
     const existing = await this.prisma.item.findFirst({
       where: { id, businessId },
     });
 
     if (!existing) throw new NotFoundException('Item not found');
 
-    await this.prisma.item.update({
+    return this.prisma.item.update({
       where: { id },
-      data: { status: ItemStatus.INACTIVE },
+      data: { status: ItemStatus.ACTIVE },
     });
+  }
+
+  async remove(businessId: string, id: string) {
+    await this.archiveItem(businessId, id);
 
     return { ok: true };
   }

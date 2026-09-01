@@ -31,4 +31,36 @@ describe('ItemsService', () => {
       }),
     );
   });
+
+  it('deletes through an inactive status without inventory writes', async () => {
+    const prisma = {
+      item: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'item-1' }),
+        update: jest.fn().mockResolvedValue({ id: 'item-1', status: 'INACTIVE' }),
+        delete: jest.fn(),
+      },
+      inventoryMovement: { delete: jest.fn(), deleteMany: jest.fn() },
+    };
+    const service = new ItemsService(
+      prisma as any,
+      { getPublicUrl: jest.fn() } as any,
+      {} as any,
+    );
+
+    await service.setStatus('business-1', 'item-1', 'INACTIVE' as any);
+    expect(prisma.item.update).toHaveBeenCalledWith({
+      where: { id: 'item-1' },
+      data: { status: 'INACTIVE' },
+    });
+    expect(prisma.item.delete).not.toHaveBeenCalled();
+    expect(prisma.inventoryMovement.delete).not.toHaveBeenCalled();
+    expect(prisma.inventoryMovement.deleteMany).not.toHaveBeenCalled();
+
+    await service.remove('business-1', 'item-1');
+    expect(prisma.item.update).toHaveBeenLastCalledWith({
+      where: { id: 'item-1' },
+      data: { status: 'INACTIVE' },
+    });
+
+  });
 });
