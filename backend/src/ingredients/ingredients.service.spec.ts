@@ -424,29 +424,6 @@ describe('IngredientsService (minStock)', () => {
     ).resolves.toBeDefined();
   });
 
-  it('reactivates an inactive ingredient', async () => {
-    const { service, prisma } = createService();
-    prisma.ingredient.findFirst.mockResolvedValue({
-      id: ingredientId,
-      businessId,
-      name: 'Flour',
-      status: 'INACTIVE',
-    });
-    prisma.ingredient.update.mockResolvedValue({
-      id: ingredientId,
-      businessId,
-      status: 'ACTIVE',
-    });
-
-    const result = await service.reactivate(businessId, ingredientId);
-
-    expect(result.status).toBe('ACTIVE');
-    expect(prisma.ingredient.update).toHaveBeenCalledWith({
-      where: { id: ingredientId },
-      data: { status: 'ACTIVE' },
-    });
-  });
-
   it('returns deactivation impact scoped to the ingredient business', async () => {
     const { service, prisma } = createService();
     prisma.ingredient.findFirst.mockResolvedValue({
@@ -508,26 +485,11 @@ describe('IngredientsService (minStock)', () => {
     expect(prisma.itemOption.findMany).toHaveBeenCalled();
     expect(prisma.ingredient.update).toHaveBeenCalledWith({
       where: { id: ingredientId },
-      data: { status: 'INACTIVE' },
+      data: { status: 'INACTIVE', deletedAt: expect.any(Date) },
     });
   });
 
-  it('returns active ingredient without updating when reactivate is idempotent', async () => {
-    const { service, prisma } = createService();
-    prisma.ingredient.findFirst.mockResolvedValue({
-      id: ingredientId,
-      businessId,
-      name: 'Flour',
-      status: 'ACTIVE',
-    });
-
-    const result = await service.reactivate(businessId, ingredientId);
-
-    expect(result.status).toBe('ACTIVE');
-    expect(prisma.ingredient.update).not.toHaveBeenCalled();
-  });
-
-  it('does not expose ingredient from another business on findOne/update/reactivate', async () => {
+  it('does not expose ingredient from another business on findOne/update', async () => {
     const { service, prisma } = createService();
     prisma.ingredient.findFirst.mockResolvedValue(null);
 
@@ -537,10 +499,6 @@ describe('IngredientsService (minStock)', () => {
     await expect(
       service.update('business-2', ingredientId, { minStock: '1' } as any),
     ).rejects.toBeInstanceOf(NotFoundException);
-    await expect(
-      service.reactivate('business-2', ingredientId),
-    ).rejects.toBeInstanceOf(NotFoundException);
-
     expect(prisma.ingredient.update).not.toHaveBeenCalled();
   });
 });

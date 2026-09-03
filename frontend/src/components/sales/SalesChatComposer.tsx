@@ -1136,7 +1136,7 @@ export default function SalesChatComposer({
                   value={searchValue}
                   onChange={(e) => onSearchChange(e.target.value)}
                   placeholder="Buscar por cliente o ID..."
-                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
                 />
               )}
 

@@ -133,7 +133,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                   Ver detalle
                 </button>
 
-                <button
+                {item.status !== "INACTIVE" && <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -145,9 +145,9 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                 >
                   <Pencil className="w-3.5 h-3.5 text-neutral-400" />
                   Editar item
-                </button>
+                </button>}
 
-                {inventoryAction && (
+                {item.status !== "INACTIVE" && inventoryAction && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -166,7 +166,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                 {/* Línea divisoria sutil antes de una acción crítica como borrar */}
                 <div className="border-t border-neutral-100 my-1" />
 
-                <button
+                {item.status !== "INACTIVE" && <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -178,7 +178,7 @@ function ItemCardComponent({ item, onEdit, onDelete, onView, recipeLineCount = 0
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-400" />
                   Eliminar
-                </button>
+                </button>}
               </div>
             </>
           )}

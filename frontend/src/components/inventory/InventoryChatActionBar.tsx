@@ -242,7 +242,7 @@ export function InventoryChatActionBar({
                 value={effectiveValue}
                 onChange={(e) => handleChange(e.target.value)}
                 placeholder={placeholder ?? "Buscar ingrediente o producto..."}
-                className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
               />
 
               <button

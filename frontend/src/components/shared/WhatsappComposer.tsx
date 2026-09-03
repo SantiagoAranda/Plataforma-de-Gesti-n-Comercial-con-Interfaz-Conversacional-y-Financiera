@@ -145,12 +145,7 @@ export function WhatsappComposer({
           )}
         </button>
 
-        <div
-          className={cn(
-            "min-h-11 min-w-0 flex-1 rounded-[24px] bg-transparent px-3 py-3 ring-1 ring-transparent transition-colors",
-            hasError ? "ring-red-300" : "focus-within:ring-[#0B3F64]/30",
-          )}
-        >
+        <div className="min-h-11 min-w-0 flex-1 bg-transparent px-3 py-3">
           {centerContent ?? (
             <div className="flex items-center gap-2">
               {showEmojiIcon && (
@@ -165,7 +160,7 @@ export function WhatsappComposer({
                   placeholder={placeholder}
                   disabled={disabled || isSubmitting}
                   className={cn(
-                    "w-full resize-none border-none bg-transparent py-0 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-400",
+                    "w-full resize-none border-none bg-transparent py-0 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:text-slate-400",
                     inputClassName,
                   )}
                   {...textareaProps}
@@ -178,7 +173,7 @@ export function WhatsappComposer({
                   placeholder={placeholder}
                   disabled={disabled || isSubmitting}
                   className={cn(
-                    "w-full border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-400",
+                    "w-full border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:cursor-not-allowed disabled:text-slate-400",
                     inputClassName,
                   )}
                 />

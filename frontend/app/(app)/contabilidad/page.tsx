@@ -9,7 +9,9 @@ import {
   type SetStateAction,
 } from "react";
 import Link from "next/link";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import AppHeader from "@/src/components/layout/AppHeader";
+import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
@@ -37,6 +39,82 @@ import {
 } from "@/src/lib/businessDate";
 
 const todayISO = () => getBusinessDayKey(new Date());
+
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+] as const;
+
+function MonthPickerPopover({
+  selectedYear,
+  selectedMonth,
+  onSelect,
+}: {
+  selectedYear: number;
+  selectedMonth: number;
+  onSelect: (year: number, month: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [navYear, setNavYear] = useState(selectedYear);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => { setNavYear(selectedYear); setOpen((o) => !o); }}
+        className="flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 transition"
+      >
+        <CalendarDays className="h-3.5 w-3.5 text-[#0B3F64]" />
+        <span>{MONTHS[selectedMonth - 1]} {selectedYear}</span>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-black/5 bg-white p-3 shadow-xl">
+          <div className="mb-3 flex items-center justify-between">
+            <button type="button" onClick={() => setNavYear((y) => y - 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronLeft className="h-4 w-4 text-slate-500" />
+            </button>
+            <span className="text-sm font-semibold text-slate-800">{navYear}</span>
+            <button type="button" onClick={() => setNavYear((y) => y + 1)} className="rounded-lg p-1 hover:bg-slate-100">
+              <ChevronRight className="h-4 w-4 text-slate-500" />
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {MONTHS.map((m, i) => {
+              const isSelected = navYear === selectedYear && i + 1 === selectedMonth;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => { onSelect(navYear, i + 1); setOpen(false); }}
+                  className={`rounded-xl py-1.5 text-xs font-medium transition ${
+                    isSelected
+                      ? "bg-[#0B3F64] text-white shadow-sm"
+                      : "border border-neutral-100 bg-white text-slate-700 hover:bg-neutral-50"
+                  }`}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type AccountingFormErrors = {
   puc?: string;
@@ -232,6 +310,11 @@ export default function ContabilidadPage() {
   const [selectedMovement, setSelectedMovement] =
     useState<AccountingMovement | null>(null);
 
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [viewMode, setViewMode] = useState<"DAILY" | "MONTH">("DAILY");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -248,6 +331,41 @@ export default function ContabilidadPage() {
 
   const isEditing = Boolean(form.id);
   const isSalesOriginEditing = isEditing && form.originType !== "MANUAL";
+
+  const movementDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    movements.forEach((movement) => {
+      try {
+        const key = getBusinessDayKey(movement.date);
+        if (key) keys.add(key);
+      } catch {}
+    });
+    return keys;
+  }, [movements]);
+
+  const handleMonthSelect = (year: number, month: number) => {
+    setFilterYear(year);
+    setFilterMonth(month);
+    setViewMode("MONTH");
+    setSelectedDate(new Date(year, month - 1, 1));
+  };
+
+  const handleDaySelect = (date: Date) => {
+    setSelectedDate(date);
+    setViewMode("DAILY");
+    setFilterYear(date.getFullYear());
+    setFilterMonth(date.getMonth() + 1);
+  };
+
+  const handleClearDate = () => {
+    const now = new Date();
+    setSelectedDate(now);
+    setViewMode("DAILY");
+    setFilterYear(now.getFullYear());
+    setFilterMonth(now.getMonth() + 1);
+  };
+
+  const hasDateFilter = viewMode === "MONTH" || !isSameCalendarDay(selectedDate, new Date());
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     bottomRef.current?.scrollIntoView({
@@ -286,10 +404,10 @@ export default function ContabilidadPage() {
   const resetForm = useCallback(() => {
     setForm({
       ...emptyForm,
-      date: todayISO(),
+      date: getBusinessDayKey(selectedDate),
     });
     setFormErrors({});
-  }, []);
+  }, [selectedDate]);
 
   const validateForm = useCallback((value: AccountingFormState) => {
     const nextErrors: AccountingFormErrors = {};
@@ -483,6 +601,26 @@ export default function ContabilidadPage() {
         : null;
 
     return movements.filter((movement) => {
+      if (viewMode === "MONTH") {
+        try {
+          const d = new Date(movement.date);
+          if (d.getFullYear() !== filterYear || d.getMonth() + 1 !== filterMonth) {
+            return false;
+          }
+        } catch {
+          return false;
+        }
+      } else {
+        try {
+          const selectedKey = getBusinessDayKey(selectedDate);
+          if (getBusinessDayKey(movement.date) !== selectedKey) {
+            return false;
+          }
+        } catch {
+          return false;
+        }
+      }
+
       if (
         searchFilters.nature !== "ALL" &&
         movement.nature !== searchFilters.nature
@@ -566,7 +704,7 @@ export default function ContabilidadPage() {
       );
       return text.includes(query);
     });
-  }, [movements, searchFilters]);
+  }, [movements, searchFilters, viewMode, filterYear, filterMonth, selectedDate]);
 
   const isEmpty = useMemo(
     () => !loading && displayMovements.length === 0,
@@ -574,7 +712,9 @@ export default function ContabilidadPage() {
   );
 
   const hasActiveDisplayFilters =
-    searchFilters.nature !== "ALL" || searchFilters.query.trim().length > 0;
+    searchFilters.nature !== "ALL" ||
+    searchFilters.query.trim().length > 0 ||
+    hasDateFilter;
 
   const balanceSummary = useMemo(() => {
     const totalDebit = displayMovements.reduce((acc, movement) => {
@@ -633,13 +773,23 @@ export default function ContabilidadPage() {
             deleteLabel="Eliminar"
           />
         ) : (
-          <AppHeader title="Contabilidad" showBack />
+          <AppHeader
+            title="Contabilidad"
+            showBack
+            rightContent={
+              <MonthPickerPopover
+                selectedYear={filterYear}
+                selectedMonth={filterMonth}
+                onSelect={handleMonthSelect}
+              />
+            }
+          />
         )}
       </div>
 
       {/* Resumen del Balance */}
       <div className="shrink-0 bg-white">
-        <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-3 sm:px-4">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-2 pt-3 sm:px-4">
           <section
             className="relative overflow-hidden rounded-[24px] p-5 text-white shadow-md"
             style={{
@@ -656,11 +806,6 @@ export default function ContabilidadPage() {
                   <div className="text-xs font-bold uppercase tracking-wider text-white">
                     Resumen del balance
                   </div>
-                  {hasActiveDisplayFilters && (
-                    <div className="mt-0.5 text-[10px] font-medium text-white/70">
-                      Según resultados visibles
-                    </div>
-                  )}
                 </div>
                 {taxSettingsEnabled && simpleRegimeTaxModuleEnabled && (
                   <Link
@@ -699,6 +844,31 @@ export default function ContabilidadPage() {
               </div>
             </div>
           </section>
+        </div>
+      </div>
+
+      {/* Selector de Fecha / Calendario */}
+      <div className="shrink-0 bg-white">
+        <div className="mx-auto w-full max-w-3xl px-3 pb-3 pt-0 sm:px-4">
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition-all">
+            <DayPickerCalendar
+              selectedDate={selectedDate}
+              onSelectDate={handleDaySelect}
+              markedDateKeys={movementDateKeys}
+              id="accounting-calendar"
+            />
+            {hasDateFilter && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleClearDate}
+                  className="rounded-full bg-[#E6EFF5] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#0B3F64] hover:bg-[#E6EFF5]/80 transition-colors shadow-sm"
+                >
+                  Limpiar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

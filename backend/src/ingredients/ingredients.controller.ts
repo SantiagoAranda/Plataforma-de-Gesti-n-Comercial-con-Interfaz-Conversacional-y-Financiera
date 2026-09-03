@@ -114,21 +114,8 @@ export class IngredientsController {
     return this.ingredientsService.deactivate(req.user.businessId, id);
   }
 
-  @Patch(':id/reactivate')
-  reactivate(@Req() req: any, @Param('id') id: string) {
-    return this.ingredientsService.reactivate(req.user.businessId, id);
-  }
-
   @Delete(':id')
-  remove(
-    @Req() req: any,
-    @Param('id') id: string,
-    @Query('residualInventoryAction') residualInventoryAction?: string,
-  ) {
-    return this.ingredientsService.remove(
-      req.user.businessId,
-      id,
-      residualInventoryAction,
-    );
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.ingredientsService.remove(req.user.businessId, id);
   }
 }
