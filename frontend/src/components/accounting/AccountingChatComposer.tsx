@@ -161,7 +161,7 @@ export function AccountingChatComposer({
                       ? "Edita la descripcion del movimiento (opcional)..."
                       : "Describi el movimiento contable (opcional)..."
                   }
-                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
                 />
               ) : (
                 <input
@@ -169,7 +169,7 @@ export function AccountingChatComposer({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder={currentSearchMode.placeholder}
-                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0"
                 />
               )}
 

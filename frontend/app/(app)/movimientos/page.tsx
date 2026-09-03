@@ -11,7 +11,8 @@ import BottomNavbar from "@/src/components/layout/BottomNav";
 import { MovementEmptyState } from "@/src/components/movements/MovementEmptyState";
 import { MovementProfitHero } from "@/src/components/movements/MovementProfitHero";
 import { MovementSummaryList } from "@/src/components/movements/MovementSummaryList";
-import { getAccountingSummary, type AccountingSummary } from "@/src/services/accounting";
+import { getAccountingSummary, listMovements, type AccountingMovement, type AccountingSummary } from "@/src/services/accounting";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
 import { cn } from "@/src/lib/utils";
 import DayPickerCalendar from "@/src/components/shared/DayPickerCalendar";
 
@@ -162,8 +163,38 @@ export default function MovimientosPage() {
   const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
 
   const [summary, setSummary] = useState<AccountingSummary | null>(null);
+  const [allMovements, setAllMovements] = useState<AccountingMovement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const loadAllMovementDates = useCallback(async () => {
+    try {
+      const data = await listMovements();
+      setAllMovements(data ?? []);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    loadAllMovementDates();
+    const handleCreated = () => {
+      loadAllMovementDates();
+    };
+    window.addEventListener("accounting:movement-created", handleCreated);
+    return () => {
+      window.removeEventListener("accounting:movement-created", handleCreated);
+    };
+  }, [loadAllMovementDates]);
+
+  const movementDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    allMovements.forEach((m) => {
+      try {
+        const key = getBusinessDayKey(m.date);
+        if (key) keys.add(key);
+      } catch {}
+    });
+    return keys;
+  }, [allMovements]);
 
   // ── Rango de fechas para la API ────────────────────────────────────────────
   const dateRange = useMemo(() => {
@@ -416,7 +447,7 @@ export default function MovimientosPage() {
               <DayPickerCalendar
                 selectedDate={selectedDate}
                 onSelectDate={handleDaySelect}
-                markedDateKeys={new Set<string>()}
+                markedDateKeys={movementDateKeys}
                 id="movements-calendar"
               />
 
