@@ -7,6 +7,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { ItemOptionsModule } from '../item-options/item-options.module';
 import { TaxModule } from '../tax/tax.module';
 import { CommonModule } from '../common/common.module';
+import { FiscalDocumentsModule } from '../fiscal-documents/fiscal-documents.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { CommonModule } from '../common/common.module';
     ItemOptionsModule,
     TaxModule,
     CommonModule,
+    FiscalDocumentsModule,
   ],
   controllers: [SalesController],
   providers: [SalesService],

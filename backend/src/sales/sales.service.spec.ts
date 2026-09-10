@@ -6,10 +6,7 @@ import { SalesService } from './sales.service';
 describe('SalesService.findAll', () => {
   const businessId = 'business-1';
 
-  function createService(
-    orders: any[],
-    reservations: any[],
-  ) {
+  function createService(orders: any[], reservations: any[]) {
     const prisma = {
       order: {
         findMany: (jest.fn() as any).mockResolvedValue(orders),
@@ -199,12 +196,24 @@ describe('SalesService.findAll', () => {
   it('returns null fiscal data for a legacy order without an OrderFiscalContext', async () => {
     const createdAt = new Date('2026-08-09T12:00:00.000Z');
     const service = createService(
-      [{
-        id: 'legacy-order', customerName: null, customerWhatsapp: null,
-        paymentMethod: 'CASH', total: new Prisma.Decimal(100), status: 'SENT',
-        inventoryPostedAt: null, accountingPostedAt: null, createdAt, origin: 'MANUAL',
-        fiscalContext: null, taxLines: [], taxSnapshot: null, items: [],
-      }],
+      [
+        {
+          id: 'legacy-order',
+          customerName: null,
+          customerWhatsapp: null,
+          paymentMethod: 'CASH',
+          total: new Prisma.Decimal(100),
+          status: 'SENT',
+          inventoryPostedAt: null,
+          accountingPostedAt: null,
+          createdAt,
+          origin: 'MANUAL',
+          fiscalContext: null,
+          taxLines: [],
+          taxSnapshot: null,
+          items: [],
+        },
+      ],
       [],
     );
 
@@ -253,7 +262,17 @@ describe('SalesService.remove', () => {
 
     const accountingService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma, inventoryService };
+    return {
+      service: new SalesService(
+        prisma,
+        accountingService,
+        inventoryService,
+        {} as any,
+        {} as any,
+      ),
+      prisma,
+      inventoryService,
+    };
   }
 
   it('archives non-completed orders', async () => {
@@ -264,12 +283,16 @@ describe('SalesService.remove', () => {
       inventoryPostedAt: null,
     });
 
-    await expect(service.remove(businessId, 'order-1', 'ORDER')).resolves.toEqual(
-      expect.objectContaining({ archived: true }),
-    );
+    await expect(
+      service.remove(businessId, 'order-1', 'ORDER'),
+    ).resolves.toEqual(expect.objectContaining({ archived: true }));
     expect(prisma.order.update).toHaveBeenCalledTimes(1);
-    expect(inventoryService.reverseInventoryConsumptionForOrder).not.toHaveBeenCalled();
-    expect(inventoryService.applyInventoryConsumptionForOrder).not.toHaveBeenCalled();
+    expect(
+      inventoryService.reverseInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
+    expect(
+      inventoryService.applyInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
   });
 
   it('archives COMPLETED orders when inventoryPostedAt is null', async () => {
@@ -280,12 +303,16 @@ describe('SalesService.remove', () => {
       inventoryPostedAt: null,
     });
 
-    await expect(service.remove(businessId, 'order-1', 'ORDER')).resolves.toEqual(
-      expect.objectContaining({ archived: true }),
-    );
+    await expect(
+      service.remove(businessId, 'order-1', 'ORDER'),
+    ).resolves.toEqual(expect.objectContaining({ archived: true }));
     expect(prisma.order.update).toHaveBeenCalledTimes(1);
-    expect(inventoryService.reverseInventoryConsumptionForOrder).not.toHaveBeenCalled();
-    expect(inventoryService.applyInventoryConsumptionForOrder).not.toHaveBeenCalled();
+    expect(
+      inventoryService.reverseInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
+    expect(
+      inventoryService.applyInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
   });
 
   it('blocks deletion for COMPLETED orders with inventoryPostedAt set', async () => {
@@ -296,16 +323,22 @@ describe('SalesService.remove', () => {
       inventoryPostedAt: new Date(),
     });
 
-    await expect(service.remove(businessId, 'order-1', 'ORDER')).rejects.toThrow(
+    await expect(
+      service.remove(businessId, 'order-1', 'ORDER'),
+    ).rejects.toThrow(
       'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
     );
-    await expect(service.remove(businessId, 'order-1', 'ORDER')).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(
+      service.remove(businessId, 'order-1', 'ORDER'),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prisma.order.update).not.toHaveBeenCalled();
-    expect(inventoryService.reverseInventoryConsumptionForOrder).not.toHaveBeenCalled();
-    expect(inventoryService.applyInventoryConsumptionForOrder).not.toHaveBeenCalled();
+    expect(
+      inventoryService.reverseInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
+    expect(
+      inventoryService.applyInventoryConsumptionForOrder,
+    ).not.toHaveBeenCalled();
   });
 });
 
@@ -406,9 +439,9 @@ describe('SalesService manual service mirror reservations', () => {
         status: { not: 'CANCELLED' },
       }),
     });
-    expect(prisma.reservation.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
-      tx.order.create.mock.invocationCallOrder[0],
-    );
+    expect(
+      prisma.reservation.findFirst.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.order.create.mock.invocationCallOrder[0]);
     expect(tx.reservation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         id: 'order-1',
@@ -450,7 +483,14 @@ describe('SalesService personalized order lines', () => {
           customerName: 'Consumidor final',
           customerWhatsapp: null,
           paymentMethod: 'CASH',
-          items: [],
+          items: [
+            {
+              id: 'order-item-1',
+              itemId: item.id,
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(10000),
+            },
+          ],
         }),
         update: jest.fn(),
         findUniqueOrThrow: (jest.fn() as any).mockResolvedValue({
@@ -491,23 +531,24 @@ describe('SalesService personalized order lines', () => {
     const itemOptionsService = {
       resolveSelectionsForOrderLine: jest
         .fn()
-        .mockImplementation((_businessId, _itemId, quantity: number, selections: any[]) =>
-          Promise.resolve({
-            optionsTotal: new Prisma.Decimal(
-              selections[0]?.optionId === 'cheese' ? 2000 : 1000,
-            ),
-            snapshots: [
-              {
-                groupTitleSnapshot: 'Extras',
-                optionNameSnapshot:
-                  selections[0]?.optionId === 'cheese' ? 'Queso' : 'Aguacate',
-                priceDeltaSnapshot: new Prisma.Decimal(
-                  selections[0]?.optionId === 'cheese' ? 2000 : 1000,
-                ),
-                totalQuantitySnapshot: new Prisma.Decimal(quantity),
-              },
-            ],
-          }),
+        .mockImplementation(
+          (_businessId, _itemId, quantity: number, selections: any[]) =>
+            Promise.resolve({
+              optionsTotal: new Prisma.Decimal(
+                selections[0]?.optionId === 'cheese' ? 2000 : 1000,
+              ),
+              snapshots: [
+                {
+                  groupTitleSnapshot: 'Extras',
+                  optionNameSnapshot:
+                    selections[0]?.optionId === 'cheese' ? 'Queso' : 'Aguacate',
+                  priceDeltaSnapshot: new Prisma.Decimal(
+                    selections[0]?.optionId === 'cheese' ? 2000 : 1000,
+                  ),
+                  totalQuantitySnapshot: new Prisma.Decimal(quantity),
+                },
+              ],
+            }),
         ),
     } as any;
     const inventoryService = {
@@ -540,7 +581,7 @@ describe('SalesService personalized order lines', () => {
     };
   }
 
-  it('calculates the RST fiscal preview before the create transaction', async () => {
+  it('calculates the RST fiscal preview after persisted order items exist', async () => {
     const { service, taxService, executionOrder } = createService();
 
     await service.create(businessId, {
@@ -556,11 +597,11 @@ describe('SalesService personalized order lines', () => {
       },
     });
 
-    expect(executionOrder).toEqual(['preview', 'tx']);
+    expect(executionOrder).toEqual(['tx', 'preview']);
     expect(taxService.calculateTaxPreview).toHaveBeenCalledWith(
       businessId,
       expect.objectContaining({ buyerIsRegimenSimple: true }),
-      undefined,
+      expect.anything(),
     );
   });
 
@@ -589,7 +630,9 @@ describe('SalesService personalized order lines', () => {
       ],
     });
 
-    expect(itemOptionsService.resolveSelectionsForOrderLine).toHaveBeenCalledTimes(2);
+    expect(
+      itemOptionsService.resolveSelectionsForOrderLine,
+    ).toHaveBeenCalledTimes(2);
     expect(tx.order.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -600,7 +643,11 @@ describe('SalesService personalized order lines', () => {
                 itemId: item.id,
                 unitPrice: new Prisma.Decimal(12000),
                 lineTotalSnapshot: new Prisma.Decimal(12000),
-                options: { create: [expect.objectContaining({ optionNameSnapshot: 'Queso' })] },
+                options: {
+                  create: [
+                    expect.objectContaining({ optionNameSnapshot: 'Queso' }),
+                  ],
+                },
               }),
               expect.objectContaining({
                 itemId: item.id,
@@ -643,7 +690,9 @@ describe('SalesService personalized order lines', () => {
         orderId: 'order-1',
         unitPrice: new Prisma.Decimal(12000),
         lineTotal: new Prisma.Decimal(24000),
-        options: { create: [expect.objectContaining({ optionNameSnapshot: 'Queso' })] },
+        options: {
+          create: [expect.objectContaining({ optionNameSnapshot: 'Queso' })],
+        },
       }),
     });
     expect(tx.order.update).toHaveBeenCalledWith({
@@ -659,7 +708,9 @@ describe('SalesService personalized order lines', () => {
     const { service, tx } = createService({ [field]: value });
 
     await expect(
-      service.update(businessId, 'order-1', { items: [{ itemId: item.id, quantity: 1 }] }),
+      service.update(businessId, 'order-1', {
+        items: [{ itemId: item.id, quantity: 1 }],
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(tx.orderItem.deleteMany).not.toHaveBeenCalled();
   });
@@ -689,23 +740,26 @@ describe('SalesService personalized order lines', () => {
     [true, false],
     [false, true],
     [false, false],
-  ])('accepts valid buyer fiscal combination Gran=%s, Autorretenedor=%s', async (buyerIsGranContribuyente, buyerIsAutorretenedor) => {
-    const { service } = createService();
+  ])(
+    'accepts valid buyer fiscal combination Gran=%s, Autorretenedor=%s',
+    async (buyerIsGranContribuyente, buyerIsAutorretenedor) => {
+      const { service } = createService();
 
-    await expect(
-      service.create(businessId, {
-        type: 'PRODUCTO',
-        status: 'PENDIENTE',
-        origin: 'MANUAL',
-        items: [{ itemId: item.id, quantity: 1 }],
-        buyerFiscalContext: {
-          buyerType: 'JURIDICA',
-          buyerIsGranContribuyente,
-          buyerIsAutorretenedor,
-        },
-      }),
-    ).resolves.toEqual(expect.objectContaining({ id: 'order-1' }));
-  });
+      await expect(
+        service.create(businessId, {
+          type: 'PRODUCTO',
+          status: 'PENDIENTE',
+          origin: 'MANUAL',
+          items: [{ itemId: item.id, quantity: 1 }],
+          buyerFiscalContext: {
+            buyerType: 'JURIDICA',
+            buyerIsGranContribuyente,
+            buyerIsAutorretenedor,
+          },
+        }),
+      ).resolves.toEqual(expect.objectContaining({ id: 'order-1' }));
+    },
+  );
 });
 
 describe('SalesService.reverseConfirmedOrder', () => {
@@ -715,9 +769,9 @@ describe('SalesService.reverseConfirmedOrder', () => {
 
   it('reverses inventory via InventoryService and cancels the order (happy path)', async () => {
     const inventoryService = {
-      reverseInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue([
-        { id: 'return-1' },
-      ] as any),
+      reverseInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue(
+        [{ id: 'return-1' }] as any,
+      ),
     } as any;
 
     const tx = {
@@ -740,14 +794,31 @@ describe('SalesService.reverseConfirmedOrder', () => {
       inventoryMovement: {
         findMany: mockFn().mockResolvedValue([]),
       },
+      fiscalDocument: {
+        findFirst: mockFn()
+          .mockResolvedValueOnce({ id: 'invoice-1' })
+          .mockResolvedValueOnce({ id: 'credit-1' }),
+        update: mockFn().mockResolvedValue({}),
+      },
     };
 
     const prisma = {
       $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
     } as any;
 
-    const accountingService = {} as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
+    const accountingService = {
+      reverseOrderMovements: (jest.fn() as any).mockResolvedValue([
+        { id: 'accounting-return-1' },
+      ]),
+    } as any;
+    const service = new SalesService(
+      prisma,
+      accountingService,
+      inventoryService,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
 
     const result = await service.reverseConfirmedOrder(businessId, orderId, {
       reason: 'Cliente canceló',
@@ -763,11 +834,32 @@ describe('SalesService.reverseConfirmedOrder', () => {
       take: 1,
       select: { id: true },
     });
-    expect(inventoryService.reverseInventoryConsumptionForOrder).toHaveBeenCalledWith(
+    expect(
+      inventoryService.reverseInventoryConsumptionForOrder,
+    ).toHaveBeenCalledWith(
       tx,
       businessId,
       { orderId, reason: 'Cliente canceló' },
+      expect.any(Date),
     );
+    expect(accountingService.reverseOrderMovements).toHaveBeenCalledWith(
+      tx,
+      businessId,
+      expect.objectContaining({
+        orderId,
+        reversedAt: expect.any(Date),
+        reason: 'Cliente canceló',
+      }),
+    );
+    const reversedAt =
+      accountingService.reverseOrderMovements.mock.calls[0][2].reversedAt;
+    expect(
+      inventoryService.reverseInventoryConsumptionForOrder.mock.calls[0][3],
+    ).toBe(reversedAt);
+    expect(tx.fiscalDocument.update).toHaveBeenCalledWith({
+      where: { id: 'invoice-1' },
+      data: { status: 'CREDITED', reversalAppliedAt: reversedAt },
+    });
     expect(tx.order.update).toHaveBeenCalledWith({
       where: { id: orderId },
       data: { status: 'CANCELLED' },
@@ -777,8 +869,52 @@ describe('SalesService.reverseConfirmedOrder', () => {
       expect.objectContaining({
         inventoryReversed: true,
         reversalMovements: [{ id: 'return-1' }],
+        accountingReversalMovements: [{ id: 'accounting-return-1' }],
       }),
     );
+  });
+
+  it('does not cancel the order when historical accounting reversal fails', async () => {
+    const inventoryService = {
+      reverseInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue(
+        [],
+      ),
+    } as any;
+    const accountingService = {
+      reverseOrderMovements: (jest.fn() as any).mockRejectedValue(
+        new BadRequestException('Movimientos originales faltantes'),
+      ),
+    } as any;
+    const tx = {
+      order: {
+        findFirst: mockFn().mockResolvedValue({
+          id: orderId,
+          businessId,
+          status: 'COMPLETED',
+          inventoryPostedAt: new Date(),
+          accountingPostedAt: new Date(),
+          items: [],
+        }),
+        update: mockFn(),
+      },
+      inventoryMovement: { findMany: mockFn().mockResolvedValue([]) },
+    };
+    const prisma = {
+      $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+    } as any;
+    const service = new SalesService(
+      prisma,
+      accountingService,
+      inventoryService,
+      {} as any,
+      {} as any,
+    );
+
+    await expect(
+      service.reverseConfirmedOrder(businessId, orderId, {}),
+    ).rejects.toThrow('Movimientos originales faltantes');
+
+    expect(tx.order.update).not.toHaveBeenCalled();
   });
 });
 
@@ -839,7 +975,9 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     };
   }
 
-  function createService(order: Record<string, any> | null = createRecipeOrder()) {
+  function createService(
+    order: Record<string, any> | null = createRecipeOrder(),
+  ) {
     const prisma = {
       order: {
         findFirst: mockFn().mockResolvedValue(order),
@@ -855,16 +993,30 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const accountingService = {} as any;
     const inventoryService = {} as any;
 
-    return { service: new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any), prisma };
+    return {
+      service: new SalesService(
+        prisma,
+        accountingService,
+        inventoryService,
+        {} as any,
+        {} as any,
+      ),
+      prisma,
+    };
   }
 
   it('persists optional ingredient exclusions before inventory is posted', async () => {
     const { service, prisma } = createService();
 
     await expect(
-      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
-        excludedOptionalIngredientIds: [optionalIngredientId],
-      }),
+      service.updateOrderItemOptionalIngredients(
+        businessId,
+        orderId,
+        orderItemId,
+        {
+          excludedOptionalIngredientIds: [optionalIngredientId],
+        },
+      ),
     ).resolves.toEqual(
       expect.objectContaining({
         id: orderItemId,
@@ -884,9 +1036,14 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const { service, prisma } = createService();
 
     await expect(
-      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
-        excludedOptionalIngredientIds: [requiredIngredientId],
-      }),
+      service.updateOrderItemOptionalIngredients(
+        businessId,
+        orderId,
+        orderItemId,
+        {
+          excludedOptionalIngredientIds: [requiredIngredientId],
+        },
+      ),
     ).rejects.toThrow('Mandatory ingredients cannot be excluded');
 
     expect(prisma.orderItem.update).not.toHaveBeenCalled();
@@ -896,9 +1053,14 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const { service, prisma } = createService();
 
     await expect(
-      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
-        excludedOptionalIngredientIds: [outsideIngredientId],
-      }),
+      service.updateOrderItemOptionalIngredients(
+        businessId,
+        orderId,
+        orderItemId,
+        {
+          excludedOptionalIngredientIds: [outsideIngredientId],
+        },
+      ),
     ).rejects.toThrow('outside the optional recipe');
 
     expect(prisma.orderItem.update).not.toHaveBeenCalled();
@@ -908,9 +1070,17 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     const { service, prisma } = createService();
 
     await expect(
-      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
-        excludedOptionalIngredientIds: [optionalIngredientId, optionalIngredientId],
-      }),
+      service.updateOrderItemOptionalIngredients(
+        businessId,
+        orderId,
+        orderItemId,
+        {
+          excludedOptionalIngredientIds: [
+            optionalIngredientId,
+            optionalIngredientId,
+          ],
+        },
+      ),
     ).rejects.toThrow('contains duplicates');
 
     expect(prisma.orderItem.update).not.toHaveBeenCalled();
@@ -922,9 +1092,14 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
     );
 
     await expect(
-      service.updateOrderItemOptionalIngredients(businessId, orderId, orderItemId, {
-        excludedOptionalIngredientIds: [optionalIngredientId],
-      }),
+      service.updateOrderItemOptionalIngredients(
+        businessId,
+        orderId,
+        orderItemId,
+        {
+          excludedOptionalIngredientIds: [optionalIngredientId],
+        },
+      ),
     ).rejects.toThrow('Order inventory has already been posted');
 
     expect(prisma.orderItem.update).not.toHaveBeenCalled();
@@ -967,16 +1142,26 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
       $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
     } as any;
     const inventoryService = {
-      applyInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue([]),
+      applyInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue(
+        [],
+      ),
     } as any;
     const accountingService = {
       postOrderMovements: jest.fn(),
     } as any;
-    const service = new SalesService(prisma, accountingService, inventoryService, {} as any, {} as any);
+    const service = new SalesService(
+      prisma,
+      accountingService,
+      inventoryService,
+      {} as any,
+      {} as any,
+    );
 
     await service.confirmOrder(businessId, orderId, 'ORDER');
 
-    expect(inventoryService.applyInventoryConsumptionForOrder).toHaveBeenCalledWith(
+    expect(
+      inventoryService.applyInventoryConsumptionForOrder,
+    ).toHaveBeenCalledWith(
       tx,
       businessId,
       expect.objectContaining({

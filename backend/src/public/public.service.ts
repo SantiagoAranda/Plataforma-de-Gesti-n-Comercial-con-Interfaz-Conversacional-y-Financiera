@@ -1271,18 +1271,6 @@ export class PublicService {
           dto.customerName,
         )
       : undefined;
-    const fiscalPreview =
-      this.taxService && buyerFiscalContext
-        ? await this.taxService.calculateTaxPreview(business.id, {
-            ...buyerFiscalContext,
-            cartItems: orderItemCreates.map((item) => ({
-              itemId: item.itemId,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice),
-            })),
-          })
-        : undefined;
-
     let order: {
       id: string;
       businessId: string;
@@ -1319,13 +1307,34 @@ export class PublicService {
             origin: true,
             customerName: true,
             total: true,
+            items: {
+              select: {
+                id: true,
+                itemId: true,
+                quantity: true,
+                unitPrice: true,
+              },
+            },
           },
         });
       order =
-        this.taxService && fiscalPreview && buyerFiscalContext
+        this.taxService && buyerFiscalContext
           ? await this.prisma.$transaction(
               async (tx) => {
                 const created = await createOrder(tx);
+                const fiscalPreview = await this.taxService.calculateTaxPreview(
+                  business.id,
+                  {
+                    ...buyerFiscalContext,
+                    cartItems: created.items.map((item) => ({
+                      orderItemId: item.id,
+                      itemId: item.itemId,
+                      quantity: Number(item.quantity),
+                      unitPrice: Number(item.unitPrice),
+                    })),
+                  },
+                  tx,
+                );
                 await this.taxService.freezeTaxCalculation(
                   tx,
                   created.id,

@@ -335,6 +335,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
           id: 'order-1',
           businessId: 'business-1',
           total: 100000,
+          items: [{ id: 'order-item-1', orderId: 'order-1' }],
           business: {
             taxProfile: {
               tradeName: 'Test Business',
@@ -369,6 +370,7 @@ describe('Manual Verification of Colombian Tax Module', () => {
       uvtValue: new Prisma.Decimal(52374),
       taxLines: [
         {
+          orderItemId: 'order-item-1',
           taxType: TaxType.IVA,
           direction: TaxDirection.CHARGE,
           baseAmount: new Prisma.Decimal(100000),

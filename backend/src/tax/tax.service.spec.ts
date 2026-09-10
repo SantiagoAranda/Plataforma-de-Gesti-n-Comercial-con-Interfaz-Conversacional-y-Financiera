@@ -7,7 +7,7 @@ import {
   jest,
 } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PersonType, SaleConcept, TaxType, Prisma } from '@prisma/client';
+import { PersonType, SaleConcept, TaxDirection, TaxType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TaxPreviewDto } from './dto/tax-preview.dto';
 import { TaxService } from './tax.service';
@@ -163,6 +163,49 @@ describe('TaxService', () => {
     expect(result.impoconsumoTotal.toNumber()).toBe(8000);
     expect(result.netReceived.toNumber()).toBe(108000);
     expect(result.taxLines.find((line) => line.taxType === TaxType.IVA)?.applied).toBe(false);
+  });
+
+  it('preserves IVA and Impoconsumo ownership per persisted order item', async () => {
+    mockSeller(['48']);
+    mockItems([
+      { id: 'hamburguesa', price: 900000, appliesImpoconsumo: true },
+      { id: 'llaveros', price: 100000, appliesImpoconsumo: false },
+    ]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerType: PersonType.NATURAL,
+        cartItems: [
+          { itemId: 'hamburguesa', orderItemId: 'order-item-hamburguesa', quantity: 1 },
+          { itemId: 'llaveros', orderItemId: 'order-item-llaveros', quantity: 1 },
+        ] as any,
+      }),
+    );
+
+    const charges = result.taxLines.filter(
+      (line) => line.applied && line.direction === TaxDirection.CHARGE,
+    );
+    expect(charges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          orderItemId: 'order-item-hamburguesa',
+          taxType: TaxType.IMPOCONSUMO,
+          baseAmount: new Prisma.Decimal(900000),
+          taxAmount: new Prisma.Decimal(72000),
+        }),
+        expect.objectContaining({
+          orderItemId: 'order-item-llaveros',
+          taxType: TaxType.IVA,
+          baseAmount: new Prisma.Decimal(100000),
+          taxAmount: new Prisma.Decimal(19000),
+        }),
+      ]),
+    );
+    expect(charges).toHaveLength(2);
+    expect(result.vatTotal.toNumber()).toBe(19000);
+    expect(result.impoconsumoTotal.toNumber()).toBe(72000);
+    expect(result.netReceived.toNumber()).toBe(1091000);
   });
 
   it('sets IVA and Impoconsumo to zero for Persona Natural No Responsable', async () => {
@@ -372,9 +415,16 @@ describe('TaxService', () => {
   it('persists the same ReteFuente base, rate and SERVICES concept in the fiscal snapshot', async () => {
     mockSeller(['05', '07', '48', '52']);
     mockItems([{ price: 1100000, saleConcept: SaleConcept.SERVICES }]);
-    const buyer = baseDto({ saleConcept: SaleConcept.GOODS });
+    const buyer = baseDto({
+      saleConcept: SaleConcept.GOODS,
+      cartItems: [
+        { itemId: 'item-1', orderItemId: 'order-item-1', quantity: 1 },
+      ] as any,
+    });
     const preview = await service.calculateTaxPreview(businessId, buyer);
     mockPrismaService.order.findUnique.mockResolvedValue({
+      id: 'order-1',
+      items: [{ id: 'order-item-1', orderId: 'order-1' }],
       business: {
         taxProfile: {
           personType: PersonType.JURIDICA,
@@ -398,6 +448,49 @@ describe('TaxService', () => {
     expect(snapshot.create.rawCalculation.reteFuenteTotal.toNumber()).toBe(44000);
     expect(reteFuente.baseAmount.toNumber()).toBe(1100000);
     expect(reteFuente.rate.toString()).toBe('0.04');
+    expect(
+      snapshot.create.rawCalculation.allLines.find(
+        (line: any) => line.taxType === TaxType.IVA,
+      ).orderItemId,
+    ).toBe('order-item-1');
+  });
+
+  it('keeps separate IVA lines for multiple quantities and equal tax rates', async () => {
+    mockSeller(['48']);
+    mockItems([
+      { id: 'item-a', price: 100000, appliesImpoconsumo: false },
+      { id: 'item-b', price: 50000, appliesImpoconsumo: false },
+    ]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({
+        buyerType: PersonType.NATURAL,
+        cartItems: [
+          { itemId: 'item-a', orderItemId: 'order-item-a', quantity: 2 },
+          { itemId: 'item-b', orderItemId: 'order-item-b', quantity: 3 },
+        ] as any,
+      }),
+    );
+
+    const ivaLines = result.taxLines.filter(
+      (line) => line.applied && line.taxType === TaxType.IVA,
+    );
+    expect(ivaLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          orderItemId: 'order-item-a',
+          baseAmount: new Prisma.Decimal(200000),
+          taxAmount: new Prisma.Decimal(38000),
+        }),
+        expect.objectContaining({
+          orderItemId: 'order-item-b',
+          baseAmount: new Prisma.Decimal(150000),
+          taxAmount: new Prisma.Decimal(28500),
+        }),
+      ]),
+    );
+    expect(result.vatTotal.toNumber()).toBe(66500);
   });
 
   it('calculates ReteICA 9.66 per thousand over 1,000,000', async () => {

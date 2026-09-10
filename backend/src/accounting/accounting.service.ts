@@ -1304,6 +1304,84 @@ export class AccountingService {
     return movements.map((movement) => this.serializeMovement(movement));
   }
 
+  async reverseOrderMovements(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    input: {
+      orderId: string;
+      accountingPostedAt: Date | null;
+      reversedAt: Date;
+      reason?: string;
+    },
+  ) {
+    const movements = await tx.accountingMovement.findMany({
+      where: {
+        businessId,
+        originType: AccountingMovementOriginType.ORDER,
+        originId: input.orderId,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Filter in application code so null metadata remains an original movement.
+    const originals = movements.filter((movement) => {
+      const role = movement.accountingRole ?? '';
+      const metadata = movement.metadata as Record<string, unknown> | null;
+      return (
+        !role.startsWith('SALE_REVERSAL:') && metadata?.kind !== 'SALE_REVERSAL'
+      );
+    });
+
+    if (input.accountingPostedAt && !originals.length) {
+      throw new BadRequestException(
+        'La venta está contabilizada pero no tiene movimientos contables originales para revertir',
+      );
+    }
+
+    const existingRoles = new Set(
+      movements
+        .map((movement) => movement.accountingRole)
+        .filter((role): role is string =>
+          Boolean(role?.startsWith('SALE_REVERSAL:')),
+        ),
+    );
+
+    const reversals = [];
+    for (const original of originals) {
+      const accountingRole = `SALE_REVERSAL:${original.id}`;
+      if (existingRoles.has(accountingRole)) continue;
+
+      reversals.push(
+        await tx.accountingMovement.create({
+          data: {
+            businessId: original.businessId,
+            pucCuentaCode: original.pucCuentaCode,
+            pucSubcuentaId: original.pucSubcuentaId,
+            amount: original.amount,
+            nature:
+              original.nature === MovementNature.DEBIT
+                ? MovementNature.CREDIT
+                : MovementNature.DEBIT,
+            date: input.reversedAt,
+            detail: original.detail
+              ? `Reversión de ${original.detail}`
+              : 'Reversión de movimiento de venta',
+            originType: original.originType,
+            originId: original.originId,
+            accountingRole,
+            metadata: {
+              kind: 'SALE_REVERSAL',
+              reversesMovementId: original.id,
+              ...(input.reason ? { reason: input.reason } : {}),
+            },
+          },
+        }),
+      );
+    }
+
+    return reversals;
+  }
+
   async findAllMovements(businessId: string, q: AccountingMovementsQueryDto) {
     const [archivedOrders, archivedReservations] = await Promise.all([
       this.prisma.order.findMany({

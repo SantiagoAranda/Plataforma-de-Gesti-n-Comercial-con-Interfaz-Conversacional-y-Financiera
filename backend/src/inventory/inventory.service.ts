@@ -1319,6 +1319,7 @@ export class InventoryService {
     tx: Prisma.TransactionClient,
     businessId: string,
     input: { orderId: string; reason?: string },
+    occurredAt: Date = new Date(),
   ) {
     const saleMovements = await tx.inventoryMovement.findMany({
       where: {
@@ -1476,6 +1477,7 @@ export class InventoryService {
           orderId: movement.orderId,
           orderItemId: movement.orderItemId,
           detail,
+          occurredAt,
         },
       });
 
@@ -2157,7 +2159,10 @@ export class InventoryService {
   private async resolveMovementTarget(
     tx: Prisma.TransactionClient,
     businessId: string,
-    input: Pick<ApplyInventoryMovementInput, 'ingredientId' | 'itemId' | 'type'>,
+    input: Pick<
+      ApplyInventoryMovementInput,
+      'ingredientId' | 'itemId' | 'type'
+    >,
   ): Promise<StockTarget> {
     const hasIngredient = Boolean(input.ingredientId);
     const hasItem = Boolean(input.itemId);
