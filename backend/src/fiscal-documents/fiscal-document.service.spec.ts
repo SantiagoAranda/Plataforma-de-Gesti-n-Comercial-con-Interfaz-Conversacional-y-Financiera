@@ -1,5 +1,136 @@
 import { FiscalDocumentService } from './fiscal-document.service';
 import { FiscalDocumentRecoveryService } from './fiscal-document-recovery.service';
+import { NotFoundException } from '@nestjs/common';
+
+describe('FiscalDocumentService safe read contracts', () => {
+  it('lists only the owned business with safe artifact and order fields', async () => {
+    const prisma: any = {
+      fiscalDocument: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new FiscalDocumentService(prisma, {} as any, {} as any);
+
+    await service.list('business-1');
+
+    expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith({
+      where: { businessId: 'business-1' },
+      include: expect.objectContaining({
+        artifacts: {
+          select: {
+            id: true,
+            kind: true,
+            checksum: true,
+            sizeBytes: true,
+            createdAt: true,
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            customerName: true,
+            total: true,
+            status: true,
+            createdAt: true,
+          },
+        },
+      }),
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  it('returns configuration status without exposing encrypted credentials', async () => {
+    const prisma: any = {
+      factusConfiguration: {
+        findUnique: jest.fn().mockResolvedValue({
+          enabled: true,
+          environment: 'sandbox',
+          encryptedCredentials: 'ciphertext',
+          invoiceRangeId: 389,
+          creditNoteRangeId: 1776,
+          updatedAt: new Date('2026-09-10T12:00:00Z'),
+        }),
+      },
+    };
+    const service = new FiscalDocumentService(prisma, {} as any, {} as any);
+
+    await expect(service.getConfiguration('business-1')).resolves.toEqual({
+      enabled: true,
+      configured: true,
+      environment: 'sandbox',
+      invoiceRangeId: 389,
+      creditNoteRangeId: 1776,
+      updatedAt: new Date('2026-09-10T12:00:00Z'),
+      lastVerifiedAt: null,
+    });
+    expect(prisma.factusConfiguration.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { businessId: 'business-1' },
+        select: expect.not.objectContaining({ encryptedCredentials: false }),
+      }),
+    );
+    expect(JSON.stringify(await service.getConfiguration('business-1'))).not.toContain('ciphertext');
+  });
+
+  it('downloads an artifact only through a business-scoped lookup', async () => {
+    const prisma: any = {
+      fiscalDocumentArtifact: {
+        findFirst: jest.fn().mockResolvedValue({ objectKey: 'private/key.pdf' }),
+      },
+    };
+    const storage: any = {
+      downloadObject: jest.fn().mockResolvedValue({
+        body: Buffer.from('pdf'),
+        contentType: 'application/pdf',
+      }),
+    };
+    const service = new FiscalDocumentService(prisma, {} as any, storage);
+
+    const result = await service.downloadArtifact('business-1', 'document-1', 'pdf');
+
+    expect(prisma.fiscalDocumentArtifact.findFirst).toHaveBeenCalledWith({
+      where: {
+        fiscalDocumentId: 'document-1',
+        kind: 'pdf',
+        fiscalDocument: { businessId: 'business-1' },
+      },
+      select: { objectKey: true },
+    });
+    expect(result).toEqual(expect.objectContaining({ filename: 'document-1.pdf' }));
+    expect(result).not.toHaveProperty('objectKey');
+  });
+
+  it.each(['pdf', 'exe'])(
+    'uses the same 404 for a missing or invalid %s artifact request',
+    async (kind) => {
+      const prisma: any = {
+        fiscalDocumentArtifact: { findFirst: jest.fn().mockResolvedValue(null) },
+      };
+      const service = new FiscalDocumentService(prisma, {} as any, {} as any);
+      await expect(
+        service.downloadArtifact('business-b', 'document-a', kind),
+      ).rejects.toEqual(
+        new NotFoundException('Documento fiscal o archivo no encontrado'),
+      );
+    },
+  );
+
+  it('uses the generic 404 when the private object is missing from storage', async () => {
+    const prisma: any = {
+      fiscalDocumentArtifact: {
+        findFirst: jest.fn().mockResolvedValue({ objectKey: 'missing.pdf' }),
+      },
+    };
+    const storage: any = {
+      downloadObject: jest.fn().mockRejectedValue({ name: 'NoSuchKey' }),
+    };
+    const service = new FiscalDocumentService(prisma, {} as any, storage);
+
+    await expect(
+      service.downloadArtifact('business-1', 'document-1', 'pdf'),
+    ).rejects.toEqual(
+      new NotFoundException('Documento fiscal o archivo no encontrado'),
+    );
+  });
+});
 
 describe('FiscalDocumentService artifacts', () => {
   const document = {

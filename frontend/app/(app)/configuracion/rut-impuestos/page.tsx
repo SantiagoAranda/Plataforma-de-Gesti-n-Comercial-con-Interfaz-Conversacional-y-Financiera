@@ -16,11 +16,9 @@ import {
   CiiuActivity,
   IcaRate,
 } from "@/src/lib/settings/api";
-import {
-  COLOMBIAN_MUNICIPALITIES,
-  getDepartmentCodeFromMunicipality,
-  getMunicipalityName,
-} from "@/src/constants/colombianMunicipalities";
+import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
+import { getFactusConfiguration } from "@/src/services/fiscalDocuments";
+import type { FactusConfigurationView } from "@/src/types/fiscal-documents";
 import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
@@ -178,6 +176,7 @@ export default function RutImpuestosPage() {
   const router = useRouter();
   const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeSalesEnabled, simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
+  const municipalities = useFiscalMunicipalities();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -215,6 +214,7 @@ export default function RutImpuestosPage() {
 
   const [initialSnapshot, setInitialSnapshot] = useState<any>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [factusConfiguration, setFactusConfiguration] = useState<FactusConfigurationView | null>(null);
 
   useEffect(() => {
     setIsIncomeTaxDeclarant(deriveIncomeTaxDeclarant(personType, selectedRespCodes));
@@ -473,8 +473,8 @@ export default function RutImpuestosPage() {
   }, [icaRatePerMil, useSameReteIcaRate]);
 
   const selectedMunicipalityName = useMemo(
-    () => (municipalityCode ? getMunicipalityName(municipalityCode) : ""),
-    [municipalityCode],
+    () => municipalities.find((item) => item.code === municipalityCode)?.name ?? municipalityCode,
+    [municipalities, municipalityCode],
   );
 
   const visibleResponsibilities = responsibilitiesCatalog.filter((responsibility) =>
@@ -485,9 +485,30 @@ export default function RutImpuestosPage() {
   const hasHistoricalSimpleResponsibility =
     initialSnapshot?.selectedRespCodes.includes("47") ?? false;
 
+  const electronicInvoicingResponsible = selectedRespCodes.includes("52");
+
+  useEffect(() => {
+    if (!electronicInvoicingResponsible) {
+      setFactusConfiguration(null);
+      return;
+    }
+    let active = true;
+    getFactusConfiguration()
+      .then((configuration) => {
+        if (active) setFactusConfiguration(configuration);
+      })
+      .catch(() => {
+        if (active) setFactusConfiguration(null);
+      });
+    return () => { active = false; };
+  }, [electronicInvoicingResponsible]);
+
   const handleMunicipalityChange = (code: string) => {
     setMunicipalityCode(code);
-    setDepartmentCode(code ? getDepartmentCodeFromMunicipality(code) : "");
+    setDepartmentCode(
+      municipalities.find((item) => item.code === code)?.department.code ??
+        (code ? code.slice(0, 2) : ""),
+    );
   };
 
   const handleBusinessProfileChange = (key: TaxBusinessProfileKey) => {
@@ -832,9 +853,11 @@ export default function RutImpuestosPage() {
                   className={inputClassName}
                 >
                   <option value="">Seleccionar municipio</option>
-                  {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                  {municipalities.map((municipality) => (
                     <option key={municipality.code} value={municipality.code}>
-                      {municipality.name}
+                      {municipality.department.name
+                        ? `${municipality.name} (${municipality.department.name})`
+                        : municipality.name}
                     </option>
                   ))}
                 </select>
@@ -985,6 +1008,38 @@ export default function RutImpuestosPage() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] font-medium leading-relaxed text-slate-500">
                 Tu perfil fiscal conserva la responsabilidad 47 — Régimen Simple. Este régimen no está disponible en esta versión y las ventas nuevas están bloqueadas para este perfil. La responsabilidad debe ser corregida mediante un proceso administrativo controlado o el módulo debe habilitarse nuevamente.
               </div>
+            )}
+
+            {electronicInvoicingResponsible && (
+              <section className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Facturación electrónica</h3>
+                    <p className="mt-1 text-[11px] font-medium text-slate-500">
+                      Integración Factus asociada a este RUT.
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                    factusConfiguration?.enabled && factusConfiguration.configured
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-amber-100 text-amber-800"
+                  }`}>
+                    {factusConfiguration?.enabled && factusConfiguration.configured
+                      ? "Configurada"
+                      : "No configurada"}
+                  </span>
+                </div>
+                {factusConfiguration?.environment === "sandbox" && (
+                  <p className="mt-3 text-xs font-semibold text-slate-600">Sandbox</p>
+                )}
+                <details className="mt-3 text-xs">
+                  <summary className="cursor-pointer font-semibold text-slate-600">Ver detalles técnicos</summary>
+                  <dl className="mt-3 grid grid-cols-2 gap-3">
+                    <div><dt className="text-slate-400">Rango facturas</dt><dd className="font-bold text-slate-800">{factusConfiguration?.invoiceRangeId ?? "Sin asignar"}</dd></div>
+                    <div><dt className="text-slate-400">Rango notas crédito</dt><dd className="font-bold text-slate-800">{factusConfiguration?.creditNoteRangeId ?? "Sin asignar"}</dd></div>
+                  </dl>
+                </details>
+              </section>
             )}
 
             <details className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">

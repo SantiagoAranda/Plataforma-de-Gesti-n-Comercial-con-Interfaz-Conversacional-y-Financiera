@@ -165,6 +165,21 @@ describe('TaxService', () => {
     expect(result.taxLines.find((line) => line.taxType === TaxType.IVA)?.applied).toBe(false);
   });
 
+  it('keeps the buyer payable total at 972,000 for a 900,000 item with Impoconsumo', async () => {
+    mockSeller(['48']);
+    mockItems([{ price: 900000, appliesImpoconsumo: true }]);
+
+    const result = await service.calculateTaxPreview(
+      businessId,
+      baseDto({ buyerType: PersonType.NATURAL }),
+    );
+
+    expect(result.subtotal.toNumber()).toBe(900000);
+    expect(result.impoconsumoTotal.toNumber()).toBe(72000);
+    expect(result.vatTotal.toNumber()).toBe(0);
+    expect(result.netReceived.toNumber()).toBe(972000);
+  });
+
   it('preserves IVA and Impoconsumo ownership per persisted order item', async () => {
     mockSeller(['48']);
     mockItems([

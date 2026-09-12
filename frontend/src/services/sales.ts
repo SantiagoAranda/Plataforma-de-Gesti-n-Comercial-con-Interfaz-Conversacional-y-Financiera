@@ -71,8 +71,9 @@ export type ConfirmOrderResponse = {
   isReservation?: boolean;
 };
 
-export function listSales() {
-  return api<ApiOrder[]>("/sales");
+export function listSales(options?: { includeCancelled?: boolean }) {
+  const query = options?.includeCancelled ? "?includeCancelled=true" : "";
+  return api<ApiOrder[]>(`/sales${query}`);
 }
 
 export function getSale(id: string) {
@@ -118,6 +119,12 @@ export function confirmSale(id: string, sourceType: string = "ORDER", buyerFisca
 export function cancelSale(id: string, sourceType: string = "ORDER") {
   return api<ApiOrder>(`/sales/${id}/cancel?sourceType=${sourceType}`, {
     method: "PATCH",
+  });
+}
+export function reverseSale(id: string, reason?: string) {
+  return api(`/sales/${encodeURIComponent(id)}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }
 export function deleteSale(id: string, sourceType: string = "ORDER") {

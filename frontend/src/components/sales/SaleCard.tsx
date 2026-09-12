@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheck, ExternalLink, MessageCircle, MoreVertical, ShieldCheck, User, AlertTriangle } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
+import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 import { formatBusinessTime } from "@/src/lib/businessDate";
 import SaleFiscalSummary from "./SaleFiscalSummary";
 import { getCached } from "@/src/lib/cache";
 import { api } from "@/src/lib/api";
+import FiscalDocumentMenu from "./FiscalDocumentMenu";
+import { FISCAL_STATUS_PRESENTATION } from "@/src/lib/fiscalPresentation";
 
 function calcTotal(sale: Sale) {
   if (sale.total !== undefined) return sale.total;
@@ -66,6 +69,16 @@ type Props = {
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
+  electronicInvoicingEnabled?: boolean;
+  fiscalDocument?: FiscalDocument;
+  creditNote?: FiscalDocument;
+  onFiscalView?: (document: FiscalDocument) => void;
+  onFiscalReceipt?: (sale: Sale, document: FiscalDocument) => void;
+  onFiscalDownload?: (document: FiscalDocument, kind: "pdf" | "xml") => void;
+  onFiscalDispatch?: (document: FiscalDocument) => void;
+  onFiscalRetry?: (document: FiscalDocument) => void;
+  onFiscalAnnul?: (document: FiscalDocument) => void;
+  onCompleteAnnulment?: (document: FiscalDocument) => void;
 };
 
 function getItemUnitPrice(it: Sale["items"][number]) {
@@ -86,6 +99,16 @@ export default function SaleCard({
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
+  electronicInvoicingEnabled = false,
+  fiscalDocument,
+  creditNote,
+  onFiscalView,
+  onFiscalReceipt,
+  onFiscalDownload,
+  onFiscalDispatch,
+  onFiscalRetry,
+  onFiscalAnnul,
+  onCompleteAnnulment,
 }: Props) {
   const router = useRouter();
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
@@ -132,7 +155,9 @@ export default function SaleCard({
 
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
-  const validationLabel = sale.status === "CERRADO" ? "Validado" : styles.label;
+  const fiscalPresentation = electronicInvoicingEnabled && fiscalDocument
+    ? FISCAL_STATUS_PRESENTATION[fiscalDocument.status]
+    : null;
 
   const handleDetails = () => {
     if (selected) {
@@ -184,13 +209,23 @@ export default function SaleCard({
               </button>
             )}
 
-            <span
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${styles.badge}`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${styles.dotColor}`} />
-              {styles.label}
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${fiscalPresentation?.badge ?? styles.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${fiscalPresentation?.dot ?? styles.dotColor}`} />
+              {fiscalPresentation?.label ?? styles.label}
             </span>
-            <button
+            {fiscalPresentation && fiscalDocument && onFiscalView && onFiscalDownload && onFiscalDispatch && onFiscalRetry && onFiscalAnnul && onCompleteAnnulment ? (
+              <FiscalDocumentMenu
+                document={fiscalDocument}
+                creditNote={creditNote}
+                onView={onFiscalView}
+                onViewReceipt={(document) => onFiscalReceipt?.(sale, document)}
+                onDownload={onFiscalDownload}
+                onDispatch={onFiscalDispatch}
+                onRetry={onFiscalRetry}
+                onAnnul={onFiscalAnnul}
+                onCompleteAnnulment={onCompleteAnnulment}
+              />
+            ) : <button
               type="button"
               aria-label="Ver detalles"
               onClick={(e) => {
@@ -201,7 +236,7 @@ export default function SaleCard({
               className="grid h-7 w-7 place-items-center rounded-full text-slate-300 hover:bg-slate-50"
             >
               <MoreVertical className="h-4 w-4" />
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -310,7 +345,11 @@ export default function SaleCard({
           </div>
           <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 shrink-0">
             {formatTime(sale.createdAt)}
-            <CheckCheck className="w-4 h-4 text-[#34b7f1]" />
+            {fiscalPresentation ? (
+              fiscalPresentation.ticks === 2
+                ? <CheckCheck className={`h-4 w-4 ${fiscalPresentation.tickClass}`} />
+                : <Check className={`h-4 w-4 ${fiscalPresentation.tickClass}`} />
+            ) : <CheckCheck className="w-4 h-4 text-[#34b7f1]" />}
           </span>
         </div>
       </div>

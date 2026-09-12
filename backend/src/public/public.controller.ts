@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Query,
   Param,
   Post,
@@ -67,6 +68,13 @@ export class PublicController {
   @Get(':slug/fiscal-settings')
   getFiscalSettings(@Param('slug') slug: string) {
     return this.publicService.getFiscalSettings(slug);
+  }
+
+  @Get(':slug/fiscal-municipalities')
+  @Header('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800')
+  @Header('ETag', '"factus-municipalities-v2-2026-09"')
+  getFiscalMunicipalities(@Param('slug') slug: string) {
+    return this.publicService.getFiscalMunicipalities(slug);
   }
 
   @Post(':slug/tax-preview')

@@ -87,10 +87,92 @@ export class FiscalDocumentService {
       where: { businessId },
       include: {
         attempts: { orderBy: { startedAt: 'desc' }, take: 1 },
-        artifacts: true,
+        artifacts: {
+          select: {
+            id: true,
+            kind: true,
+            checksum: true,
+            sizeBytes: true,
+            createdAt: true,
+          },
+        },
+        order: {
+          select: {
+            id: true,
+            customerName: true,
+            total: true,
+            status: true,
+            createdAt: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async getConfiguration(businessId: string) {
+    const configuration = await this.prisma.factusConfiguration.findUnique({
+      where: { businessId },
+      select: {
+        enabled: true,
+        environment: true,
+        encryptedCredentials: true,
+        invoiceRangeId: true,
+        creditNoteRangeId: true,
+        updatedAt: true,
+      },
+    });
+    return {
+      enabled: configuration?.enabled ?? false,
+      configured: Boolean(configuration?.encryptedCredentials),
+      environment:
+        configuration?.environment === 'production' ? 'production' : 'sandbox',
+      invoiceRangeId: configuration?.invoiceRangeId ?? null,
+      creditNoteRangeId: configuration?.creditNoteRangeId ?? null,
+      updatedAt: configuration?.updatedAt ?? null,
+      lastVerifiedAt: null,
+    };
+  }
+
+  async downloadArtifact(
+    businessId: string,
+    documentId: string,
+    kind: string,
+  ) {
+    if (kind !== 'pdf' && kind !== 'xml') {
+      throw new NotFoundException('Documento fiscal o archivo no encontrado');
+    }
+    const artifact = await this.prisma.fiscalDocumentArtifact.findFirst({
+      where: {
+        fiscalDocumentId: documentId,
+        kind,
+        fiscalDocument: { businessId },
+      },
+      select: { objectKey: true },
+    });
+    if (!artifact) {
+      throw new NotFoundException('Documento fiscal o archivo no encontrado');
+    }
+    let stored: Awaited<ReturnType<StorageService['downloadObject']>>;
+    try {
+      stored = await this.storage.downloadObject(artifact.objectKey);
+    } catch (error: any) {
+      if (
+        error?.name === 'NoSuchKey' ||
+        error?.name === 'NotFound' ||
+        error?.$metadata?.httpStatusCode === 404
+      ) {
+        throw new NotFoundException('Documento fiscal o archivo no encontrado');
+      }
+      throw error;
+    }
+    return {
+      body: stored.body,
+      contentType:
+        stored.contentType ??
+        (kind === 'pdf' ? 'application/pdf' : 'application/xml'),
+      filename: `${documentId}.${kind}`,
+    };
   }
 
   async recoverPendingDocuments(now = new Date()) {

@@ -8,7 +8,7 @@ import {
   type TaxPreviewResponse,
 } from "@/src/lib/tax/api";
 import type { Sale } from "@/src/types/sales";
-import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
 import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
@@ -51,6 +51,7 @@ export default function TaxPreviewModal({
   initialContext?: BuyerFiscalContext | null;
   actionLabel?: string;
 }) {
+  const municipalities = useFiscalMunicipalities(open);
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [buyerType, setBuyerType] = useState<"NATURAL" | "JURIDICA">("NATURAL");
   const [buyerDocumentType, setBuyerDocumentType] = useState<"CC" | "NIT" | "CE" | "PASAPORTE" | "TI">("CC");
@@ -365,7 +366,7 @@ export default function TaxPreviewModal({
                   className="w-full h-10 rounded-xl border border-slate-200 px-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium text-slate-700 transition"
                 >
                   <option value="">Seleccione Municipio...</option>
-                  {COLOMBIAN_MUNICIPALITIES.map((mun) => (
+                  {municipalities.map((mun) => (
                     <option key={mun.code} value={mun.code}>
                       {mun.name}
                     </option>
@@ -625,7 +626,7 @@ export default function TaxPreviewModal({
                   <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-700">
                     <AlertTriangle size={15} className="shrink-0 mt-0.5 text-amber-600" />
                     <span>
-                      No se liquidó ReteICA para {COLOMBIAN_MUNICIPALITIES.find(m => m.code === fiscalMunicipalityCode)?.name}. Asegúrese de registrar las tarifas municipales en Configuración Fiscal si aplica retención.
+                      No se liquidó ReteICA para {municipalities.find(m => m.code === fiscalMunicipalityCode)?.name}. Asegúrese de registrar las tarifas municipales en Configuración Fiscal si aplica retención.
                     </span>
                   </div>
                 )}

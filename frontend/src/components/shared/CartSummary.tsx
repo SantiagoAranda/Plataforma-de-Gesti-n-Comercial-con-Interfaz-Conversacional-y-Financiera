@@ -31,6 +31,10 @@ type Props = {
   onClose: () => void;
   taxPreviewContent?: ReactNode;
   fiscalContent?: ReactNode;
+  /** Total fiscal calculado por el backend; no cambia el subtotal comercial. */
+  payableTotal?: number;
+  isFiscalTotalPending?: boolean;
+  hasFiscalTotalError?: boolean;
 };
 
 export default function CartSummary({
@@ -49,8 +53,12 @@ export default function CartSummary({
   onClose,
   taxPreviewContent,
   fiscalContent,
+  payableTotal,
+  isFiscalTotalPending = false,
+  hasFiscalTotalError = false,
 }: Props) {
-  const total = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
+  const lineSubtotal = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
+  const total = payableTotal ?? lineSubtotal;
 
   const formatPrice = (value: number) => {
     return value.toLocaleString("es-CO", {
@@ -62,11 +70,24 @@ export default function CartSummary({
   // Validaciones básicas de formulario
   const isNameValid = customerName.trim().length >= 3;
   const { isValid: isPhoneValid } = validatePhoneNumber(countryCode, phoneNumber);
-  const isFormValid = isNameValid && isPhoneValid && items.length > 0;
+  const isFormValid =
+    isNameValid &&
+    isPhoneValid &&
+    items.length > 0 &&
+    !isFiscalTotalPending &&
+    !hasFiscalTotalError;
 
   const handleConfirm = () => {
     if (items.length === 0) {
       toast.error("El carrito está vacío.");
+      return;
+    }
+    if (isFiscalTotalPending) {
+      toast.error("Estamos calculando el total de tu pedido.");
+      return;
+    }
+    if (hasFiscalTotalError) {
+      toast.error("No fue posible calcular el total de tu pedido. Intenta nuevamente.");
       return;
     }
     if (customerName.trim().length < 3) {
@@ -210,13 +231,15 @@ export default function CartSummary({
       <div className="shrink-0 border-t border-neutral-100 bg-white px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
         <div className="flex items-center justify-between">
           <span className="text-base font-medium text-neutral-800">Total a pagar</span>
-          <span className="text-2xl font-semibold text-neutral-900">${formatPrice(total)}</span>
+          <span className="text-2xl font-semibold text-neutral-900">
+            {isFiscalTotalPending ? "Calculando…" : hasFiscalTotalError ? "No disponible" : `$${formatPrice(total)}`}
+          </span>
         </div>
 
         <button
           type="button"
           onClick={handleConfirm}
-          disabled={items.length === 0}
+          disabled={!isFormValid}
           className={`mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-medium text-white shadow-md transition hover:bg-emerald-600 ${!isFormValid ? "cursor-not-allowed opacity-50" : ""
             }`}
         >

@@ -22,6 +22,27 @@ describe('SalesService.findAll', () => {
     return new SalesService(prisma, {} as any, {} as any, {} as any, {} as any);
   }
 
+  it('keeps cancelled orders and reservations excluded unless includeCancelled is explicit', async () => {
+    const service = createService([], []);
+    const prisma = (service as any).prisma;
+
+    await service.findAll(businessId);
+    expect(prisma.order.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: { not: 'CANCELLED' } }) }),
+    );
+    expect(prisma.reservation.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: { not: 'CANCELLED' } }) }),
+    );
+
+    await service.findAll(businessId, { includeCancelled: true });
+    expect(prisma.order.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) }),
+    );
+    expect(prisma.reservation.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) }),
+    );
+  });
+
   it('maps mixed manual orders without assuming the first line is the only type', async () => {
     const createdAt = new Date('2026-06-24T12:00:00.000Z');
     const service = createService(

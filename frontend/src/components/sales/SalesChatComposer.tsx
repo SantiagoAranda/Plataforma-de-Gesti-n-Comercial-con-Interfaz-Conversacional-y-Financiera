@@ -31,6 +31,21 @@ import {
   resolveAgendaLineType,
 } from "@/src/lib/sales/serviceAgenda";
 
+export type SalesSearchCriterion =
+  | "GENERAL"
+  | "CUSTOMER"
+  | "REFERENCE"
+  | "INVOICE_NUMBER"
+  | "CUFE"
+  | "STATUS";
+
+export type FiscalSalesFilter =
+  | "ALL"
+  | "PENDING"
+  | "VALIDATED"
+  | "ERROR"
+  | "CREDITED";
+
 
 type EditableItem = {
   itemId: string;
@@ -134,6 +149,13 @@ export default function SalesChatComposer({
   taxSettingsEnabled: propEnabled,
   filterStatus = "ALL",
   onFilterStatusChange,
+  electronicInvoicingEnabled = false,
+  searchCriterion = "GENERAL",
+  onSearchCriterionChange,
+  fiscalFilterActive = false,
+  onFiscalFilterActiveChange,
+  fiscalStatusFilter = "ALL",
+  onFiscalStatusFilterChange,
 }: {
   mode?: "create" | "edit" | "readonly";
   sale?: Sale | null;
@@ -146,6 +168,13 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
   filterStatus?: FilterStatus;
   onFilterStatusChange?: (status: FilterStatus) => void;
+  electronicInvoicingEnabled?: boolean;
+  searchCriterion?: SalesSearchCriterion;
+  onSearchCriterionChange?: (criterion: SalesSearchCriterion) => void;
+  fiscalFilterActive?: boolean;
+  onFiscalFilterActiveChange?: (active: boolean) => void;
+  fiscalStatusFilter?: FiscalSalesFilter;
+  onFiscalStatusFilterChange?: (filter: FiscalSalesFilter) => void;
 }) {
   const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
@@ -1132,12 +1161,41 @@ export default function SalesChatComposer({
                   </span>
                 </div>
               ) : (
-                <input
-                  value={searchValue}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="Buscar por cliente o ID..."
-                  className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
-                />
+                <>
+                  {electronicInvoicingEnabled && onSearchCriterionChange && (
+                    <select
+                      value={searchCriterion}
+                      onChange={(event) => onSearchCriterionChange(event.target.value as SalesSearchCriterion)}
+                      className="max-w-32 shrink-0 border-none bg-transparent text-xs font-semibold text-slate-600 outline-none"
+                      aria-label="Criterio de búsqueda"
+                    >
+                      <option value="GENERAL">General</option>
+                      <option value="CUSTOMER">Cliente</option>
+                      <option value="REFERENCE">ID / referencia</option>
+                      <option value="INVOICE_NUMBER">Nº factura</option>
+                      <option value="CUFE">CUFE</option>
+                      <option value="STATUS">Estado</option>
+                    </select>
+                  )}
+                  <input
+                    value={searchValue}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    placeholder={
+                      searchCriterion === "CUSTOMER"
+                        ? "Buscar cliente..."
+                        : searchCriterion === "REFERENCE"
+                          ? "Buscar ID o referencia..."
+                          : searchCriterion === "INVOICE_NUMBER"
+                            ? "Buscar número Factus..."
+                            : searchCriterion === "CUFE"
+                              ? "Buscar CUFE..."
+                              : searchCriterion === "STATUS"
+                                ? "Buscar estado..."
+                                : "Buscar por cliente o ID..."
+                    }
+                    className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                  />
+                </>
               )}
 
               <button
@@ -1196,12 +1254,52 @@ export default function SalesChatComposer({
                 >
                   Canceladas
                 </button>
-                {(filterStatus !== "ALL" || (searchValue && searchValue.trim() !== "")) && (
+                {electronicInvoicingEnabled && onFiscalFilterActiveChange && (
+                  <button
+                    type="button"
+                    onClick={() => onFiscalFilterActiveChange(!fiscalFilterActive)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      fiscalFilterActive
+                        ? "border-[#0B3F64] bg-[#E6EFF5] font-semibold text-[#0B3F64]"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    Facturación electrónica
+                  </button>
+                )}
+                {electronicInvoicingEnabled && fiscalFilterActive && onFiscalStatusFilterChange && (
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      ["ALL", "Todas fiscales"],
+                      ["PENDING", "Pendientes fiscales"],
+                      ["VALIDATED", "Validadas"],
+                      ["ERROR", "Con error"],
+                      ["CREDITED", "Anuladas"],
+                    ] as Array<[FiscalSalesFilter, string]>).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => onFiscalStatusFilterChange(value)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                          fiscalStatusFilter === value
+                            ? "border-[#0B3F64] bg-[#E6EFF5] font-semibold text-[#0B3F64]"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {(filterStatus !== "ALL" || fiscalFilterActive || (searchValue && searchValue.trim() !== "")) && (
                   <button
                     type="button"
                     onClick={() => {
                       onFilterStatusChange("ALL");
                       onSearchChange("");
+                      onFiscalFilterActiveChange?.(false);
+                      onFiscalStatusFilterChange?.("ALL");
+                      onSearchCriterionChange?.("GENERAL");
                     }}
                     className="rounded-full px-3 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
                   >

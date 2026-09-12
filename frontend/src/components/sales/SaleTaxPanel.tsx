@@ -9,7 +9,7 @@ import {
   type TaxPreviewResponse,
 } from "@/src/lib/tax/api";
 import type { Sale, SaleFiscalSummary } from "@/src/types/sales";
-import { COLOMBIAN_MUNICIPALITIES } from "@/src/constants/colombianMunicipalities";
+import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 export type SaleFiscalFormState = {
@@ -286,6 +286,7 @@ export default function SaleTaxPanel({
   onPreviewChange?: (preview: TaxPreviewResponse | null) => void;
   taxSettingsEnabled?: boolean;
 }) {
+  const municipalities = useFiscalMunicipalities(true);
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const readonly = mode === "readonly";
   const [livePreview, setLivePreview] = useState<TaxPreviewResponse | null>(null);
@@ -505,7 +506,7 @@ export default function SaleTaxPanel({
                   className="h-10 rounded-xl border border-slate-100 bg-white px-3 text-xs text-slate-700 outline-none focus:border-emerald-500 disabled:bg-slate-50"
                 >
                   <option value="">Municipio ICA</option>
-                  {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                  {municipalities.map((municipality) => (
                     <option key={municipality.code} value={municipality.code}>
                       {municipality.name}
                     </option>

@@ -18,6 +18,7 @@ import { isIngredientOperational } from '../ingredients/ingredient-operational';
 import { TaxService } from '../tax/tax.service';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { getFactusMunicipalities } from '../settings/factus-municipalities.catalog';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -207,13 +208,29 @@ export class PublicService {
   }
 
   private async getFiscalSettingsForBusiness(businessId: string) {
-    const profile = await this.prisma.businessTaxProfile.findUnique({
-      where: { businessId },
-      select: { taxSettingsEnabled: true },
-    });
+    const [profile, factusConfiguration] = await Promise.all([
+      this.prisma.businessTaxProfile.findUnique({
+        where: { businessId },
+        include: {
+          responsibilities: { include: { responsibility: true } },
+        },
+      }),
+      this.prisma.factusConfiguration.findUnique({
+        where: { businessId },
+        select: { enabled: true },
+      }),
+    ]);
+    const hasElectronicInvoicerResponsibility = Boolean(
+      profile?.responsibilities?.some(
+        (entry) => entry.responsibility.code === '52',
+      ),
+    );
 
     return {
       fiscalContextEnabled: profile?.taxSettingsEnabled === true,
+      electronicInvoicingEnabled:
+        hasElectronicInvoicerResponsibility &&
+        factusConfiguration?.enabled === true,
       simpleRegimeSalesEnabled:
         this.featureFlags.simpleRegimeSalesEnabled === true,
     };
@@ -222,6 +239,12 @@ export class PublicService {
   async getFiscalSettings(slug: string) {
     const business = await this.findActiveBusiness(slug);
     return this.getFiscalSettingsForBusiness(business.id);
+  }
+
+
+  async getFiscalMunicipalities(slug: string) {
+    await this.findActiveBusiness(slug);
+    return getFactusMunicipalities();
   }
 
   async calculateTaxPreview(slug: string, dto: TaxPreviewDto) {

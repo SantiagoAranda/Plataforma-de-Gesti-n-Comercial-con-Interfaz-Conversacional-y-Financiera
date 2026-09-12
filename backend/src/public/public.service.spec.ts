@@ -51,7 +51,13 @@ describe('PublicService', () => {
         findFirst: mockFn().mockResolvedValue(business),
       },
       businessTaxProfile: {
-        findUnique: mockFn().mockResolvedValue({ taxSettingsEnabled: true }),
+        findUnique: mockFn().mockResolvedValue({
+          taxSettingsEnabled: true,
+          responsibilities: [],
+        }),
+      },
+      factusConfiguration: {
+        findUnique: mockFn().mockResolvedValue(null),
       },
       item: {
         findMany: mockFn().mockResolvedValue(items),
@@ -824,6 +830,14 @@ describe('PublicService', () => {
         origin: 'PUBLIC_STORE',
         customerName: 'Fiscal customer',
         total: new Prisma.Decimal(10000),
+        items: [
+          {
+            id: 'order-item-fiscal-1',
+            itemId: 'item-1',
+            quantity: new Prisma.Decimal(1),
+            unitPrice: new Prisma.Decimal(10000),
+          },
+        ],
       }),
     };
     const tx = { order: transactionOrder } as any;
@@ -864,19 +878,31 @@ describe('PublicService', () => {
       items: [{ itemId: 'item-1', quantity: 1 }],
     });
 
-    expect(taxService.calculateTaxPreview).toHaveBeenCalledWith(
+    expect(taxService.calculateTaxPreview).toHaveBeenNthCalledWith(
+      2,
       business.id,
       expect.objectContaining({
         buyerIsGranContribuyente: true,
         buyerIsRegimenSimple: true,
         fiscalMunicipalityCode: '11001',
         reteIcaRateOverride: 9.66,
-        cartItems: [{ itemId: 'item-1', quantity: 1, unitPrice: 10000 }],
+        cartItems: [{
+          orderItemId: 'order-item-fiscal-1',
+          itemId: 'item-1',
+          quantity: 1,
+          unitPrice: 10000,
+        }],
       }),
+      tx,
     );
     expect(prisma.$transaction).toHaveBeenCalledWith(
       expect.any(Function),
       { maxWait: 5000, timeout: 15000 },
+    );
+    expect(transactionOrder.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ total: 10000 }),
+      }),
     );
     expect(taxService.freezeTaxCalculation).toHaveBeenCalledWith(
       tx,
@@ -888,6 +914,7 @@ describe('PublicService', () => {
         buyerIsAutorretenedor: false,
       }),
     );
+    expect(endpointPreview.netReceived).toBe(11900);
   });
 
   it('exposes the sales flag independently from the disabled bimonthly tax module', async () => {
@@ -899,8 +926,32 @@ describe('PublicService', () => {
 
     await expect(service.getFiscalSettings('demo')).resolves.toEqual({
       fiscalContextEnabled: true,
+      electronicInvoicingEnabled: false,
       simpleRegimeSalesEnabled: true,
     });
+  });
+
+  it('exposes electronic invoicing only with responsibility 52 and enabled Factus configuration', async () => {
+    const { service, prisma } = createService();
+    prisma.businessTaxProfile.findUnique.mockResolvedValue({
+      taxSettingsEnabled: true,
+      responsibilities: [{ responsibility: { code: '52' } }],
+    });
+    prisma.factusConfiguration.findUnique.mockResolvedValue({ enabled: true });
+
+    await expect(service.getFiscalSettings('demo')).resolves.toEqual(
+      expect.objectContaining({ electronicInvoicingEnabled: true }),
+    );
+  });
+
+  it('serves the versioned official municipality catalog without Factus credentials', async () => {
+    const { service } = createService();
+    const municipalities = await service.getFiscalMunicipalities('demo');
+
+    expect(municipalities.length).toBeGreaterThan(1000);
+    expect(municipalities).toContainEqual(
+      expect.objectContaining({ code: '11001', name: expect.any(String) }),
+    );
   });
 
   it('does not calculate or persist buyer fiscal data when the business has no enabled tax profile', async () => {

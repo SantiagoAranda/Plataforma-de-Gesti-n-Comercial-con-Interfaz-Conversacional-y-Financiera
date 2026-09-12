@@ -1016,15 +1016,16 @@ export class SalesService {
 
   async findAll(
     businessId: string,
-    options?: { includeArchived?: boolean },
+    options?: { includeArchived?: boolean; includeCancelled?: boolean },
   ): Promise<UnifiedSaleDto[]> {
     const includeArchived = options?.includeArchived ?? false;
+    const includeCancelled = options?.includeCancelled ?? false;
     const [orders, reservations] = await Promise.all([
       this.prisma.order.findMany({
         where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' },
+          ...(includeCancelled ? {} : { status: { not: 'CANCELLED' } }),
         },
         include: {
           items: {
@@ -1042,7 +1043,7 @@ export class SalesService {
         where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' },
+          ...(includeCancelled ? {} : { status: { not: 'CANCELLED' } }),
         },
         include: {
           item: true,

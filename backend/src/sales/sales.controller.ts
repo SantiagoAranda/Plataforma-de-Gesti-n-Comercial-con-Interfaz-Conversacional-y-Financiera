@@ -34,8 +34,13 @@ export class SalesController {
 
   @Get()
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
-  findAll(@Req() req: any) {
-    return this.salesService.findAll(req.user.businessId);
+  findAll(
+    @Req() req: any,
+    @Query('includeCancelled') includeCancelled?: string,
+  ) {
+    return this.salesService.findAll(req.user.businessId, {
+      includeCancelled: includeCancelled === 'true',
+    });
   }
 
   @Patch(':id/confirm')

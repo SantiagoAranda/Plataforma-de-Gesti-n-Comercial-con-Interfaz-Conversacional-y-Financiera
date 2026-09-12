@@ -2,6 +2,7 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -65,6 +66,24 @@ export class StorageService {
         Key: objectKey,
       }),
     );
+  }
+
+  async downloadObject(objectKey: string) {
+    const response = await this.getClient().send(
+      new GetObjectCommand({
+        Bucket: this.getBucket(),
+        Key: objectKey,
+      }),
+    );
+    if (!response.Body) {
+      throw new InternalServerErrorException(
+        'El archivo almacenado no contiene datos',
+      );
+    }
+    return {
+      body: Buffer.from(await response.Body.transformToByteArray()),
+      contentType: response.ContentType,
+    };
   }
 
   getPublicUrl(objectKey: string) {
