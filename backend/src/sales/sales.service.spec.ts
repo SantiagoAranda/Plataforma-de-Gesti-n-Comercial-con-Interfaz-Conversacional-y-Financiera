@@ -817,6 +817,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
       },
       fiscalDocument: {
         findFirst: mockFn()
+          .mockResolvedValueOnce(null)
           .mockResolvedValueOnce({ id: 'invoice-1' })
           .mockResolvedValueOnce({ id: 'credit-1' }),
         update: mockFn().mockResolvedValue({}),
@@ -854,6 +855,15 @@ describe('SalesService.reverseConfirmedOrder', () => {
       where: { businessId, orderId, type: 'SALE_RETURN' },
       take: 1,
       select: { id: true },
+    });
+    expect(tx.fiscalDocument.findFirst).toHaveBeenNthCalledWith(1, {
+      where: {
+        businessId,
+        orderId,
+        type: 'INVOICE',
+        status: { in: ['PROCESSING', 'LOCAL_PERSISTENCE_FAILURE'] },
+      },
+      select: { id: true, status: true },
     });
     expect(
       inventoryService.reverseInventoryConsumptionForOrder,
@@ -1142,7 +1152,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
         {
           id: 'order-item-1',
           excludedOptionalIngredientIds: ['ingredient-optional'],
-          item: { id: 'item-1' },
+          item: { id: 'item-1', inventoryMode: 'NONE' },
         },
       ],
     };
@@ -1161,6 +1171,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     };
     const prisma = {
       $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
+      fiscalDocument: { findFirst: (jest.fn() as any).mockResolvedValue(null) },
     } as any;
     const inventoryService = {
       applyInventoryConsumptionForOrder: (jest.fn() as any).mockResolvedValue(
@@ -1170,12 +1181,17 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     const accountingService = {
       postOrderMovements: jest.fn(),
     } as any;
+    const fiscalDocuments = {
+      createInvoiceIntent: (jest.fn() as any).mockResolvedValue(null),
+      dispatch: jest.fn(),
+    } as any;
     const service = new SalesService(
       prisma,
       accountingService,
       inventoryService,
       {} as any,
       {} as any,
+      fiscalDocuments,
     );
 
     await service.confirmOrder(businessId, orderId, 'ORDER');
@@ -1196,6 +1212,20 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
       { sourceType: 'ORDER' },
     );
     expect(accountingService.postOrderMovements).not.toHaveBeenCalled();
+    expect(tx.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'COMPLETED' } }),
+    );
+    expect(fiscalDocuments.createInvoiceIntent).toHaveBeenCalledWith(
+      tx,
+      businessId,
+      orderId,
+    );
+    expect(prisma.fiscalDocument.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'PENDING' }),
+      }),
+    );
+    expect(fiscalDocuments.dispatch).not.toHaveBeenCalled();
   });
 });
 

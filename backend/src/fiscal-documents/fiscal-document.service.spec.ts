@@ -350,7 +350,7 @@ describe('FiscalDocumentService item tax snapshots', () => {
         itemNameSnapshot: 'Hamburguesa test',
         quantity: 1,
         unitPrice: '900000.00',
-        item: { fiscalCode: 'HAMB', factusUnitMeasureCode: '94', factusStandardCode: '999' },
+        item: { factusUnitMeasureCode: '94', factusStandardCode: '999' },
       },
       {
         id: 'order-item-llaveros',
@@ -358,7 +358,7 @@ describe('FiscalDocumentService item tax snapshots', () => {
         itemNameSnapshot: 'Llaveros',
         quantity: 1,
         unitPrice: '100000.00',
-        item: { fiscalCode: 'LLAV', factusUnitMeasureCode: '94', factusStandardCode: '999' },
+        item: { factusUnitMeasureCode: '94', factusStandardCode: '999' },
       },
     ],
     taxLines: [
@@ -393,6 +393,23 @@ describe('FiscalDocumentService item tax snapshots', () => {
     expect(snapshots.payload.items).toEqual(snapshots.items);
     expect(snapshots.payment.amount).toBe('1091000.00');
     expect(snapshots.total.toString()).toBe('1091000');
+    expect(snapshots.items.map((item) => item.code_reference)).toEqual([
+      'item-hamburguesa',
+      'item-llaveros',
+    ]);
+  });
+
+  it('uses the historical item id even when an item retains a legacy fiscalCode', () => {
+    const legacyCodeOrder = {
+      ...order,
+      items: [{ ...order.items[0], item: { ...order.items[0].item, fiscalCode: ' hab-001 ' } }],
+      taxLines: [order.taxLines[0]],
+    };
+
+    const snapshots = (service as any).buildSnapshots(legacyCodeOrder, configuration);
+
+    expect(snapshots.items[0].code_reference).toBe('item-hamburguesa');
+    expect(snapshots.payload.items[0].code_reference).toBe('item-hamburguesa');
   });
 
   it('rejects a charge tax without an order item relationship', () => {
@@ -403,6 +420,67 @@ describe('FiscalDocumentService item tax snapshots', () => {
 
     expect(() => (service as any).buildSnapshots(legacyOrder, configuration)).toThrow(
       'La factura tiene impuestos IVA o Impoconsumo sin trazabilidad por item de orden',
+    );
+  });
+
+  it.each([
+    ['the RUT is off despite responsibility 52 and enabled historical Factus configuration', ['52'], true, false],
+    ['responsibility 52 is absent despite an enabled Factus configuration', [], true, true],
+    ['Factus is disabled despite responsibility 52', ['52'], false, true],
+  ])(
+    'keeps the sale local when %s',
+    async (_caseName, responsibilityCodes, factusEnabled, taxSettingsEnabled) => {
+      const tx: any = {
+        factusConfiguration: { findUnique: jest.fn().mockResolvedValue({ enabled: factusEnabled }) },
+        businessTaxProfile: {
+          findUnique: jest.fn().mockResolvedValue({
+            taxSettingsEnabled,
+            responsibilities: responsibilityCodes.map((code) => ({ responsibility: { code } })),
+          }),
+        },
+        fiscalDocument: { findFirst: jest.fn(), create: jest.fn() },
+        order: { findFirst: jest.fn() },
+      };
+
+      await expect(
+        service.createInvoiceIntent(tx, 'business-1', 'order-1'),
+      ).resolves.toBeNull();
+
+      expect(tx.order.findFirst).not.toHaveBeenCalled();
+      expect(tx.fiscalDocument.findFirst).not.toHaveBeenCalled();
+      expect(tx.fiscalDocument.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('creates an electronic intent for a legacy item without fiscalCode', async () => {
+    const tx: any = {
+      factusConfiguration: {
+        findUnique: jest.fn().mockResolvedValue({ ...configuration, enabled: true }),
+      },
+      businessTaxProfile: {
+        findUnique: jest.fn().mockResolvedValue({
+          taxSettingsEnabled: true,
+          responsibilities: [{ responsibility: { code: '52' } }],
+        }),
+      },
+      fiscalDocument: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'invoice-1' }) },
+      order: {
+        findFirst: jest.fn().mockResolvedValue({
+          ...order,
+          items: [{ ...order.items[0], item: { ...order.items[0].item, fiscalCode: null } }],
+        }),
+      },
+    };
+
+    await expect(service.createInvoiceIntent(tx, 'business-1', 'order-1')).resolves.toEqual({ id: 'invoice-1' });
+    expect(tx.fiscalDocument.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          itemsSnapshot: expect.arrayContaining([
+            expect.objectContaining({ code_reference: 'item-hamburguesa' }),
+          ]),
+        }),
+      }),
     );
   });
 });
@@ -824,7 +902,7 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
             is_validated: true,
             number: 'SETP990019999',
             cufe: 'CUFE-RETRY-1',
-            validated_at: '2026-09-10T12:00:00.000Z',
+            validated_at: '13-09-2026 10:37:14 PM',
           },
         }),
       download: jest.fn().mockResolvedValue({
@@ -877,6 +955,7 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
     });
 
     expect(document).toMatchObject({ ...immutable, status: 'VALIDATED' });
+    expect(document.dianValidatedAt?.toISOString()).toBe('2026-09-14T03:37:14.000Z');
     expect(attempts).toHaveLength(2);
     expect(attempts[0].result).toBe('RETRYABLE_FAILURE');
     expect(attempts[1]).toMatchObject({ result: 'SUCCEEDED', httpStatus: 201 });
@@ -887,7 +966,7 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
     });
   });
 
-  it.each(['REJECTED', 'VALIDATED'])('blocks retry from %s', async (status) => {
+  it.each(['REJECTED', 'VALIDATED', 'LOCAL_PERSISTENCE_FAILURE', 'PROCESSING'])('blocks retry from %s', async (status) => {
     const { service, provider, prisma, document } = setupRetryFlow(status);
 
     await expect(service.retry('business-1', document.id)).rejects.toThrow(
@@ -895,6 +974,147 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
     );
     expect(provider.validateInvoice).not.toHaveBeenCalled();
     expect(prisma.fiscalDocument.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('protects an accepted Factus response when the normal local persistence fails', async () => {
+    const { service, prisma, provider, document, attempts } = setupRetryFlow();
+    provider.validateInvoice.mockReset().mockResolvedValue({
+      data: {
+        is_validated: true,
+        number: 'SETP990018954',
+        cufe: 'CUFE-ACCEPTED',
+        validated_at: '13-09-2026 10:37:14 PM',
+      },
+    });
+    let transaction = 0;
+    prisma.$transaction.mockImplementation(async (callback: any) => {
+      transaction += 1;
+      if (transaction === 1) {
+        return callback({
+          fiscalDocumentAttempt: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          fiscalDocument: {
+            updateMany: jest.fn().mockRejectedValue(new Error('Prisma write failed')),
+            findFirst: jest.fn(),
+          },
+        });
+      }
+      return callback({
+        fiscalDocumentAttempt: {
+          updateMany: jest.fn(({ where, data }: any) => {
+            Object.assign(attempts.find((attempt) => attempt.id === where.id), data);
+            return { count: 1 };
+          }),
+        },
+        fiscalDocument: {
+          updateMany: jest.fn(({ data }: any) => {
+            Object.assign(document, data);
+            return { count: 1 };
+          }),
+          findFirst: jest.fn().mockResolvedValue(document),
+        },
+      });
+    });
+
+    await expect(service.dispatch('business-1', document.id)).resolves.toMatchObject({
+      status: 'LOCAL_PERSISTENCE_FAILURE',
+      factusNumber: 'SETP990018954',
+      cufeOrCude: 'CUFE-ACCEPTED',
+    });
+
+    expect(document.dianValidatedAt?.toISOString()).toBe('2026-09-14T03:37:14.000Z');
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      result: 'LOCAL_PERSISTENCE_FAILURE',
+      httpStatus: 201,
+      responsePayload: expect.objectContaining({ data: expect.objectContaining({ is_validated: true }) }),
+    });
+    expect(provider.validateInvoice).toHaveBeenCalledTimes(1);
+    await expect(service.retry('business-1', document.id)).rejects.toThrow(
+      'El documento no puede reintentarse en su estado actual',
+    );
+    expect(provider.validateInvoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles a verified accepted response without a second Factus validate call', async () => {
+    const { service, prisma, provider, document, attempts } = setupRetryFlow('LOCAL_PERSISTENCE_FAILURE');
+    document.payloadSnapshot = { reference_code: document.referenceCode, items: [] };
+    provider.download = jest.fn().mockResolvedValue({
+      base64: Buffer.from('artifact').toString('base64'),
+      contentType: 'application/pdf',
+      extension: 'pdf',
+    });
+    prisma.factusConfiguration = {
+      findUnique: jest.fn().mockResolvedValue(document.business.factusConfiguration),
+    };
+    prisma.$transaction.mockImplementation(async (callback: any) => callback({
+      fiscalDocumentAttempt: {
+        create: jest.fn(({ data }: any) => {
+          attempts.push({ id: `attempt-${attempts.length + 1}`, ...data });
+          return attempts[attempts.length - 1];
+        }),
+      },
+      fiscalDocument: {
+        updateMany: jest.fn(({ data }: any) => {
+          Object.assign(document, data);
+          return { count: 1 };
+        }),
+        findFirst: jest.fn().mockResolvedValue(document),
+      },
+    }));
+
+    await expect(service.reconcileAcceptedProviderResponse('business-1', document.id, {
+      data: {
+        is_validated: true,
+        reference_code: document.referenceCode,
+        number: 'SETP990018954',
+        cufe: 'CUFE-ACCEPTED',
+        validated_at: '13-09-2026 10:37:14 PM',
+      },
+    })).resolves.toMatchObject({ status: 'VALIDATED', factusNumber: 'SETP990018954' });
+
+    expect(document.dianValidatedAt?.toISOString()).toBe('2026-09-14T03:37:14.000Z');
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({ result: 'SUCCEEDED', httpStatus: 201 });
+    expect(provider.validateInvoice).not.toHaveBeenCalled();
+  });
+
+  it('persists a Factus-format validated_at for a credit note', async () => {
+    const { service, provider, document } = setupRetryFlow();
+    document.type = 'CREDIT_NOTE';
+    provider.validateCreditNote = jest.fn().mockResolvedValue({
+      data: {
+        is_validated: true,
+        number: 'NC9901',
+        cude: 'CUDE-CREDIT-1',
+        validated_at: '01-01-2026 12:00:00 AM',
+      },
+    });
+
+    await expect(service.dispatch('business-1', document.id)).resolves.toMatchObject({
+      status: 'VALIDATED',
+      cufeOrCude: 'CUDE-CREDIT-1',
+    });
+    expect(document.dianValidatedAt?.toISOString()).toBe('2026-01-01T05:00:00.000Z');
+    expect(provider.validateCreditNote).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a validated invoice valid when Factus sends an invalid auxiliary date', async () => {
+    const { service, provider, document } = setupRetryFlow();
+    provider.validateInvoice.mockReset().mockResolvedValue({
+      data: {
+        is_validated: true,
+        number: 'SETP990018955',
+        cufe: 'CUFE-INVALID-DATE',
+        validated_at: '31-02-2026 10:37:14 PM',
+      },
+    });
+
+    await expect(service.dispatch('business-1', document.id)).resolves.toMatchObject({
+      status: 'VALIDATED',
+      factusNumber: 'SETP990018955',
+    });
+    expect(document.dianValidatedAt).toBeNull();
+    expect(Number.isNaN(document.dianValidatedAt?.getTime())).toBe(false);
   });
 });
 
@@ -915,7 +1135,7 @@ describe('FiscalDocumentService credit-note payment details', () => {
     paymentSnapshot,
     sellerSnapshot: { nit: '1' },
     buyerSnapshot: { identification: '22222222222' },
-    itemsSnapshot: [{ name: 'Llaveros' }],
+    itemsSnapshot: [{ name: 'Llaveros', code_reference: 'item-llaveros' }],
     taxSnapshot: { tax: 'snapshot' },
     total: '119000.00',
   };
@@ -949,6 +1169,18 @@ describe('FiscalDocumentService credit-note payment details', () => {
     return { service, prisma };
   }
 
+  it.each(['LOCAL_PERSISTENCE_FAILURE', 'PROCESSING'])(
+    'blocks credit-note creation while the invoice is protected in %s',
+    async (status) => {
+      const { service, prisma } = setup({ status });
+
+      await expect(
+        service.requestCreditNote('business-1', 'invoice-1', '2'),
+      ).rejects.toThrow('La factura requiere sincronizacion local antes de crear una nota credito');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+
   it('copies the frozen payment snapshot into one credit-note payment detail', async () => {
     const { service, prisma } = setup();
 
@@ -967,6 +1199,7 @@ describe('FiscalDocumentService credit-note payment details', () => {
     await create(tx);
 
     expect(credit.paymentSnapshot).toEqual(paymentSnapshot);
+    expect(credit.itemsSnapshot).toEqual(invoice.itemsSnapshot);
     expect(tx.fiscalDocument.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

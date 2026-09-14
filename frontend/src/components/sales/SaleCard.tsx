@@ -69,7 +69,6 @@ type Props = {
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
-  electronicInvoicingEnabled?: boolean;
   fiscalDocument?: FiscalDocument;
   creditNote?: FiscalDocument;
   onFiscalView?: (document: FiscalDocument) => void;
@@ -99,7 +98,6 @@ export default function SaleCard({
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
-  electronicInvoicingEnabled = false,
   fiscalDocument,
   creditNote,
   onFiscalView,
@@ -155,7 +153,7 @@ export default function SaleCard({
 
   const total = calcTotal(sale);
   const styles = getStatusStyles(sale.status);
-  const fiscalPresentation = electronicInvoicingEnabled && fiscalDocument
+  const fiscalPresentation = fiscalDocument
     ? FISCAL_STATUS_PRESENTATION[fiscalDocument.status]
     : null;
 

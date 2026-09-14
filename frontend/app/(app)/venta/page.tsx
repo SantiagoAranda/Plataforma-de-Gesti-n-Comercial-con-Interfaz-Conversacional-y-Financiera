@@ -265,6 +265,7 @@ function VentaPageContent() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDone = useRef(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
+  const artifactPollingAttemptsRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     let active = true;
@@ -393,10 +394,29 @@ function VentaPageContent() {
     const hasInFlightDocument = fiscalDocuments.some((document) =>
       ["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"].includes(document.status),
     );
-    if (!hasInFlightDocument) return;
+    const documentsAwaitingArtifacts = fiscalDocuments.filter((document) => {
+      const artifactKinds = new Set(document.artifacts.map((artifact) => artifact.kind.toLowerCase()));
+      const isValidatedDocument = document.status === "VALIDATED" || document.status === "CREDITED";
+      return isValidatedDocument && (!artifactKinds.has("pdf") || !artifactKinds.has("xml"));
+    });
+    for (const document of fiscalDocuments) {
+      if (!documentsAwaitingArtifacts.some((candidate) => candidate.id === document.id)) {
+        artifactPollingAttemptsRef.current.delete(document.id);
+      }
+    }
+    const canRefreshArtifacts = documentsAwaitingArtifacts.some(
+      (document) => (artifactPollingAttemptsRef.current.get(document.id) ?? 0) < 15,
+    );
+    if (!hasInFlightDocument && !canRefreshArtifacts) return;
     const interval = window.setInterval(() => {
+      for (const document of documentsAwaitingArtifacts) {
+        artifactPollingAttemptsRef.current.set(
+          document.id,
+          (artifactPollingAttemptsRef.current.get(document.id) ?? 0) + 1,
+        );
+      }
       void refreshFiscalDocuments().catch(() => undefined);
-    }, 10_000);
+    }, canRefreshArtifacts ? 2_000 : 10_000);
     return () => window.clearInterval(interval);
   }, [electronicInvoicingEnabled, fiscalDocuments, refreshFiscalDocuments]);
 
@@ -1255,7 +1275,6 @@ function VentaPageContent() {
               onReceipt={(sale) => handleOpenReceipt(sale)}
               onSendWhatsApp={handleSendWhatsApp}
               taxSettingsEnabled={taxSettingsEnabled}
-              electronicInvoicingEnabled={electronicInvoicingEnabled}
               invoicesByOrder={invoicesByOrder}
               creditNotesByInvoice={creditNotesByInvoice}
               onFiscalView={setFiscalDetail}

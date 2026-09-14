@@ -12,6 +12,7 @@ import {
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { parseFactusDateTime } from './factus-date';
 import { FactusProvider } from './providers/factus.provider';
 
 type Tx = Prisma.TransactionClient;
@@ -34,10 +35,8 @@ export class FiscalDocumentService {
   ) {}
 
   async createInvoiceIntent(tx: Tx, businessId: string, orderId: string) {
-    const configuration = await tx.factusConfiguration.findUnique({
-      where: { businessId },
-    });
-    if (!configuration?.enabled) return null;
+    const configuration = await this.electronicInvoicingConfiguration(tx, businessId);
+    if (!configuration) return null;
     const existing = await tx.fiscalDocument.findFirst({
       where: { businessId, orderId, type: 'INVOICE', sequenceScope: 'PRIMARY' },
     });
@@ -80,6 +79,34 @@ export class FiscalDocumentService {
         total: snapshots.total,
       },
     });
+  }
+
+  /**
+   * Factus configuration alone is not an issuance switch.  A business must
+   * explicitly keep DIAN responsibility 52 before a local sale becomes an
+   * electronic invoice.
+   */
+  private async electronicInvoicingConfiguration(tx: Tx, businessId: string) {
+    const [configuration, taxProfile] = await Promise.all([
+      tx.factusConfiguration.findUnique({ where: { businessId } }),
+      tx.businessTaxProfile.findUnique({
+        where: { businessId },
+        include: {
+          responsibilities: { include: { responsibility: true } },
+        },
+      }),
+    ]);
+    const hasElectronicInvoicerResponsibility = Boolean(
+      taxProfile?.responsibilities.some(
+        (entry: any) => entry.responsibility.code === '52',
+      ),
+    );
+    const taxSettingsEnabled = taxProfile?.taxSettingsEnabled === true;
+    return configuration?.enabled &&
+      taxSettingsEnabled &&
+      hasElectronicInvoicerResponsibility
+      ? configuration
+      : null;
   }
 
   async list(businessId: string) {
@@ -270,6 +297,13 @@ export class FiscalDocumentService {
   ) {
     const invoice = await this.requireOwnedDocument(businessId, invoiceId);
     if (
+      invoice.status === 'LOCAL_PERSISTENCE_FAILURE' ||
+      invoice.status === 'PROCESSING'
+    )
+      throw new BadRequestException(
+        'La factura requiere sincronizacion local antes de crear una nota credito',
+      );
+    if (
       invoice.type !== 'INVOICE' ||
       invoice.status !== 'VALIDATED' ||
       !invoice.factusNumber
@@ -387,6 +421,9 @@ export class FiscalDocumentService {
     let configuration: any;
     let credentials: any;
     let shouldPersistArtifacts = false;
+    let acceptedProviderResult:
+      | { response: any; data: any; payload: Record<string, unknown>; dianValidatedAt: Date | null }
+      | undefined;
     try {
       configuration = document.business.factusConfiguration;
       if (!configuration?.enabled || !configuration.encryptedCredentials)
@@ -419,6 +456,14 @@ export class FiscalDocumentService {
       const nextStatus: FiscalDocumentStatus = validated
         ? 'VALIDATED'
         : 'SUBMITTED_PENDING_DIAN';
+      const dianValidatedAt = this.parseValidatedAt(
+        data.validated_at,
+        document.id,
+        document.referenceCode,
+      );
+      if (validated) {
+        acceptedProviderResult = { response, data, payload, dianValidatedAt };
+      }
       updated = await this.prisma.$transaction(async (tx) => {
         await tx.fiscalDocumentAttempt.updateMany({
           where: { id: attempt.id, fiscalDocumentId: id },
@@ -436,9 +481,7 @@ export class FiscalDocumentService {
             status: nextStatus,
             factusNumber: data.number ?? null,
             cufeOrCude: data.cufe ?? data.cude ?? null,
-            dianValidatedAt: data.validated_at
-              ? new Date(data.validated_at)
-              : null,
+            dianValidatedAt,
             providerResponse: response as Prisma.InputJsonValue,
             providerErrors: data.errors ?? undefined,
           },
@@ -449,6 +492,22 @@ export class FiscalDocumentService {
       });
       shouldPersistArtifacts = validated && Boolean(data.number);
     } catch (error: any) {
+      if (acceptedProviderResult) {
+        const fallback = await this.persistAcceptedProviderFailure(
+          businessId,
+          id,
+          attempt.id,
+          acceptedProviderResult,
+          error,
+        );
+        if (fallback) return fallback;
+        // The claim remains PROCESSING when even the fallback cannot reach the
+        // database. PROCESSING is deliberately not retryable automatically.
+        this.logger.error(
+          `Fiscal accepted response could not be persisted fiscalDocumentId=${id} businessId=${businessId} referenceCode=${document.referenceCode} error=${this.errorSummary(error)}`,
+        );
+        throw error;
+      }
       const status = Number(error?.status ?? 0);
       const retryable =
         status === 0 ||
@@ -491,6 +550,151 @@ export class FiscalDocumentService {
     return updated;
   }
 
+  /** Reconciles a Factus response already verified out of band. It never emits. */
+  async reconcileAcceptedProviderResponse(
+    businessId: string,
+    id: string,
+    response: unknown,
+  ) {
+    const document = await this.requireOwnedDocument(businessId, id);
+    if (!['LOCAL_PERSISTENCE_FAILURE', 'RETRYABLE_FAILURE'].includes(document.status))
+      throw new BadRequestException(
+        'El documento no requiere reconciliacion de una respuesta Factus aceptada',
+      );
+    const data = this.factusResponseData(response);
+    if (
+      data?.is_validated !== true ||
+      data.reference_code !== document.referenceCode ||
+      typeof data.number !== 'string' ||
+      !data.number.trim() ||
+      (typeof data.cufe !== 'string' || !data.cufe.trim()) &&
+        (typeof data.cude !== 'string' || !data.cude.trim())
+    )
+      throw new BadRequestException(
+        'La respuesta Factus verificada no coincide completamente con el documento fiscal',
+      );
+
+    const dianValidatedAt = this.parseValidatedAt(
+      data.validated_at,
+      document.id,
+      document.referenceCode,
+    );
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.fiscalDocumentAttempt.create({
+        data: {
+          fiscalDocumentId: document.id,
+          result: 'SUCCEEDED',
+          httpStatus: 201,
+          requestPayload: document.payloadSnapshot as Prisma.InputJsonValue,
+          responsePayload: response as Prisma.InputJsonValue,
+          errorCode: 'RECONCILED_ACCEPTED_RESPONSE',
+          errorMessage: 'Respuesta Factus aceptada reconciliada localmente',
+          completedAt: new Date(),
+        },
+      });
+      const changed = await tx.fiscalDocument.updateMany({
+        where: {
+          id: document.id,
+          businessId,
+          status: { in: ['LOCAL_PERSISTENCE_FAILURE', 'RETRYABLE_FAILURE'] },
+        },
+        data: {
+          status: 'VALIDATED',
+          factusNumber: data.number,
+          cufeOrCude: data.cufe ?? data.cude,
+          dianValidatedAt,
+          providerResponse: response as Prisma.InputJsonValue,
+          providerErrors: Prisma.JsonNull,
+        },
+      });
+      if (!changed.count)
+        throw new BadRequestException('El documento ya no puede reconciliarse');
+      return tx.fiscalDocument.findFirst({ where: { id: document.id, businessId } });
+    });
+
+    const configuration = await this.prisma.factusConfiguration.findUnique({
+      where: { businessId },
+    });
+    if (configuration?.enabled && configuration.encryptedCredentials && updated) {
+      try {
+        await this.persistArtifacts(
+          updated,
+          configuration,
+          this.provider.decryptCredentials(configuration.encryptedCredentials),
+        );
+      } catch (error: any) {
+        this.logger.warn(
+          `Fiscal reconciliation artifacts failed fiscalDocumentId=${id} businessId=${businessId} error=${this.errorSummary(error)}`,
+        );
+      }
+    }
+    return updated;
+  }
+
+  private factusResponseData(response: any): any {
+    return response?.data ?? response;
+  }
+
+  private parseValidatedAt(value: unknown, documentId: string, referenceCode: string) {
+    const parsed = parseFactusDateTime(typeof value === 'string' ? value : null);
+    if (value && !parsed) {
+      this.logger.warn(
+        `Factus validated_at is invalid fiscalDocumentId=${documentId} referenceCode=${referenceCode}`,
+      );
+    }
+    return parsed;
+  }
+
+  private errorSummary(error: any) {
+    return String(error?.message ?? error ?? 'Error desconocido').slice(0, 500);
+  }
+
+  private async persistAcceptedProviderFailure(
+    businessId: string,
+    id: string,
+    attemptId: string,
+    accepted: { response: any; data: any; payload: Record<string, unknown>; dianValidatedAt: Date | null },
+    error: any,
+  ) {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.fiscalDocumentAttempt.updateMany({
+          where: { id: attemptId, fiscalDocumentId: id },
+          data: {
+            result: 'LOCAL_PERSISTENCE_FAILURE',
+            httpStatus: 201,
+            requestPayload: accepted.payload as Prisma.InputJsonValue,
+            responsePayload: accepted.response as Prisma.InputJsonValue,
+            errorCode: 'LOCAL_PERSISTENCE_FAILURE',
+            errorMessage: this.errorSummary(error),
+            completedAt: new Date(),
+          },
+        });
+        const changed = await tx.fiscalDocument.updateMany({
+          where: { id, businessId, status: 'PROCESSING' },
+          data: {
+            status: 'LOCAL_PERSISTENCE_FAILURE',
+            factusNumber: accepted.data.number ?? null,
+            cufeOrCude: accepted.data.cufe ?? accepted.data.cude ?? null,
+            dianValidatedAt: accepted.dianValidatedAt,
+            providerResponse: accepted.response as Prisma.InputJsonValue,
+            providerErrors: {
+              kind: 'LOCAL_PERSISTENCE_FAILURE',
+              message: this.errorSummary(error),
+            },
+          },
+        });
+        if (!changed.count) return null;
+        return tx.fiscalDocument.findFirst({ where: { id, businessId } });
+      });
+    } catch (fallbackError: any) {
+      this.logger.error(
+        `Fiscal local persistence fallback failed fiscalDocumentId=${id} businessId=${businessId} error=${this.errorSummary(fallbackError)}`,
+      );
+      return null;
+    }
+  }
+
   private buildSnapshots(order: any, configuration: any) {
     const profile = order.business.taxProfile;
     if (!profile)
@@ -517,7 +721,7 @@ export class FiscalDocumentService {
           municipality_code: fiscal.fiscalMunicipalityCode,
         };
     const items = order.items.map((line: any) => ({
-      code_reference: line.item.fiscalCode ?? line.itemId,
+      code_reference: line.itemId,
       name: line.itemNameSnapshot,
       quantity: Number(line.quantity).toFixed(2),
       discount_rate: '0.00',

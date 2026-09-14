@@ -16,7 +16,6 @@ type Props = {
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
-  electronicInvoicingEnabled?: boolean;
   invoicesByOrder?: Map<string, FiscalDocument>;
   creditNotesByInvoice?: Map<string, FiscalDocument>;
   onFiscalView?: (document: FiscalDocument) => void;
@@ -63,7 +62,6 @@ export default function SalesList({
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
-  electronicInvoicingEnabled = false,
   invoicesByOrder,
   creditNotesByInvoice,
   onFiscalView,
@@ -105,7 +103,6 @@ export default function SalesList({
                 onReceipt={onReceipt}
                 onSendWhatsApp={onSendWhatsApp}
                 taxSettingsEnabled={taxSettingsEnabled}
-                electronicInvoicingEnabled={electronicInvoicingEnabled}
                 fiscalDocument={invoice}
                 creditNote={invoice ? creditNotesByInvoice?.get(invoice.id) : undefined}
                 onFiscalView={onFiscalView}

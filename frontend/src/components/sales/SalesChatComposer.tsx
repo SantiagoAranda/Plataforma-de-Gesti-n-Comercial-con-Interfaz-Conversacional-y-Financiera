@@ -1215,6 +1215,7 @@ export default function SalesChatComposer({
 
             {!expanded && onFilterStatusChange && (
               <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:pl-12 sm:pr-2">
+                {!fiscalFilterActive && <>
                 <button
                   type="button"
                   onClick={() =>
@@ -1254,6 +1255,7 @@ export default function SalesChatComposer({
                 >
                   Canceladas
                 </button>
+                </>}
                 {electronicInvoicingEnabled && onFiscalFilterActiveChange && (
                   <button
                     type="button"

@@ -12,7 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { InventoryMode, ItemType, Weekday, SaleConcept } from '@prisma/client';
 
 class BadgeInput {

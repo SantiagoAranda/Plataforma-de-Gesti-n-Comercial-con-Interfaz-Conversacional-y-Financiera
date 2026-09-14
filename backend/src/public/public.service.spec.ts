@@ -944,6 +944,22 @@ describe('PublicService', () => {
     );
   });
 
+  it('does not expose electronic invoicing when the RUT is disabled even if 52 and Factus persist', async () => {
+    const { service, prisma } = createService();
+    prisma.businessTaxProfile.findUnique.mockResolvedValue({
+      taxSettingsEnabled: false,
+      responsibilities: [{ responsibility: { code: '52' } }],
+    });
+    prisma.factusConfiguration.findUnique.mockResolvedValue({ enabled: true });
+
+    await expect(service.getFiscalSettings('demo')).resolves.toEqual(
+      expect.objectContaining({
+        fiscalContextEnabled: false,
+        electronicInvoicingEnabled: false,
+      }),
+    );
+  });
+
   it('serves the versioned official municipality catalog without Factus credentials', async () => {
     const { service } = createService();
     const municipalities = await service.getFiscalMunicipalities('demo');

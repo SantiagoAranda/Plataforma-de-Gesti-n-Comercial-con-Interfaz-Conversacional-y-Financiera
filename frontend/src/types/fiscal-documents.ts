@@ -4,6 +4,7 @@ export type FiscalDocumentStatus =
   | "SUBMITTED_PENDING_DIAN"
   | "VALIDATED"
   | "RETRYABLE_FAILURE"
+  | "LOCAL_PERSISTENCE_FAILURE"
   | "REJECTED"
   | "CREDITED";
 
@@ -11,7 +12,7 @@ export type FiscalDocumentType = "INVOICE" | "CREDIT_NOTE";
 
 export type FiscalDocumentAttemptSummary = {
   id: string;
-  result: "STARTED" | "SUCCEEDED" | "RETRYABLE_FAILURE" | "REJECTED";
+  result: "STARTED" | "SUCCEEDED" | "RETRYABLE_FAILURE" | "LOCAL_PERSISTENCE_FAILURE" | "REJECTED";
   httpStatus: number | null;
   errorCode: string | null;
   errorMessage: string | null;

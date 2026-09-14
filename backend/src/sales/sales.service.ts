@@ -2148,6 +2148,24 @@ export class SalesService {
 
         if (!order) throw new NotFoundException('Order not found');
 
+        const protectedFiscalDocument =
+          this.fiscalDocuments && (tx as any).fiscalDocument
+            ? await (tx as any).fiscalDocument.findFirst({
+                where: {
+                  businessId,
+                  orderId: id,
+                  type: 'INVOICE',
+                  status: { in: ['PROCESSING', 'LOCAL_PERSISTENCE_FAILURE'] },
+                },
+                select: { id: true, status: true },
+              })
+            : null;
+        if (protectedFiscalDocument) {
+          throw new BadRequestException(
+            'La factura electronica requiere sincronizacion antes de revertir la venta.',
+          );
+        }
+
         const validatedInvoice =
           this.fiscalDocuments && (tx as any).fiscalDocument
             ? await (tx as any).fiscalDocument.findFirst({

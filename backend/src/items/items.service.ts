@@ -76,7 +76,6 @@ export class ItemsService {
         );
 
         const cleanedBadges = this.normalizeBadges((dto as any).badges);
-
         const cleanedBadgeText = dto.badgeText?.trim() ?? '';
         const legacyBadgeText = cleanedBadgeText ? cleanedBadgeText : null;
         const cleanedBadgeColor = dto.badgeColor?.trim() ?? '';

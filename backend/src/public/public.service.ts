@@ -229,6 +229,7 @@ export class PublicService {
     return {
       fiscalContextEnabled: profile?.taxSettingsEnabled === true,
       electronicInvoicingEnabled:
+        profile?.taxSettingsEnabled === true &&
         hasElectronicInvoicerResponsibility &&
         factusConfiguration?.enabled === true,
       simpleRegimeSalesEnabled:

@@ -8,7 +8,7 @@ export default function FiscalDocumentDetailModal({ document, onClose }: { docum
   if (!document) return null;
   const state = FISCAL_STATUS_PRESENTATION[document.status];
   const attempt = document.attempts[0];
-  const isError = document.status === "RETRYABLE_FAILURE" || document.status === "REJECTED";
+  const isError = document.status === "RETRYABLE_FAILURE" || document.status === "LOCAL_PERSISTENCE_FAILURE" || document.status === "REJECTED";
   return (
     <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-slate-950/40 p-3 backdrop-blur-sm sm:items-center" onClick={onClose}>
       <section className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>

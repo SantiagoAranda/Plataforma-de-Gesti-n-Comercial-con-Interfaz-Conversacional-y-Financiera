@@ -18,7 +18,7 @@ function matches(document: FiscalDocument, filter: FiscalViewFilter) {
   if (filter === "ALL") return true;
   if (filter === "VALIDATED") return document.status === "VALIDATED";
   if (filter === "PENDING") return (["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"] as FiscalDocumentStatus[]).includes(document.status);
-  if (filter === "ERROR") return document.status === "RETRYABLE_FAILURE" || document.status === "REJECTED";
+  if (filter === "ERROR") return document.status === "RETRYABLE_FAILURE" || document.status === "LOCAL_PERSISTENCE_FAILURE" || document.status === "REJECTED";
   if (filter === "CREDIT_NOTES") return document.type === "CREDIT_NOTE";
   return document.type === "INVOICE" && document.status === "CREDITED";
 }
