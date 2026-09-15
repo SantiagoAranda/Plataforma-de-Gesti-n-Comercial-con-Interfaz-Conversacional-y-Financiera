@@ -177,6 +177,63 @@ function isDeletionBlockedByPostedInventory(sale: Sale) {
   return sale.status === "CERRADO" && sale.inventoryPostedAt != null;
 }
 
+const SALE_SAVE_ERROR_FALLBACK =
+  "No se pudo guardar la venta. Revisá los datos e intentá nuevamente.";
+
+function translateKnownSaleError(message: string): string | null {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("buyeremail") || normalized.includes("buyer email")) {
+    return "Ingresá un correo electrónico válido.";
+  }
+
+  if (
+    normalized.includes("buyerdocument") ||
+    normalized.includes("buyer document") ||
+    normalized.includes("documentnumber")
+  ) {
+    return "Ingresá el número de identificación.";
+  }
+
+  if (
+    normalized.includes("buyerphone") ||
+    normalized.includes("buyer phone") ||
+    normalized.includes("buyerwhatsapp") ||
+    normalized.includes("customerwhatsapp") ||
+    normalized.includes("customer phone")
+  ) {
+    return "Ingresá un número de teléfono válido.";
+  }
+
+  if (normalized.includes("buyername") || normalized.includes("buyer name")) {
+    return "Ingresá el nombre del comprador.";
+  }
+
+  return null;
+}
+
+function getSaleSaveErrorMessage(error: unknown) {
+  const apiError = error instanceof AppApiError ? error : null;
+  const backendMessage = apiError?.details?.message;
+  const messages = Array.isArray(backendMessage)
+    ? backendMessage.filter((message): message is string => typeof message === "string")
+    : typeof backendMessage === "string"
+      ? [backendMessage]
+      : typeof apiError?.message === "string"
+        ? [apiError.message]
+        : error instanceof Error
+          ? [error.message]
+          : [];
+
+  const translated = messages
+    .map(translateKnownSaleError)
+    .filter((message): message is string => Boolean(message));
+
+  return translated.length > 0
+    ? [...new Set(translated)].join(" ")
+    : SALE_SAVE_ERROR_FALLBACK;
+}
+
 function formatDisplayMoney(value: number) {
   return new Intl.NumberFormat("es-AR", {
     minimumFractionDigits: 0,
@@ -851,16 +908,7 @@ function VentaPageContent() {
       setPendingSmoothScroll(true);
     } catch (error: unknown) {
       console.error("Error creating sale:", error);
-      const apiError = error as {
-        status?: unknown;
-        details?: unknown;
-        raw?: unknown;
-        message?: string;
-      };
-      console.error("Status:", apiError.status);
-      console.error("Details:", apiError.details);
-      console.error("Raw:", apiError.raw);
-      toast.error(apiError.message || "Error al registrar la venta");
+      toast.error(getSaleSaveErrorMessage(error));
       throw error;
     }
   };
@@ -990,11 +1038,12 @@ function VentaPageContent() {
       }, 2100);
     } catch (err) {
       console.error(err);
-      setError("No se pudo actualizar la venta");
+      const message = getSaleSaveErrorMessage(err);
+      setError(message);
 
       toast.dismiss(loadingId);
 
-      toast.error("Error al actualizar la venta", {
+      toast.error(message, {
         id: errorId,
         duration: 3000,
       });

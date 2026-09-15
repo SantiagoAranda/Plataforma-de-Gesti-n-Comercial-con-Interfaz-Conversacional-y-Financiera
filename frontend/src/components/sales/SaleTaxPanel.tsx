@@ -10,6 +10,7 @@ import {
 } from "@/src/lib/tax/api";
 import type { Sale, SaleFiscalSummary } from "@/src/types/sales";
 import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
+import { isValidEmail } from "@/src/lib/email";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 export type SaleFiscalFormState = {
@@ -348,6 +349,13 @@ export default function SaleTaxPanel({
 
     if (items.length === 0) {
       setLivePreview(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    const email = context.buyerEmail?.trim();
+    if (email && !isValidEmail(email)) {
       setError(null);
       setLoading(false);
       return;

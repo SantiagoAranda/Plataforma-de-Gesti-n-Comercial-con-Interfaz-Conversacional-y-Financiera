@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Building2, FileText, ShoppingBag, Trash2, Plus, User, X, Search, Send } from "lucide-react";
+import { Building2, Check, ChevronDown, FileText, ShoppingBag, Trash2, Plus, User, X, Search, Send } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import toast from "react-hot-toast";
 import type { Sale } from "@/src/types/sales";
@@ -22,6 +22,7 @@ import SaleTaxPanel, {
 } from "@/src/components/sales/SaleTaxPanel";
 import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import { api } from "@/src/lib/api";
+import { isValidEmail } from "@/src/lib/email";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
@@ -193,6 +194,8 @@ export default function SalesChatComposer({
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
   const [formError, setFormError] = useState<string | null>(null);
+  const [buyerEmailError, setBuyerEmailError] = useState<string | null>(null);
+  const [isSearchCriterionOpen, setIsSearchCriterionOpen] = useState(false);
   const [customizing, setCustomizing] = useState<{
     item: BusinessItem;
     quantity: number;
@@ -292,6 +295,7 @@ export default function SalesChatComposer({
       setSelectedStartMinute(null);
       setManualDuration("60");
       setFormError(null);
+      setBuyerEmailError(null);
       setIsSubmitting(false);
     }
   }, [expanded, sale?.id, mode]);
@@ -524,6 +528,12 @@ export default function SalesChatComposer({
     if (isSubmitting) return;
 
     setFormError(null);
+    const email = fiscalForm.buyerEmail.trim();
+    if (email && !isValidEmail(email)) {
+      setBuyerEmailError("Ingresá un correo electrónico válido.");
+      return;
+    }
+    setBuyerEmailError(null);
     const cleanedName = fiscalForm.buyerName.trim();
     const rawPhone = phoneNumber.replace(/\D/g, "");
     const cleanedWhatsapp = rawPhone.length > 0 ? `${countryCode}${rawPhone}` : undefined;
@@ -896,10 +906,25 @@ export default function SalesChatComposer({
                     type="email"
                     value={fiscalForm.buyerEmail}
                     disabled={isReadonly}
-                    onChange={(e) => setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }))}
+                    onChange={(e) => {
+                      setFiscalForm(prev => ({ ...prev, buyerEmail: e.target.value }));
+                      setBuyerEmailError(null);
+                    }}
                     placeholder="Correo"
-                    className="h-11 w-full rounded-xl border border-sky-200 bg-white px-3 text-sm outline-none focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500"
+                    aria-invalid={Boolean(buyerEmailError)}
+                    aria-describedby={buyerEmailError ? "buyer-email-error" : undefined}
+                    className={cn(
+                      "h-11 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 placeholder:text-slate-400 transition disabled:bg-slate-50 disabled:text-slate-500",
+                      buyerEmailError
+                        ? "border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-500/10"
+                        : "border-sky-200 bg-white focus:border-[#0B3F64] focus:ring-[#0B3F64]/10"
+                    )}
                   />
+                  {buyerEmailError && (
+                    <p id="buyer-email-error" className="mt-1 text-xs font-medium text-red-600">
+                      {buyerEmailError}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1162,21 +1187,6 @@ export default function SalesChatComposer({
                 </div>
               ) : (
                 <>
-                  {electronicInvoicingEnabled && onSearchCriterionChange && (
-                    <select
-                      value={searchCriterion}
-                      onChange={(event) => onSearchCriterionChange(event.target.value as SalesSearchCriterion)}
-                      className="max-w-32 shrink-0 border-none bg-transparent text-xs font-semibold text-slate-600 outline-none"
-                      aria-label="Criterio de búsqueda"
-                    >
-                      <option value="GENERAL">General</option>
-                      <option value="CUSTOMER">Cliente</option>
-                      <option value="REFERENCE">ID / referencia</option>
-                      <option value="INVOICE_NUMBER">Nº factura</option>
-                      <option value="CUFE">CUFE</option>
-                      <option value="STATUS">Estado</option>
-                    </select>
-                  )}
                   <input
                     value={searchValue}
                     onChange={(e) => onSearchChange(e.target.value)}
@@ -1195,6 +1205,57 @@ export default function SalesChatComposer({
                     }
                     className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
                   />
+                  {electronicInvoicingEnabled && onSearchCriterionChange && (
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsSearchCriterionOpen((current) => !current)}
+                        className="inline-flex h-9 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-3 sm:text-xs"
+                        aria-label="Criterio de búsqueda"
+                        aria-expanded={isSearchCriterionOpen}
+                      >
+                        <span>
+                          {(
+                            {
+                              GENERAL: "General",
+                              CUSTOMER: "Cliente",
+                              REFERENCE: "ID / referencia",
+                              INVOICE_NUMBER: "Nº factura",
+                              CUFE: "CUFE",
+                              STATUS: "Estado",
+                            } as Record<SalesSearchCriterion, string>
+                          )[searchCriterion]}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+
+                      {isSearchCriterionOpen && (
+                        <div className="absolute bottom-full right-0 z-30 mb-2 w-48 rounded-2xl border border-slate-200 bg-white p-1 shadow-lg">
+                          {([
+                            ["GENERAL", "General"],
+                            ["CUSTOMER", "Cliente"],
+                            ["REFERENCE", "ID / referencia"],
+                            ["INVOICE_NUMBER", "Nº factura"],
+                            ["CUFE", "CUFE"],
+                            ["STATUS", "Estado"],
+                          ] as Array<[SalesSearchCriterion, string]>).map(([value, label]) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => {
+                                onSearchCriterionChange(value);
+                                setIsSearchCriterionOpen(false);
+                              }}
+                              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+                            >
+                              <span>{label}</span>
+                              {searchCriterion === value && <Check className="h-4 w-4 text-[#0B3F64]" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -1214,14 +1275,14 @@ export default function SalesChatComposer({
             </form>
 
             {!expanded && onFilterStatusChange && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 px-1 sm:pl-12 sm:pr-2">
+              <div className="scrollbar-none mt-2 flex flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain px-1 touch-pan-x sm:pl-12 sm:pr-2">
                 {!fiscalFilterActive && <>
                 <button
                   type="button"
                   onClick={() =>
                     onFilterStatusChange(filterStatus === "PENDING" ? "ALL" : "PENDING")
                   }
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     filterStatus === "PENDING"
                       ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -1234,7 +1295,7 @@ export default function SalesChatComposer({
                   onClick={() =>
                     onFilterStatusChange(filterStatus === "CLOSED" ? "ALL" : "CLOSED")
                   }
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     filterStatus === "CLOSED"
                       ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -1247,7 +1308,7 @@ export default function SalesChatComposer({
                   onClick={() =>
                     onFilterStatusChange(filterStatus === "CANCELLED" ? "ALL" : "CANCELLED")
                   }
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                     filterStatus === "CANCELLED"
                       ? "border-[#0B3F64] bg-[#E6EFF5] text-[#0B3F64] font-semibold"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -1260,7 +1321,7 @@ export default function SalesChatComposer({
                   <button
                     type="button"
                     onClick={() => onFiscalFilterActiveChange(!fiscalFilterActive)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                       fiscalFilterActive
                         ? "border-[#0B3F64] bg-[#E6EFF5] font-semibold text-[#0B3F64]"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -1270,7 +1331,7 @@ export default function SalesChatComposer({
                   </button>
                 )}
                 {electronicInvoicingEnabled && fiscalFilterActive && onFiscalStatusFilterChange && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex shrink-0 flex-nowrap gap-2">
                     {([
                       ["ALL", "Todas fiscales"],
                       ["PENDING", "Pendientes fiscales"],
@@ -1282,7 +1343,7 @@ export default function SalesChatComposer({
                         key={value}
                         type="button"
                         onClick={() => onFiscalStatusFilterChange(value)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                           fiscalStatusFilter === value
                             ? "border-[#0B3F64] bg-[#E6EFF5] font-semibold text-[#0B3F64]"
                             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -1303,7 +1364,7 @@ export default function SalesChatComposer({
                       onFiscalStatusFilterChange?.("ALL");
                       onSearchCriterionChange?.("GENERAL");
                     }}
-                    className="rounded-full px-3 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
+                    className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
                   >
                     Limpiar filtros
                   </button>
