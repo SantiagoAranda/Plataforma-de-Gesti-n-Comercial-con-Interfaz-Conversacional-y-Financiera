@@ -255,11 +255,11 @@ export function SimpleProductDetailSheet({ product, open, onClose, onChanged }: 
                           <input
                             value={quantity}
                             onChange={(e) => setQuantity(e.target.value.replace(/[^0-9.,]/g, ""))}
-                            placeholder="Cantidad"
+                            placeholder="0"
                             inputMode="decimal"
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-[#0B3F64]"
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-20 text-sm font-semibold text-slate-800 outline-none shadow-sm focus:border-[#0B3F64]"
                           />
-                          <span className="absolute right-4 text-xs font-bold text-slate-400">unidades</span>
+                          <span className="pointer-events-none absolute right-4 text-xs font-bold text-slate-400">unidades</span>
                         </div>
                       </div>
 

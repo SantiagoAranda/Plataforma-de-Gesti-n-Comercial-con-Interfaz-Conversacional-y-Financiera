@@ -302,10 +302,7 @@ export default function DayPickerCalendar({
                   {date.getDate()}
                   {hasDot && !isSelected && (
                     <span
-                      className={cn(
-                        "absolute left-1/2 top-[30px] h-1.5 w-1.5 -translate-x-1/2 rounded-full",
-                        tone === "blue" ? "bg-[#0B3F64]" : "bg-emerald-500",
-                      )}
+                      className="absolute left-1/2 top-[30px] h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-emerald-500"
                     />
                   )}
                 </button>
