@@ -319,6 +319,173 @@ describe('AccountingService automatic order postings', () => {
   });
 });
 
+describe('AccountingService historical order reversals', () => {
+  const businessId = 'business-1';
+  const orderId = 'order-1';
+  const reversedAt = new Date('2026-09-09T12:00:00.000Z');
+
+  function setup(movements: any[]) {
+    const tx: any = {
+      accountingMovement: {
+        findMany: (jest.fn() as any).mockResolvedValue(movements),
+        create: jest.fn(({ data }: any) =>
+          Promise.resolve({ id: `reversal-${data.accountingRole}`, ...data }),
+        ),
+      },
+    };
+    return { service: new AccountingService({} as any), tx };
+  }
+
+  it('creates one historical compensatory movement per original, including metadata-null movements', async () => {
+    const originals = [
+      {
+        id: 'cash',
+        businessId,
+        pucCuentaCode: null,
+        pucSubcuentaId: '110505',
+        amount: new Prisma.Decimal(119000),
+        nature: 'DEBIT',
+        date: new Date(),
+        detail: 'Caja',
+        originType: 'ORDER',
+        originId: orderId,
+        accountingRole: null,
+        metadata: { kind: 'SALE_TAX' },
+      },
+      {
+        id: 'income',
+        businessId,
+        pucCuentaCode: null,
+        pucSubcuentaId: '413595',
+        amount: new Prisma.Decimal(100000),
+        nature: 'CREDIT',
+        date: new Date(),
+        detail: 'Venta',
+        originType: 'ORDER',
+        originId: orderId,
+        accountingRole: null,
+        metadata: null,
+      },
+      {
+        id: 'iva',
+        businessId,
+        pucCuentaCode: '2408',
+        pucSubcuentaId: null,
+        amount: new Prisma.Decimal(19000),
+        nature: 'CREDIT',
+        date: new Date(),
+        detail: 'IVA',
+        originType: 'ORDER',
+        originId: orderId,
+        accountingRole: null,
+        metadata: { kind: 'SALE_TAX', taxType: 'IVA' },
+      },
+    ];
+    const { service, tx } = setup(originals);
+
+    const reversals = await service.reverseOrderMovements(tx, businessId, {
+      orderId,
+      accountingPostedAt: new Date(),
+      reversedAt,
+      reason: 'Nota crédito validada',
+    });
+
+    expect(reversals).toHaveLength(3);
+    expect(
+      tx.accountingMovement.create.mock.calls.map(([call]: any[]) => call.data),
+    ).toEqual([
+      expect.objectContaining({
+        pucSubcuentaId: '110505',
+        amount: originals[0].amount,
+        nature: 'CREDIT',
+        date: reversedAt,
+        originId: orderId,
+        accountingRole: 'SALE_REVERSAL:cash',
+        metadata: {
+          kind: 'SALE_REVERSAL',
+          reversesMovementId: 'cash',
+          reason: 'Nota crédito validada',
+        },
+      }),
+      expect.objectContaining({
+        pucSubcuentaId: '413595',
+        amount: originals[1].amount,
+        nature: 'DEBIT',
+        date: reversedAt,
+        originId: orderId,
+        accountingRole: 'SALE_REVERSAL:income',
+        metadata: {
+          kind: 'SALE_REVERSAL',
+          reversesMovementId: 'income',
+          reason: 'Nota crédito validada',
+        },
+      }),
+      expect.objectContaining({
+        pucCuentaCode: '2408',
+        amount: originals[2].amount,
+        nature: 'DEBIT',
+        date: reversedAt,
+        originId: orderId,
+        accountingRole: 'SALE_REVERSAL:iva',
+        metadata: {
+          kind: 'SALE_REVERSAL',
+          reversesMovementId: 'iva',
+          reason: 'Nota crédito validada',
+        },
+      }),
+    ]);
+  });
+
+  it('does not duplicate reversals already identified by their stable role', async () => {
+    const original = {
+      id: 'bank',
+      businessId,
+      pucCuentaCode: null,
+      pucSubcuentaId: '111005',
+      amount: new Prisma.Decimal(500),
+      nature: 'DEBIT',
+      date: new Date(),
+      detail: null,
+      originType: 'ORDER',
+      originId: orderId,
+      accountingRole: null,
+      metadata: null,
+    };
+    const existingReversal = {
+      ...original,
+      id: 'reversal-bank',
+      nature: 'CREDIT',
+      accountingRole: 'SALE_REVERSAL:bank',
+      metadata: { kind: 'SALE_REVERSAL', reversesMovementId: 'bank' },
+    };
+    const { service, tx } = setup([original, existingReversal]);
+
+    await expect(
+      service.reverseOrderMovements(tx, businessId, {
+        orderId,
+        accountingPostedAt: new Date(),
+        reversedAt,
+      }),
+    ).resolves.toEqual([]);
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+  });
+
+  it('aborts a posted sale with no original accounting movements', async () => {
+    const { service, tx } = setup([]);
+
+    await expect(
+      service.reverseOrderMovements(tx, businessId, {
+        orderId,
+        accountingPostedAt: new Date(),
+        reversedAt,
+      }),
+    ).rejects.toThrow(
+      'La venta está contabilizada pero no tiene movimientos contables originales para revertir',
+    );
+    expect(tx.accountingMovement.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('AccountingService manual paid expense postings', () => {
   const businessId = 'business-1';
   const userId = 'user-1';

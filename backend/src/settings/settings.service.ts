@@ -11,6 +11,7 @@ import { CreateTaxRuleDto } from './dto/create-tax-rule.dto';
 import { PersonType, Prisma } from '@prisma/client';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
+import { getFactusMunicipalities } from './factus-municipalities.catalog';
 
 export function deriveIncomeTaxDeclarant(
   personType: PersonType,
@@ -86,6 +87,10 @@ export class SettingsService {
       },
     });
     return profile;
+  }
+
+  listFiscalMunicipalities() {
+    return getFactusMunicipalities();
   }
 
   async upsertTaxProfile(businessId: string, dto: UpsertTaxProfileDto) {

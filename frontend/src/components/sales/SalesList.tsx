@@ -1,6 +1,7 @@
 "use client";
 
 import type { Sale } from "@/src/types/sales";
+import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import SaleCard from "./SaleCard";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 
@@ -15,6 +16,15 @@ type Props = {
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
+  invoicesByOrder?: Map<string, FiscalDocument>;
+  creditNotesByInvoice?: Map<string, FiscalDocument>;
+  onFiscalView?: (document: FiscalDocument) => void;
+  onFiscalReceipt?: (sale: Sale, document: FiscalDocument) => void;
+  onFiscalDownload?: (document: FiscalDocument, kind: "pdf" | "xml") => void;
+  onFiscalDispatch?: (document: FiscalDocument) => void;
+  onFiscalRetry?: (document: FiscalDocument) => void;
+  onFiscalAnnul?: (document: FiscalDocument) => void;
+  onCompleteAnnulment?: (document: FiscalDocument) => void;
 };
 
 function groupSalesByDate(sales: Sale[]) {
@@ -52,6 +62,15 @@ export default function SalesList({
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
+  invoicesByOrder,
+  creditNotesByInvoice,
+  onFiscalView,
+  onFiscalReceipt,
+  onFiscalDownload,
+  onFiscalDispatch,
+  onFiscalRetry,
+  onFiscalAnnul,
+  onCompleteAnnulment,
 }: Props) {
   const groups = groupSalesByDate(sales);
 
@@ -59,7 +78,9 @@ export default function SalesList({
     <main className="flex flex-col px-3 pb-4 gap-4 max-w-md mx-auto sm:max-w-3xl sm:px-4">
       {groups.map((group) => (
         <div key={group.dateISO} className="flex flex-col gap-4">
-          {group.sales.map((s) => (
+          {group.sales.map((s) => {
+            const invoice = invoicesByOrder?.get(s.id);
+            return (
             <div
               key={s.id}
               ref={
@@ -82,9 +103,19 @@ export default function SalesList({
                 onReceipt={onReceipt}
                 onSendWhatsApp={onSendWhatsApp}
                 taxSettingsEnabled={taxSettingsEnabled}
+                fiscalDocument={invoice}
+                creditNote={invoice ? creditNotesByInvoice?.get(invoice.id) : undefined}
+                onFiscalView={onFiscalView}
+                onFiscalReceipt={onFiscalReceipt}
+                onFiscalDownload={onFiscalDownload}
+                onFiscalDispatch={onFiscalDispatch}
+                onFiscalRetry={onFiscalRetry}
+                onFiscalAnnul={onFiscalAnnul}
+                onCompleteAnnulment={onCompleteAnnulment}
               />
             </div>
-          ))}
+            );
+          })}
         </div>
       ))}
     </main>

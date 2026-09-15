@@ -7,11 +7,13 @@ import html2canvas from "html2canvas-pro";
 
 import type { Sale, SaleTaxLine } from "@/src/types/sales";
 import type { BusinessLogoProfile } from "@/src/lib/businessLogo";
+import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { getStatusStyles } from "@/src/lib/statusStyles";
 
 type ReceiptViewProps = {
   sale: Sale;
   business: BusinessLogoProfile | null;
+  fiscalDocument?: FiscalDocument | null;
   receiptRef: RefObject<HTMLDivElement | null>;
   isExporting: boolean;
   onClose: () => void;
@@ -115,6 +117,7 @@ async function waitForReceiptImages(root: HTMLElement) {
 function SaleReceiptView({
   sale,
   business,
+  fiscalDocument,
   receiptRef,
   isExporting,
   onClose,
@@ -129,6 +132,14 @@ function SaleReceiptView({
   const discounts = 0;
   const statusStyles = getStatusStyles(sale.status);
   const logoUrl = logoFailed ? null : business?.logoUrl;
+  const isElectronic = fiscalDocument?.status === "VALIDATED" || fiscalDocument?.status === "CREDITED";
+  const displayConsumerTaxLines: Array<{ taxType: "IVA" | "IMPOCONSUMO"; taxAmount: number }> =
+    isElectronic && sale.fiscalSummary
+      ? [
+          { taxType: "IVA", taxAmount: Number(sale.fiscalSummary.iva) },
+          { taxType: "IMPOCONSUMO", taxAmount: Number(sale.fiscalSummary.impoconsumo) },
+        ].filter((line) => line.taxAmount > 0) as Array<{ taxType: "IVA" | "IMPOCONSUMO"; taxAmount: number }>
+      : consumerTaxLines;
 
   useEffect(() => {
     setLogoFailed(false);
@@ -173,10 +184,10 @@ function SaleReceiptView({
           <div className="my-5 border-t border-dashed border-slate-200" />
 
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
-            TICKET DE VENTA
+            {isElectronic ? "FACTURA ELECTRÓNICA" : "TICKET DE VENTA"}
           </p>
           <p className="mt-1 text-xl font-semibold text-slate-900">
-            N° {formatReceiptNumber(sale.id)}
+            N° {isElectronic && fiscalDocument?.factusNumber ? fiscalDocument.factusNumber : formatReceiptNumber(sale.id)}
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-3 text-left">
@@ -198,6 +209,16 @@ function SaleReceiptView({
             </div>
           </div>
         </header>
+
+        {isElectronic && fiscalDocument && (
+          <section className="px-6 pb-5">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-xs text-slate-700">
+              <div className="flex justify-between gap-4"><span>Estado DIAN</span><strong>{fiscalDocument.status === "CREDITED" ? "Anulada" : "Validada"}</strong></div>
+              <div className="mt-2 flex justify-between gap-4"><span>Fecha de validación</span><strong>{fiscalDocument.dianValidatedAt ? `${formatDate(fiscalDocument.dianValidatedAt)} ${formatTime(fiscalDocument.dianValidatedAt)}` : "-"}</strong></div>
+              <div className="mt-2"><span className="block text-slate-500">CUFE</span><span className="mt-1 block break-all font-mono text-[10px]">{fiscalDocument.cufeOrCude || "-"}</span></div>
+            </div>
+          </section>
+        )}
 
         <section className="px-6 pb-5">
           <div className="rounded-2xl border border-slate-100 p-4">
@@ -277,14 +298,17 @@ function SaleReceiptView({
                   ${formatMoney(discounts)}
                 </span>
               </div>
-              {consumerTaxLines.map((line) => (
-                <div key={`${line.taxType}-${line.direction}`} className="flex justify-between text-slate-500">
+              {displayConsumerTaxLines.map((line, index) => (
+                <div key={`${line.taxType}-${index}`} className="flex justify-between text-slate-500">
                   <span>{consumerTaxLabels[line.taxType]}</span>
                   <span className="font-medium tabular-nums text-slate-700">
                     ${formatMoney(Number(line.taxAmount))}
                   </span>
                 </div>
               ))}
+              {sale.fiscalSummary && Number(sale.fiscalSummary.reteFuente) > 0 && <div className="flex justify-between text-slate-500"><span>Retefuente</span><span>-${formatMoney(Number(sale.fiscalSummary.reteFuente))}</span></div>}
+              {sale.fiscalSummary && Number(sale.fiscalSummary.reteIva) > 0 && <div className="flex justify-between text-slate-500"><span>ReteIVA</span><span>-${formatMoney(Number(sale.fiscalSummary.reteIva))}</span></div>}
+              {sale.fiscalSummary && Number(sale.fiscalSummary.reteIca) > 0 && <div className="flex justify-between text-slate-500"><span>ReteICA</span><span>-${formatMoney(Number(sale.fiscalSummary.reteIca))}</span></div>}
             </div>
 
             <div className="mt-4 flex items-end justify-between border-t border-slate-200 pt-4">
@@ -322,14 +346,15 @@ function SaleReceiptView({
         </section>
 
         <section className="px-6 pb-5">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className={`${isElectronic ? "border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"} rounded-2xl border p-4`}>
             <div className="flex gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-              <p className="text-xs font-semibold leading-relaxed text-amber-900">
-                Este ticket es únicamente un comprobante interno de la operación registrada en la plataforma.
-                <br />
-                <br />
-                NO constituye factura electrónica ni comprobante fiscal válido ante organismos tributarios.
+              <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${isElectronic ? "text-blue-600" : "text-amber-600"}`} />
+              <p className={`text-xs font-semibold leading-relaxed ${isElectronic ? "text-blue-900" : "text-amber-900"}`}>
+                {isElectronic ? (
+                  <>Representación de la factura electrónica validada por DIAN.<br /><br />El PDF/XML oficial puede descargarse desde las opciones del documento.</>
+                ) : (
+                  <>Este ticket es únicamente un comprobante interno de la operación registrada en la plataforma.<br /><br />NO constituye factura electrónica ni comprobante fiscal válido ante organismos tributarios.</>
+                )}
               </p>
             </div>
           </div>
@@ -382,11 +407,13 @@ export default function SaleReceiptModal({
   sale,
   onClose,
   business,
+  fiscalDocument,
 }: {
   open: boolean;
   sale: Sale | null;
   onClose: () => void;
   business: BusinessLogoProfile | null;
+  fiscalDocument?: FiscalDocument | null;
 }) {
   const receiptRef = useRef<HTMLDivElement | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -549,6 +576,7 @@ export default function SaleReceiptModal({
         <SaleReceiptView
           sale={sale}
           business={business}
+          fiscalDocument={fiscalDocument}
           receiptRef={receiptRef}
           isExporting={isExporting}
           onClose={onClose}

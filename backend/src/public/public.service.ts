@@ -18,6 +18,7 @@ import { isIngredientOperational } from '../ingredients/ingredient-operational';
 import { TaxService } from '../tax/tax.service';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 import { FeatureFlagsService } from '../common/config/feature-flags';
+import { getFactusMunicipalities } from '../settings/factus-municipalities.catalog';
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -207,13 +208,30 @@ export class PublicService {
   }
 
   private async getFiscalSettingsForBusiness(businessId: string) {
-    const profile = await this.prisma.businessTaxProfile.findUnique({
-      where: { businessId },
-      select: { taxSettingsEnabled: true },
-    });
+    const [profile, factusConfiguration] = await Promise.all([
+      this.prisma.businessTaxProfile.findUnique({
+        where: { businessId },
+        include: {
+          responsibilities: { include: { responsibility: true } },
+        },
+      }),
+      this.prisma.factusConfiguration.findUnique({
+        where: { businessId },
+        select: { enabled: true },
+      }),
+    ]);
+    const hasElectronicInvoicerResponsibility = Boolean(
+      profile?.responsibilities?.some(
+        (entry) => entry.responsibility.code === '52',
+      ),
+    );
 
     return {
       fiscalContextEnabled: profile?.taxSettingsEnabled === true,
+      electronicInvoicingEnabled:
+        profile?.taxSettingsEnabled === true &&
+        hasElectronicInvoicerResponsibility &&
+        factusConfiguration?.enabled === true,
       simpleRegimeSalesEnabled:
         this.featureFlags.simpleRegimeSalesEnabled === true,
     };
@@ -222,6 +240,12 @@ export class PublicService {
   async getFiscalSettings(slug: string) {
     const business = await this.findActiveBusiness(slug);
     return this.getFiscalSettingsForBusiness(business.id);
+  }
+
+
+  async getFiscalMunicipalities(slug: string) {
+    await this.findActiveBusiness(slug);
+    return getFactusMunicipalities();
   }
 
   async calculateTaxPreview(slug: string, dto: TaxPreviewDto) {
@@ -1271,18 +1295,6 @@ export class PublicService {
           dto.customerName,
         )
       : undefined;
-    const fiscalPreview =
-      this.taxService && buyerFiscalContext
-        ? await this.taxService.calculateTaxPreview(business.id, {
-            ...buyerFiscalContext,
-            cartItems: orderItemCreates.map((item) => ({
-              itemId: item.itemId,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice),
-            })),
-          })
-        : undefined;
-
     let order: {
       id: string;
       businessId: string;
@@ -1319,13 +1331,34 @@ export class PublicService {
             origin: true,
             customerName: true,
             total: true,
+            items: {
+              select: {
+                id: true,
+                itemId: true,
+                quantity: true,
+                unitPrice: true,
+              },
+            },
           },
         });
       order =
-        this.taxService && fiscalPreview && buyerFiscalContext
+        this.taxService && buyerFiscalContext
           ? await this.prisma.$transaction(
               async (tx) => {
                 const created = await createOrder(tx);
+                const fiscalPreview = await this.taxService.calculateTaxPreview(
+                  business.id,
+                  {
+                    ...buyerFiscalContext,
+                    cartItems: created.items.map((item) => ({
+                      orderItemId: item.id,
+                      itemId: item.itemId,
+                      quantity: Number(item.quantity),
+                      unitPrice: Number(item.unitPrice),
+                    })),
+                  },
+                  tx,
+                );
                 await this.taxService.freezeTaxCalculation(
                   tx,
                   created.id,

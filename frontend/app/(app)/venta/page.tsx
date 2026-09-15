@@ -17,14 +17,20 @@ import type { Sale } from "@/src/types/sales";
 import AppHeader from "@/src/components/layout/AppHeader";
 import { EmptyStateCard } from "@/src/components/shared/EmptyStateCard";
 import SalesList from "@/src/components/sales/SalesList";
-import SalesChatComposer from "@/src/components/sales/SalesChatComposer";
+import SalesChatComposer, {
+  type FiscalSalesFilter,
+  type SalesSearchCriterion,
+} from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
+import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { dispatchFiscalDocument, downloadFiscalArtifact, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
+import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { getCached, invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import { AppApiError } from "@/src/lib/api";
@@ -171,6 +177,63 @@ function isDeletionBlockedByPostedInventory(sale: Sale) {
   return sale.status === "CERRADO" && sale.inventoryPostedAt != null;
 }
 
+const SALE_SAVE_ERROR_FALLBACK =
+  "No se pudo guardar la venta. Revisá los datos e intentá nuevamente.";
+
+function translateKnownSaleError(message: string): string | null {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("buyeremail") || normalized.includes("buyer email")) {
+    return "Ingresá un correo electrónico válido.";
+  }
+
+  if (
+    normalized.includes("buyerdocument") ||
+    normalized.includes("buyer document") ||
+    normalized.includes("documentnumber")
+  ) {
+    return "Ingresá el número de identificación.";
+  }
+
+  if (
+    normalized.includes("buyerphone") ||
+    normalized.includes("buyer phone") ||
+    normalized.includes("buyerwhatsapp") ||
+    normalized.includes("customerwhatsapp") ||
+    normalized.includes("customer phone")
+  ) {
+    return "Ingresá un número de teléfono válido.";
+  }
+
+  if (normalized.includes("buyername") || normalized.includes("buyer name")) {
+    return "Ingresá el nombre del comprador.";
+  }
+
+  return null;
+}
+
+function getSaleSaveErrorMessage(error: unknown) {
+  const apiError = error instanceof AppApiError ? error : null;
+  const backendMessage = apiError?.details?.message;
+  const messages = Array.isArray(backendMessage)
+    ? backendMessage.filter((message): message is string => typeof message === "string")
+    : typeof backendMessage === "string"
+      ? [backendMessage]
+      : typeof apiError?.message === "string"
+        ? [apiError.message]
+        : error instanceof Error
+          ? [error.message]
+          : [];
+
+  const translated = messages
+    .map(translateKnownSaleError)
+    .filter((message): message is string => Boolean(message));
+
+  return translated.length > 0
+    ? [...new Set(translated)].join(" ")
+    : SALE_SAVE_ERROR_FALLBACK;
+}
+
 function formatDisplayMoney(value: number) {
   return new Intl.NumberFormat("es-AR", {
     minimumFractionDigits: 0,
@@ -196,16 +259,25 @@ function VentaPageContent() {
   const { taxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
+  const [electronicInvoicingEnabled, setElectronicInvoicingEnabled] = useState(false);
+  const [taxProfileLoaded, setTaxProfileLoaded] = useState(false);
   const [q, setQ] = useState("");
 
   useEffect(() => {
     getTaxProfile()
       .then((profile) => {
         setHasHistoricalSimpleResponsibility(
-          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility.code === "47")),
+          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "47")),
+        );
+        setElectronicInvoicingEnabled(
+          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "52")),
         );
       })
-      .catch(() => setHasHistoricalSimpleResponsibility(false));
+      .catch(() => {
+        setHasHistoricalSimpleResponsibility(false);
+        setElectronicInvoicingEnabled(false);
+      })
+      .finally(() => setTaxProfileLoaded(true));
   }, []);
 
   const salesBlockedBySimpleRegime =
@@ -227,6 +299,13 @@ function VentaPageContent() {
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
+  const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
+  const [fiscalDetail, setFiscalDetail] = useState<FiscalDocument | null>(null);
+  const [fiscalFilterActive, setFiscalFilterActive] = useState(false);
+  const [fiscalStatusFilter, setFiscalStatusFilter] = useState<FiscalSalesFilter>("ALL");
+  const [searchCriterion, setSearchCriterion] = useState<SalesSearchCriterion>("GENERAL");
+  const [includeCancelledSales, setIncludeCancelledSales] = useState(false);
   const [receiptBusiness, setReceiptBusiness] = useState<BusinessLogoProfile | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
@@ -243,6 +322,7 @@ function VentaPageContent() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const initialScrollDone = useRef(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
+  const artifactPollingAttemptsRef = useRef(new Map<string, number>());
 
   useEffect(() => {
     let active = true;
@@ -309,7 +389,7 @@ function VentaPageContent() {
       setLoading(true);
       setError(null);
 
-      const data = await listSales();
+      const data = await listSales({ includeCancelled: includeCancelledSales });
       setSales(data.map(mapOrderToSale));
     } catch (err) {
       console.error(err);
@@ -317,11 +397,85 @@ function VentaPageContent() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [includeCancelledSales]);
 
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  const refreshFiscalDocuments = useCallback(async () => {
+    if (!electronicInvoicingEnabled) {
+      setFiscalDocuments([]);
+      return [];
+    }
+    const documents = await listFiscalDocuments();
+    setFiscalDocuments(documents);
+    return documents;
+  }, [electronicInvoicingEnabled]);
+
+  useEffect(() => {
+    if (!taxProfileLoaded) return;
+    if (!electronicInvoicingEnabled) {
+      setFiscalDocuments([]);
+      setFiscalFilterActive(false);
+      setFiscalStatusFilter("ALL");
+      setIncludeCancelledSales(false);
+      return;
+    }
+    void refreshFiscalDocuments().catch(() => {
+      setFiscalDocuments([]);
+      setFiscalFilterActive(false);
+      setFiscalStatusFilter("ALL");
+      setIncludeCancelledSales(false);
+    });
+  }, [electronicInvoicingEnabled, refreshFiscalDocuments, taxProfileLoaded]);
+
+  const invoicesByOrder = useMemo(() => {
+    const result = new Map<string, FiscalDocument>();
+    fiscalDocuments
+      .filter((document) => document.type === "INVOICE")
+      .forEach((document) => result.set(document.orderId, document));
+    return result;
+  }, [fiscalDocuments]);
+
+  const creditNotesByInvoice = useMemo(() => {
+    const result = new Map<string, FiscalDocument>();
+    fiscalDocuments
+      .filter((document) => document.type === "CREDIT_NOTE" && document.parentDocumentId)
+      .forEach((document) => result.set(document.parentDocumentId!, document));
+    return result;
+  }, [fiscalDocuments]);
+
+  useEffect(() => {
+    if (!electronicInvoicingEnabled) return;
+    const hasInFlightDocument = fiscalDocuments.some((document) =>
+      ["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"].includes(document.status),
+    );
+    const documentsAwaitingArtifacts = fiscalDocuments.filter((document) => {
+      const artifactKinds = new Set(document.artifacts.map((artifact) => artifact.kind.toLowerCase()));
+      const isValidatedDocument = document.status === "VALIDATED" || document.status === "CREDITED";
+      return isValidatedDocument && (!artifactKinds.has("pdf") || !artifactKinds.has("xml"));
+    });
+    for (const document of fiscalDocuments) {
+      if (!documentsAwaitingArtifacts.some((candidate) => candidate.id === document.id)) {
+        artifactPollingAttemptsRef.current.delete(document.id);
+      }
+    }
+    const canRefreshArtifacts = documentsAwaitingArtifacts.some(
+      (document) => (artifactPollingAttemptsRef.current.get(document.id) ?? 0) < 15,
+    );
+    if (!hasInFlightDocument && !canRefreshArtifacts) return;
+    const interval = window.setInterval(() => {
+      for (const document of documentsAwaitingArtifacts) {
+        artifactPollingAttemptsRef.current.set(
+          document.id,
+          (artifactPollingAttemptsRef.current.get(document.id) ?? 0) + 1,
+        );
+      }
+      void refreshFiscalDocuments().catch(() => undefined);
+    }, canRefreshArtifacts ? 2_000 : 10_000);
+    return () => window.clearInterval(interval);
+  }, [electronicInvoicingEnabled, fiscalDocuments, refreshFiscalDocuments]);
 
   useEffect(() => {
     const saleId = searchParams.get("saleId");
@@ -424,15 +578,55 @@ function VentaPageContent() {
       });
     }
 
+    if (fiscalFilterActive) {
+      result = result.filter((sale) => {
+        const invoice = invoicesByOrder.get(sale.id);
+        if (!invoice) return false;
+        if (fiscalStatusFilter === "PENDING") {
+          return ["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"].includes(invoice.status);
+        }
+        if (fiscalStatusFilter === "VALIDATED") return invoice.status === "VALIDATED";
+        if (fiscalStatusFilter === "ERROR") {
+          return ["RETRYABLE_FAILURE", "REJECTED"].includes(invoice.status);
+        }
+        if (fiscalStatusFilter === "CREDITED") return invoice.status === "CREDITED";
+        return true;
+      });
+    }
+
     const term = q.trim().toLowerCase();
     if (!term) return result;
 
     return result.filter((s) => {
-      if (s.customerName?.toLowerCase().includes(term)) return true;
-      if (s.id.toLowerCase().includes(term)) return true;
-      return s.items.some((i) => i.name.toLowerCase().includes(term));
+      const invoice = invoicesByOrder.get(s.id);
+      const customer = s.customerName?.toLowerCase() ?? "";
+      const reference = invoice?.referenceCode?.toLowerCase() ?? "";
+      const number = invoice?.factusNumber?.toLowerCase() ?? "";
+      const cufe = invoice?.cufeOrCude?.toLowerCase() ?? "";
+      const fiscalStatus = invoice?.status.toLowerCase() ?? "";
+
+      if (searchCriterion === "CUSTOMER") return customer.includes(term);
+      if (searchCriterion === "REFERENCE") return s.id.toLowerCase().includes(term) || reference.includes(term);
+      if (searchCriterion === "INVOICE_NUMBER") return number.includes(term);
+      if (searchCriterion === "CUFE") return cufe.includes(term);
+      if (searchCriterion === "STATUS") {
+        return fiscalStatus.includes(term) || s.status.toLowerCase().includes(term);
+      }
+      return (
+        customer.includes(term) ||
+        s.id.toLowerCase().includes(term) ||
+        s.items.some((i) => i.name.toLowerCase().includes(term))
+      );
     });
-  }, [q, salesForSelectedDate, filterStatus]);
+  }, [
+    q,
+    salesForSelectedDate,
+    filterStatus,
+    fiscalFilterActive,
+    fiscalStatusFilter,
+    invoicesByOrder,
+    searchCriterion,
+  ]);
 
   const registerSaleElement = useCallback(
     (saleId: string, element: HTMLDivElement | null) => {
@@ -613,7 +807,10 @@ function VentaPageContent() {
       );
 
       invalidateCache("home:sales");
-      await loadOrders();
+      await Promise.all([
+        loadOrders(),
+        refreshFiscalDocuments().catch(() => []),
+      ]);
 
       setDetailsSale(null);
       toast.dismiss(loadingId);
@@ -635,7 +832,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, taxSettingsEnabled]);
+  }, [loadOrders, refreshFiscalDocuments, taxSettingsEnabled]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -703,21 +900,15 @@ function VentaPageContent() {
       toast.success("Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
-      await loadOrders();
+      await Promise.all([
+        loadOrders(),
+        refreshFiscalDocuments().catch(() => []),
+      ]);
       setIsCreateOpen(false);
       setPendingSmoothScroll(true);
     } catch (error: unknown) {
       console.error("Error creating sale:", error);
-      const apiError = error as {
-        status?: unknown;
-        details?: unknown;
-        raw?: unknown;
-        message?: string;
-      };
-      console.error("Status:", apiError.status);
-      console.error("Details:", apiError.details);
-      console.error("Raw:", apiError.raw);
-      toast.error(apiError.message || "Error al registrar la venta");
+      toast.error(getSaleSaveErrorMessage(error));
       throw error;
     }
   };
@@ -847,11 +1038,12 @@ function VentaPageContent() {
       }, 2100);
     } catch (err) {
       console.error(err);
-      setError("No se pudo actualizar la venta");
+      const message = getSaleSaveErrorMessage(err);
+      setError(message);
 
       toast.dismiss(loadingId);
 
-      toast.error("Error al actualizar la venta", {
+      toast.error(message, {
         id: errorId,
         duration: 3000,
       });
@@ -863,6 +1055,104 @@ function VentaPageContent() {
       setConfirmingSaleId(null);
     }
   };
+
+  const handleOpenReceipt = useCallback((sale: Sale, document?: FiscalDocument | null) => {
+    const invoice = document ?? invoicesByOrder.get(sale.id) ?? null;
+    setReceiptFiscalDocument(invoice?.status === "VALIDATED" || invoice?.status === "CREDITED" ? invoice : null);
+    setReceiptSale(sale);
+  }, [invoicesByOrder]);
+
+  const handleFiscalDispatch = useCallback(async (document: FiscalDocument) => {
+    const toastId = `fiscal-dispatch-${document.id}`;
+    toast.loading("Procesando factura…", { id: toastId });
+    try {
+      const result = await dispatchFiscalDocument(document.id);
+      await refreshFiscalDocuments();
+      toast.success(result.status === "VALIDATED" ? "Factura validada por DIAN" : "Factura enviada", { id: toastId });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No fue posible procesar la factura"), { id: toastId });
+      await refreshFiscalDocuments().catch(() => undefined);
+    }
+  }, [refreshFiscalDocuments]);
+
+  const handleFiscalRetry = useCallback(async (document: FiscalDocument) => {
+    const toastId = `fiscal-retry-${document.id}`;
+    toast.loading("Reintentando factura…", { id: toastId });
+    try {
+      const result = await retryFiscalDocument(document.id);
+      await refreshFiscalDocuments();
+      toast.success(result.status === "VALIDATED" ? "Factura validada por DIAN" : "Factura enviada", { id: toastId });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No fue posible procesar la factura"), { id: toastId });
+      await refreshFiscalDocuments().catch(() => undefined);
+    }
+  }, [refreshFiscalDocuments]);
+
+  const handleFiscalDownload = useCallback(async (document: FiscalDocument, kind: "pdf" | "xml") => {
+    try {
+      await downloadFiscalArtifact(document.id, kind);
+    } catch (err) {
+      toast.error(getErrorMessage(err, `No fue posible descargar el ${kind.toUpperCase()}`));
+    }
+  }, []);
+
+  const completeAnnulment = useCallback(async (invoice: FiscalDocument) => {
+    const toastId = `fiscal-reverse-${invoice.id}`;
+    toast.loading("Completando anulación…", { id: toastId });
+    try {
+      await reverseSale(invoice.orderId, "Reversión posterior a nota crédito validada");
+      await Promise.all([loadOrders(), refreshFiscalDocuments()]);
+      toast.success("Venta anulada", { id: toastId });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "No fue posible completar la anulación"), { id: toastId });
+    }
+  }, [loadOrders, refreshFiscalDocuments]);
+
+  const handleCompleteAnnulment = useCallback((invoice: FiscalDocument) => {
+    showConfirmation(
+      "La nota crédito está validada. ¿Deseás completar la anulación local?",
+      "Completar",
+      () => { void completeAnnulment(invoice); },
+      "rose",
+    );
+  }, [completeAnnulment]);
+
+  const handleFiscalAnnul = useCallback((invoice: FiscalDocument) => {
+    showConfirmation(
+      "Se emitirá una nota crédito antes de anular la venta.",
+      "Continuar",
+      () => {
+        void (async () => {
+          const toastId = `credit-note-${invoice.id}`;
+          toast.loading("Enviando nota crédito…", { id: toastId });
+          try {
+            const created = await requestCreditNote(invoice.id);
+            toast.success("Nota crédito enviada", { id: toastId });
+
+            for (let elapsed = 0; elapsed <= 60_000; elapsed += 2_000) {
+              const documents = await refreshFiscalDocuments();
+              const note = documents.find((item) => item.id === created.id);
+              if (note?.status === "VALIDATED") {
+                await completeAnnulment(invoice);
+                return;
+              }
+              if (note?.status === "REJECTED" || note?.status === "RETRYABLE_FAILURE") {
+                setFiscalDetail(note);
+                toast.error("No fue posible procesar la nota crédito");
+                return;
+              }
+              if (elapsed < 60_000) await new Promise((resolve) => setTimeout(resolve, 2_000));
+            }
+            toast("Nota crédito en proceso");
+          } catch (err) {
+            toast.error(getErrorMessage(err, "No fue posible crear la nota crédito"), { id: toastId });
+            await refreshFiscalDocuments().catch(() => undefined);
+          }
+        })();
+      },
+      "rose",
+    );
+  }, [completeAnnulment, refreshFiscalDocuments]);
 
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
@@ -1031,9 +1321,18 @@ function VentaPageContent() {
               onSaleElement={registerSaleElement}
               onSelect={(sale) => setSelectedSale(prev => prev?.id === sale.id ? null : sale)}
               onDetails={(sale) => setDetailsSale(sale)}
-              onReceipt={(sale) => setReceiptSale(sale)}
+              onReceipt={(sale) => handleOpenReceipt(sale)}
               onSendWhatsApp={handleSendWhatsApp}
               taxSettingsEnabled={taxSettingsEnabled}
+              invoicesByOrder={invoicesByOrder}
+              creditNotesByInvoice={creditNotesByInvoice}
+              onFiscalView={setFiscalDetail}
+              onFiscalReceipt={(sale, document) => handleOpenReceipt(sale, document)}
+              onFiscalDownload={handleFiscalDownload}
+              onFiscalDispatch={handleFiscalDispatch}
+              onFiscalRetry={handleFiscalRetry}
+              onFiscalAnnul={handleFiscalAnnul}
+              onCompleteAnnulment={handleCompleteAnnulment}
             />
           )}
           <div ref={bottomRef} className="h-px w-full" />
@@ -1074,9 +1373,12 @@ function VentaPageContent() {
       <SaleReceiptModal
         open={!!receiptSale}
         sale={receiptSale}
-        onClose={() => setReceiptSale(null)}
+        onClose={() => { setReceiptSale(null); setReceiptFiscalDocument(null); }}
         business={receiptBusiness}
+        fiscalDocument={receiptFiscalDocument}
       />
+
+      <FiscalDocumentDetailModal document={fiscalDetail} onClose={() => setFiscalDetail(null)} />
 
       <SalesFilterModal
         open={filterOpen}
@@ -1098,6 +1400,24 @@ function VentaPageContent() {
           onFilterStatusChange={setFilterStatus}
           onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
           taxSettingsEnabled={taxSettingsEnabled}
+          electronicInvoicingEnabled={electronicInvoicingEnabled}
+          searchCriterion={searchCriterion}
+          onSearchCriterionChange={setSearchCriterion}
+          fiscalFilterActive={fiscalFilterActive}
+          onFiscalFilterActiveChange={(active) => {
+            setFiscalFilterActive(active);
+            setFiscalStatusFilter("ALL");
+            if (active) {
+              setFilterStatus("ALL");
+              setQ("");
+              setIncludeCancelledSales(true);
+              void refreshFiscalDocuments().catch(() => toast.error("No se pudieron cargar los documentos fiscales"));
+            } else {
+              setIncludeCancelledSales(false);
+            }
+          }}
+          fiscalStatusFilter={fiscalStatusFilter}
+          onFiscalStatusFilterChange={setFiscalStatusFilter}
         />
       )}
     </div>

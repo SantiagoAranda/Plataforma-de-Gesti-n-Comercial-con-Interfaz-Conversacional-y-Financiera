@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,6 +16,10 @@ import {
   TaxType,
   Prisma,
 } from '@prisma/client';
+
+type TaxPreviewCartItemWithOrderItem = TaxPreviewDto['cartItems'][number] & {
+  orderItemId?: string;
+};
 
 @Injectable()
 export class TaxService {
@@ -169,7 +174,7 @@ export class TaxService {
     let impoconsumoRateUsed: Prisma.Decimal | null = null;
     const impoconsumoRatesUsed = new Set<string>();
 
-    for (const cartItem of dto.cartItems) {
+    for (const cartItem of dto.cartItems as TaxPreviewCartItemWithOrderItem[]) {
       const item = itemsMap.get(cartItem.itemId);
       if (!item) continue;
 
@@ -194,29 +199,42 @@ export class TaxService {
         impoconsumoRateUsed =
           impoconsumoRatesUsed.size === 1 ? new Prisma.Decimal(rate) : null;
         impoconsumoBase = impoconsumoBase.add(itemSubtotal);
-        impoconsumoTotal = impoconsumoTotal.add(itemSubtotal.mul(rate));
+        const taxAmount = itemSubtotal.mul(rate);
+        impoconsumoTotal = impoconsumoTotal.add(taxAmount);
+        taxLines.push({
+          orderItemId: cartItem.orderItemId,
+          taxType: TaxType.IMPOCONSUMO,
+          direction: TaxDirection.CHARGE,
+          baseAmount: itemSubtotal,
+          rate,
+          taxAmount,
+          accountCode: '519595',
+          applied: true,
+          reason: 'Aplica Impoconsumo sobre este item configurado individualmente.',
+        });
         continue;
       }
 
       if (sellerIsIvaResponsable) {
         vatBase = vatBase.add(itemSubtotal);
-        vatTotal = vatTotal.add(itemSubtotal.mul(defaultVat));
+        const taxAmount = itemSubtotal.mul(defaultVat);
+        vatTotal = vatTotal.add(taxAmount);
+        taxLines.push({
+          orderItemId: cartItem.orderItemId,
+          taxType: TaxType.IVA,
+          direction: TaxDirection.CHARGE,
+          baseAmount: itemSubtotal,
+          rate: defaultVat,
+          taxAmount,
+          accountCode: '2408',
+          applied: true,
+          reason:
+            'El vendedor es Responsable de IVA (48) y este item no aplica Impoconsumo.',
+        });
       }
     }
 
-    if (vatTotal.gt(0)) {
-      taxLines.push({
-        taxType: TaxType.IVA,
-        direction: TaxDirection.CHARGE,
-        baseAmount: vatBase,
-        rate: defaultVat,
-        taxAmount: vatTotal,
-        accountCode: '2408',
-        applied: true,
-        reason:
-          'El vendedor es Responsable de IVA (48) y el item no aplica Impoconsumo.',
-      });
-    } else if (sellerIsIvaResponsable || sellerIsPersonaNaturalNoResponsable) {
+    if (vatTotal.eq(0) && (sellerIsIvaResponsable || sellerIsPersonaNaturalNoResponsable)) {
       taxLines.push({
         taxType: TaxType.IVA,
         direction: TaxDirection.CHARGE,
@@ -228,20 +246,6 @@ export class TaxService {
         reason: sellerIsPersonaNaturalNoResponsable
           ? 'Persona Natural No Responsable: no genera IVA.'
           : 'No hay base gravada con IVA.',
-      });
-    }
-
-    if (impoconsumoTotal.gt(0)) {
-      taxLines.push({
-        taxType: TaxType.IMPOCONSUMO,
-        direction: TaxDirection.CHARGE,
-        baseAmount: impoconsumoBase,
-        rate:
-          impoconsumoRateUsed ?? defaultImpoconsumo ?? new Prisma.Decimal(0.08),
-        taxAmount: impoconsumoTotal,
-        accountCode: '519595',
-        applied: true,
-        reason: 'Aplica Impoconsumo sobre items configurados individualmente.',
       });
     }
 
@@ -610,6 +614,7 @@ export class TaxService {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
+        items: { select: { id: true, orderId: true } },
         business: {
           include: {
             taxProfile: {
@@ -627,6 +632,28 @@ export class TaxService {
     });
 
     if (!order) throw new NotFoundException('Orden no encontrada');
+
+    const orderItemIds = new Set(
+      order.items
+        .filter((item) => item.orderId === order.id)
+        .map((item) => item.id),
+    );
+    for (const line of preview.taxLines.filter(
+      (line: any) =>
+        line.applied &&
+        line.direction === TaxDirection.CHARGE &&
+        (line.taxType === TaxType.IVA || line.taxType === TaxType.IMPOCONSUMO),
+    )) {
+      if (
+        (line.orderId && line.orderId !== order.id) ||
+        !line.orderItemId ||
+        !orderItemIds.has(line.orderItemId)
+      ) {
+        throw new BadRequestException(
+          'Cada impuesto IVA o Impoconsumo aplicado debe estar vinculado a un item de la misma orden',
+        );
+      }
+    }
 
     const sellerProfile = order.business.taxProfile;
     const sellerPersonType = sellerProfile?.personType || null;
@@ -738,6 +765,7 @@ export class TaxService {
       await tx.saleTaxLine.createMany({
         data: preview.taxLines.map((l: any) => ({
           orderId,
+          orderItemId: l.orderItemId ?? null,
           taxType: l.taxType,
           direction: l.direction,
           baseAmount: l.baseAmount,

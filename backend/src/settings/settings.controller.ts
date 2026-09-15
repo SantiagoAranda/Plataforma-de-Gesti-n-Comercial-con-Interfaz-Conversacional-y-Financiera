@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Header,
   Put,
   Post,
   Patch,
@@ -47,6 +48,13 @@ export class SettingsController {
   @Get('tax-responsibilities')
   listTaxResponsibilities() {
     return this.settingsService.listTaxResponsibilities();
+  }
+
+  @Get('fiscal-municipalities')
+  @Header('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800')
+  @Header('ETag', '"factus-municipalities-v2-2026-09"')
+  listFiscalMunicipalities() {
+    return this.settingsService.listFiscalMunicipalities();
   }
 
   @Get('economic-activities')

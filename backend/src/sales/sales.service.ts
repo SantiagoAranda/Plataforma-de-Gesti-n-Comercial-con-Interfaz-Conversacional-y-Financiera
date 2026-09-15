@@ -20,6 +20,7 @@ import { SalesOrderLineInputDto } from './dto/order-line-input.dto';
 import { TaxService } from '../tax/tax.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
+import { FiscalDocumentService } from '../fiscal-documents/fiscal-document.service';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -95,6 +96,8 @@ export class SalesService {
     private inventoryService: InventoryService,
     private itemOptionsService: ItemOptionsService,
     private taxService: TaxService,
+    @Optional()
+    private fiscalDocuments?: FiscalDocumentService,
     @Optional()
     private featureFlags: FeatureFlagsService = {
       simpleRegimeSalesEnabled: true,
@@ -323,24 +326,39 @@ export class SalesService {
     businessId: string,
     orderId: string,
     buyerFiscalContext: any,
-    cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
-    preparedPreview?: any,
+    persistedOrderItems?: Array<{
+      id: string;
+      itemId: string;
+      quantity: number;
+      unitPrice: Prisma.Decimal | number;
+    }>,
     onStage?: (
       stage: 'fiscal-context' | 'tax-lines' | 'snapshot',
       durationMs: number,
     ) => void,
   ) {
     this.assertBuyerFiscalContextAllowed(buyerFiscalContext);
-    if (!buyerFiscalContext || cartItems.length === 0) return;
+    if (!buyerFiscalContext) return;
 
-    const preview =
-      preparedPreview ??
-      (await this.calculateOrderTaxPreview(
-        businessId,
-        buyerFiscalContext,
-        cartItems,
-        tx,
-      ));
+    const orderItems =
+      persistedOrderItems ??
+      (await tx.orderItem.findMany({
+        where: { orderId },
+        select: { id: true, itemId: true, quantity: true, unitPrice: true },
+      }));
+    if (!orderItems.length) return;
+
+    const preview = await this.calculateOrderTaxPreview(
+      businessId,
+      buyerFiscalContext,
+      orderItems.map((item) => ({
+        orderItemId: item.id,
+        itemId: item.itemId,
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+      })),
+      tx,
+    );
 
     await this.taxService.freezeTaxCalculation(
       tx,
@@ -354,7 +372,12 @@ export class SalesService {
   private async calculateOrderTaxPreview(
     businessId: string,
     buyerFiscalContext: any,
-    cartItems: Array<{ itemId: string; quantity: number; unitPrice?: number }>,
+    cartItems: Array<{
+      orderItemId?: string;
+      itemId: string;
+      quantity: number;
+      unitPrice?: number;
+    }>,
     tx?: Prisma.TransactionClient,
   ) {
     return this.taxService.calculateTaxPreview(
@@ -396,6 +419,12 @@ export class SalesService {
         'Gran Contribuyente y Autorretenedor no pueden estar activos al mismo tiempo para el comprador de la venta.',
       );
     }
+  }
+
+  private sumAppliedTaxAmount(taxLines: any[], taxType: string) {
+    return taxLines
+      .filter((line) => line.taxType === taxType && line.applied)
+      .reduce((total, line) => total + Number(line.taxAmount), 0);
   }
 
   private assertOrderEditable(order: {
@@ -903,24 +932,6 @@ export class SalesService {
       { isManual },
     );
     logTiming('resolve-lines', resolveLinesStartedAt);
-    const fiscalCartItems = dto.buyerFiscalContext
-      ? orderItemsData.map((item: any) => ({
-          itemId: item.itemId,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice ?? item.price),
-        }))
-      : [];
-    const fiscalPreviewStartedAt = Date.now();
-    const preparedFiscalPreview = dto.buyerFiscalContext
-      ? await this.calculateOrderTaxPreview(
-          businessId,
-          dto.buyerFiscalContext,
-          fiscalCartItems,
-        )
-      : undefined;
-    if (dto.buyerFiscalContext)
-      logTiming('fiscal-preview', fiscalPreviewStartedAt);
-
     const transactionStartedAt = Date.now();
     const order = await this.prisma.$transaction(
       async (tx) => {
@@ -977,8 +988,7 @@ export class SalesService {
             businessId,
             createdOrder.id,
             dto.buyerFiscalContext,
-            fiscalCartItems,
-            preparedFiscalPreview,
+            createdOrder.items,
             (stage, durationMs) =>
               console.log('[SalesService] sales.create.timing', {
                 stage: `sales.create.tx.${stage}`,
@@ -1006,15 +1016,16 @@ export class SalesService {
 
   async findAll(
     businessId: string,
-    options?: { includeArchived?: boolean },
+    options?: { includeArchived?: boolean; includeCancelled?: boolean },
   ): Promise<UnifiedSaleDto[]> {
     const includeArchived = options?.includeArchived ?? false;
+    const includeCancelled = options?.includeCancelled ?? false;
     const [orders, reservations] = await Promise.all([
       this.prisma.order.findMany({
         where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' },
+          ...(includeCancelled ? {} : { status: { not: 'CANCELLED' } }),
         },
         include: {
           items: {
@@ -1032,7 +1043,7 @@ export class SalesService {
         where: {
           businessId,
           ...(includeArchived ? {} : { archived: false }),
-          status: { not: 'CANCELLED' },
+          ...(includeCancelled ? {} : { status: { not: 'CANCELLED' } }),
         },
         include: {
           item: true,
@@ -1069,30 +1080,11 @@ export class SalesService {
       const fiscalSummary = o.fiscalContext
         ? {
             subtotal: Number(o.fiscalContext.subtotal),
-            iva: Number(
-              o.taxLines.find((line) => line.taxType === 'IVA' && line.applied)
-                ?.taxAmount ?? 0,
-            ),
-            impoconsumo: Number(
-              o.taxLines.find(
-                (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
-              )?.taxAmount ?? 0,
-            ),
-            reteFuente: Number(
-              o.taxLines.find(
-                (line) => line.taxType === 'RETEFUENTE' && line.applied,
-              )?.taxAmount ?? 0,
-            ),
-            reteIva: Number(
-              o.taxLines.find(
-                (line) => line.taxType === 'RETEIVA' && line.applied,
-              )?.taxAmount ?? 0,
-            ),
-            reteIca: Number(
-              o.taxLines.find(
-                (line) => line.taxType === 'RETEICA' && line.applied,
-              )?.taxAmount ?? 0,
-            ),
+            iva: this.sumAppliedTaxAmount(o.taxLines, 'IVA'),
+            impoconsumo: this.sumAppliedTaxAmount(o.taxLines, 'IMPOCONSUMO'),
+            reteFuente: this.sumAppliedTaxAmount(o.taxLines, 'RETEFUENTE'),
+            reteIva: this.sumAppliedTaxAmount(o.taxLines, 'RETEIVA'),
+            reteIca: this.sumAppliedTaxAmount(o.taxLines, 'RETEICA'),
             totalCollected:
               Number(o.fiscalContext.subtotal) +
               Number(o.fiscalContext.chargedTaxTotal),
@@ -1363,7 +1355,7 @@ export class SalesService {
       return this.confirmReservation(businessId, id, buyerFiscalContext);
     }
 
-    return this.runSerializableTransaction(async (tx) => {
+    const confirmation = await this.runSerializableTransaction(async (tx) => {
       // ... (KEEP EXISTING Order logic but use id instead of orderId)
       const order = await tx.order.findFirst({
         where: { id, businessId },
@@ -1437,37 +1429,16 @@ export class SalesService {
 
       if (fiscalContextToUse) {
         const cartItems = order.items.map((it: any) => ({
+          orderItemId: it.id,
           itemId: it.itemId,
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice ?? it.price),
         }));
 
-        const preview = await this.taxService.calculateTaxPreview(
+        const preview = await this.calculateOrderTaxPreview(
           businessId,
-          {
-            buyerType: fiscalContextToUse.buyerType,
-            buyerName: fiscalContextToUse.buyerName,
-            buyerDocumentType: fiscalContextToUse.buyerDocumentType,
-            buyerDocumentNumber: fiscalContextToUse.buyerDocumentNumber,
-            buyerEmail: fiscalContextToUse.buyerEmail,
-            buyerIsIvaResponsable:
-              fiscalContextToUse.buyerIsIvaResponsable || false,
-            buyerIsRetenedor: fiscalContextToUse.buyerIsRetenedor || false,
-            buyerIsGranContribuyente:
-              fiscalContextToUse.buyerIsGranContribuyente || false,
-            buyerIsAutorretenedor:
-              fiscalContextToUse.buyerIsAutorretenedor || false,
-            buyerIsRegimenSimple:
-              fiscalContextToUse.buyerIsRegimenSimple || false,
-            buyerRequiresElectronicInvoice:
-              fiscalContextToUse.buyerRequiresElectronicInvoice || false,
-            fiscalMunicipalityCode: fiscalContextToUse.fiscalMunicipalityCode,
-            saleConcept: fiscalContextToUse.saleConcept || 'GOODS',
-            reteIcaRateOverride:
-              fiscalContextToUse.reteIcaRateOverride ??
-              fiscalContextToUse.icaRateOverride,
-            cartItems,
-          },
+          fiscalContextToUse,
+          cartItems,
           tx,
         );
 
@@ -1524,6 +1495,10 @@ export class SalesService {
         include: { items: { include: { item: true, options: true } } },
       });
 
+      // The intent is persisted in the same short local transaction as the sale.
+      // Dispatch happens outside this transaction through FiscalDocumentService.
+      await this.fiscalDocuments?.createInvoiceIntent(tx, businessId, id);
+
       return {
         order: updatedOrder,
         accountingCreated: !order.accountingPostedAt,
@@ -1533,6 +1508,21 @@ export class SalesService {
         movements,
       };
     });
+
+    // Best-effort asynchronous dispatch. The durable PENDING record is the
+    // source of truth; a later retry/worker can resume if this process stops.
+    if (this.fiscalDocuments) {
+      const fiscalDocument = await this.prisma.fiscalDocument.findFirst({
+        where: { businessId, orderId: id, type: 'INVOICE', status: 'PENDING' },
+        select: { id: true },
+      });
+      if (fiscalDocument) {
+        void this.fiscalDocuments
+          .dispatch(businessId, fiscalDocument.id)
+          .catch(() => undefined);
+      }
+    }
+    return confirmation;
   }
 
   private async confirmReservation(
@@ -2034,31 +2024,11 @@ export class SalesService {
     const fiscalSummary = order.fiscalContext
       ? {
           subtotal: Number(order.fiscalContext.subtotal),
-          iva: Number(
-            order.taxLines.find(
-              (line) => line.taxType === 'IVA' && line.applied,
-            )?.taxAmount ?? 0,
-          ),
-          impoconsumo: Number(
-            order.taxLines.find(
-              (line) => line.taxType === 'IMPOCONSUMO' && line.applied,
-            )?.taxAmount ?? 0,
-          ),
-          reteFuente: Number(
-            order.taxLines.find(
-              (line) => line.taxType === 'RETEFUENTE' && line.applied,
-            )?.taxAmount ?? 0,
-          ),
-          reteIva: Number(
-            order.taxLines.find(
-              (line) => line.taxType === 'RETEIVA' && line.applied,
-            )?.taxAmount ?? 0,
-          ),
-          reteIca: Number(
-            order.taxLines.find(
-              (line) => line.taxType === 'RETEICA' && line.applied,
-            )?.taxAmount ?? 0,
-          ),
+          iva: this.sumAppliedTaxAmount(order.taxLines, 'IVA'),
+          impoconsumo: this.sumAppliedTaxAmount(order.taxLines, 'IMPOCONSUMO'),
+          reteFuente: this.sumAppliedTaxAmount(order.taxLines, 'RETEFUENTE'),
+          reteIva: this.sumAppliedTaxAmount(order.taxLines, 'RETEIVA'),
+          reteIca: this.sumAppliedTaxAmount(order.taxLines, 'RETEICA'),
           totalCollected:
             Number(order.fiscalContext.subtotal) +
             Number(order.fiscalContext.chargedTaxTotal),
@@ -2166,6 +2136,7 @@ export class SalesService {
     id: string,
     dto: ReverseOrderDto,
   ) {
+    const reversedAt = new Date();
     return this.prisma.$transaction(
       async (tx) => {
         const order = await tx.order.findFirst({
@@ -2176,6 +2147,52 @@ export class SalesService {
         });
 
         if (!order) throw new NotFoundException('Order not found');
+
+        const protectedFiscalDocument =
+          this.fiscalDocuments && (tx as any).fiscalDocument
+            ? await (tx as any).fiscalDocument.findFirst({
+                where: {
+                  businessId,
+                  orderId: id,
+                  type: 'INVOICE',
+                  status: { in: ['PROCESSING', 'LOCAL_PERSISTENCE_FAILURE'] },
+                },
+                select: { id: true, status: true },
+              })
+            : null;
+        if (protectedFiscalDocument) {
+          throw new BadRequestException(
+            'La factura electronica requiere sincronizacion antes de revertir la venta.',
+          );
+        }
+
+        const validatedInvoice =
+          this.fiscalDocuments && (tx as any).fiscalDocument
+            ? await (tx as any).fiscalDocument.findFirst({
+                where: {
+                  businessId,
+                  orderId: id,
+                  type: 'INVOICE',
+                  status: 'VALIDATED',
+                },
+                select: { id: true },
+              })
+            : null;
+        if (validatedInvoice) {
+          const validatedCredit = await (tx as any).fiscalDocument.findFirst({
+            where: {
+              parentDocumentId: validatedInvoice.id,
+              type: 'CREDIT_NOTE',
+              status: 'VALIDATED',
+            },
+            select: { id: true },
+          });
+          if (!validatedCredit) {
+            throw new BadRequestException(
+              'La factura electrónica debe anularse mediante una nota crédito validada antes de revertir la venta.',
+            );
+          }
+        }
 
         const existingReturn = await tx.inventoryMovement.findMany({
           where: {
@@ -2208,7 +2225,16 @@ export class SalesService {
             tx,
             businessId,
             { orderId: id, reason: dto.reason },
+            reversedAt,
           );
+
+        const accountingReversalMovements =
+          await this.accountingService.reverseOrderMovements(tx, businessId, {
+            orderId: id,
+            accountingPostedAt: order.accountingPostedAt,
+            reversedAt,
+            reason: dto.reason,
+          });
 
         const updatedOrder = await tx.order.update({
           where: { id },
@@ -2220,10 +2246,18 @@ export class SalesService {
           },
         });
 
+        if (validatedInvoice) {
+          await (tx as any).fiscalDocument.update({
+            where: { id: validatedInvoice.id },
+            data: { status: 'CREDITED', reversalAppliedAt: reversedAt },
+          });
+        }
+
         return {
           order: updatedOrder,
           inventoryReversed: reversalMovements.length > 0,
           reversalMovements,
+          accountingReversalMovements,
         };
       },
       {
@@ -2410,24 +2444,11 @@ export class SalesService {
       }
 
       if (dto.buyerFiscalContext) {
-        const currentItems = resolvedItems
-          ? resolvedItems.lines.map((line: any) => ({
-              itemId: line.itemId,
-              quantity: Number(line.quantity),
-              unitPrice: Number(line.unitPrice ?? line.price),
-            }))
-          : order.items.map((item: any) => ({
-              itemId: item.itemId,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice ?? item.price),
-            }));
-
         await this.persistOrderFiscalPreview(
           tx,
           businessId,
           orderId,
           dto.buyerFiscalContext,
-          currentItems,
         );
       }
 

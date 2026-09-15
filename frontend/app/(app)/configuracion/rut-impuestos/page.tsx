@@ -16,11 +16,7 @@ import {
   CiiuActivity,
   IcaRate,
 } from "@/src/lib/settings/api";
-import {
-  COLOMBIAN_MUNICIPALITIES,
-  getDepartmentCodeFromMunicipality,
-  getMunicipalityName,
-} from "@/src/constants/colombianMunicipalities";
+import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
 import { getSimpleTaxConfig, updateSimpleTaxConfig } from "@/src/lib/simple-tax/api";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
@@ -178,6 +174,7 @@ export default function RutImpuestosPage() {
   const router = useRouter();
   const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeSalesEnabled, simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
+  const municipalities = useFiscalMunicipalities();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -473,8 +470,8 @@ export default function RutImpuestosPage() {
   }, [icaRatePerMil, useSameReteIcaRate]);
 
   const selectedMunicipalityName = useMemo(
-    () => (municipalityCode ? getMunicipalityName(municipalityCode) : ""),
-    [municipalityCode],
+    () => municipalities.find((item) => item.code === municipalityCode)?.name ?? municipalityCode,
+    [municipalities, municipalityCode],
   );
 
   const visibleResponsibilities = responsibilitiesCatalog.filter((responsibility) =>
@@ -487,7 +484,10 @@ export default function RutImpuestosPage() {
 
   const handleMunicipalityChange = (code: string) => {
     setMunicipalityCode(code);
-    setDepartmentCode(code ? getDepartmentCodeFromMunicipality(code) : "");
+    setDepartmentCode(
+      municipalities.find((item) => item.code === code)?.department.code ??
+        (code ? code.slice(0, 2) : ""),
+    );
   };
 
   const handleBusinessProfileChange = (key: TaxBusinessProfileKey) => {
@@ -832,9 +832,11 @@ export default function RutImpuestosPage() {
                   className={inputClassName}
                 >
                   <option value="">Seleccionar municipio</option>
-                  {COLOMBIAN_MUNICIPALITIES.map((municipality) => (
+                  {municipalities.map((municipality) => (
                     <option key={municipality.code} value={municipality.code}>
-                      {municipality.name}
+                      {municipality.department.name
+                        ? `${municipality.name} (${municipality.department.name})`
+                        : municipality.name}
                     </option>
                   ))}
                 </select>

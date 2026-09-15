@@ -358,6 +358,7 @@ export default function PublicStoreClient() {
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
+  const [electronicInvoicingEnabled, setElectronicInvoicingEnabled] = useState(false);
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
   const [publicTaxPreviewStatus, setPublicTaxPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -918,7 +919,7 @@ export default function PublicStoreClient() {
     return {
       buyerType: isCompany && buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
       buyerName: customerName.trim() || null,
-      buyerDocumentType: "NIT",
+      buyerDocumentType: isCompany ? "NIT" : "CC",
       buyerDocumentNumber: buyerNit.trim() || null,
       buyerEmail: buyerEmail.trim() || null,
       buyerIsIvaResponsable: false,
@@ -927,7 +928,7 @@ export default function PublicStoreClient() {
       buyerIsAutorretenedor: isCompany && buyerIsSelfWithholder,
       buyerIsRegimenSimple:
         isCompany && simpleRegimeSalesEnabled && buyerIsRegimenSimple,
-      buyerRequiresElectronicInvoice: false,
+      buyerRequiresElectronicInvoice: electronicInvoicingEnabled,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,
       saleConcept: "GOODS",
@@ -941,6 +942,7 @@ export default function PublicStoreClient() {
     buyerNit,
     buyerUiType,
     customerName,
+    electronicInvoicingEnabled,
     fiscalMunicipalityCode,
     reteIcaRateOverride,
     simpleRegimeSalesEnabled,
@@ -953,6 +955,7 @@ export default function PublicStoreClient() {
       .then((settings) => {
         if (!cancelled) {
           setHasFiscalConfiguration(settings?.fiscalContextEnabled === true);
+          setElectronicInvoicingEnabled(settings?.electronicInvoicingEnabled === true);
           const regimenSimpleEnabled = settings?.simpleRegimeSalesEnabled === true;
           setSimpleRegimeSalesEnabled(regimenSimpleEnabled);
           if (!regimenSimpleEnabled) setBuyerIsRegimenSimple(false);
@@ -961,6 +964,7 @@ export default function PublicStoreClient() {
       .catch(() => {
         if (!cancelled) {
           setHasFiscalConfiguration(false);
+          setElectronicInvoicingEnabled(false);
           setSimpleRegimeSalesEnabled(false);
           setBuyerIsRegimenSimple(false);
         }
@@ -974,9 +978,11 @@ export default function PublicStoreClient() {
       setPublicTaxPreviewStatus("idle");
       return;
     }
+    // Never display a fiscal total calculated for a previous cart or buyer.
+    setPublicTaxPreview(null);
+    setPublicTaxPreviewStatus("loading");
     let cancelled = false;
     const timer = window.setTimeout(async () => {
-      setPublicTaxPreviewStatus("loading");
       try {
         const res = await fetch(`${API_URL}/public/${slug}/tax-preview`, {
           method: "POST",
@@ -1320,22 +1326,33 @@ export default function PublicStoreClient() {
                 onPaymentMethodChange={setPaymentMethod}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
                 onClose={() => setShowCartModal(false)}
+                payableTotal={
+                  hasFiscalConfiguration && publicTaxPreviewStatus === "ready"
+                    ? publicTaxPreview?.netReceived
+                    : undefined
+                }
+                isFiscalTotalPending={
+                  hasFiscalConfiguration && cartItems.length > 0 && publicTaxPreviewStatus === "loading"
+                }
+                hasFiscalTotalError={
+                  hasFiscalConfiguration && cartItems.length > 0 && publicTaxPreviewStatus === "error"
+                }
                 taxPreviewContent={hasFiscalConfiguration ? (
                   <section className="rounded-xl border border-slate-200 bg-white px-4 py-3" aria-live="polite">
                     <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-700">Resumen fiscal</span>
+                      <span className="text-xs font-semibold text-slate-700">Resumen del pedido</span>
                       {publicTaxPreviewStatus === "loading" && (
                         <span className="text-[11px] text-slate-500">Calculando…</span>
                       )}
                     </div>
                     {publicTaxPreview ? (
                       <div className="space-y-1 text-xs text-neutral-600">
-                        <div className="flex justify-between"><span>IVA</span><span>{formatCop(publicTaxPreview.vatTotal)}</span></div>
-                        <div className="flex justify-between"><span>Impoconsumo</span><span>{formatCop(publicTaxPreview.impoconsumoTotal)}</span></div>
-                        <div className="flex justify-between"><span>ReteFuente</span><span>-{formatCop(publicTaxPreview.reteFuenteTotal)}</span></div>
-                        <div className="flex justify-between"><span>ReteIVA</span><span>-{formatCop(publicTaxPreview.reteIvaTotal)}</span></div>
-                        <div className="flex justify-between"><span>ReteICA</span><span>-{formatCop(publicTaxPreview.reteIcaTotal)}</span></div>
-                        <div className="mt-2 flex justify-between border-t border-slate-100 pt-2 font-semibold text-neutral-800"><span>Neto recibido</span><span>{formatCop(publicTaxPreview.netReceived)}</span></div>
+                        <div className="flex justify-between"><span>Subtotal</span><span>{formatCop(publicTaxPreview.subtotal)}</span></div>
+                        {publicTaxPreview.vatTotal > 0 && <div className="flex justify-between"><span>IVA</span><span>{formatCop(publicTaxPreview.vatTotal)}</span></div>}
+                        {publicTaxPreview.impoconsumoTotal > 0 && <div className="flex justify-between"><span>Impoconsumo</span><span>{formatCop(publicTaxPreview.impoconsumoTotal)}</span></div>}
+                        {publicTaxPreview.reteFuenteTotal > 0 && <div className="flex justify-between"><span>ReteFuente</span><span>-{formatCop(publicTaxPreview.reteFuenteTotal)}</span></div>}
+                        {publicTaxPreview.reteIvaTotal > 0 && <div className="flex justify-between"><span>ReteIVA</span><span>-{formatCop(publicTaxPreview.reteIvaTotal)}</span></div>}
+                        {publicTaxPreview.reteIcaTotal > 0 && <div className="flex justify-between"><span>ReteICA</span><span>-{formatCop(publicTaxPreview.reteIcaTotal)}</span></div>}
                       </div>
                     ) : publicTaxPreviewStatus === "error" ? (
                       <p className="text-xs text-amber-700">No se pudo actualizar el resumen fiscal.</p>
@@ -1394,11 +1411,11 @@ export default function PublicStoreClient() {
 
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="min-w-0">
-                        <label htmlFor="public-order-document" className="sr-only">Cédula o NIT opcional</label>
+                        <label htmlFor="public-order-document" className="sr-only">{buyerUiType === "COMPANY" ? "NIT opcional" : "Cédula opcional"}</label>
                         <input
                           id="public-order-document"
                           type="text"
-                          placeholder="Cédula / NIT (Opcional)"
+                          placeholder={buyerUiType === "COMPANY" ? "NIT (Opcional)" : "Cédula (Opcional)"}
                           value={buyerNit}
                           onChange={(event) => setBuyerNit(event.target.value)}
                           className="h-11 w-full min-w-0 rounded-xl border border-sky-200 bg-white px-3 text-sm font-semibold text-neutral-800 outline-none transition placeholder:text-neutral-400 focus:border-[#0B3F64] focus:ring-2 focus:ring-[#0B3F64]/10"
@@ -1488,6 +1505,7 @@ export default function PublicStoreClient() {
                         value={fiscalMunicipalityCode}
                         onChange={setFiscalMunicipalityCode}
                         className="h-11 rounded-xl border-sky-200 px-3 py-0 shadow-none"
+                        publicSlug={slug}
                       />
                       <label htmlFor="public-order-reteica" className="sr-only">ReteICA o ICA retenido por mil</label>
                       <input
