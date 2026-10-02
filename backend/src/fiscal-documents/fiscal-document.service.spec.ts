@@ -233,12 +233,16 @@ describe('FiscalDocumentService artifacts', () => {
   });
 
   it('keeps the validated document when storage fails', async () => {
+    let localStatus = 'PENDING';
     const prisma: any = {
       fiscalDocument: {
         findFirst: jest.fn(({ where }: any) => {
           if (where.type === 'INVOICE') return { order: { taxLines: [] } };
           return {
             ...document,
+            status: localStatus,
+            orderId: 'order-1',
+            order: { status: 'COMPLETED', accountingPostedAt: new Date(), inventoryPostedAt: new Date() },
             payloadSnapshot: {},
             business: {
               factusConfiguration: {
@@ -267,19 +271,22 @@ describe('FiscalDocumentService artifacts', () => {
       },
       $transaction: jest.fn(async (callback: any) =>
         callback({
-          fiscalDocumentAttempt: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+          fiscalDocumentAttempt: { create: jest.fn().mockResolvedValue({ id: 'attempt-1' }), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
           fiscalDocument: {
-            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            updateMany: jest.fn(({ data }: any) => { localStatus = data.status; return { count: 1 }; }),
             findFirst: jest
               .fn()
-              .mockResolvedValue({ ...document, status: 'VALIDATED' }),
+              .mockImplementation(() => ({ ...document, status: localStatus,
+                order: { status: 'COMPLETED', accountingPostedAt: new Date(), inventoryPostedAt: new Date(), taxLines: [] },
+                business: { status: 'ACTIVE', factusConfiguration: { enabled: true, encryptedCredentials: 'encrypted', environment: 'sandbox' } },
+                payloadSnapshot: {} })),
           },
         }),
       ),
       fiscalDocumentArtifact: { upsert: jest.fn() },
     };
     const provider: any = {
-      decryptCredentials: jest.fn().mockReturnValue({}),
+      decryptCredentials: jest.fn().mockReturnValue({ clientId: 'id', clientSecret: 'secret', username: 'user', password: 'password' }),
       validateInvoice: jest
         .fn()
         .mockResolvedValue({ data: { is_validated: true, number: 'SETP1' } }),
@@ -298,8 +305,7 @@ describe('FiscalDocumentService artifacts', () => {
       service.dispatch('business-1', 'document-1'),
     ).resolves.toMatchObject({ status: 'VALIDATED' });
 
-    expect(prisma.fiscalDocument.updateMany).toHaveBeenCalledTimes(1);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
   it('is idempotent through the artifact unique upsert when run twice', async () => {
@@ -330,6 +336,7 @@ describe('FiscalDocumentService item tax snapshots', () => {
 
   const order = {
     total: '1000000.00',
+    taxSnapshot: { rawCalculation: { subtotal: 1000000, vatTotal: 19000, impoconsumoTotal: 72000 } },
     paymentMethod: 'CASH',
     fiscalContext: {
       subtotal: '1000000.00',
@@ -467,7 +474,7 @@ describe('FiscalDocumentService item tax snapshots', () => {
       order: {
         findFirst: jest.fn().mockResolvedValue({
           ...order,
-          items: [{ ...order.items[0], item: { ...order.items[0].item, fiscalCode: null } }],
+          items: [{ ...order.items[0], item: { ...order.items[0].item, fiscalCode: null } }, order.items[1]],
         }),
       },
     };
@@ -630,6 +637,7 @@ describe('FiscalDocumentService recovery', () => {
       payloadSnapshot: { customer: { identification: '22222222222' } },
       itemsSnapshot: [{ code_reference: 'ITEM-1' }],
       paymentSnapshot: { amount: '119000.00' },
+      business: { status: 'ACTIVE', factusConfiguration: { enabled: true } },
       order: { taxLines: [] },
       attempts: [],
       _count: { attempts: 0 },
@@ -719,6 +727,19 @@ describe('FiscalDocumentService recovery', () => {
     await service.recoverPendingDocuments(now);
 
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('does not send pending documents while the business is inactive or Factus is suspended', async () => {
+    const { service, prisma } = setup([
+      candidate({ id: 'inactive', business: { status: 'INACTIVE', factusConfiguration: { enabled: true } } }),
+      candidate({ id: 'suspended', business: { status: 'ACTIVE', factusConfiguration: { enabled: false } } }),
+    ]);
+    const dispatch = jest.spyOn(service, 'dispatch');
+    await expect(service.recoverPendingDocuments(now)).resolves.toMatchObject({ eligible: 0 });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ business: expect.objectContaining({ status: 'ACTIVE' }) }),
+    }));
   });
 
   it('skips legacy charge taxes without calling Factus through dispatch', async () => {
@@ -832,9 +853,12 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
       payloadSnapshot: structuredClone(originalPayload),
       itemsSnapshot: structuredClone(originalPayload.items),
       paymentSnapshot: structuredClone(originalPayload.payment_details[0]),
+      orderId: 'order-1',
+      order: { status: 'COMPLETED', accountingPostedAt: new Date(), inventoryPostedAt: new Date(), taxLines: [] },
       factusNumber: null,
       cufeOrCude: null,
       business: {
+        status: 'ACTIVE',
         factusConfiguration: {
           enabled: true,
           encryptedCredentials: 'encrypted',
@@ -873,6 +897,11 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
       $transaction: jest.fn(async (callback: any) =>
         callback({
           fiscalDocumentAttempt: {
+            create: jest.fn(({ data }: any) => {
+              const attempt = { id: `attempt-${attempts.length + 1}`, ...data };
+              attempts.push(attempt);
+              return attempt;
+            }),
             updateMany: jest.fn(({ where, data }: any) => {
               Object.assign(attempts.find((attempt) => attempt.id === where.id), data);
             }),
@@ -888,7 +917,7 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
       ),
     };
     const provider: any = {
-      decryptCredentials: jest.fn().mockReturnValue({}),
+      decryptCredentials: jest.fn().mockReturnValue({ clientId: 'id', clientSecret: 'secret', username: 'user', password: 'password' }),
       validateInvoice: jest
         .fn()
         .mockRejectedValueOnce(
@@ -987,9 +1016,11 @@ describe('FiscalDocumentService dispatch retry snapshots', () => {
       },
     });
     let transaction = 0;
+    const claimTransaction = prisma.$transaction.getMockImplementation();
     prisma.$transaction.mockImplementation(async (callback: any) => {
       transaction += 1;
-      if (transaction === 1) {
+      if (transaction === 1) return claimTransaction(callback);
+      if (transaction === 2) {
         return callback({
           fiscalDocumentAttempt: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
           fiscalDocument: {
@@ -1155,6 +1186,8 @@ describe('FiscalDocumentService credit-note payment details', () => {
       },
       $transaction: jest.fn(async (callback: any) =>
         callback({
+          business: { findUnique: jest.fn().mockResolvedValue({ status: 'ACTIVE' }) },
+          factusConfiguration: { findUnique: jest.fn().mockResolvedValue({ enabled: true, creditNoteRangeId: 1776 }) },
           fiscalDocument: {
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             create: jest.fn().mockImplementation(({ data }: any) => data),
@@ -1191,6 +1224,8 @@ describe('FiscalDocumentService credit-note payment details', () => {
     );
     const create = prisma.$transaction.mock.calls[0][0];
     const tx: any = {
+      business: { findUnique: jest.fn().mockResolvedValue({ status: 'ACTIVE' }) },
+      factusConfiguration: { findUnique: jest.fn().mockResolvedValue({ enabled: true, creditNoteRangeId: 1776 }) },
       fiscalDocument: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn().mockImplementation(({ data }: any) => data),

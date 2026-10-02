@@ -131,6 +131,7 @@ export interface Sale {
   status: SaleStatus;
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
+  requiresLegacyInvoiceWarning?: boolean;
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;

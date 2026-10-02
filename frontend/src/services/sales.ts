@@ -22,6 +22,7 @@ export interface ApiOrder {
   status: "PENDIENTE" | "CERRADO" | "CANCELADO";
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
+  requiresLegacyInvoiceWarning?: boolean;
   origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;

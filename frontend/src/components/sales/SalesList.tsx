@@ -4,6 +4,7 @@ import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import SaleCard from "./SaleCard";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
+import { canGenerateElectronicInvoice, type InvoiceCapability } from "@/src/lib/sales/manualInvoiceUi";
 
 type Props = {
   sales: Sale[];
@@ -25,6 +26,9 @@ type Props = {
   onFiscalRetry?: (document: FiscalDocument) => void;
   onFiscalAnnul?: (document: FiscalDocument) => void;
   onCompleteAnnulment?: (document: FiscalDocument) => void;
+  invoiceCapability?: InvoiceCapability;
+  generatingInvoiceSaleId?: string | null;
+  onGenerateElectronicInvoice?: (sale: Sale) => void;
 };
 
 function groupSalesByDate(sales: Sale[]) {
@@ -71,6 +75,9 @@ export default function SalesList({
   onFiscalRetry,
   onFiscalAnnul,
   onCompleteAnnulment,
+  invoiceCapability,
+  generatingInvoiceSaleId,
+  onGenerateElectronicInvoice,
 }: Props) {
   const groups = groupSalesByDate(sales);
 
@@ -112,6 +119,9 @@ export default function SalesList({
                 onFiscalRetry={onFiscalRetry}
                 onFiscalAnnul={onFiscalAnnul}
                 onCompleteAnnulment={onCompleteAnnulment}
+                canGenerateElectronicInvoice={Boolean(invoiceCapability && canGenerateElectronicInvoice(s, Boolean(invoice), invoiceCapability, Boolean(generatingInvoiceSaleId)))}
+                factusEnabled={invoiceCapability?.factusEnabled === true}
+                onGenerateElectronicInvoice={onGenerateElectronicInvoice}
               />
             </div>
             );
