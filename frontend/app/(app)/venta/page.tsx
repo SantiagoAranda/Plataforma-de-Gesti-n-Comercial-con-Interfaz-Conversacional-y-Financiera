@@ -25,12 +25,14 @@ import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/Sale
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
 import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
+import ElectronicInvoiceConfirmModal from "@/src/components/sales/ElectronicInvoiceConfirmModal";
+import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirmation, firstInvoiceConfirmationStep } from "@/src/lib/sales/manualInvoiceUi";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
-import { dispatchFiscalDocument, downloadFiscalArtifact, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
-import type { FiscalDocument } from "@/src/types/fiscal-documents";
+import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
+import type { FactusConfigurationView, FiscalDocument } from "@/src/types/fiscal-documents";
 import { getCached, invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import { AppApiError } from "@/src/lib/api";
@@ -162,6 +164,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     status: order.status as Sale["status"],
     inventoryPostedAt: order.inventoryPostedAt ?? null,
     accountingPostedAt: order.accountingPostedAt ?? null,
+    requiresLegacyInvoiceWarning: order.requiresLegacyInvoiceWarning ?? true,
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
@@ -259,8 +262,8 @@ function VentaPageContent() {
   const { taxSettingsEnabled } = useTaxSettings();
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
-  const [electronicInvoicingEnabled, setElectronicInvoicingEnabled] = useState(false);
-  const [taxProfileLoaded, setTaxProfileLoaded] = useState(false);
+  const [hasResponsibility52, setHasResponsibility52] = useState(false);
+  const [factusConfiguration, setFactusConfiguration] = useState<FactusConfigurationView | null>(null);
   const [q, setQ] = useState("");
 
   useEffect(() => {
@@ -269,15 +272,19 @@ function VentaPageContent() {
         setHasHistoricalSimpleResponsibility(
           Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "47")),
         );
-        setElectronicInvoicingEnabled(
+        setHasResponsibility52(
           Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "52")),
         );
       })
       .catch(() => {
         setHasHistoricalSimpleResponsibility(false);
-        setElectronicInvoicingEnabled(false);
+        setHasResponsibility52(false);
       })
-      .finally(() => setTaxProfileLoaded(true));
+      .finally(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    void getFactusConfiguration().then(setFactusConfiguration).catch(() => setFactusConfiguration(null));
   }, []);
 
   const salesBlockedBySimpleRegime =
@@ -301,6 +308,12 @@ function VentaPageContent() {
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
   const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
+  const [fiscalDocumentsStatus, setFiscalDocumentsStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const electronicInvoicingEnabled = hasResponsibility52 || fiscalDocuments.length > 0;
+  const [manualInvoiceSale, setManualInvoiceSale] = useState<Sale | null>(null);
+  const [manualInvoiceStep, setManualInvoiceStep] = useState<"warning" | "confirm" | "sending" | null>(null);
+  const [generatingInvoiceSaleId, setGeneratingInvoiceSaleId] = useState<string | null>(null);
+  const manualInvoiceBusyRef = useRef(false);
   const [fiscalDetail, setFiscalDetail] = useState<FiscalDocument | null>(null);
   const [fiscalFilterActive, setFiscalFilterActive] = useState(false);
   const [fiscalStatusFilter, setFiscalStatusFilter] = useState<FiscalSalesFilter>("ALL");
@@ -404,31 +417,20 @@ function VentaPageContent() {
   }, [loadOrders]);
 
   const refreshFiscalDocuments = useCallback(async () => {
-    if (!electronicInvoicingEnabled) {
-      setFiscalDocuments([]);
-      return [];
+    try {
+      const documents = await listFiscalDocuments();
+      setFiscalDocuments(documents);
+      setFiscalDocumentsStatus("loaded");
+      return documents;
+    } catch (error) {
+      setFiscalDocumentsStatus("error");
+      throw error;
     }
-    const documents = await listFiscalDocuments();
-    setFiscalDocuments(documents);
-    return documents;
-  }, [electronicInvoicingEnabled]);
+  }, []);
 
   useEffect(() => {
-    if (!taxProfileLoaded) return;
-    if (!electronicInvoicingEnabled) {
-      setFiscalDocuments([]);
-      setFiscalFilterActive(false);
-      setFiscalStatusFilter("ALL");
-      setIncludeCancelledSales(false);
-      return;
-    }
-    void refreshFiscalDocuments().catch(() => {
-      setFiscalDocuments([]);
-      setFiscalFilterActive(false);
-      setFiscalStatusFilter("ALL");
-      setIncludeCancelledSales(false);
-    });
-  }, [electronicInvoicingEnabled, refreshFiscalDocuments, taxProfileLoaded]);
+    void refreshFiscalDocuments().catch(() => undefined);
+  }, [refreshFiscalDocuments]);
 
   const invoicesByOrder = useMemo(() => {
     const result = new Map<string, FiscalDocument>();
@@ -447,7 +449,7 @@ function VentaPageContent() {
   }, [fiscalDocuments]);
 
   useEffect(() => {
-    if (!electronicInvoicingEnabled) return;
+    if (!fiscalDocuments.length) return;
     const hasInFlightDocument = fiscalDocuments.some((document) =>
       ["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN"].includes(document.status),
     );
@@ -774,11 +776,6 @@ function VentaPageContent() {
   };
 
   const handleConfirmSale = useCallback(async (sale: Sale) => {
-    if (taxSettingsEnabled && !sale.fiscalContext) {
-      toast.error("Faltan datos fiscales para liquidar esta venta. Editala antes de confirmar.");
-      return;
-    }
-
     const loadingId = "sale-confirm-loading";
     const successId = "sale-confirm-success";
     const errorId = "sale-confirm-error";
@@ -832,7 +829,7 @@ function VentaPageContent() {
     } finally {
       setConfirmingSaleId(null);
     }
-  }, [loadOrders, refreshFiscalDocuments, taxSettingsEnabled]);
+  }, [loadOrders, refreshFiscalDocuments]);
 
   const handleSaveOptionalIngredients = useCallback(
     async (sale: Sale, orderItemId: string, excludedOptionalIngredientIds: string[]) => {
@@ -1154,6 +1151,54 @@ function VentaPageContent() {
     );
   }, [completeAnnulment, refreshFiscalDocuments]);
 
+  const handleStartElectronicInvoice = useCallback((sale: Sale) => {
+    if (manualInvoiceBusyRef.current) return;
+    setManualInvoiceSale(sale);
+    setManualInvoiceStep(firstInvoiceConfirmationStep(sale));
+  }, []);
+
+  const handleGenerateElectronicInvoice = useCallback(async () => {
+    if (!manualInvoiceSale || !canSubmitInvoiceStep(manualInvoiceStep) || manualInvoiceBusyRef.current) return;
+    manualInvoiceBusyRef.current = true;
+    setGeneratingInvoiceSaleId(manualInvoiceSale.id);
+    setManualInvoiceStep("sending");
+    try {
+      const result = await generateElectronicInvoice(manualInvoiceSale.id);
+      try { await refreshFiscalDocuments(); } catch {
+        toast.error("Se creó el documento, pero no se pudo actualizar la lista. Volvé a cargar Ventas para consultar su estado.");
+        setManualInvoiceSale(null);
+        setManualInvoiceStep(null);
+        return;
+      }
+      if (result.status === "VALIDATED") toast.success("Factura validada por DIAN");
+      else if (result.status === "REJECTED" || result.status === "RETRYABLE_FAILURE" || result.status === "LOCAL_PERSISTENCE_FAILURE")
+        toast.error("La venta sigue finalizada. Revisá el estado del documento fiscal.");
+      else toast.success("Intención fiscal creada. Consultá el estado del documento.");
+      setManualInvoiceSale(null);
+      setManualInvoiceStep(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "No fue posible generar la factura electrónica"));
+      try {
+        const documents = await refreshFiscalDocuments();
+        if (documents.some((document) => document.type === "INVOICE" && document.orderId === manualInvoiceSale.id)) {
+          setManualInvoiceSale(null);
+          setManualInvoiceStep(null);
+          return;
+        }
+      } catch {
+        // The request may have created the document. Do not offer another click
+        // until a successful document reload establishes the actual state.
+        setManualInvoiceSale(null);
+        setManualInvoiceStep(null);
+        return;
+      }
+      setManualInvoiceStep("confirm");
+    } finally {
+      manualInvoiceBusyRef.current = false;
+      setGeneratingInvoiceSaleId(null);
+    }
+  }, [manualInvoiceSale, manualInvoiceStep, refreshFiscalDocuments]);
+
   return (
     <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-white">
       <div className="shrink-0">
@@ -1333,6 +1378,15 @@ function VentaPageContent() {
               onFiscalRetry={handleFiscalRetry}
               onFiscalAnnul={handleFiscalAnnul}
               onCompleteAnnulment={handleCompleteAnnulment}
+              invoiceCapability={{
+                documentsLoaded: fiscalDocumentsStatus === "loaded",
+                factusEnabled: factusConfiguration?.enabled === true,
+                factusConfigured: factusConfiguration?.configured === true,
+                taxSettingsEnabled,
+                responsibility52: hasResponsibility52,
+              }}
+              generatingInvoiceSaleId={generatingInvoiceSaleId}
+              onGenerateElectronicInvoice={handleStartElectronicInvoice}
             />
           )}
           <div ref={bottomRef} className="h-px w-full" />
@@ -1379,6 +1433,13 @@ function VentaPageContent() {
       />
 
       <FiscalDocumentDetailModal document={fiscalDetail} onClose={() => setFiscalDetail(null)} />
+      <ElectronicInvoiceConfirmModal
+        sale={manualInvoiceSale}
+        step={manualInvoiceStep}
+        onCancel={() => { if (!manualInvoiceBusyRef.current) { setManualInvoiceSale(null); setManualInvoiceStep(cancelInvoiceConfirmation()); } }}
+        onContinue={() => setManualInvoiceStep((step) => continueInvoiceConfirmation(step === "warning" ? step : "confirm"))}
+        onGenerate={() => { void handleGenerateElectronicInvoice(); }}
+      />
 
       <SalesFilterModal
         open={filterOpen}

@@ -183,11 +183,11 @@ export class PublicService {
 
   private normalizeBuyerFiscalContext(
     value: CreatePublicOrderDto['buyerFiscalContext'] | undefined,
-    customerName: string,
   ) {
     return {
       buyerType: value?.buyerType ?? 'NATURAL',
-      buyerName: value?.buyerName?.trim() || customerName.trim() || null,
+      // The commercial contact name alone does not declare a fiscal buyer.
+      buyerName: value?.buyerName?.trim() || null,
       buyerDocumentType: value?.buyerDocumentType,
       buyerDocumentNumber: value?.buyerDocumentNumber?.trim() || null,
       buyerEmail: value?.buyerEmail?.trim() || null,
@@ -1292,7 +1292,6 @@ export class PublicService {
     const buyerFiscalContext = fiscalSettings.fiscalContextEnabled
       ? this.normalizeBuyerFiscalContext(
           dto.buyerFiscalContext,
-          dto.customerName,
         )
       : undefined;
     let order: {

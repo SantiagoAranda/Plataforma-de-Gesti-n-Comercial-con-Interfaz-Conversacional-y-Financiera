@@ -78,6 +78,9 @@ type Props = {
   onFiscalRetry?: (document: FiscalDocument) => void;
   onFiscalAnnul?: (document: FiscalDocument) => void;
   onCompleteAnnulment?: (document: FiscalDocument) => void;
+  canGenerateElectronicInvoice?: boolean;
+  factusEnabled?: boolean;
+  onGenerateElectronicInvoice?: (sale: Sale) => void;
 };
 
 function getItemUnitPrice(it: Sale["items"][number]) {
@@ -107,9 +110,13 @@ export default function SaleCard({
   onFiscalRetry,
   onFiscalAnnul,
   onCompleteAnnulment,
+  canGenerateElectronicInvoice = false,
+  factusEnabled = false,
+  onGenerateElectronicInvoice,
 }: Props) {
   const router = useRouter();
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
+  const [commercialMenuOpen, setCommercialMenuOpen] = useState(false);
 
   useEffect(() => {
     if (sale.status === "CERRADO" || sale.status === "CANCELADO" || !sale.items?.length) {
@@ -214,6 +221,7 @@ export default function SaleCard({
             {fiscalPresentation && fiscalDocument && onFiscalView && onFiscalDownload && onFiscalDispatch && onFiscalRetry && onFiscalAnnul && onCompleteAnnulment ? (
               <FiscalDocumentMenu
                 document={fiscalDocument}
+                canEmit={factusEnabled}
                 creditNote={creditNote}
                 onView={onFiscalView}
                 onViewReceipt={(document) => onFiscalReceipt?.(sale, document)}
@@ -223,6 +231,14 @@ export default function SaleCard({
                 onAnnul={onFiscalAnnul}
                 onCompleteAnnulment={onCompleteAnnulment}
               />
+            ) : canGenerateElectronicInvoice && onGenerateElectronicInvoice ? (
+              <div className="relative" onClick={(event) => event.stopPropagation()}>
+                <button type="button" aria-label="Opciones de venta" aria-expanded={commercialMenuOpen} onClick={() => setCommercialMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-slate-50"><MoreVertical className="h-4 w-4" /></button>
+                {commercialMenuOpen && <div className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
+                  <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); if (onDetails) onDetails(sale); else router.push(`/ventas/${sale.id}`); }}>Ver detalles</button>
+                  <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); onGenerateElectronicInvoice(sale); }}>Generar factura electrónica</button>
+                </div>}
+              </div>
             ) : <button
               type="button"
               aria-label="Ver detalles"

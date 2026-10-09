@@ -361,7 +361,6 @@ export default function PublicStoreClient() {
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
-  const [electronicInvoicingEnabled, setElectronicInvoicingEnabled] = useState(false);
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
   const [publicTaxPreviewStatus, setPublicTaxPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -925,7 +924,7 @@ export default function PublicStoreClient() {
     const isCompany = buyerUiType === "COMPANY";
     return {
       buyerType: isCompany && buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
-      buyerName: customerName.trim() || null,
+        buyerName: isCompany || buyerNit.trim() ? customerName.trim() || null : null,
       buyerDocumentType: isCompany ? "NIT" : "CC",
       buyerDocumentNumber: buyerNit.trim() || null,
       buyerEmail: buyerEmail.trim() || null,
@@ -935,7 +934,7 @@ export default function PublicStoreClient() {
       buyerIsAutorretenedor: isCompany && buyerIsSelfWithholder,
       buyerIsRegimenSimple:
         isCompany && simpleRegimeSalesEnabled && buyerIsRegimenSimple,
-      buyerRequiresElectronicInvoice: electronicInvoicingEnabled,
+      buyerRequiresElectronicInvoice: false,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,
       saleConcept: "GOODS",
@@ -949,7 +948,6 @@ export default function PublicStoreClient() {
     buyerNit,
     buyerUiType,
     customerName,
-    electronicInvoicingEnabled,
     fiscalMunicipalityCode,
     reteIcaRateOverride,
     simpleRegimeSalesEnabled,
@@ -962,7 +960,6 @@ export default function PublicStoreClient() {
       .then((settings) => {
         if (!cancelled) {
           setHasFiscalConfiguration(settings?.fiscalContextEnabled === true);
-          setElectronicInvoicingEnabled(settings?.electronicInvoicingEnabled === true);
           const regimenSimpleEnabled = settings?.simpleRegimeSalesEnabled === true;
           setSimpleRegimeSalesEnabled(regimenSimpleEnabled);
           if (!regimenSimpleEnabled) setBuyerIsRegimenSimple(false);
@@ -971,7 +968,6 @@ export default function PublicStoreClient() {
       .catch(() => {
         if (!cancelled) {
           setHasFiscalConfiguration(false);
-          setElectronicInvoicingEnabled(false);
           setSimpleRegimeSalesEnabled(false);
           setBuyerIsRegimenSimple(false);
         }

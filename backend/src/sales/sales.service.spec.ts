@@ -498,6 +498,7 @@ describe('SalesService personalized order lines', () => {
     const executionOrder: string[] = [];
     const tx: any = {
       order: {
+        findFirst: (jest.fn() as any).mockResolvedValue({ status: 'SENT', accountingPostedAt: null, inventoryPostedAt: null }),
         create: (jest.fn() as any).mockResolvedValue({
           id: 'order-1',
           origin: 'MANUAL',
@@ -861,7 +862,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
         businessId,
         orderId,
         type: 'INVOICE',
-        status: { in: ['PROCESSING', 'LOCAL_PERSISTENCE_FAILURE'] },
+        status: { in: ['PENDING', 'PROCESSING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN', 'LOCAL_PERSISTENCE_FAILURE'] },
       },
       select: { id: true, status: true },
     });
@@ -1019,6 +1020,7 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
           excludedOptionalIngredientIds: [optionalIngredientId],
         }),
       },
+      $transaction: (callback: any) => callback(prisma),
     } as any;
 
     const accountingService = {} as any;
@@ -1215,16 +1217,8 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
     expect(tx.order.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: 'COMPLETED' } }),
     );
-    expect(fiscalDocuments.createInvoiceIntent).toHaveBeenCalledWith(
-      tx,
-      businessId,
-      orderId,
-    );
-    expect(prisma.fiscalDocument.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ status: 'PENDING' }),
-      }),
-    );
+    expect(fiscalDocuments.createInvoiceIntent).not.toHaveBeenCalled();
+    expect(prisma.fiscalDocument.findFirst).not.toHaveBeenCalled();
     expect(fiscalDocuments.dispatch).not.toHaveBeenCalled();
   });
 });

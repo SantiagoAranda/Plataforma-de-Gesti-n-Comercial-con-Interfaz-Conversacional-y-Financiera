@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,6 +16,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { parseFactusDateTime } from './factus-date';
 import { FactusProvider } from './providers/factus.provider';
+import { assertInvoiceHistory, buyerIdentityState, invoiceCloseSnapshot, INVOICE_CLOSE_SNAPSHOT_VERSION, TAX_CALCULATED, TAX_DISABLED_AT_CLOSE } from './invoice-close-snapshot';
+import { lockOwnedOrder } from '../sales/order-lock';
 
 type Tx = Prisma.TransactionClient;
 
@@ -28,11 +32,73 @@ const RETRY_BACKOFF_MAX_MS = 30 * 60_000;
 @Injectable()
 export class FiscalDocumentService {
   private readonly logger = new Logger(FiscalDocumentService.name);
+  private assertBusinessContext(businessId: string) {
+    if (typeof businessId !== 'string' || !businessId.trim())
+      throw new ForbiddenException('Falta el contexto del negocio');
+  }
+  private async lockAdministrativeRows(tx: Tx, businessId: string) {
+    if (typeof tx.$queryRaw !== 'function') return;
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "Business" WHERE id = ${businessId} FOR UPDATE`);
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM "FactusConfiguration" WHERE "businessId" = ${businessId} FOR UPDATE`);
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly provider: FactusProvider,
     private readonly storage: StorageService,
   ) {}
+
+  async generateInvoiceForSale(businessId: string, orderId: string) {
+    if (!businessId?.trim()) throw new ForbiddenException('Falta el contexto del negocio');
+    const business = await this.prisma.business.findUnique({ where: { id: businessId }, select: { status: true } });
+    if (!business || business.status !== 'ACTIVE') throw new ForbiddenException('El negocio no está activo');
+    let created = false;
+    let document: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        document = await this.prisma.$transaction(async (tx) => {
+        await lockOwnedOrder(tx, businessId, orderId);
+        await this.lockAdministrativeRows(tx, businessId);
+        const activeBusiness = await tx.business.findUnique({ where: { id: businessId }, select: { status: true } });
+        if (activeBusiness?.status !== 'ACTIVE') throw new ForbiddenException('El negocio no está activo');
+        const order = await tx.order.findFirst({ where: { id: orderId, businessId }, include: {
+          items: { include: { item: true } }, fiscalContext: true, taxLines: true, taxSnapshot: true,
+        } });
+        if (!order) throw new NotFoundException('Venta no encontrada');
+        if (order.status !== 'COMPLETED' || !order.accountingPostedAt || !order.inventoryPostedAt)
+          throw new BadRequestException('La venta debe estar finalizada antes de generar su factura electrónica');
+        const existing = await tx.fiscalDocument.findFirst({ where: { businessId, orderId, type: 'INVOICE', sequenceScope: 'PRIMARY' } });
+        if (existing) return existing;
+        const configuration = await this.electronicInvoicingConfiguration(tx, businessId);
+        if (!configuration?.enabled) throw new BadRequestException('Facturación electrónica no habilitada para este negocio o RUT incompleto');
+        if (!configuration.encryptedCredentials) throw new BadRequestException('Faltan las credenciales de Factus');
+        let credentials: any;
+        try { credentials = this.provider.decryptCredentials(configuration.encryptedCredentials); } catch {
+          throw new BadRequestException('Las credenciales de Factus no se pueden utilizar');
+        }
+        if (['clientId', 'clientSecret', 'username', 'password'].some((key) => typeof credentials?.[key] !== 'string' || !credentials[key].trim()))
+          throw new BadRequestException('Las credenciales de Factus están incompletas');
+        assertInvoiceHistory(order);
+        const intent = await this.createInvoiceIntent(tx, businessId, orderId);
+        if (!intent) throw new BadRequestException('La facturación electrónica no está habilitada');
+        created = true;
+        return intent;
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 20000 });
+        break;
+      } catch (error: any) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !['P2002', 'P2034'].includes(error.code)) throw error;
+        created = false;
+        document = await this.prisma.fiscalDocument.findFirst({ where: { businessId, orderId, type: 'INVOICE', sequenceScope: 'PRIMARY' } });
+        if (document) break;
+        if (error.code !== 'P2034' || attempt === 2) throw error;
+      }
+    }
+    if (!created) return document;
+    try { return await this.dispatch(businessId, document.id); } catch (error) {
+      const persisted = await this.prisma.fiscalDocument.findFirst({ where: { id: document.id, businessId } });
+      if (persisted && ['RETRYABLE_FAILURE', 'REJECTED', 'LOCAL_PERSISTENCE_FAILURE'].includes(persisted.status)) return persisted;
+      throw error;
+    }
+  }
 
   async createInvoiceIntent(tx: Tx, businessId: string, orderId: string) {
     const configuration = await this.electronicInvoicingConfiguration(tx, businessId);
@@ -60,6 +126,7 @@ export class FiscalDocumentService {
       },
     });
     if (!order) throw new NotFoundException('Order not found');
+    assertInvoiceHistory(order);
     const snapshots = this.buildSnapshots(order, configuration);
     const id = randomUUID();
     return tx.fiscalDocument.create({
@@ -79,6 +146,47 @@ export class FiscalDocumentService {
         total: snapshots.total,
       },
     });
+  }
+
+  async captureInvoiceCloseSnapshot(tx: Tx, businessId: string, orderId: string) {
+    const order = await tx.order.findFirst({
+      where: { id: orderId, businessId },
+      include: {
+        items: { include: { item: true } }, fiscalContext: true, taxLines: true, taxSnapshot: true,
+        business: { include: { taxProfile: { include: { responsibilities: { include: { responsibility: true } } } } } },
+      },
+    });
+    if (!order) throw new NotFoundException('Venta no encontrada');
+    const fiscalEnabled = order.business.taxProfile?.taxSettingsEnabled === true;
+    if (fiscalEnabled && (!order.taxSnapshot || !order.fiscalContext))
+      throw new BadRequestException('Falta el cálculo fiscal de cierre');
+    const configuration = fiscalEnabled
+      ? await tx.factusConfiguration.findUnique({ where: { businessId } }) : null;
+    const snapshots = fiscalEnabled
+      ? this.buildSnapshots(order, configuration ?? {}, { allowIncompleteBuyer: true }) : null;
+    const raw = order.taxSnapshot?.rawCalculation as Record<string, unknown> | undefined;
+    const close = {
+      version: INVOICE_CLOSE_SNAPSHOT_VERSION,
+      capturedAt: new Date().toISOString(),
+      fiscalState: fiscalEnabled ? TAX_CALCULATED : TAX_DISABLED_AT_CLOSE,
+      seller: snapshots?.seller ?? null,
+      buyer: snapshots?.buyer ?? null,
+      buyerState: fiscalEnabled ? buyerIdentityState(order.fiscalContext) : null,
+      items: snapshots?.items ?? null,
+      orderItemIds: order.items.map((line) => line.id),
+      payment: snapshots?.payment ?? null,
+      total: snapshots ? Number(snapshots.total) : null,
+      taxSettingsEnabled: fiscalEnabled,
+      taxDisabledReason: fiscalEnabled ? null : 'TAX_SETTINGS_DISABLED',
+    };
+    const rawCalculation = { ...(raw ?? {}), invoiceCloseSnapshot: close } as Prisma.InputJsonValue;
+    if (order.taxSnapshot) {
+      await tx.taxCalculationSnapshot.update({ where: { orderId }, data: { rawCalculation } });
+    } else {
+      // UVT is required by the existing model; zero is an unused sentinel, not a tax calculation.
+      await tx.taxCalculationSnapshot.create({ data: { orderId, uvtValue: 0,
+        sellerFiscal: {}, buyerFiscal: {}, rawCalculation } });
+    }
   }
 
   /**
@@ -110,6 +218,7 @@ export class FiscalDocumentService {
   }
 
   async list(businessId: string) {
+    this.assertBusinessContext(businessId);
     return this.prisma.fiscalDocument.findMany({
       where: { businessId },
       include: {
@@ -138,6 +247,7 @@ export class FiscalDocumentService {
   }
 
   async getConfiguration(businessId: string) {
+    this.assertBusinessContext(businessId);
     const configuration = await this.prisma.factusConfiguration.findUnique({
       where: { businessId },
       select: {
@@ -166,6 +276,7 @@ export class FiscalDocumentService {
     documentId: string,
     kind: string,
   ) {
+    this.assertBusinessContext(businessId);
     if (kind !== 'pdf' && kind !== 'xml') {
       throw new NotFoundException('Documento fiscal o archivo no encontrado');
     }
@@ -204,18 +315,21 @@ export class FiscalDocumentService {
 
   async recoverPendingDocuments(now = new Date()) {
     const candidates = await this.prisma.fiscalDocument.findMany({
-      where: { status: { in: ['PENDING', 'RETRYABLE_FAILURE'] } },
+      where: { status: { in: ['PENDING', 'RETRYABLE_FAILURE'] },
+        business: { status: 'ACTIVE', factusConfiguration: { is: { enabled: true } } } },
       include: {
         attempts: { orderBy: { startedAt: 'desc' }, take: 1 },
         _count: { select: { attempts: true } },
         order: { select: { taxLines: true } },
+        business: { select: { status: true, factusConfiguration: { select: { enabled: true } } } },
       },
       orderBy: { createdAt: 'asc' },
       take: RECOVERY_CANDIDATE_LIMIT,
     });
 
     const eligible = candidates
-      .filter((document) => this.isRecoveryEligible(document, now))
+      .filter((document) => document.business?.status === 'ACTIVE' &&
+        document.business?.factusConfiguration?.enabled === true && this.isRecoveryEligible(document, now))
       .slice(0, RECOVERY_DISPATCH_LIMIT);
     const outcomes = await this.runWithConcurrency(
       eligible,
@@ -244,6 +358,9 @@ export class FiscalDocumentService {
   }
 
   async configure(businessId: string, input: any) {
+    if (!businessId?.trim()) throw new ForbiddenException('Falta el contexto del negocio');
+    if (input?.environment !== undefined && !['sandbox', 'production'].includes(input.environment))
+      throw new BadRequestException('Ambiente Factus inválido');
     const credentials = input?.credentials;
     const encryptedCredentials = credentials
       ? this.provider.encryptCredentials({
@@ -257,9 +374,8 @@ export class FiscalDocumentService {
       where: { businessId },
       create: {
         businessId,
-        enabled: Boolean(input?.enabled),
-        environment:
-          input?.environment === 'production' ? 'production' : 'sandbox',
+        enabled: false,
+        environment: input?.environment ?? 'sandbox',
         encryptedCredentials,
         invoiceRangeId: input?.invoiceRangeId,
         creditNoteRangeId: input?.creditNoteRangeId,
@@ -267,9 +383,7 @@ export class FiscalDocumentService {
         defaultPaymentMethod: input?.defaultPaymentMethod,
       },
       update: {
-        enabled: input?.enabled,
-        environment:
-          input?.environment === 'production' ? 'production' : 'sandbox',
+        environment: input?.environment,
         encryptedCredentials,
         invoiceRangeId: input?.invoiceRangeId,
         creditNoteRangeId: input?.creditNoteRangeId,
@@ -322,25 +436,24 @@ export class FiscalDocumentService {
       },
     });
     if (existing) return existing;
-    const config = await this.prisma.factusConfiguration.findUnique({
-      where: { businessId },
-    });
-    if (!config?.enabled)
-      throw new BadRequestException(
-        'Factus no esta habilitado para este negocio',
-      );
     const id = randomUUID();
-    const payload = {
-      reference_code: `NC-${id}`,
-      correction_concept_code: correctionConceptCode,
-      customization_id: '20',
-      bill_number: invoice.factusNumber,
-      numbering_range_id: config.creditNoteRangeId ?? undefined,
-      payment_details: paymentDetails,
-      customer: invoice.buyerSnapshot,
-      items: invoice.itemsSnapshot,
-    };
     const credit = await this.prisma.$transaction(async (tx) => {
+      await lockOwnedOrder(tx, businessId, invoice.orderId);
+      await this.lockAdministrativeRows(tx, businessId);
+      const business = await tx.business.findUnique({ where: { id: businessId }, select: { status: true } });
+      if (business?.status !== 'ACTIVE') throw new ForbiddenException('El negocio no está activo');
+      const config = await tx.factusConfiguration.findUnique({ where: { businessId } });
+      if (!config?.enabled) throw new BadRequestException('Factus no está habilitado para este negocio');
+      const payload = {
+        reference_code: `NC-${id}`,
+        correction_concept_code: correctionConceptCode,
+        customization_id: '20',
+        bill_number: invoice.factusNumber,
+        numbering_range_id: config.creditNoteRangeId ?? undefined,
+        payment_details: paymentDetails,
+        customer: invoice.buyerSnapshot,
+        items: invoice.itemsSnapshot,
+      };
       const parentUpdated = await tx.fiscalDocument.updateMany({
         where: { id: invoice.id, businessId },
         data: { reversalRequestedAt: new Date() },
@@ -385,38 +498,42 @@ export class FiscalDocumentService {
   }
 
   async dispatch(businessId: string, id: string) {
-    await this.requireOwnedDocument(businessId, id);
+    if (!businessId?.trim()) throw new ForbiddenException('Falta el contexto del negocio');
+    const owned = await this.requireOwnedDocument(businessId, id);
     await this.assertInvoiceTaxTraceabilityBeforeDispatch(businessId, id);
-    const claimed = await this.prisma.fiscalDocument.updateMany({
-      where: {
-        id,
-        businessId,
-        status: {
-          in: ['PENDING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN'],
-        },
-      },
-      data: { status: 'PROCESSING' },
-    });
-    if (!claimed.count) {
-      const current = await this.prisma.fiscalDocument.findFirst({
+    const claim = await this.prisma.$transaction(async (tx) => {
+      await lockOwnedOrder(tx, businessId, owned.orderId);
+      await this.lockAdministrativeRows(tx, businessId);
+      const current = await tx.fiscalDocument.findFirst({
         where: { id, businessId },
+        include: { order: { include: { taxLines: true } }, business: { include: { factusConfiguration: true } } },
       });
-      if (!current)
-        throw new NotFoundException('Documento fiscal no encontrado');
-      return current;
-    }
-    const document = await this.prisma.fiscalDocument.findFirst({
-      where: { id, businessId },
-      include: { business: { include: { factusConfiguration: true } } },
+      if (!current) throw new NotFoundException('Documento fiscal no encontrado');
+      if (current.type === 'INVOICE') this.assertChargeTaxLinesHaveOrderItem(current.order.taxLines);
+      if (!['PENDING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN'].includes(current.status))
+        return { current, attempt: null };
+      if (current.business.status !== 'ACTIVE') throw new ForbiddenException('El negocio no está activo');
+      if (current.order.status !== 'COMPLETED' || !current.order.accountingPostedAt || !current.order.inventoryPostedAt)
+        throw new ConflictException('La venta ya no permite enviar la factura electrónica');
+      const config = current.business.factusConfiguration;
+      if (!config?.enabled) throw new BadRequestException('Factus está deshabilitado para este negocio');
+      if (!config.encryptedCredentials) throw new BadRequestException('Faltan las credenciales de Factus');
+      const credentials = this.provider.decryptCredentials(config.encryptedCredentials);
+      if (['clientId', 'clientSecret', 'username', 'password'].some((key) => typeof (credentials as any)?.[key] !== 'string' || !(credentials as any)[key].trim()))
+        throw new BadRequestException('Las credenciales de Factus están incompletas');
+      const changed = await tx.fiscalDocument.updateMany({
+        where: { id, businessId, status: { in: ['PENDING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN'] } },
+        data: { status: 'PROCESSING' },
+      });
+      if (!changed.count) return { current, attempt: null };
+      const attempt = await tx.fiscalDocumentAttempt.create({
+        data: { fiscalDocumentId: id, requestPayload: current.payloadSnapshot as Prisma.InputJsonValue },
+      });
+      return { current, attempt };
     });
-    if (!document)
-      throw new NotFoundException('Documento fiscal no encontrado');
-    const attempt = await this.prisma.fiscalDocumentAttempt.create({
-      data: {
-        fiscalDocumentId: id,
-        requestPayload: document.payloadSnapshot as Prisma.InputJsonValue,
-      },
-    });
+    if (!claim.attempt) return claim.current;
+    const document = claim.current;
+    const attempt = claim.attempt;
     let updated: any;
     let configuration: any;
     let credentials: any;
@@ -695,14 +812,33 @@ export class FiscalDocumentService {
     }
   }
 
-  private buildSnapshots(order: any, configuration: any) {
+  private buildSnapshots(order: any, configuration: any, options?: { allowIncompleteBuyer?: boolean }) {
+    const closed = invoiceCloseSnapshot(order.taxSnapshot?.rawCalculation);
+    if (closed) {
+      if (!closed.seller || !closed.buyer || !Array.isArray(closed.items) || !closed.payment || !Number.isFinite(Number(closed.total)))
+        throw new BadRequestException('El snapshot fiscal de cierre está incompleto.');
+      const payload = {
+        document: '01', numbering_range_id: configuration.invoiceRangeId ?? undefined,
+        operation_type: '10', payment_details: [closed.payment], customer: closed.buyer, items: closed.items,
+      };
+      return {
+        seller: closed.seller, buyer: closed.buyer, items: closed.items,
+        payment: closed.payment, payload,
+        tax: { internalLines: order.taxLines, internalSnapshot: order.taxSnapshot.rawCalculation,
+          subtotal: Number(order.fiscalContext.subtotal), chargedTaxTotal: Number(order.fiscalContext.chargedTaxTotal),
+          withheldTaxTotal: Number(order.fiscalContext.withheldTaxTotal), netReceived: Number(order.fiscalContext.netReceived) },
+        total: new Prisma.Decimal(closed.total),
+      };
+    }
     const profile = order.business.taxProfile;
     if (!profile)
       throw new BadRequestException('El negocio no tiene perfil tributario');
     const fiscal = order.fiscalContext ?? order.taxSnapshot?.buyerFiscal ?? {};
     this.assertChargeTaxLinesHaveOrderItem(order.taxLines);
-    const consumerFinal = !fiscal.buyerDocumentNumber;
-    const buyer = consumerFinal
+    const buyerState = buyerIdentityState(fiscal);
+    if (buyerState === 'EXPLICIT_INCOMPLETE' && !options?.allowIncompleteBuyer)
+      throw new BadRequestException('El comprador informado requiere nombre y documento fiscal para emitir la factura electrónica.');
+    const buyer = buyerState === 'EXPLICIT_INCOMPLETE' ? null : buyerState === 'CONSUMER_FINAL'
       ? {
           identification_document_code: '13',
           identification: '22222222222',
@@ -892,6 +1028,7 @@ export class FiscalDocumentService {
   }
 
   private async requireOwnedDocument(businessId: string, id: string) {
+    this.assertBusinessContext(businessId);
     const document = await this.prisma.fiscalDocument.findFirst({
       where: { id, businessId },
     });

@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "@/src/lib/api";
 import AppHeader from "@/src/components/layout/AppHeader";
 import toast from "react-hot-toast";
 import { cn } from "@/src/lib/utils";
+import { saveFactusEntitlement, type AdminFactus } from "@/src/lib/admin/factusEntitlement";
+import { FactusEntitlementCard } from "./FactusEntitlementCard";
 
 type BusinessDetail = {
+  factus: AdminFactus
   id: string
   name: string
   slug: string
@@ -28,8 +31,27 @@ export function BusinessDetailPage({ businessId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [savingFactus, setSavingFactus] = useState(false);
+  const factusSaveLock = useRef(false);
 
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleToggleFactus = () => {
+    if (!business) return;
+    const targetId = business.id;
+    void saveFactusEntitlement({
+      lock: factusSaveLock,
+      businessId: targetId,
+      enabled: !business.factus.enabled,
+      request: (path, options) => api<{ factus: AdminFactus }>(path, options),
+      onSaving: setSavingFactus,
+      onSuccess: (factus) => {
+        setBusiness((current) => current?.id === targetId ? { ...current, factus } : current);
+        toast.success(factus.enabled ? "Facturación electrónica activada" : "Facturación electrónica desactivada");
+      },
+      onError: () => toast.error("No se pudo actualizar la facturación electrónica"),
+    });
+  };
 
   const fetchBusiness = async () => {
     setLoading(true);
@@ -149,6 +171,8 @@ export function BusinessDetailPage({ businessId }: Props) {
               value={(business._count?.items ?? 0).toString()}
             />
           </div>
+
+          <FactusEntitlementCard factus={business.factus} saving={savingFactus} onToggle={handleToggleFactus} />
 
           <button
             onClick={() =>

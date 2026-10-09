@@ -21,6 +21,8 @@ import { TaxService } from '../tax/tax.service';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-regime-not-available.exception';
 import { FiscalDocumentService } from '../fiscal-documents/fiscal-document.service';
+import { requiresLegacyInvoiceWarning } from '../fiscal-documents/invoice-close-snapshot';
+import { lockOwnedOrder } from './order-lock';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
@@ -35,6 +37,7 @@ export interface UnifiedSaleDto {
   status: UnifiedStatus;
   inventoryPostedAt?: Date | null;
   accountingPostedAt?: Date | null;
+  requiresLegacyInvoiceWarning?: boolean;
   createdAt: Date;
   scheduledAt?: string;
   origin: 'MANUAL' | 'PUBLIC_STORE';
@@ -105,6 +108,11 @@ export class SalesService {
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
   ) {}
+
+  async generateElectronicInvoice(businessId: string, orderId: string) {
+    if (!this.fiscalDocuments) throw new BadRequestException('Servicio fiscal no disponible');
+    return this.fiscalDocuments.generateInvoiceForSale(businessId, orderId);
+  }
 
   private async runSerializableTransaction<T>(
     operation: (tx: Prisma.TransactionClient) => Promise<T>,
@@ -443,6 +451,14 @@ export class SalesService {
     if (!editableStatuses.includes(order.status)) {
       throw new BadRequestException('Order not editable');
     }
+  }
+
+  private async assertEditableInTransaction(tx: Prisma.TransactionClient, businessId: string, orderId: string) {
+    await lockOwnedOrder(tx, businessId, orderId);
+    const current = await tx.order.findFirst({ where: { id: orderId, businessId },
+      select: { status: true, accountingPostedAt: true, inventoryPostedAt: true } });
+    if (!current) throw new NotFoundException('Order not found');
+    this.assertOrderEditable(current);
   }
 
   private async resolveOrderLines(
@@ -1108,6 +1124,7 @@ export class SalesService {
         status: this.mapOrderStatus(o.status),
         inventoryPostedAt: o.inventoryPostedAt,
         accountingPostedAt: o.accountingPostedAt,
+        requiresLegacyInvoiceWarning: requiresLegacyInvoiceWarning(o.taxSnapshot?.rawCalculation),
         createdAt: o.createdAt,
         origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
         scheduledAt: mirrorReservation
@@ -1356,6 +1373,7 @@ export class SalesService {
     }
 
     const confirmation = await this.runSerializableTransaction(async (tx) => {
+      await lockOwnedOrder(tx, businessId, id);
       // ... (KEEP EXISTING Order logic but use id instead of orderId)
       const order = await tx.order.findFirst({
         where: { id, businessId },
@@ -1425,7 +1443,13 @@ export class SalesService {
         !Array.isArray(order.taxSnapshot.buyerFiscal)
           ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
           : null;
-      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal;
+      const taxProfile = !buyerFiscalContext && !persistedBuyerFiscal && tx.businessTaxProfile?.findUnique
+        ? await tx.businessTaxProfile.findUnique({ where: { businessId }, select: { taxSettingsEnabled: true } })
+        : null;
+      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal ??
+        (taxProfile?.taxSettingsEnabled ? { buyerType: 'NATURAL', buyerName: null,
+          buyerDocumentType: 'CC', buyerDocumentNumber: null, buyerEmail: null,
+          fiscalMunicipalityCode: null, saleConcept: 'GOODS' } : null);
 
       if (fiscalContextToUse) {
         const cartItems = order.items.map((it: any) => ({
@@ -1494,10 +1518,10 @@ export class SalesService {
         where: { id },
         include: { items: { include: { item: true, options: true } } },
       });
-
-      // The intent is persisted in the same short local transaction as the sale.
-      // Dispatch happens outside this transaction through FiscalDocumentService.
-      await this.fiscalDocuments?.createInvoiceIntent(tx, businessId, id);
+      // Persist a closure version even for ordinary sales. It does not issue a document.
+      if (this.fiscalDocuments?.captureInvoiceCloseSnapshot) {
+        await this.fiscalDocuments.captureInvoiceCloseSnapshot(tx, businessId, id);
+      }
 
       return {
         order: updatedOrder,
@@ -1509,19 +1533,6 @@ export class SalesService {
       };
     });
 
-    // Best-effort asynchronous dispatch. The durable PENDING record is the
-    // source of truth; a later retry/worker can resume if this process stops.
-    if (this.fiscalDocuments) {
-      const fiscalDocument = await this.prisma.fiscalDocument.findFirst({
-        where: { businessId, orderId: id, type: 'INVOICE', status: 'PENDING' },
-        select: { id: true },
-      });
-      if (fiscalDocument) {
-        void this.fiscalDocuments
-          .dispatch(businessId, fiscalDocument.id)
-          .catch(() => undefined);
-      }
-    }
     return confirmation;
   }
 
@@ -1851,13 +1862,16 @@ export class SalesService {
       }
     }
 
-    const updated = await this.prisma.orderItem.update({
-      where: { id: orderItem.id },
-      data: {
-        excludedOptionalIngredientIds:
-          excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
-      },
-      include: this.orderItemRecipeInclude,
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.assertEditableInTransaction(tx, businessId, orderId);
+      return tx.orderItem.update({
+        where: { id: orderItem.id },
+        data: {
+          excludedOptionalIngredientIds:
+            excludedIds.length > 0 ? excludedIds : Prisma.JsonNull,
+        },
+        include: this.orderItemRecipeInclude,
+      });
     });
 
     return {
@@ -1892,6 +1906,7 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertEditableInTransaction(tx, businessId, order.id);
       const created = await tx.orderItem.create({
         data: {
           ...resolved.lines[0],
@@ -1944,6 +1959,7 @@ export class SalesService {
     );
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertEditableInTransaction(tx, businessId, orderId);
       await tx.orderItem.delete({ where: { id: oi.id } });
       const updated = await tx.orderItem.create({
         data: {
@@ -1980,6 +1996,7 @@ export class SalesService {
     if (!oi) throw new NotFoundException('OrderItem not found');
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertEditableInTransaction(tx, businessId, orderId);
       await tx.orderItem.delete({ where: { id: oi.id } });
 
       const totals = await tx.orderItem.aggregate({
@@ -2107,6 +2124,9 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await lockOwnedOrder(tx, businessId, id);
+      const current = await tx.order.findFirst({ where: { id, businessId }, select: { status: true } });
+      if (!current || current.status === 'COMPLETED') throw new BadRequestException('Completed orders cannot be cancelled');
       const cancelledOrder = await tx.order.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2139,6 +2159,7 @@ export class SalesService {
     const reversedAt = new Date();
     return this.prisma.$transaction(
       async (tx) => {
+        await lockOwnedOrder(tx, businessId, id);
         const order = await tx.order.findFirst({
           where: { id, businessId },
           include: {
@@ -2155,7 +2176,7 @@ export class SalesService {
                   businessId,
                   orderId: id,
                   type: 'INVOICE',
-                  status: { in: ['PROCESSING', 'LOCAL_PERSISTENCE_FAILURE'] },
+                  status: { in: ['PENDING', 'PROCESSING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN', 'LOCAL_PERSISTENCE_FAILURE'] },
                 },
                 select: { id: true, status: true },
               })
@@ -2298,6 +2319,13 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await lockOwnedOrder(tx, businessId, id);
+      const current = await tx.order.findFirst({ where: { id, businessId },
+        select: { status: true, inventoryPostedAt: true } });
+      if (!current) throw new NotFoundException('Order not found');
+      if (current.status === 'COMPLETED' && current.inventoryPostedAt) {
+        throw new BadRequestException('No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.');
+      }
       const archivedOrder = await tx.order.update({
         where: { id },
         data: { archived: true },
@@ -2368,6 +2396,7 @@ export class SalesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.assertEditableInTransaction(tx, businessId, orderId);
       await tx.order.update({
         where: { id: orderId },
         data: {

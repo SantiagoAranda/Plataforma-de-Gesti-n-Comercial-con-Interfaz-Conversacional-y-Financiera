@@ -101,6 +101,17 @@ describe('PublicService', () => {
     };
   }
 
+  it('does not turn a commercial contact name into a declared fiscal buyer', () => {
+    const { service } = createService();
+    const absent = (service as any).normalizeBuyerFiscalContext(undefined);
+    expect(absent.buyerName).toBeNull();
+    expect(absent.buyerDocumentNumber).toBeNull();
+    const company = (service as any).normalizeBuyerFiscalContext({
+      buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentType: 'NIT', buyerDocumentNumber: null,
+    });
+    expect(company).toMatchObject({ buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentNumber: null });
+  });
+
   it('persists excluded optional ingredient ids on public order items', async () => {
     const { service, prisma } = createService();
 
