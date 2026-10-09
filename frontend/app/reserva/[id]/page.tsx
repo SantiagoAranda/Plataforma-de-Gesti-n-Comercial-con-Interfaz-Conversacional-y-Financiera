@@ -9,6 +9,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import CancelReservationButton from "./CancelReservationButton";
+import ReservationBackButton from "./ReservationBackButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ interface ReservationDetail {
   business: {
     id: string;
     name: string;
+    slug?: string;
     phoneWhatsapp: string;
   };
   // Optional: specialist/employee assigned. Extend when backend supports it.
@@ -199,6 +201,9 @@ function ReservationNotFound() {
         No pudimos encontrar ninguna reserva con este enlace. Puede que haya
         expirado o el enlace no sea válido.
       </p>
+      <div className="mt-5">
+        <ReservationBackButton />
+      </div>
     </div>
   );
 }
@@ -227,8 +232,12 @@ export default async function ReservationDetailPage({
   return (
     <div className="min-h-screen bg-slate-50 font-[Poppins,sans-serif]">
       {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-slate-100 px-5 pt-10 pb-5">
+      <header className="bg-white border-b border-slate-100 px-5 pt-8 pb-5">
         <div className="mx-auto w-full max-w-md">
+          <div className="mb-4 flex items-center justify-between">
+            <ReservationBackButton fallbackSlug={reservation.business.slug} />
+            <StatusBadge status={reservation.status} />
+          </div>
           <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
             {reservation.business.name}
           </p>
