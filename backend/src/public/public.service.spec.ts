@@ -101,6 +101,17 @@ describe('PublicService', () => {
     };
   }
 
+  it('does not turn a commercial contact name into a declared fiscal buyer', () => {
+    const { service } = createService();
+    const absent = (service as any).normalizeBuyerFiscalContext(undefined);
+    expect(absent.buyerName).toBeNull();
+    expect(absent.buyerDocumentNumber).toBeNull();
+    const company = (service as any).normalizeBuyerFiscalContext({
+      buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentType: 'NIT', buyerDocumentNumber: null,
+    });
+    expect(company).toMatchObject({ buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentNumber: null });
+  });
+
   it('persists excluded optional ingredient ids on public order items', async () => {
     const { service, prisma } = createService();
 
@@ -996,5 +1007,43 @@ describe('PublicService', () => {
     expect(taxService.calculateTaxPreview).not.toHaveBeenCalled();
     expect(taxService.freezeTaxCalculation).not.toHaveBeenCalled();
     expect(prisma.order.create).toHaveBeenCalled();
+  });
+
+  it('finds reservations by phone number with formatting normalization', async () => {
+    const { service, prisma } = createService();
+
+    prisma.reservation = {
+      findMany: mockFn().mockResolvedValue([
+        {
+          id: 'res-1',
+          publicToken: 'token-1',
+          status: 'PENDING',
+          customerName: 'Juan Perez',
+          customerWhatsapp: '573001234567',
+          date: new Date('2026-10-15T00:00:00.000Z'),
+          startMinute: 600,
+          endMinute: 660,
+          note: 'Corte de cabello',
+          createdAt: new Date(),
+          item: {
+            id: 'item-1',
+            name: 'Corte Clásico',
+            price: new Prisma.Decimal(35000),
+            durationMinutes: 60,
+          },
+          business: {
+            id: 'b-1',
+            name: 'Barbería Demo',
+            phoneWhatsapp: '573009998877',
+          },
+        },
+      ]),
+    };
+
+    const result = await service.findReservationsByPhone('demo', '+57 (300) 123-4567');
+    expect(prisma.reservation.findMany).toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0].customerName).toBe('Juan Perez');
+    expect(result[0].item.price).toBe(35000);
   });
 });

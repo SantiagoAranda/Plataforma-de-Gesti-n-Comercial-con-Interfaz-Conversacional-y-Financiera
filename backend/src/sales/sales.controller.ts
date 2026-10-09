@@ -59,6 +59,11 @@ export class SalesController {
     );
   }
 
+  @Post(':saleId/electronic-invoice')
+  generateElectronicInvoice(@Req() req: any, @Param('saleId') saleId: string) {
+    return this.salesService.generateElectronicInvoice(req.user.businessId, saleId);
+  }
+
   @Get(':id/reservation-availability')
   getReservationAvailability(
     @Req() req: any,

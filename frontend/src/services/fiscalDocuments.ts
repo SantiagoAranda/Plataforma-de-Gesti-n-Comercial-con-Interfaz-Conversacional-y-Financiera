@@ -11,6 +11,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 export const listFiscalDocuments = () =>
   api<FiscalDocument[]>("/fiscal-documents");
 
+export const generateElectronicInvoice = (saleId: string) =>
+  api<FiscalDocument>(`/sales/${encodeURIComponent(saleId)}/electronic-invoice`, { method: "POST" });
+
 export const getFactusConfiguration = () =>
   api<FactusConfigurationView>("/fiscal-documents/configuration");
 

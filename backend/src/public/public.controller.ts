@@ -32,6 +32,14 @@ export class PublicController {
     return reservation;
   }
 
+  @Get(':slug/reservations')
+  findReservationsByPhone(
+    @Param('slug') slug: string,
+    @Query('phone') phone: string,
+  ) {
+    return this.publicService.findReservationsByPhone(slug, phone);
+  }
+
   @Get(':slug/items')
   listPublicItems(@Param('slug') slug: string, @Query('type') type?: string) {
     return this.publicService.listPublicItems(slug, type);

@@ -39,6 +39,23 @@ type StoreFooterSettingsPayload = {
 };
 
 const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
+const ADMIN_FACTUS_SELECT = {
+  enabled: true,
+  environment: true,
+  encryptedCredentials: true,
+} as const;
+
+function adminFactusView(configuration: {
+  enabled: boolean;
+  environment: string;
+  encryptedCredentials: string | null;
+} | null) {
+  return {
+    enabled: configuration?.enabled ?? false,
+    configured: Boolean(configuration?.encryptedCredentials),
+    environment: configuration?.environment === 'production' ? 'production' : 'sandbox',
+  };
+}
 const ALLOWED_LOGO_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -542,6 +559,7 @@ export class BusinessesService {
     const business = await this.prisma.business.findUnique({
       where: { id },
       include: {
+        factusConfiguration: { select: ADMIN_FACTUS_SELECT },
         _count: {
           select: {
             items: true,
@@ -550,7 +568,36 @@ export class BusinessesService {
       },
     });
 
-    return business ? this.withPublicLogoUrl(business) : null;
+    if (!business) return null;
+    const { factusConfiguration, ...detail } = business;
+    return {
+      ...this.withPublicLogoUrl(detail),
+      factus: adminFactusView(factusConfiguration),
+    };
+  }
+
+  async updateFactusEntitlement(businessId: string, body: unknown) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new BadRequestException('Se requiere únicamente enabled de tipo boolean');
+    }
+    const input = body as Record<string, unknown>;
+    if (typeof input.enabled !== 'boolean' || Object.keys(input).some((key) => key !== 'enabled')) {
+      throw new BadRequestException('Se requiere únicamente enabled de tipo boolean');
+    }
+
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true },
+    });
+    if (!business) throw new NotFoundException('Negocio no encontrado');
+
+    const configuration = await this.prisma.factusConfiguration.upsert({
+      where: { businessId },
+      create: { businessId, enabled: input.enabled },
+      update: { enabled: input.enabled },
+      select: ADMIN_FACTUS_SELECT,
+    });
+    return { factus: adminFactusView(configuration) };
   }
 
   async getProfile(businessId: string) {

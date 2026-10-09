@@ -128,4 +128,14 @@ export class BusinessesController {
   getBusinessById(@Param('id') id: string) {
     return this.businessesService.getBusinessById(id);
   }
+
+  @Patch('admin/:businessId/factus')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  updateFactusEntitlement(
+    @Param('businessId') businessId: string,
+    @Body() body: unknown,
+  ) {
+    return this.businessesService.updateFactusEntitlement(businessId, body);
+  }
 }

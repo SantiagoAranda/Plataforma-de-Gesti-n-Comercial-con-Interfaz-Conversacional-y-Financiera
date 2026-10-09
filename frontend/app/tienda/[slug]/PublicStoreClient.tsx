@@ -18,9 +18,11 @@ import {
   X,
   MapPin,
   Share2,
+  CalendarDays,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
+import AppointmentLookupModal from "@/src/components/reservations/AppointmentLookupModal";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 import { formatPriceInput, generateCreationId } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
@@ -335,6 +337,7 @@ export default function PublicStoreClient() {
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [showCartModal, setShowCartModal] = useState(false);
+  const [showAppointmentLookup, setShowAppointmentLookup] = useState(false);
 
   const [selectedService, setSelectedService] = useState<Item | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
@@ -358,7 +361,6 @@ export default function PublicStoreClient() {
   const [fiscalMunicipalityCode, setFiscalMunicipalityCode] = useState("");
   const [reteIcaRateOverride, setReteIcaRateOverride] = useState<number | undefined>(undefined);
   const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
-  const [electronicInvoicingEnabled, setElectronicInvoicingEnabled] = useState(false);
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
   const [publicTaxPreviewStatus, setPublicTaxPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -381,7 +383,11 @@ export default function PublicStoreClient() {
   const [isNavigationSettling, setIsNavigationSettling] = useState(false);
   const [navigationSettleDuration, setNavigationSettleDuration] = useState(320);
   const hasOpenOverlay = Boolean(
-    showCartModal || customizingProduct || selectedProduct || selectedService,
+    showCartModal ||
+      customizingProduct ||
+      selectedProduct ||
+      selectedService ||
+      showAppointmentLookup,
   );
 
   const handleShareItem = useCallback(
@@ -918,7 +924,7 @@ export default function PublicStoreClient() {
     const isCompany = buyerUiType === "COMPANY";
     return {
       buyerType: isCompany && buyerIsLegalEntity ? "JURIDICA" : "NATURAL",
-      buyerName: customerName.trim() || null,
+        buyerName: isCompany || buyerNit.trim() ? customerName.trim() || null : null,
       buyerDocumentType: isCompany ? "NIT" : "CC",
       buyerDocumentNumber: buyerNit.trim() || null,
       buyerEmail: buyerEmail.trim() || null,
@@ -928,7 +934,7 @@ export default function PublicStoreClient() {
       buyerIsAutorretenedor: isCompany && buyerIsSelfWithholder,
       buyerIsRegimenSimple:
         isCompany && simpleRegimeSalesEnabled && buyerIsRegimenSimple,
-      buyerRequiresElectronicInvoice: electronicInvoicingEnabled,
+      buyerRequiresElectronicInvoice: false,
       fiscalMunicipalityCode: fiscalMunicipalityCode || null,
       reteIcaRateOverride,
       saleConcept: "GOODS",
@@ -942,7 +948,6 @@ export default function PublicStoreClient() {
     buyerNit,
     buyerUiType,
     customerName,
-    electronicInvoicingEnabled,
     fiscalMunicipalityCode,
     reteIcaRateOverride,
     simpleRegimeSalesEnabled,
@@ -955,7 +960,6 @@ export default function PublicStoreClient() {
       .then((settings) => {
         if (!cancelled) {
           setHasFiscalConfiguration(settings?.fiscalContextEnabled === true);
-          setElectronicInvoicingEnabled(settings?.electronicInvoicingEnabled === true);
           const regimenSimpleEnabled = settings?.simpleRegimeSalesEnabled === true;
           setSimpleRegimeSalesEnabled(regimenSimpleEnabled);
           if (!regimenSimpleEnabled) setBuyerIsRegimenSimple(false);
@@ -964,7 +968,6 @@ export default function PublicStoreClient() {
       .catch(() => {
         if (!cancelled) {
           setHasFiscalConfiguration(false);
-          setElectronicInvoicingEnabled(false);
           setSimpleRegimeSalesEnabled(false);
           setBuyerIsRegimenSimple(false);
         }
@@ -1192,6 +1195,17 @@ export default function PublicStoreClient() {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAppointmentLookup(true)}
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 text-[#0B3F64] px-3 shadow-sm transition hover:bg-slate-100 active:scale-95 text-xs font-semibold"
+                aria-label="Mis turnos"
+                title="Consultar mis turnos"
+              >
+                <CalendarDays className="h-4 w-4 text-[#0B3F64]" />
+                <span className="hidden sm:inline">Mis Turnos</span>
+              </button>
+
               {headerLocationUrl && (
                 <a
                   href={headerLocationUrl}
@@ -1661,6 +1675,13 @@ export default function PublicStoreClient() {
           title={selectedService?.name}
           selectedDateValue={selectedDateKey}
           serviceDurationMinutes={selectedService?.durationMinutes}
+        />
+
+        <AppointmentLookupModal
+          open={showAppointmentLookup}
+          onClose={() => setShowAppointmentLookup(false)}
+          slug={slug}
+          businessName={businessName}
         />
 
         <ProductDetailOverlay

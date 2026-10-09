@@ -183,11 +183,11 @@ export class PublicService {
 
   private normalizeBuyerFiscalContext(
     value: CreatePublicOrderDto['buyerFiscalContext'] | undefined,
-    customerName: string,
   ) {
     return {
       buyerType: value?.buyerType ?? 'NATURAL',
-      buyerName: value?.buyerName?.trim() || customerName.trim() || null,
+      // The commercial contact name alone does not declare a fiscal buyer.
+      buyerName: value?.buyerName?.trim() || null,
       buyerDocumentType: value?.buyerDocumentType,
       buyerDocumentNumber: value?.buyerDocumentNumber?.trim() || null,
       buyerEmail: value?.buyerEmail?.trim() || null,
@@ -1292,7 +1292,6 @@ export class PublicService {
     const buyerFiscalContext = fiscalSettings.fiscalContextEnabled
       ? this.normalizeBuyerFiscalContext(
           dto.buyerFiscalContext,
-          dto.customerName,
         )
       : undefined;
     let order: {
@@ -1443,6 +1442,7 @@ export class PublicService {
           select: {
             id: true,
             name: true,
+            slug: true,
             phoneWhatsapp: true,
           },
         },
@@ -1472,5 +1472,94 @@ export class PublicService {
       where: { id },
       data: { status: 'CANCELLED' },
     });
+  }
+
+  /* =====================================================
+     FIND RESERVATIONS BY PHONE (búsqueda pública de turnos)
+  ===================================================== */
+
+  async findReservationsByPhone(slug: string, rawPhone: string) {
+    let business = await this.prisma.business.findFirst({
+      where: { slug, status: 'ACTIVE' },
+    });
+
+    if (!business) {
+      const normalized = await generateSlug(slug);
+      business = await this.prisma.business.findFirst({
+        where: { slug: normalized, status: 'ACTIVE' },
+      });
+    }
+
+    if (!business) throw new BadRequestException('Business not found');
+
+    const cleanPhone = (rawPhone || '').replace(/\D/g, '').trim();
+    if (!cleanPhone || cleanPhone.length < 4) {
+      return [];
+    }
+
+    const trimmedRaw = (rawPhone || '').trim();
+
+    // Suffix / variation matching
+    const phoneConditions: Prisma.ReservationWhereInput[] = [
+      { customerWhatsapp: { contains: cleanPhone } },
+    ];
+    if (trimmedRaw && trimmedRaw !== cleanPhone) {
+      phoneConditions.push({ customerWhatsapp: { contains: trimmedRaw } });
+    }
+
+    for (const prefix of ['57', '54', '52', '34', '56', '51', '1']) {
+      if (cleanPhone.startsWith(prefix) && cleanPhone.length >= prefix.length + 6) {
+        const localPart = cleanPhone.slice(prefix.length);
+        phoneConditions.push({ customerWhatsapp: { contains: localPart } });
+      }
+    }
+
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        businessId: business.id,
+        archived: false,
+        OR: phoneConditions,
+      },
+      select: {
+        id: true,
+        publicToken: true,
+        status: true,
+        customerName: true,
+        customerWhatsapp: true,
+        date: true,
+        startMinute: true,
+        endMinute: true,
+        note: true,
+        createdAt: true,
+        item: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            durationMinutes: true,
+          },
+        },
+        business: {
+          select: {
+            id: true,
+            name: true,
+            phoneWhatsapp: true,
+          },
+        },
+      },
+      orderBy: [
+        { date: 'desc' },
+        { startMinute: 'desc' },
+      ],
+    });
+
+    return reservations.map((reservation) => ({
+      ...reservation,
+      date: reservation.date.toISOString(),
+      item: {
+        ...reservation.item,
+        price: Number(reservation.item.price),
+      },
+    }));
   }
 }
