@@ -8,6 +8,10 @@ interface Props {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+// Misma URL en metadata y página: Next deduplica y cachea el fetch.
+const getStoreItems = async (slug: string) =>
+  fetch(`${API_URL}/public/${slug}/items?type=`, { next: { revalidate: 60 } });
+
 export async function generateMetadata({ params }: Props) {
   try {
     // Handle both Promise and synchronous params representation safely
@@ -25,9 +29,7 @@ export async function generateMetadata({ params }: Props) {
       };
     }
 
-    const res = await fetch(`${API_URL}/public/${slug}/items`, {
-      next: { revalidate: 60 }, // Cache metadata for 60 seconds
-    });
+    const res = await getStoreItems(slug);
 
     if (!res.ok) {
       return {
@@ -65,6 +67,14 @@ export async function generateMetadata({ params }: Props) {
   }
 }
 
-export default function Page() {
-  return <PublicStoreClient />;
+export default async function Page({ params }: Props) {
+  let initialData = null;
+  try {
+    const { slug } = await params;
+    const res = await getStoreItems(slug);
+    if (res.ok) initialData = await res.json();
+  } catch {
+    // el cliente reintenta el fetch si no hay datos iniciales
+  }
+  return <PublicStoreClient initialData={initialData} />;
 }

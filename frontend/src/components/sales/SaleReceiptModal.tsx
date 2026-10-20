@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { AlertTriangle, Download, Loader2, Printer, ReceiptText, Share2, X } from "lucide-react";
 import toast from "react-hot-toast";
-import html2canvas from "html2canvas-pro";
 
 import type { Sale, SaleTaxLine } from "@/src/types/sales";
 import type { BusinessLogoProfile } from "@/src/lib/businessLogo";
@@ -463,6 +462,7 @@ export default function SaleReceiptModal({
 
       const width = Math.ceil(clone.scrollWidth);
       const height = Math.ceil(clone.scrollHeight);
+      const { default: html2canvas } = await import("html2canvas-pro");
       const canvas = await html2canvas(clone, {
         useCORS: true,
         allowTaint: false,
