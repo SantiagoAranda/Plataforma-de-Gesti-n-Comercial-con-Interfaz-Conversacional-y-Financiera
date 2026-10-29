@@ -21,6 +21,7 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
+    maxAge: 7200, // cachea el preflight OPTIONS: evita un viaje extra por cada llamada
   });
 
   app.useGlobalPipes(
