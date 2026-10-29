@@ -234,6 +234,7 @@ export default function LoginForm() {
       );
 
       localStorage.setItem("accessToken", data.accessToken);
+      window.dispatchEvent(new Event("auth-session-changed"));
 
       if (data.businessName?.trim()) {
         localStorage.setItem("businessName", data.businessName.trim());

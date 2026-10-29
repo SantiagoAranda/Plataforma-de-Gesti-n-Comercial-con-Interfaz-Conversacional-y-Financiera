@@ -7,10 +7,12 @@ import {
   type BuyerFiscalContext,
   type TaxPreviewLine,
   type TaxPreviewResponse,
+  type TaxPreviewRequest,
 } from "@/src/lib/tax/api";
 import type { Sale, SaleFiscalSummary } from "@/src/types/sales";
 import { useFiscalMunicipalities } from "@/src/hooks/useFiscalMunicipalities";
 import { isValidEmail } from "@/src/lib/email";
+import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 
 export type SaleFiscalFormState = {
@@ -290,7 +292,28 @@ export default function SaleTaxPanel({
   const municipalities = useFiscalMunicipalities(true);
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const readonly = mode === "readonly";
-  const [livePreview, setLivePreview] = useState<TaxPreviewResponse | null>(null);
+  const { fiscalRevision, taxSettingsReady } = useTaxSettings();
+  const [livePreview, setLivePreview] = useState<{ key: string; data: TaxPreviewResponse } | null>(null);
+  const [retry, setRetry] = useState(0);
+  const context = useMemo(() => buildBuyerFiscalContext(value), [value]);
+  const requestJson = JSON.stringify({
+    buyerType: context.buyerType,
+    buyerName: context.buyerName || undefined,
+    buyerDocumentType: context.buyerDocumentType,
+    buyerDocumentNumber: context.buyerDocumentNumber || undefined,
+    buyerEmail: context.buyerEmail || undefined,
+    buyerIsIvaResponsable: context.buyerIsIvaResponsable,
+    buyerIsRetenedor: context.buyerIsRetenedor,
+    buyerIsGranContribuyente: context.buyerIsGranContribuyente,
+    buyerIsAutorretenedor: context.buyerIsAutorretenedor,
+    buyerIsRegimenSimple: context.buyerIsRegimenSimple,
+    buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
+    fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
+    reteIcaRateOverride: context.reteIcaRateOverride,
+    saleConcept: context.saleConcept,
+    cartItems: items.filter((item): item is { itemId: string; quantity: number } => Boolean(item.itemId)).map(item => ({ itemId: item.itemId, quantity: item.quantity })),
+  } satisfies TaxPreviewRequest);
+  const previewKey = JSON.stringify([fiscalRevision, taxSettingsEnabled, taxSettingsReady, requestJson]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -298,8 +321,8 @@ export default function SaleTaxPanel({
     if (readonly) {
       return fiscalSummary ? summaryToPreview(fiscalSummary, taxLines) : null;
     }
-    return livePreview;
-  }, [readonly, fiscalSummary, taxLines, livePreview]);
+    return taxSettingsReady && taxSettingsEnabled && livePreview?.key === previewKey ? livePreview.data : null;
+  }, [readonly, fiscalSummary, taxLines, livePreview, previewKey, taxSettingsReady, taxSettingsEnabled]);
 
   useEffect(() => {
     if (readonly) return;
@@ -338,63 +361,34 @@ export default function SaleTaxPanel({
     onChange(normalizeBuyerFiscalExclusion(next));
   };
 
-  const context = useMemo(() => buildBuyerFiscalContext(value), [value]);
-
   useEffect(() => {
-    if (readonly) {
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    setLivePreview(null);
+    setError(null);
+    setLoading(false);
+    const request: TaxPreviewRequest = JSON.parse(requestJson);
+    if (readonly || !taxSettingsEnabled || !taxSettingsReady || request.cartItems.length === 0) return;
+    if (request.buyerEmail && !isValidEmail(request.buyerEmail.trim())) return;
 
-    if (items.length === 0) {
-      setLivePreview(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    const email = context.buyerEmail?.trim();
-    if (email && !isValidEmail(email)) {
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-        setError(null);
-        const data = await getTaxPreview({
-          buyerType: context.buyerType,
-          buyerName: context.buyerName || undefined,
-          buyerDocumentType: context.buyerDocumentType,
-          buyerDocumentNumber: context.buyerDocumentNumber || undefined,
-          buyerEmail: context.buyerEmail || undefined,
-          buyerIsIvaResponsable: context.buyerIsIvaResponsable,
-          buyerIsRetenedor: context.buyerIsRetenedor,
-          buyerIsGranContribuyente: context.buyerIsGranContribuyente,
-          buyerIsAutorretenedor: context.buyerIsAutorretenedor,
-          buyerIsRegimenSimple: context.buyerIsRegimenSimple,
-          buyerRequiresElectronicInvoice: context.buyerRequiresElectronicInvoice,
-          fiscalMunicipalityCode: context.fiscalMunicipalityCode || undefined,
-          reteIcaRateOverride: context.reteIcaRateOverride,
-          saleConcept: context.saleConcept,
-          cartItems: items
-            .filter((item): item is { itemId: string; quantity: number } => Boolean(item.itemId))
-            .map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
-        });
-        setLivePreview(data);
-      } catch (err: any) {
-        setError(err.message || "No se pudo calcular la liquidacion tributaria.");
+        const data = await getTaxPreview(request, controller.signal);
+        if (!controller.signal.aborted) setLivePreview({ key: previewKey, data });
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setLivePreview(null);
+          setError(err instanceof Error ? err.message : "No se pudo calcular la liquidación tributaria.");
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 350);
-
-    return () => clearTimeout(timer);
-  }, [context, items, readonly]);
-
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [requestJson, previewKey, readonly, taxSettingsEnabled, taxSettingsReady, retry]);
   const chargedTotal = preview
     ? Number(preview.vatTotal) + Number(preview.impoconsumoTotal)
     : 0;
@@ -615,6 +609,7 @@ export default function SaleTaxPanel({
               <div className="flex items-start gap-2 text-rose-600">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 {error}
+                <button type="button" onClick={() => setRetry(value => value + 1)} className="underline">Reintentar</button>
               </div>
             ) : preview ? (
               <>

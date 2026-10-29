@@ -156,6 +156,7 @@ export default function RegisterForm() {
 
       // Guardar sesión
       localStorage.setItem("accessToken", data.accessToken);
+      window.dispatchEvent(new Event("auth-session-changed"));
       localStorage.setItem("businessName", businessName.trim());
       if (data.businessSlug) {
         localStorage.setItem("businessSlug", data.businessSlug);

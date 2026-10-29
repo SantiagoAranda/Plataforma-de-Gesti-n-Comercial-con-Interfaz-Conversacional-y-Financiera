@@ -8,6 +8,7 @@ import DesktopSidebar from "@/src/components/layout/DesktopSidebar";
 import DesktopSidePanel from "@/src/components/layout/DesktopSidePanel";
 import { DesktopSidePanelProvider } from "@/src/components/layout/DesktopSidePanelContext";
 import { ManualPaidOutflowProvider } from "@/src/components/layout/ManualPaidOutflowProvider";
+import { TaxSettingsProvider } from "@/src/components/settings/TaxSettingsProvider";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [router]);
 
   return (
-    <ManualPaidOutflowProvider>
+    <TaxSettingsProvider><ManualPaidOutflowProvider>
       <DesktopSidePanelProvider>
         <div className="min-h-screen bg-white lg:grid lg:h-screen lg:grid-cols-[88px_320px_1fr] lg:overflow-hidden">
           <DesktopSidebar />
@@ -30,6 +31,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </DesktopSidePanelProvider>
-    </ManualPaidOutflowProvider>
+    </ManualPaidOutflowProvider></TaxSettingsProvider>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Building2, Check, ChevronDown, FileText, ShoppingBag, Trash2, Plus, User, X, Search, Send } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import toast from "react-hot-toast";
@@ -10,7 +10,7 @@ import { WhatsappComposer } from "@/src/components/shared/WhatsappComposer";
 import ReservationSlotPicker from "@/src/components/reservations/ReservationSlotPicker";
 import ProductOptionSelector, { type OptionSelection } from "@/src/components/shared/ProductOptionSelector";
 import type { PublicItemOptionGroup } from "@/src/types/item";
-import type { BuyerFiscalContext } from "@/src/lib/tax/api";
+import type { BuyerFiscalContext, TaxPreviewResponse } from "@/src/lib/tax/api";
 import type { FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleTaxPanel, {
   buildBuyerFiscalContext,
@@ -150,7 +150,7 @@ export default function SalesChatComposer({
   taxSettingsEnabled: propEnabled,
   filterStatus = "ALL",
   onFilterStatusChange,
-  electronicInvoicingEnabled = false,
+  showFiscalTools = false,
   searchCriterion = "GENERAL",
   onSearchCriterionChange,
   fiscalFilterActive = false,
@@ -169,7 +169,7 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
   filterStatus?: FilterStatus;
   onFilterStatusChange?: (status: FilterStatus) => void;
-  electronicInvoicingEnabled?: boolean;
+  showFiscalTools?: boolean;
   searchCriterion?: SalesSearchCriterion;
   onSearchCriterionChange?: (criterion: SalesSearchCriterion) => void;
   fiscalFilterActive?: boolean;
@@ -177,11 +177,13 @@ export default function SalesChatComposer({
   fiscalStatusFilter?: FiscalSalesFilter;
   onFiscalStatusFilterChange?: (filter: FiscalSalesFilter) => void;
 }) {
-  const { taxSettingsEnabled: hookEnabled } = useTaxSettings();
+  const { taxSettingsEnabled: hookEnabled, fiscalRevision, taxSettingsReady } = useTaxSettings();
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
   const taxSettingsEnabled = propEnabled ?? hookEnabled;
   const [fiscalForm, setFiscalForm] = useState<SaleFiscalFormState>(DEFAULT_SALE_FISCAL_FORM);
-  const [taxPreview, setTaxPreview] = useState<any>(null);
+  const [previewState, setPreviewState] = useState<{ revision: number; data: TaxPreviewResponse } | null>(null);
+  const taxPreview = taxSettingsEnabled && taxSettingsReady && previewState?.revision === fiscalRevision ? previewState.data : null;
+  const setTaxPreview = useCallback((data: TaxPreviewResponse | null) => setPreviewState(data ? { revision: fiscalRevision, data } : null), [fiscalRevision]);
   const [countryCode, setCountryCode] = useState("57");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [type, setType] = useState<Sale["type"]>("PRODUCTO");
@@ -189,6 +191,7 @@ export default function SalesChatComposer({
   const [paymentMethod, setPaymentMethod] = useState<Sale["paymentMethod"]>("CASH");
   const [items, setItems] = useState<EditableItem[]>([]);
   const [businessItems, setBusinessItems] = useState<BusinessItem[]>([]);
+  const previewItems = useMemo(() => items.map(item => ({ itemId: item.itemId, quantity: normalizeQty(type, item.qty) })), [items, type]);
   const [newItem, setNewItem] = useState<{ itemId: string, qty: number | "" }>({ itemId: "", qty: 1 });
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
@@ -607,8 +610,9 @@ export default function SalesChatComposer({
       }
     } catch (err) {
       console.error(err);
+      if (isMounted.current) setFormError("No se pudo guardar la venta. Intentá nuevamente.");
     } finally {
-      if (isMounted.current && expanded) {
+      if (isMounted.current) {
         setIsSubmitting(false);
       }
     }
@@ -1077,10 +1081,7 @@ export default function SalesChatComposer({
             value={fiscalForm}
             onChange={(next) => setFiscalForm(taxSettingsEnabled ? normalizeBuyerFiscalExclusion(next) : next)}
             saleType={type}
-            items={items.map((item) => ({
-              itemId: item.itemId,
-              quantity: normalizeQty(type, item.qty),
-            }))}
+            items={previewItems}
             previewOnly={true}
             onPreviewChange={setTaxPreview}
             fiscalSummary={sale?.fiscalSummary}
@@ -1205,7 +1206,7 @@ export default function SalesChatComposer({
                     }
                     className="min-w-0 flex-1 border-none bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
                   />
-                  {electronicInvoicingEnabled && onSearchCriterionChange && (
+                  {showFiscalTools && onSearchCriterionChange && (
                     <div className="relative shrink-0">
                       <button
                         type="button"
@@ -1317,7 +1318,7 @@ export default function SalesChatComposer({
                   Canceladas
                 </button>
                 </>}
-                {electronicInvoicingEnabled && onFiscalFilterActiveChange && (
+                {showFiscalTools && onFiscalFilterActiveChange && (
                   <button
                     type="button"
                     onClick={() => onFiscalFilterActiveChange(!fiscalFilterActive)}
@@ -1330,7 +1331,7 @@ export default function SalesChatComposer({
                     Facturación electrónica
                   </button>
                 )}
-                {electronicInvoicingEnabled && fiscalFilterActive && onFiscalStatusFilterChange && (
+                {showFiscalTools && fiscalFilterActive && onFiscalStatusFilterChange && (
                   <div className="flex shrink-0 flex-nowrap gap-2">
                     {([
                       ["ALL", "Todas fiscales"],

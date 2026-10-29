@@ -31,8 +31,8 @@ import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirm
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
-import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
-import type { FactusConfigurationView, FiscalDocument } from "@/src/types/fiscal-documents";
+import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
+import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { getCached, invalidateCache } from "@/src/lib/cache";
 import { getErrorMessage } from "@/src/lib/errors";
 import { AppApiError } from "@/src/lib/api";
@@ -42,7 +42,7 @@ import { getBusinessDayKey } from "@/src/lib/businessDate";
 import DayPickerCalendar, { isSameCalendarDay } from "@/src/components/shared/DayPickerCalendar";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
-import { getTaxProfile } from "@/src/lib/settings/api";
+import { useFactusConfiguration } from "@/src/hooks/useFactusConfiguration";
 import { getBusinessProfile, type BusinessLogoProfile } from "@/src/lib/businessLogo";
 
 // ─── MonthPickerPopover (inline, cloned from Dashboard / Nómina) ───────────
@@ -259,34 +259,12 @@ function VentaPageContent() {
     null,
   );
   const saleElementsRef = useRef(new Map<string, HTMLDivElement>());
-  const { taxSettingsEnabled } = useTaxSettings();
+  const { taxSettingsEnabled, taxProfile, taxSettingsReady, fiscalRevision } = useTaxSettings();
   const { simpleRegimeSalesEnabled } = useFeatureFlags();
-  const [hasHistoricalSimpleResponsibility, setHasHistoricalSimpleResponsibility] = useState(false);
-  const [hasResponsibility52, setHasResponsibility52] = useState(false);
-  const [factusConfiguration, setFactusConfiguration] = useState<FactusConfigurationView | null>(null);
+  const hasHistoricalSimpleResponsibility = Boolean(taxProfile?.responsibilities?.some(item => item.responsibility.code === "47"));
+  const hasResponsibility52 = Boolean(taxProfile?.responsibilities?.some(item => item.responsibility.code === "52"));
+  const { factusConfiguration, factusError, factusLoading, refreshFactus } = useFactusConfiguration(fiscalRevision);
   const [q, setQ] = useState("");
-
-  useEffect(() => {
-    getTaxProfile()
-      .then((profile) => {
-        setHasHistoricalSimpleResponsibility(
-          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "47")),
-        );
-        setHasResponsibility52(
-          Boolean(profile?.responsibilities?.some((item: any) => item.responsibility?.code === "52")),
-        );
-      })
-      .catch(() => {
-        setHasHistoricalSimpleResponsibility(false);
-        setHasResponsibility52(false);
-      })
-      .finally(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    void getFactusConfiguration().then(setFactusConfiguration).catch(() => setFactusConfiguration(null));
-  }, []);
-
   const salesBlockedBySimpleRegime =
     !simpleRegimeSalesEnabled && hasHistoricalSimpleResponsibility;
 
@@ -309,7 +287,8 @@ function VentaPageContent() {
   const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
   const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
   const [fiscalDocumentsStatus, setFiscalDocumentsStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const electronicInvoicingEnabled = hasResponsibility52 || fiscalDocuments.length > 0;
+  const electronicInvoicingEnabled = taxSettingsReady && taxSettingsEnabled && hasResponsibility52 && factusConfiguration?.enabled === true;
+  const showFiscalTools = electronicInvoicingEnabled || fiscalDocuments.length > 0;
   const [manualInvoiceSale, setManualInvoiceSale] = useState<Sale | null>(null);
   const [manualInvoiceStep, setManualInvoiceStep] = useState<"warning" | "confirm" | "sending" | null>(null);
   const [generatingInvoiceSaleId, setGeneratingInvoiceSaleId] = useState<string | null>(null);
@@ -336,6 +315,13 @@ function VentaPageContent() {
   const initialScrollDone = useRef(false);
   const [pendingSmoothScroll, setPendingSmoothScroll] = useState(false);
   const artifactPollingAttemptsRef = useRef(new Map<string, number>());
+
+  useEffect(() => {
+    if (!taxSettingsReady || factusLoading || showFiscalTools) return;
+    setFiscalFilterActive(false);
+    setFiscalStatusFilter("ALL");
+    setSearchCriterion("GENERAL");
+  }, [taxSettingsReady, factusLoading, showFiscalTools]);
 
   useEffect(() => {
     let active = true;
@@ -1252,6 +1238,9 @@ function VentaPageContent() {
         </div>
       )}
 
+      {factusError && <div role="alert" className="mx-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">
+        {factusError} <button type="button" disabled={factusLoading} onClick={() => void refreshFactus()} className="underline">Reintentar</button>
+      </div>}
       <main className="min-h-0 flex-1 overflow-hidden relative">
         <div className="h-full overflow-y-auto w-full pb-24">
           {loading && (
@@ -1380,7 +1369,7 @@ function VentaPageContent() {
               onCompleteAnnulment={handleCompleteAnnulment}
               invoiceCapability={{
                 documentsLoaded: fiscalDocumentsStatus === "loaded",
-                factusEnabled: factusConfiguration?.enabled === true,
+                factusEnabled: electronicInvoicingEnabled,
                 factusConfigured: factusConfiguration?.configured === true,
                 taxSettingsEnabled,
                 responsibility52: hasResponsibility52,
@@ -1461,7 +1450,7 @@ function VentaPageContent() {
           onFilterStatusChange={setFilterStatus}
           onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
           taxSettingsEnabled={taxSettingsEnabled}
-          electronicInvoicingEnabled={electronicInvoicingEnabled}
+          showFiscalTools={showFiscalTools}
           searchCriterion={searchCriterion}
           onSearchCriterionChange={setSearchCriterion}
           fiscalFilterActive={fiscalFilterActive}

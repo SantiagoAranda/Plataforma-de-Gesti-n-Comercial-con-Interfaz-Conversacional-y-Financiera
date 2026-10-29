@@ -44,14 +44,29 @@ export async function api<T>(
     }
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-    credentials: "include",
-  });
+  let res: Response;
+  let raw: string;
+  const fiscalRequest = ["/sales/tax-preview", "/settings/tax-profile", "/settings/tax-profile/toggle", "/fiscal-documents/configuration"].includes(path);
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+      credentials: "include",
+    });
+    raw = await res.text();
+  } catch (cause) {
+    if (!init.signal?.aborted && fiscalRequest) {
+      // Static route and error kind only: never log request bodies, buyer data or tokens.
+      console.error("Fiscal request failed", { method: init.method ?? "GET", path, cause: cause instanceof Error ? cause.name : "UnknownError" });
+      throw Object.assign(new Error("No se pudo conectar para actualizar la información fiscal. Reintentá.", { cause }), { method: init.method ?? "GET", path });
+    }
+    throw cause;
+  }
 
-  const raw = await res.text();
+  if (!res.ok && fiscalRequest) {
+    console.error("Fiscal request failed", { method: init.method ?? "GET", path, status: res.status });
+  }
   let data: any = null;
 
   if (raw) {

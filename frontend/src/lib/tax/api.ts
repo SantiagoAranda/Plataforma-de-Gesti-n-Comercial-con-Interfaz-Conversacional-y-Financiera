@@ -78,9 +78,10 @@ export type TaxPreviewRequest = {
   cartItems: Array<{ itemId: string; quantity: number }>;
 };
 
-export function getTaxPreview(data: TaxPreviewRequest) {
+export function getTaxPreview(data: TaxPreviewRequest, signal?: AbortSignal) {
   return api<TaxPreviewResponse>("/sales/tax-preview", {
     method: "POST",
+    signal,
     body: JSON.stringify(data),
   });
 }

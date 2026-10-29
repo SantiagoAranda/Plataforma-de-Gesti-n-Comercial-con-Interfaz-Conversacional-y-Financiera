@@ -6,6 +6,7 @@ export const getToken = (): string | null => {
 export const removeToken = () => {
   if (typeof window === "undefined") return;
   localStorage.removeItem("accessToken");
+  window.dispatchEvent(new Event("auth-session-changed"));
 };
 
 export const handleSessionExpired = () => {

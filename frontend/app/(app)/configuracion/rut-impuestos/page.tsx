@@ -172,7 +172,7 @@ function parsePerThousand(value: string) {
 
 export default function RutImpuestosPage() {
   const router = useRouter();
-  const { taxSettingsEnabled, taxSettingsLoading, setTaxSettingsEnabled } = useTaxSettings();
+  const { taxSettingsEnabled, refreshTaxSettings } = useTaxSettings();
   const { simpleRegimeSalesEnabled, simpleRegimeTaxModuleEnabled, featureFlagsLoading } = useFeatureFlags();
   const municipalities = useFiscalMunicipalities();
 
@@ -627,7 +627,7 @@ export default function RutImpuestosPage() {
         }
         await updateSimpleTaxConfig(simpleTaxPayload);
       }
-      window.dispatchEvent(new Event("tax-profile-updated"));
+      await refreshTaxSettings();
 
       const savedSnapshot = {
         personType,
@@ -655,7 +655,6 @@ export default function RutImpuestosPage() {
       };
       setInitialSnapshot(savedSnapshot);
 
-      router.refresh();
       toast.success("El registro RUT se actualizó correctamente.");
     } catch (err: any) {
       toast.error(err.message || "Verifique los datos ingresados.");

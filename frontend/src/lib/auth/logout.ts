@@ -4,6 +4,7 @@ export function logoutAndRedirect(redirectTo: (href: string) => void) {
     localStorage.removeItem("session");
     localStorage.removeItem("user");
     localStorage.removeItem("accessToken");
+    window.dispatchEvent(new Event("auth-session-changed"));
     localStorage.removeItem("businessName");
     localStorage.removeItem("businessSubtitle");
     localStorage.removeItem("businessPhone");

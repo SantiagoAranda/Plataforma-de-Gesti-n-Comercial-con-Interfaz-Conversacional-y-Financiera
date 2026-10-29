@@ -20,6 +20,7 @@ test("a finalized real order can offer manual invoice only after documents loade
   assert.equal(canGenerateElectronicInvoice({ ...sale, sourceType: "RESERVATION" }, false, capability, false), false);
   assert.equal(canGenerateElectronicInvoice({ ...sale, accountingPostedAt: null }, false, capability, false), false);
   assert.equal(canGenerateElectronicInvoice(sale, false, { ...capability, factusEnabled: false }, false), false);
+  assert.equal(canGenerateElectronicInvoice(sale, false, { ...capability, taxSettingsEnabled: false }, false), false);
   assert.equal(canGenerateElectronicInvoice(sale, false, { ...capability, responsibility52: false }, false), false);
 });
 

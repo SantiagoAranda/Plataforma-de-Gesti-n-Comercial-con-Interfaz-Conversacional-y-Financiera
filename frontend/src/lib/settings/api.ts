@@ -75,15 +75,27 @@ export function getTaxProfile() {
   return api<TaxProfile>("/settings/tax-profile");
 }
 
-export function updateTaxProfile(data: any) {
-  return api<TaxProfile>("/settings/tax-profile", {
+export function notifyTaxProfileUpdated() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("tax-profile-updated"));
+}
+
+async function fiscalWrite<T>(path: string, options: RequestInit) {
+  const result = await api<T>(path, options);
+  notifyTaxProfileUpdated();
+  return result;
+}
+
+export async function updateTaxProfile(data: any) {
+  const profile = await api<TaxProfile>("/settings/tax-profile", {
     method: "PUT",
     body: JSON.stringify(data),
   });
+  notifyTaxProfileUpdated();
+  return profile;
 }
 
 export function toggleTaxSettings(enabled: boolean) {
-  return api<TaxProfile>("/settings/tax-profile/toggle", {
+  return api<Omit<TaxProfile, "responsibilities">>("/settings/tax-profile/toggle", {
     method: "PATCH",
     body: JSON.stringify({ taxSettingsEnabled: enabled }),
   });
@@ -103,21 +115,21 @@ export function listIcaRates() {
 }
 
 export function createIcaRate(data: IcaRateInput) {
-  return api<IcaRate>("/settings/ica-rates", {
+  return fiscalWrite<IcaRate>("/settings/ica-rates", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export function updateIcaRate(id: string, data: Partial<IcaRateInput>) {
-  return api<IcaRate>(`/settings/ica-rates/${id}`, {
+  return fiscalWrite<IcaRate>(`/settings/ica-rates/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 }
 
 export function deleteIcaRate(id: string) {
-  return api<{ ok: boolean }>(`/settings/ica-rates/${id}`, {
+  return fiscalWrite<{ ok: boolean }>(`/settings/ica-rates/${id}`, {
     method: "DELETE",
   });
 }
@@ -127,21 +139,21 @@ export function listTaxRules() {
 }
 
 export function createTaxRule(data: any) {
-  return api<TaxRule>("/settings/tax-rules", {
+  return fiscalWrite<TaxRule>("/settings/tax-rules", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
 export function updateTaxRule(id: string, data: any) {
-  return api<TaxRule>(`/settings/tax-rules/${id}`, {
+  return fiscalWrite<TaxRule>(`/settings/tax-rules/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 }
 
 export function deleteTaxRule(id: string) {
-  return api<{ ok: boolean }>(`/settings/tax-rules/${id}`, {
+  return fiscalWrite<{ ok: boolean }>(`/settings/tax-rules/${id}`, {
     method: "DELETE",
   });
 }
