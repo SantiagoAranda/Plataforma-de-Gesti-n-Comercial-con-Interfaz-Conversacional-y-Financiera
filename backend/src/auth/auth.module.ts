@@ -9,6 +9,8 @@ import { BusinessesModule } from '../businesses/businesses.module';
 import { JwtStrategy } from './jwt.strategy/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { BusinessActiveGuard } from './guards/business-active.guard';
+import { jwtSecret, JWT_EXPIRATION } from './jwt.config';
+import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 
 @Module({
   imports: [
@@ -18,13 +20,19 @@ import { BusinessActiveGuard } from './guards/business-active.guard';
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '24h' },
+        secret: jwtSecret(configService),
+        signOptions: { expiresIn: JWT_EXPIRATION },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, BusinessActiveGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RolesGuard,
+    BusinessActiveGuard,
+    AuthRateLimitGuard,
+  ],
   exports: [JwtModule],
 })
 export class AuthModule {}

@@ -395,43 +395,35 @@ export class BusinessesService {
     fiscalId?: string;
     phoneWhatsapp: string;
   }): Promise<Business> {
-    // ✅ Diagnóstico: Log de nombre antes de guardar
-    console.log(`[BusinessesService] Creating business: "${data.name}"`);
-    console.log(
-      `[BusinessesService] Name Hex: ${Buffer.from(data.name).toString('hex')}`,
-    );
-
-    const slug = await generateSlug(data.name, async (s) => {
-      const existing = await this.prisma.business.findUnique({
-        where: { slug: s },
-      });
-      return !existing;
-    });
-    console.log(`[BusinessesService] Generated slug: "${slug}"`);
-
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const business = await tx.business.create({
-          data: {
-            name: data.name,
-            fiscalId: data.fiscalId?.trim() ?? '',
-            phoneWhatsapp: data.phoneWhatsapp,
-            slug,
-            status: 'ACTIVE',
-          },
-        });
-
-        await this.initializePayrollAccountingMappingsForBusiness(
-          tx,
-          business.id,
-        );
-
-        return business;
-      });
+      return await this.prisma.$transaction((tx) =>
+        this.createBusinessInTransaction(tx, data),
+      );
     } catch (error) {
       if (error instanceof HttpException) throw error;
       throw new BadRequestException('Error creating business');
     }
+  }
+
+  async createBusinessInTransaction(
+    tx: Prisma.TransactionClient,
+    data: { name: string; fiscalId?: string; phoneWhatsapp: string },
+  ): Promise<Business> {
+    const slug = await generateSlug(
+      data.name,
+      async (s) => !(await tx.business.findUnique({ where: { slug: s } })),
+    );
+    const business = await tx.business.create({
+      data: {
+        name: data.name,
+        fiscalId: data.fiscalId?.trim() ?? '',
+        phoneWhatsapp: data.phoneWhatsapp,
+        slug,
+        status: 'ACTIVE',
+      },
+    });
+    await this.initializePayrollAccountingMappingsForBusiness(tx, business.id);
+    return business;
   }
 
   private async assertPucAccountExists(

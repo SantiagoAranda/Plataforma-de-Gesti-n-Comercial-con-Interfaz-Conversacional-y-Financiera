@@ -42,7 +42,11 @@ function subscribeBusinessName(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
 
   window.addEventListener("storage", onStoreChange);
-  return () => window.removeEventListener("storage", onStoreChange);
+  window.addEventListener('business-profile-updated', onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener('business-profile-updated', onStoreChange);
+  };
 }
 
 function getBusinessNameSnapshot() {

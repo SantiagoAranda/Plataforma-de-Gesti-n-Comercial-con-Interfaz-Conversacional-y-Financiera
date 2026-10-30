@@ -1,3 +1,4 @@
+import { getSessionContext } from './auth/session';
 export type BusinessProfile = {
   name: string;
   subtitle: string;
@@ -15,6 +16,7 @@ export function readBusinessProfile(): BusinessProfile {
     return { name: "Mi Negocio", subtitle: "", phone: "" };
   }
 
+  getSessionContext();
   return {
     name: localStorage.getItem(KEYS.name) || "Mi Negocio",
     subtitle: localStorage.getItem(KEYS.subtitle) || "",
@@ -25,6 +27,7 @@ export function readBusinessProfile(): BusinessProfile {
 export function writeBusinessProfile(next: Partial<BusinessProfile>) {
   if (typeof window === "undefined") return;
 
+  getSessionContext();
   if (typeof next.name === "string") localStorage.setItem(KEYS.name, next.name);
   if (typeof next.subtitle === "string") localStorage.setItem(KEYS.subtitle, next.subtitle);
   if (typeof next.phone === "string") localStorage.setItem(KEYS.phone, next.phone);

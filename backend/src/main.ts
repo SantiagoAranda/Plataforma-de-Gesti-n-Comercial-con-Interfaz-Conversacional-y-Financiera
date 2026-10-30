@@ -2,9 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import * as bodyParser from 'body-parser';
+import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { authProxyTrust } from './auth/auth-rate-limit.guard';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.set('trust proxy', authProxyTrust(app.get(ConfigService)));
 
   app.use(bodyParser.json({ limit: '10mb' }));
   app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
@@ -21,6 +25,7 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
+    exposedHeaders: ['Retry-After'],
   });
 
   app.useGlobalPipes(

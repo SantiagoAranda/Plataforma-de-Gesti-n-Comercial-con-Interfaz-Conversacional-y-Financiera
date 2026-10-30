@@ -1,5 +1,6 @@
 import { api } from "@/src/lib/api";
 import { getToken } from "@/src/lib/auth";
+import { assertCurrentSession, getSessionContext } from '../lib/auth/session';
 import type {
   FactusConfigurationView,
   FiscalDocument,
@@ -37,6 +38,7 @@ export const listFiscalMunicipalities = () =>
   api<FiscalMunicipality[]>("/settings/fiscal-municipalities");
 
 export async function downloadFiscalArtifact(id: string, kind: "pdf" | "xml") {
+  const session = getSessionContext();
   const token = getToken();
   const response = await fetch(
     `${API_URL}/fiscal-documents/${encodeURIComponent(id)}/artifacts/${kind}`,
@@ -44,6 +46,7 @@ export async function downloadFiscalArtifact(id: string, kind: "pdf" | "xml") {
   );
   if (!response.ok) throw new Error("Documento fiscal o archivo no encontrado");
   const blob = await response.blob();
+  assertCurrentSession(session);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

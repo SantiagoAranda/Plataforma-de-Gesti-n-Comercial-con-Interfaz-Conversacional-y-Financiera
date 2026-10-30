@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { api } from "../../lib/api";
+import { assertCurrentSession, establishSession, getSessionContext, StaleSessionError } from "../../lib/auth/session";
+import { useAuthRetry } from "../../hooks/useAuthRetry";
+import { api, AppApiError } from "../../lib/api";
 import LoginStoreHint from "./LoginStoreHint";
 import NavigationTransitionBackdrop from "../shared/NavigationTransitionBackdrop";
 import { useInteractiveHorizontalNavigation } from "../../hooks/useInteractiveHorizontalNavigation";
@@ -85,11 +87,13 @@ function translateError(err: unknown): string {
 }
 export default function LoginForm() {
   const router = useRouter();
+  const { retrySeconds, setRetrySeconds } = useAuthRetry();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
@@ -209,17 +213,16 @@ export default function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current || retrySeconds) return;
     setError("");
 
     if (!validate()) return;
 
+    submitting.current = true;
     setLoading(true);
 
     try {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("businessName");
-      localStorage.removeItem("user");
-
+      const session = getSessionContext();
       const data = await api<{ 
         accessToken: string; 
         businessName?: string; 
@@ -233,23 +236,8 @@ export default function LoginForm() {
         }
       );
 
-      localStorage.setItem("accessToken", data.accessToken);
-
-      if (data.businessName?.trim()) {
-        localStorage.setItem("businessName", data.businessName.trim());
-      }
-      if (data.businessSlug?.trim()) {
-        localStorage.setItem("businessSlug", data.businessSlug.trim());
-      }
-
-      const payload = JSON.parse(atob(data.accessToken.split(".")[1]));
-
-      const user = {
-        role: payload.role,
-        businessId: payload.businessId,
-      };
-
-      localStorage.setItem("user", JSON.stringify(user));
+      assertCurrentSession(session);
+      const user = establishSession(data);
 
       if (user.role === "ADMIN" && !user.businessId) {
         router.push("/admin");
@@ -257,6 +245,12 @@ export default function LoginForm() {
         router.push("/home");
       }
     } catch (err: unknown) {
+      if (err instanceof StaleSessionError) return;
+      if (err instanceof AppApiError && err.status === 429) {
+        setRetrySeconds(err.details?.retryAfterSeconds || 1);
+        setError(err.message);
+        return;
+      }
       const msg = translateError(err);
       const lower = msg.toLowerCase();
 
@@ -283,12 +277,15 @@ export default function LoginForm() {
         });
       }
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const pendingEmail = sessionStorage.getItem("login_email_hint");
+      if (pendingEmail) { setEmail(pendingEmail); sessionStorage.removeItem("login_email_hint"); }
       const searchParams = new URLSearchParams(window.location.search);
       const isExpiredQuery = searchParams.get("expired") === "true";
       const isExpiredStorage = sessionStorage.getItem("session_expired_notice");
@@ -436,7 +433,7 @@ export default function LoginForm() {
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || retrySeconds > 0}
         className="
   w-full
   bg-[#0b3f64]

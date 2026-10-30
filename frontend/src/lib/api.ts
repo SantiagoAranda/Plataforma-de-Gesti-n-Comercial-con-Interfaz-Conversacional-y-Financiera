@@ -1,4 +1,5 @@
-import { getToken, handleSessionExpired, removeToken } from "./auth";
+import { getToken, handleSessionExpired } from "./auth";
+import { assertCurrentSession, getSessionContext } from './auth/session';
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -30,6 +31,7 @@ export async function api<T>(
   options: RequestInit & { auth?: boolean } = {}
 ): Promise<T> {
   const { auth = true, ...init } = options;
+  const session = getSessionContext();
 
   const headers = new Headers(init.headers);
 
@@ -52,6 +54,7 @@ export async function api<T>(
   });
 
   const raw = await res.text();
+  assertCurrentSession(session);
   let data: any = null;
 
   if (raw) {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -15,12 +15,15 @@ export class UsersService {
     });
   }
 
-  async createBusinessUser(data: {
-    email: string;
-    password: string;
-    businessId: string;
-  }) {
-    return this.prisma.user.create({
+  async createBusinessUser(
+    data: {
+      email: string;
+      password: string;
+      businessId: string;
+    },
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    return tx.user.create({
       data: {
         email: data.email,
         password: data.password,

@@ -1,11 +1,13 @@
+import { clearSession, getSessionContext } from './auth/session';
+
 export const getToken = (): string | null => {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("accessToken");
+  return getSessionContext().token;
 };
 
 export const removeToken = () => {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("accessToken");
+  clearSession();
 };
 
 export const handleSessionExpired = () => {

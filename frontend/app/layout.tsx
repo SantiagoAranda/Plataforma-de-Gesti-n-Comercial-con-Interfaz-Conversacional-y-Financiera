@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Toaster } from "react-hot-toast";
+import SessionBoundary from '../src/components/auth/SessionBoundary';
 import PushForegroundListener from "../src/components/notifications/PushForegroundListener";
 import ToastLimitListener from "../src/components/notifications/ToastLimitListener";
 
@@ -47,8 +48,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-white">
         {children}
-        <PushForegroundListener />
-        <ToastLimitListener />
+        <SessionBoundary>
+          <PushForegroundListener />
+          <ToastLimitListener />
+        </SessionBoundary>
         <Toaster
           position="top-right"
           reverseOrder={false}

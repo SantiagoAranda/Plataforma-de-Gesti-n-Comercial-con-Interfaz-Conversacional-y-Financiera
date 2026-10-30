@@ -2,8 +2,11 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../prisma/prisma.service';
+import { JWT_EXPIRATION } from './jwt.config';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
 import { BusinessesService } from '../businesses/businesses.service';
@@ -15,6 +18,7 @@ export class AuthService {
     private usersService: UsersService,
     private businessesService: BusinessesService,
     private jwtService: JwtService,
+    private prisma: PrismaService,
   ) {}
 
   async registerBusiness(dto: RegisterBusinessDto) {
@@ -27,42 +31,81 @@ export class AuthService {
     // Hashear contraseña
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    // Crear negocio
-    const business = await this.businessesService.createBusiness({
-      name: dto.name,
-      fiscalId: dto.fiscalId?.trim() ?? '',
-      phoneWhatsapp: dto.phoneWhatsapp,
-    });
+    const { user, business } = await this.createAccount(dto, hashedPassword);
+    try {
+      const accessToken = this.jwtService.sign(
+        {
+          sub: user.id,
+          role: user.role,
+          businessId: business.id,
+        },
+        { expiresIn: JWT_EXPIRATION },
+      );
+      return {
+        accessToken,
+        businessName: business.name,
+        businessSlug: business.slug,
+      };
+    } catch {
+      new Logger(AuthService.name).error(
+        'Account committed; automatic sign-in failed',
+      );
+      return {
+        accountCreated: true as const,
+        code: 'ACCOUNT_CREATED_LOGIN_REQUIRED' as const,
+        message:
+          'Tu cuenta fue creada, pero no pudimos iniciar sesión automáticamente. Iniciá sesión con tus credenciales.',
+      };
+    }
+  }
 
-    // Crear usuario asociado al negocio
-    const user = await this.usersService.createBusinessUser({
-      email: dto.email,
-      password: hashedPassword,
-      businessId: business.id,
-    });
-
-    // Generar JWT con expiración
-    const accessToken = this.jwtService.sign(
-      {
-        sub: user.id,
-        role: user.role,
-        businessId: business.id,
-      },
-      {
-        expiresIn: '24h',
-      },
-    );
-
-    console.log(`[AuthService] Register result - Name: "${business.name}"`);
-    console.log(
-      `[AuthService] Name Hex: ${Buffer.from(business.name).toString('hex')}`,
-    );
-
-    return {
-      accessToken,
-      businessName: business.name,
-      businessSlug: business.slug,
-    };
+  private async createAccount(
+    dto: RegisterBusinessDto,
+    hashedPassword: string,
+  ) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const business =
+            await this.businessesService.createBusinessInTransaction(tx, dto);
+          const user = await this.usersService.createBusinessUser(
+            {
+              email: dto.email,
+              password: hashedPassword,
+              businessId: business.id,
+            },
+            tx,
+          );
+          return { user, business };
+        });
+      } catch (error) {
+        const failure = error as {
+          code?: string;
+          meta?: { target?: string[] | string };
+        };
+        const target = failure.meta?.target;
+        const fields = Array.isArray(target) ? target : [target];
+        if (
+          failure.code === 'P2002' &&
+          fields.some(
+            (field) => field === 'email' || field === 'User_email_key',
+          )
+        ) {
+          throw new BadRequestException('Email already in use');
+        }
+        const slugConflict =
+          failure.code === 'P2002' &&
+          fields.length === 1 &&
+          (fields[0] === 'slug' || fields[0] === 'Business_slug_key');
+        if (attempt < 2 && (slugConflict || failure.code === 'P2034')) continue;
+        if (slugConflict || failure.code === 'P2034') {
+          throw new BadRequestException(
+            'No se pudo completar el registro. Intentá nuevamente.',
+          );
+        }
+        throw error;
+      }
+    }
   }
 
   async login(email: string, password: string) {
@@ -88,7 +131,7 @@ export class AuthService {
           businessId: null,
         },
         {
-          expiresIn: '24h',
+          expiresIn: JWT_EXPIRATION,
         },
       );
 
@@ -110,7 +153,7 @@ export class AuthService {
         businessId: user.businessId,
       },
       {
-        expiresIn: '24h',
+        expiresIn: JWT_EXPIRATION,
       },
     );
 

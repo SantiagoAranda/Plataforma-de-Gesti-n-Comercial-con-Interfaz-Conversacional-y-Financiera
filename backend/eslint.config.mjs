@@ -32,4 +32,13 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    files: ['**/*.spec.ts', '**/*.test.ts', '**/*-spec.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: './tsconfig.spec.json',
+      },
+    },
+  },
 );

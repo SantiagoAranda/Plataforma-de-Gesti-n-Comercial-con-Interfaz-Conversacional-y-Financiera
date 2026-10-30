@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { assertCurrentSession, getSessionContext, subscribeSession } from '../lib/auth/session';
 import {
   getPushStatus as fetchPushStatus,
   registerPushSubscription,
@@ -67,6 +68,10 @@ const ACTIVATION_EVENT = "push-activation-state";
 
 let activationPromise: Promise<ActivatePushResult> | null = null;
 let activationInFlightSnapshot = false;
+subscribeSession(() => {
+  activationPromise = null;
+  activationInFlightSnapshot = false;
+});
 
 class PushActivationTimeoutError extends Error {
   constructor(readonly stage: TimeoutStage) {
@@ -331,6 +336,7 @@ function stateFromFacts(
 }
 
 export function usePushNotifications() {
+  const session = useRef(getSessionContext());
   const [state, setState] = useState<PushState>("default");
   const [status, setStatus] = useState<PushStatusResponse | null>(null);
   const [permissionGranted, setPermissionGranted] = useState(false);
@@ -363,6 +369,7 @@ export function usePushNotifications() {
   );
 
   const currentDevice = useCallback(() => {
+    assertCurrentSession(session.current);
     const userId = getUserId();
     if (!userId) throw new Error("AUTH_REQUIRED");
     return { userId, deviceId: deviceIdForUser(userId) };
@@ -583,6 +590,7 @@ export function usePushNotifications() {
   ]);
 
   const runActivation = useCallback(async (): Promise<ActivatePushResult> => {
+    assertCurrentSession(session.current);
     setActivationError(null);
     if (!checkSupport()) return failActivation("support");
     if (isIosBrowser() && !isStandalone()) {

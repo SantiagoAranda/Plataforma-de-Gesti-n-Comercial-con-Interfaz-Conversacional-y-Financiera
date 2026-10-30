@@ -1,4 +1,5 @@
 "use client";
+import { getCached, getInstantCache, invalidateCache } from "@/src/lib/cache";
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, History, RefreshCw } from "lucide-react";
@@ -17,7 +18,7 @@ type Props = {
   type: "recipe" | "service";
 };
 
-const historyCache = new Map<string, ConsumptionHistoryLine[]>();
+const HISTORY_TTL = Number.POSITIVE_INFINITY;
 
 function formatOccurredAt(value: string) {
   const date = new Date(value);
@@ -32,15 +33,15 @@ function formatOccurredAt(value: string) {
 }
 
 export function ConsumptionHistoryTab({ itemId, itemName, type }: Props) {
-  const cacheKey = `${type}:${itemId}`;
-  const [loading, setLoading] = useState(() => !historyCache.has(cacheKey));
+  const cacheKey = `consumption-history:${type}:${itemId}`;
+  const [loading, setLoading] = useState(() => !getInstantCache(cacheKey, HISTORY_TTL));
   const [error, setError] = useState<string | null>(null);
-  const [history, setHistory] = useState<ConsumptionHistoryLine[]>(() => historyCache.get(cacheKey) ?? []);
+  const [history, setHistory] = useState<ConsumptionHistoryLine[]>(() => getInstantCache<ConsumptionHistoryLine[]>(cacheKey, HISTORY_TTL) ?? []);
   const [expandedSales, setExpandedSales] = useState<Record<string, boolean>>({});
 
   const fetchHistory = async (force = false) => {
     if (!force) {
-      const cached = historyCache.get(cacheKey);
+      const cached = getInstantCache<ConsumptionHistoryLine[]>(cacheKey, HISTORY_TTL);
       if (cached) {
         setHistory(cached);
         setLoading(false);
@@ -51,10 +52,10 @@ export function ConsumptionHistoryTab({ itemId, itemName, type }: Props) {
     try {
       setLoading(true);
       setError(null);
-      const data = type === "recipe"
-        ? await getRecipeConsumptionHistory(itemId, { limit: 2 })
-        : await getServiceConsumptionHistory(itemId);
-      historyCache.set(cacheKey, data);
+      if (force) invalidateCache(cacheKey);
+      const data = await getCached(cacheKey, HISTORY_TTL, () => type === "recipe"
+        ? getRecipeConsumptionHistory(itemId, { limit: 2 })
+        : getServiceConsumptionHistory(itemId));
       setHistory(data);
     } catch (err) {
       console.error(err);

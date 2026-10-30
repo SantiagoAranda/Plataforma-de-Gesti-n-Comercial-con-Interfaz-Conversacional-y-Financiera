@@ -1,4 +1,6 @@
 import { api } from "./api";
+import { getSessionContext, assertCurrentSession } from './auth/session';
+import { writeBusinessProfile } from './businessProfile';
 
 export type BusinessLogoProfile = {
   id: string;
@@ -28,8 +30,18 @@ export function readBusinessLogoFileError(file: File) {
   return null;
 }
 
-export function getBusinessProfile() {
-  return api<BusinessLogoProfile>("/businesses/profile");
+export async function getBusinessProfile() {
+  const session = getSessionContext();
+  const profile = await api<BusinessLogoProfile>("/businesses/profile");
+  assertCurrentSession(session);
+  if (profile.id === session.businessId) {
+    try {
+      writeBusinessProfile({ name: profile.name, phone: profile.phoneWhatsapp });
+      localStorage.setItem('businessSlug', profile.slug);
+      window.dispatchEvent(new Event('business-profile-updated'));
+    } catch { /* Reading the profile remains possible if browser storage is full. */ }
+  }
+  return profile;
 }
 
 export function uploadBusinessLogo(file: File) {

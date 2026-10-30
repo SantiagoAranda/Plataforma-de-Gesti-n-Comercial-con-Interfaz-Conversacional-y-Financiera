@@ -8,8 +8,13 @@ import DesktopSidebar from "@/src/components/layout/DesktopSidebar";
 import DesktopSidePanel from "@/src/components/layout/DesktopSidePanel";
 import { DesktopSidePanelProvider } from "@/src/components/layout/DesktopSidePanelContext";
 import { ManualPaidOutflowProvider } from "@/src/components/layout/ManualPaidOutflowProvider";
+import SessionBoundary from '@/src/components/auth/SessionBoundary';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
+  return <SessionBoundary><AppLayoutContent>{children}</AppLayoutContent></SessionBoundary>;
+}
+
+function AppLayoutContent({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {

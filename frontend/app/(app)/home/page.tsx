@@ -72,6 +72,7 @@ export default function HomePage() {
 
     getBusinessProfile()
       .then((data) => {
+        if (data?.name) setBusinessName(data.name);
         if (data?.logoUrl) setLogoUrl(data.logoUrl);
       })
       .catch(() => {});

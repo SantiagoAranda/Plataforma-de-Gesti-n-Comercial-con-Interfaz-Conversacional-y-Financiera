@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import { api } from "@/src/lib/api";
 import {
   ArrowLeft,
   ArrowRight,
@@ -226,44 +227,17 @@ export default function MiTiendaPage() {
   useEffect(() => {
     const fetchMyItems = async () => {
       try {
-        const token = localStorage.getItem("accessToken");
-
-        if (!token) {
-          toast.error("Sesión expirada. Volvé a iniciar sesión.");
-          return;
-        }
-
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/items`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (!res.ok) throw new Error();
-
-        const data = await res.json();
+        const data = await api<Item[]>("/items");
 
         setItems(
-          data.map((item: any) => ({
+          data.map((item) => ({
             ...item,
             price: Number(item.price),
           }))
         );
 
-        const resSettings = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/businesses/store-footer-settings`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        if (resSettings.ok) {
-          const settings = await resSettings.json() as StoreFooterSettings;
+        const settings = await api<StoreFooterSettings>("/businesses/store-footer-settings");
+        if (settings) {
           setFooterSettings(settings);
           setShowLocationButton(Boolean(settings?.showLocationButton));
           setLocationLabel(settings?.locationLabel || "Cómo llegar");
@@ -589,19 +563,7 @@ function AdminProductCard({
     if (!confirmDelete) return;
 
     try {
-      const token = localStorage.getItem("accessToken");
-
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/items/${item.id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!res.ok) throw new Error();
+      await api(`/items/${item.id}`, { method: "DELETE" });
 
       toast.success("Producto eliminado");
 

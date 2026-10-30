@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { registerAccount, CREATED_LOGIN_REQUIRED, REGISTRATION_UNCONFIRMED } from "../../lib/auth/registration";
+import { AppApiError } from "../../lib/api";
+import { StaleSessionError } from "../../lib/auth/session";
+import { useAuthRetry } from "../../hooks/useAuthRetry";
 
 // ── SVG Eye Icons ──────────────────────────────────────────────
 function EyeIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -59,6 +63,13 @@ interface FieldErrors {
 // ── Component ──────────────────────────────────────────────────
 export default function RegisterForm() {
   const router = useRouter();
+  const submitting = useRef(false);
+  const { retrySeconds, setRetrySeconds } = useAuthRetry();
+  const [registrationNotice, setRegistrationNotice] = useState("");
+  const goToLogin = () => {
+    try { sessionStorage.setItem("login_email_hint", email); } catch {}
+    router.push("/login");
+  };
 
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
@@ -125,45 +136,25 @@ export default function RegisterForm() {
   // ── Submit (lógica intacta) ────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current || retrySeconds || registrationNotice === CREATED_LOGIN_REQUIRED) return;
     setError("");
 
     if (!validate()) return;
 
+    submitting.current = true;
     setLoading(true);
 
     try {
-      const API_URL =
-        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
-      const res = await fetch(`${API_URL}/auth/register-business`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: businessName,
-          phoneWhatsapp: whatsapp,
-          email,
-          password,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || "Error al registrarse");
+      const result = await registerAccount({ name: businessName, phoneWhatsapp: whatsapp, email, password });
+      if (result === 'signed-in') router.push('/home');
+      else setRegistrationNotice(result === 'login-required' ? CREATED_LOGIN_REQUIRED : REGISTRATION_UNCONFIRMED);
+    } catch (err: unknown) {
+      if (err instanceof StaleSessionError) return;
+      if (err instanceof AppApiError && err.status === 429) {
+        setRetrySeconds(err.details?.retryAfterSeconds || 1);
+        setError(err.message);
+        return;
       }
-
-      // Guardar sesión
-      localStorage.setItem("accessToken", data.accessToken);
-      localStorage.setItem("businessName", businessName.trim());
-      if (data.businessSlug) {
-        localStorage.setItem("businessSlug", data.businessSlug);
-      }
-
-      // Redirigir a home privada
-      router.push("/home");
-    } catch (err: any) {
       const msg = translateError(err);
       const lower = msg.toLowerCase();
 
@@ -181,6 +172,7 @@ export default function RegisterForm() {
         setError(msg);
       }
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -224,6 +216,12 @@ export default function RegisterForm() {
           Crear cuenta
         </h1>
 
+        {registrationNotice && (
+          <div role="status" className="text-sm text-gray-700">
+            <p>{registrationNotice}</p>
+            <button type="button" className="underline font-medium" onClick={goToLogin}>Iniciar sesión</button>
+          </div>
+        )}
         {error && (
           <p className="text-sm text-red-500 text-center font-medium">
             {error}
@@ -352,7 +350,7 @@ export default function RegisterForm() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || retrySeconds > 0 || registrationNotice === CREATED_LOGIN_REQUIRED}
           className="
             w-full
             bg-[#0b3f64]

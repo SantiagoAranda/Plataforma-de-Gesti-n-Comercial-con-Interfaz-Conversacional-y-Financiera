@@ -1,76 +1,62 @@
-/**
- * Cache en memoria de módulo con deduplicación de requests en vuelo.
- *
- * - Si el dato existe y es fresco (dentro del TTL), lo devuelve.
- * - Si hay un fetch en vuelo para la misma key, reutiliza la promesa (no duplica).
- * - Si no hay nada, ejecuta el fetcher, guarda el resultado y lo devuelve.
- */
-
-type CacheEntry<T> = {
-  data: T;
-  ts: number;
-};
-
-const store = new Map<string, CacheEntry<unknown>>();
+import {
+  assertCurrentSession,
+  getSessionContext,
+  StaleSessionError,
+  subscribeSession,
+} from "./auth/session";
+type CacheEntry = { data: unknown; ts: number };
+const store = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<unknown>>();
-
+const versions = new Map<string, number>();
+let epoch = 0;
+function scoped(key: string) {
+  return getSessionContext().key + ":" + key;
+}
 export async function getCached<T>(
   key: string,
   ttlMs: number,
   fetcher: () => Promise<T>,
 ): Promise<T> {
-  const now = Date.now();
-  const entry = store.get(key) as CacheEntry<T> | undefined;
-
-  // Dato fresco en cache
-  if (entry && now - entry.ts < ttlMs) {
-    return entry.data;
-  }
-
-  // Request ya en vuelo — reutilizar promesa
-  if (inflight.has(key)) {
-    return inflight.get(key) as Promise<T>;
-  }
-
-  // Nuevo fetch
-  const promise = fetcher()
+  const session = getSessionContext();
+  const scopedKey = scoped(key);
+  const entry = store.get(scopedKey);
+  if (entry && Date.now() - entry.ts < ttlMs) return entry.data as T;
+  const pending = inflight.get(scopedKey);
+  if (pending) return pending as Promise<T>;
+  const version = versions.get(scopedKey) || 0;
+  const startEpoch = epoch;
+  const promise = Promise.resolve()
+    .then(() => {
+      assertCurrentSession(session);
+      return fetcher();
+    })
     .then((data) => {
-      store.set(key, { data, ts: Date.now() });
-      inflight.delete(key);
+      assertCurrentSession(session);
+      if (epoch !== startEpoch || (versions.get(scopedKey) || 0) !== version)
+        throw new StaleSessionError();
+      store.set(scopedKey, { data, ts: Date.now() });
       return data;
     })
-    .catch((err) => {
-      inflight.delete(key);
-      throw err;
+    .finally(() => {
+      if (inflight.get(scopedKey) === promise) inflight.delete(scopedKey);
     });
-
-  inflight.set(key, promise as Promise<unknown>);
+  inflight.set(scopedKey, promise);
   return promise;
 }
-
 export function invalidateCache(key: string) {
-  store.delete(key);
-  // No cancelamos el request en vuelo (no se puede), pero el resultado
-  // no se re-guardará porque borramos la entry; la próxima llamada
-  // creará un request nuevo.
+  const scopedKey = scoped(key);
+  versions.set(scopedKey, (versions.get(scopedKey) || 0) + 1);
+  store.delete(scopedKey);
+  inflight.delete(scopedKey);
 }
-
 export function clearCache() {
+  epoch++;
   store.clear();
+  inflight.clear();
+  versions.clear();
 }
-
-/**
- * Lee del caché de forma síncrona sin devolver una Promesa.
- * Útil para inicializar estado en React en el primer render
- * y evitar skeletons si el dato ya está fresco.
- */
+subscribeSession(clearCache);
 export function getInstantCache<T>(key: string, ttlMs: number): T | null {
-  const now = Date.now();
-  const entry = store.get(key) as CacheEntry<T> | undefined;
-
-  if (entry && now - entry.ts < ttlMs) {
-    return entry.data;
-  }
-
-  return null;
+  const entry = store.get(scoped(key));
+  return entry && Date.now() - entry.ts < ttlMs ? (entry.data as T) : null;
 }
