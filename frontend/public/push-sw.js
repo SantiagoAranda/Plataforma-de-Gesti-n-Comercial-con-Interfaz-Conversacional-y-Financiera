@@ -16,6 +16,57 @@ function internalUrl(value, fallback) {
   }
 }
 
+// Propietario de sesión escrito por la página (src/lib/push/owner.ts). Si no se puede leer
+// (sin IndexedDB, error o demora) se devuelve null y el push se muestra de forma genérica.
+function readOwner() {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 1500);
+    const done = (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    try {
+      const open = indexedDB.open("push-identity", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("owner");
+      open.onerror = () => done(null);
+      open.onsuccess = () => {
+        const db = open.result;
+        try {
+          const read = db
+            .transaction("owner", "readonly")
+            .objectStore("owner")
+            .get("current");
+          read.onsuccess = () => {
+            db.close();
+            done(read.result ?? null);
+          };
+          read.onerror = () => {
+            db.close();
+            done(null);
+          };
+        } catch {
+          db.close();
+          done(null);
+        }
+      };
+    } catch {
+      done(null);
+    }
+  });
+}
+
+// Solo muestra contenido comercial si el destinatario del payload coincide con la sesión local.
+// Payloads sin recipientBusinessId (anteriores) o sin sesión verificable: nunca datos privados.
+function isVerifiedRecipient(payload, owner) {
+  return (
+    typeof payload.recipientBusinessId === "string" &&
+    payload.recipientBusinessId !== "" &&
+    Boolean(owner) &&
+    typeof owner.businessId === "string" &&
+    owner.businessId === payload.recipientBusinessId
+  );
+}
+
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
@@ -23,6 +74,21 @@ self.addEventListener("push", (event) => {
       try {
         payload = event.data ? event.data.json() : {};
       } catch {}
+      if (!payload || typeof payload !== "object") payload = {};
+
+      const owner = await readOwner();
+      if (!isVerifiedRecipient(payload, owner)) {
+        await self.registration.showNotification("Nueva notificación", {
+          body: "Inicia sesión para ver los detalles.",
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/badge-72x72.png",
+          tag: "push-unverified",
+          renotify: false,
+          data: { type: "WEB_PUSH", saleId: "", url: "/" },
+          actions: [],
+        });
+        return;
+      }
 
       const title =
         typeof payload.title === "string"
@@ -50,6 +116,7 @@ self.addEventListener("push", (event) => {
           title,
           body,
           data: safeData,
+          recipientBusinessId: payload.recipientBusinessId,
         });
         return;
       }

@@ -12,6 +12,14 @@ import {
   type PushStatusResponse,
 } from "@/src/lib/push/api";
 import { getToken } from "@/src/lib/auth";
+import { AppApiError } from "@/src/lib/api";
+import {
+  deviceIdKey,
+  intentKey,
+  pendingUnregisterKey,
+  PushLockTimeoutError,
+  withPushLock,
+} from "@/src/lib/push/lifecycle";
 import { generateCreationId } from "@/src/lib/itemHelpers";
 
 export type PushState =
@@ -127,10 +135,17 @@ function debugActivationTimeout(stage: TimeoutStage, timeoutMs: number) {
   console.debug("[Push activation timeout]", { stage, timeoutMs });
 }
 
+const LOCK_BUSY_MESSAGE =
+  "Otra pestaña está actualizando las notificaciones. Reintentá en unos segundos.";
+const ROTATION_UNAVAILABLE_MESSAGE =
+  "Este dispositivo tiene notificaciones de otra cuenta y el navegador no permite cambiarlas de forma segura. Reintentá desde una sola pestaña.";
+
 class PushFlowError extends Error {
   constructor(
     readonly stage: PushActivationStage,
     message = ACTIVATION_MESSAGES[stage],
+    /** El backend rechazó el endpoint por pertenecer a otra cuenta (409). */
+    readonly conflict = false,
   ) {
     super(message);
     this.name = "PushFlowError";
@@ -149,16 +164,12 @@ function getUserId() {
 }
 
 function deviceIdForUser(userId: string) {
-  const key = `push-device-id:v1:${userId}`;
+  const key = deviceIdKey(userId);
   const existing = localStorage.getItem(key);
   if (existing) return existing;
   const created = generateCreationId();
   localStorage.setItem(key, created);
   return created;
-}
-
-function pendingUnregisterKey(userId: string) {
-  return `push-unregister-pending:v1:${userId}`;
 }
 
 function pushEnabledForEnvironment() {
@@ -319,6 +330,65 @@ async function getReadyPushRegistration(
   throw new Error("The active service worker is not /push-sw.js at scope /");
 }
 
+async function createBrowserSubscription(
+  registration: ServiceWorkerRegistration,
+): Promise<PushSubscription> {
+  const rawVapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? "";
+  const invalidKey = () =>
+    new PushFlowError(
+      "vapid_key",
+      "La clave pública de notificaciones no tiene un formato válido.",
+    );
+
+  let applicationServerKey: ArrayBuffer;
+  try {
+    applicationServerKey = toApplicationServerKey(rawVapidKey);
+  } catch {
+    throw invalidKey();
+  }
+  const decoded = new Uint8Array(applicationServerKey);
+  if (applicationServerKey.byteLength !== 65 || decoded[0] !== 0x04) {
+    throw invalidKey();
+  }
+
+  try {
+    return await withTimeout(
+      registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      }),
+      SUBSCRIBE_TIMEOUT_MS,
+      "subscribe",
+    );
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Push activation subscribe error]", {
+        name: errorName,
+        message: errorMessage,
+      });
+    }
+    if (error instanceof PushActivationTimeoutError) {
+      debugActivationTimeout("subscribe", SUBSCRIBE_TIMEOUT_MS);
+      throw new PushFlowError(
+        "subscribe",
+        "El navegador no pudo conectarse al servicio de notificaciones. Revisa la red o vuelve a intentarlo.",
+      );
+    }
+    if (
+      errorName === "AbortError" ||
+      /registration faileds*-s*push service error/i.test(errorMessage)
+    ) {
+      throw new PushFlowError(
+        "subscribe",
+        "El navegador no pudo conectarse al servicio de notificaciones. Prueba nuevamente o revisa la configuración de red del navegador.",
+      );
+    }
+    throw new PushFlowError("subscribe");
+  }
+}
+
 function stateFromFacts(
   permission: NotificationPermission,
   browserSubscriptionExists: boolean,
@@ -363,8 +433,13 @@ export function usePushNotifications() {
       "Notification" in window,
     [],
   );
+  // ADMIN y cualquier sesión sin negocio nunca registran push (el backend responde 403).
   const checkSupport = useCallback(
-    () => supported && pushEnabledForEnvironment(),
+    () =>
+      supported &&
+      pushEnabledForEnvironment() &&
+      session.current.role !== "ADMIN" &&
+      Boolean(session.current.businessId),
     [supported],
   );
 
@@ -432,8 +507,9 @@ export function usePushNotifications() {
       }
 
       let deviceId: string;
+      let userId: string;
       try {
-        deviceId = currentDevice().deviceId;
+        ({ deviceId, userId } = currentDevice());
       } catch {
         throw new PushFlowError("backend_register");
       }
@@ -457,6 +533,7 @@ export function usePushNotifications() {
                 subscription: serialized,
                 platform: platformFromBrowser(),
                 userAgent: navigator.userAgent,
+                expectedUserId: userId,
               },
               signal,
             ),
@@ -470,7 +547,11 @@ export function usePushNotifications() {
             BACKEND_REGISTER_TIMEOUT_MS,
           );
         }
-        throw new PushFlowError("backend_register");
+        throw new PushFlowError(
+          "backend_register",
+          ACTIVATION_MESSAGES.backend_register,
+          error instanceof AppApiError && error.status === 409,
+        );
       }
 
       let verified: PushStatusResponse;
@@ -495,101 +576,36 @@ export function usePushNotifications() {
     [currentDevice],
   );
 
-  const reconcileSubscription = useCallback(async () => {
-    try {
-      const backend = await fetchPushStatus(currentDevice().deviceId);
-      setStatus(backend);
-      setBackendRegistrationEnabled(backend.configured && backend.enabled);
-    } catch {
-      if (!checkSupport()) {
-        setState("unsupported");
-        return;
-      }
-    }
-
-    if (!checkSupport()) {
-      setState("unsupported");
-      return;
-    }
-    const permission = Notification.permission;
-    setPermissionGranted(permission === "granted");
-    if (permission === "denied") {
-      setBrowserSubscriptionExists(false);
-      setState("denied");
-      return;
-    }
-
-    try {
-      const requestedRegistration = await navigator.serviceWorker.register(
-        "/push-sw.js",
-        { scope: "/" },
-      );
-      const registration = await getReadyPushRegistration(
-        requestedRegistration,
-      );
-      const subscription = await registration.pushManager.getSubscription();
-      const hasBrowserSubscription = Boolean(subscription);
-      setBrowserSubscriptionExists(hasBrowserSubscription);
-
-      const { userId, deviceId } = currentDevice();
-      const backend = await fetchPushStatus(deviceId);
-      setStatus(backend);
-      let backendEnabled = backend.configured && backend.enabled;
-      setBackendRegistrationEnabled(backendEnabled);
-
-      if (localStorage.getItem(pendingUnregisterKey(userId)) === "true") {
-        await unregisterPushSubscription(deviceId);
-        if (!subscription || (await subscription.unsubscribe())) {
-          localStorage.removeItem(pendingUnregisterKey(userId));
-          setBrowserSubscriptionExists(false);
-          setBackendRegistrationEnabled(false);
-          setStatus({ ...backend, configured: false, enabled: false });
-          setState(stateFromFacts(permission, false, false));
-        } else {
-          setState("error");
+  // 409 = el endpoint del navegador pertenece a otra cuenta. Rotación segura: dar de baja la
+  // suscripción local, crear otra sin pedir permiso y registrar una sola vez. Solo con lock.
+  const registerWithRotation = useCallback(
+    async (
+      subscription: PushSubscription,
+      registration: ServiceWorkerRegistration,
+      canRotate: boolean,
+      debugContext?: Parameters<typeof registerSubscriptionWithBackend>[1],
+    ) => {
+      try {
+        return await registerSubscriptionWithBackend(subscription, debugContext);
+      } catch (error) {
+        if (!(error instanceof PushFlowError) || !error.conflict) throw error;
+        if (!canRotate) {
+          throw new PushFlowError("backend_register", ROTATION_UNAVAILABLE_MESSAGE);
         }
-        return;
-      }
-
-      if (subscription && permission === "granted") {
-        let fingerprint: string;
-        try {
-          fingerprint = await subscriptionFingerprint(subscription);
-        } catch {
-          throw new PushFlowError("serialize");
+        currentDevice(); // una sesión nueva cancela la rotación antes de tocar el navegador
+        if (!(await subscription.unsubscribe())) {
+          throw new PushFlowError("backend_register");
         }
-        if (
-          !backend.configured ||
-          !backend.enabled ||
-          backend.subscriptionFingerprint !== fingerprint
-        ) {
-          await registerSubscriptionWithBackend(subscription);
-          backendEnabled = true;
-        }
-      } else if (!subscription && backendEnabled) {
-        await unregisterPushSubscription(deviceId);
-        backendEnabled = false;
-        setBackendRegistrationEnabled(false);
-        setStatus({ ...backend, configured: false, enabled: false });
+        currentDevice();
+        const fresh = await createBrowserSubscription(registration);
+        setBrowserSubscriptionExists(true);
+        return registerSubscriptionWithBackend(fresh);
       }
+    },
+    [currentDevice, registerSubscriptionWithBackend],
+  );
 
-      setActivationError(null);
-      setState(
-        stateFromFacts(permission, hasBrowserSubscription, backendEnabled),
-      );
-    } catch (error) {
-      const stage =
-        error instanceof PushFlowError ? error.stage : "service_worker";
-      failActivation(stage);
-    }
-  }, [
-    checkSupport,
-    currentDevice,
-    failActivation,
-    registerSubscriptionWithBackend,
-  ]);
-
-  const runActivation = useCallback(async (): Promise<ActivatePushResult> => {
+  const runActivationUnlocked = useCallback(async (canRotate: boolean): Promise<ActivatePushResult> => {
     assertCurrentSession(session.current);
     setActivationError(null);
     if (!checkSupport()) return failActivation("support");
@@ -670,95 +686,11 @@ export function usePushNotifications() {
 
       let subscription = existingSubscription;
       if (!subscription) {
-        const rawVapidKey =
-          process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() ?? "";
-
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[Push VAPID runtime]", {
-            present: rawVapidKey.length > 0,
-            encodedLength: rawVapidKey.length,
-            hasWhitespace: /\s/.test(rawVapidKey),
-            startsWithQuote:
-              rawVapidKey.startsWith('"') || rawVapidKey.startsWith("'"),
-            endsWithQuote:
-              rawVapidKey.endsWith('"') || rawVapidKey.endsWith("'"),
-          });
-        }
-
-        let applicationServerKey: ArrayBuffer;
         try {
-          applicationServerKey = toApplicationServerKey(rawVapidKey);
-        } catch {
-          return failActivation(
-            "vapid_key",
-            "La clave pública de notificaciones no tiene un formato válido.",
-          );
-        }
-
-        const decodedVapidKey = new Uint8Array(applicationServerKey);
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[Push VAPID decoded]", {
-            decodedLength: applicationServerKey.byteLength,
-            firstByte: decodedVapidKey[0] ?? null,
-          });
-        }
-
-        if (
-          applicationServerKey.byteLength !== 65 ||
-          decodedVapidKey[0] !== 0x04
-        ) {
-          return failActivation(
-            "vapid_key",
-            "La clave pública de notificaciones no tiene un formato válido.",
-          );
-        }
-
-        try {
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation stage]", {
-              stage: "subscribe_start",
-            });
-          }
-          subscription = await withTimeout(
-            registration.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey,
-            }),
-            SUBSCRIBE_TIMEOUT_MS,
-            "subscribe",
-          );
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation stage]", {
-              stage: "subscribe_completed",
-            });
-          }
+          subscription = await createBrowserSubscription(registration);
         } catch (error) {
-          const errorName =
-            error instanceof Error ? error.name : "UnknownError";
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[Push activation subscribe error]", {
-              name: errorName,
-              message: errorMessage,
-            });
-          }
-          if (error instanceof PushActivationTimeoutError) {
-            debugActivationTimeout("subscribe", SUBSCRIBE_TIMEOUT_MS);
-            return failActivation(
-              "subscribe",
-              "El navegador no pudo conectarse al servicio de notificaciones. Revisa la red o vuelve a intentarlo.",
-            );
-          }
-          if (
-            errorName === "AbortError" ||
-            /registration failed\s*-\s*push service error/i.test(errorMessage)
-          ) {
-            return failActivation(
-              "subscribe",
-              "El navegador no pudo conectarse al servicio de notificaciones. Prueba nuevamente o revisa la configuración de red del navegador.",
-            );
+          if (error instanceof PushFlowError) {
+            return failActivation(error.stage, error.message);
           }
           return failActivation("subscribe");
         }
@@ -766,7 +698,7 @@ export function usePushNotifications() {
       setBrowserSubscriptionExists(true);
 
       try {
-        await registerSubscriptionWithBackend(subscription, {
+        await registerWithRotation(subscription, registration, canRotate, {
           permissionBefore,
           permissionResult,
           serviceWorkerReady: Boolean(registration),
@@ -780,7 +712,9 @@ export function usePushNotifications() {
         return failActivation("backend_register");
       }
 
-      localStorage.removeItem(pendingUnregisterKey(currentDevice().userId));
+      const { userId: activatedUser } = currentDevice();
+      localStorage.removeItem(pendingUnregisterKey(activatedUser));
+      localStorage.setItem(intentKey(activatedUser), "on");
       setActivationError(null);
       setBackendRegistrationEnabled(true);
       setState("registered");
@@ -792,8 +726,141 @@ export function usePushNotifications() {
     checkSupport,
     currentDevice,
     failActivation,
-    registerSubscriptionWithBackend,
+    registerWithRotation,
   ]);
+
+  const reconcileUnlocked = useCallback(
+    async (canRotate: boolean) => {
+      if (!checkSupport()) {
+        setState("unsupported");
+        return;
+      }
+      try {
+        const backend = await fetchPushStatus(currentDevice().deviceId);
+        setStatus(backend);
+        setBackendRegistrationEnabled(backend.configured && backend.enabled);
+      } catch {}
+
+      const permission = Notification.permission;
+      setPermissionGranted(permission === "granted");
+      if (permission === "denied") {
+        setBrowserSubscriptionExists(false);
+        setState("denied");
+        return;
+      }
+
+      try {
+        const requestedRegistration = await navigator.serviceWorker.register(
+          "/push-sw.js",
+          { scope: "/" },
+        );
+        const registration = await getReadyPushRegistration(
+          requestedRegistration,
+        );
+        let subscription = await registration.pushManager.getSubscription();
+        setBrowserSubscriptionExists(Boolean(subscription));
+
+        const { userId, deviceId } = currentDevice();
+        const backend = await fetchPushStatus(deviceId);
+        setStatus(backend);
+        let backendEnabled = backend.configured && backend.enabled;
+        setBackendRegistrationEnabled(backendEnabled);
+        // Suscripciones anteriores a la intención persistente: el estado del backend es la intención.
+        if (backendEnabled) localStorage.setItem(intentKey(userId), "on");
+        const intent = () => localStorage.getItem(intentKey(userId)) === "on";
+
+        if (localStorage.getItem(pendingUnregisterKey(userId)) === "true") {
+          await unregisterPushSubscription(deviceId);
+          if (subscription && !(await subscription.unsubscribe())) {
+            setState("error");
+            return;
+          }
+          localStorage.removeItem(pendingUnregisterKey(userId));
+          subscription = null;
+          backendEnabled = false;
+          setBrowserSubscriptionExists(false);
+          setBackendRegistrationEnabled(false);
+          setStatus({ ...backend, configured: false, enabled: false });
+          if (!(permission === "granted" && intent())) {
+            setState(stateFromFacts(permission, false, false));
+            return;
+          }
+        }
+
+        if (permission === "granted" && intent() && !subscription) {
+          // Permiso ya concedido: se recrea la suscripción sin volver a pedirlo (tras logout o limpieza).
+          await runActivationUnlocked(canRotate);
+          return;
+        }
+
+        if (
+          subscription &&
+          permission === "granted" &&
+          (backend.configured || intent())
+        ) {
+          let fingerprint: string;
+          try {
+            fingerprint = await subscriptionFingerprint(subscription);
+          } catch {
+            throw new PushFlowError("serialize");
+          }
+          if (
+            !backend.configured ||
+            !backend.enabled ||
+            backend.subscriptionFingerprint !== fingerprint
+          ) {
+            await registerWithRotation(subscription, registration, canRotate);
+            backendEnabled = true;
+          }
+        } else if (!subscription && backendEnabled) {
+          await unregisterPushSubscription(deviceId);
+          backendEnabled = false;
+          setBackendRegistrationEnabled(false);
+          setStatus({ ...backend, configured: false, enabled: false });
+        }
+
+        setActivationError(null);
+        setState(
+          stateFromFacts(permission, Boolean(subscription), backendEnabled),
+        );
+      } catch (error) {
+        const stage =
+          error instanceof PushFlowError ? error.stage : "service_worker";
+        failActivation(
+          stage,
+          error instanceof PushFlowError ? error.message : undefined,
+        );
+      }
+    },
+    [
+      checkSupport,
+      currentDevice,
+      failActivation,
+      registerWithRotation,
+      runActivationUnlocked,
+    ],
+  );
+
+  const runActivation = useCallback(async (): Promise<ActivatePushResult> => {
+    try {
+      return await withPushLock((canRotate) => runActivationUnlocked(canRotate));
+    } catch (error) {
+      if (error instanceof PushLockTimeoutError) {
+        return failActivation("subscribe", LOCK_BUSY_MESSAGE);
+      }
+      throw error;
+    }
+  }, [failActivation, runActivationUnlocked]);
+
+  const reconcileSubscription = useCallback(async () => {
+    try {
+      await withPushLock((canRotate) => reconcileUnlocked(canRotate));
+    } catch (error) {
+      if (error instanceof PushLockTimeoutError) {
+        failActivation("subscribe", LOCK_BUSY_MESSAGE);
+      }
+    }
+  }, [failActivation, reconcileUnlocked]);
 
   const activatePush = useCallback((): Promise<ActivatePushResult> => {
     setLoadingAction("activate");
@@ -832,37 +899,48 @@ export function usePushNotifications() {
     });
   }, [failActivation, runActivation]);
 
+  const deactivateUnlocked = useCallback(async () => {
+    const { userId, deviceId } = currentDevice();
+    localStorage.removeItem(intentKey(userId)); // la baja manual no se reactiva sola
+    await unregisterPushSubscription(deviceId);
+    localStorage.setItem(pendingUnregisterKey(userId), "true");
+    const requestedRegistration = await navigator.serviceWorker.register(
+      "/push-sw.js",
+      { scope: "/" },
+    );
+    const registration = await getReadyPushRegistration(requestedRegistration);
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription && !(await subscription.unsubscribe())) {
+      throw new Error("UNSUBSCRIBE_FAILED");
+    }
+    localStorage.removeItem(pendingUnregisterKey(userId));
+    setBrowserSubscriptionExists(false);
+    setBackendRegistrationEnabled(false);
+    setActivationError(null);
+    await getPushStatus();
+    setState("default");
+  }, [currentDevice, getPushStatus]);
+
   const deactivatePush = useCallback(async () => {
     setLoadingAction("deactivate");
     try {
-      const { userId, deviceId } = currentDevice();
-      await unregisterPushSubscription(deviceId);
-      localStorage.setItem(pendingUnregisterKey(userId), "true");
-      const requestedRegistration = await navigator.serviceWorker.register(
-        "/push-sw.js",
-        { scope: "/" },
-      );
-      const registration = await getReadyPushRegistration(
-        requestedRegistration,
-      );
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription && !(await subscription.unsubscribe())) {
-        throw new Error("UNSUBSCRIBE_FAILED");
-      }
-      localStorage.removeItem(pendingUnregisterKey(userId));
-      setBrowserSubscriptionExists(false);
-      setBackendRegistrationEnabled(false);
-      setActivationError(null);
-      await getPushStatus();
-      setState("default");
+      await withPushLock(() => deactivateUnlocked());
       return true;
-    } catch {
+    } catch (error) {
       setState("error");
+      if (error instanceof PushLockTimeoutError) {
+        setActivationError({
+          ok: false,
+          deviceRegistered: false,
+          stage: "subscribe",
+          message: LOCK_BUSY_MESSAGE,
+        });
+      }
       return false;
     } finally {
       setLoadingAction(null);
     }
-  }, [currentDevice, getPushStatus]);
+  }, [deactivateUnlocked]);
 
   const sendTestPush = useCallback(async () => {
     setLoadingAction("test");

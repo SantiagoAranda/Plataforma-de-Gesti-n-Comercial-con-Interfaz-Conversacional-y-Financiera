@@ -1,6 +1,10 @@
+import { syncPushOwner } from "../push/owner";
+
 // Decoding only partitions browser state; authorization remains on the server.
 export type SessionContext = Readonly<{
   key: string;
+  /** Marca monotónica de creación; ordena transiciones entre pestañas. */
+  at: number;
   token: string | null;
   userId: string | null;
   businessId: string | null;
@@ -9,6 +13,7 @@ export type SessionContext = Readonly<{
 let generation = 0;
 let snapshot: SessionContext = {
   key: "server",
+  at: 0,
   token: null,
   userId: null,
   businessId: null,
@@ -62,7 +67,17 @@ export function getSessionContext(): SessionContext {
     } catch {
       /* Metadata storage failures must not invalidate a historical token. */
     }
-    snapshot = { ...user, token, key: `${owner}:${++generation}` };
+    snapshot = {
+      ...user,
+      token,
+      key: `${owner}:${++generation}`,
+      at: Math.max(Date.now(), snapshot.at + 1),
+    };
+    syncPushOwner({
+      userId: user.userId,
+      businessId: user.businessId,
+      at: snapshot.at,
+    });
     for (const listener of listeners) listener();
   }
   return snapshot;

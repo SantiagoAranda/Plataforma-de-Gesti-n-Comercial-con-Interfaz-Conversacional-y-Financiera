@@ -1,4 +1,4 @@
-import { api } from "@/src/lib/api";
+import { api } from "../api";
 
 export type PushPlatform =
   | "WEB_WINDOWS"
@@ -23,6 +23,7 @@ export function registerPushSubscription(
     subscription: PushSubscriptionJSON;
     platform: PushPlatform;
     userAgent?: string;
+    expectedUserId?: string;
   },
   signal?: AbortSignal,
 ) {
@@ -44,12 +45,16 @@ export function getPushStatus(deviceId: string, signal?: AbortSignal) {
   });
 }
 
-export function unregisterPushSubscription(deviceId: string) {
+export function unregisterPushSubscription(
+  deviceId: string,
+  signal?: AbortSignal,
+) {
   return api<{ configured: false; enabled: false }>(
     "/notifications/push/unregister",
     {
       method: "DELETE",
       body: JSON.stringify({ deviceId }),
+      signal,
     },
   );
 }

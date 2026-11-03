@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Asientos contables y retenciones – Colombia 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--tx:#1e293b;--mut:#64748b;--bd:#e2e8f0;--pri:#1d4ed8;--ok:#047857;--bad:#b91c1c;--warn-bg:#fef3c7;--warn-tx:#78350f;--hl:#fde047;--hl-tx:#111;--soft:#f1f5f9;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--card:#1e293b;--tx:#e2e8f0;--mut:#94a3b8;--bd:#334155;--pri:#60a5fa;--ok:#34d399;--bad:#f87171;--warn-bg:#422006;--warn-tx:#fde68a;--soft:#0f172a}}
+:root[data-theme="dark"]{--bg:#0f172a;--card:#1e293b;--tx:#e2e8f0;--mut:#94a3b8;--bd:#334155;--pri:#60a5fa;--ok:#34d399;--bad:#f87171;--warn-bg:#422006;--warn-tx:#fde68a;--soft:#0f172a}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 Inter,system-ui,sans-serif}
+header{background:linear-gradient(135deg,#1e3a8a,#3b82f6);color:#fff;padding:20px 16px}
+header h1{margin:0;font-size:21px}header p{margin:4px 0 0;font-size:12px;opacity:.9}
+main{max-width:1200px;margin:16px auto;padding:0 12px;display:grid;gap:16px;grid-template-columns:minmax(0,340px) minmax(0,1fr)}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+h2{font-size:13px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.03em;color:var(--pri)}
+label{display:block;font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;margin:9px 0 3px}
+input,select{width:100%;padding:7px 8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:inherit}
+.chk{display:flex;gap:8px;align-items:flex-start;text-transform:none;font-size:12px;font-weight:500;color:var(--tx);margin:7px 0}.chk input{width:auto;margin-top:2px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+@media(max-width:600px){.kpis{grid-template-columns:1fr 1fr}}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;text-align:center}.kpi span{font-size:10px;color:var(--mut);text-transform:uppercase;font-weight:600}.kpi b{display:block;font-size:16px;margin-top:2px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}.tabs button{flex:1;padding:8px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);font:600 13px Inter,sans-serif;cursor:pointer}.tabs button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.sc{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--soft);font-size:11px;text-transform:uppercase;color:var(--mut);text-align:left;padding:8px}td{padding:8px;border-top:1px solid var(--bd)}
+.n{text-align:right;font-variant-numeric:tabular-nums}.code{font-family:ui-monospace,monospace;color:var(--mut);font-size:12px}
+tfoot td{font-weight:700;background:var(--soft)}.bad{color:var(--bad)}.ok{color:var(--ok)}
+.tt{font-size:12px;font-weight:700;margin:0 0 8px}
+ul{margin:0;padding-left:18px}li{margin:4px 0;font-size:12px}
+.warn{background:var(--warn-bg);color:var(--warn-tx);border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:14px}
+.warn b{display:block;margin-bottom:3px}
+.mx td,.mx th{text-align:center;font-size:11px;padding:6px 4px;border:1px solid var(--bd)}.mx td:first-child,.mx th:first-child{text-align:left}
+.mx .cur{background:var(--hl);color:var(--hl-tx);font-weight:700}
+.nm{display:block;font-size:11px;color:var(--mut);margin-top:4px;font-style:italic}.chip{display:inline-block;background:var(--soft);border:1px solid var(--bd);border-radius:6px;padding:1px 6px;margin:4px 4px 0 0;font-size:11px;font-weight:600}.hide{display:none}small{color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+<h1>Asientos contables y retenciones – Colombia</h1>
+<p>Retefuente, ReteIVA, ReteICA y autorretención · reglas vigentes a octubre de 2026 · UVT 2026: $52.374</p>
+</header>
+<main>
+<aside>
+<div class="card">
+<h2>Operación</h2>
+<div class="row2"><div><label>Fecha de pago o abono en cuenta (lo que ocurra primero)</label><input type="date" id="fecha" value="2026-10-20"></div>
+<div><label>UVT ($)</label><input type="number" id="uvt"></div></div>
+<label>Concepto del pago</label><select id="concepto"></select><span class="nm">DUR 1625/2016: art. 1.2.4.4.1 (servicios), 1.2.4.9.1 (compras), 1.2.4.10.6 (honorarios, comisiones, transporte); Decreto 572/2025.</span>
+<span class="nm">UVT: art. 868 E.T. y Res. DIAN 000238/2025. Bases por fecha de pago o abono en cuenta: antes del 1-jun-2025, DUR 1625/2016 original; 1-jun-2025 a 7-may-2026, Dec. 572/2025; 8-may a 30-jun-2026, suspensión provisional (auto del 7-may-2026, DIAN Comunicado 070); desde el 1-jul-2026, Dec. 572/2025 (auto del 2-jun-2026, Rad. 11001-03-27-000-2025-00055-00).</span><label>Valor antes de IVA ($)</label><input type="number" id="base" value="1000000" min="0" step="10000">
+<div class="row2"><div><label>IVA</label><select id="iva"><option value="19">19 % general</option><option value="5">5 % reducido</option><option value="0">0 % exento</option></select></div>
+<div><label>Vendedor es declarante de renta</label><select id="decl"><option value="1">Sí</option><option value="0">No</option></select></div></div><span class="nm">IVA: arts. 420, 468 (19 %), 468-1 (5 %) y 481 (exentos) E.T. Declarante de renta: art. 592 E.T. (no obligados a declarar) y DUR 1.2.4.9.1 (tarifa de compras y servicios).</span>
+<div id="aiuBox" class="hide"><label>Valor del AIU (A+I+U) incluido en el valor ($)</label><input type="number" id="aiu" min="0" step="10000" value="0"><small>Retefuente e IVA se calculan sobre el AIU, que debe estar discriminado en la factura y no ser inferior al 10 % del valor (art. 462-1 E.T. para vigilancia y aseo; temporales pendiente de confirmación). ReteICA se calcula sobre el ingreso total, salvo disposición municipal.</small></div>
+<label>Tratamiento del IVA en el comprador</label><select id="ivaMode"><option value="auto">Automático (responsable → descontable; no responsable → costo)</option><option value="desc">IVA descontable (art. 488 E.T.)</option><option value="costo">Mayor valor del costo/gasto (sin derecho a descuento)</option></select><small>La responsabilidad de IVA no basta: el descuento depende de que la compra sea computable en operaciones gravadas o exentas (arts. 488 y 490 E.T.).</small>
+<div id="honBox" class="hide"><label class="chk"><input type="checkbox" id="t383"> El beneficiario (persona natural) solicitó aplicar la tabla del art. 383 E.T. (rentas de trabajo, sin costos ni deducciones)</label>
+<label id="c3300L">Honorarios de la persona natural en el año</label><select id="c3300"><option value="0">Hasta 3.300 UVT (10 %)</option><option value="1">Superiores a 3.300 UVT por contrato o acumulado (11 %)</option></select>
+<div id="depBox" class="hide"><div class="row2"><div><label>Aportes salud + pensión del mes ($)</label><input type="number" id="d_apo" min="0" value="0"></div><div><label>Deducciones art. 387 ($)</label><input type="number" id="d_ded" min="0" value="0"></div></div><label class="chk"><input type="checkbox" id="d_ex"> Aplicar renta exenta del 25 % (art. 206 num. 10; tope 790 UVT anuales)</label></div></div>
+</div>
+<div class="card" id="cB"></div>
+<div class="card" id="cS"></div>
+<div class="card">
+<h2>ReteICA (municipal)</h2>
+<label class="chk"><input type="checkbox" id="icaOn" checked> Comprador es agente de ReteICA y el vendedor es sujeto de ICA en este municipio</label>
+<label>Municipio</label><select id="muni"></select><div id="muniInfo"></div>
+<label>Tarifa de retención (‰)</label><select id="icaB"></select>
+<input id="icaO" type="number" step="0.01" class="hide" placeholder="‰ según acuerdo municipal">
+<label>Base mínima ReteICA (UVT)</label><input type="number" id="icaMin" placeholder="Automática" step="1"><small>Por defecto: el tope del municipio elegido. Escriba un valor en UVT para reemplazarlo.</small><span class="nm">Normas: Ley 14/1983, Decreto-Ley 1333/1986, acuerdo municipal y art. 911 E.T. (SIMPLE no sujeto).</span>
+</div>
+</aside>
+<section>
+<div class="warn" id="alerts"></div>
+<div class="warn"><b>Estado normativo (oct. 2026)</b>
+Decreto 572/2025 (arts. 2 a 8: bases y autorretención): el Consejo de Estado los suspendió provisionalmente (auto del 7-may-2026) y la DIAN ordenó aplicar las reglas previas desde el 8-may-2026; el auto del 2-jun-2026 revocó la suspensión y el decreto rige de nuevo desde el 1-jul-2026 (proceso de nulidad pendiente). La aplicación elige las reglas según la fecha de pago o abono en cuenta. Lo no verificado en fuente oficial (ReteICA municipal, tarifas de autorretención por CIIU, PUC) se marca como pendiente: confirme con su contador antes de declarar.</div>
+<div class="kpis"><div class="kpi"><span>Base</span><b id="kB"></b></div><div class="kpi"><span>IVA</span><b id="kI"></b></div><div class="kpi"><span>Retenciones</span><b id="kR" class="bad"></b></div><div class="kpi"><span>Neto</span><b id="kN" class="ok"></b></div></div>
+<div class="tabs"><button id="t_s" class="on">Vendedor</button><button id="t_b">Comprador</button><button id="t_a">Ambos</button></div>
+<div class="card" id="vS"><p class="tt">Libro diario – VENDEDOR</p><div class="sc"><table><thead><tr><th>PUC</th><th>Cuenta</th><th class="n">Débito</th><th class="n">Crédito</th></tr></thead><tbody id="bS"></tbody><tfoot id="fS"></tfoot></table></div></div>
+<div class="card" id="vB"><p class="tt">Libro diario – COMPRADOR</p><div class="sc"><table><thead><tr><th>PUC</th><th>Cuenta</th><th class="n">Débito</th><th class="n">Crédito</th></tr></thead><tbody id="bB"></tbody><tfoot id="fB"></tfoot></table></div></div>
+<div class="card"><h2>Validación por contribuyente: al comprar y al vender</h2><div class="sc"><table><thead><tr><th>Tipo</th><th>RUT</th><th>Como comprador retiene a…</th><th>Como vendedor le retienen…</th></tr></thead><tbody id="valB"></tbody></table></div><small>Calculado con el mismo motor: pago de $5.000.000 en servicios con IVA 19 %, ReteICA de Bogotá activo y vendedor sin autorretención. Si el vendedor es autorretenedor (RUT 15) no se le retiene renta. En ReteICA la calidad de agente la define cada municipio.</small></div>
+<div class="card"><h2>Interacción de responsabilidades RUT (comprador ↔ vendedor)</h2><div class="sc"><table><thead><tr><th>Impuesto</th><th>Comprador (RUT)</th><th>Vendedor (RUT)</th><th class="n">Resultado</th><th>Normas</th></tr></thead><tbody id="rutB"></tbody></table></div></div>
+<div class="card"><h2>Análisis de reglas aplicadas</h2><ul id="why"></ul></div>
+<div class="card"><h2>Matriz comprador × vendedor (con el concepto y valor actuales)</h2><div class="sc"><table class="mx"><thead id="mxh"></thead><tbody id="mx"></tbody></table></div><small>Con el concepto y valor actuales, sin autorretención del vendedor. F = retefuente · I = ReteIVA · C = ReteICA</small></div>
+<div class="card"><h2>Pruebas automáticas</h2><div id="testRes"></div><small>Cubren periodos del Decreto 572, bases mínimas en el límite, cada concepto, art. 383, AIU, SIMPLE, ReteIVA, ReteICA, autorretención y cuadre de asientos.</small></div>
+<div class="card"><h2>Alcance y notas</h2><ul>
+<li>Honorarios: persona jurídica 11 %; persona natural 10 % (hasta 3.300 UVT al año) u 11 % (por encima). La tabla del art. 383 E.T. solo se aplica si la persona natural la solicita (rentas de trabajo sin relación laboral) y con depuración; no se aplica por defecto ni a pagos laborales (este modelo no liquida nómina).</li>
+<li>Persona natural: solo es agente de retención con ingresos brutos &gt; 30.000 UVT el año anterior (art. 368-2); marque la casilla en el comprador. El gran contribuyente y las personas jurídicas son agentes (arts. 368 y 437-2).</li>
+<li>Régimen SIMPLE: no es lo mismo que ser responsable de IVA. Solo es no responsable quien desarrolla exclusivamente actividades del num. 1 del art. 908 (art. 437 par. 4). No está sujeto a retefuente ni autorretención (art. 911); sí a ReteIVA si es responsable (art. 437-2 num. 9; Oficio DIAN 901166/2022).</li>
+<li>ReteIVA: agente según la lista cerrada del art. 437-2. Aquí se modelan el gran contribuyente (num. 2) y el responsable que compra al SIMPLE responsable (num. 9); la tarifa es 15 % del IVA facturado (no de la base). No modelados: entidades estatales (num. 1), servicios a no residentes (num. 3, 100 % del IVA), emisoras de tarjetas y demás numerales.</li>
+<li>Base mínima del ReteIVA: se usan 10/27 UVT (compras) y 2/4 UVT (servicios) según el periodo, tomadas de fuentes secundarias; pendiente de confirmar en el DUR.</li>
+<li>AIU: retefuente e IVA sobre el AIU si está discriminado y es ≥ 10 % del valor. Sin AIU no se liquida la renta. Construcción: no modelada (pendiente de verificación del concepto y su base).</li>
+<li>ReteICA: las tarifas por CIIU, las bases y la calidad de agente dependen de cada acuerdo municipal. Los valores incluidos NO están verificados oficialmente salvo lo indicado como parcial; la tarifa debe seleccionarse según la actividad y la territorialidad del ingreso.</li>
+<li>Autorretención: tarifa manual por CIIU y fecha (DUR 1.2.6.8 antes y después del Decreto 572); no hay tarifas precargadas.</li>
+<li>Cuentas PUC sugeridas (Decreto 2650/1993; 2408 con auxiliares de IVA generado y descontable); las subcuentas de ingresos y gastos son sugeridas y deben ajustarse a su plan y actividad.</li>
+<li>No modela: retención a no residentes, nómina, dividendos, INC, retención de IVA por tarjetas, ni la depuración completa del art. 383 (dependientes, límites especiales).</li></ul></div></section>
+</main>
+<script>
+const C=[
+["compras","Compras generales","C",2.5,3.5,10,27,"143505|Mercancías no fabricadas por la empresa","236540","413595|Comercio – otros"],
+["agro","Compra de productos agrícolas / pecuarios sin procesamiento","C",1.5,1.5,70,92,"143505|Mercancías no fabricadas por la empresa","236540","413595|Comercio – otros"],
+["comb","Combustibles derivados del petróleo","C",0.1,0.1,0,0,"143505|Mercancías no fabricadas por la empresa","236540","413595|Comercio – otros"],
+["serv","Servicios generales","S",4,6,2,4,"513595|Servicios – otros","236525","415595|Servicios empresariales – otros"],
+["hon","Honorarios y comisiones (PJ 11 %; PN 10 %/11 %; tabla art. 383 solo si el beneficiario la solicita)","S",11,11,0,0,"511095|Honorarios – otros","236515","415595|Servicios empresariales – otros"],
+["arrI","Arrendamiento de inmuebles","S",3.5,3.5,10,27,"512010|Arrendamientos – construcciones y edificaciones","236530","415595|Arrendamientos – otros"],
+["arrM","Arrendamiento de bienes muebles","S",4,4,0,0,"512015|Arrendamientos – maquinaria y equipo","236530","415595|Arrendamientos – otros"],
+["hotel","Hoteles, restaurantes y hospedaje","S",3.5,3.5,2,4,"513595|Servicios – otros","236525","414095|Hoteles y restaurantes"],
+["tcar","Transporte de carga","S",1,1,2,4,"513550|Transporte, fletes y acarreos","236525","414595|Transporte"],
+["tpas","Transporte de pasajeros (terrestre)","S",3.5,3.5,10,27,"513550|Transporte, fletes y acarreos","236525","414595|Transporte"],
+["vig","Vigilancia y aseo (sobre AIU)","S",2,2,2,4,"513505|Aseo y vigilancia","236525","415595|Servicios empresariales – otros"],
+["temp","Servicios temporales de empleo (sobre AIU)","S",1,1,2,4,"513510|Temporales","236525","415595|Servicios empresariales – otros"]
+].map(a=>({id:a[0],n:a[1],t:a[2],rD:a[3],rN:a[4],bN:a[5],bO:a[6],buy:a[7].split("|"),ret:a[8],rev:a[9].split("|")}));
+C.forEach(c=>{c.aiu=c.id==="vig"||c.id==="temp";c.pers=c.id==="hon"||c.id==="serv"});
+const UVT={2024:47065,2025:49799,2026:52374};
+const $=i=>document.getElementById(i),fm=n=>new Intl.NumberFormat("es-CO",{style:"currency",currency:"COP",maximumFractionDigits:0}).format(n);
+/* Periodos del Decreto 572/2025 según fecha de pago o abono en cuenta (lo que ocurra primero) */
+function period(d){
+ if(d<"2025-06-01")return{k:"pre",nuevo:false,t:"anterior al Decreto 572/2025 (DUR 1625/2016 original)"};
+ if(d<="2026-05-07")return{k:"572",nuevo:true,t:"Decreto 572/2025 vigente (1-jun-2025 a 7-may-2026)"};
+ if(d<="2026-06-30")return{k:"susp",nuevo:false,t:"suspensión provisional arts. 2-8 Dec. 572 (DIAN Com. 070: desde 8-may-2026; reglas previas del DUR 1625/2016)"};
+ return{k:"572b",nuevo:true,t:"Decreto 572/2025 restablecido desde el 1-jul-2026 (auto del 2-jun-2026 que revocó la suspensión)"};
+}
+const T383=u=>u<=95?0:u<=150?(u-95)*.19:u<=360?(u-150)*.28+10:u<=640?(u-360)*.33+69:u<=945?(u-640)*.35+162:u<=2300?(u-945)*.37+268:(u-2300)*.39+770;
+function calc(p){
+ const c=p.c,r=Math.round,o={notes:[],al:[],F:0,I:0,C:0,Au:0},N=(f,t)=>o.notes.push([f,t]),A=t=>o.al.push(t);
+ const aiuOK=c.aiu&&p.aiu>0&&p.aiu>=0.1*p.base&&p.aiu<=p.base;
+ if(c.aiu&&!aiuOK)A("AIU: no se indicó un AIU válido (mínimo 10 % del valor y no mayor al total). Sin AIU discriminado no se liquida la retención de renta y el IVA se calcula sobre el total; confirme la base especial (art. 462-1 E.T. para vigilancia y aseo; temporales: pendiente de confirmación).");
+ const ivaBase=aiuOK?p.aiu:p.base;
+ o.iva=p.sellerR?r(ivaBase*p.ivaPct/100):0;o.ivaBase=ivaBase;
+ const per=p.nuevo?c.bN:c.bO,bmin=per*p.uvt;
+ const ag=p.buyer==="GC"||(["ORD","NR"].includes(p.buyer)&&p.buyerAg);
+ let rate=p.decl?c.rD:c.rN;o.rateF=rate;
+ const pers=c.pers&&p.sNat&&p.t383;
+ if(!ag)N(0,"Retefuente: el comprador "+(p.buyer==="SIM"?"del SIMPLE solo retiene pagos laborales (art. 911 E.T.).":"no es agente de retención (arts. 368 y 368-2 E.T.; persona natural solo si ingresos brutos del año anterior > 30.000 UVT)."));
+ else if(p.seller==="SIM")N(0,"Retefuente: el vendedor del SIMPLE no está sujeto a retención de renta (art. 911 E.T.).");
+ else if(p.autoRenta)N(0,"Retefuente: el vendedor es autorretenedor; el comprador no le retiene renta.");
+ else if(c.aiu&&!aiuOK)N(0,"Retefuente: sin liquidar hasta indicar el AIU.");
+ else if(p.base<bmin)N(0,"Retefuente: el pago ("+fm(p.base)+") es inferior a la base mínima de "+fm(bmin)+" ("+per+" UVT).");
+ else if(pers){
+  const ing=p.base,inc=Math.min(p.d.apo,ing),ded=p.d.ded,l40=Math.max(Math.min(.4*(ing-inc),1340/12*p.uvt),0);
+  const ex=p.d.ex?Math.min(.25*Math.max(ing-inc-ded,0),790/12*p.uvt):0,adm=Math.min(ded+ex,l40),b=Math.max(ing-inc-adm,0),u=b/p.uvt,t=T383(u);
+  o.F=r(t*p.uvt);o.rateF=o.F?+(o.F/p.base*100).toFixed(2):0;
+  N(o.F?1:0,"Retefuente art. 383 E.T. (solicitada por la persona natural): base depurada "+fm(b)+" = "+u.toFixed(1)+" UVT → "+(o.F?"retención "+fm(o.F)+" ("+o.rateF+" % efectivo).":"no supera 95 UVT, sin retención."));
+  A("Art. 383: se supone que el valor es el total pagado al beneficiario en el mes (mensualización, doctrina DIAN 2025) y que el beneficiario manifestó no tomar costos ni deducciones. La depuración es simplificada (art. 388/387 y 206 num. 10 E.T.; no incluye dependientes ni límites especiales). El requisito de no tener 2 o más trabajadores fue modificado por la Ley 2277/2022: pendiente de confirmación por su asesor.");
+  if(!p.d.apo)A("Art. 383: no se informaron aportes obligatorios a salud y pensión; sin ellos la base no está depurada y la retención puede quedar sobrestimada.");
+ }
+ else if(c.id==="hon"){rate=p.sNat?(p.c3300?11:10):11;o.rateF=rate;o.F=r(p.base*rate/100);
+  N(1,"Retefuente honorarios "+rate+" % sobre "+fm(p.base)+(p.sNat?" (persona natural: "+(p.c3300?"11 % por contrato o acumulado anual > 3.300 UVT":"10 % hasta 3.300 UVT al año")+")":" (persona jurídica)")+".");
+  if(p.sNat)A("Honorarios de persona natural: confirme si los pagos del año al beneficiario superan 3.300 UVT (11 %) y si el beneficiario solicitó la tabla del art. 383.");}
+ else if(rate===0)N(0,"Retefuente: concepto sin tarifa.");
+ else{const rb=aiuOK?p.aiu:p.base;o.F=r(rb*rate/100);N(1,"Retefuente "+rate+" % sobre "+fm(rb)+(aiuOK?" (base AIU)":"")+" ("+c.n+(p.decl?", vendedor declarante":", vendedor no declarante")+").");}
+ // ReteIVA
+ let ri=false,why="";
+ if(!p.sellerR||o.iva===0)why="el vendedor no factura IVA (no responsable, excluido o exento): la base del ReteIVA es el IVA facturado.";
+ else if(p.buyer==="GC"&&p.seller==="GC")why="entre grandes contribuyentes no se practica ReteIVA (art. 437-2 par. 1).";
+ else if(p.buyer==="GC"){ri=true;why="el gran contribuyente retiene el 15 % del IVA (art. 437-2 num. 2; art. 437-1).";}
+ else if(p.seller==="SIM"&&p.buyerR){ri=true;why="responsable de IVA que compra a contribuyente SIMPLE responsable de IVA (art. 437-2 num. 9).";}
+ else why="el comprador no es agente de ReteIVA frente a este vendedor (lista cerrada del art. 437-2).";
+ const bminI=(c.t==="C"?(p.nuevo?10:27):(p.nuevo?2:4))*p.uvt;
+ if(ri&&p.base<bminI){ri=false;A("ReteIVA NO practicada: el pago ("+fm(p.base)+") es inferior a la base mínima de "+fm(bminI)+" ("+(c.t==="C"?(p.nuevo?10:27):(p.nuevo?2:4))+" UVT para "+(c.t==="C"?"compras":"servicios")+", periodo: "+p.per.t+"). Por eso no aparece la retención ni la fila 236701/135517 en los asientos. Si el pago es igual o superior a la base, sí se practica.");why="el pago no alcanza la base mínima de ReteIVA ("+fm(bminI)+"; compras 10/27 UVT y servicios 2/4 UVT según periodo; fuente secundaria, confirme).";}
+ o.I=ri?r(o.iva*.15):0;N(ri?1:0,"ReteIVA: "+why+(ri?" 15 % × IVA "+fm(o.iva)+" = "+fm(o.I)+".":""));
+ // ReteICA
+ const im=(p.icaMin||(c.t==="C"?p.mun.bc:p.mun.bs))*p.uvt,agI=p.icaOn&&p.buyer!=="SIM"&&(p.buyer==="GC"||p.buyerAg);
+ if(!p.icaOn)why="no aplica: no se declaró comprador agente de ReteICA con ingreso gravado en este municipio.";
+ else if(!agI)why="el comprador no es agente de ReteICA (defínalo el acuerdo municipal; no verificado para SIMPLE).";
+ else if(p.seller==="SIM")why="vendedor SIMPLE: el ICA va consolidado (art. 911 E.T.).";
+ else if(p.autoICA)why="vendedor autorretenedor de ICA.";
+ else if(p.base<im)why="el pago no alcanza la base mínima municipal ("+fm(im)+").";
+ else if(!p.icaRate){why="falta la tarifa por actividad/CIIU del acuerdo municipal: no se liquida.";A("ReteICA: seleccione o ingrese la tarifa según la actividad (CIIU) del vendedor en "+p.mun.n+".");}
+ else{o.C=r(p.base*p.icaRate/1000);why="tarifa "+p.icaRate+" ‰ sobre "+fm(p.base)+" = "+fm(o.C)+".";}
+ N(o.C?1:0,"ReteICA: "+why);
+ // Autorretención
+ if(p.autoRenta&&p.seller==="SIM")N(0,"Autorretención: no aplica al SIMPLE.");
+ else if(p.autoRenta){
+  if(!p.autoRate)A("Autorretención: indique la tarifa por CIIU (DUR 1.2.6.8; cambió con el Decreto 572/2025 y debe tomarse según la fecha). No se liquida.");
+  else{o.Au=r(p.base*p.autoRate/100);N(1,"Autorretención "+p.autoRate+" % = "+fm(o.Au)+" (contable; no reduce el cobro).");
+   if(!p.nuevo)A("Autorretención: en este periodo rige la tarifa del DUR 1.2.6.8 anterior al Decreto 572; verifique que la tarifa ingresada sea la de ese periodo.");}}
+ o.bm={F:bmin,I:bminI,C:im};o.tot=o.F+o.I+o.C;o.neto=p.base+o.iva-o.tot;return o;
+}
+function ivaRes(p,o){
+ let m=p.ivaMode==="auto"?(p.buyerR?"desc":"costo"):p.ivaMode,al=null;
+ if(m==="desc"&&!p.buyerR){m="costo";al="El comprador no es responsable de IVA: no hay IVA descontable (art. 488 E.T.); el IVA se lleva al costo/gasto.";}
+ else if(p.ivaMode==="auto"&&o.iva)al=p.buyerR?"IVA descontable supuesto: valide que el bien/servicio sea computable como costo o gasto de operaciones gravadas o exentas y el prorrateo (arts. 488 y 490 E.T.). Si no da derecho a descuento, elija «mayor valor del costo/gasto».":"El comprador no es responsable de IVA: IVA al costo/gasto.";
+ return{m,al};
+}
+function asientos(p,o){
+ const c=p.c,iv=ivaRes(p,o),s=[["130505","Clientes nacionales",o.neto,0]];
+ if(o.F)s.push(["135515","Anticipo de impuestos – retención en la fuente",o.F,0]);
+ if(o.I)s.push(["135517","Anticipo de impuestos – impuesto a las ventas retenido",o.I,0]);
+ if(o.C)s.push(["135518","Anticipo de impuestos – ICA retenido",o.C,0]);
+ s.push([c.rev[0],"Ingresos – "+c.rev[1],0,p.base]);
+ if(o.iva)s.push(["240805","IVA generado (aux. de 2408)",0,o.iva]);
+ if(o.Au){s.push(["135515","Autorretención especial en renta (anticipo)",o.Au,0]);s.push(["236575","Autorretenciones por pagar",0,o.Au]);}
+ const cost=iv.m==="costo",b=[[c.buy[0],c.buy[1]+(cost&&o.iva?" (incluye IVA no descontable)":""),p.base+(cost?o.iva:0),0]];
+ if(o.iva&&!cost)b.push(["240810","IVA descontable (aux. de 2408)",o.iva,0]);
+ if(o.F)b.push([c.ret,"Retención en la fuente por pagar",0,o.F]);
+ if(o.I)b.push(["236701","Impuesto a las ventas retenido por pagar",0,o.I]);
+ if(o.C)b.push(["236801","Impuesto de industria y comercio retenido",0,o.C]);
+ b.push(["220505","Proveedores nacionales",0,o.neto]);
+ return{s,b,iv};
+}
+const T={PN:["NR",0,0,"Persona natural (no responsable de IVA)",0,"05,49"],PN_R:["ORD",0,1,"Persona natural responsable de IVA",0,"05,48"],ORD:["ORD",1,1,"Régimen ordinario",0,"05,07,42,48"],SIM:["SIM",0,1,"Régimen SIMPLE (responsable de IVA)",0,"47,48"],SIM_NR:["SIM",0,0,"Régimen SIMPLE (no responsable de IVA)",0,"47,49"],GC:["GC",1,1,"Gran contribuyente",0,"05,07,13,42,48"]};
+const MUN={
+b:{n:"Bogotá D.C.",bs:4,bc:27,rates:[[4.14,"4,14 ‰ (referencial)"],[6.9,"6,90 ‰ (referencial)"],[7.66,"7,66 ‰ (referencial)"],[9.66,"9,66 ‰ (referencial)"],[11.04,"11,04 ‰ (referencial)"],[13.8,"13,80 ‰ (referencial)"]],norm:"Acuerdo 65/2002 (art. 13: obligaciones del agente) y Res. DDI-000305/2020 (agentes designados), fuentes de la SDH.",st:"PARCIAL: la calidad de agente y la norma están en fuentes de la SDH. Las bases de 4/27 UVT y las tarifas por CIIU provienen de fuentes secundarias (Siigo, Alegra): pendiente de confirmar en la SDH (Concepto SHD-000060-25 trata la reexpresión de bases en UVT)."},
+m:{n:"Medellín",bs:15,bc:15,rates:[[2,"2 ‰ (referencial)"]],norm:"Estatuto tributario municipal (Acuerdo 066/2017 y modificaciones).",st:"NO VERIFICADO en fuente oficial: base de 15 UVT y tarifas citadas por fuentes secundarias. Confirme en Hacienda Medellín."},
+c:{n:"Cali",bs:3,bc:15,rates:[],norm:"Estatuto tributario distrital (Decreto 0416/2021 y normas posteriores).",st:"NO VERIFICADO en fuente oficial: bases citadas por fuentes secundarias; el estatuto de 2026 está pendiente de revisión."},
+q:{n:"Barranquilla",bs:4,bc:27,rates:[],norm:"Estatuto tributario distrital (Decreto 0924/2011).",st:"NO VERIFICADO en fuente oficial: la base y la tarifa por actividad deben tomarse del estatuto vigente."},
+g:{n:"Bucaramanga",bs:25,bc:50,rates:[],norm:"Estatuto tributario municipal.",st:"NO VERIFICADO en fuente oficial: bases de 25/50 UVT citadas por fuentes secundarias (Siigo)."},
+p:{n:"Pereira",bs:4,bc:27,rates:[],norm:"Estatuto tributario municipal.",st:"NO VERIFICADO en fuente oficial: las fuentes secundarias discrepan; confirme."},
+o:{n:"Otro municipio",bs:4,bc:27,rates:[],norm:"Acuerdo municipal propio (Ley 14/1983; Ley 1819/2016 art. 344). Algunos municipios atan la base a los umbrales de renta y la cambian por fecha (p. ej. Cúcuta: Circular 005 y Decreto 0117 de 2026, 2 UVT servicios y 10 UVT compras tras el Decreto 572, 4 y 27 UVT durante la suspensión).",st:"SIN VERIFICAR: use los valores de su acuerdo en el campo de base mínima."}};
+function icaInfo(){const M=MUN[$("muni").value];$("muniInfo").innerHTML=`<span class="nm"><b>${M.n}:</b> base referencial ${M.bs} UVT servicios / ${M.bc} UVT compras. ${M.norm}</span><span class="nm" style="color:var(--warn-tx)">Estado de verificación: ${M.st}</span>`;$("icaO").classList.toggle("hide",$("icaB").value!=="x")}
+function buildRates(){const M=MUN[$("muni").value];$("icaB").innerHTML='<option value="">— Seleccione según CIIU / acuerdo —</option>'+M.rates.map(r=>`<option value="${r[0]}">${r[1]}</option>`).join("")+'<option value="x">Otra tarifa (‰)…</option>';$("icaB").value=""}
+const RUT={"05":"Renta régimen ordinario","07":"Agente de retención renta","13":"Gran contribuyente","15":"Autorretenedor","42":"Obligado a llevar contabilidad","47":"Régimen SIMPLE","48":"Responsable de IVA","49":"No responsable de IVA"};
+const NT={PN:"Art. 437 par. 3 E.T. (no responsable de IVA). Persona natural: agente de retención solo con ingresos brutos > 30.000 UVT el año anterior (art. 368-2).",PN_R:"Art. 437 E.T. (responsable de IVA). Persona natural: agente de retención solo con ingresos > 30.000 UVT (art. 368-2).",ORD:"Art. 368 E.T.: las personas jurídicas son agentes de retención. 42: arts. 19 y 654 E.T.",SIM:"Arts. 903-916 E.T.; art. 911 (sin retefuente ni autorretención; sí ReteIVA, art. 437-2 num. 9). Responsable de IVA salvo actividades del num. 1 art. 908 (art. 437 par. 4).",SIM_NR:"SIMPLE solo con actividades del num. 1 del art. 908 E.T. (tiendas pequeñas, mini/micromercados, peluquerías): no responsable de IVA (art. 437 par. 4); no factura IVA.",GC:"Calidad por resolución DIAN; art. 437-2 num. 2 y par. 1 E.T."};
+function rutChips(){[["B",0],["S",1]].forEach(([x,sd])=>{const k=$(x+"_t").value,cs=T[k][5].split(",").concat(sd&&$("autoRenta").checked?["15"]:[]);
+ $(x+"_rut").innerHTML=cs.map(c=>`<span class="chip" title="${RUT[c]}">${c} · ${RUT[c]}</span>`).join("")+`<span class="nm">Casilla 53 del RUT. ${NT[k]}</span>`})}
+function ui(){const t=$("S_t").value,bt=$("B_t").value,c=$("autoRenta"),L=$("autoL"),k=$("concepto").value,cc=C.find(x=>x.id===k);
+ if(t==="ORD"||t==="GC"){c.disabled=false;L.classList.remove("hide")}else{c.checked=false;c.disabled=true;L.classList.add("hide")}
+ $("autoBox").classList.toggle("hide",!c.checked);$("iva").disabled=!T[t][2];
+ $("bAgL").classList.toggle("hide",!["PN","PN_R"].includes(bt));
+ $("aiuBox").classList.toggle("hide",!cc.aiu);
+ const pn=["PN","PN_R"].includes(t);
+ $("honBox").classList.toggle("hide",!(pn&&cc.pers));$("c3300L").classList.toggle("hide",!(pn&&k==="hon"));
+ $("depBox").classList.toggle("hide",!(pn&&cc.pers&&$("t383").checked));
+ rutChips();icaInfo()}
+function P(){
+ const g=i=>$(i).value,per=period(g("fecha")),Bk=g("B_t"),Sk=g("S_t"),ar=g("autoRate");
+ return Object.assign(mkp(Bk,Sk),{c:C.find(x=>x.id===g("concepto")),base:+g("base")||0,aiu:+g("aiu")||0,ivaPct:T[Sk][2]?+g("iva"):0,decl:g("decl")==="1",
+  buyerAg:!!T[Bk][1]||(["PN","PN_R"].includes(Bk)&&$("bAgPN").checked),autoRenta:$("autoRenta").checked,autoRate:+ar||0,autoICA:$("autoICA").checked,icaOn:$("icaOn").checked,
+  icaRate:(g("icaB")==="x"?+g("icaO"):+g("icaB"))||0,mun:MUN[g("muni")],icaMin:+g("icaMin")||0,uvt:+g("uvt")||0,nuevo:per.nuevo,per,
+  t383:$("t383").checked,c3300:g("c3300")==="1",d:{apo:+g("d_apo")||0,ded:+g("d_ded")||0,ex:$("d_ex").checked},ivaMode:g("ivaMode")});
+}
+function mkp(bk,sk,o){return Object.assign({c:C[3],base:5e6,aiu:0,ivaPct:19,decl:true,buyer:T[bk][0],buyerR:!!T[bk][2],buyerAg:!!T[bk][1],seller:T[sk][0],sellerR:!!T[sk][2],sNat:["PN","PN_R"].includes(sk),autoRenta:false,autoRate:0,autoICA:false,icaOn:false,icaRate:0,icaMin:0,mun:MUN.b,uvt:52374,nuevo:true,per:period("2026-10-20"),t383:false,c3300:false,d:{apo:0,ded:0,ex:false},ivaMode:"auto"},o||{})}
+function tbl(rows,b,f){let D=0,K=0;b.innerHTML=rows.map(x=>{D+=x[2];K+=x[3];return`<tr><td class="code">${x[0]}</td><td>${x[1]}</td><td class="n">${x[2]?fm(x[2]):"–"}</td><td class="n">${x[3]?fm(x[3]):"–"}</td></tr>`}).join("");
+ f.innerHTML=`<tr><td colspan="2" class="n">Sumas iguales ${D===K?"✓":"✗ descuadrado"}</td><td class="n">${fm(D)}</td><td class="n">${fm(K)}</td></tr>`}
+function run(){
+ ui();
+ const p=P(),o=calc(p),c=p.c,as=asientos(p,o),yr=+$("fecha").value.slice(0,4),al=o.al.slice();
+ if(!UVT[yr])al.push("UVT de "+yr+" no cargada: se usa la de 2026; ingrese el valor oficial en el campo UVT.");
+ if(as.iv.al)al.push(as.iv.al);
+ al.push("Rige: "+p.per.t+". Se aplica por fecha de pago o abono en cuenta (lo que ocurra primero).");
+ $("alerts").innerHTML="<b>Advertencias y supuestos (liquidación provisional hasta validarlos)</b><ul>"+al.map(x=>"<li>"+x+"</li>").join("")+"</ul>";
+ $("kB").textContent=fm(p.base);$("kI").textContent=fm(o.iva);$("kR").textContent=fm(o.tot);$("kN").textContent=fm(o.neto);
+ tbl(as.s,$("bS"),$("fS"));tbl(as.b,$("bB"),$("fB"));
+ $("why").innerHTML=o.notes.map(n=>`<li class="${n[0]?"ok":""}">${n[1]}</li>`).join("")+`<li>Marco aplicado: ${p.per.t}; UVT ${fm(p.uvt)}.</li><li>Bases mínimas aplicadas (por pago): retefuente ${fm(o.bm.F)}; ReteIVA ${fm(o.bm.I)}; ReteICA ${fm(o.bm.C)}.</li>`;
+ {const bk=$("B_t").value,bc=T[bk][5].split(","),sc=T[$("S_t").value][5].split(",").concat($("autoRenta").checked?["15"]:[]),gB=bc.includes("13"),gS=sc.includes("13"),Y=t=>"✓ "+t,N=t=>"✗ "+t,pAg=p.buyerAg;
+ const R=[["Retefuente (renta)",gB||pAg?Y(gB?"13/07 agente":"07 agente de retención"):N("no es agente"+(bc.includes("47")?" (SIMPLE: solo renta laboral)":"")),sc.includes("47")?N("47 SIMPLE: no sujeto"):sc.includes("15")?N("15 se autorretiene"):Y("sin 47 ni 15: sujeto"),o.F,"Arts. 365, 368, 368-2, 383, 911 E.T.; DUR 1625/2016 arts. 1.2.4.4.1, 1.2.4.9.1, 1.2.4.10.6; Dec. 572/2025"],
+ ["ReteIVA (15 % del IVA)",gB?Y("13 gran contribuyente (num. 2)"):p.buyerR?Y("responsable: retiene solo a vendedor SIMPLE (num. 9)"):N("no responsable: no es agente"),!p.sellerR?N("no responsable de IVA: sin IVA"):gS?N("13: entre grandes contribuyentes no (par. 1)"):sc.includes("47")?Y("47 responsable de IVA: sujeto (num. 9)"):Y("responsable de IVA"),o.I,"Arts. 437-1, 437-2 (num. 2 y 9; par. 1) E.T.; Oficio DIAN 901166/2022"],
+ ["ReteICA",p.icaOn&&(gB||pAg)?Y("agente declarado (acuerdo municipal)"):N("no es agente / no declarado"),sc.includes("47")?N("47: ICA consolidado"):$("autoICA").checked?N("autorretenedor de ICA"):Y("sujeto de ICA"),o.C,"Ley 14/1983; Dec.-Ley 1333/1986; art. 911 E.T.; "+p.mun.n+": "+p.mun.norm],
+ ["IVA",p.buyerR?Y("responsable: IVA descontable si hay derecho (art. 488)"):N("no responsable: IVA al costo"),p.sellerR?Y("responsable: factura IVA"):N("no responsable: no factura IVA"),o.iva,"Arts. 420, 437, 468, 468-1, 488, 490 E.T."]];
+ $("rutB").innerHTML=R.map(r=>`<tr><td><b>${r[0]}</b></td><td class="${r[1][0]==="✓"?"ok":"bad"}">${r[1]}</td><td class="${r[2][0]==="✓"?"ok":"bad"}">${r[2]}</td><td class="n">${fm(r[3])}</td><td><small>${r[4]}</small></td></tr>`).join("")}
+ {const L={PN:"Persona natural",PN_R:"P. natural resp. IVA",ORD:"Régimen ordinario",SIM:"SIMPLE resp. IVA",SIM_NR:"SIMPLE no resp. IVA",GC:"Gran contribuyente"},Q=Object.keys(T);
+ const ev=(b,s2)=>calc(mkp(b,s2,{c:C.find(x=>x.id==="serv"),base:5e6,icaOn:true,icaRate:9.66,uvt:p.uvt,nuevo:p.nuevo,per:p.per,buyerAg:!!T[b][1]}));
+ const lst=a=>a.length===Q.length?"todos":a.length?a.map(k=>L[k]).join(", "):"nadie";
+ $("valB").innerHTML=Q.map(k=>{const w=x=>lst(Q.filter(o=>ev(k,o)[x]>0)),v=x=>lst(Q.filter(o=>ev(o,k)[x]>0));
+  return`<tr><td><b>${T[k][3]}</b></td><td>${T[k][5].split(",").join(" · ")}</td><td><small>Renta: ${w("F")}<br>ReteIVA: ${w("I")}<br>ReteICA: ${w("C")}</small></td><td><small>Renta: ${v("F")}<br>ReteIVA: ${v("I")}<br>ReteICA: ${v("C")}</small></td></tr>`}).join("")}
+ const K=Object.keys(T);
+ $("mxh").innerHTML="<tr><th>Comprador \\ Vendedor</th>"+K.map(k=>"<th>"+T[k][3]+"</th>").join("")+"</tr>";
+ $("mx").innerHTML=K.map(k=>`<tr><td>${T[k][3]}</td>`+K.map(sk=>{
+  const q=calc(Object.assign({},p,{buyer:T[k][0],buyerR:!!T[k][2],buyerAg:!!T[k][1]||(["PN","PN_R"].includes(k)&&$("bAgPN").checked),seller:T[sk][0],sellerR:!!T[sk][2],sNat:["PN","PN_R"].includes(sk),autoRenta:false,autoICA:false,ivaPct:T[sk][2]?(+$("iva").value||0):0})),t=[q.F?"F":"",q.I?"I":"",q.C?"C":""].filter(Boolean).join(" + ")||"—";
+  return`<td class="${k===$("B_t").value&&sk===$("S_t").value?"cur":""}">${t}</td>`}).join("")+"</tr>").join("");
+}
+/* ===== Pruebas automáticas ===== */
+function runTests(){
+ const res=[],eq=(n,a,b)=>res.push([n,a===b,a,b]),C_=id=>C.find(x=>x.id===id),U=52374,u=n=>n*U;
+ const F=(bk,sk,o)=>calc(mkp(bk,sk,o));
+ // periodos
+ [["2025-05-31",0],["2025-06-01",1],["2026-05-07",1],["2026-05-08",0],["2026-06-30",0],["2026-07-01",1]].forEach(([d,v])=>eq("periodo "+d,period(d).nuevo,!!v));
+ // bases mínimas y tarifas (nuevo / previo)
+ const bt=(id,dec,nu,uvtN,uvtO,rate,rateN)=>{const c=C_(id),mk=n=>({c,decl:dec,base:n,nuevo:nu});
+  const m=nu?uvtN:uvtO;if(m>0)eq(id+" justo bajo base "+(nu?"572":"previa"),F("ORD","ORD",mk(Math.round(u(m))-1)).F,0);
+  const b=Math.round(u(m));eq(id+" en la base "+(nu?"572":"previa"),F("ORD","ORD",mk(b)).F,Math.round(b*rate/100))};
+ [["compras",true,2.5],["compras",false,3.5],["serv",true,4],["serv",false,6],["arrI",true,3.5],["hotel",true,3.5],["tcar",true,1],["tpas",true,3.5],["agro",true,1.5],["vig",true,2],["temp",true,1]].forEach(([id,d,rt])=>{if(id==="vig"||id==="temp")return;
+  const c=C_(id);bt(id,d,true,c.bN,c.bO,rt);bt(id,d,false,c.bN,c.bO,rt)});
+ eq("arrendamiento muebles desde $1.000",F("ORD","ORD",{c:C_("arrM"),base:1000}).F,40);
+ eq("combustibles 0,1 % desde $1.000.000",F("ORD","ORD",{c:C_("comb"),base:1e6}).F,1000);
+ // honorarios y art. 383
+ eq("honorarios PJ 11 %",F("ORD","ORD",{c:C_("hon"),base:1e6}).F,110000);
+ eq("honorarios PN 10 %",F("ORD","PN",{c:C_("hon"),base:1e6}).F,100000);
+ eq("honorarios PN 11 % (>3.300 UVT)",F("ORD","PN",{c:C_("hon"),base:1e6,c3300:true}).F,110000);
+ eq("art. 383 solo si lo solicita (sin solicitud: 10 %)",F("ORD","PN",{c:C_("hon"),base:5e6}).F,500000);
+ eq("art. 383 con 57 UVT: 0",F("ORD","PN",{c:C_("hon"),base:3e6,t383:true}).F,0);
+ const t=F("ORD","PN",{c:C_("hon"),base:u(100),t383:true,d:{apo:u(8),ded:0,ex:false}}).F;eq("art. 383 100 UVT con aportes 8 UVT (92 UVT → 0)",t,0);
+ eq("art. 383 200 UVT sin depurar",F("ORD","PN",{c:C_("hon"),base:u(200),t383:true}).F,Math.round(T383(200)*U));
+ eq("art. 383 no aplica a PJ",F("ORD","ORD",{c:C_("hon"),base:u(200),t383:true}).F,Math.round(u(200)*.11));
+ // AIU
+ const v=F("ORD","ORD",{c:C_("vig"),base:1e7,aiu:1e6});eq("vigilancia: retefuente 2 % sobre AIU",v.F,20000);eq("vigilancia: IVA solo sobre AIU",v.iva,190000);
+ const v2=F("ORD","ORD",{c:C_("vig"),base:1e7,aiu:0});eq("vigilancia sin AIU: no liquida renta",v2.F,0);eq("vigilancia sin AIU: advierte",v2.al.length>0,true);
+ eq("temporales 1 % sobre AIU",F("ORD","ORD",{c:C_("temp"),base:1e7,aiu:2e6}).F,20000);
+ eq("AIU < 10 % no válido",F("ORD","ORD",{c:C_("vig"),base:1e7,aiu:5e5}).F,0);
+ // SIMPLE e IVA
+ const s=F("ORD","SIM",{icaOn:true,icaRate:9.66});eq("SIMPLE vendedor: sin retefuente",s.F,0);eq("SIMPLE vendedor: sin ReteICA",s.C,0);eq("SIMPLE resp. IVA: ReteIVA por comprador responsable",s.I,Math.round(950000*.15));
+ eq("SIMPLE no resp. IVA: sin IVA ni ReteIVA",F("ORD","SIM_NR").iva+F("ORD","SIM_NR").I,0);
+ eq("SIMPLE comprador: sin retefuente",F("SIM","ORD").F,0);eq("SIMPLE comprador resp. IVA retiene IVA a SIMPLE",F("SIM","SIM").I>0,true);
+ eq("persona natural no responsable no retiene IVA a SIMPLE",F("PN","SIM").I,0);
+ eq("GC retiene IVA a ordinario",F("GC","ORD").I,Math.round(950000*.15));eq("GC–GC sin ReteIVA",F("GC","GC").I,0);
+ eq("ordinario a ordinario: sin ReteIVA",F("ORD","ORD").I,0);
+ eq("PN agente (>30.000 UVT) retiene renta",F("PN_R","ORD",{buyerAg:true}).F>0,true);eq("PN sin calidad de agente no retiene",F("PN","ORD").F,0);
+ eq("ReteIVA bajo base mínima",F("GC","ORD",{base:u(2)-1}).I,0);
+ const pr=F("GC","PN_R",{c:C_("compras"),base:1e6,nuevo:false});eq("GC→PN responsable, compra bajo 27 UVT: sin ReteIVA y con advertencia",pr.I+(pr.al.some(x=>x.indexOf("ReteIVA NO practicada")===0)?1:0),1);
+ eq("GC→PN responsable, servicio $1.000.000: ReteIVA 15 %",F("GC","PN_R",{base:1e6}).I,28500);
+ eq("GC→PN responsable, compra $1.000.000 con Decreto 572 (10 UVT): ReteIVA 15 %",F("GC","PN_R",{c:C_("compras"),base:1e6}).I,28500);
+ // ReteICA
+ eq("ReteICA con tarifa",F("ORD","ORD",{icaOn:true,icaRate:9.66,buyerAg:true}).C,48300);
+ eq("ReteICA sin tarifa: no liquida y advierte",F("ORD","ORD",{icaOn:true,icaRate:0,buyerAg:true}).al.length>0,true);
+ eq("ReteICA bajo base municipal",F("ORD","ORD",{icaOn:true,icaRate:9.66,buyerAg:true,base:u(4)-1}).C,0);
+ eq("ReteICA autorretenedor ICA",F("ORD","ORD",{icaOn:true,icaRate:9.66,autoICA:true}).C,0);
+ // autorretención
+ const a=F("ORD","ORD",{autoRenta:true,autoRate:.8});eq("autorretención 0,8 %",a.Au,40000);eq("autorretenedor: comprador no retiene renta",a.F,0);
+ eq("autorretención sin tarifa: no liquida",F("ORD","ORD",{autoRenta:true}).Au,0);
+ // asientos: cuadre en todas las combinaciones
+ let bad=0,n=0;const ks=Object.keys(T);
+ for(const b of ks)for(const s2 of ks)for(const c of C)for(const m of ["auto","desc","costo"])for(const ar of [false,true])for(const nu of [true,false]){
+  const p=mkp(b,s2,{c,base:c.aiu?1e7:3e6,aiu:c.aiu?1e6:0,icaOn:true,icaRate:9.66,buyerAg:!!T[b][1],ivaMode:m,autoRenta:ar&&(s2==="ORD"||s2==="GC"),autoRate:1.1,nuevo:nu,decl:ar});
+  const o=calc(p),x=asientos(p,o),sum=r=>r.reduce((q,y)=>[q[0]+y[2],q[1]+y[3]],[0,0]),S=sum(x.s),B=sum(x.b);n++;
+  if(S[0]!==S[1]||B[0]!==B[1]||(s2.startsWith("SIM")&&(o.F||o.C||o.Au))||o.neto!==p.base+o.iva-o.tot)bad++}
+ eq("asientos cuadrados y reglas SIMPLE coherentes ("+n+" combinaciones)",bad,0);
+ const ivc=asientos(mkp("PN","ORD"),F("PN","ORD"));eq("comprador no responsable: IVA al costo",ivc.b[0][2],5e6+950000);
+ const ivd=asientos(mkp("ORD","ORD",{ivaMode:"costo"}),F("ORD","ORD",{}));eq("comprador responsable puede llevar IVA al costo",ivd.b[0][2],5e6+950000);
+ return res;
+}
+function showTests(){const r=runTests(),f=r.filter(x=>!x[1]);$("testRes").innerHTML=`<b class="${f.length?"bad":"ok"}">${r.length-f.length}/${r.length} pruebas correctas</b>`+(f.length?"<ul>"+f.map(x=>`<li class="bad">${x[0]}: obtenido ${x[2]}, esperado ${x[3]}</li>`).join("")+"</ul>":"");}
+/* ===== Interfaz ===== */
+function tab(t){["s","b","a"].forEach(k=>$("t_"+k).classList.toggle("on",k===t));$("vS").classList.toggle("hide",t==="b");$("vB").classList.toggle("hide",t==="s")}
+function setUVT(){const y=+$("fecha").value.slice(0,4);$("uvt").value=UVT[y]||UVT[2026]}
+$("concepto").innerHTML=C.map(x=>`<option value="${x.id}">${x.n}</option>`).join("");
+["s","b","a"].forEach(k=>$("t_"+k).onclick=()=>tab(k));
+const opts=Object.keys(T).map(k=>`<option value="${k}">${T[k][3]}</option>`).join("");
+$("cB").innerHTML=`<h2>Comprador</h2><select id="B_t">${opts}</select><div id="B_rut"></div><label class="chk hide" id="bAgL"><input type="checkbox" id="bAgPN"> Persona natural con ingresos brutos &gt; 30.000 UVT el año anterior (agente de retención, art. 368-2 E.T.)</label><small>La persona jurídica no es un tipo aparte: puede ser del régimen ordinario o del SIMPLE, así que se elige por su régimen. Ser del SIMPLE no equivale a ser responsable de IVA: elija la variante que corresponda.</small>`;
+$("cS").innerHTML=`<h2>Vendedor</h2><select id="S_t">${opts}</select><div id="S_rut"></div>
+<label class="chk" id="autoL"><input type="checkbox" id="autoRenta"> Es autorretenedor de renta (RUT 15)</label><span class="nm">Art. 365 E.T.; Decreto 2201/2016 (DUR 1625/2016, art. 1.2.6.8); tarifas por CIIU modificadas por el Decreto 572/2025.</span>
+<div id="autoBox" class="hide"><label>Tarifa de autorretención (% según CIIU y fecha)</label><input id="autoRate" type="number" step="0.01" placeholder="% según CIIU, DUR 1.2.6.8 vigente a la fecha"><small>Sin tarifa no se liquida: la tarifa depende del CIIU y del periodo (antes de jun-2025, 8-may a 30-jun-2026 y desde 1-jul-2026).</small></div>
+<label class="chk"><input type="checkbox" id="autoICA"> Es autorretenedor de ICA</label>`;
+$("muni").innerHTML=Object.keys(MUN).map(k=>`<option value="${k}">${MUN[k].n}</option>`).join("");buildRates();
+$("fecha").onchange=()=>{setUVT();run()};
+$("muni").onchange=()=>{buildRates();run()};
+document.querySelectorAll("input,select").forEach(e=>{e.addEventListener("input",run);e.addEventListener("change",run)});
+setUVT();run();showTests();
+</script>
+</body>
+</html>

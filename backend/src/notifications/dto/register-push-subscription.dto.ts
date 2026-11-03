@@ -58,4 +58,10 @@ export class RegisterPushSubscriptionDto {
   @IsString()
   @MaxLength(512)
   userAgent?: string;
+
+  /** Solo consistencia: la autorización depende del JWT, nunca de este campo. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  expectedUserId?: string;
 }

@@ -23,6 +23,8 @@ type PushPayload = {
   badge?: string;
   tag?: string;
   data: Record<string, string>;
+  /** Destinatario autoritativo; el service worker lo compara con la sesión local. */
+  recipientBusinessId: string;
 };
 
 @Injectable()
@@ -37,6 +39,10 @@ export class PushNotificationsService {
 
   async register(actor: Actor, dto: RegisterPushSubscriptionDto) {
     await this.assertActiveActor(actor);
+    // Una operación atrasada de otra sesión viaja con el token vigente; se rechaza.
+    if (dto.expectedUserId && dto.expectedUserId !== actor.userId) {
+      throw new ForbiddenException('La sesión cambió durante el registro');
+    }
     await resolveAndValidatePushEndpoint(dto.subscription.endpoint);
 
     const expirationTime =
@@ -222,6 +228,7 @@ export class PushNotificationsService {
     }
 
     await this.sendOne(subscription, {
+      recipientBusinessId: actor.businessId,
       title: 'Notificaciones activadas',
       body: 'Este dispositivo puede recibir alertas de nuevas ventas.',
       icon: '/icons/icon-192x192.png',
@@ -265,8 +272,15 @@ export class PushNotificationsService {
     });
   }
 
-  async sendToBusiness(businessId: string, payload: PushPayload) {
+  async sendToBusiness(
+    businessId: string,
+    unstamped: Omit<PushPayload, 'recipientBusinessId'>,
+  ) {
     if (!this.vapid.isEnabled()) return;
+    const payload: PushPayload = {
+      ...unstamped,
+      recipientBusinessId: businessId,
+    };
     this.assertInternalUrl(payload.data.url);
 
     const business = await this.prisma.business.findFirst({

@@ -3,9 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { getSessionContext } from "@/src/lib/auth/session";
 
 type PushMessage = {
   type?: string;
+  recipientBusinessId?: string;
   title?: string;
   body?: string;
   data?: { type?: string; saleId?: string; url?: string };
@@ -45,6 +47,9 @@ export default function PushForegroundListener() {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (event: MessageEvent<PushMessage>) => {
       if (event.data?.type !== "WEB_PUSH_FOREGROUND") return;
+      // Sin sesión o con otro negocio no se muestra nada (el listener vive fuera del SessionBoundary).
+      const { businessId } = getSessionContext();
+      if (!businessId || event.data.recipientBusinessId !== businessId) return;
       const url = getInternalSaleUrl(event.data.data);
       toast(
         (instance) => (

@@ -151,6 +151,52 @@ describe('PushNotificationsService', () => {
     expect(prisma.pushSubscription.upsert).not.toHaveBeenCalled();
   });
 
+  it('rejects a registration whose expected user differs from the JWT actor', async () => {
+    const { service, prisma } = setup();
+    await expect(
+      service.register(
+        { businessId: 'business-1', userId: 'user-1' },
+        {
+          deviceId: subscription.deviceId,
+          expectedUserId: 'user-2',
+          subscription: {
+            endpoint: subscription.endpoint,
+            expirationTime: null,
+            keys: { p256dh: 'public-key', auth: 'auth-key' },
+          },
+          platform: 'WEB_WINDOWS',
+        },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.pushSubscription.upsert).not.toHaveBeenCalled();
+    expect(prisma.pushSubscription.update).not.toHaveBeenCalled();
+  });
+
+  it('stamps every push with the authoritative recipient business', async () => {
+    const { service, transport } = setup();
+    await service.notifyAutomaticSaleCreated({
+      businessId: 'business-1',
+      saleId: 'sale-1',
+      total: 1,
+    });
+    const payload = JSON.parse(transport.send.mock.calls[0][1]);
+    expect(payload.recipientBusinessId).toBe('business-1');
+  });
+
+  it('only targets enabled subscriptions of users of the same business', async () => {
+    const { service, prisma } = setup();
+    await service.notifyAutomaticSaleCreated({
+      businessId: 'business-1',
+      saleId: 'sale-1',
+      total: 1,
+    });
+    const select = prisma.business.findFirst.mock.calls[0][0].select;
+    expect(select.pushSubscriptions.where).toEqual({
+      enabled: true,
+      user: { businessId: 'business-1' },
+    });
+  });
+
   it('rejects an actor no longer associated with an active business', async () => {
     const { service, prisma } = setup();
     prisma.user.findFirst.mockResolvedValue(null);
