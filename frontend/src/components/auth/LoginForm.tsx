@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { assertCurrentSession, establishSession, getSessionContext, StaleSessionError } from "../../lib/auth/session";
@@ -203,7 +204,7 @@ export default function LoginForm() {
       errors.email = "Ingresá un email válido";
     }
 
-    if (!password.trim()) {
+    if (password.length === 0) {
       errors.password = "La contraseña es obligatoria";
     }
 
@@ -380,6 +381,7 @@ export default function LoginForm() {
         <input
           // 🔥 FIX 2
           type="text"
+          autoComplete="username"
           placeholder="correo@ejemplo.com"
           value={email}
           onChange={(e) => {
@@ -405,6 +407,7 @@ export default function LoginForm() {
         <div className="relative">
           <input
             type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
             placeholder="********"
             value={password}
             onChange={(e) => {
@@ -418,6 +421,7 @@ export default function LoginForm() {
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
+            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
           >
             {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
@@ -455,6 +459,17 @@ export default function LoginForm() {
         {loading ? "Ingresando..." : "Ingresar"}
       </button>
 
+      <div className="space-y-2">
+      <p className="text-sm text-center text-gray-600">
+        ¿Olvidaste tu contraseña?{" "}
+        <Link
+          href="/forgot-password"
+          className="cursor-pointer font-medium text-[#0b3f64] hover:text-[#092f4a] hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b3f64] focus-visible:ring-offset-2"
+        >
+          Recuperarla
+        </Link>
+      </p>
+
       <p className="text-sm text-center text-gray-600">
         ¿No tenés cuenta?{" "}
         <button
@@ -465,6 +480,7 @@ export default function LoginForm() {
           Registrarse
         </button>
       </p>
+      </div>
     </form>
       </div>
       <LoginStoreHint onClick={() => startStoreTransition()} disabled={isSettling} />

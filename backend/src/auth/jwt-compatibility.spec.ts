@@ -2,12 +2,18 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy/jwt.strategy';
 import { jwtSecret } from './jwt.config';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('Historical JWT compatibility', () => {
   const secret = ' fictitious-secret-with-significant-spaces ';
   function authenticate(token: string) {
     const strategy = new JwtStrategy(
       new ConfigService({ JWT_SECRET: secret }),
+      {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ sessionVersion: 0 }),
+        },
+      } as unknown as PrismaService,
     ) as JwtStrategy & {
       success: (user: unknown) => void;
       fail: (reason: unknown) => void;
@@ -47,9 +53,9 @@ describe('Historical JWT compatibility', () => {
   it.each([undefined, '', '  '])(
     'fails closed without a configured secret',
     (value) => {
-      expect(() => jwtSecret(new ConfigService({ JWT_SECRET: value }))).toThrow(
-        'JWT_SECRET must be configured',
-      );
+      const config = new ConfigService();
+      jest.spyOn(config, 'get').mockReturnValue(value);
+      expect(() => jwtSecret(config)).toThrow('JWT_SECRET must be configured');
     },
   );
 });

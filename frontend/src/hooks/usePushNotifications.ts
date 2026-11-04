@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { assertCurrentSession, getSessionContext, subscribeSession } from '../lib/auth/session';
 import {
+  authorizePushDevice,
   getPushStatus as fetchPushStatus,
   registerPushSubscription,
   sendTestPush as requestTestPush,
@@ -14,6 +15,7 @@ import {
 import { getToken } from "@/src/lib/auth";
 import { AppApiError } from "@/src/lib/api";
 import {
+  autoRegistrationAllowed,
   deviceIdKey,
   intentKey,
   pendingUnregisterKey,
@@ -137,6 +139,8 @@ function debugActivationTimeout(stage: TimeoutStage, timeoutMs: number) {
 
 const LOCK_BUSY_MESSAGE =
   "Otra pestaña está actualizando las notificaciones. Reintentá en unos segundos.";
+const AUTHORIZATION_REQUIRED_MESSAGE =
+  "Confirmá tu contraseña para reactivar las notificaciones en este dispositivo.";
 const ROTATION_UNAVAILABLE_MESSAGE =
   "Este dispositivo tiene notificaciones de otra cuenta y el navegador no permite cambiarlas de forma segura. Reintentá desde una sola pestaña.";
 
@@ -407,6 +411,7 @@ function stateFromFacts(
 
 export function usePushNotifications() {
   const session = useRef(getSessionContext());
+  const authorizationProof = useRef<string | undefined>(undefined);
   const [state, setState] = useState<PushState>("default");
   const [status, setStatus] = useState<PushStatusResponse | null>(null);
   const [permissionGranted, setPermissionGranted] = useState(false);
@@ -534,6 +539,7 @@ export function usePushNotifications() {
                 platform: platformFromBrowser(),
                 userAgent: navigator.userAgent,
                 expectedUserId: userId,
+                authorizationProof: authorizationProof.current,
               },
               signal,
             ),
@@ -546,6 +552,16 @@ export function usePushNotifications() {
             "backend_register",
             BACKEND_REGISTER_TIMEOUT_MS,
           );
+        }
+        if (
+          error instanceof AppApiError &&
+          error.status === 403 &&
+          error.details?.code === "PUSH_AUTHORIZATION_REQUIRED"
+        ) {
+          setStatus((current) =>
+            current ? { ...current, requiresAuthorization: true } : current,
+          );
+          throw new PushFlowError("backend_register", AUTHORIZATION_REQUIRED_MESSAGE);
         }
         throw new PushFlowError(
           "backend_register",
@@ -763,6 +779,13 @@ export function usePushNotifications() {
         const { userId, deviceId } = currentDevice();
         const backend = await fetchPushStatus(deviceId);
         setStatus(backend);
+        if (!autoRegistrationAllowed(backend)) {
+          // Recovery revoked every device: nothing is re-registered without an explicit, password-backed action.
+          localStorage.removeItem(intentKey(userId));
+          setBackendRegistrationEnabled(false);
+          setState(stateFromFacts(permission, Boolean(subscription), false));
+          return;
+        }
         let backendEnabled = backend.configured && backend.enabled;
         setBackendRegistrationEnabled(backendEnabled);
         // Suscripciones anteriores a la intención persistente: el estado del backend es la intención.
@@ -898,6 +921,30 @@ export function usePushNotifications() {
       setActivationInFlight(false);
     });
   }, [failActivation, runActivation]);
+
+  const authorizeAndActivate = useCallback(
+    async (password: string): Promise<ActivatePushResult> => {
+      try {
+        const { proof } = await authorizePushDevice(
+          currentDevice().deviceId,
+          password,
+        );
+        authorizationProof.current = proof;
+        return await activatePush();
+      } catch (error) {
+        const message =
+          error instanceof AppApiError && error.status === 403
+            ? "La contraseña no es correcta."
+            : error instanceof AppApiError && error.status === 429
+              ? "Demasiados intentos. Esperá unos minutos."
+              : ACTIVATION_MESSAGES.backend_register;
+        return failActivation("backend_register", message);
+      } finally {
+        authorizationProof.current = undefined;
+      }
+    },
+    [activatePush, currentDevice, failActivation],
+  );
 
   const deactivateUnlocked = useCallback(async () => {
     const { userId, deviceId } = currentDevice();
@@ -1045,6 +1092,7 @@ export function usePushNotifications() {
     needsIosInstall,
     checkSupport,
     activatePush,
+    authorizeAndActivate,
     deactivatePush,
     sendTestPush,
     reconcileSubscription,

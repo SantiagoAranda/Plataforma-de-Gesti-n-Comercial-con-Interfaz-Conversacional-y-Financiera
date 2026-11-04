@@ -1,7 +1,14 @@
 import { ConfigService } from '@nestjs/config';
+import { handlerFor } from './auth-action.decorator';
 import { ExecutionContext } from '@nestjs/common';
 import { AuthRateLimitGuard, authProxyTrust } from './auth-rate-limit.guard';
 import { PrismaService } from '../prisma/prisma.service';
+
+function isolatedConfig(values: Record<string, unknown>) {
+  const config = new ConfigService(values);
+  jest.spyOn(config, 'get').mockImplementation((key: string) => values[key]);
+  return config;
+}
 
 function makeDatabase() {
   const counts = new Map<string, number>();
@@ -16,7 +23,7 @@ function makeDatabase() {
 }
 
 function fixture(enabled = true, database?: ReturnType<typeof makeDatabase>) {
-  const config = new ConfigService({
+  const config = isolatedConfig({
     JWT_SECRET: 'fixture-secret',
     AUTH_RATE_LIMIT_ENABLED: String(enabled),
     AUTH_CLIENT_IP_MODE: 'direct',
@@ -28,7 +35,7 @@ function fixture(enabled = true, database?: ReturnType<typeof makeDatabase>) {
   };
   const response = { setHeader: jest.fn() };
   const context = {
-    getHandler: () => function login() {},
+    getHandler: () => handlerFor('login'),
     switchToHttp: () => ({
       getRequest: () => request,
       getResponse: () => response,
@@ -87,7 +94,7 @@ describe('Auth rate limiter', () => {
   });
   it('limits registrations and handles malformed email without looking up accounts', async () => {
     const f = fixture();
-    f.handler.getHandler = () => function registerBusiness() {};
+    f.handler.getHandler = () => handlerFor('register');
     for (let i = 0; i < 5; i++) await f.guard.canActivate(f.context);
     await expect(f.guard.canActivate(f.context)).rejects.toMatchObject({
       status: 429,
@@ -96,13 +103,13 @@ describe('Auth rate limiter', () => {
     await expect(f.guard.canActivate(f.context)).resolves.toBe(true);
   });
   it('requires explicit proxy configuration only when enabled', () => {
-    expect(authProxyTrust(new ConfigService({}))).toBe(false);
+    expect(authProxyTrust(isolatedConfig({}))).toBe(false);
     expect(() =>
-      authProxyTrust(new ConfigService({ AUTH_RATE_LIMIT_ENABLED: 'true' })),
+      authProxyTrust(isolatedConfig({ AUTH_RATE_LIMIT_ENABLED: 'true' })),
     ).toThrow();
     expect(() =>
       authProxyTrust(
-        new ConfigService({
+        isolatedConfig({
           AUTH_RATE_LIMIT_ENABLED: 'true',
           AUTH_CLIENT_IP_MODE: 'trusted-proxy',
           AUTH_TRUSTED_PROXIES: 'true',
@@ -111,7 +118,7 @@ describe('Auth rate limiter', () => {
     ).toThrow();
     expect(
       authProxyTrust(
-        new ConfigService({
+        isolatedConfig({
           AUTH_RATE_LIMIT_ENABLED: 'true',
           AUTH_CLIENT_IP_MODE: 'trusted-proxy',
           AUTH_TRUSTED_PROXIES: '127.0.0.1/32',
@@ -126,7 +133,7 @@ describe('Auth rate limiter', () => {
     '::1/000',
     '192.0.2.0/24,::/0',
   ])('rejects trust-all proxy range %s when enabled', (range) => {
-    const config = new ConfigService({
+    const config = isolatedConfig({
       JWT_SECRET: 'fixture-secret',
       AUTH_RATE_LIMIT_ENABLED: 'true',
       AUTH_CLIENT_IP_MODE: 'trusted-proxy',
@@ -146,7 +153,7 @@ describe('Auth rate limiter', () => {
   it('accepts explicit IPv4 and IPv6 proxies and direct mode', () => {
     expect(
       authProxyTrust(
-        new ConfigService({
+        isolatedConfig({
           AUTH_RATE_LIMIT_ENABLED: 'true',
           AUTH_CLIENT_IP_MODE: 'trusted-proxy',
           AUTH_TRUSTED_PROXIES: '192.0.2.0/24,2001:db8::/32,::1',
@@ -155,7 +162,7 @@ describe('Auth rate limiter', () => {
     ).toEqual(['192.0.2.0/24', '2001:db8::/32', '::1']);
     expect(
       authProxyTrust(
-        new ConfigService({
+        isolatedConfig({
           AUTH_RATE_LIMIT_ENABLED: 'true',
           AUTH_CLIENT_IP_MODE: 'direct',
           AUTH_TRUSTED_PROXIES: '0.0.0.0/0',
@@ -164,7 +171,7 @@ describe('Auth rate limiter', () => {
     ).toBe(false);
   });
   it('ignores insecure proxy settings and storage when disabled', async () => {
-    const config = new ConfigService({
+    const config = isolatedConfig({
       JWT_SECRET: 'fixture-secret',
       AUTH_RATE_LIMIT_ENABLED: 'false',
       AUTH_CLIENT_IP_MODE: 'trusted-proxy',

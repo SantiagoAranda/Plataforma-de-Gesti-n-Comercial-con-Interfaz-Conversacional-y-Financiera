@@ -110,3 +110,8 @@ export async function pushLogoutCleanup(ctx: SessionContext) {
     }
   } catch {}
 }
+
+/** After a recovery the backend demands per-device authorization; never auto-register meanwhile. */
+export const autoRegistrationAllowed = (status: {
+  requiresAuthorization?: boolean;
+} | null) => !status?.requiresAuthorization;

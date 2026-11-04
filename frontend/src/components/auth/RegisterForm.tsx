@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { registerAccount, CREATED_LOGIN_REQUIRED, REGISTRATION_UNCONFIRMED } from "../../lib/auth/registration";
 import { AppApiError } from "../../lib/api";
 import { StaleSessionError } from "../../lib/auth/session";
+import PasswordRequirements, { ValidCheck } from "./PasswordRequirements";
+import { newPasswordError, NEW_PASSWORD_UNMET } from "../../lib/auth/new-password";
 import { useAuthRetry } from "../../hooks/useAuthRetry";
 
 // ── SVG Eye Icons ──────────────────────────────────────────────
@@ -89,8 +91,6 @@ export default function RegisterForm() {
   const isValidEmail = (value: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
-  const isValidPassword = (value: string) =>
-    value.length >= 6 && /[A-Z]/.test(value) && /\d/.test(value);
 
   // ── Validación inline por campo ────────────────────
   const validate = (): boolean => {
@@ -106,13 +106,9 @@ export default function RegisterForm() {
       errors.email = "Ingresá un email válido";
     }
 
-    if (!password.trim()) {
-      errors.password = "La contraseña es obligatoria";
-    } else if (!isValidPassword(password)) {
-      errors.password = "Mínimo 6 caracteres, una mayúscula y un número";
-    }
+    errors.password = newPasswordError(password);
 
-    if (!confirmPassword.trim()) {
+    if (confirmPassword.length === 0) {
       errors.confirmPassword = "Confirmá la contraseña";
     } else if (password !== confirmPassword) {
       errors.confirmPassword = "Las contraseñas no coinciden";
@@ -123,8 +119,11 @@ export default function RegisterForm() {
     }
 
     setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
+    return !Object.values(errors).some(Boolean);
   };
+
+  const passwordOk = newPasswordError(password) === undefined;
+  const confirmOk = passwordOk && confirmPassword !== "" && confirmPassword === password;
 
   // ── Clear field error on change ────────────────────
   const clearFieldError = (field: keyof FieldErrors) => {
@@ -256,6 +255,7 @@ export default function RegisterForm() {
           <input
             type="text"
             placeholder="correo@ejemplo.com"
+            autoComplete="email"
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
@@ -270,20 +270,25 @@ export default function RegisterForm() {
 
         {/* Contraseña */}
         <div className="space-y-1">
-          <label className="block text-sm font-medium text-gray-700">
+          <label htmlFor="register-password" className="block text-sm font-medium text-gray-700">
             Contraseña
           </label>
           <div className="relative">
             <input
+              id="register-password"
+              aria-describedby={`register-password-help${fieldErrors.password && fieldErrors.password !== NEW_PASSWORD_UNMET ? " register-password-error" : ""}`}
+              aria-invalid={Boolean(fieldErrors.password)}
               type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
               placeholder="********"
               value={password}
               onChange={(e) => {
                 setPassword(e.target.value);
                 clearFieldError("password");
               }}
-              className={`${inputBase} pr-12 ${fieldErrors.password ? inputErr : inputOk}`}
+              className={`${inputBase} pr-20 ${fieldErrors.password ? inputErr : inputOk}`}
             />
+            <ValidCheck show={passwordOk} label="La contraseña cumple los requisitos de formato" className="right-11" />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
@@ -293,8 +298,9 @@ export default function RegisterForm() {
               {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
             </button>
           </div>
-          {fieldErrors.password && (
-            <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
+          <PasswordRequirements id="register-password-help" password={password} showErrors={fieldErrors.password === NEW_PASSWORD_UNMET} />
+          {fieldErrors.password && fieldErrors.password !== NEW_PASSWORD_UNMET && (
+            <p id="register-password-error" role="alert" className="text-xs text-red-600 mt-1">{fieldErrors.password}</p>
           )}
         </div>
 
@@ -306,14 +312,16 @@ export default function RegisterForm() {
           <div className="relative">
             <input
               type={showConfirmPassword ? "text" : "password"}
+              autoComplete="new-password"
               placeholder="********"
               value={confirmPassword}
               onChange={(e) => {
                 setConfirmPassword(e.target.value);
                 clearFieldError("confirmPassword");
               }}
-              className={`${inputBase} pr-12 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
+              className={`${inputBase} pr-20 ${fieldErrors.confirmPassword ? inputErr : inputOk}`}
             />
+            <ValidCheck show={confirmOk} label="Las contraseñas coinciden" className="right-11" />
             <button
               type="button"
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}

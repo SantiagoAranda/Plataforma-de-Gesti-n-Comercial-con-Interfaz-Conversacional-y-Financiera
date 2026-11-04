@@ -44,6 +44,8 @@ const stateCopy = {
 export default function PushSettingsCard() {
   const push = usePushNotifications();
   const [isSwitchUpdating, setIsSwitchUpdating] = useState(false);
+  const [password, setPassword] = useState("");
+  const needsAuthorization = Boolean(push.status?.requiresAuthorization);
   const preferenceEnabled = Boolean(push.status?.notifyOnAutomaticSale);
   const devicePrepared =
     push.browserSubscriptionExists && push.backendRegistrationEnabled;
@@ -59,8 +61,29 @@ export default function PushSettingsCard() {
   const activationBusy = isSwitchUpdating || push.activationInFlight;
   const busy = push.loadingAction !== null || activationBusy;
 
+  const reauthorize = async () => {
+    if (busy || !password) return;
+    setIsSwitchUpdating(true);
+    try {
+      const result = await push.authorizeAndActivate(password);
+      setPassword("");
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      await push.getPushStatus();
+      toast.success("Notificaciones reactivadas en este dispositivo.");
+    } finally {
+      setIsSwitchUpdating(false);
+    }
+  };
+
   const toggleNotifications = async (enabled: boolean) => {
     if (busy) return;
+    if (enabled && needsAuthorization) {
+      toast.error("Confirmá tu contraseña para reactivar las notificaciones.");
+      return;
+    }
     setIsSwitchUpdating(true);
     try {
       if (!enabled) {
@@ -184,6 +207,36 @@ export default function PushSettingsCard() {
           </div>
         </div>
       </div>
+
+      {needsAuthorization && (
+        <form
+          className="mt-4 rounded-2xl border border-[#CEE0EC] bg-[#E6EFF5] p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void reauthorize();
+          }}
+        >
+          <p className="text-[11px] leading-5 text-[#0B3F64]">
+            Cambiaste tu contraseña, por seguridad este dispositivo quedó
+            desactivado. Confirmá tu contraseña para volver a recibir alertas.
+          </p>
+          <input
+            type="password"
+            autoComplete="current-password"
+            aria-label="Contraseña actual"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="mt-3 w-full rounded-xl border border-[#CEE0EC] px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={busy || !password}
+            className="mt-3 min-h-11 rounded-xl bg-[#0B3F64] px-4 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            Reactivar notificaciones
+          </button>
+        </form>
+      )}
 
       {(push.needsIosInstall || push.state === "denied") && (
         <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-[11px] leading-5 text-[#C80237]">

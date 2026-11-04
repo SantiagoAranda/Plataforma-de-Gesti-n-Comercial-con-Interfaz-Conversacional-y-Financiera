@@ -2,13 +2,23 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { ConfigService } from '@nestjs/config';
+import { createHash, createHmac } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { jwtSecret } from '../auth/jwt.config';
+import { verifyPassword } from '../auth/password-policy';
+import { incrementCounter } from '../auth/auth-counter';
+import {
+  PUSH_PROOF_TTL_MS,
+  signPushProof,
+  verifyPushProof,
+} from './push-authorization';
 import { RegisterPushSubscriptionDto } from './dto/register-push-subscription.dto';
 import { resolveAndValidatePushEndpoint } from './push-endpoint-security';
 import { WebPushTransport, WebPushTransportError } from './web-push.transport';
@@ -35,7 +45,121 @@ export class PushNotificationsService {
     private readonly prisma: PrismaService,
     private readonly vapid: VapidProvider,
     private readonly transport: WebPushTransport,
+    private readonly config: ConfigService,
   ) {}
+
+  private authorizationRequired() {
+    return new ForbiddenException({
+      statusCode: 403,
+      code: 'PUSH_AUTHORIZATION_REQUIRED',
+      message:
+        'Confirmá tu contraseña para reactivar las notificaciones en este dispositivo.',
+    });
+  }
+
+  /**
+   * After a password recovery (sessionVersion > 0) each device must be authorized
+   * individually: either it was already authorized in the current epoch, or it
+   * carries a fresh proof bound to this user, business, device and epoch.
+   */
+  private assertDeviceAuthorized(
+    actor: Actor,
+    dto: RegisterPushSubscriptionDto,
+    version: number,
+    deviceRegistration: { authorizedSessionVersion: number } | null,
+  ) {
+    if (version === 0) return;
+    if (deviceRegistration?.authorizedSessionVersion === version) return;
+    const claims = verifyPushProof(
+      jwtSecret(this.config),
+      dto.authorizationProof,
+    );
+    if (
+      claims &&
+      claims.u === actor.userId &&
+      claims.b === actor.businessId &&
+      claims.d === dto.deviceId &&
+      claims.v === version
+    )
+      return;
+    throw this.authorizationRequired();
+  }
+
+  private invalidPassword() {
+    return new ForbiddenException({
+      statusCode: 403,
+      code: 'PUSH_PASSWORD_INVALID',
+      message: 'La contraseña no es correcta.',
+    });
+  }
+
+  private async lockSessionVersion(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<number> {
+    // FOR SHARE serializes against the reset's FOR UPDATE on the same user row.
+    const [row] = await tx.$queryRaw<Array<{ sessionVersion: number }>>`
+      SELECT "sessionVersion" FROM "User" WHERE "id" = ${userId} FOR SHARE`;
+    if (!row) throw new ForbiddenException('Usuario o negocio no habilitado');
+    return row.sessionVersion;
+  }
+
+  /** Issues a short-lived, device-bound proof after re-checking the current password. */
+  async authorize(actor: Actor, deviceId: string, password: string, ip = '') {
+    await this.assertActiveActor(actor);
+    const secret = jwtSecret(this.config);
+    for (const [scope, identity, limit] of [
+      ['user', actor.userId, 5],
+      ['ip', ip || 'unknown', 20],
+    ] as const) {
+      const key = createHmac('sha256', secret)
+        .update(JSON.stringify(['push-authorize-v1', scope, identity]))
+        .digest('hex');
+      const { count, remaining } = await incrementCounter(
+        this.prisma,
+        key,
+        600_000,
+      );
+      if (count > limit)
+        throw new HttpException(
+          {
+            statusCode: 429,
+            code: 'AUTH_RATE_LIMITED',
+            message: 'Demasiados intentos. Esperá antes de volver a intentar.',
+            retryAfterSeconds: remaining,
+          },
+          429,
+        );
+    }
+    const account = await this.prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { password: true, sessionVersion: true },
+    });
+    let valid = false;
+    try {
+      valid = !!account && (await verifyPassword(password, account.password));
+    } catch {
+      valid = false;
+    }
+    // 403 (not 401): a wrong password must not look like an expired session.
+    if (!valid) throw this.invalidPassword();
+    const expiresAt = Date.now() + PUSH_PROOF_TTL_MS;
+    const version = await this.prisma.$transaction((tx) =>
+      this.lockSessionVersion(tx, actor.userId),
+    );
+    // A reset that committed after the password check makes that check stale.
+    if (version !== account?.sessionVersion) throw this.invalidPassword();
+    return {
+      proof: signPushProof(secret, {
+        u: actor.userId,
+        b: actor.businessId,
+        d: deviceId,
+        v: version,
+        exp: expiresAt,
+      }),
+      expiresAt: new Date(expiresAt).toISOString(),
+    };
+  }
 
   async register(actor: Actor, dto: RegisterPushSubscriptionDto) {
     await this.assertActiveActor(actor);
@@ -52,6 +176,7 @@ export class PushNotificationsService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const version = await this.lockSessionVersion(tx, actor.userId);
         const [endpointOwner, deviceRegistration] = await Promise.all([
           tx.pushSubscription.findUnique({
             where: { endpoint: dto.subscription.endpoint },
@@ -65,6 +190,7 @@ export class PushNotificationsService {
             },
           }),
         ]);
+        this.assertDeviceAuthorized(actor, dto, version, deviceRegistration);
 
         if (
           endpointOwner &&
@@ -94,6 +220,7 @@ export class PushNotificationsService {
               platform: dto.platform,
               userAgent: dto.userAgent?.trim() || null,
               enabled: true,
+              authorizedSessionVersion: version,
               lastUsedAt: new Date(),
             },
           });
@@ -117,6 +244,7 @@ export class PushNotificationsService {
             auth: dto.subscription.keys.auth,
             platform: dto.platform,
             userAgent: dto.userAgent?.trim() || null,
+            authorizedSessionVersion: version,
           },
           update: {
             businessId: actor.businessId,
@@ -127,6 +255,7 @@ export class PushNotificationsService {
             platform: dto.platform,
             userAgent: dto.userAgent?.trim() || null,
             enabled: true,
+            authorizedSessionVersion: version,
             lastUsedAt: new Date(),
           },
         });
@@ -145,38 +274,51 @@ export class PushNotificationsService {
 
   async getStatus(actor: Actor, deviceId: string) {
     await this.assertActiveActor(actor);
-    const [subscription, business, registeredDeviceCount] = await Promise.all([
-      this.prisma.pushSubscription.findUnique({
-        where: {
-          userId_deviceId: { userId: actor.userId, deviceId },
-        },
-        select: {
-          enabled: true,
-          businessId: true,
-          endpoint: true,
-          p256dh: true,
-          auth: true,
-        },
-      }),
-      this.prisma.business.findUnique({
-        where: { id: actor.businessId },
-        select: { notifyOnAutomaticSale: true },
-      }),
-      this.prisma.pushSubscription.count({
-        where: {
-          businessId: actor.businessId,
-          enabled: true,
-          user: { businessId: actor.businessId },
-        },
-      }),
-    ]);
+    const [subscription, business, registeredDeviceCount, account] =
+      await Promise.all([
+        this.prisma.pushSubscription.findUnique({
+          where: {
+            userId_deviceId: { userId: actor.userId, deviceId },
+          },
+          select: {
+            enabled: true,
+            businessId: true,
+            endpoint: true,
+            p256dh: true,
+            auth: true,
+            authorizedSessionVersion: true,
+          },
+        }),
+        this.prisma.business.findUnique({
+          where: { id: actor.businessId },
+          select: { notifyOnAutomaticSale: true },
+        }),
+        this.prisma.pushSubscription.count({
+          where: {
+            businessId: actor.businessId,
+            enabled: true,
+            user: { businessId: actor.businessId },
+          },
+        }),
+        this.prisma.user.findUnique({
+          where: { id: actor.userId },
+          select: { sessionVersion: true },
+        }),
+      ]);
 
+    const version = account?.sessionVersion ?? 0;
+    const requiresAuthorization =
+      version > 0 && subscription?.authorizedSessionVersion !== version;
     const belongsToBusiness = subscription?.businessId === actor.businessId;
     return {
       configured: Boolean(subscription && belongsToBusiness),
       enabled: Boolean(
-        subscription && belongsToBusiness && subscription.enabled,
+        subscription &&
+        belongsToBusiness &&
+        subscription.enabled &&
+        !requiresAuthorization,
       ),
+      requiresAuthorization,
       notifyOnAutomaticSale: business?.notifyOnAutomaticSale ?? false,
       registeredDeviceCount,
       subscriptionFingerprint:

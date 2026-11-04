@@ -266,3 +266,22 @@ test("service worker fails closed after logout, with unreadable or missing Index
     assert.ok(!JSON.stringify(sw.shown[0]).match(/Juan|125|sale-1/));
   }
 });
+
+test("after a recovery, automatic registration is refused until the device is authorized", () => {
+  const { sandbox } = sandboxWith();
+  const lifecycle = loader(sandbox)(path.join(__dirname, "lifecycle.ts"));
+  assert.equal(lifecycle.autoRegistrationAllowed(null), true);
+  assert.equal(lifecycle.autoRegistrationAllowed({ requiresAuthorization: false }), true);
+  assert.equal(lifecycle.autoRegistrationAllowed({ requiresAuthorization: true }), false);
+});
+
+test("static wiring: reconcile gates on authorization and only the password flow sends a proof", () => {
+  const hook = fs.readFileSync(path.join(__dirname, "../../hooks/usePushNotifications.ts"), "utf8");
+  const reconcile = hook.slice(hook.indexOf("const reconcileUnlocked"), hook.indexOf("const runActivation = "));
+  const gate = reconcile.indexOf("autoRegistrationAllowed(backend)");
+  assert.ok(gate > 0 && gate < reconcile.indexOf("registerWithRotation"), "gate precedes any registration");
+  assert.ok(gate < reconcile.indexOf("runActivationUnlocked"), "gate precedes automatic activation");
+  const setters = hook.match(/authorizationProof\.current = /g) ?? [];
+  assert.equal(setters.length, 2, "proof is set once and cleared once");
+  assert.ok(hook.indexOf("authorizePushDevice(") < hook.indexOf("authorizationProof.current = proof"));
+});

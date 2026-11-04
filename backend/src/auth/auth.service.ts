@@ -3,14 +3,21 @@ import {
   UnauthorizedException,
   BadRequestException,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { JWT_EXPIRATION } from './jwt.config';
-import * as bcrypt from 'bcrypt';
+import {
+  hashNewPassword,
+  validateNewPassword,
+  verifyPassword,
+} from './password-policy';
 import { UsersService } from '../users/users.service';
 import { BusinessesService } from '../businesses/businesses.service';
 import { RegisterBusinessDto } from './dto/register-business.dto';
+import { ConfigService } from '@nestjs/config';
+import { passwordV2Enabled } from './password-rollout';
 
 @Injectable()
 export class AuthService {
@@ -19,9 +26,18 @@ export class AuthService {
     private businessesService: BusinessesService,
     private jwtService: JwtService,
     private prisma: PrismaService,
+    private config: ConfigService,
   ) {}
 
   async registerBusiness(dto: RegisterBusinessDto) {
+    if (!passwordV2Enabled(this.config)) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        code: 'AUTH_PASSWORD_POLICY_DISABLED',
+        message:
+          'El registro está temporalmente deshabilitado. Intentá nuevamente.',
+      });
+    }
     // Verificar si el email ya está registrado
     const existingUser = await this.usersService.findByEmail(dto.email);
     if (existingUser) {
@@ -29,7 +45,8 @@ export class AuthService {
     }
 
     // Hashear contraseña
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    validateNewPassword(dto.password);
+    const hashedPassword = await hashNewPassword(dto.password);
 
     const { user, business } = await this.createAccount(dto, hashedPassword);
     try {
@@ -38,6 +55,7 @@ export class AuthService {
           sub: user.id,
           role: user.role,
           businessId: business.id,
+          sessionVersion: user.sessionVersion ?? 0,
         },
         { expiresIn: JWT_EXPIRATION },
       );
@@ -116,7 +134,7 @@ export class AuthService {
     }
 
     // Validar contraseña
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = await verifyPassword(password, user.password);
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
@@ -129,6 +147,7 @@ export class AuthService {
           sub: user.id,
           role: user.role,
           businessId: null,
+          sessionVersion: user.sessionVersion ?? 0,
         },
         {
           expiresIn: JWT_EXPIRATION,
@@ -151,6 +170,7 @@ export class AuthService {
         sub: user.id,
         role: user.role,
         businessId: user.businessId,
+        sessionVersion: user.sessionVersion ?? 0,
       },
       {
         expiresIn: JWT_EXPIRATION,

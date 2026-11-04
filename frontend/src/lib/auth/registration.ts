@@ -37,6 +37,7 @@ export async function registerAccount(
     });
   } catch (error) {
     if (error instanceof StaleSessionError) throw error;
+    if (error instanceof AppApiError && ["AUTH_PASSWORD_POLICY_DISABLED"].includes(error.details?.code)) throw error;
     if (
       error instanceof AppApiError &&
       error.status >= 400 &&

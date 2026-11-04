@@ -279,6 +279,7 @@ model User {
   email    String   @unique
   password String
   role     UserRole
+  sessionVersion Int @default(0)
 
   // MVP: 1 cuenta BUSINESS por negocio.
   // ADMIN queda sin negocio (businessId = null).
@@ -286,11 +287,25 @@ model User {
   business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
 
   pushSubscriptions PushSubscription[]
+  passwordResetTokens PasswordResetToken[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([role])
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+  consumedAt DateTime?
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
 }
 
 model Business {
@@ -396,6 +411,7 @@ model PushSubscription {
   platform       PushPlatform
   userAgent      String?
   enabled        Boolean      @default(true)
+  authorizedSessionVersion Int  @default(0)
   lastUsedAt     DateTime     @default(now())
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

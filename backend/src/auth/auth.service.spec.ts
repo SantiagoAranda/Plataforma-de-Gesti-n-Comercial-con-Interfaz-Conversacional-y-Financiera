@@ -5,12 +5,14 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { BusinessesService } from '../businesses/businesses.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
+import { verifyPassword } from './password-policy';
 
 describe('Auth compatibility and registration', () => {
   const dto = {
     name: 'Fictitious',
     email: 'fixture@example.test',
-    password: 'Abc123',
+    password: 'Una frase de prueba 1!',
     phoneWhatsapp: '000',
   };
   const business = {
@@ -44,6 +46,11 @@ describe('Auth compatibility and registration', () => {
   let auth: AuthService;
 
   beforeEach(() => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() =>
+        Promise.resolve(new Response(`${'A'.repeat(35)}:0`, { status: 200 })),
+      );
     tx = { marker: 'same-transaction' };
     users = {
       findByEmail: jest
@@ -70,8 +77,14 @@ describe('Auth compatibility and registration', () => {
       businesses as unknown as BusinessesService,
       jwt,
       prisma as unknown as PrismaService,
+      new ConfigService({
+        AUTH_PASSWORD_POLICY_V2_ENABLED: 'true',
+        AUTH_RATE_LIMIT_ENABLED: 'true',
+      }),
     );
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it.each([
     'abcdef',
@@ -140,8 +153,31 @@ describe('Auth compatibility and registration', () => {
     const [data, client] = users.createBusinessUser.mock.calls[0];
     expect(client).toBe(tx);
     expect(data.businessId).toBe(business.id);
-    expect(await bcrypt.compare(dto.password, data.password)).toBe(true);
+    expect(await verifyPassword(dto.password, data.password)).toBe(true);
     expect(result).toHaveProperty('accessToken');
+  });
+
+  it('rejects a short new password before creating a business', async () => {
+    await expect(
+      auth.registerBusiness({ ...dto, password: 'short' }),
+    ).rejects.toThrow('8 caracteres');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps registration paused until the compatibility rollout is enabled', async () => {
+    const disabled = new AuthService(
+      users as unknown as UsersService,
+      businesses as unknown as BusinessesService,
+      jwt,
+      prisma as unknown as PrismaService,
+      new ConfigService({ AUTH_PASSWORD_POLICY_V2_ENABLED: 'false' }),
+    );
+    await expect(disabled.registerBusiness(dto)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'AUTH_PASSWORD_POLICY_DISABLED' },
+    });
+    expect(users.findByEmail).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('rejects existing and racing duplicate emails without retrying', async () => {

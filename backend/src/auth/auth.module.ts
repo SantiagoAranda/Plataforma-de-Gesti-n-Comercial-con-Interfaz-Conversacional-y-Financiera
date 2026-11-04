@@ -11,6 +11,9 @@ import { RolesGuard } from './guards/roles.guard';
 import { BusinessActiveGuard } from './guards/business-active.guard';
 import { jwtSecret, JWT_EXPIRATION } from './jwt.config';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
+import { RecoveryRateLimitGuard } from './recovery-rate-limit.guard';
+import { PasswordRecoveryService } from './password-recovery.service';
+import { RecoveryMailService } from './recovery-mail.service';
 
 @Module({
   imports: [
@@ -32,6 +35,9 @@ import { AuthRateLimitGuard } from './auth-rate-limit.guard';
     RolesGuard,
     BusinessActiveGuard,
     AuthRateLimitGuard,
+    RecoveryRateLimitGuard,
+    PasswordRecoveryService,
+    RecoveryMailService,
   ],
   exports: [JwtModule],
 })

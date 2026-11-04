@@ -12,6 +12,7 @@ import { createHmac } from 'node:crypto';
 import { isIP } from 'node:net';
 import { PrismaService } from '../prisma/prisma.service';
 import { jwtSecret } from './jwt.config';
+import { authActionOf } from './auth-action.decorator';
 
 export function authProxyTrust(config: ConfigService): false | string[] {
   if (config.get('AUTH_RATE_LIMIT_ENABLED') !== 'true') return false;
@@ -96,6 +97,8 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (!this.enabled) return true;
+    const action = authActionOf(context.getHandler());
+    if (action !== 'login' && action !== 'register') return true;
     const request = context
       .switchToHttp()
       .getRequest<{ ip?: string; body?: { email?: unknown } }>();
@@ -105,7 +108,7 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
     const ip = request.ip || 'unknown';
     const email =
       typeof request.body?.email === 'string' ? request.body.email : undefined;
-    const login = context.getHandler().name === 'login';
+    const login = action === 'login';
     const rules: Array<{
       scope: string;
       identity: string[];

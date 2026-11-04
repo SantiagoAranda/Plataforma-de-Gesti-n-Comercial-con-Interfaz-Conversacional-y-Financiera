@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { handlerFor } from '../src/auth/auth-action.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -28,7 +29,7 @@ describeDatabase(
     const dto = (tag: string) => ({
       name: `${prefix} ${tag}`,
       email: `${tag}-${suffix}@example.test`,
-      password: 'Abc123',
+      password: 'Una frase ficticia 1!',
       phoneWhatsapp: '000',
     });
 
@@ -100,10 +101,15 @@ describeDatabase(
         businesses,
         new JwtService({ secret: 'isolated-test-only' }),
         prisma as PrismaService,
+        new ConfigService({
+          AUTH_PASSWORD_POLICY_V2_ENABLED: 'true',
+          AUTH_RATE_LIMIT_ENABLED: 'true',
+        }),
       );
     }, 30000);
 
     afterAll(async () => {
+      jest.restoreAllMocks();
       if (!prisma) return;
       try {
         await prisma.user.deleteMany({
@@ -225,7 +231,7 @@ describeDatabase(
         new AuthRateLimitGuard(config, prisma as PrismaService),
       ];
       const context = {
-        getHandler: () => function login() {},
+        getHandler: () => handlerFor('login'),
         switchToHttp: () => ({
           getRequest: () => ({
             ip: '192.0.2.123',

@@ -254,6 +254,12 @@ test("registration keeps 429 separate from unknown outcomes and stores no passwo
   assert.equal(h.storage.getItem("password"), null);
 });
 
+test("registration reports a paused rollout without implying the account was created", async () => {
+  const h = harness();
+  h.sandbox.fetch = async () => new Response(JSON.stringify({ code: "AUTH_PASSWORD_POLICY_DISABLED", message: "El registro está temporalmente deshabilitado." }), { status: 503 });
+  await assert.rejects(h.registration.registerAccount(input), (error) => error.status === 503 && error.details.code === "AUTH_PASSWORD_POLICY_DISABLED");
+});
+
 
 test('historical access survives metadata storage quota errors', () => {
   const h = harness();
@@ -289,4 +295,31 @@ test('late registration response cannot replace a newer session', async () => {
   response.resolve(new Response(JSON.stringify({ accessToken: h.token('old') }), { status: 201 }));
   await rejected;
   assert.equal(h.session.getSessionContext().userId, 'newer');
+});
+
+for (const priorNotice of [false, true]) test('public 503 preserves session and prior notice=' + priorNotice, async () => {
+  const h = harness();
+  h.sandbox.window.location.pathname = '/register';
+  h.session.establishSession({ accessToken: h.token('historical') });
+  if (priorNotice) h.storage.setItem('session_expired_notice', 'true');
+  const before = h.session.getSessionContext().token;
+  h.sandbox.fetch = async (url, options) => {
+    assert.equal(options.headers.has('Authorization'), false);
+    return new Response(JSON.stringify({ code: 'AUTH_PASSWORD_POLICY_DISABLED', message: 'El registro está temporalmente deshabilitado. Intentá nuevamente.' }), { status: 503 });
+  };
+  await assert.rejects(h.registration.registerAccount(input), e => e.status === 503 && e.message.includes('temporalmente deshabilitado'));
+  assert.equal(h.session.getSessionContext().token, before);
+  assert.equal(h.sandbox.window.location.href, '');
+  assert.equal(h.storage.getItem('session_expired_notice'), priorNotice ? 'true' : null);
+});
+test('only an authenticated 401 expires the current session', async () => {
+  const h = harness();
+  h.session.establishSession({ accessToken: h.token('historical') });
+  h.sandbox.fetch = async () => new Response(JSON.stringify({message:'Credenciales incorrectas'}), {status:401});
+  await assert.rejects(h.api.api('/auth/login', {auth:false}), e => e.status === 401);
+  assert.equal(h.session.getSessionContext().userId, 'historical');
+  assert.equal(h.storage.getItem('session_expired_notice'), null);
+  await assert.rejects(h.api.api('/private'), e => e.status === 401);
+  assert.equal(h.session.getSessionContext().token, null);
+  assert.equal(h.storage.getItem('session_expired_notice'), 'true');
 });

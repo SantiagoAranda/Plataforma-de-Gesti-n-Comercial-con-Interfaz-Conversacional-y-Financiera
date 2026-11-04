@@ -13,6 +13,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { RegisterPushSubscriptionDto } from './dto/register-push-subscription.dto';
 import { PushStatusDto } from './dto/push-status.dto';
+import { AuthorizePushDto } from './dto/authorize-push.dto';
 import { TestPushDto } from './dto/test-push.dto';
 import { UnregisterPushSubscriptionDto } from './dto/unregister-push-subscription.dto';
 import { UpdatePushPreferencesDto } from './dto/update-push-preferences.dto';
@@ -46,6 +47,16 @@ export class PushNotificationsController {
     @Body() dto: RegisterPushSubscriptionDto,
   ) {
     return this.notifications.register(req.user, dto);
+  }
+
+  @Post('authorize')
+  authorize(@Req() req: AuthenticatedRequest, @Body() dto: AuthorizePushDto) {
+    return this.notifications.authorize(
+      req.user,
+      dto.deviceId,
+      dto.password,
+      req.ip,
+    );
   }
 
   @Post('status')

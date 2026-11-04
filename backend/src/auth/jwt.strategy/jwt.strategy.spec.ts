@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './jwt.strategy';
+import { PrismaService } from '../../prisma/prisma.service';
 
 describe('JwtStrategy', () => {
   let provider: JwtStrategy;
@@ -9,6 +10,14 @@ describe('JwtStrategy', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         JwtStrategy,
+        {
+          provide: PrismaService,
+          useValue: {
+            user: {
+              findUnique: jest.fn().mockResolvedValue({ sessionVersion: 0 }),
+            },
+          },
+        },
         {
           provide: ConfigService,
           useValue: { get: jest.fn().mockReturnValue('test-secret') },

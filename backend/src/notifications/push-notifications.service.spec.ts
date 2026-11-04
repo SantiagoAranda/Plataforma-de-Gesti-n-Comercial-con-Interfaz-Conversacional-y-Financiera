@@ -32,8 +32,10 @@ describe('PushNotificationsService', () => {
       send: jest.fn().mockResolvedValue(sendResult),
     };
     const prisma: any = {
+      $queryRaw: jest.fn().mockResolvedValue([{ sessionVersion: 0 }]),
       user: {
         findFirst: jest.fn().mockResolvedValue({ id: 'user-1' }),
+        findUnique: jest.fn().mockResolvedValue({ sessionVersion: 0 }),
       },
       business: {
         findUnique: jest.fn().mockResolvedValue({
@@ -65,6 +67,7 @@ describe('PushNotificationsService', () => {
         prisma,
         { isEnabled: () => true } as any,
         transport as any,
+        { get: () => 'fixture-secret' } as any,
       ),
       prisma,
       transport,
@@ -83,6 +86,7 @@ describe('PushNotificationsService', () => {
       enabled: true,
       notifyOnAutomaticSale: false,
       registeredDeviceCount: 1,
+      requiresAuthorization: false,
       subscriptionFingerprint: expect.any(String),
     });
     expect(JSON.stringify(result)).not.toContain('endpoint');

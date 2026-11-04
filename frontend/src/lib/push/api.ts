@@ -14,6 +14,7 @@ export type PushStatusResponse = {
   enabled: boolean;
   notifyOnAutomaticSale: boolean;
   registeredDeviceCount: number;
+  requiresAuthorization: boolean;
   subscriptionFingerprint: string | null;
 };
 
@@ -24,6 +25,7 @@ export function registerPushSubscription(
     platform: PushPlatform;
     userAgent?: string;
     expectedUserId?: string;
+    authorizationProof?: string;
   },
   signal?: AbortSignal,
 ) {
@@ -73,5 +75,12 @@ export function updatePushPreference(notifyOnAutomaticSale: boolean) {
       method: "PATCH",
       body: JSON.stringify({ notifyOnAutomaticSale }),
     },
+  );
+}
+
+export function authorizePushDevice(deviceId: string, password: string) {
+  return api<{ proof: string; expiresAt: string }>(
+    "/notifications/push/authorize",
+    { method: "POST", body: JSON.stringify({ deviceId, password }) },
   );
 }

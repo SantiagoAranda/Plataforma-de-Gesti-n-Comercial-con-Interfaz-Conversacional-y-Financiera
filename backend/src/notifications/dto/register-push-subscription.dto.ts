@@ -64,4 +64,10 @@ export class RegisterPushSubscriptionDto {
   @IsString()
   @MaxLength(64)
   expectedUserId?: string;
+
+  /** Prueba temporal emitida por /authorize para este dispositivo tras una recuperación. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  authorizationProof?: string;
 }
