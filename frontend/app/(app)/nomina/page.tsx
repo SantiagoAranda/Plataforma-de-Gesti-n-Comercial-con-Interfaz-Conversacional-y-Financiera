@@ -1034,11 +1034,60 @@ function PayrollEmployeeTabs<T extends string>({
   );
 }
 
+// Monta en "plus" y pasa a "x" tras el montaje para reutilizar la transición + → X de WhatsappComposer.
+function PayrollComposerFooterBar({
+  primaryLabel,
+  submitting,
+  primaryDisabled,
+  onCancel,
+  onPrimary,
+}: {
+  primaryLabel: string;
+  submitting?: boolean;
+  primaryDisabled?: boolean;
+  onCancel: () => void;
+  onPrimary: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let inner = 0;
+    const outer = window.requestAnimationFrame(() => {
+      inner = window.requestAnimationFrame(() => setExpanded(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(outer);
+      window.cancelAnimationFrame(inner);
+    };
+  }, []);
+
+  return (
+    <div className="pb-[env(safe-area-inset-bottom)]">
+      <WhatsappComposer
+        leftIconVariant={expanded ? "x" : "plus"}
+        leftAction={onCancel}
+        plusAriaLabel="Cancelar"
+        rightIconVariant="send"
+        rightButtonVariant="primary"
+        onSubmit={onPrimary}
+        isSubmitting={submitting}
+        submitDisabled={primaryDisabled}
+        submitAriaLabel={primaryLabel}
+        centerContent={
+          <span className="block text-sm font-medium text-slate-700">{primaryLabel}</span>
+        }
+        className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
+      />
+    </div>
+  );
+}
+
 function PayrollSheetFooter({
   error,
   primaryLabel,
   submitting,
   primaryDisabled,
+  composer,
   onCancel,
   onPrimary,
 }: {
@@ -1046,6 +1095,7 @@ function PayrollSheetFooter({
   primaryLabel: string;
   submitting?: boolean;
   primaryDisabled?: boolean;
+  composer?: boolean;
   onCancel: () => void;
   onPrimary: () => void;
 }) {
@@ -1054,6 +1104,15 @@ function PayrollSheetFooter({
       {error && (
         <p className="rounded-2xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
       )}
+      {composer ? (
+        <PayrollComposerFooterBar
+          primaryLabel={primaryLabel}
+          submitting={submitting}
+          primaryDisabled={primaryDisabled}
+          onCancel={onCancel}
+          onPrimary={onPrimary}
+        />
+      ) : (
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"
@@ -1079,6 +1138,7 @@ function PayrollSheetFooter({
           )}
         </button>
       </div>
+      )}
     </div>
   );
 }
@@ -1094,6 +1154,7 @@ function PayrollEmployeeSheetShell<T extends string>({
   onTabChange,
   onClose,
   footer,
+  footerClassName = "px-5 py-3.5",
   children,
 }: {
   open: boolean;
@@ -1106,6 +1167,7 @@ function PayrollEmployeeSheetShell<T extends string>({
   onTabChange: (tab: T) => void;
   onClose: () => void;
   footer: ReactNode;
+  footerClassName?: string;
   children: ReactNode;
 }) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -1139,7 +1201,7 @@ function PayrollEmployeeSheetShell<T extends string>({
         <div ref={contentRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-neutral-50/30 px-5 py-4 overscroll-contain">
           {children}
         </div>
-        <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3.5">
+        <div className={cn("shrink-0 border-t border-neutral-100 bg-white", footerClassName)}>
           {footer}
         </div>
       </div>
@@ -1645,11 +1707,13 @@ function PayrollQuickEmployeeSheet({
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onClose={closeWithDirtyCheck}
+        footerClassName="px-3 py-3"
         footer={
           <PayrollSheetFooter
             error={error}
             primaryLabel={activeTab === "empleado" ? (createdEmployee ? "Ir a contrato" : "Crear empleado") : "Crear contrato"}
             submitting={submitting}
+            composer
             onCancel={closeWithDirtyCheck}
             onPrimary={save}
           />
