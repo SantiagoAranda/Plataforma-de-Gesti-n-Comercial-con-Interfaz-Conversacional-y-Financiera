@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { assertCurrentSession, establishSession, getSessionContext, StaleSessionError } from "../../lib/auth/session";
+import { assertCurrentSession, establishSession, getSessionContext, homePath, StaleSessionError } from "../../lib/auth/session";
 import { useAuthRetry } from "../../hooks/useAuthRetry";
 import { api, AppApiError } from "../../lib/api";
 import LoginStoreHint from "./LoginStoreHint";
@@ -240,11 +240,7 @@ export default function LoginForm() {
       assertCurrentSession(session);
       const user = establishSession(data);
 
-      if (user.role === "ADMIN" && !user.businessId) {
-        router.push("/admin");
-      } else {
-        router.push("/home");
-      }
+      router.push(homePath(user));
     } catch (err: unknown) {
       if (err instanceof StaleSessionError) return;
       if (err instanceof AppApiError && err.status === 429) {

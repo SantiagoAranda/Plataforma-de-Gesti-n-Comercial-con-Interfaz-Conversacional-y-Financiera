@@ -4,5 +4,5 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <SessionBoundary>{children}</SessionBoundary>;
+  return <SessionBoundary require="ADMIN">{children}</SessionBoundary>;
 }

@@ -2,6 +2,14 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
 
+/** Safe diagnostic for logs: only a short error code (EAUTH, ETIMEDOUT...), never message, recipient or link. */
+export function mailErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,32}$/.test(code)
+    ? code
+    : 'UNKNOWN';
+}
+
 @Injectable()
 export class RecoveryMailService {
   private transport?: Transporter;

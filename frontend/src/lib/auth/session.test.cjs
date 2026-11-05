@@ -323,3 +323,18 @@ test('only an authenticated 401 expires the current session', async () => {
   assert.equal(h.session.getSessionContext().token, null);
   assert.equal(h.storage.getItem('session_expired_notice'), 'true');
 });
+
+test("voluntary logout sets no expiry notice and a late 401 from the old session does nothing", async () => {
+  const h = harness();
+  h.session.establishSession({ accessToken: h.token("A") });
+  const response = deferred();
+  h.sandbox.fetch = () => response.promise;
+  const rejected = assert.rejects(h.api.api("/sales"), { name: "StaleSessionError" });
+  h.session.clearSession();
+  response.resolve(new Response("{}", { status: 401 }));
+  await rejected;
+  assert.equal(h.storage.getItem("session_expired_notice"), null);
+  assert.equal(h.sandbox.window.location.href, "");
+  h.session.establishSession({ accessToken: h.token("B") });
+  assert.equal(h.session.getSessionContext().userId, "B");
+});

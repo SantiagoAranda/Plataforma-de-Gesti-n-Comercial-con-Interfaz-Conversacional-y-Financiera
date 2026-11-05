@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RecoveryMailService } from './recovery-mail.service';
+import { mailErrorCode, RecoveryMailService } from './recovery-mail.service';
 import { hashNewPassword, validateNewPassword } from './password-policy';
 import { passwordV2Enabled } from './password-rollout';
 import {
@@ -53,8 +53,10 @@ export class PasswordRecoveryService {
     this.assertEnabled();
     this.mail.assertConfigured();
     const minutes = this.lifetimeMinutes();
-    void this.issue(email, minutes).catch(() =>
-      this.logger.error('No se pudo procesar una solicitud de recuperación.'),
+    void this.issue(email, minutes).catch((error: unknown) =>
+      this.logger.error(
+        `No se pudo procesar una solicitud de recuperación (${mailErrorCode(error)}).`,
+      ),
     );
     return {
       message:
@@ -168,9 +170,11 @@ export class PasswordRecoveryService {
       }
       await this.mail.sendChanged(email);
       await recordMailOutcome(this.prisma, 'accepted');
-    } catch {
+    } catch (error) {
       await recordMailOutcome(this.prisma, 'failed');
-      this.logger.error('No se pudo enviar el aviso de cambio de contraseña.');
+      this.logger.error(
+        `No se pudo enviar el aviso de cambio de contraseña (${mailErrorCode(error)}).`,
+      );
     }
   }
 

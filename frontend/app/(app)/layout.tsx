@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
-import { getToken, handleSessionExpired } from "@/src/lib/auth";
+import type { ReactNode } from "react";
 import DesktopModulePanel from "@/src/components/layout/DesktopModulePanel";
 import DesktopSidebar from "@/src/components/layout/DesktopSidebar";
 import DesktopSidePanel from "@/src/components/layout/DesktopSidePanel";
@@ -11,19 +9,10 @@ import { ManualPaidOutflowProvider } from "@/src/components/layout/ManualPaidOut
 import SessionBoundary from '@/src/components/auth/SessionBoundary';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  return <SessionBoundary><AppLayoutContent>{children}</AppLayoutContent></SessionBoundary>;
+  return <SessionBoundary require="auth"><AppLayoutContent>{children}</AppLayoutContent></SessionBoundary>;
 }
 
 function AppLayoutContent({ children }: { children: ReactNode }) {
-  const router = useRouter();
-
-  useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      handleSessionExpired();
-    }
-  }, [router]);
-
   return (
     <ManualPaidOutflowProvider>
       <DesktopSidePanelProvider>

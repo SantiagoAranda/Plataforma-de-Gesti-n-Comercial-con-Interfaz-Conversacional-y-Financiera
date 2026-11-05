@@ -83,6 +83,10 @@ export function getSessionContext(): SessionContext {
   return snapshot;
 }
 
+export function homePath(s: Pick<SessionContext, "role" | "businessId">) {
+  return s.role === "ADMIN" && !s.businessId ? "/admin" : "/home";
+}
+
 export function subscribeSession(listener: () => void) {
   listeners.add(listener);
   return () => {
