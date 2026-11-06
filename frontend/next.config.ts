@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "pub-63b82db147424dc4b6616e833a203d40.r2.dev",
       },
+      {
+        protocol: "https",
+        hostname: "assets.sactec.dev",
+      },
     ],
   },
 };

@@ -317,7 +317,23 @@ function selectedOptionsForItem(item: Item, selections: OptionSelection[]) {
   );
 }
 
-export default function PublicStoreClient() {
+function parsePublicItems(data: any): Item[] {
+  const list = Array.isArray(data?.data) ? data.data : [];
+  return list.map((item: any) => ({
+    ...item,
+    price: Number(item.price || 0),
+    previousPrice:
+      item.previousPrice != null
+        ? Number(item.previousPrice)
+        : item.compareAtPrice != null
+          ? Number(item.compareAtPrice)
+          : item.originalPrice != null
+            ? Number(item.originalPrice)
+            : null,
+  }));
+}
+
+export default function PublicStoreClient({ initialData }: { initialData?: any } = {}) {
   const params = useParams();
   const slug = typeof params?.slug === "string" ? params.slug : "";
   const searchParams = useSearchParams();
@@ -327,13 +343,14 @@ export default function PublicStoreClient() {
     slug.trim().toLowerCase() === "sactec" &&
     searchParams.get("from") === "login";
 
-  const [items, setItems] = useState<Item[]>([]);
-  const [businessName, setBusinessName] = useState("");
+  const initialDataRef = useRef<any>(initialData ?? null);
+  const [items, setItems] = useState<Item[]>(() => parsePublicItems(initialData));
+  const [businessName, setBusinessName] = useState<string>(initialData?.business?.name ?? "");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
-  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(null);
-  const [footerSettings, setFooterSettings] = useState<StoreFooterSettings>(null);
+  const [businessLogoUrl, setBusinessLogoUrl] = useState<string | null>(initialData?.business?.logoUrl || null);
+  const [footerSettings, setFooterSettings] = useState<StoreFooterSettings>(initialData?.business?.storeFooterSettings ?? null);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [showCartModal, setShowCartModal] = useState(false);
@@ -577,13 +594,18 @@ export default function PublicStoreClient() {
 
     const fetchItems = async () => {
       try {
-        const res = await fetch(
-          `${API_URL}/public/${slug}/items?type=${category}`
-        );
+        // Datos precargados por el servidor: solo válidos para la primera carga (category "").
+        let data = initialDataRef.current;
+        initialDataRef.current = null;
+        if (!data || category !== "") {
+          const res = await fetch(
+            `${API_URL}/public/${slug}/items?type=${category}`
+          );
 
-        if (!res.ok) throw new Error("Error loading items");
+          if (!res.ok) throw new Error("Error loading items");
 
-        const data = await res.json();
+          data = await res.json();
+        }
 
         // Redirección Canónica
         if (data?.business?.slug && data.business.slug !== slug) {
@@ -600,18 +622,7 @@ export default function PublicStoreClient() {
         setBusinessLogoUrl(data?.business?.logoUrl || null);
         setFooterSettings(data?.business?.storeFooterSettings ?? null);
 
-        const parsedItems = itemsList.map((item: any) => ({
-          ...item,
-          price: Number(item.price || 0),
-          previousPrice:
-            item.previousPrice != null
-              ? Number(item.previousPrice)
-              : item.compareAtPrice != null
-                ? Number(item.compareAtPrice)
-                : item.originalPrice != null
-                  ? Number(item.originalPrice)
-                  : null,
-        }));
+        const parsedItems = parsePublicItems(data);
         setItems(parsedItems);
 
         const targetItemId = searchParams.get("producto") || searchParams.get("item");

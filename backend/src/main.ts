@@ -26,6 +26,7 @@ async function bootstrap() {
     origin: true,
     credentials: true,
     exposedHeaders: ['Retry-After'],
+    maxAge: 7200, // cachea el preflight OPTIONS: evita un viaje extra por cada llamada
   });
 
   app.useGlobalPipes(

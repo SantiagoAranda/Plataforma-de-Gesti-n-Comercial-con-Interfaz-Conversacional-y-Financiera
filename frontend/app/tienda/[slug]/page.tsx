@@ -22,13 +22,21 @@ function decodeSlug(value: string) {
 const resolveStore = cache(async (slug: string): Promise<Store | null | undefined> => {
   try {
     const res = await fetch(`${API_URL}/public/${encodeURIComponent(slug)}/resolve`, { cache: "no-store" });
-    if (res.status === 404) return null;
+    // Only the backend's explicit answer means "no store"; a 404 for a missing route (older backend) is treated as unavailable.
+    if (res.status === 404) {
+      const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+      return body?.message === "Tienda no encontrada" ? null : undefined;
+    }
     return res.ok ? ((await res.json()) as Store) : undefined;
   } catch (error) {
     console.error("Error resolving tienda slug:", error);
     return undefined;
   }
 });
+
+// Precarga de productos (categoría inicial) con el slug canónico; el cliente la reutiliza.
+const getStoreItems = (slug: string) =>
+  fetch(`${API_URL}/public/${encodeURIComponent(slug)}/items?type=`, { next: { revalidate: 60 } });
 
 export async function generateMetadata({ params }: Props) {
   const slug = decodeSlug((await params)?.slug ?? "");
@@ -57,5 +65,12 @@ export default async function Page({ params, searchParams }: Props) {
     // Relative path built from the server's canonical slug: one hop, never another origin.
     permanentRedirect(`/tienda/${encodeURIComponent(store.slug)}${query.size ? `?${query}` : ""}`);
   }
-  return <PublicStoreClient />;
+  let initialData = null;
+  try {
+    const res = await getStoreItems(store?.slug ?? slug);
+    if (res.ok) initialData = await res.json();
+  } catch {
+    // el cliente reintenta el fetch si no hay datos iniciales
+  }
+  return <PublicStoreClient initialData={initialData} />;
 }
