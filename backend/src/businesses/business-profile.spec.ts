@@ -1,9 +1,10 @@
-import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { BusinessesController } from './businesses.controller';
 import { BusinessesService } from './businesses.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 
@@ -68,6 +69,26 @@ describe('Business commercial name HTTP contract', () => {
   it('rejects inactive businesses through the existing guard', async () => {
     profile.status = 'INACTIVE';
     await patch({ name: 'New' }).expect(403);
+  });
+  it('applies deactivation and reactivation on the very next protected request', async () => {
+    await patch({ name: 'Uno' }).expect(200);
+    profile.status = 'INACTIVE';
+    await patch({ name: 'Dos' }).expect(403);
+    profile.status = 'ACTIVE';
+    await patch({ name: 'Tres' }).expect(200);
+    expect(profile.name).toBe('Tres');
+    expect(prisma.business.update).toHaveBeenCalledTimes(2);
+  });
+  it('reads the status on every request, so separate instances always agree', async () => {
+    // Two guard instances stand in for two backend replicas sharing the database.
+    const replicas = [new BusinessActiveGuard(prisma as any), new BusinessActiveGuard(prisma as any)];
+    const context = { switchToHttp: () => ({ getRequest: () => ({ user: { businessId: 'a' } }) }) } as any;
+    for (const guard of replicas) await expect(guard.canActivate(context)).resolves.toBe(true);
+    profile.status = 'INACTIVE';
+    for (const guard of replicas) await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    profile.status = 'ACTIVE';
+    for (const guard of replicas) await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(prisma.business.findUnique).toHaveBeenCalledTimes(6);
   });
   it('maps deletion during update to 404', async () => {
     prisma.business.update.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('missing', { code: 'P2025', clientVersion: '6' }));
