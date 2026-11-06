@@ -11,7 +11,8 @@ interface Props {
 type Store = { slug: string; name: string; logoUrl: string | null };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-const FALLBACK_METADATA = { title: { absolute: "Tienda" }, icons: { icon: "/favicon.ico" } };
+// No `icons` here: setting them replaces the root layout's SACTEC favicon for the whole route.
+const FALLBACK_METADATA = { title: { absolute: "Tienda" } };
 
 function decodeSlug(value: string) {
   try { return decodeURIComponent(value); } catch { return value; }
@@ -39,7 +40,6 @@ export async function generateMetadata({ params }: Props) {
   const protocol = first("x-forwarded-proto") ?? "https";
   return {
     title: { absolute: store.name || "Tienda" },
-    icons: { icon: store.logoUrl || "/favicon.ico" },
     // Historical slugs redirect, so the current slug is the only indexable address.
     ...(host && { alternates: { canonical: `${protocol}://${host}/tienda/${encodeURIComponent(store.slug)}` } }),
   };
