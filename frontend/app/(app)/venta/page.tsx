@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   Suspense,
   useCallback,
@@ -23,7 +24,7 @@ import SalesChatComposer, {
 } from "@/src/components/sales/SalesChatComposer";
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
-import SaleReceiptModal from "@/src/components/sales/SaleReceiptModal";
+const SaleReceiptModal = dynamic(() => import("@/src/components/sales/SaleReceiptModal"), { ssr: false });
 import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
 import ElectronicInvoiceConfirmModal from "@/src/components/sales/ElectronicInvoiceConfirmModal";
 import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirmation, firstInvoiceConfirmationStep } from "@/src/lib/sales/manualInvoiceUi";
