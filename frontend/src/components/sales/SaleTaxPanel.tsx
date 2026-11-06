@@ -645,11 +645,11 @@ export default function SaleTaxPanel({
                   <SummaryRow label="Total cobrado" value={Number(preview.subtotal) + chargedTotal} />
                   <SummaryRow label="Total retenido" value={withheldTotal} />
                 </div>
-                <div className="mt-4 flex items-end justify-between gap-4 border-t border-slate-100 pt-4">
+                <div className="mt-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-t border-slate-100 pt-4">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
                     Neto recibido
                   </span>
-                  <span className="text-2xl font-semibold text-emerald-600 tabular-nums">
+                  <span className="ml-auto text-2xl font-semibold text-emerald-600 tabular-nums">
                     ${formatCop(Number(preview.netReceived))}
                   </span>
                 </div>

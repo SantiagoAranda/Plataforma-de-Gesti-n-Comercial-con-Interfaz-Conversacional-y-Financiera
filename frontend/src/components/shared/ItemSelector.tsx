@@ -42,18 +42,18 @@ export default function ItemSelector({ value, onChange, options, placeholder = "
         onClick={() => setOpen(!open)}
         className="flex w-full min-h-[44px] items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-800 transition focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
       >
-        <span className="truncate">{selected ? selected.name : <span className="text-neutral-400">{placeholder}</span>}</span>
-        <ChevronDown size={16} className={`text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="min-w-0 truncate">{selected ? selected.name : <span className="text-neutral-400">{placeholder}</span>}</span>
+        <ChevronDown size={16} className={`shrink-0 text-neutral-400 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 flex max-h-60 flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl animate-in fade-in slide-in-from-top-2">
           <div className="flex shrink-0 items-center gap-2 border-b border-neutral-100 px-3 py-2">
-            <Search size={16} className="text-neutral-400" />
+            <Search size={16} className="shrink-0 text-neutral-400" />
             <input
               type="text"
               autoFocus
-              className="flex-1 bg-transparent text-sm text-neutral-800 outline-none placeholder:text-neutral-400 font-medium"
+              className="min-w-0 w-full flex-1 bg-transparent text-sm text-neutral-800 outline-none placeholder:text-neutral-400 font-medium"
               placeholder="Buscar..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -78,7 +78,7 @@ export default function ItemSelector({ value, onChange, options, placeholder = "
                     value === opt.id ? "text-emerald-700 bg-emerald-50/50" : "text-neutral-700"
                   }`}
                 >
-                  <span className="truncate">{opt.name}</span>
+                  <span className="min-w-0 truncate">{opt.name}</span>
                   {value === opt.id && <Check size={16} className="shrink-0 text-emerald-500" />}
                 </button>
               ))

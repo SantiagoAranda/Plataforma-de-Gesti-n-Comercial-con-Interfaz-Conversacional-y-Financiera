@@ -825,7 +825,7 @@ export default function SalesChatComposer({
         )}
 
         {/* 3. Datos del cliente y contexto fiscal */}
-        <div className="space-y-3 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+        <div className="min-w-0 space-y-3 rounded-2xl border border-sky-200 bg-sky-50/60 p-3 sm:p-4">
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-[#0B3F64]">
             <FileText className="h-4 w-4 text-[#0B3F64]" />
             {fiscalForm.buyerType === "JURIDICA" ? "Datos del comprador" : "Facturación Electrónica"}
@@ -955,7 +955,7 @@ export default function SalesChatComposer({
                             if (disabled) return;
                             toggleBuyerFiscalFlag(key, active);
                           }}
-                          className={`flex h-8 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition ${active
+                          className={`flex min-h-8 min-w-0 items-center justify-center rounded-lg border px-2 py-1 text-center text-[10px] font-semibold leading-tight transition ${active
                               ? "border-[#0B3F64] bg-white text-[#0B3F64] shadow-sm"
                               : "border-sky-200 bg-white/70 text-[#0B3F64] hover:border-[#0B3F64]"
                             } ${disabled ? "cursor-not-allowed opacity-45 hover:border-sky-200" : ""}`}
@@ -996,7 +996,7 @@ export default function SalesChatComposer({
         </div>
 
         {/* 4. Estado de venta & Medio de pago */}
-        <div className="grid grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)] gap-2 w-full min-w-0">
+        <div className="grid w-full min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
           <div>
             <span className="sr-only">
               Estado de venta
@@ -1006,7 +1006,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("PENDIENTE")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${status === "PENDIENTE"
+                className={`flex h-9 min-w-0 items-center justify-center rounded-lg border px-1 text-xs font-semibold transition-all text-center ${status === "PENDIENTE"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                   }`}
@@ -1017,7 +1017,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setStatus("CERRADO")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${status === "CERRADO"
+                className={`flex h-9 min-w-0 items-center justify-center rounded-lg border px-1 text-[10px] font-semibold transition-all text-center ${status === "CERRADO"
                     ? "border-transparent bg-white text-slate-950 shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                   }`}
@@ -1036,7 +1036,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("CASH")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-xs font-semibold transition-all text-center ${paymentMethod === "CASH"
+                className={`flex h-9 min-w-0 items-center justify-center rounded-lg border px-1 text-xs font-semibold transition-all text-center ${paymentMethod === "CASH"
                     ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                   }`}
@@ -1047,7 +1047,7 @@ export default function SalesChatComposer({
                 type="button"
                 disabled={isReadonly}
                 onClick={() => setPaymentMethod("BANK_TRANSFER")}
-                className={`flex h-9 items-center justify-center rounded-lg border px-2 text-[10px] font-semibold transition-all text-center ${paymentMethod === "BANK_TRANSFER"
+                className={`flex h-9 min-w-0 items-center justify-center rounded-lg border px-1 text-[10px] font-semibold transition-all text-center ${paymentMethod === "BANK_TRANSFER"
                     ? "border-transparent bg-[#0B3F64] text-white shadow-sm disabled:opacity-90"
                     : "border-transparent text-slate-500 hover:text-slate-700 disabled:opacity-60"
                   }`}
@@ -1134,7 +1134,7 @@ export default function SalesChatComposer({
                 </button>
               </div>
 
-              <div className="max-h-[min(65vh,520px)] overflow-y-auto pt-4 pb-5 px-5 custom-scrollbar scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent space-y-4">
+              <div className="max-h-[min(65vh,520px)] overflow-y-auto pt-4 pb-5 px-4 sm:px-5 custom-scrollbar scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent space-y-4">
                 {renderFormBody()}
               </div>
             </div>
@@ -1165,11 +1165,11 @@ export default function SalesChatComposer({
               </button>
 
               {expanded ? (
-                <div className="flex h-full w-full items-center justify-between px-2 pt-0.5 min-w-0 flex-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <div className="flex h-full w-full min-w-0 flex-1 flex-wrap items-center justify-between gap-x-2 px-2 pt-0.5 leading-tight">
+                  <span className="min-w-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                     {totalLabel}
                   </span>
-                  <span className="text-base font-semibold text-slate-950">
+                  <span className="ml-auto text-base font-semibold tabular-nums text-slate-950">
                     ${formatMoney(totalToDisplay)}
                   </span>
                 </div>

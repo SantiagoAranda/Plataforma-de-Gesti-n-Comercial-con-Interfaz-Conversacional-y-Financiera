@@ -60,8 +60,8 @@ export default function PhoneSelector({
   }
 
   return (
-    <div className="grid w-full max-w-full grid-cols-[96px_minmax(0,1fr)] gap-2 overflow-visible box-border">
-      <div className="relative min-w-0 overflow-visible" ref={containerRef}>
+    <div className="flex w-full max-w-full flex-wrap gap-2 overflow-visible box-border">
+      <div className="relative w-24 shrink-0 overflow-visible" ref={containerRef}>
         <button
           type="button"
           disabled={disabled}
@@ -114,7 +114,7 @@ export default function PhoneSelector({
         value={phoneNumber}
         onChange={(e) => onPhoneNumberChange(e.target.value.replace(/\D/g, ""))}
         placeholder="Ingrese número"
-        className={inputClasses}
+        className={`${inputClasses} flex-1 basis-32`}
       />
     </div>
   );
