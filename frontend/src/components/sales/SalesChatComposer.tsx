@@ -989,18 +989,6 @@ export default function SalesChatComposer({
                       className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-[#0B3F64] placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500"
                     />
                   </div>
-
-                  {taxPreview && (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Régimen Simple</span>
-                      <div className={`flex h-11 items-center justify-center rounded-xl border text-xs font-medium ${taxPreview.sellerIsSimpleRegime
-                          ? "border-sky-200 bg-sky-50 text-[#0B3F64]"
-                          : "border-slate-200 bg-slate-50 text-slate-600"
-                        }`}>
-                        {taxPreview.sellerIsSimpleRegime ? "RST (47)" : "Ordinario"}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
             </>
