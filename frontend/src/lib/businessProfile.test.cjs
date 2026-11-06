@@ -252,7 +252,9 @@ test('store page redirects historical slugs with 308 to the current slug, keepin
   setup(); session.clearSession();
   answer = async url => {
     const slug = decodeURIComponent(new URL(url).pathname.split('/')[2]);
-    if (slug === 'missing') return new Response('{}', { status: 404 });
+    if (slug === 'missing') return new Response(JSON.stringify({ message: 'Tienda no encontrada' }), { status: 404 });
+    // Older backend without /resolve: Nest's generic route 404.
+    if (slug === 'sin-ruta') return new Response(JSON.stringify({ message: 'Cannot GET /public/sin-ruta/resolve' }), { status: 404 });
     return { slug: 'vigente', name: 'TecnoGames', logoUrl: null };
   };
   const call = async (slug, search = {}) => {
@@ -263,7 +265,13 @@ test('store page redirects historical slugs with 308 to the current slug, keepin
   assert.deepEqual(await call('anterior'), { redirect: '/tienda/vigente', permanent: true });
   assert.equal((await call('vigente', { producto: '123' })).redirect, undefined);
   assert.deepEqual(await call('missing'), { notFound: true });
+  assert.equal((await call('sin-ruta')).notFound, undefined);
   const metadata = await storePage.generateMetadata({ params: Promise.resolve({ slug: 'anterior' }) });
   assert.equal(metadata.alternates.canonical, 'https://tienda.test/tienda/vigente');
-  assert.ok(requests.every(r => r.cache === 'no-store' && new URL(r.url).pathname.endsWith('/resolve')));
+  const resolves = requests.filter(r => new URL(r.url).pathname.endsWith('/resolve'));
+  assert.ok(resolves.length && resolves.every(r => r.cache === 'no-store'));
+  // Resolved stores preload with the canonical slug; historical and missing slugs never preload.
+  const items = requests.filter(r => new URL(r.url).pathname.endsWith('/items')).map(r => new URL(r.url).pathname);
+  assert.deepEqual(items, ['/public/vigente/items', '/public/sin-ruta/items']);
+  assert.equal(requests.length, resolves.length + items.length);
 });
