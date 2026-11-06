@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, assertIsolatedBusinessFixtures } from './business-fixtures';
 import { ConfigService } from '@nestjs/config';
 import {
   HttpException,
@@ -73,7 +74,7 @@ describeDatabase('Password recovery using isolated PostgreSQL', () => {
     // User.businessId is unique (one account per business), so each account gets its own business.
     const business =
       role === 'BUSINESS'
-        ? await prisma.business.create({
+        ? await createBusinessFixture(prisma, {
             data: {
               name: `Test ${tag} ${suffix}`,
               slug: `test-${tag}-${suffix}`,
@@ -161,6 +162,7 @@ describeDatabase('Password recovery using isolated PostgreSQL', () => {
   const endpoint = () => `https://push.example.test/${randomUUID()}`;
 
   beforeAll(async () => {
+    if (!process.env.SACTEC_TEST_RUN_ID) throw new Error('Explicit isolated test run required before initializing services');
     const raw = process.env.AUTH_TEST_DATABASE_URL;
     if (!raw) throw new Error('AUTH_TEST_DATABASE_URL is required');
     const url = new URL(raw);
@@ -228,12 +230,11 @@ describeDatabase('Password recovery using isolated PostgreSQL', () => {
     if (app) await app.close();
     if (prisma) {
       try {
+        await assertIsolatedBusinessFixtures(prisma);
         await prisma.user.deleteMany({
           where: { email: { endsWith: `${suffix}@example.test` } },
         });
-        await prisma.business.deleteMany({
-          where: { id: { in: createdBusinesses } },
-        });
+        await deleteBusinessFixtures(prisma, createdBusinesses);
       } finally {
         await prisma.$disconnect();
       }

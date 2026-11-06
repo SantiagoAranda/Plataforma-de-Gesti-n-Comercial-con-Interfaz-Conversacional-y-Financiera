@@ -222,7 +222,7 @@ describe('Auth compatibility and registration', () => {
     await expect(auth.registerBusiness(dto)).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(5);
   });
 
   it('reports committed account when signing fails and permits subsequent login', async () => {

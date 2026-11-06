@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import {
@@ -20,6 +21,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
   let globalParameterId: string;
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -33,7 +35,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     payrollService = moduleFixture.get<PayrollService>(PayrollService);
 
     // Setup base data
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Advanced Audit Test Business',
         slug: 'advanced-audit-' + Date.now(),
@@ -128,6 +130,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
   });
 
   afterAll(async () => {
+    if (!businessId) { if (app) await app.close(); return; }
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
     await prisma.payrollPayment.deleteMany({ where: { businessId } });
     await prisma.payrollContractSettlementLine.deleteMany({
@@ -145,7 +148,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     await prisma.employeeContract.deleteMany({ where: { businessId } });
     await prisma.employee.deleteMany({ where: { businessId } });
     await prisma.payrollBusinessParameter.deleteMany({ where: { businessId } });
-    await prisma.business.delete({ where: { id: businessId } });
+    await deleteBusinessFixtures(prisma, [businessId]);
     await prisma.$disconnect();
     await app.close();
   });
@@ -155,6 +158,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     let contractId: string;
 
     beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
       const emp = await prisma.employee.create({
         data: {
           businessId,
@@ -241,6 +245,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     let contractId: string;
 
     beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
       const emp = await prisma.employee.create({
         data: {
           businessId,
@@ -295,6 +300,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     let contractId: string;
 
     beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
       const emp = await prisma.employee.create({
         data: {
           businessId,
@@ -361,6 +367,7 @@ describe('Payroll Advanced Audits (Integration)', () => {
     let contractId: string;
 
     beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
       const emp = await prisma.employee.create({
         data: {
           businessId,

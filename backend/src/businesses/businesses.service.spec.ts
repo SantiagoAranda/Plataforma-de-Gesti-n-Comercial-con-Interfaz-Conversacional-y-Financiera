@@ -27,6 +27,7 @@ function payrollMappingTemplateRows() {
 
 function createPrismaMock() {
   const tx = {
+    businessSlug: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
     business: {
       create: jest.fn().mockResolvedValue({
         id: 'biz-new',
@@ -78,6 +79,7 @@ describe('BusinessesService payroll accounting defaults', () => {
     });
 
     expect(tx.business.create).toHaveBeenCalled();
+    expect(tx.businessSlug.create).toHaveBeenCalledWith({ data: { slug: 'tecnogames', businessId: 'biz-new' } });
     expect(tx.payrollAccountingMapping.upsert).toHaveBeenCalledTimes(
       rows.length,
     );

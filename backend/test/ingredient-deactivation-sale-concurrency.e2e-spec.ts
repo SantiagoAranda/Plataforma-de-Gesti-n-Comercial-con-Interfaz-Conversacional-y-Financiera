@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -24,6 +25,7 @@ describe('Ingredient deactivation versus sale inventory posting (PostgreSQL)', (
   let unitId: string;
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -35,7 +37,7 @@ describe('Ingredient deactivation versus sale inventory posting (PostgreSQL)', (
     sales = app.get(SalesService);
 
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Ingredient sale concurrency test',
         slug: `ingredient-sale-concurrency-${suffix}`,
@@ -57,10 +59,11 @@ describe('Ingredient deactivation versus sale inventory posting (PostgreSQL)', (
   });
 
   afterAll(async () => {
+    if (!businessId) { if (app) await app.close(); return; }
     if (businessId) {
       await prisma.inventoryMovement.deleteMany({ where: { businessId } });
       await prisma.order.deleteMany({ where: { businessId } });
-      await prisma.business.delete({ where: { id: businessId } });
+      await deleteBusinessFixtures(prisma, [businessId]);
     }
     if (unitId) await prisma.unit.delete({ where: { id: unitId } });
     if (app) await app.close();

@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { IngredientUnit, UnitKind } from '@prisma/client';
@@ -15,6 +16,7 @@ describe('Purchase presentation default concurrency (PostgreSQL)', () => {
   const unitIds: string[] = [];
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -24,7 +26,7 @@ describe('Purchase presentation default concurrency (PostgreSQL)', () => {
     prisma = app.get(PrismaService);
 
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Presentation concurrency test',
         slug: `presentation-concurrency-${suffix}`,
@@ -99,7 +101,8 @@ describe('Purchase presentation default concurrency (PostgreSQL)', () => {
   });
 
   afterAll(async () => {
-    if (businessId) await prisma.business.delete({ where: { id: businessId } });
+    if (!businessId) { if (app) await app.close(); return; }
+    if (businessId) await deleteBusinessFixtures(prisma, [businessId]);
     if (unitIds.length)
       await prisma.unit.deleteMany({ where: { id: { in: unitIds } } });
     if (app) await app.close();

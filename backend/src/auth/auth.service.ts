@@ -18,6 +18,7 @@ import { BusinessesService } from '../businesses/businesses.service';
 import { RegisterBusinessDto } from './dto/register-business.dto';
 import { ConfigService } from '@nestjs/config';
 import { passwordV2Enabled } from './password-rollout';
+import { retryBusinessSlugTransaction } from '../common/utils/business-slug';
 
 @Injectable()
 export class AuthService {
@@ -81,7 +82,7 @@ export class AuthService {
     dto: RegisterBusinessDto,
     hashedPassword: string,
   ) {
-    for (let attempt = 0; ; attempt++) {
+    return retryBusinessSlugTransaction(async () => {
       try {
         return await this.prisma.$transaction(async (tx) => {
           const business =
@@ -111,19 +112,9 @@ export class AuthService {
         ) {
           throw new BadRequestException('Email already in use');
         }
-        const slugConflict =
-          failure.code === 'P2002' &&
-          fields.length === 1 &&
-          (fields[0] === 'slug' || fields[0] === 'Business_slug_key');
-        if (attempt < 2 && (slugConflict || failure.code === 'P2034')) continue;
-        if (slugConflict || failure.code === 'P2034') {
-          throw new BadRequestException(
-            'No se pudo completar el registro. Intentá nuevamente.',
-          );
-        }
         throw error;
       }
-    }
+    });
   }
 
   async login(email: string, password: string) {

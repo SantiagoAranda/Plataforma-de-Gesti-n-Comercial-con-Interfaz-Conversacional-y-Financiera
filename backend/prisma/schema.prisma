@@ -309,6 +309,7 @@ model PasswordResetToken {
 }
 
 model Business {
+  slugs         BusinessSlug[]
   id            String         @id @default(uuid())
   name          String
   slug          String         @unique
@@ -380,6 +381,15 @@ model Business {
   payrollEvents PayrollEvent[]
 
   @@index([businessCategory])
+}
+
+model BusinessSlug {
+  slug       String   @id
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdAt  DateTime @default(now())
+
+  @@index([businessId])
 }
 
 model StoreFooterSettings {

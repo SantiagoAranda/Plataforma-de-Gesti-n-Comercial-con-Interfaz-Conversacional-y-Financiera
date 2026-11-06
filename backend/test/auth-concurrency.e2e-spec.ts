@@ -1,3 +1,4 @@
+import { assertIsolatedBusinessFixtures, deleteBusinessFixtures } from './business-fixtures';
 import { ConfigService } from '@nestjs/config';
 import { handlerFor } from '../src/auth/auth-action.decorator';
 import { JwtService } from '@nestjs/jwt';
@@ -34,6 +35,7 @@ describeDatabase(
     });
 
     beforeAll(async () => {
+    if (!process.env.SACTEC_TEST_RUN_ID) throw new Error('Explicit isolated test run required before initializing services');
       const raw = process.env.AUTH_TEST_DATABASE_URL;
       if (!raw) throw new Error('AUTH_TEST_DATABASE_URL is required');
       const url = new URL(raw);
@@ -48,6 +50,7 @@ describeDatabase(
       }
       prisma = new PrismaClient({ datasources: { db: { url: raw } } });
       await prisma.$connect();
+      await assertIsolatedBusinessFixtures(prisma);
       const rows = parsePayrollAccountingMappingTemplate(
         fs.readFileSync(
           path.resolve(
@@ -112,12 +115,12 @@ describeDatabase(
       jest.restoreAllMocks();
       if (!prisma) return;
       try {
+        await assertIsolatedBusinessFixtures(prisma);
         await prisma.user.deleteMany({
           where: { email: { endsWith: `${suffix}@example.test` } },
         });
-        await prisma.business.deleteMany({
-          where: { name: { startsWith: prefix } },
-        });
+        const fixtures = await prisma.business.findMany({ where: { name: { startsWith: prefix } }, select: { id: true } });
+        await deleteBusinessFixtures(prisma, fixtures.map(b => b.id));
       } finally {
         await prisma.$disconnect();
       }

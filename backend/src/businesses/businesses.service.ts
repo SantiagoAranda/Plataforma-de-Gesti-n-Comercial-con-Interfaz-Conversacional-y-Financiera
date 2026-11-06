@@ -9,7 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
 import { Business, Prisma } from '@prisma/client';
-import { generateSlug } from '../common/utils/slug.util';
+import { generateBusinessSlug, retryBusinessSlugTransaction } from '../common/utils/business-slug';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -398,8 +398,8 @@ export class BusinessesService {
     phoneWhatsapp: string;
   }): Promise<Business> {
     try {
-      return await this.prisma.$transaction((tx) =>
-        this.createBusinessInTransaction(tx, data),
+      return await retryBusinessSlugTransaction(() => this.prisma.$transaction((tx) =>
+        this.createBusinessInTransaction(tx, data)),
       );
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -411,9 +411,12 @@ export class BusinessesService {
     tx: Prisma.TransactionClient,
     data: { name: string; fiscalId?: string; phoneWhatsapp: string },
   ): Promise<Business> {
-    const slug = await generateSlug(
+    const slug = await generateBusinessSlug(
       data.name,
-      async (s) => !(await tx.business.findUnique({ where: { slug: s } })),
+      async (s) => !(await tx.businessSlug.findFirst({
+        where: { slug: { equals: s, mode: 'insensitive' } },
+        select: { slug: true },
+      })),
     );
     const business = await tx.business.create({
       data: {
@@ -424,6 +427,7 @@ export class BusinessesService {
         status: 'ACTIVE',
       },
     });
+    await tx.businessSlug.create({ data: { slug, businessId: business.id } });
     await this.initializePayrollAccountingMappingsForBusiness(tx, business.id);
     return business;
   }

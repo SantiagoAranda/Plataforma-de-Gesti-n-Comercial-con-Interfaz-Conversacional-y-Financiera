@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, BadRequestException } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
@@ -20,6 +21,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
   let globalParameterId: string;
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -31,7 +33,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
     prisma = app.get<PrismaService>(PrismaService);
 
     // Setup: Create a test business
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Test Business Payroll',
         slug: `test-payroll-${Date.now()}`,
@@ -193,6 +195,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
   });
 
   afterAll(async () => {
+    if (!businessId) { if (app) await app.close(); return; }
     // Cleanup
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
     await prisma.payrollAccountingMapping.deleteMany({ where: { businessId } });
@@ -206,7 +209,7 @@ describe('Payroll Payments & Settlements (Integration)', () => {
     await prisma.payrollPeriod.deleteMany({ where: { businessId } });
     await prisma.employeeContract.deleteMany({ where: { businessId } });
     await prisma.employee.deleteMany({ where: { businessId } });
-    await prisma.business.delete({ where: { id: businessId } });
+    await deleteBusinessFixtures(prisma, [businessId]);
     await app.close();
   });
 

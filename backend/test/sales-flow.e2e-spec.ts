@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -21,6 +22,7 @@ describe('Sales Flow (Integration)', () => {
   let serviceItemId: string;
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -33,7 +35,7 @@ describe('Sales Flow (Integration)', () => {
     prisma = app.get<PrismaService>(PrismaService);
 
     // Setup: Create a test business
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Test Business Sales Flow',
         slug: `test-business-${Date.now()}`,
@@ -83,6 +85,7 @@ describe('Sales Flow (Integration)', () => {
   });
 
   afterAll(async () => {
+    if (!businessId) { if (app) await app.close(); return; }
     // Cleanup
     await prisma.accountingMovement.deleteMany({ where: { businessId } });
     await prisma.inventoryMovement.deleteMany({ where: { businessId } });
@@ -92,7 +95,7 @@ describe('Sales Flow (Integration)', () => {
     await prisma.order.deleteMany({ where: { businessId } });
     await prisma.item.deleteMany({ where: { businessId } });
     await prisma.ingredient.deleteMany({ where: { businessId } });
-    await prisma.business.delete({ where: { id: businessId } });
+    await deleteBusinessFixtures(prisma, [businessId]);
     await app.close();
   });
 

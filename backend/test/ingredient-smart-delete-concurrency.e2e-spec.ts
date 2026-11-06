@@ -1,3 +1,4 @@
+import { createBusinessFixture, deleteBusinessFixtures, verifyIsolatedTestEnvironment } from './business-fixtures';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { InventoryMode, ItemType, Prisma } from '@prisma/client';
@@ -18,6 +19,7 @@ describe('Ingredient smart deletion concurrency (PostgreSQL)', () => {
   let suffix: string;
 
   beforeAll(async () => {
+    await verifyIsolatedTestEnvironment();
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -29,7 +31,7 @@ describe('Ingredient smart deletion concurrency (PostgreSQL)', () => {
     sales = app.get(SalesService);
     suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const business = await prisma.business.create({
+    const business = await createBusinessFixture(prisma, {
       data: {
         name: 'Ingredient smart delete concurrency test',
         slug: `ingredient-smart-delete-${suffix}`,
@@ -43,8 +45,12 @@ describe('Ingredient smart deletion concurrency (PostgreSQL)', () => {
   });
 
   afterAll(async () => {
-    if (businessId) await prisma.business.delete({ where: { id: businessId } });
-    if (app) await app.close();
+    if (!businessId) { if (app) await app.close(); return; }
+    try {
+      await deleteBusinessFixtures(prisma, [businessId]);
+    } finally {
+      if (app) await app.close();
+    }
   });
 
   const createIngredient = (name: string) =>

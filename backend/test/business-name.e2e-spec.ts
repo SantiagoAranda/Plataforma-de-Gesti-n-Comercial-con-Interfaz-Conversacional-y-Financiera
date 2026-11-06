@@ -1,3 +1,4 @@
+import { createBusinessFixture } from './business-fixtures';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { BusinessesService } from '../src/businesses/businesses.service';
@@ -19,10 +20,11 @@ describeDatabase('Commercial name persistence in isolated PostgreSQL', () => {
   const users: any[] = [];
   const taxProfiles: any[] = [];
   beforeAll(async () => {
+    if (!process.env.SACTEC_TEST_RUN_ID) throw new Error('Explicit isolated test run required before initializing services');
     const raw = process.env.BUSINESS_NAME_TEST_DATABASE_URL;
     if (!raw) throw new Error('Explicit test database URL required');
     const url = new URL(raw);
-    if (url.hostname !== '127.0.0.1' || url.port !== '55439' || url.pathname !== '/sactec_name_test') {
+    if (url.hostname !== '127.0.0.1' || !url.pathname.endsWith('_test')) {
       throw new Error('Only the dedicated local test container is allowed');
     }
     prisma = new PrismaClient({ datasources: { db: { url: raw } } });
@@ -32,7 +34,7 @@ describeDatabase('Commercial name persistence in isolated PostgreSQL', () => {
     } as any, {} as any);
     auth = new AuthService(new UsersService(prisma as any), service, new JwtService({ secret: 'isolated-test-only' }), prisma as any, new ConfigService());
     for (const tag of ['a', 'b']) {
-      const business = await prisma.business.create({ data: { name: 'TecnoGmaes', slug: `${tag}-${suffix}`, fiscalId: `fiscal-${tag}`, phoneWhatsapp: '000' } });
+      const business = await createBusinessFixture(prisma, { data: { name: 'TecnoGmaes', slug: `${tag}-${suffix}`, fiscalId: `fiscal-${tag}`, phoneWhatsapp: '000' } });
       businesses.push(business);
       taxProfiles.push(await prisma.businessTaxProfile.create({ data: {
         businessId: business.id, nit: '900000000', tradeName: 'Fiscal identity unchanged',
