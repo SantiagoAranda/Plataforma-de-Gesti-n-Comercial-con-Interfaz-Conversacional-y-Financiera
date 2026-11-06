@@ -45,6 +45,10 @@ export function businessSlugTaken() {
   return new ConflictException({ code: 'BUSINESS_SLUG_TAKEN', message: 'El identificador dejó de estar disponible. Elegí otro.' });
 }
 
+export function businessSlugChangeUsed() {
+  return new ConflictException({ code: 'BUSINESS_SLUG_CHANGE_USED', message: 'Ya utilizaste el cambio de dirección de tu tienda.' });
+}
+
 export async function retryBusinessSlugTransaction<T>(operation: () => Promise<T>, requestedSlug?: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try { return await operation(); } catch (error) {

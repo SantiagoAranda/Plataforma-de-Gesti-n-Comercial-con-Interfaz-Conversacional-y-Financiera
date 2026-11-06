@@ -1,4 +1,4 @@
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { INestApplication, UnauthorizedException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { BusinessesController } from './businesses.controller';
@@ -15,6 +15,7 @@ describe('BusinessesController ADMIN Factus authorization', () => {
     .mockResolvedValue({
       factus: { enabled: true, configured: false, environment: 'sandbox' },
     });
+  const changeBusinessSlug = jest.fn().mockResolvedValue({ slug: 'nuevo-slug' });
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -30,6 +31,7 @@ describe('BusinessesController ADMIN Factus authorization', () => {
             inactivateBusiness: adminCalls,
             activateBusiness: adminCalls,
             getBusinessById: adminCalls,
+            changeBusinessSlug,
           },
         },
       ],
@@ -40,6 +42,7 @@ describe('BusinessesController ADMIN Factus authorization', () => {
           const req = context.switchToHttp().getRequest();
           if (!req.headers['x-test-role']) throw new UnauthorizedException();
           req.user = {
+            userId: 'jwt-user',
             role: req.headers['x-test-role'],
             businessId: 'jwt-business',
           };
@@ -50,6 +53,7 @@ describe('BusinessesController ADMIN Factus authorization', () => {
       .useValue({ canActivate: () => true })
       .compile();
     app = module.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
   });
   beforeEach(() => {
@@ -109,4 +113,21 @@ describe('BusinessesController ADMIN Factus authorization', () => {
       expect(adminCalls).not.toHaveBeenCalled();
     },
   );
+  describe('PATCH /businesses/profile/slug', () => {
+    beforeEach(() => changeBusinessSlug.mockClear());
+    it('uses the JWT business, never a client businessId', async () => {
+      await request(app.getHttpServer()).patch('/businesses/profile/slug')
+        .set('x-test-role', 'BUSINESS').send({ slug: 'nuevo-slug' }).expect(200);
+      expect(changeBusinessSlug).toHaveBeenCalledWith('jwt-business', 'jwt-user', 'nuevo-slug');
+      await request(app.getHttpServer()).patch('/businesses/profile/slug')
+        .set('x-test-role', 'BUSINESS').send({ slug: 'otro-slug', businessId: 'other-business' }).expect(400);
+      expect(changeBusinessSlug).toHaveBeenCalledTimes(1);
+    });
+    it('requires authentication and a string slug', async () => {
+      await request(app.getHttpServer()).patch('/businesses/profile/slug').send({ slug: 'nuevo-slug' }).expect(401);
+      await request(app.getHttpServer()).patch('/businesses/profile/slug')
+        .set('x-test-role', 'BUSINESS').send({ slug: 5 }).expect(400);
+      expect(changeBusinessSlug).not.toHaveBeenCalled();
+    });
+  });
 });

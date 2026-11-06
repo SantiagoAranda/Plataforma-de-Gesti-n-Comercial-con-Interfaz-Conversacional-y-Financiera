@@ -313,6 +313,8 @@ model Business {
   id            String         @id @default(uuid())
   name          String
   slug          String         @unique
+  // Set by the single allowed public identifier change; previous slugs stay in BusinessSlug.
+  slugChangedAt DateTime?
   fiscalId      String
   phoneWhatsapp String
   logoUrl       String?

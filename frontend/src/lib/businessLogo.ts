@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { getSessionContext, assertCurrentSession } from './auth/session';
 import { writeBusinessProfile } from './businessProfile';
+import { invalidateCache } from './cache';
 
 export type BusinessLogoProfile = {
   id: string;
@@ -13,6 +14,7 @@ export type BusinessLogoProfile = {
   logoMimeType: string | null;
   logoSizeBytes: number | null;
   status: string;
+  slugChangedAt?: string | null;
 };
 
 export const MAX_BUSINESS_LOGO_SIZE_BYTES = 2 * 1024 * 1024;
@@ -43,6 +45,18 @@ export async function updateBusinessProfile(name: string) {
     body: JSON.stringify({ name }),
   });
   return syncBusinessProfile(profile, session);
+}
+
+// Business.slug is the single source; storage and caches are refreshed only after success.
+export async function updateBusinessSlug(slug: string) {
+  const session = getSessionContext();
+  const profile = await api<BusinessLogoProfile>("/businesses/profile/slug", {
+    method: "PATCH",
+    body: JSON.stringify({ slug }),
+  });
+  const synced = syncBusinessProfile(profile, session);
+  invalidateCache("business-profile");
+  return synced;
 }
 
 function syncBusinessProfile(profile: BusinessLogoProfile, session: ReturnType<typeof getSessionContext>) {

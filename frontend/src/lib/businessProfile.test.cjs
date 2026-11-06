@@ -17,7 +17,8 @@ let answer;
 const originalLoad = Module._load;
 Module._load = function(request, parent, isMain) {
   if (request === 'react-hot-toast') return { __esModule: true, default: { success: message => notices.push(['success', message]), error: message => notices.push(['error', message]) } };
-  if (request === 'next/navigation') return { useRouter: () => ({ push() {}, replace() {} }), usePathname: () => '/perfil' };
+  if (request === 'next/navigation') return { useRouter: () => ({ push() {}, replace() {} }), usePathname: () => '/perfil', notFound() { throw { notFound: true }; }, permanentRedirect(url) { throw { redirect: url, permanent: true }; } };
+  if (request === 'next/headers') return { headers: async () => new Headers({ host: 'tienda.test' }) };
   if (request === './PublicStoreClient') return { __esModule: true, default: () => null };
   if (/push\/owner$/.test(request)) return { syncPushOwner() {} };
   if (/useHomeModuleSummaries$/.test(request)) return { useHomeModuleSummaries: () => ({ summaries: [], orders: [], loading: false }) };
@@ -159,12 +160,110 @@ test('public metadata queries backend without owner storage or stale metadata ca
   setup();
   session.clearSession();
   let publicName = 'TecnoGmaes';
-  answer = async () => ({ business: { name: publicName, slug: 'original' } });
+  answer = async () => ({ name: publicName, slug: 'original', logoUrl: null });
   const props = () => ({ params: Promise.resolve({ slug: 'original' }) });
   assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGmaes');
   publicName = 'TecnoGames';
   assert.equal((await generateMetadata(props())).title.absolute, 'TecnoGames');
   assert.equal(localStorage.getItem('businessName'), null);
   assert.equal(requests.length, 2);
-  assert.ok(requests.every(r => r.cache === 'no-store' && new URL(r.url).pathname === '/public/original/items'));
+  assert.ok(requests.every(r => r.cache === 'no-store' && new URL(r.url).pathname === '/public/original/resolve'));
+});
+
+const storePage = require('../../app/tienda/[slug]/page.tsx');
+const slugSection = () => screen.getByText('Dirección actual').parentElement.parentElement;
+function slugSetup(overrides = {}) {
+  setup();
+  const current = { ...profile, slugChangedAt: null, ...overrides };
+  answer = async (url, init) => {
+    const { pathname, searchParams } = new URL(url);
+    if (pathname === '/auth/business-slug-availability') return { mode: 'custom', slug: searchParams.get('slug'), available: searchParams.get('slug') !== 'ocupado' };
+    if (pathname === '/businesses/profile/slug') {
+      const { slug } = JSON.parse(init.body);
+      if (slug === 'carrera') return new Response(JSON.stringify({ code: 'BUSINESS_SLUG_TAKEN', message: 'El identificador dejó de estar disponible. Elegí otro.' }), { status: 409 });
+      Object.assign(current, { slug, slugChangedAt: '2026-11-06T00:00:00.000Z' });
+      return current;
+    }
+    if (pathname === '/businesses/profile') return current;
+    return { phones: [], socials: [] };
+  };
+  return current;
+}
+async function openSlugEditor(value) {
+  await form();
+  fireEvent.click(screen.getByRole('button', { name: 'Cambiar dirección' }));
+  fireEvent.change(screen.getByLabelText('Nuevo identificador'), { target: { value } });
+  await screen.findByText('Disponible');
+}
+
+test('profile shows the current URL and confirms the single change before saving', async () => {
+  slugSetup();
+  await openSlugEditor('nuevo-slug');
+  assert.match(slugSection().textContent, /\/tienda\/original/);
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar dirección' }));
+  assert.match(screen.getByRole('alertdialog').textContent, /una sola vez.*seguirá funcionando/);
+  assert.equal(requests.some(r => r.url.endsWith('/businesses/profile/slug')), false);
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cambio' }));
+  await waitFor(() => assert.match(slugSection().textContent, /\/tienda\/nuevo-slug/));
+  assert.equal(localStorage.getItem('businessSlug'), 'nuevo-slug');
+  assert.equal(localStorage.getItem('businessName'), 'TecnoGmaes');
+  assert.equal(screen.queryByRole('button', { name: 'Cambiar dirección' }), null);
+  assert.match(slugSection().textContent, /Ya utilizaste el cambio/);
+  assert.deepEqual(JSON.parse(requests.find(r => r.url.endsWith('/businesses/profile/slug')).body), { slug: 'nuevo-slug' });
+});
+
+test('cancelling never sends the change and invalid identifiers cannot be saved', async () => {
+  slugSetup();
+  await openSlugEditor('otro-slug');
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar dirección' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+  assert.equal(screen.queryByLabelText('Nuevo identificador'), null);
+  fireEvent.click(screen.getByRole('button', { name: 'Cambiar dirección' }));
+  fireEvent.change(screen.getByLabelText('Nuevo identificador'), { target: { value: 'Mal--Slug' } });
+  assert.equal(screen.getByRole('button', { name: 'Guardar dirección' }).disabled, true);
+  fireEvent.change(screen.getByLabelText('Nuevo identificador'), { target: { value: 'ocupado' } });
+  await screen.findByText('Ocupado');
+  assert.equal(requests.some(r => r.url.endsWith('/businesses/profile/slug')), false);
+  assert.equal(localStorage.getItem('businessSlug'), 'original');
+});
+
+test('a 409 keeps the current address, storage and the available change', async () => {
+  slugSetup();
+  await openSlugEditor('carrera');
+  fireEvent.click(screen.getByRole('button', { name: 'Guardar dirección' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Confirmar cambio' }));
+  await screen.findByText('El identificador dejó de estar disponible. Elegí otro.');
+  assert.equal(localStorage.getItem('businessSlug'), 'original');
+  assert.match(slugSection().textContent, /\/tienda\/original/);
+  assert.ok(screen.getByRole('button', { name: 'Guardar dirección' }));
+});
+
+test('a used change shows only the current address', async () => {
+  slugSetup({ slug: 'vigente', slugChangedAt: '2026-11-01T00:00:00.000Z' });
+  await form();
+  assert.match(slugSection().textContent, /\/tienda\/vigente/);
+  assert.equal(screen.queryByRole('button', { name: 'Cambiar dirección' }), null);
+  // The profile read is the source for the share link after a new login on another device.
+  assert.equal(localStorage.getItem('businessSlug'), 'vigente');
+});
+
+test('store page redirects historical slugs with 308 to the current slug, keeping the query', async () => {
+  setup(); session.clearSession();
+  answer = async url => {
+    const slug = decodeURIComponent(new URL(url).pathname.split('/')[2]);
+    if (slug === 'missing') return new Response('{}', { status: 404 });
+    return { slug: 'vigente', name: 'TecnoGames', logoUrl: null };
+  };
+  const call = async (slug, search = {}) => {
+    try { return await storePage.default({ params: Promise.resolve({ slug }), searchParams: Promise.resolve(search) }); }
+    catch (error) { return error; }
+  };
+  assert.deepEqual(await call('anterior', { producto: '123', tag: ['a', 'b'] }), { redirect: '/tienda/vigente?producto=123&tag=a&tag=b', permanent: true });
+  assert.deepEqual(await call('anterior'), { redirect: '/tienda/vigente', permanent: true });
+  assert.equal((await call('vigente', { producto: '123' })).redirect, undefined);
+  assert.deepEqual(await call('missing'), { notFound: true });
+  const metadata = await storePage.generateMetadata({ params: Promise.resolve({ slug: 'anterior' }) });
+  assert.equal(metadata.alternates.canonical, 'https://tienda.test/tienda/vigente');
+  assert.ok(requests.every(r => r.cache === 'no-store' && new URL(r.url).pathname.endsWith('/resolve')));
 });

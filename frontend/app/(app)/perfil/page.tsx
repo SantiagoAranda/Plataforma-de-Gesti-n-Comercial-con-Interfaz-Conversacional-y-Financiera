@@ -7,6 +7,7 @@ import {
   Eye,
   Globe2,
   ImageIcon,
+  Link2,
   Loader2,
   Phone,
   Plus,
@@ -19,6 +20,7 @@ import {
 import { useRouter } from "next/navigation";
 
 import AppHeader from "@/src/components/layout/AppHeader";
+import StoreSlugEditor from "@/src/components/settings/StoreSlugEditor";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import ColorPickerPopover from "@/src/components/shared/ColorPickerPopover";
 import toast from "react-hot-toast";
@@ -698,6 +700,15 @@ export default function PerfilPage() {
                 />
               </label>
             </div>
+          </section>
+
+          <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
+            <CardHeader
+              icon={<Link2 className="h-5 w-5" />}
+              title="Dirección de tu tienda pública"
+              description="Es el enlace que compartís con tus clientes."
+            />
+            <StoreSlugEditor business={business} onChange={setBusiness} />
           </section>
 
           <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">

@@ -32,6 +32,15 @@ export class PublicController {
     return reservation;
   }
 
+  // Canonical slug for server-side 308 redirects and store metadata.
+  @Get(':slug/resolve')
+  @Header('Cache-Control', 'no-store')
+  async resolveStore(@Param('slug') slug: string) {
+    const store = await this.publicService.resolveStore(slug);
+    if (!store) throw new NotFoundException('Tienda no encontrada');
+    return store;
+  }
+
   @Get(':slug/reservations')
   findReservationsByPhone(
     @Param('slug') slug: string,

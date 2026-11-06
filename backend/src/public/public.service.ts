@@ -167,18 +167,45 @@ export class PublicService {
     } as FeatureFlagsService,
   ) {}
 
-  private async findActiveBusiness(slug: string) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
+  // Single resolver for every public :slug route: current slug or a historical alias in
+  // BusinessSlug (exact first, then legacy normalization). Only the owner's active record matches.
+  private async resolveActiveBusinessId(slug: string) {
+    const match = (candidate: string) => this.prisma.business.findFirst({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ slug: candidate }, { slugs: { some: { slug: candidate } } }],
+      },
+      select: { id: true },
     });
+    let business = await match(slug);
     if (!business) {
       const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
+      if (normalized !== slug) business = await match(normalized);
     }
+    return business?.id ?? null;
+  }
+
+  private async findActiveBusiness(slug: string) {
+    const id = await this.resolveActiveBusinessId(slug);
+    const business = id
+      ? await this.prisma.business.findFirst({ where: { id, status: 'ACTIVE' } })
+      : null;
     if (!business) throw new BadRequestException('Business not found');
     return business;
+  }
+
+  /** Canonical store identity for redirects and metadata; null when missing or inactive. */
+  async resolveStore(slug: string) {
+    const id = await this.resolveActiveBusinessId(slug);
+    const business = id
+      ? await this.prisma.business.findFirst({
+          where: { id, status: 'ACTIVE' },
+          select: { slug: true, name: true, logoUrl: true, logoObjectKey: true },
+        })
+      : null;
+    if (!business) return null;
+    const { logoObjectKey: _logoObjectKey, ...store } = this.withPublicLogoUrl(business);
+    return store;
   }
 
   private normalizeBuyerFiscalContext(
@@ -668,30 +695,10 @@ export class PublicService {
   ===================================================== */
 
   async listPublicItems(slug: string, type?: string) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        logoUrl: true,
-        logoObjectKey: true,
-        storeFooterSettings: {
-          select: {
-            description: true,
-            email: true,
-            phones: true,
-            socials: true,
-          },
-        },
-      },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      if (normalized !== slug) {
-        business = await this.prisma.business.findFirst({
-          where: { slug: normalized, status: 'ACTIVE' },
+    const businessId = await this.resolveActiveBusinessId(slug);
+    const business = businessId
+      ? await this.prisma.business.findFirst({
+          where: { id: businessId, status: 'ACTIVE' },
           select: {
             id: true,
             name: true,
@@ -707,9 +714,8 @@ export class PublicService {
               },
             },
           },
-        });
-      }
-    }
+        })
+      : null;
 
     if (!business) {
       return { business: null, data: [] };
@@ -901,18 +907,7 @@ export class PublicService {
   }
 
   async getAvailabilityCalendar(slug: string, itemId: string, month: string) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
-    }
-
-    if (!business) throw new BadRequestException('Business not found');
+    const business = await this.findActiveBusiness(slug);
 
     const item = await this.prisma.item.findFirst({
       where: {
@@ -977,18 +972,7 @@ export class PublicService {
   ===================================================== */
 
   async createReservation(slug: string, body: any) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
-    }
-
-    if (!business) throw new BadRequestException('Business not found');
+    const business = await this.findActiveBusiness(slug);
 
     return this.prisma.$transaction(async (tx) => {
       const {
@@ -1087,18 +1071,7 @@ export class PublicService {
     }
     const requestFingerprint = this.publicOrderFingerprint(dto);
 
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
-    }
-
-    if (!business) throw new BadRequestException('Business not found');
+    const business = await this.findActiveBusiness(slug);
 
     const previousOrder = await this.prisma.order.findUnique({
       where: {
@@ -1479,18 +1452,7 @@ export class PublicService {
   ===================================================== */
 
   async findReservationsByPhone(slug: string, rawPhone: string) {
-    let business = await this.prisma.business.findFirst({
-      where: { slug, status: 'ACTIVE' },
-    });
-
-    if (!business) {
-      const normalized = await generateSlug(slug);
-      business = await this.prisma.business.findFirst({
-        where: { slug: normalized, status: 'ACTIVE' },
-      });
-    }
-
-    if (!business) throw new BadRequestException('Business not found');
+    const business = await this.findActiveBusiness(slug);
 
     const cleanPhone = (rawPhone || '').replace(/\D/g, '').trim();
     if (!cleanPhone || cleanPhone.length < 4) {

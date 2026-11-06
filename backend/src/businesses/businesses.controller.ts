@@ -19,6 +19,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { BusinessesService } from './businesses.service';
 import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
+import { UpdateBusinessSlugDto } from './dto/update-business-slug.dto';
 import { ForbiddenException } from '@nestjs/common';
 
 type AuthenticatedRequest = Request & {
@@ -73,6 +74,19 @@ export class BusinessesController {
       getBusinessId(req),
       req.user.userId,
       body,
+    );
+  }
+
+  @Patch('profile/slug')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  updateSlug(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: UpdateBusinessSlugDto,
+  ) {
+    return this.businessesService.changeBusinessSlug(
+      getBusinessId(req),
+      req.user.userId,
+      body.slug,
     );
   }
 

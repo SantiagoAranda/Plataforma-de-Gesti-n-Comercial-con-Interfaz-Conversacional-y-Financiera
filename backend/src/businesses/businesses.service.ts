@@ -9,12 +9,27 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
 import { Business, Prisma } from '@prisma/client';
-import { businessSlugTaken, validateCustomBusinessSlug, generateBusinessSlug, retryBusinessSlugTransaction } from '../common/utils/business-slug';
+import { businessSlugChangeUsed, businessSlugTaken, validateCustomBusinessSlug, generateBusinessSlug, retryBusinessSlugTransaction } from '../common/utils/business-slug';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import { StorageService } from '../storage/storage.service';
 import { parsePayrollAccountingMappingTemplate } from '../common/payroll/payroll-accounting-mapping-template';
+
+// Every profile response carries slugChangedAt so the client never re-offers a used change.
+const BUSINESS_PROFILE_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  fiscalId: true,
+  phoneWhatsapp: true,
+  logoUrl: true,
+  logoObjectKey: true,
+  logoMimeType: true,
+  logoSizeBytes: true,
+  status: true,
+  slugChangedAt: true,
+} satisfies Prisma.BusinessSelect;
 
 type FooterPhone = {
   label: string;
@@ -621,18 +636,7 @@ export class BusinessesService {
   async getProfile(businessId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        fiscalId: true,
-        phoneWhatsapp: true,
-        logoUrl: true,
-        logoObjectKey: true,
-        logoMimeType: true,
-        logoSizeBytes: true,
-        status: true,
-      },
+      select: BUSINESS_PROFILE_SELECT,
     });
 
     if (!business) {
@@ -670,6 +674,36 @@ export class BusinessesService {
       }
       throw error;
     }
+    return this.getProfile(businessId);
+  }
+
+  // Single allowed change: previous slugs stay reserved for this business and keep resolving.
+  async changeBusinessSlug(businessId: string, userId: string, value: unknown) {
+    const slug = validateCustomBusinessSlug(value);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+    if (!user || user.businessId !== businessId) {
+      throw new ForbiddenException('No tenés autorización para modificar este negocio.');
+    }
+    await retryBusinessSlugTransaction(() => this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.findUnique({
+        where: { id: businessId },
+        select: { status: true, slugChangedAt: true },
+      });
+      if (!business) throw new NotFoundException('Negocio no encontrado');
+      if (business.status !== 'ACTIVE') throw new ForbiddenException('Business is inactive');
+      if (business.slugChangedAt) throw businessSlugChangeUsed();
+      if (!await this.isBusinessSlugAvailable(slug, tx)) throw businessSlugTaken();
+      // Conditional update locks the row first: a concurrent change of the same business gets count 0.
+      const { count } = await tx.business.updateMany({
+        where: { id: businessId, slugChangedAt: null },
+        data: { slug, slugChangedAt: new Date() },
+      });
+      if (count !== 1) throw businessSlugChangeUsed();
+      await tx.businessSlug.create({ data: { slug, businessId } });
+    }), slug);
     return this.getProfile(businessId);
   }
 
@@ -847,18 +881,7 @@ export class BusinessesService {
           logoMimeType: 'image/webp',
           logoSizeBytes: optimized.length,
         },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          fiscalId: true,
-          phoneWhatsapp: true,
-          logoUrl: true,
-          logoObjectKey: true,
-          logoMimeType: true,
-          logoSizeBytes: true,
-          status: true,
-        },
+        select: BUSINESS_PROFILE_SELECT,
       });
 
       if (previous.logoObjectKey) {
@@ -914,18 +937,7 @@ export class BusinessesService {
         logoMimeType: null,
         logoSizeBytes: null,
       },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        fiscalId: true,
-        phoneWhatsapp: true,
-        logoUrl: true,
-        logoObjectKey: true,
-        logoMimeType: true,
-        logoSizeBytes: true,
-        status: true,
-      },
+      select: BUSINESS_PROFILE_SELECT,
     });
 
     return this.withPublicLogoUrl(updatedBusiness);

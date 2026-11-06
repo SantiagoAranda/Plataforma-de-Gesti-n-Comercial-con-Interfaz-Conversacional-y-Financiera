@@ -180,4 +180,126 @@ describeDatabase('Permanent slug registry (isolated PostgreSQL)', () => {
     expect(businesses).toHaveLength(1);
     expect(businesses[0].slugs).toHaveLength(1);
   });
+
+  describe('Stage 4: single slug change', () => {
+    const publicService = () => new PublicService(prisma as any, {} as any, { getItemsSellabilityBulk: async () => [] } as any, {} as any);
+    const owner = async (tag: string) => {
+      const result = await auth.registerBusiness(input(`change-${tag}`, `Change ${tag} ${suffix}`)) as { businessSlug: string };
+      const business = await prisma.business.update({
+        where: { slug: result.businessSlug }, data: { fiscalId: `tax-${tag}-${suffix}` }, include: { user: true },
+      });
+      expect(business.slugChangedAt).toBeNull();
+      return { ...business, userId: business.user!.id };
+    };
+    const change = (b: { id: string; userId: string }, slug: unknown) => service.changeBusinessSlug(b.id, b.userId, slug);
+
+    it('changes once, keeps the old alias for the same business and preserves name and fiscal data', async () => {
+      const b = await owner('first');
+      const next = `chg-${suffix}`;
+      const profile = await change(b, next);
+      expect(profile).toMatchObject({ id: b.id, slug: next, name: b.name, fiscalId: b.fiscalId });
+      expect(profile.slugChangedAt).toBeInstanceOf(Date);
+      const stored = await prisma.business.findUniqueOrThrow({ where: { id: b.id }, include: { slugs: true } });
+      expect(stored.slugChangedAt).toEqual(profile.slugChangedAt);
+      expect(stored.slugs.map(r => r.slug).sort()).toEqual([b.slug, next].sort());
+      expect(stored.slugs.every(r => r.businessId === b.id)).toBe(true);
+
+      await expect(change(b, `chg2-${suffix}`)).rejects.toMatchObject({ status: 409, response: { code: 'BUSINESS_SLUG_CHANGE_USED' } });
+      await expect(change(b, b.slug)).rejects.toMatchObject({ status: 409 });
+      expect((await prisma.business.findUniqueOrThrow({ where: { id: b.id } })).slug).toBe(next);
+      // A new login receives the current slug, which the frontend stores as businessSlug.
+      await expect(auth.login(input('change-first').email, 'Fixture password 1!')).resolves.toMatchObject({ businessSlug: next });
+      // The previous slug stays reserved: neither registration nor another change may take it.
+      const other = await owner('takes-old');
+      await expect(change(other, b.slug)).rejects.toMatchObject({ status: 409, response: { code: 'BUSINESS_SLUG_TAKEN' } });
+      await expect(auth.registerBusiness({ ...input('old-slug'), slug: b.slug })).rejects.toMatchObject({ status: 409 });
+
+      const store = publicService();
+      expect(await store.resolveStore(b.slug)).toMatchObject({ slug: next, name: b.name });
+      expect(await store.resolveStore(next)).toMatchObject({ slug: next });
+      // Order, reservation, availability and fiscal endpoints all resolve through findActiveBusiness.
+      expect((await (store as any).findActiveBusiness(b.slug)).id).toBe(b.id);
+      expect((await store.listPublicItems(b.slug)).business?.slug).toBe(next);
+      expect(await store.resolveStore(`missing-${suffix}`)).toBeNull();
+      await service.inactivateBusiness(b.id);
+      expect(await store.resolveStore(b.slug)).toBeNull();
+      expect(await store.resolveStore(next)).toBeNull();
+      await expect((store as any).findActiveBusiness(b.slug)).rejects.toMatchObject({ status: 400 });
+      await service.activateBusiness(b.id);
+    }, 30000);
+
+    it('rejects occupied, historical, invalid, reserved, foreign and inactive requests without consuming the change', async () => {
+      const b = await owner('reject');
+      const other = await owner('reject-other');
+      await expect(change(b, other.slug)).rejects.toMatchObject({ status: 409, response: { code: 'BUSINESS_SLUG_TAKEN' } });
+      await prisma.businessSlug.create({ data: { slug: `HIST-${suffix}`, businessId: other.id } });
+      await expect(change(b, `hist-${suffix}`)).rejects.toMatchObject({ status: 409 });
+      for (const invalid of ['AB', 'foo--bar', ' foo ', '', 'x'.repeat(51), 5]) {
+        await expect(change(b, invalid)).rejects.toMatchObject({ status: 400 });
+      }
+      await expect(change(b, 'admin')).rejects.toMatchObject({ status: 400, message: expect.stringContaining('reservado') });
+      await expect(service.changeBusinessSlug(b.id, other.userId, `foreign-${suffix}`)).rejects.toMatchObject({ status: 403 });
+      await service.inactivateBusiness(b.id);
+      await expect(change(b, `inactive-${suffix}`)).rejects.toMatchObject({ status: 403 });
+      await service.activateBusiness(b.id);
+      const stored = await prisma.business.findUniqueOrThrow({ where: { id: b.id }, include: { slugs: true } });
+      expect(stored.slugChangedAt).toBeNull();
+      expect(stored.slugs.map(r => r.slug)).toEqual([b.slug]);
+      await expect(change(b, `after-reject-${suffix}`)).resolves.toMatchObject({ slug: `after-reject-${suffix}` });
+    }, 30000);
+
+    it('lets only one of two concurrent changes of the same business win', async () => {
+      const b = await owner('same-race');
+      const outcomes = await Promise.allSettled([change(b, `race-one-${suffix}`), change(b, `race-two-${suffix}`)]);
+      expect(outcomes.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.find(r => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+      const stored = await prisma.business.findUniqueOrThrow({ where: { id: b.id }, include: { slugs: true } });
+      expect(stored.slugs).toHaveLength(2);
+      expect(stored.slugs.map(r => r.slug)).toContain(stored.slug);
+    }, 30000);
+
+    it('gives a contested slug to exactly one of two businesses', async () => {
+      const [a, b] = [await owner('pair-a'), await owner('pair-b')];
+      const slug = `contested-${suffix}`;
+      let arrivals = 0;
+      let release!: () => void;
+      const gate = new Promise<void>(r => { release = r; });
+      const lookup = service.isBusinessSlugAvailable.bind(service);
+      const barrier = jest.spyOn(service, 'isBusinessSlugAvailable').mockImplementation(async (candidate, tx) => {
+        const available = await lookup(candidate, tx);
+        if (candidate === slug && arrivals < 2) { arrivals++; if (arrivals === 2) release(); await gate; }
+        return available;
+      });
+      try {
+        const outcomes = await Promise.allSettled([change(a, slug), change(b, slug)]);
+        expect(outcomes.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+        expect(outcomes.find(r => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+      } finally { barrier.mockRestore(); }
+      const winners = await prisma.business.findMany({ where: { id: { in: [a.id, b.id] } } });
+      expect(winners.filter(w => w.slug === slug)).toHaveLength(1);
+      const loser = winners.find(w => w.slug !== slug)!;
+      expect(loser.slugChangedAt).toBeNull();
+      expect((await prisma.businessSlug.findUniqueOrThrow({ where: { slug } })).businessId).not.toBe(loser.id);
+    }, 30000);
+
+    it('rolls back the slug and the used change if the reservation fails', async () => {
+      const b = await owner('rollback');
+      const slug = `rollback-${suffix}`;
+      const transaction = prisma.$transaction.bind(prisma) as any;
+      const failing = jest.spyOn(prisma, '$transaction').mockImplementationOnce(((fn: any) => transaction((tx: any) => fn(new Proxy(tx, {
+        get(target, key) {
+          if (key !== 'businessSlug') return Reflect.get(target, key);
+          return {
+            findFirst: target.businessSlug.findFirst.bind(target.businessSlug),
+            create: async () => { throw new Error('injected reservation failure'); },
+          };
+        },
+      })))) as any);
+      try { await expect(change(b, slug)).rejects.toThrow('injected reservation failure'); }
+      finally { failing.mockRestore(); }
+      const stored = await prisma.business.findUniqueOrThrow({ where: { id: b.id } });
+      expect(stored).toMatchObject({ slug: b.slug, slugChangedAt: null, name: b.name, fiscalId: b.fiscalId });
+      expect(await prisma.businessSlug.findUnique({ where: { slug } })).toBeNull();
+    }, 30000);
+  });
 });

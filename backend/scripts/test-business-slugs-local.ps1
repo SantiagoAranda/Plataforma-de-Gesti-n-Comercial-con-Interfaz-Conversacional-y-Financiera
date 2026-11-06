@@ -38,7 +38,7 @@ try {
   if ($target.Host -ne '127.0.0.1' -or $target.Port -ne $port -or $target.AbsolutePath -ne "/$database" -or $target.Query -ne '?schema=public') { throw 'Connection target mismatch' }
   Write-Output "Verified NEW isolated database: 127.0.0.1:${port}/${database}, schema public; container $createdId"
   $schema = Get-Content prisma/schema.prisma -Raw
-  $before = $schema -replace '(?m)^\s*slugs\s+BusinessSlug\[\]\s*\r?\n', '' -replace '(?s)model BusinessSlug \{.*?\}\s*', ''
+  $before = $schema -replace '(?m)^\s*slugs\s+BusinessSlug\[\]\s*\r?\n', '' -replace '(?s)model BusinessSlug \{.*?\}\s*', '' -replace '(?m)^.*single allowed public identifier.*\r?\n', '' -replace '(?m)^\s*slugChangedAt\s+DateTime\?\s*\r?\n', ''
   $beforePath = Join-Path $evidence 'before.prisma'
   [IO.File]::WriteAllText($beforePath, $before, (New-Object Text.UTF8Encoding($false)))
   & ./node_modules/.bin/prisma.cmd db push --schema $beforePath --skip-generate
@@ -64,6 +64,26 @@ INSERT INTO "Business" ("id","name","slug","fiscalId","phoneWhatsapp","updatedAt
   Check-Exit
   & ./node_modules/.bin/ts-node.cmd scripts/audit-business-slugs.ts --verify --snapshot (Join-Path $evidence 'before.json')
   Check-Exit
+  # Stage 4: additive column, applied with its real SQL after the Stage 2 backfill.
+  & ./node_modules/.bin/prisma.cmd db execute --file prisma/migrations/20261107120000_business_slug_change/migration.sql --schema prisma/schema.prisma
+  Check-Exit
+  # Via stdin: Windows PowerShell strips embedded double quotes from native arguments.
+  $used = 'SELECT count(*) FROM "Business" WHERE "slugChangedAt" IS NOT NULL;' | docker exec -i $container psql -U postgres -d $database -At
+  Check-Exit
+  if ($used.Trim() -ne '0') { throw 'Existing businesses must start with slugChangedAt = null' }
+  & ./node_modules/.bin/ts-node.cmd scripts/audit-business-slugs.ts --verify --snapshot (Join-Path $evidence 'before.json')
+  Check-Exit
+  # Full migration chain on a second new, empty database inside the same disposable container.
+  $chainDb = 'sactec_slug_chain_test'
+  docker exec $container psql -v ON_ERROR_STOP=1 -U postgres -d $database -c "CREATE DATABASE $chainDb" | Out-Null
+  Check-Exit
+  $mainUrl = $env:DATABASE_URL
+  $env:DATABASE_URL = "postgresql://postgres:${password}@127.0.0.1:${port}/${chainDb}?schema=public"
+  & ./node_modules/.bin/prisma.cmd migrate deploy
+  Check-Exit
+  # Evidence only: drift between the migration chain and schema.prisma (pre-existing index noted in Stage 2).
+  & ./node_modules/.bin/prisma.cmd migrate diff --from-url $env:DATABASE_URL --to-schema-datamodel prisma/schema.prisma --script | Out-File -Encoding utf8 (Join-Path $evidence 'chain-vs-schema.sql')
+  $env:DATABASE_URL = $mainUrl
   $env:SACTEC_TEST_RUN_ID = $runId
   $env:BUSINESS_SLUG_TEST_DATABASE_URL = $env:DATABASE_URL
   $env:BUSINESS_NAME_TEST_DATABASE_URL = $env:DATABASE_URL

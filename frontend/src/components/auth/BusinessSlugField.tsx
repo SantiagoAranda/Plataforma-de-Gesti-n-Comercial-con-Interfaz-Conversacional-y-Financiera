@@ -13,11 +13,13 @@ export function customSlugError(slug: string): string | undefined {
 type Props = {
   name: string; custom: boolean; slug: string; disabled: boolean; error?: string;
   onModeChange(custom: boolean): void; onSlugChange(slug: string): void;
+  /** Profile change: custom identifier only, without the registration legend and mode selector. */
+  editOnly?: boolean;
 };
 type Availability = { slug: string; available: boolean };
 
 export default function BusinessSlugField(props: Props) {
-  const { name, custom, slug, disabled, error, onModeChange, onSlugChange } = props;
+  const { name, custom, slug, disabled, error, onModeChange, onSlugChange, editOnly } = props;
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<{ key: string; value?: Availability; error?: string }>();
   const key = JSON.stringify([custom, custom ? slug : name, attempt]);
@@ -47,8 +49,8 @@ export default function BusinessSlugField(props: Props) {
   const queried = custom ? !syntaxError : !!name.trim();
   const segment = "flex flex-1 min-w-0 items-center justify-center gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors text-neutral-600 has-[:checked]:bg-blue-50 has-[:checked]:text-[#0b3f64] has-[:checked]:font-semibold has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#0b3f64]/40";
   return <fieldset disabled={disabled} className="min-w-0 space-y-3 text-sm text-neutral-700">
-    <legend className="block text-sm font-medium text-gray-700 mb-2">Dirección de tu tienda pública</legend>
-    <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1">
+    {!editOnly && <legend className="block text-sm font-medium text-gray-700 mb-2">Dirección de tu tienda pública</legend>}
+    {!editOnly && <div className="flex gap-1 rounded-xl border border-neutral-200 bg-neutral-50 p-1">
       <label className={segment}>
         <input type="radio" name="slug-mode" checked={!custom} onChange={() => onModeChange(false)} className="accent-[#0b3f64]" />
         <span className="truncate">Automático</span>
@@ -57,9 +59,9 @@ export default function BusinessSlugField(props: Props) {
         <input type="radio" name="slug-mode" checked={custom} onChange={() => onModeChange(true)} className="accent-[#0b3f64]" />
         <span className="truncate">Personalizado</span>
       </label>
-    </div>
+    </div>}
     {custom ? <div className="space-y-1">
-      <label htmlFor="register-slug" className="block font-medium text-gray-700">Identificador</label>
+      <label htmlFor="register-slug" className="block font-medium text-gray-700">{editOnly ? "Nuevo identificador" : "Identificador"}</label>
       <input id="register-slug" value={slug} onChange={e => onSlugChange(e.target.value)}
         autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={!!message}
         aria-describedby="register-slug-status" placeholder="prueba-03"
