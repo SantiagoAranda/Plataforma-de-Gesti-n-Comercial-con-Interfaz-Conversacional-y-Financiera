@@ -8,6 +8,7 @@ import { StaleSessionError } from "../../lib/auth/session";
 import PasswordRequirements, { ValidCheck } from "./PasswordRequirements";
 import { newPasswordError, NEW_PASSWORD_UNMET } from "../../lib/auth/new-password";
 import { useAuthRetry } from "../../hooks/useAuthRetry";
+import BusinessSlugField, { customSlugError } from "./BusinessSlugField";
 
 // ── SVG Eye Icons ──────────────────────────────────────────────
 function EyeIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -55,6 +56,7 @@ function translateError(err: unknown): string {
 
 // ── Types ──────────────────────────────────────────────────────
 interface FieldErrors {
+  slug?: string;
   businessName?: string;
   email?: string;
   password?: string;
@@ -74,6 +76,8 @@ export default function RegisterForm() {
   };
 
   const [businessName, setBusinessName] = useState("");
+  const [customSlug, setCustomSlug] = useState(false);
+  const [slug, setSlug] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -95,6 +99,7 @@ export default function RegisterForm() {
   // ── Validación inline por campo ────────────────────
   const validate = (): boolean => {
     const errors: FieldErrors = {};
+    if (customSlug) errors.slug = customSlugError(slug);
 
     if (!businessName.trim()) {
       errors.businessName = "El nombre del negocio es obligatorio";
@@ -144,11 +149,15 @@ export default function RegisterForm() {
     setLoading(true);
 
     try {
-      const result = await registerAccount({ name: businessName, phoneWhatsapp: whatsapp, email, password });
+      const result = await registerAccount({ name: businessName, phoneWhatsapp: whatsapp, email, password, ...(customSlug ? { slug } : {}) });
       if (result === 'signed-in') router.push('/home');
       else setRegistrationNotice(result === 'login-required' ? CREATED_LOGIN_REQUIRED : REGISTRATION_UNCONFIRMED);
     } catch (err: unknown) {
       if (err instanceof StaleSessionError) return;
+      if (err instanceof AppApiError && err.status === 409 && err.details?.code === 'BUSINESS_SLUG_TAKEN') {
+        setFieldErrors(prev => ({ ...prev, slug: err.message }));
+        return;
+      }
       if (err instanceof AppApiError && err.status === 429) {
         setRetrySeconds(err.details?.retryAfterSeconds || 1);
         setError(err.message);
@@ -211,9 +220,14 @@ export default function RegisterForm() {
           login-entry
         "
       >
-        <h1 className="text-2xl font-semibold text-center text-gray-900">
-          Crear cuenta
-        </h1>
+        {/* Copia recortada de app/icon-2.png; su fondo blanco coincide con bg-white del formulario. */}
+        <div className="space-y-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- PNG estático pequeño, sin optimizador. */}
+          <img src="/brand/sactec-logo.png" alt="SACTEC" width={254} height={240} className="mx-auto h-16 w-auto" />
+          <h1 className="text-2xl font-semibold text-center text-gray-900">
+            Crear cuenta
+          </h1>
+        </div>
 
         {registrationNotice && (
           <div role="status" className="text-sm text-gray-700">
@@ -246,6 +260,11 @@ export default function RegisterForm() {
             <p className="text-xs text-red-500 mt-1">{fieldErrors.businessName}</p>
           )}
         </div>
+
+        <BusinessSlugField name={businessName} custom={customSlug} slug={slug}
+          disabled={loading || registrationNotice === CREATED_LOGIN_REQUIRED} error={fieldErrors.slug}
+          onModeChange={value => { setCustomSlug(value); clearFieldError('slug'); }}
+          onSlugChange={value => { setSlug(value); clearFieldError('slug'); }} />
 
         {/* Email */}
         <div className="space-y-1">

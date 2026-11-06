@@ -11,6 +11,7 @@ export const CREATED_LOGIN_REQUIRED =
 export const REGISTRATION_UNCONFIRMED =
   "No pudimos confirmar el resultado. Es posible que tu cuenta se haya creado. Intentá iniciar sesión antes de volver a registrarte.";
 type Registration = {
+  slug?: string;
   name: string;
   phoneWhatsapp: string;
   email: string;

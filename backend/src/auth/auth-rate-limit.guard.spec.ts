@@ -55,12 +55,21 @@ function fixture(enabled = true, database?: ReturnType<typeof makeDatabase>) {
 describe('Auth rate limiter', () => {
   it('does not inspect request, query or clean absent table when disabled', async () => {
     const f = fixture(false);
-    await expect(f.guard.canActivate({} as ExecutionContext)).resolves.toBe(
+    await expect(f.guard.canActivate(f.context)).resolves.toBe(
       true,
     );
     await f.guard.cleanup();
     expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
     expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('limits availability independently, even when registration is disabled', async () => {
+    const f = fixture(false);
+    f.handler.getHandler = () => handlerFor('slug-availability');
+    for (let i = 0; i < 60; i++) await f.guard.canActivate(f.context);
+    await expect(f.guard.canActivate(f.context)).rejects.toMatchObject({ status: 429 });
+    expect(f.prisma.$queryRaw).toHaveBeenCalledTimes(61);
+    f.handler.getHandler = () => handlerFor('register');
+    await expect(f.guard.canActivate(f.context)).resolves.toBe(true);
   });
   it('shares counters between guard instances and returns safe 429', async () => {
     const f = fixture();
@@ -183,7 +192,7 @@ describe('Auth rate limiter', () => {
       prisma as unknown as PrismaService,
     );
     expect(authProxyTrust(config)).toBe(false);
-    await expect(guard.canActivate({} as ExecutionContext)).resolves.toBe(true);
+    await expect(guard.canActivate({ getHandler: () => handlerFor('login') } as unknown as ExecutionContext)).resolves.toBe(true);
     await guard.cleanup();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
     expect(prisma.$executeRaw).not.toHaveBeenCalled();

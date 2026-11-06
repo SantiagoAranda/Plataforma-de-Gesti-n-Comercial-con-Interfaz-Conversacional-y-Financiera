@@ -9,7 +9,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
 import { Business, Prisma } from '@prisma/client';
-import { generateBusinessSlug, retryBusinessSlugTransaction } from '../common/utils/business-slug';
+import { businessSlugTaken, validateCustomBusinessSlug, generateBusinessSlug, retryBusinessSlugTransaction } from '../common/utils/business-slug';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -392,14 +392,36 @@ export class BusinessesService {
     };
   }
 
+  async isBusinessSlugAvailable(slug: string, tx: Prisma.TransactionClient = this.prisma) {
+    return !(await tx.businessSlug.findFirst({
+      where: { slug: { equals: slug, mode: 'insensitive' } }, select: { slug: true },
+    }));
+  }
+
+  async businessSlugAvailability(query: { slug?: string; name?: string }) {
+    if ((query.slug === undefined) === (query.name === undefined)) {
+      throw new BadRequestException('Indicá solamente slug o name.');
+    }
+    if (query.slug !== undefined) {
+      const slug = validateCustomBusinessSlug(query.slug);
+      return { mode: 'custom', slug, available: await this.isBusinessSlugAvailable(slug) };
+    }
+    if (typeof query.name !== 'string' || !query.name.trim() || query.name.length > 200) {
+      throw new BadRequestException('Ingresá un nombre comercial de hasta 200 caracteres.');
+    }
+    const slug = await generateBusinessSlug(query.name, s => this.isBusinessSlugAvailable(s));
+    return { mode: 'automatic', slug, available: true };
+  }
+
   async createBusiness(data: {
+    slug?: string;
     name: string;
     fiscalId?: string;
     phoneWhatsapp: string;
   }): Promise<Business> {
     try {
       return await retryBusinessSlugTransaction(() => this.prisma.$transaction((tx) =>
-        this.createBusinessInTransaction(tx, data)),
+        this.createBusinessInTransaction(tx, data)), data.slug,
       );
     } catch (error) {
       if (error instanceof HttpException) throw error;
@@ -409,15 +431,13 @@ export class BusinessesService {
 
   async createBusinessInTransaction(
     tx: Prisma.TransactionClient,
-    data: { name: string; fiscalId?: string; phoneWhatsapp: string },
+    data: { name: string; fiscalId?: string; phoneWhatsapp: string; slug?: string },
   ): Promise<Business> {
-    const slug = await generateBusinessSlug(
+    const slug = data.slug !== undefined ? validateCustomBusinessSlug(data.slug) : await generateBusinessSlug(
       data.name,
-      async (s) => !(await tx.businessSlug.findFirst({
-        where: { slug: { equals: s, mode: 'insensitive' } },
-        select: { slug: true },
-      })),
+      s => this.isBusinessSlugAvailable(s, tx),
     );
+    if (data.slug !== undefined && !await this.isBusinessSlugAvailable(slug, tx)) throw businessSlugTaken();
     const business = await tx.business.create({
       data: {
         name: data.name,

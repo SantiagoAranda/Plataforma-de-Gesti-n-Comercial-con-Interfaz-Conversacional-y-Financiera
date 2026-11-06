@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { BusinessesService } from '../src/businesses/businesses.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { PublicService } from '../src/public/public.service';
 import { parsePayrollAccountingMappingTemplate } from '../src/common/payroll/payroll-accounting-mapping-template';
 import { assertIsolatedBusinessFixtures, createBusinessFixture } from './business-fixtures';
 
@@ -50,6 +51,61 @@ describeDatabase('Permanent slug registry (isolated PostgreSQL)', () => {
     }
   });
 
+  it('registers exact custom slugs, serves their public store, and logs in with the assigned slug', async () => {
+    const slug = `custom-${suffix}`;
+    const dto = { ...input('custom'), slug };
+    expect(await service.businessSlugAvailability({ slug })).toEqual({ mode: 'custom', slug, available: true });
+    await expect(auth.registerBusiness(dto)).resolves.toMatchObject({ businessSlug: slug });
+    const business = await prisma.business.findUniqueOrThrow({ where: { slug }, include: { slugs: true } });
+    expect(business.slugs).toEqual([expect.objectContaining({ slug, businessId: business.id })]);
+    const publicService = new PublicService(prisma as any, {} as any, { getItemsSellabilityBulk: async () => [] } as any, {} as any);
+    expect((await publicService.listPublicItems(slug)).business?.name).toBe(dto.name);
+    await expect(auth.login(dto.email, dto.password)).resolves.toMatchObject({ businessSlug: slug });
+    await expect(auth.registerBusiness({ ...input('taken'), slug })).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.user.count({ where: { email: input('taken').email } })).toBe(0);
+    const historical = `historic-${suffix}`;
+    await prisma.businessSlug.create({ data: { slug: historical.toUpperCase(), businessId: business.id } });
+    await expect(auth.registerBusiness({ ...input('history-custom'), slug: historical })).rejects.toMatchObject({ status: 409 });
+  }, 30000);
+
+  it('forces a custom collision and rolls back the losing account without substitution', async () => {
+    const slug = `race-${suffix}`;
+    let arrivals = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const lookup = service.isBusinessSlugAvailable.bind(service);
+    const barrier = jest.spyOn(service, 'isBusinessSlugAvailable').mockImplementation(async (candidate, tx) => {
+      const available = await lookup(candidate, tx);
+      if (candidate === slug && arrivals < 2) {
+        arrivals++;
+        if (arrivals === 2) release();
+        await gate;
+      }
+      return available;
+    });
+    try {
+      const outcomes = await Promise.allSettled(['race-a', 'race-b'].map(tag => auth.registerBusiness({ ...input(tag, `Custom race ${suffix}`), slug })));
+      expect(outcomes.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.find(r => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+      const businesses = await prisma.business.findMany({ where: { name: `Custom race ${suffix}` }, include: { slugs: true, user: true } });
+      expect(businesses).toHaveLength(1);
+      expect(businesses[0].slug).toBe(slug);
+      expect(businesses[0].slugs).toHaveLength(1);
+      expect(businesses[0].user).not.toBeNull();
+    } finally { barrier.mockRestore(); }
+  }, 30000);
+
+  it('rolls back a custom reservation after an intermediate failure', async () => {
+    const slug = `fail-${suffix}`;
+    const dto = { ...input('custom-fail'), slug };
+    const failure = jest.spyOn(users, 'createBusinessUser').mockRejectedValueOnce(new Error('injected custom failure'));
+    try { await expect(auth.registerBusiness(dto)).rejects.toThrow('injected custom failure'); }
+    finally { failure.mockRestore(); }
+    expect(await prisma.business.findUnique({ where: { slug } })).toBeNull();
+    expect(await prisma.businessSlug.findUnique({ where: { slug } })).toBeNull();
+    expect(await prisma.user.findUnique({ where: { email: dto.email } })).toBeNull();
+  });
+
   it('forces both transactions to select the same candidate, then retries with -2', async () => {
     let arrivals = 0;
     let release!: () => void;
@@ -79,7 +135,7 @@ describeDatabase('Permanent slug registry (isolated PostgreSQL)', () => {
       const slugs = results.map(r => 'businessSlug' in r ? r.businessSlug! : '').sort();
       expect(slugs[1]).toBe(`${slugs[0]}-2`);
       expect(barrier.mock.calls.length).toBeGreaterThanOrEqual(3);
-      const businesses = await prisma.business.findMany({ where: { name: input('one').name }, include: { slugs: true, user: true, payrollAccountingMappings: true } });
+      const businesses = await prisma.business.findMany({ where: { slug: { in: slugs } }, include: { slugs: true, user: true, payrollAccountingMappings: true } });
       expect(businesses).toHaveLength(2);
       for (const b of businesses) {
         expect(b.slugs.map(r => r.slug)).toEqual([b.slug]);

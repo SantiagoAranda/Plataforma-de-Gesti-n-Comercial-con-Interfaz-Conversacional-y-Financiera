@@ -1,7 +1,7 @@
 import { SetMetadata } from '@nestjs/common';
 
 export const AUTH_ACTION = 'auth:action';
-export type AuthActionName = 'login' | 'register' | 'forgot' | 'reset';
+export type AuthActionName = 'login' | 'register' | 'forgot' | 'reset' | 'slug-availability';
 
 /** Stable identity for rate-limit policy; independent of method names. */
 export const AuthAction = (action: AuthActionName) =>

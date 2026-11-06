@@ -37,6 +37,85 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const { ForgotPasswordForm, ResetPasswordForm } = require('./RecoveryForms.tsx');
 const RegisterForm = require('./RegisterForm.tsx').default;
 const LoginForm = require('./LoginForm.tsx').default;
+const fillRegistration = () => {
+  fireEvent.change(screen.getByPlaceholderText('Mi Negocio'), { target: { value: 'TecnoGames' } });
+  fireEvent.change(screen.getByPlaceholderText('correo@ejemplo.com'), { target: { value: 'fixture@example.test' } });
+  fireEvent.change(screen.getByPlaceholderText('11 1234 5678'), { target: { value: '123456789' } });
+  for (const input of document.querySelectorAll('input[autocomplete="new-password"]')) fireEvent.change(input, { target: { value: 'Frase ficticia 1!' } });
+};
+
+test('automatic default uses server suggestion and omits slug when submitting', async () => {
+  answer = async path => path.includes('availability') ? { slug: 'tecnogames-3', available: true } : { accountCreated: true };
+  render(React.createElement(RegisterForm));
+  assert.equal(screen.getByRole('radio', { name: /^Automático/ }).checked, true);
+  fillRegistration();
+  await screen.findByText('/tienda/tecnogames-3');
+  fireEvent.click(screen.getByRole('button', { name: 'Registrarse' }));
+  await waitFor(() => assert.ok(requests.some(r => r.path === '/auth/register-business')));
+  assert.equal('slug' in JSON.parse(requests.find(r => r.path === '/auth/register-business').options.body), false);
+});
+
+test('custom syntax is exact, availability can fail, and 409 preserves all values', async () => {
+  answer = async path => {
+    if (path.includes('availability')) throw new Error('network failure');
+    throw new AppApiError(409, 'El identificador dejó de estar disponible. Elegí otro.', { code: 'BUSINESS_SLUG_TAKEN' });
+  };
+  render(React.createElement(RegisterForm)); fillRegistration();
+  fireEvent.click(screen.getByRole('radio', { name: /^Personalizado/ }));
+  const slug = screen.getByLabelText('Identificador');
+  for (const value of ['ABc', 'ab', 'foo--bar', '-foo', 'foo-', ' foo ', 'x'.repeat(51)]) {
+    fireEvent.change(slug, { target: { value } });
+    assert.equal(slug.value, value);
+    assert.equal(slug.getAttribute('aria-invalid'), 'true');
+  }
+  fireEvent.change(slug, { target: { value: 'tecnogames-sf' } });
+  await screen.findByText(/No pudimos comprobar/);
+  assert.equal(screen.queryByText('Disponible'), null);
+  fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  await waitFor(() => assert.equal(requests.filter(r => r.path.includes('availability')).length, 2));
+  fireEvent.click(screen.getByRole('button', { name: 'Registrarse' }));
+  await screen.findByText(/dejó de estar disponible/);
+  assert.equal(slug.value, 'tecnogames-sf');
+  assert.equal(screen.getByPlaceholderText('correo@ejemplo.com').value, 'fixture@example.test');
+  assert.equal(JSON.parse(requests.find(r => r.path === '/auth/register-business').options.body).slug, 'tecnogames-sf');
+});
+
+test('custom available, occupied and reserved states are shown beside the field', async () => {
+  answer = async path => {
+    if (path.includes('admin')) throw new AppApiError(400, 'Este identificador está reservado por el sistema.');
+    return { slug: new URLSearchParams(path.split('?')[1]).get('slug'), available: !path.includes('occupied') };
+  };
+  render(React.createElement(RegisterForm));
+  fireEvent.click(screen.getByRole('radio', { name: /^Personalizado/ }));
+  const slug = screen.getByLabelText('Identificador');
+  fireEvent.change(slug, { target: { value: 'available' } }); await screen.findByText('Disponible');
+  fireEvent.change(slug, { target: { value: 'occupied' } });
+  assert.equal(screen.queryByText('Disponible'), null);
+  await screen.findByText('Ocupado');
+  fireEvent.change(slug, { target: { value: 'admin' } }); await screen.findByText(/reservado por el sistema/);
+});
+
+test('late results are ignored after editing and switching modes', async () => {
+  const pending = [];
+  answer = path => new Promise(resolve => pending.push({ path, resolve }));
+  render(React.createElement(RegisterForm)); fillRegistration();
+  await waitFor(() => assert.equal(pending.length, 1));
+  fireEvent.click(screen.getByRole('radio', { name: /^Personalizado/ }));
+  const slug = screen.getByLabelText('Identificador');
+  fireEvent.change(slug, { target: { value: 'first-slug' } });
+  await waitFor(() => assert.equal(pending.length, 2));
+  fireEvent.change(slug, { target: { value: 'second-slug' } });
+  await waitFor(() => assert.equal(pending.length, 3));
+  const { act } = require('@testing-library/react');
+  await act(async () => {
+    pending[2].resolve({ slug: 'second-slug', available: false });
+    pending[1].resolve({ slug: 'first-slug', available: true });
+    pending[0].resolve({ slug: 'tecnogames', available: true });
+  });
+  assert.ok(screen.getByText('/tienda/second-slug'));
+  assert.ok(screen.getByText('Ocupado'));
+  assert.equal(screen.queryByText('Disponible'), null);
+});
 afterEach(() => { cleanup(); requests.length = 0; navigation.length = 0; answer = async () => ({ message: 'Si existe una cuenta con ese correo, recibirás instrucciones.' }); });
 
 test('forgot password displays a generic confirmation and submits the entered email once', async () => {

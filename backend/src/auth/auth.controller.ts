@@ -1,4 +1,5 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Query, Post, UseGuards } from '@nestjs/common';
+import { BusinessSlugQueryDto } from './dto/business-slug.dto';
 import { AuthRateLimitGuard } from './auth-rate-limit.guard';
 import { AuthService } from './auth.service';
 import { RegisterBusinessDto } from './dto/register-business.dto';
@@ -21,6 +22,13 @@ export class AuthController {
   @AuthAction('register')
   registerBusiness(@Body() dto: RegisterBusinessDto) {
     return this.authService.registerBusiness(dto);
+  }
+
+  @Get('business-slug-availability')
+  @Header('Cache-Control', 'no-store')
+  @AuthAction('slug-availability')
+  businessSlugAvailability(@Query() query: BusinessSlugQueryDto) {
+    return this.authService.businessSlugAvailability(query);
   }
 
   @Post('login')

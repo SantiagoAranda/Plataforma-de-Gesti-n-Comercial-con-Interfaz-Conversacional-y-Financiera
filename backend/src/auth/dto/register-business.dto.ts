@@ -1,6 +1,11 @@
-import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsBusinessSlug } from './business-slug.dto';
 
 export class RegisterBusinessDto {
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBusinessSlug()
+  slug?: string;
+
   @IsString()
   name: string;
 

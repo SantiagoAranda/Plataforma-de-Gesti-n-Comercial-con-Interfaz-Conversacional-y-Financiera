@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { generateSlug as normalizeLegacySlug } from './slug.util';
 
 // Root segments from frontend/app and backend controllers; api is infrastructure,
@@ -41,7 +41,11 @@ export async function generateBusinessSlug(
 }
 
 // Retry outside the transaction: PostgreSQL aborts a transaction after a unique violation.
-export async function retryBusinessSlugTransaction<T>(operation: () => Promise<T>): Promise<T> {
+export function businessSlugTaken() {
+  return new ConflictException({ code: 'BUSINESS_SLUG_TAKEN', message: 'El identificador dejó de estar disponible. Elegí otro.' });
+}
+
+export async function retryBusinessSlugTransaction<T>(operation: () => Promise<T>, requestedSlug?: string): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try { return await operation(); } catch (error) {
       const failure = error as { code?: string; meta?: { target?: string[] | string; modelName?: string } };
@@ -50,6 +54,7 @@ export async function retryBusinessSlugTransaction<T>(operation: () => Promise<T
       const slugConflict = failure?.code === 'P2002' && fields.length === 1 &&
         ['slug', 'Business_slug_key', 'BusinessSlug_pkey'].includes(fields[0] ?? '') &&
         (!failure.meta?.modelName || ['Business', 'BusinessSlug'].includes(failure.meta.modelName));
+      if (slugConflict && requestedSlug !== undefined) throw businessSlugTaken();
       if (!slugConflict && failure?.code !== 'P2034') throw error;
       if (attempt >= 4) {
         throw new BadRequestException('No se pudo reservar el identificador del negocio. Intentá nuevamente.');

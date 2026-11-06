@@ -59,6 +59,7 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
   private readonly logger = new Logger(AuthRateLimitGuard.name);
   private readonly local = new Map<string, Counter>();
   private degraded = false;
+  private availabilityUsed = false;
   private readonly enabled: boolean;
   private readonly secret: string;
 
@@ -75,7 +76,7 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
     this.logger.log(
       this.enabled
         ? 'Authentication rate limiting enabled'
-        : 'Authentication rate limiting disabled; storage is not accessed',
+        : 'Authentication rate limiting disabled; public slug checks remain rate limited',
     );
   }
 
@@ -96,9 +97,11 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    if (!this.enabled) return true;
     const action = authActionOf(context.getHandler());
-    if (action !== 'login' && action !== 'register') return true;
+    const availability = action === 'slug-availability';
+    if (availability) this.availabilityUsed = true;
+    if (!this.enabled && !availability) return true;
+    if (action !== 'login' && action !== 'register' && !availability) return true;
     const request = context
       .switchToHttp()
       .getRequest<{ ip?: string; body?: { email?: unknown } }>();
@@ -116,13 +119,13 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
       ttl: number;
     }> = [
       {
-        scope: login ? 'login-ip' : 'register-ip',
+        scope: availability ? 'slug-availability-ip' : login ? 'login-ip' : 'register-ip',
         identity: [ip],
-        limit: login ? 200 : 30,
-        ttl: login ? 900000 : 3600000,
+        limit: availability ? 60 : login ? 200 : 30,
+        ttl: availability ? 60000 : login ? 900000 : 3600000,
       },
     ];
-    if (email !== undefined) {
+    if (email !== undefined && !availability) {
       rules.push({
         scope: login ? 'login-email' : 'register-email',
         identity: [email],
@@ -196,7 +199,7 @@ export class AuthRateLimitGuard implements CanActivate, OnModuleInit {
 
   @Interval(60000)
   async cleanup() {
-    if (!this.enabled) return;
+    if (!this.enabled && !this.availabilityUsed) return;
     for (const [key, entry] of this.local)
       if (entry.expires <= Date.now()) this.local.delete(key);
     try {

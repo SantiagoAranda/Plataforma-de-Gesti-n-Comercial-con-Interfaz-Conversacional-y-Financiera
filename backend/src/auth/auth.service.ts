@@ -18,7 +18,7 @@ import { BusinessesService } from '../businesses/businesses.service';
 import { RegisterBusinessDto } from './dto/register-business.dto';
 import { ConfigService } from '@nestjs/config';
 import { passwordV2Enabled } from './password-rollout';
-import { retryBusinessSlugTransaction } from '../common/utils/business-slug';
+import { retryBusinessSlugTransaction, validateCustomBusinessSlug } from '../common/utils/business-slug';
 
 @Injectable()
 export class AuthService {
@@ -31,6 +31,7 @@ export class AuthService {
   ) {}
 
   async registerBusiness(dto: RegisterBusinessDto) {
+    if (dto.slug !== undefined) validateCustomBusinessSlug(dto.slug);
     if (!passwordV2Enabled(this.config)) {
       throw new ServiceUnavailableException({
         statusCode: 503,
@@ -114,7 +115,11 @@ export class AuthService {
         }
         throw error;
       }
-    });
+    }, dto.slug);
+  }
+
+  businessSlugAvailability(query: { slug?: string; name?: string }) {
+    return this.businessesService.businessSlugAvailability(query);
   }
 
   async login(email: string, password: string) {
