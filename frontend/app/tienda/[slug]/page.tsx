@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: Props) {
     }
 
     const res = await fetch(`${API_URL}/public/${slug}/items`, {
-      next: { revalidate: 60 }, // Cache metadata for 60 seconds
+      cache: "no-store",
     });
 
     if (!res.ok) {

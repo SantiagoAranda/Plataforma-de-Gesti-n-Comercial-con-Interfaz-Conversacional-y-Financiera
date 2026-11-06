@@ -33,6 +33,19 @@ export function readBusinessLogoFileError(file: File) {
 export async function getBusinessProfile() {
   const session = getSessionContext();
   const profile = await api<BusinessLogoProfile>("/businesses/profile");
+  return syncBusinessProfile(profile, session);
+}
+
+export async function updateBusinessProfile(name: string) {
+  const session = getSessionContext();
+  const profile = await api<BusinessLogoProfile>("/businesses/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+  return syncBusinessProfile(profile, session);
+}
+
+function syncBusinessProfile(profile: BusinessLogoProfile, session: ReturnType<typeof getSessionContext>) {
   assertCurrentSession(session);
   if (profile.id === session.businessId) {
     try {

@@ -66,38 +66,29 @@ export default function HomePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const profile = readBusinessProfile();
-    if (profile.name?.trim()) setBusinessName(profile.name.trim());
-    if (profile.subtitle?.trim()) setBusinessSubtitle(profile.subtitle.trim());
+    const syncProfile = () => {
+      const profile = readBusinessProfile();
+      setBusinessName(profile.name);
+      setBusinessSubtitle(profile.subtitle);
+    };
+    syncProfile();
+    window.addEventListener("business-profile-updated", syncProfile);
+    window.addEventListener("storage", syncProfile);
+    let cancelled = false;
 
     getBusinessProfile()
       .then((data) => {
+        if (cancelled) return;
         if (data?.name) setBusinessName(data.name);
         if (data?.logoUrl) setLogoUrl(data.logoUrl);
       })
       .catch(() => {});
 
-    const storedUser = localStorage.getItem("user");
-    if (!storedUser) return;
-
-    try {
-      const parsed = JSON.parse(storedUser) as {
-        businessName?: string;
-        name?: string;
-        business?: { name?: string; logoUrl?: string };
-      } | null;
-
-      const nextName =
-        parsed?.businessName ?? parsed?.business?.name ?? parsed?.name;
-      const nextLogo = parsed?.business?.logoUrl;
-
-      if (nextName?.trim()) {
-        setBusinessName(nextName.trim());
-      }
-      if (nextLogo) {
-        setLogoUrl(nextLogo);
-      }
-    } catch {}
+    return () => {
+      cancelled = true;
+      window.removeEventListener("business-profile-updated", syncProfile);
+      window.removeEventListener("storage", syncProfile);
+    };
   }, []);
 
   return (

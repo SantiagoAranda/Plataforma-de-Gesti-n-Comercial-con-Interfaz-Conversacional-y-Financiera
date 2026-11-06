@@ -18,6 +18,7 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { BusinessesService } from './businesses.service';
+import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
 import { ForbiddenException } from '@nestjs/common';
 
 type AuthenticatedRequest = Request & {
@@ -60,6 +61,19 @@ export class BusinessesController {
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   getStoreFooterSettings(@Req() req: AuthenticatedRequest) {
     return this.businessesService.getStoreFooterSettings(getBusinessId(req));
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+  updateProfile(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: UpdateBusinessProfileDto,
+  ) {
+    return this.businessesService.updateProfile(
+      getBusinessId(req),
+      req.user.userId,
+      body,
+    );
   }
 
   @Patch('store-footer-settings')

@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateBusinessProfileDto } from './dto/update-business-profile.dto';
 import { Business, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import fs from 'node:fs';
@@ -614,6 +616,37 @@ export class BusinessesService {
     }
 
     return this.withPublicLogoUrl(business);
+  }
+
+  async updateProfile(
+    businessId: string,
+    userId: string,
+    body: UpdateBusinessProfileDto,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { businessId: true },
+    });
+    if (!user || user.businessId !== businessId) {
+      throw new ForbiddenException(
+        'No tenés autorización para modificar este negocio.',
+      );
+    }
+    try {
+      await this.prisma.business.update({
+        where: { id: businessId },
+        data: { name: body.name },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Negocio no encontrado');
+      }
+      throw error;
+    }
+    return this.getProfile(businessId);
   }
 
   async getStoreFooterSettings(businessId: string) {

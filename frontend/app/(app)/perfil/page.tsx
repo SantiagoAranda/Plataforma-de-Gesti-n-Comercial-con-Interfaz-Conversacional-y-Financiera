@@ -29,6 +29,7 @@ import {
   BusinessLogoProfile,
   deleteBusinessLogo,
   getBusinessProfile,
+  updateBusinessProfile,
   readBusinessLogoFileError,
   uploadBusinessLogo,
 } from "@/src/lib/businessLogo";
@@ -213,6 +214,7 @@ function CardHeader({
 export default function PerfilPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const savingRef = useRef(false);
 
   const [name, setName] = useState("");
   const [subtitle, setSubtitle] = useState("");
@@ -363,6 +365,13 @@ export default function PerfilPage() {
   };
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    setSaved(false);
+    const normalizedName = name.trim().replace(/\s+/g, " ");
+    if (!normalizedName || [...normalizedName].length > 80) {
+      toast.error("El nombre comercial debe tener entre 1 y 80 caracteres.");
+      return;
+    }
     setPhoneError(null);
     setManualPhoneError(null);
     setExtraPhoneErrors({});
@@ -448,6 +457,7 @@ export default function PerfilPage() {
     }
 
     setSaving(true);
+    savingRef.current = true;
 
     const fullPhone = registrationPhone;
     const phonesPayload = [
@@ -464,12 +474,12 @@ export default function PerfilPage() {
       value: social.value,
     }));
 
+    let nameSaved = false;
     try {
-      writeBusinessProfile({
-        name: name.trim(),
-        subtitle: subtitle.trim(),
-        phone: fullPhone,
-      });
+      const profile = await updateBusinessProfile(normalizedName);
+      nameSaved = true;
+      setBusiness(profile);
+      setName(profile.name);
 
       const footer = await api<StoreFooterSettings>("/businesses/store-footer-settings", {
         method: "PATCH",
@@ -488,6 +498,7 @@ export default function PerfilPage() {
       });
 
       setPublicEmail(footer.email ?? "");
+      writeBusinessProfile({ subtitle: footer.description ?? "", phone: fullPhone });
       setShowFooterLogo(Boolean(footer.showLogo));
       setSocials(withSocialIds(footer.socials ?? []));
 
@@ -511,8 +522,11 @@ export default function PerfilPage() {
       toast.success("Perfil guardado");
     } catch (error) {
       console.error(error);
-      toast.error("No se pudo guardar el perfil");
+      toast.error(nameSaved
+        ? "El nombre comercial se guardó, pero no pudimos guardar el pie de página. Volvé a intentarlo"
+        : "No se pudo guardar el nombre comercial. Revisá el nombre y volvé a intentarlo.");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -569,6 +583,7 @@ export default function PerfilPage() {
       <AppHeader title="Perfil" subtitle="Datos del negocio" showBack hrefBack="/home" />
 
       <main className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-5 pb-10 box-border">
+        <fieldset disabled={saving || loadingFooter} className="min-w-0 border-0 p-0 m-0">
         <div className="mx-auto w-full max-w-xl space-y-4 overflow-visible box-border">
           <section className="w-full max-w-full overflow-visible rounded-3xl border border-black/5 bg-white p-5 shadow-sm box-border">
             <CardHeader
@@ -1150,6 +1165,7 @@ export default function PerfilPage() {
             </button>
           </div>
         </div>
+        </fieldset>
       </main>
     </div>
   );
