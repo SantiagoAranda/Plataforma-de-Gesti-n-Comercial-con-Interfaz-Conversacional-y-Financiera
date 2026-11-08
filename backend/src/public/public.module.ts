@@ -8,6 +8,7 @@ import { ItemOptionsModule } from '../item-options/item-options.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TaxModule } from '../tax/tax.module';
 import { CommonModule } from '../common/common.module';
+import { AvailabilityModule } from '../availability/availability.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CommonModule } from '../common/common.module';
     NotificationsModule,
     TaxModule,
     CommonModule,
+    AvailabilityModule,
   ],
   controllers: [PublicController],
   providers: [PublicService, PrismaService],

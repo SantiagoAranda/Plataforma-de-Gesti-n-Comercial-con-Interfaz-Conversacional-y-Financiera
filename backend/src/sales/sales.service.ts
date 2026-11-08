@@ -5,7 +5,11 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { OrderStatus, Prisma, Weekday } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
+import {
+  AvailabilityService,
+  formatDateKey,
+} from '../availability/availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -107,6 +111,8 @@ export class SalesService {
       simpleRegimeTaxModuleEnabled: false,
       simpleRegimeEnabled: true,
     } as FeatureFlagsService,
+    @Optional()
+    private availability: AvailabilityService = new AvailabilityService(prisma),
   ) {}
 
   async generateElectronicInvoice(businessId: string, orderId: string) {
@@ -684,97 +690,6 @@ export class SalesService {
     return { dateOnly, startMinute };
   }
 
-  private async getReservationAvailabilitySlots(
-    businessId: string,
-    itemId: string,
-    date: Date,
-    durationMinutes: number,
-    excludeReservationId?: string,
-  ) {
-    const weekdayMap: Record<number, Weekday> = {
-      0: 'SUN',
-      1: 'MON',
-      2: 'TUE',
-      3: 'WED',
-      4: 'THU',
-      5: 'FRI',
-      6: 'SAT',
-    };
-    // Use getUTCDay() — dates are stored/compared as UTC midnight.
-    // getDay() would shift the weekday by the server's local TZ offset.
-    const weekday = weekdayMap[date.getUTCDay()];
-
-    const [windows, blocks, reservations] = await Promise.all([
-      this.prisma.serviceScheduleWindow.findMany({
-        where: {
-          businessId,
-          weekday,
-          OR: [{ itemId }, { itemId: null }],
-        },
-        orderBy: { startMinute: 'asc' },
-      }),
-      this.prisma.serviceScheduleBlock.findMany({
-        where: {
-          businessId,
-          date,
-          OR: [{ itemId }, { itemId: null }],
-        },
-      }),
-      this.prisma.reservation.findMany({
-        where: {
-          businessId,
-          itemId,
-          date,
-          status: { not: 'CANCELLED' },
-          ...(excludeReservationId
-            ? { id: { not: excludeReservationId } }
-            : {}),
-        },
-        select: { startMinute: true, endMinute: true },
-      }),
-    ]);
-
-    const slots: string[] = [];
-    // Fixed 60-minute step: we evaluate every full hour within the window.
-    // Using durationMinutes as the step would skip slots (e.g. with a 2-hour
-    // service and a 14:00–17:00 block, cursor would jump 840→960→1080 and
-    // only 14:00 would be emitted instead of also evaluating 15:00).
-    const step = 60;
-
-    for (const window of windows) {
-      // Align cursor to the next exact hour boundary so slots are always HH:00.
-      let cursor = window.startMinute;
-      if (cursor % 60 !== 0) {
-        cursor = cursor + (60 - (cursor % 60));
-      }
-
-      while (cursor + durationMinutes <= window.endMinute) {
-        const start = cursor;
-        const end = cursor + durationMinutes;
-
-        const blocked = blocks.some((block) => {
-          if (block.startMinute === null || block.endMinute === null) {
-            return true;
-          }
-          return start < block.endMinute && end > block.startMinute;
-        });
-
-        const overlapping = reservations.some(
-          (res) =>
-            Math.max(start, res.startMinute) < Math.min(end, res.endMinute),
-        );
-
-        if (!blocked && !overlapping) {
-          slots.push(this.formatTime(start));
-        }
-
-        cursor += step;
-      }
-    }
-
-    return slots;
-  }
-
   private async assertReservationSlotAvailable(
     businessId: string,
     itemId: string,
@@ -787,23 +702,14 @@ export class SalesService {
       throw new BadRequestException('Invalid time range');
     }
 
-    const overlapping = await this.prisma.reservation.findFirst({
-      where: {
-        businessId,
-        itemId,
-        date,
-        status: { not: 'CANCELLED' },
-        ...(excludeReservationId ? { id: { not: excludeReservationId } } : {}),
-        AND: [
-          { startMinute: { lt: endMinute } },
-          { endMinute: { gt: startMinute } },
-        ],
-      },
+    await this.availability.assertNoOverlap({
+      businessId,
+      itemId,
+      date,
+      startMinute,
+      endMinute,
+      excludeReservationId,
     });
-
-    if (overlapping) {
-      throw new BadRequestException('Time slot already booked');
-    }
   }
 
   async create(businessId: string, dto: CreateOrderDto) {
@@ -1688,68 +1594,29 @@ export class SalesService {
         1,
         (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0),
       );
-    const excludeReservationId = reservation?.id ?? reservationId;
+    const slotQuery = {
+      businessId,
+      itemId,
+      durationMinutes: duration,
+      excludeReservationId: reservation?.id ?? reservationId,
+      allowPastDateKey: reservation ? formatDateKey(reservation.date) : undefined,
+    };
 
     if (query.date) {
-      const dateOnly = this.parseDateOnly(query.date);
-      return this.getReservationAvailabilitySlots(
-        businessId,
-        itemId,
-        dateOnly,
-        duration,
-        excludeReservationId,
-      );
+      return this.availability.getSlots({
+        ...slotQuery,
+        date: this.parseDateOnly(query.date),
+      });
     }
 
     if (!query.month) {
       throw new BadRequestException('month or date is required');
     }
 
-    const { year, monthIndex } = this.parseMonth(query.month);
-    const firstDay = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
-    const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0, 0, 0, 0, 0));
-
-    const nowInBusiness = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-    );
-    const today = new Date(
-      Date.UTC(
-        nowInBusiness.getFullYear(),
-        nowInBusiness.getMonth(),
-        nowInBusiness.getDate(),
-        0,
-        0,
-        0,
-        0,
-      ),
-    );
-
-    const cursor = new Date(firstDay);
-    const availableDates: string[] = [];
-
-    while (cursor <= lastDay) {
-      if (
-        cursor >= today ||
-        (reservation &&
-          this.formatDateOnly(cursor) === this.formatDateOnly(reservation.date))
-      ) {
-        const slots = await this.getReservationAvailabilitySlots(
-          businessId,
-          itemId,
-          new Date(cursor),
-          duration,
-          excludeReservationId,
-        );
-
-        if (slots.length > 0) {
-          availableDates.push(this.formatDateOnly(cursor));
-        }
-      }
-
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-
-    return availableDates;
+    return this.availability.getAvailableDates({
+      ...slotQuery,
+      ...this.parseMonth(query.month),
+    });
   }
 
   private mapReservationToVirtualOrder(res: any) {
@@ -2528,13 +2395,14 @@ export class SalesService {
         reservation.item.durationMinutes ??
         Math.max(1, reservation.endMinute - reservation.startMinute);
       const endMinute = startMinute + duration;
-      const availableSlots = await this.getReservationAvailabilitySlots(
+      const availableSlots = await this.availability.getSlots({
         businessId,
-        reservation.itemId,
-        dateOnly,
-        duration,
-        reservation.id,
-      );
+        itemId: reservation.itemId,
+        durationMinutes: duration,
+        excludeReservationId: reservation.id,
+        allowPastDateKey: formatDateKey(reservation.date),
+        date: dateOnly,
+      });
 
       if (!availableSlots.includes(this.formatTime(startMinute))) {
         throw new BadRequestException(
