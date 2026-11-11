@@ -11,7 +11,8 @@ export default function ToastLimitListener() {
   const timerMapRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   useEffect(() => {
-    const visibleToasts = toasts.filter((t) => t.visible);
+    // Custom toasts are confirmation dialogs: they stay until the user decides.
+    const visibleToasts = toasts.filter((t) => t.visible && t.type !== "custom");
 
     // Enforce max 2 visible toasts
     if (visibleToasts.length > MAX_TOASTS) {

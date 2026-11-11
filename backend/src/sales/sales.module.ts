@@ -23,5 +23,6 @@ import { FiscalDocumentsModule } from '../fiscal-documents/fiscal-documents.modu
   ],
   controllers: [SalesController],
   providers: [SalesService],
+  exports: [SalesService],
 })
 export class SalesModule {}

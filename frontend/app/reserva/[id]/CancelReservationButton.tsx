@@ -3,15 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, X, Loader2 } from "lucide-react";
+import { cancelErrorMessage } from "@/src/lib/sales/reservationCancelUi";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 interface CancelReservationButtonProps {
   reservationId: string;
+  token: string;
 }
 
 export default function CancelReservationButton({
   reservationId,
+  token,
 }: CancelReservationButtonProps) {
   const router = useRouter();
   const [step, setStep] = useState<"idle" | "confirm" | "loading" | "error">(
@@ -25,12 +28,19 @@ export default function CancelReservationButton({
 
     try {
       const res = await fetch(
-        `${API_URL}/public/reservations/${reservationId}/cancel`,
-        { method: "POST" }
+        `${API_URL}/public/reservations/${encodeURIComponent(reservationId)}/cancel`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        }
       );
 
       if (!res.ok) {
-        throw new Error("No se pudo cancelar la reserva. Intenta nuevamente.");
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          cancelErrorMessage(body, "No se pudo cancelar la reserva. Intenta nuevamente.")
+        );
       }
 
       router.refresh();

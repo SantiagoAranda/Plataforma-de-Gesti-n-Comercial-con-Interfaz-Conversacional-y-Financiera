@@ -1075,8 +1075,10 @@ model Reservation {
 
   archived Boolean @default(false)
 
-  // Evita duplicar exactamente el mismo slot para el mismo servicio
-  @@unique([itemId, date, startMinute])
+  // Slot uniqueness only among active reservations: partial unique index
+  // "Reservation_active_slot_key" (itemId, date, startMinute) WHERE status <> 'CANCELLED',
+  // created in migration 20261108120000 (Prisma cannot express partial indexes).
+  // Overlaps with different starts are prevented by agenda advisory locks.
   @@unique([id, businessId])
   @@index([businessId, date])
   @@index([itemId, date])

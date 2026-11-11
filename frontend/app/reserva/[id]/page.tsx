@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import CancelReservationButton from "./CancelReservationButton";
 import ReservationBackButton from "./ReservationBackButton";
+import { canCancelPublicReservation } from "@/src/lib/sales/reservationCancelUi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -212,10 +213,15 @@ function ReservationNotFound() {
 
 export default async function ReservationDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ t?: string | string[] }>;
 }) {
   const { id } = await params;
+  const { t } = await searchParams;
+  // Booking-time token; links without it (lookup, old links) are view-only.
+  const cancelToken = typeof t === "string" ? t : null;
   const reservation = await getReservation(id);
 
   if (!reservation) {
@@ -351,10 +357,18 @@ export default async function ReservationDetailPage({
             Contactar por WhatsApp
           </a>
 
-          {/* Cancelar reserva — siempre visible salvo si ya está cancelada */}
-          {reservation.status !== "CANCELLED" && (
-            <CancelReservationButton reservationId={reservation.id} />
-          )}
+          {/* Cancelar reserva — solo pendientes y con el enlace recibido al reservar */}
+          {canCancelPublicReservation(reservation.status, cancelToken) ? (
+            <CancelReservationButton reservationId={reservation.id} token={cancelToken!} />
+          ) : reservation.status === "PENDING" ? (
+            <p className="text-center text-[12px] text-slate-400">
+              Para cancelar, usá el enlace que recibiste al reservar o contactá al negocio.
+            </p>
+          ) : reservation.status === "CONFIRMED" ? (
+            <p className="text-center text-[12px] text-slate-400">
+              Tu reserva está confirmada. Para cancelarla, contactá al negocio.
+            </p>
+          ) : null}
         </div>
       </footer>
     </div>

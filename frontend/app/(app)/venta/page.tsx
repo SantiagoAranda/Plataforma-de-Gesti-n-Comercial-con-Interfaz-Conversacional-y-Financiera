@@ -31,7 +31,9 @@ import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirm
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { canCancelReservation, reservationCancelPrompt, reservationLink } from "@/src/lib/sales/reservationCancelUi";
+import { saleDayKey, type SaleDateBasis } from "@/src/lib/sales/saleDates";
 import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
 import type { FactusConfigurationView, FiscalDocument } from "@/src/types/fiscal-documents";
 import { getCached, invalidateCache } from "@/src/lib/cache";
@@ -169,6 +171,7 @@ function mapOrderToSale(order: ApiOrder): Sale {
     origin: order.origin,
     createdAt: order.createdAt,
     scheduledAt: order.scheduledAt,
+    reservationPublicToken: order.reservationPublicToken ?? null,
     fiscalSummary: order.fiscalSummary ?? null,
     fiscalContext,
     taxLines: order.taxLines ?? null,
@@ -296,6 +299,7 @@ function VentaPageContent() {
   const [filterYear, setFilterYear] = useState<number>(() => new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<number>(() => new Date().getMonth() + 1);
   const [viewMode, setViewMode] = useState<"MONTH" | "DAILY">("DAILY");
+  const [dateBasis, setDateBasis] = useState<SaleDateBasis>("REGISTRO");
 
   // today como referencia estable (sin useMemo para evitar desajustes)
   const todayRef = useRef(new Date());
@@ -365,7 +369,8 @@ function VentaPageContent() {
     title: string,
     actionLabel: string,
     onAction: () => void,
-    variant: 'emerald' | 'rose' = 'emerald'
+    variant: 'emerald' | 'rose' = 'emerald',
+    dismissLabel = 'Cancelar'
   ) => {
     toast.custom((t) => (
       <div className={`${t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-2'} max-w-xs w-full bg-white shadow-2xl rounded-2xl border border-neutral-100 p-4 pointer-events-auto`}>
@@ -377,14 +382,16 @@ function VentaPageContent() {
             <p className="text-[13px] font-medium text-neutral-800 leading-tight mb-3">{title}</p>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => toast.dismiss(t.id)}
+                // remove, not dismiss: dismiss queues a 1 s removal by id that also killed a
+                // confirmation reopened within that second (same id) — the dialog never showed.
+                onClick={() => toast.remove(t.id)}
                 className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-medium uppercase tracking-wider hover:bg-neutral-100 transition"
               >
-                Cancelar
+                {dismissLabel}
               </button>
               <button
                 onClick={() => {
-                  toast.dismiss(t.id);
+                  toast.remove(t.id);
                   onAction();
                 }}
                 className={`flex-1 h-9 rounded-xl text-white text-[11px] font-medium uppercase tracking-wider shadow-sm transition ${variant === 'rose' ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
@@ -395,7 +402,7 @@ function VentaPageContent() {
           </div>
         </div>
       </div>
-    ), { id: 'sale-action-confirm', position: 'top-center' });
+    ), { id: 'sale-action-confirm', position: 'top-center', duration: Infinity });
   };
 
   const loadOrders = useCallback(async () => {
@@ -403,7 +410,8 @@ function VentaPageContent() {
       setLoading(true);
       setError(null);
 
-      const data = await listSales({ includeCancelled: includeCancelledSales });
+      // The backend omits cancelled sales unless asked; the "Canceladas" filter needs them.
+      const data = await listSales({ includeCancelled: includeCancelledSales || filterStatus === "CANCELLED" });
       setSales(data.map(mapOrderToSale));
     } catch (err) {
       console.error(err);
@@ -411,7 +419,7 @@ function VentaPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [includeCancelledSales]);
+  }, [includeCancelledSales, filterStatus]);
 
   useEffect(() => {
     loadOrders();
@@ -517,6 +525,7 @@ function VentaPageContent() {
         setFilterYear(createdAt.getFullYear());
         setFilterMonth(createdAt.getMonth() + 1);
         setViewMode("DAILY");
+        setDateBasis("REGISTRO");
         setPendingDeepLinkSaleId(sale.id);
       })
       .catch(() => {
@@ -538,27 +547,14 @@ function VentaPageContent() {
 
   // ── Ventas del período activo (MONTH o DAILY) ────────────────────────────
   const salesForPeriod = useMemo(() => {
+    // Día de negocio (Bogotá) de la fecha de registro o del turno, según la vista elegida.
     if (viewMode === "MONTH") {
-      // Filtro client-side por año/mes de createdAt
-      return sales.filter((sale) => {
-        try {
-          const d = new Date(sale.createdAt);
-          return d.getFullYear() === filterYear && d.getMonth() + 1 === filterMonth;
-        } catch {
-          return false;
-        }
-      });
+      const monthPrefix = `${filterYear}-${String(filterMonth).padStart(2, "0")}-`;
+      return sales.filter((sale) => saleDayKey(sale, dateBasis)?.startsWith(monthPrefix));
     }
-    // Modo DAILY: filtro por día de negocio (comportamiento original)
     const selectedKey = getCalendarBusinessDayKey(selectedDate);
-    return sales.filter((sale) => {
-      try {
-        return getBusinessDayKey(sale.createdAt) === selectedKey;
-      } catch {
-        return false;
-      }
-    });
-  }, [sales, viewMode, filterYear, filterMonth, selectedDate]);
+    return sales.filter((sale) => saleDayKey(sale, dateBasis) === selectedKey);
+  }, [sales, viewMode, filterYear, filterMonth, selectedDate, dateBasis]);
 
   // Alias para compatibilidad con el DayPickerCalendar (marcado de fechas)
   const salesForSelectedDate = salesForPeriod;
@@ -702,12 +698,11 @@ function VentaPageContent() {
   const saleDateKeys = useMemo(() => {
     const keys = new Set<string>();
     sales.forEach((sale) => {
-      try {
-        keys.add(getBusinessDayKey(sale.createdAt));
-      } catch { }
+      const key = saleDayKey(sale, dateBasis);
+      if (key) keys.add(key);
     });
     return keys;
-  }, [sales]);
+  }, [sales, dateBasis]);
 
   // ── hasDateFilter: visible en modo DAILY con día != hoy, o en modo MONTH ───────
   const hasDateFilter = viewMode === "MONTH" || !isSameCalendarDay(selectedDate, today);
@@ -766,7 +761,7 @@ function VentaPageContent() {
 
     const reservaLink =
       sale.type === "SERVICIO" && sale.id
-        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${window.location.origin}/reserva/${sale.id}`
+        ? `\n\n📋 Consultá el detalle de tu turno aquí:\n${reservationLink(window.location.origin, sale.id, sale.reservationPublicToken)}`
         : "";
 
     const msg = baseMsg + reservaLink;
@@ -982,6 +977,43 @@ function VentaPageContent() {
       "rose"
     );
   }, [detailsSale, loadOrders]);
+
+  const handleCancelReservation = useCallback((sale: Sale) => {
+    showConfirmation(
+      `¿Cancelar esta reserva? ${reservationCancelPrompt(sale)}`,
+      "Sí, cancelar reserva",
+      async () => {
+        const loadingId = "reservation-cancel-loading";
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading("Cancelando reserva...", { id: loadingId });
+          // ORDER cancels itself and its mirror in one transaction; the mirror id alone gets 409.
+          await cancelSale(sale.id, sale.sourceType);
+          invalidateCache("home:sales");
+          invalidateCache("home:businessActivity");
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success("Reserva cancelada. El horario quedó libre.", { duration: 2500 });
+        } catch (err) {
+          console.error(err);
+          toast.dismiss(loadingId);
+          // 4xx carry the backend's Spanish reason; 5xx/network errors are not user-readable.
+          const fallback = "No se pudo cancelar la reserva. Intentá nuevamente.";
+          toast.error(
+            err instanceof AppApiError && err.status < 500 ? getErrorMessage(err, fallback) : fallback,
+            { duration: 5000 }
+          );
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "rose",
+      // "Cancelar" next to "Cancelar reserva" read as the confirm button and silently dismissed.
+      "Volver"
+    );
+  }, [loadOrders]);
 
   const handleSaveEditedSale = async (updated: Sale) => {
     const loadingId = "sale-edit-loading";
@@ -1224,7 +1256,10 @@ function VentaPageContent() {
             }
             editLabel="Editar"
             onDelete={
-              salesBlockedBySimpleRegime || isDeletionBlockedByPostedInventory(selectedSale)
+              salesBlockedBySimpleRegime ||
+              isDeletionBlockedByPostedInventory(selectedSale) ||
+              // Active reservations are cancelled from the detail ("Cancelar reserva"), not deleted.
+              canCancelReservation(selectedSale)
                 ? undefined
                 : () => handleDeleteSale(selectedSale)
             }
@@ -1314,6 +1349,22 @@ function VentaPageContent() {
               </div>
 
               <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+                <div role="group" aria-label="Fecha usada en el calendario" className="mb-4 grid grid-cols-2 gap-1 rounded-full bg-slate-100 p-1">
+                  {([
+                    ["REGISTRO", "Fecha de registro"],
+                    ["TURNO", "Fecha del turno"],
+                  ] as const).map(([basis, label]) => (
+                    <button
+                      key={basis}
+                      type="button"
+                      aria-pressed={dateBasis === basis}
+                      onClick={() => setDateBasis(basis)}
+                      className={`h-8 rounded-full text-[11px] font-semibold uppercase tracking-wider transition-colors ${dateBasis === basis ? "bg-white text-[#0B3F64] shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <DayPickerCalendar
                   selectedDate={selectedDate}
                   onSelectDate={handleDaySelect}
@@ -1416,6 +1467,11 @@ function VentaPageContent() {
           (detailsSale != null && isDeletionBlockedByPostedInventory(detailsSale))
             ? undefined
             : handleDeleteSale
+        }
+        onCancelReservation={
+          detailsSale != null && canCancelReservation(detailsSale)
+            ? handleCancelReservation
+            : undefined
         }
         onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
           setEditingSale(sale);

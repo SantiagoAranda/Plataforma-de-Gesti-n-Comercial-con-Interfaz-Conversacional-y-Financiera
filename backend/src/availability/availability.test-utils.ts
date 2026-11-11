@@ -11,6 +11,10 @@ export const ANCHOR_RESERVATION_ID = 'anchor-reservation';
 
 export type Fixture = {
   durationMinutes: number | null;
+  itemStatus?: string;
+  itemType?: string;
+  // Extra items, e.g. a service of another business or a product.
+  extraItems?: Array<Record<string, unknown>>;
   anchorDate?: string;
   anchorMinutes?: [number, number];
   windows: Array<{
@@ -63,10 +67,11 @@ export function createFakePrisma(fixture: Fixture) {
   const item = {
     id: ITEM_ID,
     businessId: BUSINESS_ID,
-    type: 'SERVICE',
-    status: 'ACTIVE',
+    type: fixture.itemType ?? 'SERVICE',
+    status: fixture.itemStatus ?? 'ACTIVE',
     durationMinutes: fixture.durationMinutes,
   };
+  const items: any[] = [item, ...(fixture.extraItems ?? [])];
   const windows = fixture.windows.map((w, i) => ({
     id: `w-${i}`,
     businessId: BUSINESS_ID,
@@ -80,7 +85,7 @@ export function createFakePrisma(fixture: Fixture) {
     endMinute: b.endMinute,
     date: day(b.date),
   }));
-  const reservations = (fixture.reservations ?? []).map((r, i) => ({
+  const reservations: any[] = (fixture.reservations ?? []).map((r, i) => ({
     id: r.id ?? `r-${i}`,
     businessId: BUSINESS_ID,
     itemId: r.itemId ?? ITEM_ID,
@@ -107,11 +112,15 @@ export function createFakePrisma(fixture: Fixture) {
   const fake = (fn: (args: any) => unknown) =>
     jest.fn((args: any) => Promise.resolve(fn(args)));
 
-  return {
+  const prisma: any = {
     business: {
       findFirst: fake(() => ({ id: BUSINESS_ID, status: 'ACTIVE' })),
     },
-    item: { findFirst: fake(() => item) },
+    item: {
+      findFirst: fake(
+        (args) => items.find((i) => matches(args.where, i)) ?? null,
+      ),
+    },
     order: { findFirst: fake(() => null) },
     serviceScheduleWindow: {
       count: fake(
@@ -136,8 +145,38 @@ export function createFakePrisma(fixture: Fixture) {
           ? anchor
           : (reservations.find((r) => matches(args.where, r)) ?? null),
       ),
+      findUnique: fake(
+        (args) => reservations.find((r) => r.id === args.where.id) ?? null,
+      ),
+      findUniqueOrThrow: fake((args) => {
+        const row = reservations.find((r) => r.id === args.where.id);
+        if (!row) throw new Error('not found');
+        return row;
+      }),
+      create: fake((args) => {
+        const row = {
+          id: args.data.id ?? `new-${reservations.length}`,
+          status: 'PENDING',
+          ...args.data,
+        };
+        reservations.push(row);
+        return row;
+      }),
+      update: fake((args) => {
+        const row = reservations.find((r) => r.id === args.where.id);
+        Object.assign(row, args.data);
+        return row;
+      }),
     },
-  } as any;
+    // Raw SQL (advisory locks, SET LOCAL, FOR UPDATE) is a no-op here; real
+    // locking is verified against PostgreSQL in test/reservations-concurrency.
+    $executeRaw: fake(() => 0),
+    $executeRawUnsafe: fake(() => 0),
+    $queryRaw: fake(() => []),
+    reservations,
+  };
+  prisma.$transaction = jest.fn((fn: (tx: any) => unknown) => fn(prisma));
+  return prisma;
 }
 
 export function createRoutes(prisma: any) {

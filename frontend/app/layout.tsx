@@ -50,8 +50,11 @@ export default function RootLayout({
         {children}
         <SessionBoundary>
           <PushForegroundListener />
-          <ToastLimitListener />
         </SessionBoundary>
+        {/* Must mount and unmount together with <Toaster>: react-hot-toast 2.6 removes the first
+            "default" store listener on unmount, so a subscriber remounting alone (SessionBoundary
+            mounts late and remounts per session) detached the Toaster and no toast was painted. */}
+        <ToastLimitListener />
         <Toaster
           position="top-right"
           reverseOrder={false}

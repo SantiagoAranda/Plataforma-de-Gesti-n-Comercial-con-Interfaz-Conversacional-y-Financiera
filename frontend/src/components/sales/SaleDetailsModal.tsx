@@ -23,6 +23,7 @@ export default function SaleDetailsModal({
   onEdit,
   onConfirm,
   onCancel,
+  onCancelReservation,
   onSaveOptionalIngredients, // kept for TS signature compatibility
   confirming = false,
   taxSettingsEnabled = false,
@@ -33,6 +34,8 @@ export default function SaleDetailsModal({
   onEdit?: (sale: Sale) => void;
   onConfirm?: (sale: Sale) => void;
   onCancel?: (sale: Sale) => void;
+  // Cancels (not deletes) a standalone reservation, freeing its slot.
+  onCancelReservation?: (sale: Sale) => void;
   onSaveOptionalIngredients?: (
     sale: Sale,
     orderItemId: string,
@@ -150,7 +153,18 @@ export default function SaleDetailsModal({
                 <Pencil size={16} />
               </button>
             )}
-            {onCancel && (
+            {onCancelReservation && (
+              <button
+                onClick={() => onCancelReservation(sale)}
+                disabled={confirming}
+                className="h-9 px-3 flex items-center justify-center rounded-xl border border-rose-100 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
+                aria-label="Cancelar reserva"
+              >
+                Cancelar reserva
+              </button>
+            )}
+            {/* An active reservation is cancelled, not deleted: one destructive action only. */}
+            {onCancel && !onCancelReservation && (
               <button
                 onClick={handleCancelAction}
                 disabled={confirming}

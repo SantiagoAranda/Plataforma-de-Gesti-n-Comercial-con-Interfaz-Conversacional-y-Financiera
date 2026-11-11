@@ -2,12 +2,14 @@ import {
   Injectable,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Logger,
   Optional,
 } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
+import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
 import { IngredientStatus, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
@@ -18,11 +20,23 @@ import { isIngredientOperational } from '../ingredients/ingredient-operational';
 import { TaxService } from '../tax/tax.service';
 import {
   AvailabilityService,
-  formatSlotTime,
+  RESERVATION_ERRORS,
+  toBookingConflict,
 } from '../availability/availability.service';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { getFactusMunicipalities } from '../settings/factus-municipalities.catalog';
+
+/** Constant-time token check; legacy rows without a token can never match. */
+export function publicTokenMatches(
+  expected: string | null | undefined,
+  provided: string | null | undefined,
+) {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -764,92 +778,41 @@ export class PublicService {
      CREATE RESERVATION
   ===================================================== */
 
-  async createReservation(slug: string, body: any) {
+  async createReservation(slug: string, dto: CreatePublicReservationDto) {
     const business = await this.findActiveBusiness(slug);
 
-    return this.prisma.$transaction(async (tx) => {
-      const {
-        itemId,
-        customerName,
-        customerWhatsapp,
-        date,
-        startMinute,
-        endMinute,
-      } = body;
-
-      if (!customerName || !customerWhatsapp)
-        throw new BadRequestException('Customer data required');
-
-      if (startMinute >= endMinute)
-        throw new BadRequestException('Invalid time range');
-
-      const selectedDate = this.parseDateOnly(date);
-
-      const nowInBusiness = new Date(
-        new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }),
-      );
-      const today = new Date(
-        Date.UTC(
-          nowInBusiness.getFullYear(),
-          nowInBusiness.getMonth(),
-          nowInBusiness.getDate(),
-          0,
-          0,
-          0,
-          0,
-        ),
-      );
-
-      if (selectedDate < today)
-        throw new BadRequestException('Cannot reserve past dates');
-
-      const item = await tx.item.findFirst({
-        where: {
-          id: itemId,
+    const reservation = await this.prisma
+      .$transaction(async (tx) => {
+        const slot = await this.availability.reserveSlot(tx, {
           businessId: business.id,
-          type: 'SERVICE',
-          status: 'ACTIVE',
-        },
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+        });
+
+        return tx.reservation.create({
+          data: {
+            businessId: business.id,
+            itemId: slot.itemId,
+            customerName: dto.customerName,
+            customerWhatsapp: dto.customerWhatsapp,
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+            status: 'PENDING',
+            origin: 'PUBLIC_STORE',
+          },
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
       });
 
-      if (!item) throw new BadRequestException('Invalid service');
-
-      const availableSlots = await this.availability.getSlots(
-        {
-          businessId: business.id,
-          itemId: item.id,
-          durationMinutes: item.durationMinutes,
-          date: selectedDate,
-        },
-        tx,
-      );
-      const requestedSlot = formatSlotTime(startMinute);
-
-      if (!availableSlots.includes(requestedSlot)) {
-        throw new BadRequestException(
-          'Time slot already reserved or unavailable',
-        );
-      }
-
-      const reservation = await tx.reservation.create({
-        data: {
-          businessId: business.id,
-          itemId,
-          customerName,
-          customerWhatsapp,
-          date: selectedDate,
-          startMinute,
-          endMinute,
-          status: 'PENDING',
-          origin: 'PUBLIC_STORE',
-        },
-      });
-
-      console.log(
-        `[PublicService] Created reservation origin: ${reservation.origin}`,
-      );
-      return reservation;
-    });
+    console.log(
+      `[PublicService] Created reservation origin: ${reservation.origin}`,
+    );
+    return reservation;
   }
 
   /* =====================================================
@@ -1225,16 +1188,33 @@ export class PublicService {
     };
   }
 
-  async cancelReservation(id: string) {
-    const reservation = await this.prisma.reservation.findUnique({
+  async cancelReservation(id: string, token?: string) {
+    const found = await this.prisma.reservation.findUnique({
       where: { id },
+      select: { businessId: true, publicToken: true },
     });
 
-    if (!reservation) return null;
+    if (!found) return null;
+    // The id is shown in shared links and lookups; only the booking-time token authorizes.
+    if (!publicTokenMatches(found.publicToken, token)) {
+      throw new ForbiddenException(RESERVATION_ERRORS.publicCancelUnauthorized);
+    }
 
-    return this.prisma.reservation.update({
-      where: { id },
-      data: { status: 'CANCELLED' },
+    return this.prisma.$transaction(async (tx) => {
+      const { reservation, alreadyCancelled } =
+        await this.availability.lockReservationForCancellation(
+          tx,
+          found.businessId,
+          id,
+        );
+      if (alreadyCancelled) return reservation;
+      if (reservation.status !== 'PENDING') {
+        throw new ConflictException(RESERVATION_ERRORS.publicCancelNotAllowed);
+      }
+      return tx.reservation.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      });
     });
   }
 
@@ -1274,8 +1254,9 @@ export class PublicService {
         OR: phoneConditions,
       },
       select: {
+        // publicToken is deliberately omitted: it authorizes cancellation and this
+        // lookup only needs a few phone digits.
         id: true,
-        publicToken: true,
         status: true,
         customerName: true,
         customerWhatsapp: true,

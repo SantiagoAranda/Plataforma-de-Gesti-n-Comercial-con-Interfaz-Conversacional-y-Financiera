@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { PublicService } from './public.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
+import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
+import { CancelPublicReservationDto } from './dto/cancel-public-reservation.dto';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 
 @Controller('public')
@@ -26,8 +28,14 @@ export class PublicController {
   }
 
   @Post('reservations/:id/cancel')
-  async cancelReservation(@Param('id') id: string) {
-    const reservation = await this.publicService.cancelReservation(id);
+  async cancelReservation(
+    @Param('id') id: string,
+    @Body() dto: CancelPublicReservationDto,
+  ) {
+    const reservation = await this.publicService.cancelReservation(
+      id,
+      dto?.token,
+    );
     if (!reservation) throw new NotFoundException('Reserva no encontrada');
     return reservation;
   }
@@ -73,8 +81,11 @@ export class PublicController {
   }
 
   @Post(':slug/reserve')
-  createReservation(@Param('slug') slug: string, @Body() body: any) {
-    return this.publicService.createReservation(slug, body);
+  createReservation(
+    @Param('slug') slug: string,
+    @Body() dto: CreatePublicReservationDto,
+  ) {
+    return this.publicService.createReservation(slug, dto);
   }
 
   @Post(':slug/order')

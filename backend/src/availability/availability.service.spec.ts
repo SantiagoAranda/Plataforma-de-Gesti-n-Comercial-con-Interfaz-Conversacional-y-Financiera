@@ -6,7 +6,6 @@ import {
   it,
   jest,
 } from '@jest/globals';
-import { BadRequestException } from '@nestjs/common';
 import {
   AvailabilityService,
   computeSlots,
@@ -176,8 +175,8 @@ describe('computeSlots (pure)', () => {
     ).toEqual(['11:00', '12:00']);
   });
 
-  it('missing or non-positive duration falls back to 60 min (never loops forever)', () => {
-    for (const durationMinutes of [null, undefined, 0, -5]) {
+  it('missing, zero, negative or fractional duration offers no slots (never loops)', () => {
+    for (const durationMinutes of [null, undefined, 0, -5, 2.5]) {
       expect(
         computeSlots({
           windows: [{ startMinute: H(9), endMinute: H(11) }],
@@ -185,7 +184,7 @@ describe('computeSlots (pure)', () => {
           reservations: [],
           durationMinutes,
         }),
-      ).toEqual(['09:00', '10:00']);
+      ).toEqual([]);
     }
   });
 });
@@ -335,35 +334,6 @@ describe('AvailabilityService', () => {
     expect(
       await svc.getAvailableDates({ ...query, year: 2026, monthIndex: 10 }),
     ).toEqual(['2026-11-16', '2026-11-30']);
-  });
-
-  it('assertNoOverlap rejects overlaps and honours the exclusion', async () => {
-    const svc = service({
-      durationMinutes: 60,
-      windows: [],
-      reservations: [
-        { id: 'r-1', date: FUTURE, startMinute: 600, endMinute: 660 },
-      ],
-    });
-    const base = {
-      businessId: BUSINESS_ID,
-      itemId: ITEM_ID,
-      date: day(FUTURE),
-    };
-    await expect(
-      svc.assertNoOverlap({ ...base, startMinute: 630, endMinute: 690 }),
-    ).rejects.toThrow(new BadRequestException('Time slot already booked'));
-    await expect(
-      svc.assertNoOverlap({ ...base, startMinute: 660, endMinute: 720 }),
-    ).resolves.toBeUndefined();
-    await expect(
-      svc.assertNoOverlap({
-        ...base,
-        startMinute: 630,
-        endMinute: 690,
-        excludeReservationId: 'r-1',
-      }),
-    ).resolves.toBeUndefined();
   });
 });
 
@@ -539,7 +509,6 @@ describe('Política de intervalo entre inicios', () => {
       expect(resolveSlotInterval(duration, null)).toBe(60);
       expect(resolveSlotInterval(duration, undefined)).toBe(60);
     }
-    expect(resolveSlotInterval(null, null)).toBe(60);
   });
 
   it.each([0, -15, 7, 45, 90, Number.NaN, 2.5])(
@@ -657,7 +626,7 @@ describe('Política de intervalo entre inicios', () => {
     spy.mockRestore();
   });
 
-  it('divergencia conocida: Ventas usa el largo de la reserva si el servicio no tiene duración', async () => {
+  it('sin duración válida ninguna ruta ofrece horarios (tampoco Ventas al editar)', async () => {
     const routes = createRoutes(
       createFakePrisma({
         durationMinutes: null,
@@ -665,16 +634,9 @@ describe('Política de intervalo entre inicios', () => {
         windows: [win(H(9), H(12))],
       }),
     );
-    expect(await routes.reservations.slots(FUTURE)).toEqual([
-      '09:00',
-      '10:00',
-      '11:00',
-    ]);
-    expect(await routes.publicStore.slots(FUTURE)).toEqual([
-      '09:00',
-      '10:00',
-      '11:00',
-    ]);
-    expect(await routes.sales.slots(FUTURE)).toEqual(['09:00', '10:00']);
+    // reserveSlot rejects these services, so no route may offer slots for them.
+    expect(await routes.reservations.slots(FUTURE)).toEqual([]);
+    expect(await routes.publicStore.slots(FUTURE)).toEqual([]);
+    expect(await routes.sales.slots(FUTURE)).toEqual([]);
   });
 });

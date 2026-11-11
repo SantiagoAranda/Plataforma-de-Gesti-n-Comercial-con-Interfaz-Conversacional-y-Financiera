@@ -5,6 +5,7 @@ import ReservationSlotPicker from "./ReservationSlotPicker";
 import PhoneSelector from "@/src/components/shared/PhoneSelector";
 import { CheckCircle, Copy, Check } from "lucide-react";
 import { formatLocalDateKey } from "@/src/lib/datetime";
+import { reservationLink } from "@/src/lib/sales/reservationCancelUi";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -157,7 +158,7 @@ export default function ReservationDrawer({
       const reservation = await res.json();
       const id = reservation?.id ?? "";
       const link = id
-        ? `${window.location.origin}/reserva/${id}`
+        ? reservationLink(window.location.origin, id, reservation?.publicToken)
         : `${window.location.origin}/reserva`;
 
       setAppointmentLink(link);

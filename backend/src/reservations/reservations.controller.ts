@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { ReservationsService } from './reservations.service';
+import { SalesService } from '../sales/sales.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { RescheduleReservationDto } from './dto/reschedule-reservation.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -18,7 +19,10 @@ import { BusinessActiveGuard } from '../common/guards/business-active.guard';
 
 @Controller('reservations')
 export class ReservationsController {
-  constructor(private reservationsService: ReservationsService) {}
+  constructor(
+    private reservationsService: ReservationsService,
+    private salesService: SalesService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
@@ -69,7 +73,14 @@ export class ReservationsController {
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, BusinessActiveGuard)
   confirm(@Req() req: any, @Param('id') id: string) {
-    return this.reservationsService.confirm(req.user.businessId, id);
+    // Same commercial confirmation as Ventas (inventory + accounting); a status-only
+    // confirm would leave CONFIRMED reservations without their effects.
+    return this.salesService.confirmOrder(
+      req.user.businessId,
+      id,
+      undefined,
+      'RESERVATION',
+    );
   }
 
   @Patch(':id/reschedule')

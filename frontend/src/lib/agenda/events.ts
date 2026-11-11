@@ -34,14 +34,13 @@ export function saleToAgendaEvent(sale: Sale): AgendaEvent | null {
     sale.items?.[0]?.name?.trim() ||
     (sale.type === "SERVICIO" ? "Servicio" : "Evento");
 
+  // CERRADO only means the sale/reservation was confirmed; the service may not have happened yet.
   const status: AgendaEventStatus =
     sale.status === "CANCELADO"
       ? "CANCELADO"
-      : sale.status === "CERRADO"
-        ? "COMPLETADO"
-        : sale.status === "PENDIENTE DE CIERRE"
-          ? "CONFIRMADO"
-          : "PENDIENTE";
+      : sale.status === "CERRADO" || sale.status === "PENDIENTE DE CIERRE"
+        ? "CONFIRMADO"
+        : "PENDIENTE";
 
   return {
     id: sale.id,

@@ -1,7 +1,21 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { describe, expect, it, jest } from '@jest/globals';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from '@jest/globals';
 import { SalesService } from './sales.service';
+import {
+  BUSINESS_ID,
+  createFakePrisma,
+  Fixture,
+  freezeBogotaTime,
+  ITEM_ID,
+} from '../availability/availability.test-utils';
 
 describe('SalesService.findAll', () => {
   const businessId = 'business-1';
@@ -26,8 +40,14 @@ describe('SalesService.findAll', () => {
     const service = createService([], []);
     const prisma = (service as any).prisma;
 
+    // The listing query (the other order.findMany only resolves mirror ids).
+    const listQuery = () =>
+      prisma.order.findMany.mock.calls
+        .filter(([args]: any) => 'archived' in args.where)
+        .at(-1)[0];
+
     await service.findAll(businessId);
-    expect(prisma.order.findMany).toHaveBeenLastCalledWith(
+    expect(listQuery()).toEqual(
       expect.objectContaining({ where: expect.objectContaining({ status: { not: 'CANCELLED' } }) }),
     );
     expect(prisma.reservation.findMany).toHaveBeenLastCalledWith(
@@ -35,7 +55,7 @@ describe('SalesService.findAll', () => {
     );
 
     await service.findAll(businessId, { includeCancelled: true });
-    expect(prisma.order.findMany).toHaveBeenLastCalledWith(
+    expect(listQuery()).toEqual(
       expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) }),
     );
     expect(prisma.reservation.findMany).toHaveBeenLastCalledWith(
@@ -364,9 +384,9 @@ describe('SalesService.remove', () => {
 });
 
 describe('SalesService manual service mirror reservations', () => {
-  const businessId = 'business-1';
+  const businessId = BUSINESS_ID;
   const serviceItem = {
-    id: 'service-1',
+    id: ITEM_ID,
     businessId,
     name: 'Servicio Test 1M',
     status: 'ACTIVE',
@@ -378,28 +398,26 @@ describe('SalesService manual service mirror reservations', () => {
     optionGroups: [],
   };
 
-  function createService() {
-    const tx = {
-      order: {
-        create: (jest.fn() as any).mockResolvedValue({
-          id: 'order-1',
-          businessId,
-          origin: 'MANUAL',
-          customerName: 'Cliente',
-          customerWhatsapp: '573001112233',
-          paymentMethod: 'CASH',
-          total: new Prisma.Decimal(1000000),
-          items: [
-            {
-              itemId: serviceItem.id,
-              quantity: 1,
-            },
-          ],
-        }),
-      },
-      reservation: {
-        create: (jest.fn() as any).mockResolvedValue({ id: 'order-1' }),
-      },
+  function createService(fixture: Partial<Fixture> = {}) {
+    // 2026-06-30 is a Tuesday; the service opens 09:00-13:00.
+    const tx = createFakePrisma({
+      durationMinutes: 60,
+      windows: [
+        { itemId: ITEM_ID, weekday: 'TUE', startMinute: 540, endMinute: 780 },
+      ],
+      ...fixture,
+    });
+    tx.order = {
+      create: (jest.fn() as any).mockResolvedValue({
+        id: 'order-1',
+        businessId,
+        origin: 'MANUAL',
+        customerName: 'Cliente',
+        customerWhatsapp: '573001112233',
+        paymentMethod: 'CASH',
+        total: new Prisma.Decimal(1000000),
+        items: [{ itemId: serviceItem.id, quantity: 1 }],
+      }),
     };
     const prisma = {
       item: {
@@ -437,32 +455,34 @@ describe('SalesService manual service mirror reservations', () => {
     };
   }
 
-  it('creates an Order and mirror Reservation for a scheduled manual service sale', async () => {
-    const { service, prisma, tx } = createService();
-
-    const result = await service.create(businessId, {
+  const createSale = (service: SalesService, scheduledAt: string) =>
+    service.create(businessId, {
       origin: 'MANUAL',
       type: 'SERVICIO',
       status: 'PENDIENTE',
       customerName: 'Cliente',
       customerWhatsapp: '573001112233',
       paymentMethod: 'CASH',
-      scheduledAt: '2026-06-30T10:00:00',
-      durationMinutes: 60,
+      scheduledAt,
+      // Ignored for scheduling: the stored service duration is the source of truth.
+      durationMinutes: 999,
       items: [{ itemId: serviceItem.id, quantity: 1 }],
     });
 
+  beforeEach(() => freezeBogotaTime('2026-06-20T08:00:00'));
+  afterEach(() => jest.useRealTimers());
+
+  it('creates an Order and mirror Reservation (id = orderId) validated inside the transaction', async () => {
+    const { service, prisma, tx } = createService();
+
+    const result = await createSale(service, '2026-06-30T10:00:00');
+
     expect(result).toEqual(expect.objectContaining({ id: 'order-1' }));
-    expect(prisma.reservation.findFirst).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        businessId,
-        itemId: serviceItem.id,
-        status: { not: 'CANCELLED' },
-      }),
-    });
-    expect(
-      prisma.reservation.findFirst.mock.invocationCallOrder[0],
-    ).toBeLessThan(tx.order.create.mock.invocationCallOrder[0]);
+    // No validation outside the write transaction any more.
+    expect(prisma.reservation.findFirst).not.toHaveBeenCalled();
+    const lockAt = tx.$executeRaw.mock.invocationCallOrder[0];
+    expect(lockAt).toBeGreaterThan(tx.order.create.mock.invocationCallOrder[0]);
+    expect(lockAt).toBeLessThan(tx.reservation.create.mock.invocationCallOrder[0]);
     expect(tx.reservation.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         id: 'order-1',
@@ -476,6 +496,28 @@ describe('SalesService manual service mirror reservations', () => {
         origin: 'MANUAL',
       }),
     });
+  });
+
+  it('rejects an occupied slot with 409 before writing the mirror (order rolls back)', async () => {
+    const { service, tx } = createService({
+      reservations: [{ date: '2026-06-30', startMinute: 600, endMinute: 660 }],
+    });
+
+    await expect(createSale(service, '2026-06-30T10:00:00')).rejects.toThrow(
+      new ConflictException('El horario seleccionado ya no está disponible.'),
+    );
+    expect(tx.reservation.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a slot outside the configured schedule', async () => {
+    const { service, tx } = createService();
+
+    await expect(createSale(service, '2026-06-30T14:00:00')).rejects.toThrow(
+      new BadRequestException(
+        'El turno supera el horario de atención configurado.',
+      ),
+    );
+    expect(tx.reservation.create).not.toHaveBeenCalled();
   });
 });
 
@@ -823,6 +865,9 @@ describe('SalesService.reverseConfirmedOrder', () => {
           .mockResolvedValueOnce({ id: 'credit-1' }),
         update: mockFn().mockResolvedValue({}),
       },
+      reservation: {
+        updateMany: mockFn().mockResolvedValue({ count: 1 }),
+      },
     };
 
     const prisma = {
@@ -851,6 +896,11 @@ describe('SalesService.reverseConfirmedOrder', () => {
     expect(tx.order.findFirst).toHaveBeenCalledWith({
       where: { id: orderId, businessId },
       include: { items: { include: { item: true } } },
+    });
+    // The mirror (Reservation.id = Order.id) is cancelled in the same transaction.
+    expect(tx.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: orderId, businessId, status: { not: 'CANCELLED' } },
+      data: { status: 'CANCELLED' },
     });
     expect(tx.inventoryMovement.findMany).toHaveBeenCalledWith({
       where: { businessId, orderId, type: 'SALE_RETURN' },
@@ -1258,6 +1308,8 @@ describe('SalesService.confirmReservation accounting order', () => {
     };
 
     const tx = {
+      $queryRaw: (jest.fn() as any).mockResolvedValue([]),
+      order: { findFirst: (jest.fn() as any).mockResolvedValue(null) },
       reservation: {
         findFirst: (jest.fn() as any).mockResolvedValue(reservation),
         update: (jest.fn() as any).mockResolvedValue(updatedReservation),
@@ -1293,6 +1345,12 @@ describe('SalesService.confirmReservation accounting order', () => {
 
     await service.confirmOrder(businessId, reservationId, 'RESERVATION');
 
+    // Row lock (serializes against cancel) and mirror check happen before any effect.
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.order.findFirst).toHaveBeenCalledWith({
+      where: { id: reservationId, businessId },
+      select: { id: true },
+    });
     expect(executionOrder).toEqual(['inventory', 'accounting']);
     expect(accountingService.postOrderMovements).toHaveBeenCalledWith(
       tx,

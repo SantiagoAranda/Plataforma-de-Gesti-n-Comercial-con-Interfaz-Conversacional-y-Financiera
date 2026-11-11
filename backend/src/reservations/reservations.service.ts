@@ -1,6 +1,16 @@
-import { Injectable, BadRequestException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { AvailabilityService } from '../availability/availability.service';
+import {
+  AvailabilityService,
+  formatDateKey,
+  RESERVATION_ERRORS,
+  toBookingConflict,
+} from '../availability/availability.service';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 
 @Injectable()
@@ -58,9 +68,7 @@ export class ReservationsService {
         select: { id: true },
       });
       if (service) {
-        throw new BadRequestException(
-          'El servicio no estÃ¡ disponible para nuevas reservas.',
-        );
+        throw new BadRequestException(RESERVATION_ERRORS.serviceInactive);
       }
       throw new BadRequestException('Invalid service');
     }
@@ -69,33 +77,31 @@ export class ReservationsService {
   }
 
   async create(businessId: string, dto: CreateReservationDto) {
-    if (dto.startMinute >= dto.endMinute) {
-      throw new BadRequestException('Invalid time range');
-    }
+    return this.prisma
+      .$transaction(async (tx) => {
+        const slot = await this.availability.reserveSlot(tx, {
+          businessId,
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+        });
 
-    await this.getBusinessService(businessId, dto.itemId);
-
-    const dateOnly = this.parseDateOnly(dto.date);
-
-    await this.availability.assertNoOverlap({
-      businessId,
-      itemId: dto.itemId,
-      date: dateOnly,
-      startMinute: dto.startMinute,
-      endMinute: dto.endMinute,
-    });
-
-    return this.prisma.reservation.create({
-      data: {
-        businessId,
-        itemId: dto.itemId,
-        customerName: dto.customerName?.trim() || null,
-        customerWhatsapp: dto.customerWhatsapp?.trim() || null,
-        date: dateOnly,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-      },
-    });
+        return tx.reservation.create({
+          data: {
+            businessId,
+            itemId: slot.itemId,
+            customerName: dto.customerName?.trim() || null,
+            customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+          },
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
   }
 
   async findByDate(businessId: string, date: string) {
@@ -136,49 +142,26 @@ export class ReservationsService {
     });
   }
 
+  // PENDING only: a CONFIRMED reservation carries inventory and accounting, whose
+  // reversal is SalesService.cancel(RESERVATION). Confirmation lives in SalesService too.
   async cancel(businessId: string, id: string) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
-
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-      },
-    });
-  }
-
-  async confirm(businessId: string, id: string) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
-
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
-
-    if (reservation.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING reservations can be confirmed',
-      );
-    }
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        status: 'CONFIRMED',
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const { reservation, alreadyCancelled } =
+        await this.availability.lockReservationForCancellation(
+          tx,
+          businessId,
+          id,
+        );
+      if (alreadyCancelled) return reservation;
+      if (reservation.status !== 'PENDING') {
+        throw new ConflictException(
+          RESERVATION_ERRORS.confirmedCancelRequiresSales,
+        );
+      }
+      return tx.reservation.update({
+        where: { id },
+        data: { status: 'CANCELLED' },
+      });
     });
   }
 
@@ -187,45 +170,56 @@ export class ReservationsService {
     id: string,
     dto: { date: string; startMinute: number; endMinute: number },
   ) {
-    if (dto.startMinute >= dto.endMinute) {
-      throw new BadRequestException('Invalid time range');
-    }
+    return this.prisma
+      .$transaction(async (tx) => {
+        const reservation = await this.availability.lockReservationRow(
+          tx,
+          businessId,
+          id,
+        );
 
-    const reservation = await this.prisma.reservation.findFirst({
-      where: {
-        id,
-        businessId,
-      },
-    });
+        if (!reservation) {
+          throw new BadRequestException(RESERVATION_ERRORS.notFound);
+        }
 
-    if (!reservation) {
-      throw new BadRequestException('Reservation not found');
-    }
+        if (reservation.status !== 'PENDING') {
+          throw new BadRequestException(
+            'Solo se pueden reprogramar reservas pendientes.',
+          );
+        }
 
-    if (reservation.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING reservations can be rescheduled',
-      );
-    }
+        // Same slot: nothing moves, so historical values are kept untouched.
+        if (
+          dto.date === formatDateKey(reservation.date) &&
+          dto.startMinute === reservation.startMinute
+        ) {
+          return reservation;
+        }
 
-    const dateOnly = this.parseDateOnly(dto.date);
+        const slot = await this.availability.reserveSlot(tx, {
+          businessId,
+          itemId: reservation.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          requestedEndMinute: dto.endMinute,
+          excludeReservationId: id,
+          allowInactiveService: true,
+          extraLockKeys: [
+            { businessId, itemId: reservation.itemId, date: reservation.date },
+          ],
+        });
 
-    await this.availability.assertNoOverlap({
-      businessId,
-      itemId: reservation.itemId,
-      date: dateOnly,
-      startMinute: dto.startMinute,
-      endMinute: dto.endMinute,
-      excludeReservationId: id,
-    });
-
-    return this.prisma.reservation.update({
-      where: { id },
-      data: {
-        date: dateOnly,
-        startMinute: dto.startMinute,
-        endMinute: dto.endMinute,
-      },
-    });
+        return tx.reservation.update({
+          where: { id },
+          data: {
+            date: slot.date,
+            startMinute: slot.startMinute,
+            endMinute: slot.endMinute,
+          },
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
   }
 }

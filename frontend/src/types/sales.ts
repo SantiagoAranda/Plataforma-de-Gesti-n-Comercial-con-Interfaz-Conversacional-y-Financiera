@@ -132,6 +132,8 @@ export interface Sale {
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
   requiresLegacyInvoiceWarning?: boolean;
+  // Standalone reservations: authorizes cancelling from the customer link.
+  reservationPublicToken?: string | null;
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;
   fiscalContext?: SaleFiscalContext | null;

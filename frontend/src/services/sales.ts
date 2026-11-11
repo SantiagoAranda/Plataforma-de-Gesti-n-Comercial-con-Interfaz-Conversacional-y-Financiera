@@ -26,6 +26,7 @@ export interface ApiOrder {
   origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
+  reservationPublicToken?: string | null;
   type: "PRODUCTO" | "SERVICIO";
   hasInvalidOptionSnapshot?: boolean;
   fiscalSummary?: SaleFiscalSummary | null;

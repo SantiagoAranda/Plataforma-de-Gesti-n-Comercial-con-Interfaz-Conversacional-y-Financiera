@@ -9,6 +9,8 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import {
   AvailabilityService,
   formatDateKey,
+  RESERVATION_ERRORS,
+  toBookingConflict,
 } from '../availability/availability.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
@@ -29,6 +31,9 @@ import { requiresLegacyInvoiceWarning } from '../fiscal-documents/invoice-close-
 import { lockOwnedOrder } from './order-lock';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
+const SCHEDULED_SERVICE_ALONE =
+  'Un servicio con turno debe registrarse solo, en una venta separada. Quitá los demás ítems o registralos en otra venta.';
+
 export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
 
 export interface UnifiedSaleDto {
@@ -44,6 +49,8 @@ export interface UnifiedSaleDto {
   requiresLegacyInvoiceWarning?: boolean;
   createdAt: Date;
   scheduledAt?: string;
+  // Standalone reservations only: lets the business share a link that can cancel.
+  reservationPublicToken?: string | null;
   origin: 'MANUAL' | 'PUBLIC_STORE';
   type: 'PRODUCTO' | 'SERVICIO';
   hasInvalidOptionSnapshot?: boolean;
@@ -116,7 +123,8 @@ export class SalesService {
   ) {}
 
   async generateElectronicInvoice(businessId: string, orderId: string) {
-    if (!this.fiscalDocuments) throw new BadRequestException('Servicio fiscal no disponible');
+    if (!this.fiscalDocuments)
+      throw new BadRequestException('Servicio fiscal no disponible');
     return this.fiscalDocuments.generateInvoiceForSale(businessId, orderId);
   }
 
@@ -459,10 +467,20 @@ export class SalesService {
     }
   }
 
-  private async assertEditableInTransaction(tx: Prisma.TransactionClient, businessId: string, orderId: string) {
+  private async assertEditableInTransaction(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    orderId: string,
+  ) {
     await lockOwnedOrder(tx, businessId, orderId);
-    const current = await tx.order.findFirst({ where: { id: orderId, businessId },
-      select: { status: true, accountingPostedAt: true, inventoryPostedAt: true } });
+    const current = await tx.order.findFirst({
+      where: { id: orderId, businessId },
+      select: {
+        status: true,
+        accountingPostedAt: true,
+        inventoryPostedAt: true,
+      },
+    });
     if (!current) throw new NotFoundException('Order not found');
     this.assertOrderEditable(current);
   }
@@ -690,28 +708,6 @@ export class SalesService {
     return { dateOnly, startMinute };
   }
 
-  private async assertReservationSlotAvailable(
-    businessId: string,
-    itemId: string,
-    date: Date,
-    startMinute: number,
-    endMinute: number,
-    excludeReservationId?: string,
-  ) {
-    if (startMinute < 0 || endMinute > 24 * 60 || startMinute >= endMinute) {
-      throw new BadRequestException('Invalid time range');
-    }
-
-    await this.availability.assertNoOverlap({
-      businessId,
-      itemId,
-      date,
-      startMinute,
-      endMinute,
-      excludeReservationId,
-    });
-  }
-
   async create(businessId: string, dto: CreateOrderDto) {
     const createStartedAt = Date.now();
     const logTiming = (stage: string, startedAt: number, orderId?: string) => {
@@ -756,19 +752,12 @@ export class SalesService {
       Boolean(dto.scheduledAt)
         ? itemsFromDb[0]
         : null;
-
-    if (manualScheduledServiceItem && dto.scheduledAt) {
-      await this.validateMirrorReservationAvailability({
-        businessId,
-        itemId: manualScheduledServiceItem.id,
-        scheduledAt: dto.scheduledAt,
-        durationMinutes:
-          manualScheduledServiceItem.durationMinutes ??
-          dto.durationMinutes ??
-          60,
-      });
+    // Only a lone service line gets a mirror reservation; never drop a requested slot silently.
+    if (isManual && dto.scheduledAt && !manualScheduledServiceItem) {
+      throw new BadRequestException(SCHEDULED_SERVICE_ALONE);
     }
 
+    // Scheduled-service validation runs inside the write transaction (reserveSlot).
     // BIFURCACIÓN SEGÚN TIPO
     if (!isManual && itemType === 'SERVICE') {
       if (dto.items.length !== 1) {
@@ -788,32 +777,34 @@ export class SalesService {
       }
 
       const { dateOnly, startMinute } = this.parseScheduledAt(dto.scheduledAt);
-      const duration = item.durationMinutes ?? dto.durationMinutes ?? 60;
-      const endMinute = startMinute + duration;
 
-      await this.assertReservationSlotAvailable(
-        businessId,
-        item.id,
-        dateOnly,
-        startMinute,
-        endMinute,
-      );
-
-      const reservation = await this.prisma.reservation.create({
-        data: {
-          businessId,
-          itemId: item.id,
-          customerName: dto.customerName?.trim() || null,
-          customerWhatsapp: dto.customerWhatsapp?.trim() || null,
-          date: dateOnly,
-          startMinute,
-          endMinute,
-          status: 'PENDING',
-          origin: dto.origin ?? 'MANUAL',
-          paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
-        },
-        include: { item: true },
-      });
+      const reservation = await this.prisma
+        .$transaction(async (tx) => {
+          const slot = await this.availability.reserveSlot(tx, {
+            businessId,
+            itemId: item.id,
+            date: dateOnly,
+            startMinute,
+          });
+          return tx.reservation.create({
+            data: {
+              businessId,
+              itemId: slot.itemId,
+              customerName: dto.customerName?.trim() || null,
+              customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+              date: slot.date,
+              startMinute: slot.startMinute,
+              endMinute: slot.endMinute,
+              status: 'PENDING',
+              origin: dto.origin ?? 'MANUAL',
+              paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+            },
+            include: { item: true },
+          });
+        })
+        .catch((error) => {
+          throw toBookingConflict(error);
+        });
 
       // Mapear a un formato que el frontend entienda como una "venta" recién creada
       return {
@@ -855,76 +846,87 @@ export class SalesService {
     );
     logTiming('resolve-lines', resolveLinesStartedAt);
     const transactionStartedAt = Date.now();
-    const order = await this.prisma.$transaction(
-      async (tx) => {
-        logTiming('tx.start', Date.now());
-        const orderWriteStartedAt = Date.now();
-        const createdOrder = await tx.order.create({
-          data: {
-            businessId,
-            customerName:
-              dto.origin === 'PUBLIC_STORE'
-                ? dto.customerName?.trim() || null
-                : dto.customerName?.trim() || 'Consumidor final',
-            customerWhatsapp: dto.customerWhatsapp?.trim() || null,
-            note: dto.note,
-            paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
-            origin: dto.origin ?? 'MANUAL',
-            total,
-            status: 'SENT', // Estado inicial para órdenes manuales
-            items: {
-              create: orderItemsData,
+    const order = await this.prisma
+      .$transaction(
+        async (tx) => {
+          logTiming('tx.start', Date.now());
+          const orderWriteStartedAt = Date.now();
+          const createdOrder = await tx.order.create({
+            data: {
+              businessId,
+              customerName:
+                dto.origin === 'PUBLIC_STORE'
+                  ? dto.customerName?.trim() || null
+                  : dto.customerName?.trim() || 'Consumidor final',
+              customerWhatsapp: dto.customerWhatsapp?.trim() || null,
+              note: dto.note,
+              paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
+              origin: dto.origin ?? 'MANUAL',
+              total,
+              status: 'SENT', // Estado inicial para órdenes manuales
+              items: {
+                create: orderItemsData,
+              },
             },
-          },
-          include: {
-            items: {
-              include: this.orderItemRecipeInclude,
+            include: {
+              items: {
+                include: this.orderItemRecipeInclude,
+              },
             },
-          },
-        });
-        logTiming('tx.order', orderWriteStartedAt, createdOrder.id);
-
-        if (manualScheduledServiceItem && dto.scheduledAt) {
-          const mirror = this.buildMirrorReservationData({
-            businessId,
-            orderId: createdOrder.id,
-            itemId: manualScheduledServiceItem.id,
-            customerName: createdOrder.customerName,
-            customerWhatsapp: createdOrder.customerWhatsapp,
-            paymentMethod: createdOrder.paymentMethod as any,
-            scheduledAt: dto.scheduledAt,
-            durationMinutes:
-              manualScheduledServiceItem.durationMinutes ??
-              dto.durationMinutes ??
-              60,
           });
+          logTiming('tx.order', orderWriteStartedAt, createdOrder.id);
 
-          await tx.reservation.create({
-            data: mirror.create,
-          });
-        }
+          if (manualScheduledServiceItem && dto.scheduledAt) {
+            const { dateOnly, startMinute } = this.parseScheduledAt(
+              dto.scheduledAt,
+            );
+            // Locks the agenda; a conflict rolls back the whole order (no orphan orders).
+            const slot = await this.availability.reserveSlot(tx, {
+              businessId,
+              itemId: manualScheduledServiceItem.id,
+              date: dateOnly,
+              startMinute,
+            });
+            const mirror = this.buildMirrorReservationData({
+              businessId,
+              orderId: createdOrder.id,
+              itemId: manualScheduledServiceItem.id,
+              customerName: createdOrder.customerName,
+              customerWhatsapp: createdOrder.customerWhatsapp,
+              paymentMethod: createdOrder.paymentMethod as any,
+              scheduledAt: dto.scheduledAt,
+              durationMinutes: slot.durationMinutes,
+            });
 
-        if (dto.buyerFiscalContext) {
-          await this.persistOrderFiscalPreview(
-            tx,
-            businessId,
-            createdOrder.id,
-            dto.buyerFiscalContext,
-            createdOrder.items,
-            (stage, durationMs) =>
-              console.log('[SalesService] sales.create.timing', {
-                stage: `sales.create.tx.${stage}`,
-                durationMs,
-                elapsedMs: Date.now() - createStartedAt,
-                orderId: createdOrder.id,
-              }),
-          );
-        }
+            await tx.reservation.create({
+              data: mirror.create,
+            });
+          }
 
-        return createdOrder;
-      },
-      { maxWait: 5000, timeout: 15000 },
-    );
+          if (dto.buyerFiscalContext) {
+            await this.persistOrderFiscalPreview(
+              tx,
+              businessId,
+              createdOrder.id,
+              dto.buyerFiscalContext,
+              createdOrder.items,
+              (stage, durationMs) =>
+                console.log('[SalesService] sales.create.timing', {
+                  stage: `sales.create.tx.${stage}`,
+                  durationMs,
+                  elapsedMs: Date.now() - createStartedAt,
+                  orderId: createdOrder.id,
+                }),
+            );
+          }
+
+          return createdOrder;
+        },
+        { maxWait: 5000, timeout: 15000 },
+      )
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
     logTiming('tx.commit', transactionStartedAt, order.id);
     logTiming('total', createStartedAt, order.id);
 
@@ -976,8 +978,18 @@ export class SalesService {
       }),
     ]);
     const conversions = await this.prisma.unitConversion.findMany();
-    const orderIds = new Set(orders.map((order) => order.id));
+    // A mirror shares its order's id. Match against every order, not only the listed ones:
+    // an archived/cancelled order's mirror otherwise leaked as a standalone RESERVATION.
+    const orderIds = new Set(
+      (
+        await this.prisma.order.findMany({
+          where: { businessId, id: { in: reservations.map((r) => r.id) } },
+          select: { id: true },
+        })
+      ).map((order) => order.id),
+    );
     const mirrorReservations = await this.findMirrorReservationsForOrders(
+      businessId,
       orders
         .filter(
           (order) =>
@@ -1030,7 +1042,9 @@ export class SalesService {
         status: this.mapOrderStatus(o.status),
         inventoryPostedAt: o.inventoryPostedAt,
         accountingPostedAt: o.accountingPostedAt,
-        requiresLegacyInvoiceWarning: requiresLegacyInvoiceWarning(o.taxSnapshot?.rawCalculation),
+        requiresLegacyInvoiceWarning: requiresLegacyInvoiceWarning(
+          o.taxSnapshot?.rawCalculation,
+        ),
         createdAt: o.createdAt,
         origin: o.origin as 'MANUAL' | 'PUBLIC_STORE',
         scheduledAt: mirrorReservation
@@ -1101,6 +1115,7 @@ export class SalesService {
           createdAt: r.createdAt,
           origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
           scheduledAt: this.toScheduledAt(r.date, r.startMinute),
+          reservationPublicToken: r.publicToken ?? null,
           type: 'SERVICIO',
           items: [
             {
@@ -1167,10 +1182,14 @@ export class SalesService {
     return orderId;
   }
 
-  private async findMirrorReservationsForOrders(orderIds: string[]) {
+  private async findMirrorReservationsForOrders(
+    businessId: string,
+    orderIds: string[],
+  ) {
     if (orderIds.length === 0) return new Map<string, any>();
     const reservations = await this.prisma.reservation.findMany({
       where: {
+        businessId,
         id: { in: orderIds },
         status: { not: 'CANCELLED' },
       },
@@ -1229,24 +1248,6 @@ export class SalesService {
     };
   }
 
-  private async validateMirrorReservationAvailability(input: {
-    businessId: string;
-    itemId: string;
-    scheduledAt: string;
-    durationMinutes: number;
-    excludeReservationId?: string;
-  }) {
-    const { dateOnly, startMinute } = this.parseScheduledAt(input.scheduledAt);
-    await this.assertReservationSlotAvailable(
-      input.businessId,
-      input.itemId,
-      dateOnly,
-      startMinute,
-      startMinute + input.durationMinutes,
-      input.excludeReservationId,
-    );
-  }
-
   private mapOrderStatus(status: string): UnifiedStatus {
     if (status === 'COMPLETED') return 'CERRADO';
     if (status === 'CANCELLED') return 'CANCELADO';
@@ -1289,11 +1290,13 @@ export class SalesService {
         },
       });
 
-      if (!order) throw new NotFoundException('Order not found');
+      if (!order) throw new NotFoundException('Venta no encontrada');
       if (!order.items.length)
-        throw new BadRequestException('Order must contain at least one item');
+        throw new BadRequestException('La venta debe tener al menos un ítem');
       if (order.status === 'CANCELLED')
-        throw new BadRequestException('Cancelled orders cannot be confirmed');
+        throw new BadRequestException(
+          'Una venta cancelada no se puede confirmar',
+        );
       if (order.accountingPostedAt && order.inventoryPostedAt)
         return {
           order,
@@ -1304,7 +1307,9 @@ export class SalesService {
 
       const confirmableStatuses: OrderStatus[] = ['DRAFT', 'SENT', 'COMPLETED'];
       if (!confirmableStatuses.includes(order.status))
-        throw new BadRequestException('Order cannot be confirmed');
+        throw new BadRequestException(
+          'La venta no se puede confirmar en su estado actual',
+        );
 
       const postingDate = new Date();
       if (!order.accountingPostedAt) {
@@ -1326,7 +1331,7 @@ export class SalesService {
             where: { id, businessId },
             include: { items: { include: { item: true, options: true } } },
           });
-          if (!currentOrder) throw new NotFoundException('Order not found');
+          if (!currentOrder) throw new NotFoundException('Venta no encontrada');
           return {
             order: currentOrder,
             accountingCreated: false,
@@ -1349,13 +1354,29 @@ export class SalesService {
         !Array.isArray(order.taxSnapshot.buyerFiscal)
           ? (order.taxSnapshot.buyerFiscal as Record<string, any>)
           : null;
-      const taxProfile = !buyerFiscalContext && !persistedBuyerFiscal && tx.businessTaxProfile?.findUnique
-        ? await tx.businessTaxProfile.findUnique({ where: { businessId }, select: { taxSettingsEnabled: true } })
-        : null;
-      const fiscalContextToUse = buyerFiscalContext ?? persistedBuyerFiscal ??
-        (taxProfile?.taxSettingsEnabled ? { buyerType: 'NATURAL', buyerName: null,
-          buyerDocumentType: 'CC', buyerDocumentNumber: null, buyerEmail: null,
-          fiscalMunicipalityCode: null, saleConcept: 'GOODS' } : null);
+      const taxProfile =
+        !buyerFiscalContext &&
+        !persistedBuyerFiscal &&
+        tx.businessTaxProfile?.findUnique
+          ? await tx.businessTaxProfile.findUnique({
+              where: { businessId },
+              select: { taxSettingsEnabled: true },
+            })
+          : null;
+      const fiscalContextToUse =
+        buyerFiscalContext ??
+        persistedBuyerFiscal ??
+        (taxProfile?.taxSettingsEnabled
+          ? {
+              buyerType: 'NATURAL',
+              buyerName: null,
+              buyerDocumentType: 'CC',
+              buyerDocumentNumber: null,
+              buyerEmail: null,
+              fiscalMunicipalityCode: null,
+              saleConcept: 'GOODS',
+            }
+          : null);
 
       if (fiscalContextToUse) {
         const cartItems = order.items.map((it: any) => ({
@@ -1426,7 +1447,11 @@ export class SalesService {
       });
       // Persist a closure version even for ordinary sales. It does not issue a document.
       if (this.fiscalDocuments?.captureInvoiceCloseSnapshot) {
-        await this.fiscalDocuments.captureInvoiceCloseSnapshot(tx, businessId, id);
+        await this.fiscalDocuments.captureInvoiceCloseSnapshot(
+          tx,
+          businessId,
+          id,
+        );
       }
 
       return {
@@ -1449,16 +1474,20 @@ export class SalesService {
   ) {
     return this.prisma.$transaction(
       async (tx) => {
+        // Row lock serializes confirm against cancel: never CANCELLED -> CONFIRMED.
+        await this.availability.lockReservationRow(tx, businessId, id);
         const res = await tx.reservation.findFirst({
           where: { id, businessId },
           include: { item: true },
         });
 
-        if (!res) throw new NotFoundException('Reservation not found');
+        if (!res) throw new NotFoundException('Reserva no encontrada');
         if (res.status === 'CANCELLED')
-          throw new BadRequestException(
-            'Cancelled reservations cannot be confirmed',
+          throw new ConflictException(
+            RESERVATION_ERRORS.cancelledCannotConfirm,
           );
+        // A mirror is confirmed through its order; confirming it here would post twice.
+        await this.availability.assertNotSalesMirror(tx, businessId, id);
 
         const existingMovements = await tx.accountingMovement.findMany({
           where: {
@@ -1587,19 +1616,19 @@ export class SalesService {
     }
 
     const itemId = reservation?.itemId ?? legacyServiceLine.itemId;
+    // Same duration reserveSlot validates with: the service's current one.
     const duration =
       reservation?.item.durationMinutes ??
-      legacyServiceLine?.durationMinutesSnapshot ??
-      Math.max(
-        1,
-        (reservation?.endMinute ?? 60) - (reservation?.startMinute ?? 0),
-      );
+      legacyServiceLine?.item.durationMinutes ??
+      null;
     const slotQuery = {
       businessId,
       itemId,
       durationMinutes: duration,
       excludeReservationId: reservation?.id ?? reservationId,
-      allowPastDateKey: reservation ? formatDateKey(reservation.date) : undefined,
+      allowPastDateKey: reservation
+        ? formatDateKey(reservation.date)
+        : undefined,
     };
 
     if (query.date) {
@@ -1897,6 +1926,7 @@ export class SalesService {
 
     const conversions = await this.prisma.unitConversion.findMany();
     const mirrorReservations = await this.findMirrorReservationsForOrders(
+      businessId,
       order.origin === 'MANUAL' &&
         order.items.length === 1 &&
         order.items[0]?.itemTypeSnapshot === 'SERVICE'
@@ -1957,43 +1987,74 @@ export class SalesService {
     sourceType: UnifiedSourceType = 'ORDER',
   ) {
     if (sourceType === 'RESERVATION') {
-      return this.prisma.$transaction(async (tx) => {
-        const res = await tx.reservation.findFirst({
-          where: { id, businessId },
-          include: { item: true },
-        });
-        if (!res) throw new NotFoundException('Reservation not found');
+      return this.prisma.$transaction(
+        async (tx) => {
+          const { reservation, alreadyCancelled } =
+            await this.availability.lockReservationForCancellation(
+              tx,
+              businessId,
+              id,
+            );
+          // Idempotent: a second cancel must not create new returns or reversals.
+          if (alreadyCancelled) {
+            return tx.reservation.findUniqueOrThrow({
+              where: { id },
+              include: { item: true },
+            });
+          }
 
-        if (res.inventoryPostedAt) {
-          await this.inventoryService.reverseInventoryConsumptionForReservation(
-            tx,
-            businessId,
-            res.id,
-          );
-        }
+          if (reservation.status === 'CONFIRMED') {
+            // Same rule as reverseConfirmedOrder: undo the sale with counter-movements,
+            // never deleting originals. Standalone reservations cannot hold Factus documents.
+            const reversedAt = new Date();
+            const reason = 'Cancelación de reserva confirmada';
+            if (reservation.inventoryPostedAt) {
+              await this.inventoryService.reverseInventoryConsumptionForReservation(
+                tx,
+                businessId,
+                id,
+              );
+            }
+            await this.accountingService.reverseOrderMovements(tx, businessId, {
+              orderId: id,
+              accountingPostedAt: null,
+              reversedAt,
+              reason,
+            });
+          }
 
-        return tx.reservation.update({
-          where: { id },
-          data: { status: 'CANCELLED' },
-          include: { item: true },
-        });
-      });
+          return tx.reservation.update({
+            where: { id },
+            data: { status: 'CANCELLED' },
+            include: { item: true },
+          });
+        },
+        { timeout: 20000 },
+      );
     }
 
     const order = await this.prisma.order.findFirst({
       where: { id, businessId },
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Venta no encontrada');
 
     if (order.status === 'COMPLETED') {
-      throw new BadRequestException('Completed orders cannot be cancelled');
+      throw new BadRequestException(
+        'Una venta confirmada no se puede cancelar. Usá «Revertir venta».',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
       await lockOwnedOrder(tx, businessId, id);
-      const current = await tx.order.findFirst({ where: { id, businessId }, select: { status: true } });
-      if (!current || current.status === 'COMPLETED') throw new BadRequestException('Completed orders cannot be cancelled');
+      const current = await tx.order.findFirst({
+        where: { id, businessId },
+        select: { status: true },
+      });
+      if (!current || current.status === 'COMPLETED')
+        throw new BadRequestException(
+          'Una venta confirmada no se puede cancelar. Usá «Revertir venta».',
+        );
       const cancelledOrder = await tx.order.update({
         where: { id },
         data: { status: 'CANCELLED' },
@@ -2034,7 +2095,7 @@ export class SalesService {
           },
         });
 
-        if (!order) throw new NotFoundException('Order not found');
+        if (!order) throw new NotFoundException('Venta no encontrada');
 
         const protectedFiscalDocument =
           this.fiscalDocuments && (tx as any).fiscalDocument
@@ -2043,7 +2104,15 @@ export class SalesService {
                   businessId,
                   orderId: id,
                   type: 'INVOICE',
-                  status: { in: ['PENDING', 'PROCESSING', 'RETRYABLE_FAILURE', 'SUBMITTED_PENDING_DIAN', 'LOCAL_PERSISTENCE_FAILURE'] },
+                  status: {
+                    in: [
+                      'PENDING',
+                      'PROCESSING',
+                      'RETRYABLE_FAILURE',
+                      'SUBMITTED_PENDING_DIAN',
+                      'LOCAL_PERSISTENCE_FAILURE',
+                    ],
+                  },
                 },
                 select: { id: true, status: true },
               })
@@ -2093,19 +2162,25 @@ export class SalesService {
         });
 
         if (existingReturn.length) {
-          throw new ConflictException('Order inventory already reversed');
+          throw new ConflictException(
+            'El inventario de esta venta ya fue revertido',
+          );
         }
 
         if (order.status === 'CANCELLED') {
-          throw new BadRequestException('Cancelled orders cannot be reversed');
+          throw new BadRequestException(
+            'Una venta cancelada no se puede revertir',
+          );
         }
         if (order.status !== 'COMPLETED') {
           throw new BadRequestException(
-            'Only completed orders can be reversed',
+            'Solo se pueden revertir ventas confirmadas',
           );
         }
         if (!order.inventoryPostedAt) {
-          throw new BadRequestException('Order inventory was not posted');
+          throw new BadRequestException(
+            'La venta no tiene inventario registrado para revertir',
+          );
         }
 
         const reversalMovements =
@@ -2132,6 +2207,16 @@ export class SalesService {
           include: {
             items: { include: { item: true } },
           },
+        });
+
+        // Frees the mirror slot (same id); no-op for orders without a mirror.
+        await tx.reservation.updateMany({
+          where: {
+            id: this.getMirrorReservationIdForManualServiceOrder(id),
+            businessId,
+            status: { not: 'CANCELLED' },
+          },
+          data: { status: 'CANCELLED' },
         });
 
         if (validatedInvoice) {
@@ -2161,15 +2246,28 @@ export class SalesService {
   ) {
     await this.assertSimpleRegimeAvailableForNewSale(businessId);
     if (sourceType === 'RESERVATION') {
-      const res = await this.prisma.reservation.findFirst({
-        where: { id, businessId },
-      });
-      if (!res) throw new NotFoundException('Reservation not found');
+      return this.prisma.$transaction(async (tx) => {
+        const res = await this.availability.lockReservationRow(
+          tx,
+          businessId,
+          id,
+        );
+        if (!res) throw new NotFoundException('Reserva no encontrada');
+        if (res.status === 'CONFIRMED') {
+          throw new BadRequestException(
+            'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
+          );
+        }
+        if (res.status === 'PENDING') {
+          // Archiving alone kept the slot occupied; deleting a reservation also frees it.
+          await this.availability.assertNotSalesMirror(tx, businessId, id);
+        }
 
-      return this.prisma.reservation.update({
-        where: { id },
-        data: { archived: true },
-        include: { item: true },
+        return tx.reservation.update({
+          where: { id },
+          data: { archived: true, status: 'CANCELLED' },
+          include: { item: true },
+        });
       });
     }
 
@@ -2177,7 +2275,7 @@ export class SalesService {
       where: { id, businessId },
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException('Venta no encontrada');
 
     if (order.status === 'COMPLETED' && order.inventoryPostedAt) {
       throw new BadRequestException(
@@ -2187,11 +2285,15 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       await lockOwnedOrder(tx, businessId, id);
-      const current = await tx.order.findFirst({ where: { id, businessId },
-        select: { status: true, inventoryPostedAt: true } });
-      if (!current) throw new NotFoundException('Order not found');
+      const current = await tx.order.findFirst({
+        where: { id, businessId },
+        select: { status: true, inventoryPostedAt: true },
+      });
+      if (!current) throw new NotFoundException('Venta no encontrada');
       if (current.status === 'COMPLETED' && current.inventoryPostedAt) {
-        throw new BadRequestException('No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.');
+        throw new BadRequestException(
+          'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
+        );
       }
       const archivedOrder = await tx.order.update({
         where: { id },
@@ -2247,119 +2349,171 @@ export class SalesService {
     const finalServiceItemId = finalSingleManualService
       ? finalLines[0].itemId
       : null;
-    const finalServiceDuration = finalSingleManualService
-      ? Number(finalLines[0].durationMinutesSnapshot ?? 60)
-      : 60;
-
-    if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
-      await this.validateMirrorReservationAvailability({
-        businessId,
-        itemId: finalServiceItemId,
-        scheduledAt: dto.scheduledAt,
-        durationMinutes: finalServiceDuration,
-        excludeReservationId:
-          this.getMirrorReservationIdForManualServiceOrder(orderId),
-      });
+    if (
+      order.origin === 'MANUAL' &&
+      dto.scheduledAt &&
+      !finalSingleManualService
+    ) {
+      throw new BadRequestException(SCHEDULED_SERVICE_ALONE);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.assertEditableInTransaction(tx, businessId, orderId);
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          customerName:
-            order.origin === 'PUBLIC_STORE'
-              ? dto.customerName !== undefined
-                ? dto.customerName?.trim() || null
-                : undefined
-              : dto.customerName !== undefined
-                ? dto.customerName?.trim() || 'Consumidor final'
-                : undefined,
-          customerWhatsapp: dto.customerWhatsapp,
-          note: dto.note,
-          paymentMethod: dto.paymentMethod as any,
-        } as any,
-      });
-
-      // 2. Handle Items Sync if provided
-      if (resolvedItems) {
-        await tx.orderItem.deleteMany({
-          where: { orderId },
+    return this.prisma
+      .$transaction(async (tx) => {
+        await this.assertEditableInTransaction(tx, businessId, orderId);
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            customerName:
+              order.origin === 'PUBLIC_STORE'
+                ? dto.customerName !== undefined
+                  ? dto.customerName?.trim() || null
+                  : undefined
+                : dto.customerName !== undefined
+                  ? dto.customerName?.trim() || 'Consumidor final'
+                  : undefined,
+            customerWhatsapp: dto.customerWhatsapp,
+            note: dto.note,
+            paymentMethod: dto.paymentMethod as any,
+          } as any,
         });
 
-        for (const line of resolvedItems.lines) {
-          await tx.orderItem.create({
-            data: {
-              ...line,
-              orderId,
-            },
+        // 2. Handle Items Sync if provided
+        if (resolvedItems) {
+          await tx.orderItem.deleteMany({
+            where: { orderId },
+          });
+
+          for (const line of resolvedItems.lines) {
+            await tx.orderItem.create({
+              data: {
+                ...line,
+                orderId,
+              },
+            });
+          }
+
+          await tx.order.update({
+            where: { id: orderId },
+            data: { total: resolvedItems.total },
           });
         }
 
-        await tx.order.update({
-          where: { id: orderId },
-          data: { total: resolvedItems.total },
-        });
-      }
-
-      if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
-        const mirror = this.buildMirrorReservationData({
-          businessId,
-          orderId,
-          itemId: finalServiceItemId,
-          customerName:
-            dto.customerName !== undefined
-              ? dto.customerName
-              : order.customerName,
-          customerWhatsapp:
-            dto.customerWhatsapp !== undefined
-              ? dto.customerWhatsapp
-              : order.customerWhatsapp,
-          paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
-          scheduledAt: dto.scheduledAt,
-          durationMinutes: finalServiceDuration,
-        });
-
-        await tx.reservation.upsert({
-          where: { id: mirror.reservationId },
-          create: mirror.create,
-          update: mirror.update,
-        });
-      } else if (
-        order.origin === 'MANUAL' &&
-        resolvedItems &&
-        !finalSingleManualService
-      ) {
-        await tx.reservation.updateMany({
-          where: {
-            id: this.getMirrorReservationIdForManualServiceOrder(orderId),
+        if (finalSingleManualService && finalServiceItemId && dto.scheduledAt) {
+          const mirrorId =
+            this.getMirrorReservationIdForManualServiceOrder(orderId);
+          // Row lock first, then agenda locks (same order as every reservation edit).
+          const existingMirror = await this.availability.lockReservationRow(
+            tx,
             businessId,
+            mirrorId,
+          );
+          const { dateOnly, startMinute } = this.parseScheduledAt(
+            dto.scheduledAt,
+          );
+          const mirrorData = {
+            businessId,
+            orderId,
+            itemId: finalServiceItemId,
+            customerName:
+              dto.customerName !== undefined
+                ? dto.customerName
+                : order.customerName,
+            customerWhatsapp:
+              dto.customerWhatsapp !== undefined
+                ? dto.customerWhatsapp
+                : order.customerWhatsapp,
+            paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
+            scheduledAt: dto.scheduledAt,
+          };
+          const slotUnchanged =
+            existingMirror !== null &&
+            existingMirror.status !== 'CANCELLED' &&
+            existingMirror.itemId === finalServiceItemId &&
+            existingMirror.date.getTime() === dateOnly.getTime() &&
+            existingMirror.startMinute === startMinute;
+
+          if (slotUnchanged) {
+            // Administrative edit: keep the historical slot, duration and status.
+            const mirror = this.buildMirrorReservationData({
+              ...mirrorData,
+              durationMinutes:
+                existingMirror.endMinute - existingMirror.startMinute,
+            });
+            await tx.reservation.update({
+              where: { id: mirrorId },
+              data: {
+                customerName: mirror.update.customerName,
+                customerWhatsapp: mirror.update.customerWhatsapp,
+                paymentMethod: mirror.update.paymentMethod,
+              },
+            });
+          } else {
+            // New or moved slot (also a cancelled mirror revived by this explicit edit).
+            const slot = await this.availability.reserveSlot(tx, {
+              businessId,
+              itemId: finalServiceItemId,
+              date: dateOnly,
+              startMinute,
+              excludeReservationId: mirrorId,
+              allowInactiveService: existingMirror !== null,
+              extraLockKeys: existingMirror
+                ? [
+                    {
+                      businessId,
+                      itemId: existingMirror.itemId,
+                      date: existingMirror.date,
+                    },
+                  ]
+                : [],
+            });
+            const mirror = this.buildMirrorReservationData({
+              ...mirrorData,
+              durationMinutes: slot.durationMinutes,
+            });
+            await tx.reservation.upsert({
+              where: { id: mirror.reservationId },
+              create: mirror.create,
+              update: mirror.update,
+            });
+          }
+        } else if (
+          order.origin === 'MANUAL' &&
+          resolvedItems &&
+          !finalSingleManualService
+        ) {
+          await tx.reservation.updateMany({
+            where: {
+              id: this.getMirrorReservationIdForManualServiceOrder(orderId),
+              businessId,
+            },
+            data: { status: 'CANCELLED' },
+          });
+        }
+
+        if (dto.buyerFiscalContext) {
+          await this.persistOrderFiscalPreview(
+            tx,
+            businessId,
+            orderId,
+            dto.buyerFiscalContext,
+          );
+        }
+
+        return tx.order.findUniqueOrThrow({
+          where: { id: orderId },
+          include: {
+            items: {
+              include: this.orderItemRecipeInclude,
+            },
+            fiscalContext: true,
+            taxLines: true,
+            taxSnapshot: true,
           },
-          data: { status: 'CANCELLED' },
         });
-      }
-
-      if (dto.buyerFiscalContext) {
-        await this.persistOrderFiscalPreview(
-          tx,
-          businessId,
-          orderId,
-          dto.buyerFiscalContext,
-        );
-      }
-
-      return tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: {
-          items: {
-            include: this.orderItemRecipeInclude,
-          },
-          fiscalContext: true,
-          taxLines: true,
-          taxSnapshot: true,
-        },
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
       });
-    });
   }
 
   private async updateReservation(
@@ -2367,59 +2521,71 @@ export class SalesService {
     id: string,
     dto: UpdateOrderDto,
   ) {
-    const reservation = await this.prisma.reservation.findFirst({
-      where: { id, businessId },
-      include: { item: true },
-    });
-
-    if (!reservation) {
-      throw new NotFoundException('Reservation not found');
-    }
-
-    if (reservation.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Reservation not editable in current status',
-      );
-    }
-
-    const data: any = {
-      customerName: dto.customerName,
-      customerWhatsapp: dto.customerWhatsapp,
-      note: dto.note,
-      paymentMethod: dto.paymentMethod,
-    };
-
-    if (dto.scheduledAt) {
-      const { dateOnly, startMinute } = this.parseScheduledAt(dto.scheduledAt);
-      const duration =
-        reservation.item.durationMinutes ??
-        Math.max(1, reservation.endMinute - reservation.startMinute);
-      const endMinute = startMinute + duration;
-      const availableSlots = await this.availability.getSlots({
-        businessId,
-        itemId: reservation.itemId,
-        durationMinutes: duration,
-        excludeReservationId: reservation.id,
-        allowPastDateKey: formatDateKey(reservation.date),
-        date: dateOnly,
-      });
-
-      if (!availableSlots.includes(this.formatTime(startMinute))) {
-        throw new BadRequestException(
-          'Selected time is outside service availability',
+    const updated = await this.prisma
+      .$transaction(async (tx) => {
+        const reservation = await this.availability.lockReservationRow(
+          tx,
+          businessId,
+          id,
         );
-      }
 
-      data.date = dateOnly;
-      data.startMinute = startMinute;
-      data.endMinute = endMinute;
-    }
+        if (!reservation) {
+          throw new NotFoundException('Reservation not found');
+        }
 
-    const updated = await this.prisma.reservation.update({
-      where: { id },
-      data,
-      include: { item: true },
-    });
+        if (reservation.status !== 'PENDING') {
+          throw new BadRequestException(
+            'Reservation not editable in current status',
+          );
+        }
+
+        const data: any = {
+          customerName: dto.customerName,
+          customerWhatsapp: dto.customerWhatsapp,
+          note: dto.note,
+          paymentMethod: dto.paymentMethod,
+        };
+
+        if (dto.scheduledAt) {
+          const { dateOnly, startMinute } = this.parseScheduledAt(
+            dto.scheduledAt,
+          );
+          const slotUnchanged =
+            reservation.date.getTime() === dateOnly.getTime() &&
+            reservation.startMinute === startMinute;
+
+          // Unchanged slot = administrative edit: historical values are kept as stored.
+          if (!slotUnchanged) {
+            const slot = await this.availability.reserveSlot(tx, {
+              businessId,
+              itemId: reservation.itemId,
+              date: dateOnly,
+              startMinute,
+              excludeReservationId: reservation.id,
+              allowInactiveService: true,
+              extraLockKeys: [
+                {
+                  businessId,
+                  itemId: reservation.itemId,
+                  date: reservation.date,
+                },
+              ],
+            });
+            data.date = slot.date;
+            data.startMinute = slot.startMinute;
+            data.endMinute = slot.endMinute;
+          }
+        }
+
+        return tx.reservation.update({
+          where: { id },
+          data,
+          include: { item: true },
+        });
+      })
+      .catch((error) => {
+        throw toBookingConflict(error);
+      });
 
     return {
       id: updated.id,
