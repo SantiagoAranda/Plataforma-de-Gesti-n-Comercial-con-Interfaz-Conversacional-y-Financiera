@@ -88,13 +88,15 @@ async function compressImageFile(file: File, maxWidth = 1600, maxHeight = 1600, 
             resolve(file);
             return;
           }
-          const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
-            type: "image/jpeg",
+          // blob.type: Safari no exporta WebP y devuelve PNG.
+          const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, `.${blob.type.split("/")[1]}`), {
+            type: blob.type,
             lastModified: Date.now(),
           });
           resolve(compressedFile);
         },
-        "image/jpeg",
+        // JPEG no tiene transparencia: los PNG/WebP transparentes quedaban con fondo negro.
+        file.type === "image/jpeg" ? "image/jpeg" : "image/webp",
         quality
       );
     };
