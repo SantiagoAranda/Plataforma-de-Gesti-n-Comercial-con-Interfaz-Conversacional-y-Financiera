@@ -3202,6 +3202,24 @@ describe('InventoryService', () => {
     });
   });
 
+  it('lists only ACTIVE simple products in the inventory summary (deleted products are hidden)', async () => {
+    const { service, prisma } = createService();
+    prisma.item.findMany.mockResolvedValueOnce([]);
+
+    await expect(service.getSimpleItemsSummary(businessId)).resolves.toEqual(
+      [],
+    );
+    expect(prisma.item.findMany).toHaveBeenCalledWith({
+      where: {
+        businessId,
+        type: 'PRODUCT',
+        inventoryMode: 'SIMPLE',
+        status: 'ACTIVE',
+      },
+      orderBy: { name: 'asc' },
+    });
+  });
+
   it('uses only stock and average cost, preserving zeroes and six-decimal precision', async () => {
     const { service, prisma } = createService();
     prisma.ingredient.findMany.mockResolvedValueOnce([
