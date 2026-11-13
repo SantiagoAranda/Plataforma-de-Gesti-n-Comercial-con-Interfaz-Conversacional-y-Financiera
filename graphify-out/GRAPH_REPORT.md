@@ -1,9 +1,9 @@
 # Graph Report - Plataforma-de-Gesti-n-Comercial-con-Interfaz-Conversacional-y-Financiera  (2026-11-13)
 
 ## Corpus Check
-- 676 files · ~444,611 words
+- 676 files · ~444,636 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 36 file(s) not represented in the graph (top: .log 16, .csv 10, (none) 4)
+- Unclassified: 20 file(s) not represented in the graph (top: .csv 10, (none) 4, .example 1)
 
 ## Summary
 - 4823 nodes · 12503 edges · 226 communities (143 shown, 83 thin omitted)
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e005caa7`
+- Built from commit: `54ea8869`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

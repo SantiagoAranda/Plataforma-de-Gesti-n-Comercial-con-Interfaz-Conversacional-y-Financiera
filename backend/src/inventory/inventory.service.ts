@@ -561,7 +561,13 @@ export class InventoryService {
 
   async getSimpleItemsSummary(businessId: string) {
     const items = await this.prisma.item.findMany({
-      where: { businessId, type: 'PRODUCT', inventoryMode: 'SIMPLE' },
+      // Borrar un producto lo deja INACTIVE (soft delete): no debe seguir en Inventario.
+      where: {
+        businessId,
+        type: 'PRODUCT',
+        inventoryMode: 'SIMPLE',
+        status: 'ACTIVE',
+      },
       orderBy: { name: 'asc' },
     });
 
