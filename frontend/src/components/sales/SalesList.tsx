@@ -14,6 +14,12 @@ type Props = {
   onSaleElement?: (saleId: string, element: HTMLDivElement | null) => void;
   onSelect?: (sale: Sale) => void;
   onDetails?: (sale: Sale) => void;
+  onComplete?: (sale: Sale) => void;
+  onReschedule?: (sale: Sale) => void;
+  onCancelReservation?: (sale: Sale) => void;
+  onNoShow?: (sale: Sale) => void;
+  onEdit?: (sale: Sale) => void;
+  onDelete?: (sale: Sale) => void;
   onReceipt?: (sale: Sale) => void;
   onSendWhatsApp?: (sale: Sale) => void;
   taxSettingsEnabled?: boolean;
@@ -62,7 +68,7 @@ export default function SalesList({
   targetId,
   onSaleElement,
   onSelect,
-  onDetails,
+  onDetails, onComplete, onReschedule, onCancelReservation, onNoShow, onEdit, onDelete,
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
@@ -104,6 +110,12 @@ export default function SalesList({
             >
               <SaleCard
                 sale={s}
+                onComplete={onComplete}
+                onReschedule={onReschedule}
+                onCancelReservation={onCancelReservation}
+                onNoShow={onNoShow}
+                onEdit={onEdit}
+                onDelete={onDelete}
                 selected={selectedId === s.id}
                 onSelect={onSelect ? () => onSelect(s) : undefined}
                 onDetails={onDetails}

@@ -310,6 +310,9 @@ export default function SalesChatComposer({
   }, [items, businessItems]);
   const agendaItemType = agendaItem?.itemType;
   const requiresAgenda = requiresServiceAgenda(agendaItem, businessItems);
+  // A scheduled service is a booking (born CONFIRMED, sold on «Finalizar atención»): no sale status to pick.
+  // Historical policy 1 sales keep their selector when edited.
+  const isBookingForm = mode === "create" ? requiresAgenda : sale?.commercialPolicyVersion === 2;
 
   useEffect(() => {
     if (agendaItemType === "PRODUCT") {
@@ -598,7 +601,7 @@ export default function SalesChatComposer({
           customerName: cleanedName || undefined,
           customerWhatsapp: cleanedWhatsapp,
           type: requiresAgenda ? "SERVICIO" : "PRODUCTO",
-          status,
+          status: isBookingForm ? "PENDIENTE" : status,
           paymentMethod: paymentMethod || "CASH",
           ...agendaPayload,
           buyerFiscalContext,
@@ -997,7 +1000,16 @@ export default function SalesChatComposer({
 
         {/* 4. Estado de venta & Medio de pago */}
         <div className="grid w-full min-w-0 grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-          <div>
+          {/* Bookings show their attention state instead; same cell, so the grid keeps its shape. */}
+          {isBookingForm ? (
+            <div
+              className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-2 text-xs font-semibold text-slate-700"
+              title="El turno queda confirmado. La venta se registra con «Finalizar atención»."
+            >
+              <span className="text-slate-500">Atención:</span>
+              <span className="rounded-md bg-white px-2 py-1 text-slate-950 shadow-sm">Confirmado</span>
+            </div>
+          ) : <div>
             <span className="sr-only">
               Estado de venta
             </span>
@@ -1025,7 +1037,7 @@ export default function SalesChatComposer({
                 Confirmado
               </button>
             </div>
-          </div>
+          </div>}
 
           <div>
             <span className="sr-only">

@@ -3,7 +3,8 @@ export type SaleStatus =
   | "CERRADO"
   | "PENDIENTE"
   | "CANCELADO"
-  | "CONFIRMADO";
+  | "CONFIRMADO"
+  | "FINALIZADA";
 
 export type SaleType = "PRODUCTO" | "SERVICIO";
 export type SourceType = "ORDER" | "RESERVATION";
@@ -119,7 +120,19 @@ export interface SaleItem {
   }>;
 }
 
-export interface Sale {
+export type SaleAction = "confirm" | "complete" | "cancel" | "edit" | "reschedule" | "delete" | "reverse" | "noShow";
+export interface ReservationLifecycleView {
+  allowedActions?: SaleAction[];
+  blockedActions?: Partial<Record<SaleAction, { code: string; message: string }>>;
+  reservationStatus?: "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED" | null;
+  confirmedAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
+  // Bloque 2.2: 2 = booking confirmed on creation, sale realized only on completion.
+  commercialPolicyVersion?: number | null;
+}
+export interface Sale extends ReservationLifecycleView {
   id: string;
   sourceType: SourceType; // ORIGEN EXPLÍCITO
 
@@ -132,6 +145,8 @@ export interface Sale {
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
   requiresLegacyInvoiceWarning?: boolean;
+  // Backend decides: true only for a realized sale (income posted). Totals rely on it.
+  countsAsSale?: boolean;
   // Standalone reservations: authorizes cancelling from the customer link.
   reservationPublicToken?: string | null;
   hasInvalidOptionSnapshot?: boolean;

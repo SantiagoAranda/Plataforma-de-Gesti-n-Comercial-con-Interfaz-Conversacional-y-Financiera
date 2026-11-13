@@ -44,3 +44,11 @@ test("agenda shows a confirmed (CERRADO) appointment as CONFIRMADO, never COMPLE
   ], new Date(2026, 10, 11));
   assert.deepEqual(events.map((e) => [e.id, e.status]), [["a", "CONFIRMADO"], ["b", "PENDIENTE"]]);
 });
+
+ test("completed appointments stay in history and commercial closure is separate", () => {
+   const { saleToAgendaEvent, getAgendaEventsForDate } = require("../agenda/events.ts");
+   const base = { id: "done", status: "CERRADO", reservationStatus: "COMPLETED", scheduledAt: "2026-11-11T09:00:00", items: [] };
+   assert.equal(saleToAgendaEvent(base).status, "COMPLETADO");
+   assert.equal(saleToAgendaEvent({...base, reservationStatus: "CONFIRMED"}).status, "CONFIRMADO");
+   assert.equal(getAgendaEventsForDate([base], new Date(2026,10,11)).length, 1);
+ });

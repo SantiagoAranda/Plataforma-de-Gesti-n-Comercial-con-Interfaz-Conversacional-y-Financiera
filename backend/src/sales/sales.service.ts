@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -29,12 +30,13 @@ import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-r
 import { FiscalDocumentService } from '../fiscal-documents/fiscal-document.service';
 import { requiresLegacyInvoiceWarning } from '../fiscal-documents/invoice-close-snapshot';
 import { lockOwnedOrder } from './order-lock';
+import { reservationArchiveBlock, actionPolicy, orderTransitionBlock, reverseBlock, completionBlock, reservationTransitionBlock, lifecycleConflict, requireServiceProvided, cancellationReason, throwLifecycleError, emptyEvidence, CommercialEvidence, isPolicyV2, isFreeV2, newReservationPolicy, v2CompletedEvidenceBlock, noShowBlock, hasCommercialEffects, NO_SHOW_REASON, MIRROR_DETACHED_REASON } from '../reservations/reservation-lifecycle';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 const SCHEDULED_SERVICE_ALONE =
   'Un servicio con turno debe registrarse solo, en una venta separada. Quitá los demás ítems o registralos en otra venta.';
 
-export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO';
+export type UnifiedStatus = 'PENDIENTE' | 'CERRADO' | 'CANCELADO' | 'CONFIRMADO' | 'FINALIZADA';
 
 export interface UnifiedSaleDto {
   id: string;
@@ -44,6 +46,19 @@ export interface UnifiedSaleDto {
   paymentMethod?: 'CASH' | 'BANK_TRANSFER';
   total: number;
   status: UnifiedStatus;
+  allowedActions?: import('../reservations/reservation-lifecycle').SaleAction[];
+  blockedActions?: Partial<Record<import('../reservations/reservation-lifecycle').SaleAction, import('../reservations/reservation-lifecycle').ActionBlock>>;
+  reservationStatus?: string | null;
+  confirmedAt?: Date | null;
+  completedAt?: Date | null;
+  cancelledAt?: Date | null;
+  cancelReason?: string | null;
+  // Bloque 2.2: fixed lifecycle contract of the service booking (1 historical, 2 new).
+  commercialPolicyVersion?: number | null;
+  // Policy 2 standalone: price agreed at booking.
+  priceSnapshot?: number | null;
+  // True only for a realized sale (income posted). A policy 2 CONFIRMED booking is not a sale.
+  countsAsSale?: boolean;
   inventoryPostedAt?: Date | null;
   accountingPostedAt?: Date | null;
   requiresLegacyInvoiceWarning?: boolean;
@@ -121,6 +136,153 @@ export class SalesService {
     @Optional()
     private availability: AvailabilityService = new AvailabilityService(prisma),
   ) {}
+
+  private async loadCommercialEvidence(db: any, businessId: string, ids: string[]) {
+    const result = new Map<string, CommercialEvidence>(ids.map(id => [id, emptyEvidence()]));
+    if (!ids.length) return result;
+    const [accounting, inventory, fiscal] = await Promise.all([
+      db.accountingMovement.findMany({ where: { businessId, originType: 'ORDER', originId: { in: ids } } }),
+      db.inventoryMovement.findMany({ where: { businessId, OR: [{ orderId: { in: ids } }, { reservationId: { in: ids } }], type: { in: ['SALE', 'SALE_RETURN'] } } }),
+      db.fiscalDocument?.findMany ? db.fiscalDocument.findMany({ where: { businessId, orderId: { in: ids } } }) : [],
+    ]);
+    for (const row of accounting) result.get(row.originId)?.accounting.push(row);
+    for (const row of inventory) result.get(row.orderId ?? row.reservationId)?.inventory.push(row);
+    for (const row of fiscal) result.get(row.orderId)?.fiscal.push(row);
+    return result;
+  }
+
+  private lifecycleView(sourceType: UnifiedSourceType, record: any, reservation: any, evidence: CommercialEvidence) {
+    return {
+      ...actionPolicy(sourceType, record, reservation, evidence),
+      reservationStatus: reservation?.status ?? null,
+      confirmedAt: reservation?.confirmedAt ?? null,
+      completedAt: reservation?.completedAt ?? null,
+      cancelledAt: reservation?.cancelledAt ?? null,
+      cancelReason: reservation?.cancelReason ?? null,
+      commercialPolicyVersion: reservation?.commercialPolicyVersion ?? null,
+    };
+  }
+
+  /** Realized sale = income posted. Historical (policy 1) bookings keep their old meaning. */
+  private countsAsSale(sourceType: UnifiedSourceType, record: any) {
+    if (sourceType === 'ORDER') return record.status === 'COMPLETED';
+    if (!isPolicyV2(record)) return record.status === 'CONFIRMED' || record.status === 'COMPLETED';
+    return record.status === 'COMPLETED' && !isFreeV2(record);
+  }
+
+  private static readonly ACCEPTED_PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER'];
+
+  /** Maps the inventory stock rejection to a stable code; every other error passes through. */
+  private stockConflict(error: any): never {
+    const message = String(error?.response?.message ?? error?.message ?? '');
+    if (error instanceof BadRequestException && message.startsWith('Insufficient stock'))
+      lifecycleConflict({ code: 'INSUFFICIENT_STOCK_FOR_COMPLETION', message: `No hay stock suficiente para finalizar la atención (${message.replace('Insufficient stock for ingredient ', '')}). Regularizá el inventario e intentá nuevamente.` });
+    throw error;
+  }
+
+  /**
+   * Policy 2 completion: the business declares the service was provided and the commercial
+   * effects (recipe in force, agreed price, stored payment method) are posted exactly once,
+   * atomically. Lock order: Order -> Reservation -> existing commercial locks.
+   */
+  private async completeReservationV2(businessId: string, id: string) {
+    // Same gate the legacy confirmation applied before any commercial closing.
+    await this.assertSimpleRegimeAvailableForNewSale(businessId);
+    return this.runSerializableTransaction(async tx => {
+      await lockOwnedOrder(tx, businessId, id);
+      const business = await tx.business.findFirst({ where: { id: businessId, status: 'ACTIVE' }, select: { id: true } });
+      if (!business) throw new ForbiddenException({ code: 'BUSINESS_INACTIVE', message: 'El negocio no está activo.' });
+      const order = await tx.order.findFirst({ where: { id, businessId } });
+      const reservation = await this.availability.lockReservationRow(tx, businessId, id);
+      if (!reservation) throw new NotFoundException({ code: 'RESERVATION_NOT_FOUND', message: 'Reserva no encontrada' });
+      if (!isPolicyV2(reservation)) lifecycleConflict({ code: 'RESERVATION_CONCURRENT_MODIFICATION', message: 'El registro cambió durante la operación. Actualizá e intentá nuevamente.' });
+      if (reservation.archived || order?.archived) lifecycleConflict({ code: 'RECORD_ARCHIVED', message: 'El registro está eliminado.' });
+      const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+      if (reservation.status === 'COMPLETED') {
+        const reason = v2CompletedEvidenceBlock(reservation, order, evidence);
+        if (reason) lifecycleConflict(reason);
+        return { ...reservation, ...this.lifecycleView(order ? 'ORDER' : 'RESERVATION', order ?? reservation, reservation, evidence), alreadyCompleted: true };
+      }
+      const reason = completionBlock(reservation, order, evidence);
+      if (reason) lifecycleConflict(reason);
+      const paymentMethod = order?.paymentMethod ?? reservation.paymentMethod;
+      // No silent fallback: the stored method selects Caja or Banco.
+      if (!SalesService.ACCEPTED_PAYMENT_METHODS.includes(paymentMethod))
+        lifecycleConflict({ code: 'INVALID_PAYMENT_METHOD', message: 'El método de pago registrado no es válido. Corregilo desde «Editar» antes de finalizar.' });
+      const completedAt = new Date();
+      if (order) {
+        if (!new Prisma.Decimal(order.total).gt(0))
+          lifecycleConflict({ code: 'ZERO_AMOUNT_NOT_POSTABLE', message: 'Una venta vinculada de importe cero no se puede registrar comercialmente.' });
+        await this.postOrderCommercialEffects(tx, businessId, id, undefined, 'ORDER').catch(e => this.stockConflict(e));
+      } else {
+        if (reservation.priceSnapshot == null)
+          lifecycleConflict({ code: 'COMMERCIAL_EVIDENCE_INCONSISTENT', message: 'La reserva no tiene el precio pactado registrado.' });
+        const withItem = await tx.reservation.findUniqueOrThrow({ where: { id }, include: { item: true } });
+        const virtualOrder = { ...this.mapReservationToVirtualOrder(withItem), accountingPostedAt: completedAt };
+        await this.inventoryService.applyInventoryConsumptionForReservation(tx, businessId, withItem, completedAt).catch(e => this.stockConflict(e));
+        if (isFreeV2(reservation)) {
+          // Free service: real consumption cost only; never fabricated income.
+          await this.accountingService.postInventoryCostMovements(tx, businessId, virtualOrder, completedAt);
+        } else {
+          await this.accountingService.postOrderMovements(tx, businessId, virtualOrder as any);
+        }
+      }
+      const updated = await tx.reservation.update({
+        where: { id },
+        data: { status: 'COMPLETED', completedAt, ...(order ? {} : { accountingPostedAt: completedAt }) },
+      });
+      const finalOrder = order ? await tx.order.findFirst({ where: { id, businessId } }) : null;
+      const finalEvidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+      return { ...updated, ...this.lifecycleView(order ? 'ORDER' : 'RESERVATION', finalOrder ?? updated, updated, finalEvidence), alreadyCompleted: false };
+    }).catch(throwLifecycleError);
+  }
+
+  /** Policy 2: the customer did not attend. Cancels (Order too, for mirrors) without effects. */
+  async markNoShow(businessId: string, id: string, confirmed: unknown) {
+    if (confirmed !== true)
+      throw new BadRequestException({ code: 'NO_SHOW_CONFIRMATION_REQUIRED', message: 'Confirmá explícitamente que el cliente no asistió.' });
+    return this.prisma.$transaction(async tx => {
+      await lockOwnedOrder(tx, businessId, id);
+      const order = await tx.order.findFirst({ where: { id, businessId } });
+      const reservation = await this.availability.lockReservationRow(tx, businessId, id);
+      if (!reservation) throw new NotFoundException({ code: 'RESERVATION_NOT_FOUND', message: 'Reserva no encontrada' });
+      if (reservation.status === 'CANCELLED' && reservation.cancelReason === NO_SHOW_REASON) return reservation;
+      const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+      const reason = noShowBlock(reservation, order, evidence);
+      if (reason) lifecycleConflict(reason);
+      const cancelledAt = new Date();
+      if (order) await tx.order.update({ where: { id }, data: { status: 'CANCELLED' } });
+      return tx.reservation.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt, cancelReason: NO_SHOW_REASON } });
+    }, { timeout: 20000 }).catch(throwLifecycleError);
+  }
+
+  async completeReservation(businessId: string, id: string, serviceProvided: unknown) {
+    requireServiceProvided(serviceProvided);
+    // The policy version never changes after creation; it is re-checked under lock anyway.
+    const policy = await this.prisma.reservation.findFirst({ where: { id, businessId }, select: { commercialPolicyVersion: true } });
+    if (policy?.commercialPolicyVersion === 2) return this.completeReservationV2(businessId, id);
+    return this.prisma.$transaction(async tx => {
+      // Always Order -> Reservation, also when the id has no order. Never reverse this order.
+      await lockOwnedOrder(tx, businessId, id);
+      const business = await tx.business.findFirst({ where: { id: businessId, status: 'ACTIVE' }, select: { id: true } });
+      if (!business) throw new ForbiddenException({ code: 'BUSINESS_INACTIVE', message: 'El negocio no está activo.' });
+      const order = await tx.order.findFirst({ where: { id, businessId } });
+      const reservation = await this.availability.lockReservationRow(tx, businessId, id);
+      if (!reservation) throw new NotFoundException({ code: 'RESERVATION_NOT_FOUND', message: 'Reserva no encontrada' });
+      if (reservation.archived || order?.archived) lifecycleConflict({ code: 'RECORD_ARCHIVED', message: 'El registro está eliminado.' });
+      if (reservation.status === 'COMPLETED') {
+        const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+        const reason = completionBlock({ ...reservation, status: 'CONFIRMED' }, order, evidence);
+        if (reason) lifecycleConflict(reason);
+        return { ...reservation, ...this.lifecycleView(order ? 'ORDER' : 'RESERVATION', order ?? reservation, reservation, evidence), alreadyCompleted: true };
+      }
+      const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+      const reason = completionBlock(reservation, order, evidence);
+      if (reason) lifecycleConflict(reason);
+      const updated = await tx.reservation.update({ where: { id }, data: { status: 'COMPLETED', completedAt: new Date() } });
+      return { ...updated, ...this.lifecycleView(order ? 'ORDER' : 'RESERVATION', order ?? updated, updated, evidence), alreadyCompleted: false };
+    }, { timeout: 20000 }).catch(throwLifecycleError);
+  }
 
   async generateElectronicInvoice(businessId: string, orderId: string) {
     if (!this.fiscalDocuments)
@@ -454,6 +616,8 @@ export class SalesService {
     inventoryPostedAt?: Date | null;
     accountingPostedAt?: Date | null;
   }) {
+    const restriction = orderTransitionBlock(order, 'edit');
+    if (restriction) lifecycleConflict(restriction);
     if (order.inventoryPostedAt) {
       throw new ConflictException('Order inventory has already been posted');
     }
@@ -795,7 +959,7 @@ export class SalesService {
               date: slot.date,
               startMinute: slot.startMinute,
               endMinute: slot.endMinute,
-              status: 'PENDING',
+              ...(await newReservationPolicy(tx, businessId, slot.itemId)),
               origin: dto.origin ?? 'MANUAL',
               paymentMethod: (dto.paymentMethod ?? 'CASH') as any,
             },
@@ -815,8 +979,10 @@ export class SalesService {
         paymentMethod: (reservation.paymentMethod ?? 'CASH') as
           | 'CASH'
           | 'BANK_TRANSFER',
-        total: Number(reservation.item.price),
+        total: Number(reservation.priceSnapshot ?? reservation.item.price),
         status: this.mapReservationStatus(reservation.status),
+        commercialPolicyVersion: reservation.commercialPolicyVersion,
+        countsAsSale: this.countsAsSale('RESERVATION', reservation),
         createdAt: reservation.createdAt,
         origin: reservation.origin as 'MANUAL' | 'PUBLIC_STORE',
         scheduledAt: this.toScheduledAt(
@@ -846,6 +1012,8 @@ export class SalesService {
     );
     logTiming('resolve-lines', resolveLinesStartedAt);
     const transactionStartedAt = Date.now();
+    // Lets the client know a scheduled-service sale is a policy 2 booking (no early close).
+    let mirrorPolicyVersion: number | null = null;
     const order = await this.prisma
       .$transaction(
         async (tx) => {
@@ -898,8 +1066,13 @@ export class SalesService {
               durationMinutes: slot.durationMinutes,
             });
 
+            const mirrorPolicy = await newReservationPolicy(tx, businessId, null);
+            mirrorPolicyVersion = mirrorPolicy.commercialPolicyVersion;
             await tx.reservation.create({
-              data: mirror.create,
+              data: {
+                ...mirror.create,
+                ...mirrorPolicy,
+              },
             });
           }
 
@@ -935,6 +1108,7 @@ export class SalesService {
     return {
       ...order,
       sourceType: 'ORDER',
+      commercialPolicyVersion: mirrorPolicyVersion,
     };
   }
 
@@ -977,6 +1151,7 @@ export class SalesService {
         },
       }),
     ]);
+    const evidenceById = await this.loadCommercialEvidence(this.prisma, businessId, [...new Set([...orders, ...reservations].map(r => r.id))]);
     const conversions = await this.prisma.unitConversion.findMany();
     // A mirror shares its order's id. Match against every order, not only the listed ones:
     // an archived/cancelled order's mirror otherwise leaked as a standalone RESERVATION.
@@ -1033,6 +1208,7 @@ export class SalesService {
       return {
         id: o.id,
         sourceType: 'ORDER',
+        ...this.lifecycleView('ORDER', o, mirrorReservation, evidenceById.get(o.id)!),
         customerName: o.customerName,
         customerWhatsapp: o.customerWhatsapp,
         paymentMethod: ((o as any).paymentMethod ?? 'CASH') as
@@ -1040,6 +1216,7 @@ export class SalesService {
           | 'BANK_TRANSFER',
         total: Number(o.total),
         status: this.mapOrderStatus(o.status),
+        countsAsSale: this.countsAsSale('ORDER', o),
         inventoryPostedAt: o.inventoryPostedAt,
         accountingPostedAt: o.accountingPostedAt,
         requiresLegacyInvoiceWarning: requiresLegacyInvoiceWarning(
@@ -1097,11 +1274,13 @@ export class SalesService {
       .filter((r) => !orderIds.has(r.id))
       .map((r) => {
         const item = (r as any).item;
-        const price = Number(item?.price ?? 0);
+        // Policy 2 shows the agreed price; historical rows keep the catalog price they always showed.
+        const price = Number(r.priceSnapshot ?? item?.price ?? 0);
 
         return {
           id: r.id,
           sourceType: 'RESERVATION',
+          ...this.lifecycleView('RESERVATION', r, r, evidenceById.get(r.id)!),
           customerName: r.customerName ?? null,
           customerWhatsapp: r.customerWhatsapp ?? null,
           paymentMethod: (r.paymentMethod ?? 'CASH') as
@@ -1109,9 +1288,11 @@ export class SalesService {
             | 'BANK_TRANSFER',
           total: Number.isFinite(price) ? price : 0,
           status: this.mapReservationStatus(r.status),
+          priceSnapshot: r.priceSnapshot == null ? null : Number(r.priceSnapshot),
+          countsAsSale: this.countsAsSale('RESERVATION', r),
           inventoryPostedAt: r.inventoryPostedAt ?? null,
-          accountingPostedAt:
-            r.status === 'CONFIRMED' ? (r.updatedAt ?? null) : null,
+          accountingPostedAt: r.accountingPostedAt ??
+            evidenceById.get(r.id)?.accounting.find(m => !String(m.accountingRole ?? '').startsWith('SALE_REVERSAL:') && m.metadata?.kind !== 'SALE_REVERSAL')?.date ?? null,
           createdAt: r.createdAt,
           origin: (r.origin ?? 'MANUAL') as 'MANUAL' | 'PUBLIC_STORE',
           scheduledAt: this.toScheduledAt(r.date, r.startMinute),
@@ -1191,7 +1372,6 @@ export class SalesService {
       where: {
         businessId,
         id: { in: orderIds },
-        status: { not: 'CANCELLED' },
       },
     });
     return new Map(
@@ -1241,9 +1421,7 @@ export class SalesService {
         date: dateOnly,
         startMinute,
         endMinute,
-
-        status: 'PENDING' as const,
-        origin: 'MANUAL' as const,
+        // Never status/origin/version: editing an existing mirror keeps its lifecycle.
       },
     };
   }
@@ -1255,7 +1433,8 @@ export class SalesService {
   }
 
   private mapReservationStatus(status: string): UnifiedStatus {
-    if (status === 'CONFIRMED') return 'CERRADO';
+    if (status === 'CONFIRMED') return 'CONFIRMADO';
+    if (status === 'COMPLETED') return 'FINALIZADA';
     if (status === 'CANCELLED') return 'CANCELADO';
     return 'PENDIENTE';
   }
@@ -1281,7 +1460,28 @@ export class SalesService {
 
     const confirmation = await this.runSerializableTransaction(async (tx) => {
       await lockOwnedOrder(tx, businessId, id);
-      // ... (KEEP EXISTING Order logic but use id instead of orderId)
+      const mirror = await this.availability.lockReservationRow(tx, businessId, id);
+      // Policy 2 separates booking from sale: its mirror order only posts through completion.
+      if (isPolicyV2(mirror))
+        lifecycleConflict({ code: 'RESERVATION_USE_COMPLETE', message: 'Esta venta corresponde a un turno. Usá «Finalizar atención» cuando el servicio se preste.' });
+      return this.postOrderCommercialEffects(tx, businessId, id, buyerFiscalContext, sourceType);
+    });
+
+    return confirmation;
+  }
+
+  /**
+   * Commercial closing of an order (claim, tax freeze, inventory, accounting, invoice-close
+   * snapshot; never issues a document). Caller holds Order -> Reservation locks.
+   */
+  private async postOrderCommercialEffects(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    id: string,
+    buyerFiscalContext: any,
+    sourceType: UnifiedSourceType,
+  ) {
+    {
       const order = await tx.order.findFirst({
         where: { id, businessId },
         include: {
@@ -1291,6 +1491,8 @@ export class SalesService {
       });
 
       if (!order) throw new NotFoundException('Venta no encontrada');
+      const restriction = orderTransitionBlock(order, 'confirm');
+      if (restriction) lifecycleConflict(restriction);
       if (!order.items.length)
         throw new BadRequestException('La venta debe tener al menos un ítem');
       if (order.status === 'CANCELLED')
@@ -1410,9 +1612,9 @@ export class SalesService {
           where: {
             id: this.getMirrorReservationIdForManualServiceOrder(id),
             businessId,
-            status: { not: 'CANCELLED' },
+            status: 'PENDING',
           },
-          data: { status: 'CONFIRMED' },
+          data: { status: 'CONFIRMED', confirmedAt: postingDate },
         });
       }
 
@@ -1462,9 +1664,7 @@ export class SalesService {
         inventoryMovements,
         movements,
       };
-    });
-
-    return confirmation;
+    }
   }
 
   private async confirmReservation(
@@ -1482,6 +1682,8 @@ export class SalesService {
         });
 
         if (!res) throw new NotFoundException('Reserva no encontrada');
+        const transitionBlock = reservationTransitionBlock(res, 'confirm');
+        if (transitionBlock) lifecycleConflict(transitionBlock);
         if (res.status === 'CANCELLED')
           throw new ConflictException(
             RESERVATION_ERRORS.cancelledCannotConfirm,
@@ -1502,7 +1704,7 @@ export class SalesService {
             ? res
             : await tx.reservation.update({
                 where: { id },
-                data: { status: 'CONFIRMED' },
+                data: { status: 'CONFIRMED', confirmedAt: new Date() },
                 include: { item: true },
               });
 
@@ -1653,8 +1855,8 @@ export class SalesService {
       throw new BadRequestException('Reservation service is not available');
     }
 
-    // Falls back to current item price if no snapshot (as per user request)
-    const price = res.item.price ?? 0;
+    // Policy 2: the price agreed at booking. Policy 1 keeps its historical catalog-price rule.
+    const price = res.priceSnapshot ?? res.item.price ?? 0;
 
     return {
       id: res.id,
@@ -1922,7 +2124,11 @@ export class SalesService {
       },
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) {
+      const reservation = (await this.findAll(businessId, { includeArchived: true, includeCancelled: true })).find(sale => sale.id === orderId && sale.sourceType === 'RESERVATION');
+      if (!reservation) throw new NotFoundException('Order not found');
+      return reservation;
+    }
 
     const conversions = await this.prisma.unitConversion.findMany();
     const mirrorReservations = await this.findMirrorReservationsForOrders(
@@ -1952,8 +2158,10 @@ export class SalesService {
         }
       : null;
 
+    const evidence = (await this.loadCommercialEvidence(this.prisma, businessId, [orderId])).get(orderId)!;
     return {
       ...order,
+      ...this.lifecycleView('ORDER', order, mirrorReservation, evidence),
       scheduledAt: mirrorReservation
         ? this.toScheduledAt(
             mirrorReservation.date,
@@ -1985,7 +2193,9 @@ export class SalesService {
     businessId: string,
     id: string,
     sourceType: UnifiedSourceType = 'ORDER',
+    reasonInput?: unknown,
   ) {
+    const userReason = cancellationReason(reasonInput);
     if (sourceType === 'RESERVATION') {
       return this.prisma.$transaction(
         async (tx) => {
@@ -2003,11 +2213,17 @@ export class SalesService {
             });
           }
 
-          if (reservation.status === 'CONFIRMED') {
+          const evidence = isPolicyV2(reservation)
+            ? (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!
+            : undefined;
+          const restriction = reservationTransitionBlock(reservation, 'cancel', 'sales', evidence);
+          if (restriction) lifecycleConflict(restriction);
+          // Policy 2 CONFIRMED never posted anything: no returns, no counter-entries.
+          if (reservation.status === 'CONFIRMED' && !isPolicyV2(reservation)) {
             // Same rule as reverseConfirmedOrder: undo the sale with counter-movements,
             // never deleting originals. Standalone reservations cannot hold Factus documents.
             const reversedAt = new Date();
-            const reason = 'Cancelación de reserva confirmada';
+            const reason = userReason ?? 'Cancelación de reserva confirmada';
             if (reservation.inventoryPostedAt) {
               await this.inventoryService.reverseInventoryConsumptionForReservation(
                 tx,
@@ -2025,7 +2241,7 @@ export class SalesService {
 
           return tx.reservation.update({
             where: { id },
-            data: { status: 'CANCELLED' },
+            data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: userReason },
             include: { item: true },
           });
         },
@@ -2047,10 +2263,11 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       await lockOwnedOrder(tx, businessId, id);
+      await this.availability.lockReservationRow(tx, businessId, id);
       const current = await tx.order.findFirst({
         where: { id, businessId },
-        select: { status: true },
       });
+      if (current) { const restriction = orderTransitionBlock(current, 'cancel'); if (restriction) lifecycleConflict(restriction); }
       if (!current || current.status === 'COMPLETED')
         throw new BadRequestException(
           'Una venta confirmada no se puede cancelar. Usá «Revertir venta».',
@@ -2071,8 +2288,9 @@ export class SalesService {
         where: {
           id: this.getMirrorReservationIdForManualServiceOrder(id),
           businessId,
+          status: { not: 'CANCELLED' },
         },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: userReason },
       });
 
       return cancelledOrder;
@@ -2088,6 +2306,7 @@ export class SalesService {
     return this.prisma.$transaction(
       async (tx) => {
         await lockOwnedOrder(tx, businessId, id);
+      await this.availability.lockReservationRow(tx, businessId, id);
         const order = await tx.order.findFirst({
           where: { id, businessId },
           include: {
@@ -2096,6 +2315,9 @@ export class SalesService {
         });
 
         if (!order) throw new NotFoundException('Venta no encontrada');
+        const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+        const restriction = order.archived ? { code: 'RECORD_ARCHIVED', message: 'El registro está eliminado.' } : reverseBlock(order, evidence);
+        if (restriction) lifecycleConflict(restriction);
 
         const protectedFiscalDocument =
           this.fiscalDocuments && (tx as any).fiscalDocument
@@ -2216,7 +2438,7 @@ export class SalesService {
             businessId,
             status: { not: 'CANCELLED' },
           },
-          data: { status: 'CANCELLED' },
+          data: { status: 'CANCELLED', cancelledAt: reversedAt, cancelReason: dto.reason ?? null },
         });
 
         if (validatedInvoice) {
@@ -2253,7 +2475,12 @@ export class SalesService {
           id,
         );
         if (!res) throw new NotFoundException('Reserva no encontrada');
-        if (res.status === 'CONFIRMED') {
+        const evidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
+        const restriction = reservationArchiveBlock(res, evidence);
+        if (restriction) throw new BadRequestException(restriction);
+        await this.availability.assertNotSalesMirror(tx, businessId, id);
+        // Policy 2 CONFIRMED (no effects): cancel + free the slot + archive in this transaction.
+        if (res.status === 'CONFIRMED' && !isPolicyV2(res)) {
           throw new BadRequestException(
             'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
           );
@@ -2265,7 +2492,7 @@ export class SalesService {
 
         return tx.reservation.update({
           where: { id },
-          data: { archived: true, status: 'CANCELLED' },
+          data: { archived: true, status: 'CANCELLED', ...(res.status !== 'CANCELLED' ? { cancelledAt: new Date() } : {}) },
           include: { item: true },
         });
       });
@@ -2285,9 +2512,10 @@ export class SalesService {
 
     return this.prisma.$transaction(async (tx) => {
       await lockOwnedOrder(tx, businessId, id);
+      await this.availability.lockReservationRow(tx, businessId, id);
       const current = await tx.order.findFirst({
         where: { id, businessId },
-        select: { status: true, inventoryPostedAt: true },
+        select: { status: true, inventoryPostedAt: true, archived: true },
       });
       if (!current) throw new NotFoundException('Venta no encontrada');
       if (current.status === 'COMPLETED' && current.inventoryPostedAt) {
@@ -2295,6 +2523,10 @@ export class SalesService {
           'No se puede eliminar una venta confirmada con inventario impactado. Primero debe revertirse.',
         );
       }
+      const mirror = await tx.reservation.findFirst({ where: { id, businessId } });
+      const restriction = orderTransitionBlock(current, 'delete', mirror);
+      if (restriction) lifecycleConflict(restriction);
+      if (mirror?.status === 'COMPLETED') lifecycleConflict({ code: 'RESERVATION_STATE_CONFLICT', message: 'No se puede cancelar implícitamente una atención finalizada al eliminar la venta.' });
       const archivedOrder = await tx.order.update({
         where: { id },
         data: { archived: true },
@@ -2311,8 +2543,9 @@ export class SalesService {
         where: {
           id: this.getMirrorReservationIdForManualServiceOrder(id),
           businessId,
+          status: { not: 'CANCELLED' },
         },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', cancelledAt: new Date() },
       });
 
       return archivedOrder;
@@ -2425,6 +2658,14 @@ export class SalesService {
             paymentMethod: (dto.paymentMethod ?? order.paymentMethod) as any,
             scheduledAt: dto.scheduledAt,
           };
+          // Policy 2 mirrors only revive after the controlled detach of this same editor.
+          if (existingMirror?.status === 'CANCELLED' && isPolicyV2(existingMirror)) {
+            const evidence = (await this.loadCommercialEvidence(tx, businessId, [mirrorId])).get(mirrorId)!;
+            if (existingMirror.cancelReason !== MIRROR_DETACHED_REASON || existingMirror.archived || hasCommercialEffects(existingMirror, evidence))
+              lifecycleConflict({ code: 'MIRROR_REACTIVATION_NOT_ALLOWED', message: 'Este turno fue cancelado y no se puede reactivar. Registrá una venta nueva.' });
+          }
+          if (existingMirror && isPolicyV2(existingMirror) && existingMirror.status === 'COMPLETED')
+            lifecycleConflict({ code: 'RESERVATION_STATE_CONFLICT', message: 'La atención ya fue finalizada.' });
           const slotUnchanged =
             existingMirror !== null &&
             existingMirror.status !== 'CANCELLED' &&
@@ -2470,10 +2711,22 @@ export class SalesService {
               ...mirrorData,
               durationMinutes: slot.durationMinutes,
             });
+            const revive = existingMirror?.status === 'CANCELLED';
             await tx.reservation.upsert({
               where: { id: mirror.reservationId },
-              create: mirror.create,
-              update: mirror.update,
+              create: {
+                ...mirror.create,
+                ...(await newReservationPolicy(tx, businessId, null)),
+              },
+              update: {
+                ...mirror.update,
+                // Revival keeps the row's own policy: v1 back to PENDING (historical), v2 CONFIRMED.
+                ...(revive
+                  ? isPolicyV2(existingMirror)
+                    ? { status: 'CONFIRMED' as const, confirmedAt: new Date(), cancelledAt: null, cancelReason: null }
+                    : { status: 'PENDING' as const }
+                  : {}),
+              },
             });
           }
         } else if (
@@ -2481,12 +2734,14 @@ export class SalesService {
           resolvedItems &&
           !finalSingleManualService
         ) {
+          // Controlled detach: the only writer of MIRROR_DETACHED_REASON (never user input).
           await tx.reservation.updateMany({
             where: {
               id: this.getMirrorReservationIdForManualServiceOrder(orderId),
               businessId,
+              status: { not: 'CANCELLED' },
             },
-            data: { status: 'CANCELLED' },
+            data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: MIRROR_DETACHED_REASON },
           });
         }
 
@@ -2533,7 +2788,13 @@ export class SalesService {
           throw new NotFoundException('Reservation not found');
         }
 
-        if (reservation.status !== 'PENDING') {
+        const evidence = isPolicyV2(reservation)
+          ? (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!
+          : undefined;
+        const restriction = reservationTransitionBlock(reservation, 'edit', 'sales', evidence);
+        if (restriction) lifecycleConflict(restriction);
+        await this.availability.assertNotSalesMirror(tx, businessId, id);
+        if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
           throw new BadRequestException(
             'Reservation not editable in current status',
           );
@@ -2593,7 +2854,8 @@ export class SalesService {
       customerName: updated.customerName,
       customerWhatsapp: updated.customerWhatsapp,
       paymentMethod: updated.paymentMethod as 'CASH' | 'BANK_TRANSFER',
-      total: Number(updated.item.price),
+      total: Number(updated.priceSnapshot ?? updated.item.price),
+      commercialPolicyVersion: updated.commercialPolicyVersion,
       status: this.mapReservationStatus(updated.status),
       createdAt: updated.createdAt,
       scheduledAt: this.toScheduledAt(updated.date, updated.startMinute),

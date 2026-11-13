@@ -1,5 +1,5 @@
 import { api } from "@/src/lib/api";
-import type { SaleFiscalContext, SaleFiscalSummary, SaleTaxLine } from "@/src/types/sales";
+import type { SaleFiscalContext, SaleFiscalSummary, SaleTaxLine, ReservationLifecycleView } from "@/src/types/sales";
 
 export type ApiOrderItem = {
   quantity: number;
@@ -12,17 +12,18 @@ export type ApiOrderItem = {
   };
 };
 
-export interface ApiOrder {
+export interface ApiOrder extends ReservationLifecycleView {
   id: string;
   sourceType: "ORDER" | "RESERVATION";
   customerName: string | null;
   customerWhatsapp: string | null;
   paymentMethod?: "CASH" | "BANK_TRANSFER";
   total: number;
-  status: "PENDIENTE" | "CERRADO" | "CANCELADO";
+  status: "PENDIENTE" | "CERRADO" | "CANCELADO" | "CONFIRMADO" | "FINALIZADA";
   inventoryPostedAt?: string | null;
   accountingPostedAt?: string | null;
   requiresLegacyInvoiceWarning?: boolean;
+  countsAsSale?: boolean;
   origin: "MANUAL" | "PUBLIC_STORE";
   createdAt: string;
   scheduledAt?: string;
@@ -190,4 +191,12 @@ export function removeOrderItem(saleId: string, orderItemId: string) {
   return api(`/sales/${saleId}/items/${orderItemId}`, {
     method: "DELETE",
   });
+}
+
+export function markReservationNoShow(id: string) {
+  return api(`/reservations/${encodeURIComponent(id)}/no-show`, { method: "POST", body: JSON.stringify({ confirmed: true }) });
+}
+
+export function completeReservation(id: string) {
+  return api(`/reservations/${encodeURIComponent(id)}/complete`, { method: "POST", body: JSON.stringify({ serviceProvided: true }) });
 }

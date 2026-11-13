@@ -1,7 +1,9 @@
 type CancelableSale = {
   sourceType: "ORDER" | "RESERVATION" | string;
   status: string;
+  allowedActions?: string[];
   scheduledAt?: string | null;
+  commercialPolicyVersion?: number | null;
 };
 
 /**
@@ -10,22 +12,29 @@ type CancelableSale = {
  * A confirmed ORDER is undone with «Revertir venta», not here.
  */
 export function canCancelReservation(sale: CancelableSale): boolean {
-  if (sale.sourceType === "RESERVATION") return sale.status !== "CANCELADO";
+  if (!sale.allowedActions?.includes("cancel")) return false;
+  if (sale.sourceType === "RESERVATION") return ["PENDIENTE", "CONFIRMADO", "CERRADO"].includes(sale.status);
   return sale.sourceType === "ORDER" && sale.status === "PENDIENTE" && Boolean(sale.scheduledAt);
 }
 
 export function reservationCancelPrompt(sale: CancelableSale): string {
-  return sale.status === "CERRADO"
+  // Policy 2 bookings never posted anything, so there is nothing to reverse.
+  if (sale.commercialPolicyVersion === 2) return "El horario de esta reserva quedará libre.";
+  return (sale.status === "CERRADO" || sale.status === "CONFIRMADO")
     ? "La reserva está confirmada: se revertirán el inventario y los registros contables, y el horario quedará libre."
     : "El horario de esta reserva quedará libre.";
 }
 
-/** Public page: only PENDING reservations, and only with the booking-time token. */
+/**
+ * Public page: the server decides eligibility (`canCancel`: policy, mirror, start time);
+ * the booking-time token is still required. Older payloads keep the PENDING-only rule.
+ */
 export function canCancelPublicReservation(
   status: string,
   token: string | null | undefined,
+  canCancel?: boolean,
 ): boolean {
-  return status === "PENDING" && Boolean(token);
+  return (canCancel ?? status === "PENDING") && Boolean(token);
 }
 
 /** Customer link; the token (when known) is what authorizes cancelling. */

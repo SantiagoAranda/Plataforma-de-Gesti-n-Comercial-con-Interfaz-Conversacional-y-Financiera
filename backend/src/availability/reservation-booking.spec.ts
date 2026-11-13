@@ -415,6 +415,7 @@ describe('Tienda pública', () => {
     customerWhatsapp: '573001112233',
     date: FUTURE,
     startMinute: H(10),
+    idempotencyKey: '7d9f2c1e-4b8a-4c3d-9e6f-1a2b3c4d5e6f',
     ...overrides,
   });
 
@@ -426,7 +427,8 @@ describe('Tienda pública', () => {
       expect.objectContaining({
         endMinute: H(11),
         origin: 'PUBLIC_STORE',
-        status: 'PENDING',
+        status: 'CONFIRMED',
+        commercialPolicyVersion: 2,
       }),
     );
   });

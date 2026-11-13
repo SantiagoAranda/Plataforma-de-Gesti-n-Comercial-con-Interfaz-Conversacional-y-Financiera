@@ -14,11 +14,13 @@ import { canCancelPublicReservation } from "@/src/lib/sales/reservationCancelUi"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ReservationStatus = "PENDING" | "CONFIRMED" | "CANCELLED";
+type ReservationStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
 
 interface ReservationDetail {
   id: string;
   status: ReservationStatus;
+  // Server-side eligibility for cancelling from this page (token still required).
+  canCancel?: boolean;
   customerName: string | null;
   customerWhatsapp: string | null;
   date: string; // ISO string
@@ -124,6 +126,7 @@ function capitalize(str: string): string {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: ReservationStatus }) {
+  if (status === "COMPLETED") return <span aria-label="Estado: Finalizada" className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700">Finalizada</span>;
   const isConfirmed = status === "CONFIRMED";
   const isPending = status === "PENDING";
 
@@ -357,8 +360,8 @@ export default async function ReservationDetailPage({
             Contactar por WhatsApp
           </a>
 
-          {/* Cancelar reserva — solo pendientes y con el enlace recibido al reservar */}
-          {canCancelPublicReservation(reservation.status, cancelToken) ? (
+          {/* Cancelar reserva — según el servidor y con el enlace recibido al reservar */}
+          {canCancelPublicReservation(reservation.status, cancelToken, reservation.canCancel) ? (
             <CancelReservationButton reservationId={reservation.id} token={cancelToken!} />
           ) : reservation.status === "PENDING" ? (
             <p className="text-center text-[12px] text-slate-400">
@@ -366,7 +369,9 @@ export default async function ReservationDetailPage({
             </p>
           ) : reservation.status === "CONFIRMED" ? (
             <p className="text-center text-[12px] text-slate-400">
-              Tu reserva está confirmada. Para cancelarla, contactá al negocio.
+              {reservation.canCancel
+                ? "Tu reserva está confirmada. Para cancelarla, usá el enlace que recibiste al reservar o contactá al negocio."
+                : "Tu reserva está confirmada. Para cancelarla, contactá al negocio."}
             </p>
           ) : null}
         </div>

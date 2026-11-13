@@ -17,6 +17,23 @@ import {
   ITEM_ID,
 } from '../availability/availability.test-utils';
 
+function withLifecycleMocks(prisma: any) {
+  const extend = (db: any) => {
+    db.$queryRaw ??= (jest.fn() as any).mockResolvedValue([]);
+    db.accountingMovement ??= { findMany: (jest.fn() as any).mockResolvedValue([]) };
+    db.inventoryMovement ??= { findMany: (jest.fn() as any).mockResolvedValue([]) };
+    db.reservation ??= {};
+    db.reservation.findFirst ??= (jest.fn() as any).mockResolvedValue(null);
+    return db;
+  };
+  extend(prisma);
+  if (prisma.$transaction) {
+    const original = prisma.$transaction;
+    prisma.$transaction = jest.fn((fn: any, ...options: any[]) => original((tx: any) => fn(extend(tx)), ...options));
+  }
+  return prisma;
+}
+
 describe('SalesService.findAll', () => {
   const businessId = 'business-1';
 
@@ -33,7 +50,7 @@ describe('SalesService.findAll', () => {
       },
     } as any;
 
-    return new SalesService(prisma, {} as any, {} as any, {} as any, {} as any);
+    return new SalesService(withLifecycleMocks(prisma), {} as any, {} as any, {} as any, {} as any);
   }
 
   it('keeps cancelled orders and reservations excluded unless includeCancelled is explicit', async () => {
@@ -305,7 +322,7 @@ describe('SalesService.remove', () => {
 
     return {
       service: new SalesService(
-        prisma,
+        withLifecycleMocks(prisma),
         accountingService,
         inventoryService,
         {} as any,
@@ -444,7 +461,7 @@ describe('SalesService manual service mirror reservations', () => {
 
     return {
       service: new SalesService(
-        prisma,
+        withLifecycleMocks(prisma),
         {} as any,
         inventoryService,
         itemOptionsService,
@@ -492,7 +509,9 @@ describe('SalesService manual service mirror reservations', () => {
         customerWhatsapp: '573001112233',
         startMinute: 600,
         endMinute: 660,
-        status: 'PENDING',
+        // Every new booking is policy 2: born CONFIRMED, effects on completion.
+        status: 'CONFIRMED',
+        commercialPolicyVersion: 2,
         origin: 'MANUAL',
       }),
     });
@@ -631,7 +650,7 @@ describe('SalesService personalized order lines', () => {
     } as any;
     return {
       service: new SalesService(
-        prisma,
+        withLifecycleMocks(prisma),
         {} as any,
         inventoryService,
         itemOptionsService,
@@ -880,7 +899,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
       ]),
     } as any;
     const service = new SalesService(
-      prisma,
+      withLifecycleMocks(prisma),
       accountingService,
       inventoryService,
       {} as any,
@@ -900,7 +919,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
     // The mirror (Reservation.id = Order.id) is cancelled in the same transaction.
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
       where: { id: orderId, businessId, status: { not: 'CANCELLED' } },
-      data: { status: 'CANCELLED' },
+      data: expect.objectContaining({ status: 'CANCELLED', cancelledAt: expect.any(Date), cancelReason: expect.any(String) }),
     });
     expect(tx.inventoryMovement.findMany).toHaveBeenCalledWith({
       where: { businessId, orderId, type: 'SALE_RETURN' },
@@ -985,7 +1004,7 @@ describe('SalesService.reverseConfirmedOrder', () => {
       $transaction: jest.fn((fn: (innerTx: any) => unknown) => fn(tx)),
     } as any;
     const service = new SalesService(
-      prisma,
+      withLifecycleMocks(prisma),
       accountingService,
       inventoryService,
       {} as any,
@@ -1078,7 +1097,7 @@ describe('SalesService.updateOrderItemOptionalIngredients', () => {
 
     return {
       service: new SalesService(
-        prisma,
+        withLifecycleMocks(prisma),
         accountingService,
         inventoryService,
         {} as any,
@@ -1238,7 +1257,7 @@ describe('SalesService.confirmOrder optional ingredient exclusions', () => {
       dispatch: jest.fn(),
     } as any;
     const service = new SalesService(
-      prisma,
+      withLifecycleMocks(prisma),
       accountingService,
       inventoryService,
       {} as any,
@@ -1336,7 +1355,7 @@ describe('SalesService.confirmReservation accounting order', () => {
       }),
     } as any;
     const service = new SalesService(
-      prisma,
+      withLifecycleMocks(prisma),
       accountingService,
       inventoryService,
       {} as any,

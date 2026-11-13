@@ -20,6 +20,8 @@ const user = 'reservas_b1';
 const mainDb = 'reservations_b1_test';
 const compatDb = 'reservations_compat_test';
 const newMigration = '20261108120000_reservation_active_slot_unique';
+const lifecycleMigrations = ['20261112000100_reservation_completed', '20261112000200_reservation_audit'];
+const policyMigration = '20261113000100_reservation_policy_v2';
 const run = crypto.randomUUID();
 const specs = process.argv.slice(2).length
   ? process.argv.slice(2)
@@ -89,6 +91,7 @@ try {
   fs.copyFileSync(path.join(root, 'prisma/schema.prisma'), path.join(tmpDir, 'schema.prisma'));
   fs.cpSync(path.join(root, 'prisma/migrations'), path.join(tmpDir, 'migrations'), { recursive: true });
   fs.rmSync(path.join(tmpDir, 'migrations', newMigration), { recursive: true });
+  for (const migration of [...lifecycleMigrations, policyMigration]) fs.rmSync(path.join(tmpDir, 'migrations', migration), { recursive: true });
   prisma(['migrate', 'deploy', '--schema', path.join(tmpDir, 'schema.prisma')], compatDb);
   psql(compatDb, `
     INSERT INTO "Business"(id, name, slug, "fiscalId", "phoneWhatsapp", "updatedAt") VALUES ('b-compat', 'Compat', 'compat', '1', '0', now());
@@ -105,6 +108,37 @@ try {
   if (before !== after) throw new Error(`La migración modificó reservas existentes:\n${before}\n${after}`);
   psql(compatDb, `INSERT INTO "Reservation"(id, "businessId", "itemId", status, date, "startMinute", "endMinute", "updatedAt") VALUES ('r-rebook', 'b-compat', 'i-compat', 'PENDING', '2026-12-01', 660, 720, now());`);
   console.log('Migración sobre datos existentes: 3 reservas intactas; el inicio cancelado se puede volver a reservar.');
+
+  const beforeLifecycle = snapshot();
+  for (const migration of lifecycleMigrations) fs.cpSync(path.join(root, 'prisma/migrations', migration), path.join(tmpDir, 'migrations', migration), { recursive: true });
+  prisma(['migrate', 'deploy', '--schema', path.join(tmpDir, 'schema.prisma')], compatDb);
+  if (snapshot() !== beforeLifecycle) throw new Error('Bloque 2.1 changed historical states.');
+  if (psql(compatDb, `SELECT count(*) FROM "Reservation" WHERE "confirmedAt" IS NOT NULL OR "completedAt" IS NOT NULL OR "cancelledAt" IS NOT NULL OR "cancelReason" IS NOT NULL OR "walkIn";`) !== '0') throw new Error('Historical audit was inferred.');
+  psql(compatDb, `INSERT INTO "Reservation"(id, "businessId", "itemId", status, date, "startMinute", "endMinute", "updatedAt") VALUES ('r-completed', 'b-compat', 'i-compat', 'COMPLETED', '2026-12-03', 600, 660, now());`);
+  console.log('Bloque 2.1: enum recognized, historical states unchanged, audit null, walkIn=false.');
+
+  // Bloque 2.2: additive policy columns over historical rows (states, prices, payment
+  // methods and postings preserved; every existing row stays on policy 1, nothing inferred).
+  psql(compatDb, `
+    UPDATE "Reservation" SET "paymentMethod" = 'BANK_TRANSFER', "inventoryPostedAt" = '2026-12-02 10:00', "confirmedAt" = '2026-12-02 10:00' WHERE id = 'r-confirmed';
+    INSERT INTO "PucClase"(code, name) VALUES ('1', 'Activo') ON CONFLICT DO NOTHING;
+    INSERT INTO "PucGrupo"(code, name, "claseCode") VALUES ('11', 'Disponible', '1') ON CONFLICT DO NOTHING;
+    INSERT INTO "PucCuenta"(code, name, "grupoCode") VALUES ('1110', 'Bancos', '11') ON CONFLICT DO NOTHING;
+    INSERT INTO "AccountingMovement"(id, "businessId", "pucCuentaCode", amount, nature, date, detail, "originType", "originId", "updatedAt")
+      VALUES ('m-compat', 'b-compat', '1110', 1000, 'DEBIT', '2026-12-02', 'Historico', 'ORDER', 'r-confirmed', now());`);
+  const commercial = () => psql(compatDb, `SELECT
+    (SELECT string_agg(id || '|' || status || '|' || "paymentMethod" || '|' || coalesce("inventoryPostedAt"::text, '-') || '|' || coalesce("confirmedAt"::text, '-'), ';' ORDER BY id) FROM "Reservation") || ' # ' ||
+    (SELECT string_agg(id || '|' || price::text, ';' ORDER BY id) FROM "Item") || ' # ' ||
+    (SELECT string_agg(id || '|' || amount::text || '|' || nature || '|' || "originId", ';' ORDER BY id) FROM "AccountingMovement");`);
+  const beforePolicy = commercial();
+  const beforePolicySlots = snapshot();
+  fs.cpSync(path.join(root, 'prisma/migrations', policyMigration), path.join(tmpDir, 'migrations', policyMigration), { recursive: true });
+  prisma(['migrate', 'deploy', '--schema', path.join(tmpDir, 'schema.prisma')], compatDb);
+  if (commercial() !== beforePolicy || snapshot() !== beforePolicySlots) throw new Error('Bloque 2.2 changed historical commercial data.');
+  if (psql(compatDb, `SELECT count(*) FROM "Reservation" WHERE "commercialPolicyVersion" <> 1 OR "priceSnapshot" IS NOT NULL OR "accountingPostedAt" IS NOT NULL OR "publicRequestId" IS NOT NULL OR "publicRequestFingerprint" IS NOT NULL;`) !== '0') throw new Error('Bloque 2.2 inferred policy data for historical rows.');
+  if (psql(compatDb, `SELECT count(*) FROM "Business" WHERE "reservationPolicyV2Enabled";`) !== '0') throw new Error('Policy 2 must start disabled.');
+  if (!psql(compatDb, `SELECT indexdef FROM pg_indexes WHERE indexname = 'Reservation_businessId_publicRequestId_key';`).includes('UNIQUE')) throw new Error('Missing public idempotency index.');
+  console.log('Bloque 2.2: historical rows unchanged (states, prices, payment methods, postings), policy=1, snapshots null, flag disabled, idempotency index present.');
 
   // 4) E2E suites against the migrated main database.
   psql(mainDb, `CREATE TABLE public."SactecTestEnvironment"("runId" text PRIMARY KEY); INSERT INTO public."SactecTestEnvironment" VALUES ('${run}');`);

@@ -39,11 +39,11 @@ const stubs = {
   '@/src/components/shared/EmptyStateCard': { EmptyStateCard: Null },
   '@/src/components/sales/SalesList': {
     __esModule: true,
-    default: ({ sales, onDetails }) => h('ul', null, sales.map((s) => h('li', { key: s.id }, h('button', { onClick: () => onDetails(s) }, `ver ${s.id}`)))),
+    default: ({ sales, onDetails, onComplete, onReschedule, onCancelReservation }) => h('ul', null, sales.map((s) => h('li', { key: s.id }, h('button', { onClick: () => onDetails(s) }, `ver ${s.id}`), ...[['complete',onComplete],['reschedule',onReschedule],['cancel',onCancelReservation]].filter(([action,handler])=>handler && s.allowedActions?.includes(action)).map(([action,handler])=>h('button',{key:action,onClick:()=>handler(s)},`menu ${action} ${s.id}`))))),
   },
-  '@/src/components/sales/SalesChatComposer': { __esModule: true, default: Null },
+  '@/src/components/sales/SalesChatComposer': { __esModule: true, default: ({mode,sale,onSave}) => mode === 'edit' ? h('button',{onClick:()=>onSave({...sale,scheduledAt:'2026-12-01T10:00:00'})},'guardar turno') : null },
   './SalesChatComposer': { __esModule: true, default: Null },
-  '@/src/components/sales/SalesFilterModal': { __esModule: true, default: Null },
+  '@/src/components/sales/SalesFilterModal': { __esModule: true, default: ({onChange}) => h('div', null, ['CLOSED','CONFIRMED','COMPLETED'].map(value => h('button', {key:value,onClick:()=>onChange(value)}, 'filter '+value))) },
   '@/src/components/sales/FiscalDocumentDetailModal': { __esModule: true, default: Null },
   '@/src/components/sales/ElectronicInvoiceConfirmModal': { __esModule: true, default: Null },
   '@/src/components/shared/selection/SelectionActionBar': { SelectionActionBar: Null },
@@ -78,6 +78,8 @@ const VentaPage = require('./page.tsx').default;
 
 // --- fake backend --------------------------------------------------------
 const reservation = (status, extra = {}) => ({
+  allowedActions: status === 'PENDIENTE' ? ['confirm','cancel','edit','delete'] : status === 'CERRADO' || status === 'CONFIRMADO' ? ['cancel'] : status === 'FINALIZADA' ? [] : ['delete'],
+  reservationStatus: status === 'PENDIENTE' ? 'PENDING' : status === 'FINALIZADA' ? 'COMPLETED' : status === 'CANCELADO' ? 'CANCELLED' : 'CONFIRMED',
   id: 'res-1', sourceType: 'RESERVATION', status, customerName: 'Ana', paymentMethod: 'CASH',
   origin: 'MANUAL', createdAt: new Date().toISOString(), scheduledAt: '2026-11-10T13:00:00.000Z',
   type: 'SERVICIO', total: 1000, items: [{ name: 'Corte', qty: 1, unitPrice: 1000, price: 1000 }], ...extra,
@@ -85,12 +87,19 @@ const reservation = (status, extra = {}) => ({
 const order = { ...reservation('PENDIENTE'), id: 'ord-1', sourceType: 'ORDER', type: 'PRODUCTO', scheduledAt: undefined };
 // Manual service sale with appointment: the ORDER owns a mirror Reservation with the same id.
 const serviceOrder = (status) => ({ ...reservation(status), id: 'ord-svc', sourceType: 'ORDER', scheduledAt: '2026-11-20T08:00:00' });
-let rows; let calls; let cancelResponse;
+let rows; let calls; let cancelResponse; let completeConflict = false; let editPayload;
 global.fetch = async (url, init = {}) => {
   const u = new URL(url);
   calls.push(`${init.method ?? 'GET'} ${u.pathname}${u.search}`);
   const json = (status, body) => ({ ok: status < 400, status, statusText: '', text: async () => JSON.stringify(body) });
   if (u.pathname === '/sales' && (init.method ?? 'GET') === 'GET') return json(200, rows);
+  if (u.pathname.startsWith('/sales/') && init.method === 'PATCH' && !u.pathname.endsWith('/cancel')) { editPayload=JSON.parse(init.body); return json(200,rows[0]); }
+  if (u.pathname.endsWith('/complete')) {
+    if (completeConflict) { completeConflict = false; rows=rows.map(r=>({...r,allowedActions:[]})); return json(409,{code:'RESERVATION_STATE_CONFLICT',message:'La reserva cambio de estado'}); }
+    assert.deepEqual(JSON.parse(init.body), {serviceProvided: true});
+    rows = rows.map(r => ({ ...r, status: 'FINALIZADA', reservationStatus: 'COMPLETED', allowedActions: [] }));
+    return json(200, rows[0]);
+  }
   if (u.pathname.endsWith('/cancel')) {
     const [status, body] = cancelResponse();
     if (status < 400) rows = rows.filter((r) => r.id !== u.pathname.split('/')[2]); // cancelled leaves the default list
@@ -204,8 +213,9 @@ for (const [status, message] of [
     await openDetails(reservation('PENDIENTE'));
     await cancelThroughDialog();
     assert.ok(await screen.findByText(message));
-    assert.ok(screen.getByText('Detalle de Venta'));
-    assert.ok(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    if (status === 409) { assert.equal(screen.queryByText('Detalle de Venta'), null); assert.ok(calls.filter(c => c === 'GET /sales' || c.startsWith('GET /sales?')).length >= 2); }
+    else assert.ok(screen.getByText('Detalle de Venta'));
+    if (status !== 409) assert.ok(screen.getByRole('button', { name: 'Cancelar reserva' }));
   });
 }
 
@@ -220,4 +230,100 @@ test('the 11/11 calendar shows a service sold on 09/11 only under "Fecha del tur
   assert.ok(await screen.findByText('ver svc-1'));
   fireEvent.click(screen.getByRole('button', { name: 'Fecha de registro' }));
   assert.equal(screen.queryByText('ver svc-1'), null);
+});
+
+
+test('Finalizar requires an explicit unchecked declaration and submits once', async () => {
+  await openDetails(reservation('CONFIRMADO', { allowedActions: ['complete','cancel'] }));
+  fireEvent.click(screen.getByRole('button', { name: 'Finalizar atenci\u00f3n' }));
+  const check = screen.getByRole('checkbox');
+  assert.equal(check.checked, false);
+  const dialog = screen.getByRole('dialog');
+  const button = require('@testing-library/react').within(dialog).getByRole('button', { name: 'Finalizar atenci\u00f3n' });
+  assert.equal(button.disabled, true);
+  assert.match(dialog.textContent, /Ana/); assert.match(dialog.textContent, /Corte/);
+  fireEvent.click(check);
+  assert.equal(button.disabled, false);
+  await act(async () => { fireEvent.click(button); fireEvent.click(button); });
+  await waitFor(() => assert.equal(calls.filter(x => x.includes('/complete')).length, 1));
+});
+
+test('Finalizada has no ordinary cancel, confirm or delete', async () => {
+  await openDetails(reservation('FINALIZADA'));
+  assert.ok(screen.getByText('Finalizado'));
+  assert.equal(screen.queryByRole('button', {name: 'Cancelar reserva'}), null);
+  assert.equal(screen.queryByRole('button', {name: 'Eliminar venta'}), null);
+  assert.equal(screen.queryByRole('button', {name: 'Finalizar atenci\u00f3n'}), null);
+});
+
+test('Missing allowedActions fails closed', async () => {
+  await openDetails(reservation('PENDIENTE', {allowedActions: undefined}));
+  assert.equal(screen.queryByRole('button', {name: 'Cancelar reserva'}), null);
+  assert.equal(screen.queryByRole('button', {name: 'Eliminar venta'}), null);
+});
+
+test('commercial and appointment filters preserve their independent meanings', async () => {
+ rows = [reservation('CONFIRMADO', {id:'confirmed'}), reservation('FINALIZADA', {id:'completed'}), {...order,id:'closed',status:'CERRADO',reservationStatus:null}]; calls=[];
+ render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
+ await screen.findByText('ver confirmed');
+ fireEvent.click(screen.getByText('filter CLOSED'));
+ assert.ok(await screen.findByText('ver confirmed')); assert.ok(await screen.findByText('ver completed')); assert.ok(screen.getByText('ver closed'));
+ fireEvent.click(screen.getByText('filter CONFIRMED'));
+ assert.ok(await screen.findByText('ver confirmed')); assert.equal(screen.queryByText('ver completed'),null);
+ fireEvent.click(screen.getByText('filter COMPLETED'));
+ assert.ok(await screen.findByText('ver completed')); assert.equal(screen.queryByText('ver confirmed'),null); assert.equal(screen.queryByText('ver closed'),null);
+});
+
+test('completion conflict refreshes capabilities and closes the stale decision without retrying', async () => {
+ await openDetails(reservation('CONFIRMADO',{allowedActions:['complete','cancel']}));
+ fireEvent.click(screen.getByRole('button',{name:'Finalizar atenci\u00f3n'}));
+ fireEvent.click(screen.getByRole('checkbox'));
+ completeConflict = true;
+ fireEvent.click(require('@testing-library/react').within(screen.getByRole('dialog')).getByRole('button',{name:'Finalizar atenci\u00f3n'}));
+ await screen.findByText('La reserva cambio de estado');
+ assert.equal(screen.queryByRole('dialog'),null);
+ assert.equal(calls.filter(c=>c.includes('/complete')).length,1);
+ fireEvent.click(await screen.findByText('ver res-1'));
+ assert.equal(screen.queryByRole('button',{name:'Finalizar atenci\u00f3n'}),null);
+});
+
+for(const sourceType of ['ORDER','RESERVATION']) test(`menu reprogramar reuses sale editing with ${sourceType}`, async()=>{
+ rows=[reservation('PENDIENTE',{sourceType,allowedActions:['reschedule']})];calls=[];editPayload=null;
+ render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
+ fireEvent.click(await screen.findByText('menu reschedule res-1'));
+ fireEvent.click(await screen.findByText('guardar turno'));
+ await screen.findByText('Venta actualizada');
+ assert.ok(calls.includes(`PATCH /sales/res-1?sourceType=${sourceType}`));
+ assert.equal(editPayload.scheduledAt,'2026-12-01T10:00:00');
+ assert.ok(calls.filter(c=>c.startsWith('GET /sales')).length>=2);
+});
+test('card completion uses the existing explicit declaration dialog',async()=>{
+ rows=[reservation('CONFIRMADO',{allowedActions:['complete']})];calls=[];
+ render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
+ fireEvent.click(await screen.findByText('menu complete res-1'));
+ assert.equal(screen.getByRole('checkbox').checked,false);
+ fireEvent.click(screen.getByRole('button',{name:'Volver'}));
+ fireEvent.click(screen.getByText('menu complete res-1'));
+ assert.equal(screen.getByRole('checkbox').checked,false);
+ fireEvent.click(screen.getByRole('checkbox'));
+ fireEvent.click(screen.getByRole('button',{name:'Finalizar atenci\u00f3n'}));
+ await screen.findByText('Atenci\u00f3n finalizada');
+ assert.equal(calls.filter(c=>c==='POST /reservations/res-1/complete').length,1);
+});
+test('card mirror cancellation targets the ORDER route',async()=>{
+ rows=[reservation('PENDIENTE',{sourceType:'ORDER',allowedActions:['cancel']})];calls=[];cancelResponse=()=>[200,{}];
+ render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
+ fireEvent.click(await screen.findByText('menu cancel res-1'));
+ fireEvent.click(await screen.findByRole('button',{name:'S\u00ed, cancelar reserva'}));
+ await screen.findByText('Reserva cancelada. El horario qued\u00f3 libre.');
+ assert.ok(calls.includes('PATCH /sales/res-1/cancel?sourceType=ORDER'));
+});
+
+test('detail uses its operational badge without permanent completion warnings', async()=>{
+ await openDetails(reservation('CERRADO',{sourceType:'ORDER',reservationStatus:'CONFIRMED',allowedActions:[],blockedActions:{complete:{code:'RESERVATION_NOT_STARTED',message:'El horario de la reserva todavia no comenzo'}}}));
+ assert.ok(screen.getByText('Confirmado'));
+ assert.equal(screen.queryByText('Cerrado'),null);
+ assert.equal(screen.queryByText(/Atenci\u00f3n:/),null);
+ assert.equal(screen.queryByText('El horario de la reserva todavia no comenzo'),null);
+ assert.equal(screen.queryByRole('button',{name:'Finalizar atenci\u00f3n'}),null);
 });

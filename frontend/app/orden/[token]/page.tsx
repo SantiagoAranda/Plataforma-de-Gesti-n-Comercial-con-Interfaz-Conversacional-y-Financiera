@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Search } from "lucide-react";
 import toast from "react-hot-toast";
 import ReservationDrawer from "@/src/components/reservations/ReservationDrawer";
 import { formatLocalDateKey } from "@/src/lib/datetime";
+import { bookingAttemptKey, bookingErrorMessage, type BookingAttempt } from "@/src/lib/reservations/bookingAttempt";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -104,6 +105,7 @@ export default function PublicStorePage() {
     }
   };
 
+  const bookingAttempt = useRef<BookingAttempt>(null);
   const handleConfirmReservation = async (data: any) => {
     if (!selectedService || !data.date || !data.time) return;
 
@@ -113,23 +115,29 @@ export default function PublicStorePage() {
       const startMinute = hour * 60 + minute;
       const endMinute = startMinute + duration;
 
+      const payload = {
+        itemId: selectedService.id,
+        customerName: data.fullName,
+        customerWhatsapp: data.whatsapp,
+        date: formatLocalDateKey(data.date),
+        startMinute,
+        endMinute,
+      };
       const res = await fetch(
         `${API_URL}/public/${token}/reserve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            itemId: selectedService.id,
-            customerName: data.fullName,
-            customerWhatsapp: data.whatsapp,
-            date: formatLocalDateKey(data.date),
-            startMinute,
-            endMinute,
-          }),
+          body: JSON.stringify({ ...payload, idempotencyKey: bookingAttemptKey(bookingAttempt, payload) }),
         }
       );
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        if (res.status === 409) bookingAttempt.current = null;
+        toast.error(await bookingErrorMessage(res, "No se pudo crear la reserva"));
+        return;
+      }
+      bookingAttempt.current = null;
 
       toast.success("Reserva creada correctamente");
 

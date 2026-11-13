@@ -1,4 +1,5 @@
 import {
+  IsUUID,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -44,4 +45,10 @@ export class CreatePublicReservationDto {
   @IsOptional()
   @IsInt()
   endMinute?: number;
+
+  // One random key per booking attempt, reused only by that attempt's retries.
+  // Required (400 IDEMPOTENCY_KEY_REQUIRED, checked in the service with a stable code).
+  @IsOptional()
+  @IsUUID()
+  idempotencyKey?: string;
 }

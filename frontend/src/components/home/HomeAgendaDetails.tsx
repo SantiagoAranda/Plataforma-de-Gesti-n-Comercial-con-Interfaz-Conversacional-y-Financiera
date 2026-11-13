@@ -81,7 +81,7 @@ export function HomeAgendaDetailsContent({
                   statusBadgeStyle(ev.status),
                 )}
               >
-                {ev.status}
+                {ev.status === 'COMPLETADO' ? 'FINALIZADA' : ev.status}
               </span>
             </div>
 

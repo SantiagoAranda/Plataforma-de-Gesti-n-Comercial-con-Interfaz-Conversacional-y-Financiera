@@ -6,4 +6,9 @@ export class CancelPublicReservationDto {
   @IsString()
   @MaxLength(100)
   token?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
 }

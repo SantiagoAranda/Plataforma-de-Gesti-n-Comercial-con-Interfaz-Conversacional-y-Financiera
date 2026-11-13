@@ -1185,13 +1185,52 @@ export class AccountingService {
       }
     }
 
+    movements.push(
+      ...(await this.postInventoryCostMovements(tx, businessId, order, date, lines)),
+    );
+
+    // --- VALIDACIÓN DE BALANCE (DÉBITOS = CRÉDITOS) ---
+    let sumDebits = new Prisma.Decimal(0);
+    let sumCredits = new Prisma.Decimal(0);
+    for (const mov of movements) {
+      const amt = new Prisma.Decimal(mov.amount);
+      if (mov.nature === MovementNature.DEBIT) {
+        sumDebits = sumDebits.add(amt);
+      } else if (mov.nature === MovementNature.CREDIT) {
+        sumCredits = sumCredits.add(amt);
+      }
+    }
+    const difference = sumDebits.sub(sumCredits).abs();
+    if (difference.gt(new Prisma.Decimal(1.0))) {
+      throw new BadRequestException(
+        `Desbalance contable detectado en la venta: Débitos ($${sumDebits.toFixed(2)}) y Créditos ($${sumCredits.toFixed(2)}) no coinciden. Diferencia: $${difference.toFixed(2)}`,
+      );
+    }
+
+    return movements.map((movement) => this.serializeMovement(movement));
+  }
+
+  /**
+   * Cost of sale (6135 debit / 1435 credit) for the inventory already consumed under
+   * originId=order.id. Balanced by construction. Extracted verbatim from
+   * postOrderMovements (Bloque 2.2) so a free service can post its real cost without
+   * fabricating income; postOrderMovements still calls it at the same point.
+   */
+  async postInventoryCostMovements(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    order: OrderForPosting | Record<string, any>,
+    date: Date,
+    lines: PostingLine[] = this.buildPostingLines(order),
+  ): Promise<any[]> {
     const inventoryMovements = await this.resolveOrderInventoryCosts(
       tx,
       businessId,
       order.id,
     );
 
-    if (inventoryMovements.length > 0) {
+    if (inventoryMovements.length === 0) return [];
+    {
       const inventoryReference = await this.loadPucReferenceOrThrow(
         {
           pucCuentaCode: ORDER_ACCOUNTING_DEFAULTS.inventoryPucCode,
@@ -1280,28 +1319,8 @@ export class AccountingService {
         )
       ).flat();
 
-      movements.push(...costMovements);
+      return costMovements;
     }
-
-    // --- VALIDACIÓN DE BALANCE (DÉBITOS = CRÉDITOS) ---
-    let sumDebits = new Prisma.Decimal(0);
-    let sumCredits = new Prisma.Decimal(0);
-    for (const mov of movements) {
-      const amt = new Prisma.Decimal(mov.amount);
-      if (mov.nature === MovementNature.DEBIT) {
-        sumDebits = sumDebits.add(amt);
-      } else if (mov.nature === MovementNature.CREDIT) {
-        sumCredits = sumCredits.add(amt);
-      }
-    }
-    const difference = sumDebits.sub(sumCredits).abs();
-    if (difference.gt(new Prisma.Decimal(1.0))) {
-      throw new BadRequestException(
-        `Desbalance contable detectado en la venta: Débitos ($${sumDebits.toFixed(2)}) y Créditos ($${sumCredits.toFixed(2)}) no coinciden. Diferencia: $${difference.toFixed(2)}`,
-      );
-    }
-
-    return movements.map((movement) => this.serializeMovement(movement));
   }
 
   async reverseOrderMovements(

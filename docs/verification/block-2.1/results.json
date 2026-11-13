@@ -1,0 +1,91 @@
+{
+  "baseline": "e005caa",
+  "backend": {
+    "numTotalTests": 429,
+    "numPassedTests": 428,
+    "numFailedTests": 1,
+    "numTotalTestSuites": 14,
+    "numPassedTestSuites": 13,
+    "numFailedTestSuites": 1
+  },
+  "postgresReservations": {
+    "passed": 41,
+    "failed": 0
+  },
+  "frontend": {
+    "passed": 134,
+    "failed": 0
+  },
+  "suites": [
+    {
+      "file": "backend\\src\\accounting\\accounting.service.spec.ts",
+      "tests": 34,
+      "status": "failed"
+    },
+    {
+      "file": "backend\\src\\availability\\reservation-cancel.spec.ts",
+      "tests": 8,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\fiscal-documents\\fiscal-document.service.spec.ts",
+      "tests": 46,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\inventory\\inventory.service.spec.ts",
+      "tests": 105,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\sales\\sales.service.spec.ts",
+      "tests": 30,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\availability\\reservation-booking.spec.ts",
+      "tests": 41,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\sales\\sales-price-history.spec.ts",
+      "tests": 14,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\availability\\availability.service.spec.ts",
+      "tests": 62,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\sales\\manual-invoice-confirmation.spec.ts",
+      "tests": 4,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\reservations\\reservations.service.spec.ts",
+      "tests": 3,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\fiscal-documents\\manual-invoice.spec.ts",
+      "tests": 33,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\reservations\\reservation-lifecycle.spec.ts",
+      "tests": 36,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\fiscal-documents\\providers\\factus.provider.spec.ts",
+      "tests": 2,
+      "status": "passed"
+    },
+    {
+      "file": "backend\\src\\fiscal-documents\\factus-date.spec.ts",
+      "tests": 11,
+      "status": "passed"
+    }
+  ]
+}

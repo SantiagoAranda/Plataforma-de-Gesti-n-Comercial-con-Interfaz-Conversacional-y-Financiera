@@ -1,4 +1,5 @@
 "use client";
+import CompleteReservationDialog from "@/src/components/sales/CompleteReservationDialog";
 
 import dynamic from "next/dynamic";
 import {
@@ -31,8 +32,9 @@ import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirm
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
-import { confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
+import { completeReservation, markReservationNoShow, confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { canCancelReservation, reservationCancelPrompt, reservationLink } from "@/src/lib/sales/reservationCancelUi";
+import { isNoShow } from "@/src/lib/sales/salePresentation";
 import { saleDayKey, type SaleDateBasis } from "@/src/lib/sales/saleDates";
 import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
 import type { FactusConfigurationView, FiscalDocument } from "@/src/types/fiscal-documents";
@@ -165,6 +167,15 @@ function mapOrderToSale(order: ApiOrder): Sale {
     paymentMethod: order.paymentMethod,
     type: order.type,
     status: order.status as Sale["status"],
+    allowedActions: order.allowedActions,
+    blockedActions: order.blockedActions,
+    reservationStatus: order.reservationStatus,
+    confirmedAt: order.confirmedAt,
+    completedAt: order.completedAt,
+    cancelledAt: order.cancelledAt,
+    cancelReason: order.cancelReason ?? null,
+    commercialPolicyVersion: order.commercialPolicyVersion ?? null,
+    countsAsSale: order.countsAsSale,
     inventoryPostedAt: order.inventoryPostedAt ?? null,
     accountingPostedAt: order.accountingPostedAt ?? null,
     requiresLegacyInvoiceWarning: order.requiresLegacyInvoiceWarning ?? true,
@@ -180,8 +191,14 @@ function mapOrderToSale(order: ApiOrder): Sale {
   };
 }
 
+// The backend decides what is a realized sale; a policy 2 CONFIRMED booking is not one.
+// Older payloads without the flag keep the historical status rule.
+function isRealizedSale(sale: Sale) {
+  return sale.countsAsSale ?? ["CERRADO", "CONFIRMADO", "FINALIZADA"].includes(sale.status);
+}
+
 function isDeletionBlockedByPostedInventory(sale: Sale) {
-  return sale.status === "CERRADO" && sale.inventoryPostedAt != null;
+  return !sale.allowedActions?.includes("delete");
 }
 
 const SALE_SAVE_ERROR_FALLBACK =
@@ -411,7 +428,7 @@ function VentaPageContent() {
       setError(null);
 
       // The backend omits cancelled sales unless asked; the "Canceladas" filter needs them.
-      const data = await listSales({ includeCancelled: includeCancelledSales || filterStatus === "CANCELLED" });
+      const data = await listSales({ includeCancelled: includeCancelledSales || filterStatus === "CANCELLED" || filterStatus === "NO_SHOW" });
       setSales(data.map(mapOrderToSale));
     } catch (err) {
       console.error(err);
@@ -567,12 +584,13 @@ function VentaPageContent() {
         if (filterStatus === "PENDING") {
           return s.status === "PENDIENTE" || s.status === "PENDIENTE DE CIERRE";
         }
-        if (filterStatus === "CLOSED") {
-          return s.status === "CERRADO";
-        }
+        if (filterStatus === "CLOSED") return isRealizedSale(s);
+        if (filterStatus === "CONFIRMED") return s.reservationStatus === "CONFIRMED";
+        if (filterStatus === "COMPLETED") return s.reservationStatus === "COMPLETED";
         if (filterStatus === "CANCELLED") {
-          return s.status === "CANCELADO";
+          return s.status === "CANCELADO" && !isNoShow(s);
         }
+        if (filterStatus === "NO_SHOW") return isNoShow(s);
         return true;
       });
     }
@@ -689,9 +707,12 @@ function VentaPageContent() {
   const todayMetrics = useMemo(() => {
     return {
       total: salesForSelectedDate
-        .filter((sale) => sale.status === "CERRADO")
+        .filter(isRealizedSale)
         .reduce((acc, sale) => acc + (sale.total ?? 0), 0),
-      transactions: salesForSelectedDate.length,
+      // A policy 2 booking (confirmed, cancelled or no-show) is not a transaction until completed.
+      transactions: salesForSelectedDate.filter(
+        (sale) => sale.commercialPolicyVersion !== 2 || isRealizedSale(sale)
+      ).length,
     };
   }, [salesForSelectedDate]);
 
@@ -812,6 +833,7 @@ function VentaPageContent() {
         duration: 2000,
       });
     } catch (err) {
+      if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
       console.error(err);
       const message = getErrorMessage(err, "No se pudo finalizar la venta");
       setError(message);
@@ -886,11 +908,13 @@ function VentaPageContent() {
       console.log("Payload create sale:", payload);
       const created = await createSale(payload);
 
-      if (data.status === "CERRADO") {
+      // Policy 2 bookings are never closed at creation: the sale happens on «Finalizar atención».
+      const isBooking = (created as { commercialPolicyVersion?: number | null }).commercialPolicyVersion === 2;
+      if (data.status === "CERRADO" && !isBooking) {
         await confirmSale(created.id, created.sourceType, data.buyerFiscalContext);
       }
 
-      toast.success("Venta registrada manualmente");
+      toast.success(isBooking ? "Turno reservado. Registrá la venta con «Finalizar atención» cuando se preste el servicio." : "Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
       await Promise.all([
@@ -950,6 +974,7 @@ function VentaPageContent() {
             toast.dismiss(successId);
           }, 2100);
         } catch (err) {
+          if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
           console.error(err);
 
           toast.dismiss(loadingId);
@@ -978,7 +1003,39 @@ function VentaPageContent() {
     );
   }, [detailsSale, loadOrders]);
 
+  const handleOpenEdit = (sale: Sale, action: 'edit' | 'reschedule' = 'edit') => {
+    if (salesBlockedBySimpleRegime || !sale.allowedActions?.includes(action)) return;
+    setEditingSale(sale);
+    setDetailsSale(null);
+    setSelectedSale(null);
+  };
+  const handleOpenCompletion = (sale: Sale) => {
+    if (sale.allowedActions?.includes('complete')) setCompletionSale(sale);
+  };
+  const [completionSale, setCompletionSale] = useState<Sale | null>(null);
+  const handleCompleteReservation = async (sale: Sale) => {
+    if (!sale.allowedActions?.includes('complete')) throw new Error('Actualizá la reserva antes de finalizar.');
+    try {
+      await completeReservation(sale.id);
+      invalidateCache('home:sales');
+      invalidateCache('home:businessActivity');
+      await loadOrders();
+      setDetailsSale(null);
+      setSelectedSale(null);
+      toast.success('Atención finalizada');
+    } catch (error) {
+      await loadOrders();
+      setDetailsSale(null);
+      setSelectedSale(null);
+      // Close stale decisions; a fresh dialog requires a new explicit declaration.
+      setCompletionSale(null);
+      toast.error(getErrorMessage(error, 'No se pudo finalizar la atención.'));
+      throw error;
+    }
+  };
+
   const handleCancelReservation = useCallback((sale: Sale) => {
+    if (!sale.allowedActions?.includes("cancel")) return;
     showConfirmation(
       `¿Cancelar esta reserva? ${reservationCancelPrompt(sale)}`,
       "Sí, cancelar reserva",
@@ -997,6 +1054,7 @@ function VentaPageContent() {
           toast.dismiss(loadingId);
           toast.success("Reserva cancelada. El horario quedó libre.", { duration: 2500 });
         } catch (err) {
+          if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
           console.error(err);
           toast.dismiss(loadingId);
           // 4xx carry the backend's Spanish reason; 5xx/network errors are not user-readable.
@@ -1011,6 +1069,44 @@ function VentaPageContent() {
       },
       "rose",
       // "Cancelar" next to "Cancelar reserva" read as the confirm button and silently dismissed.
+      "Volver"
+    );
+  }, [loadOrders]);
+
+  const handleNoShow = useCallback((sale: Sale) => {
+    if (!sale.allowedActions?.includes("noShow")) return;
+    showConfirmation(
+      "¿Registrar que el cliente no asistió? La reserva quedará como «No asistió», sin venta ni movimientos de inventario.",
+      "Sí, no asistió",
+      async () => {
+        const loadingId = "reservation-no-show-loading";
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading("Registrando ausencia...", { id: loadingId });
+          await markReservationNoShow(sale.id);
+          invalidateCache("home:sales");
+          invalidateCache("home:businessActivity");
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success("Ausencia registrada. El horario quedó libre.", { duration: 2500 });
+        } catch (err) {
+          // Never retried automatically: refresh capabilities and let the user decide again.
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          const fallback = "No se pudo registrar la ausencia. Intentá nuevamente.";
+          toast.error(
+            err instanceof AppApiError && err.status < 500 ? getErrorMessage(err, fallback) : fallback,
+            { duration: 5000 }
+          );
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      "rose",
       "Volver"
     );
   }, [loadOrders]);
@@ -1067,6 +1163,7 @@ function VentaPageContent() {
         toast.dismiss(successId);
       }, 2100);
     } catch (err) {
+      if (err instanceof AppApiError && err.status === 409) { await loadOrders(); setDetailsSale(null); setSelectedSale(null); }
       console.error(err);
       const message = getSaleSaveErrorMessage(err);
       setError(message);
@@ -1247,7 +1344,7 @@ function VentaPageContent() {
             viewLabel="Ver detalles"
             onEdit={
               !salesBlockedBySimpleRegime &&
-                (selectedSale.status === "PENDIENTE" || selectedSale.status === "PENDIENTE DE CIERRE")
+                selectedSale.allowedActions?.includes("edit")
                 ? () => {
                   setEditingSale(selectedSale);
                   setSelectedSale(null);
@@ -1412,6 +1509,12 @@ function VentaPageContent() {
           {!loading && !error && filtered.length > 0 && (
             <SalesList
               sales={filtered}
+              onComplete={handleOpenCompletion}
+              onReschedule={salesBlockedBySimpleRegime ? undefined : (sale) => handleOpenEdit(sale, 'reschedule')}
+              onCancelReservation={handleCancelReservation}
+              onNoShow={handleNoShow}
+              onEdit={salesBlockedBySimpleRegime ? undefined : handleOpenEdit}
+              onDelete={salesBlockedBySimpleRegime ? undefined : handleDeleteSale}
               selectedId={selectedSale?.id}
               highlightedId={highlightedSaleId}
               targetId={pendingDeepLinkSaleId}
@@ -1456,10 +1559,12 @@ function VentaPageContent() {
         />
       )}
 
+      {completionSale && <CompleteReservationDialog sale={completionSale} onClose={() => setCompletionSale(null)} onComplete={handleCompleteReservation} />}
       <SaleDetailsModal
         open={!!detailsSale}
         sale={detailsSale}
         onClose={() => setDetailsSale(null)}
+        onComplete={handleOpenCompletion}
         onConfirm={salesBlockedBySimpleRegime ? undefined : handleConfirmSale}
         onSaveOptionalIngredients={salesBlockedBySimpleRegime ? undefined : handleSaveOptionalIngredients}
         onCancel={
@@ -1473,10 +1578,8 @@ function VentaPageContent() {
             ? handleCancelReservation
             : undefined
         }
-        onEdit={salesBlockedBySimpleRegime ? undefined : (sale) => {
-          setEditingSale(sale);
-          setDetailsSale(null);
-        }}
+        onNoShow={handleNoShow}
+        onEdit={salesBlockedBySimpleRegime ? undefined : handleOpenEdit}
         confirming={confirmingSaleId === detailsSale?.id}
         taxSettingsEnabled={taxSettingsEnabled}
       />

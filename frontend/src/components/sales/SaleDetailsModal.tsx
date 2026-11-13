@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import SalesChatComposer from "./SalesChatComposer";
-import { getStatusStyles } from "@/src/lib/statusStyles";
+import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
 import { getSaleOriginLabel, getSaleOriginStyles } from "@/src/lib/saleOrigin";
 import { getCached } from "@/src/lib/cache";
 import { api } from "@/src/lib/api";
@@ -24,6 +24,8 @@ export default function SaleDetailsModal({
   onConfirm,
   onCancel,
   onCancelReservation,
+  onNoShow,
+  onComplete,
   onSaveOptionalIngredients, // kept for TS signature compatibility
   confirming = false,
   taxSettingsEnabled = false,
@@ -33,9 +35,11 @@ export default function SaleDetailsModal({
   onClose: () => void;
   onEdit?: (sale: Sale) => void;
   onConfirm?: (sale: Sale) => void;
+  onComplete?: (sale: Sale) => void;
   onCancel?: (sale: Sale) => void;
   // Cancels (not deletes) a standalone reservation, freeing its slot.
   onCancelReservation?: (sale: Sale) => void;
+  onNoShow?: (sale: Sale) => void;
   onSaveOptionalIngredients?: (
     sale: Sale,
     orderItemId: string,
@@ -47,7 +51,7 @@ export default function SaleDetailsModal({
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
 
   useEffect(() => {
-    if (!sale || sale.status === "CERRADO" || sale.status === "CONFIRMADO" || sale.status === "CANCELADO" || !sale.items?.length) {
+    if (!sale || sale.status === "CERRADO" || sale.status === "CONFIRMADO" || sale.status === "FINALIZADA" || sale.status === "CANCELADO" || !sale.items?.length) {
       setHasPriceDivergence(false);
       return;
     }
@@ -86,15 +90,11 @@ export default function SaleDetailsModal({
     };
   }, [sale]);
 
+  const presentation = useSaleBadge(sale);
   if (!open || !sale) return null;
 
-  const canConfirm = sale.status === "PENDIENTE" || sale.status === "PENDIENTE DE CIERRE";
-  const canEditSale =
-    Boolean(onEdit) &&
-    canConfirm &&
-    sale.sourceType === "ORDER" &&
-    !sale.inventoryPostedAt &&
-    !sale.accountingPostedAt;
+  const canConfirm = canUseSaleAction(sale, "confirm");
+  const canEditSale = Boolean(onEdit) && canUseSaleAction(sale, "edit");
 
   const total = sale.total ?? sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
   const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
@@ -112,7 +112,7 @@ export default function SaleDetailsModal({
     Number(sale.fiscalSummary?.impoconsumo ?? 0)
     : total;
 
-  const statusStyles = getStatusStyles(sale.status);
+  const statusStyles = presentation!.styles;
   const originLabel = getSaleOriginLabel(sale.origin);
   const originStyles = getSaleOriginStyles(sale.origin);
   const paymentMethodText = sale.paymentMethod === "BANK_TRANSFER" ? "Transferencia" : "Efectivo";
@@ -133,7 +133,7 @@ export default function SaleDetailsModal({
     <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] sm:rounded-2xl shadow-2xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
         {/* Header Section */}
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+        <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between bg-white shrink-0">
           <div className="flex flex-col min-w-0">
             <h2 className="font-semibold text-slate-900 text-base truncate">Detalle de Venta</h2>
             <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
@@ -141,7 +141,8 @@ export default function SaleDetailsModal({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 ml-4">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-full">
+            {onComplete && canUseSaleAction(sale, 'complete') && <button type="button" disabled={confirming} onClick={() => onComplete(sale)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white">Finalizar atención</button>}
             {canEditSale && (
               <button
                 onClick={() => onEdit?.(sale)}
@@ -153,7 +154,7 @@ export default function SaleDetailsModal({
                 <Pencil size={16} />
               </button>
             )}
-            {onCancelReservation && (
+            {onCancelReservation && canUseSaleAction(sale, "cancel") && (
               <button
                 onClick={() => onCancelReservation(sale)}
                 disabled={confirming}
@@ -163,8 +164,18 @@ export default function SaleDetailsModal({
                 Cancelar reserva
               </button>
             )}
+            {onNoShow && canUseSaleAction(sale, "noShow") && (
+              <button
+                onClick={() => onNoShow(sale)}
+                disabled={confirming}
+                className="h-9 px-3 flex items-center justify-center rounded-xl border border-rose-100 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
+                aria-label="Registrar que el cliente no asistió"
+              >
+                No asistió
+              </button>
+            )}
             {/* An active reservation is cancelled, not deleted: one destructive action only. */}
-            {onCancel && !onCancelReservation && (
+            {onCancel && !onCancelReservation && canUseSaleAction(sale, "delete") && (
               <button
                 onClick={handleCancelAction}
                 disabled={confirming}

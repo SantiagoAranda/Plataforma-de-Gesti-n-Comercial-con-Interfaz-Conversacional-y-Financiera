@@ -1,3 +1,5 @@
+import { UseInterceptors } from '@nestjs/common';
+import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Controller,
   Get,
@@ -14,6 +16,7 @@ import { CreatePublicReservationDto } from './dto/create-public-reservation.dto'
 import { CancelPublicReservationDto } from './dto/cancel-public-reservation.dto';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
 
+@UseInterceptors(ReservationConflictInterceptor)
 @Controller('public')
 export class PublicController {
   constructor(private readonly publicService: PublicService) {}
@@ -35,6 +38,7 @@ export class PublicController {
     const reservation = await this.publicService.cancelReservation(
       id,
       dto?.token,
+      dto?.reason,
     );
     if (!reservation) throw new NotFoundException('Reserva no encontrada');
     return reservation;

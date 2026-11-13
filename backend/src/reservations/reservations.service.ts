@@ -1,3 +1,4 @@
+import { reservationTransitionBlock, lifecycleConflict, cancellationReason, isPolicyV2, newReservationPolicy } from '../reservations/reservation-lifecycle';
 import {
   Injectable,
   BadRequestException,
@@ -96,6 +97,7 @@ export class ReservationsService {
             date: slot.date,
             startMinute: slot.startMinute,
             endMinute: slot.endMinute,
+            ...(await newReservationPolicy(tx, businessId, slot.itemId)),
           },
         });
       })
@@ -144,7 +146,8 @@ export class ReservationsService {
 
   // PENDING only: a CONFIRMED reservation carries inventory and accounting, whose
   // reversal is SalesService.cancel(RESERVATION). Confirmation lives in SalesService too.
-  async cancel(businessId: string, id: string) {
+  async cancel(businessId: string, id: string, reasonInput?: unknown) {
+    const reason = cancellationReason(reasonInput);
     return this.prisma.$transaction(async (tx) => {
       const { reservation, alreadyCancelled } =
         await this.availability.lockReservationForCancellation(
@@ -153,14 +156,17 @@ export class ReservationsService {
           id,
         );
       if (alreadyCancelled) return reservation;
-      if (reservation.status !== 'PENDING') {
+      const restriction = reservationTransitionBlock(reservation, 'cancel', 'internal');
+      if (restriction) lifecycleConflict(restriction);
+      // Policy 2 CONFIRMED carries no effects (checked above), so nothing needs Sales' reversal.
+      if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
         throw new ConflictException(
           RESERVATION_ERRORS.confirmedCancelRequiresSales,
         );
       }
       return tx.reservation.update({
         where: { id },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
       });
     });
   }
@@ -182,7 +188,10 @@ export class ReservationsService {
           throw new BadRequestException(RESERVATION_ERRORS.notFound);
         }
 
-        if (reservation.status !== 'PENDING') {
+        const restriction = reservationTransitionBlock(reservation, 'reschedule');
+        if (restriction) lifecycleConflict(restriction);
+        await this.availability.assertNotSalesMirror(tx, businessId, id);
+        if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
           throw new BadRequestException(
             'Solo se pueden reprogramar reservas pendientes.',
           );

@@ -1,3 +1,4 @@
+import { reservationTransitionBlock, lifecycleConflict, cancellationReason, isPolicyV2, newReservationPolicy } from '../reservations/reservation-lifecycle';
 import {
   Injectable,
   BadRequestException,
@@ -37,6 +38,21 @@ export function publicTokenMatches(
   const b = Buffer.from(provided);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+// A booking-attempt key only replays its own response for this long; afterwards it is no
+// credential at all (no token, no data, no new booking).
+export const PUBLIC_RESERVATION_REPLAY_WINDOW_MS = 15 * 60 * 1000;
+// The only reservation fields a public caller ever receives back. Never key hash/fingerprint.
+const PUBLIC_RESERVATION_RESULT = {
+  id: true,
+  publicToken: true,
+  status: true,
+  date: true,
+  startMinute: true,
+  endMinute: true,
+  createdAt: true,
+  publicRequestFingerprint: true,
+} as const;
 
 type PublicRecipeLine = {
   ingredientId: string;
@@ -345,6 +361,55 @@ export class PublicService {
       });
     }
     return { message: 'Order created', orderId: order.publicToken };
+  }
+
+  private publicReservationKeyHash(businessId: string, key: string) {
+    return createHash('sha256').update(`${businessId}:${key}`).digest('hex');
+  }
+
+  private publicReservationFingerprint(dto: CreatePublicReservationDto) {
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          itemId: dto.itemId,
+          date: dto.date,
+          startMinute: dto.startMinute,
+          endMinute: dto.endMinute ?? null,
+          customerName: dto.customerName.trim(),
+          customerWhatsapp: dto.customerWhatsapp.trim(),
+        }),
+      )
+      .digest('hex');
+  }
+
+  /** Single replay rule for every lookup path (pre-check and post-P2002 re-read). */
+  private resolvePublicReservationReplay(
+    row: { createdAt: Date; publicRequestFingerprint: string | null } & Record<string, any>,
+    fingerprint: string,
+    now = Date.now(),
+  ) {
+    if (row.publicRequestFingerprint !== fingerprint) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD',
+        message: 'La clave de idempotencia ya fue utilizada con otro contenido',
+      });
+    }
+    if (now - row.createdAt.getTime() > PUBLIC_RESERVATION_REPLAY_WINDOW_MS) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        code: 'IDEMPOTENCY_KEY_EXPIRED',
+        message: 'Este intento de reserva ya no es válido. Iniciá una nueva reserva.',
+      });
+    }
+    return this.publicReservationResult(row);
+  }
+
+  private publicReservationResult(row: Record<string, any>) {
+    const { publicRequestFingerprint: _omit, ...result } = row;
+    return result;
   }
 
   private isPublicOrderIdempotencyConflict(error: unknown) {
@@ -780,9 +845,35 @@ export class PublicService {
 
   async createReservation(slug: string, dto: CreatePublicReservationDto) {
     const business = await this.findActiveBusiness(slug);
+    // Scoped to the slug's business: a key from another business can never match here.
+    const keyHash = dto.idempotencyKey
+      ? this.publicReservationKeyHash(business.id, dto.idempotencyKey)
+      : null;
+    const fingerprint = keyHash ? this.publicReservationFingerprint(dto) : null;
+    const findPrevious = (db: any) =>
+      db.reservation.findUnique({
+        where: {
+          businessId_publicRequestId: {
+            businessId: business.id,
+            publicRequestId: keyHash,
+          },
+        },
+        select: PUBLIC_RESERVATION_RESULT,
+      });
 
-    const reservation = await this.prisma
-      .$transaction(async (tx) => {
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Every new booking is policy 2: retries must be idempotent.
+        if (!keyHash)
+          throw new BadRequestException({
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'idempotencyKey is required',
+          });
+        if (keyHash) {
+          const previous = await findPrevious(tx);
+          if (previous)
+            return this.resolvePublicReservationReplay(previous, fingerprint!);
+        }
         const slot = await this.availability.reserveSlot(tx, {
           businessId: business.id,
           itemId: dto.itemId,
@@ -790,8 +881,7 @@ export class PublicService {
           startMinute: dto.startMinute,
           requestedEndMinute: dto.endMinute,
         });
-
-        return tx.reservation.create({
+        const created = await tx.reservation.create({
           data: {
             businessId: business.id,
             itemId: slot.itemId,
@@ -800,19 +890,31 @@ export class PublicService {
             date: slot.date,
             startMinute: slot.startMinute,
             endMinute: slot.endMinute,
-            status: 'PENDING',
             origin: 'PUBLIC_STORE',
+            // Public bookings keep the documented CASH default (no payment step in the store);
+            // the business can correct it from «Editar» before completing.
+            ...(await newReservationPolicy(tx, business.id, slot.itemId)),
+            publicRequestId: keyHash,
+            publicRequestFingerprint: fingerprint,
           },
+          select: PUBLIC_RESERVATION_RESULT,
         });
-      })
-      .catch((error) => {
-        throw toBookingConflict(error);
+        return this.publicReservationResult(created);
       });
-
-    console.log(
-      `[PublicService] Created reservation origin: ${reservation.origin}`,
-    );
-    return reservation;
+      // Logs never include the key, its hash or the fingerprint.
+      console.log('[PublicService] Created public reservation');
+      return result;
+    } catch (error) {
+      if (keyHash) {
+        // A concurrent twin may have committed first. It surfaces as P2002 on the key index
+        // or, more often, as "slot unavailable" after waiting on the agenda lock. Either way
+        // the same replay rules apply; never a second booking.
+        const concurrent = await findPrevious(this.prisma);
+        if (concurrent)
+          return this.resolvePublicReservationReplay(concurrent, fingerprint!);
+      }
+      throw toBookingConflict(error);
+    }
   }
 
   /* =====================================================
@@ -1151,6 +1253,10 @@ export class PublicService {
       select: {
         id: true,
         status: true,
+        archived: true,
+        commercialPolicyVersion: true,
+        inventoryPostedAt: true,
+        accountingPostedAt: true,
         customerName: true,
         customerWhatsapp: true,
         date: true,
@@ -1177,9 +1283,30 @@ export class PublicService {
     });
 
     if (!reservation) return null;
+    const isMirror = Boolean(
+      await this.prisma.order.findFirst({
+        where: { id, businessId: reservation.business.id },
+        select: { id: true },
+      }),
+    );
+    const {
+      archived,
+      commercialPolicyVersion,
+      inventoryPostedAt,
+      accountingPostedAt,
+      ...visible
+    } = reservation;
+    // Server-side eligibility (the token is still required to actually cancel).
+    const canCancel =
+      !isMirror &&
+      (isPolicyV2(reservation)
+        ? reservation.status === 'CONFIRMED' &&
+          !reservationTransitionBlock(reservation, 'cancel', 'public')
+        : reservation.status === 'PENDING' && !archived);
 
     return {
-      ...reservation,
+      ...visible,
+      canCancel,
       date: reservation.date.toISOString(),
       item: {
         ...reservation.item,
@@ -1188,7 +1315,8 @@ export class PublicService {
     };
   }
 
-  async cancelReservation(id: string, token?: string) {
+  async cancelReservation(id: string, token?: string, reasonInput?: unknown) {
+    const reason = cancellationReason(reasonInput);
     const found = await this.prisma.reservation.findUnique({
       where: { id },
       select: { businessId: true, publicToken: true },
@@ -1207,14 +1335,21 @@ export class PublicService {
           found.businessId,
           id,
         );
-      if (alreadyCancelled) return reservation;
-      if (reservation.status !== 'PENDING') {
+      if (!publicTokenMatches(reservation.publicToken, token)) throw new ForbiddenException(RESERVATION_ERRORS.publicCancelUnauthorized);
+      const visible = (row: any) => ({ id: row.id, status: row.status, cancelledAt: row.cancelledAt });
+      if (alreadyCancelled) return visible(reservation);
+      // Mirrors were already rejected by lockReservationForCancellation.
+      const restriction = reservationTransitionBlock(reservation, 'cancel', 'public');
+      if (restriction) lifecycleConflict(restriction);
+      if (reservation.status !== 'PENDING' && !isPolicyV2(reservation)) {
         throw new ConflictException(RESERVATION_ERRORS.publicCancelNotAllowed);
       }
-      return tx.reservation.update({
-        where: { id },
-        data: { status: 'CANCELLED' },
-      });
+      return visible(
+        await tx.reservation.update({
+          where: { id },
+          data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason },
+        }),
+      );
     });
   }
 

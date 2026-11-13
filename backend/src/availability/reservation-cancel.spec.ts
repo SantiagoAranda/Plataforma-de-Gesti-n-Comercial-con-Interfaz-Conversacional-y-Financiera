@@ -26,6 +26,8 @@ function setup(status: string, opts: { mirror?: boolean } = {}) {
       },
     ],
   });
+  (prisma as any).accountingMovement = { findMany: jest.fn<any>().mockResolvedValue([]) };
+  (prisma as any).inventoryMovement = { findMany: jest.fn<any>().mockResolvedValue([]) };
   prisma.reservations[0].publicToken = TOKEN;
   prisma.reservations[0].inventoryPostedAt =
     status === 'CONFIRMED' ? new Date() : null;

@@ -1,3 +1,5 @@
+import { UseInterceptors } from '@nestjs/common';
+import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Body,
   Controller,
@@ -22,6 +24,7 @@ import { ReverseOrderDto } from './dto/reverse-order.dto';
 import { UpdateOrderItemOptionalsDto } from './dto/update-order-item-optionals.dto';
 
 @UseGuards(JwtAuthGuard, BusinessActiveGuard)
+@UseInterceptors(ReservationConflictInterceptor)
 @Controller('sales')
 export class SalesController {
   constructor(private salesService: SalesService) {}
@@ -88,8 +91,9 @@ export class SalesController {
     @Req() req: any,
     @Param('id') id: string,
     @Query('sourceType') sourceType?: any,
+    @Body() body?: { reason?: unknown },
   ) {
-    return this.salesService.cancel(req.user.businessId, id, sourceType);
+    return this.salesService.cancel(req.user.businessId, id, sourceType, body?.reason);
   }
 
   @Post(':id/reverse')

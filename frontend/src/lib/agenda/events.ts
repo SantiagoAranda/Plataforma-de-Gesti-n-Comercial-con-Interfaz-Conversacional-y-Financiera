@@ -36,9 +36,11 @@ export function saleToAgendaEvent(sale: Sale): AgendaEvent | null {
 
   // CERRADO only means the sale/reservation was confirmed; the service may not have happened yet.
   const status: AgendaEventStatus =
-    sale.status === "CANCELADO"
+    sale.reservationStatus === "COMPLETED" || sale.status === "FINALIZADA"
+      ? "COMPLETADO"
+      : sale.status === "CANCELADO" || sale.reservationStatus === "CANCELLED"
       ? "CANCELADO"
-      : sale.status === "CERRADO" || sale.status === "PENDIENTE DE CIERRE"
+      : sale.reservationStatus === "CONFIRMED" || sale.status === "CONFIRMADO" || sale.status === "CERRADO" || sale.status === "PENDIENTE DE CIERRE"
         ? "CONFIRMADO"
         : "PENDIENTE";
 
