@@ -36,9 +36,9 @@
     "semantic_hash": "fa439650fa28a1a7aa8c2b6d81c8cc20"
   },
   "backend/package.json": {
-    "mtime": 1793997253.561824,
-    "seen": 1794172669.427216,
-    "ast_hash": "15ad4f3f80ec53a0c83f275c998cfd5a",
+    "mtime": 1794599061.6383529,
+    "seen": 1794599466.7136598,
+    "ast_hash": "4d3df78fe4ef2ecd6b7aeb75a5b75912",
     "semantic_hash": ""
   },
   "backend/prisma/check_schedules.ts": {
@@ -3593,10 +3593,22 @@
     "ast_hash": "8dec474e57594367cfc0d490ed03bffc",
     "semantic_hash": ""
   },
+  "backend/test/sharp-image-compat.test.cjs": {
+    "mtime": 1794599241.004539,
+    "seen": 1794599466.78785,
+    "ast_hash": "8b05029387cdc75f9c9d8eeda3ae04c8",
+    "semantic_hash": ""
+  },
+  "docs/verification/sharp-remediation-2026-11-13.md": {
+    "mtime": 1794599440.9345741,
+    "seen": 1794599466.8687794,
+    "ast_hash": "7db0a06f8e5072e426fe6bb5bbaf38be",
+    "semantic_hash": ""
+  },
   "backend/package-lock.json": {
-    "mtime": 1793997253.56078,
-    "seen": 1794172669.428216,
-    "ast_hash": "0cb02935ff1da2003b698ea46a0267a7",
+    "mtime": 1794599062.1038778,
+    "seen": 1794599466.8732896,
+    "ast_hash": "db46c971ef454254220dba5375a64c2d",
     "semantic_hash": ""
   },
   "frontend/package-lock.json": {

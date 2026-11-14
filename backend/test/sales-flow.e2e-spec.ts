@@ -82,6 +82,13 @@ describe('Sales Flow (Integration)', () => {
     await prisma.pucSubcuenta.upsert({ where: { code: '413595' }, create: { code: '413595', name: 'Venta de otros productos', cuentaCode: '4135', active: true }, update: {} });
     await prisma.pucCuenta.upsert({ where: { code: '4170' }, create: { code: '4170', name: 'Otras actividades de servicios comunitarios, sociales y personales', grupoCode: '41' }, update: {} });
     await prisma.pucSubcuenta.upsert({ where: { code: '417095' }, create: { code: '417095', name: 'Actividades conexas', cuentaCode: '4170', active: true }, update: {} });
+
+    // Cost posting must work when this suite runs alone on an empty database.
+    await prisma.pucGrupo.upsert({ where: { code: '14' }, create: { code: '14', name: 'Inventarios', claseCode: '1' }, update: {} });
+    await prisma.pucCuenta.upsert({ where: { code: '1435' }, create: { code: '1435', name: 'Mercancías', grupoCode: '14' }, update: {} });
+    await prisma.pucClase.upsert({ where: { code: '6' }, create: { code: '6', name: 'Costos de ventas' }, update: {} });
+    await prisma.pucGrupo.upsert({ where: { code: '61' }, create: { code: '61', name: 'Costo de ventas', claseCode: '6' }, update: {} });
+    await prisma.pucCuenta.upsert({ where: { code: '6135' }, create: { code: '6135', name: 'Comercio', grupoCode: '61' }, update: {} });
   });
 
   afterAll(async () => {
@@ -282,7 +289,7 @@ describe('Sales Flow (Integration)', () => {
           type: 'PRODUCT',
           price: 20,
           status: 'ACTIVE',
-          inventoryMode: 'SIMPLE',
+          inventoryMode: 'RECIPE_BASED',
         },
       });
 
@@ -310,7 +317,7 @@ describe('Sales Flow (Integration)', () => {
               quantity: 2,
               itemNameSnapshot: inventoryItem.name,
               itemTypeSnapshot: 'PRODUCT',
-              inventoryModeSnapshot: 'SIMPLE',
+              inventoryModeSnapshot: 'RECIPE_BASED',
               unitPrice: 20,
               lineTotal: 40,
             },
@@ -350,7 +357,7 @@ describe('Sales Flow (Integration)', () => {
               quantity: 1,
               itemNameSnapshot: inventoryItem.name,
               itemTypeSnapshot: 'PRODUCT',
-              inventoryModeSnapshot: 'SIMPLE',
+              inventoryModeSnapshot: 'RECIPE_BASED',
               unitPrice: 20,
               lineTotal: 20,
             },
@@ -403,7 +410,7 @@ describe('Sales Flow (Integration)', () => {
           type: 'PRODUCT',
           price: 20,
           status: 'ACTIVE',
-          inventoryMode: 'SIMPLE',
+          inventoryMode: 'RECIPE_BASED',
         },
       });
 
@@ -431,7 +438,7 @@ describe('Sales Flow (Integration)', () => {
               quantity: 2,
               itemNameSnapshot: inventoryItem.name,
               itemTypeSnapshot: 'PRODUCT',
-              inventoryModeSnapshot: 'SIMPLE',
+              inventoryModeSnapshot: 'RECIPE_BASED',
               unitPrice: 20,
               lineTotal: 40,
             },
@@ -552,7 +559,7 @@ describe('Sales Flow (Integration)', () => {
         expect(orderResults.every(m => m.originType === 'ORDER')).toBe(true);
     });
 
-    it('should generate details with descriptive text including customer name and item type', async () => {
+    it('describes accounting roles by item and preserves the customer on the linked order', async () => {
         const order = await prisma.order.create({
             data: {
               businessId,
@@ -580,10 +587,23 @@ describe('Sales Flow (Integration)', () => {
             where: { originId: order.id },
           });
 
-          // Checking if detail contains "venta product" and "Detail Customer"
-          expect(movements[0]?.detail?.toLowerCase()).toContain('venta');
-          expect(movements[0]?.detail?.toLowerCase()).toContain('product');
-          expect(movements[0]?.detail).toContain('Detail Customer');
+          // Posting contract introduced in 2072105: role + item, not customer.
+          // PostgreSQL does not guarantee row order without ORDER BY.
+          expect(movements).toHaveLength(2);
+          const debit = movements.find((m) => m.nature === MovementNature.DEBIT);
+          const income = movements.find((m) => m.nature === MovementNature.CREDIT);
+          expect(debit?.detail).toBe('Contrapartida producto - Test Product');
+          expect(income?.detail).toBe('Ingreso por venta de producto - Test Product');
+          for (const movement of movements) {
+            expect(movement.businessId).toBe(businessId);
+            expect(movement.originType).toBe(AccountingMovementOriginType.ORDER);
+            expect(movement.originId).toBe(order.id);
+            expect(Number(movement.amount)).toBe(75);
+          }
+          const linkedOrder = await prisma.order.findUniqueOrThrow({
+            where: { id: income!.originId! },
+          });
+          expect(linkedOrder.customerName).toBe('Detail Customer');
     });
   });
 });
