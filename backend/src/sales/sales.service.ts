@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -10,6 +11,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import {
   AvailabilityService,
   formatDateKey,
+  parseDateKey,
   RESERVATION_ERRORS,
   toBookingConflict,
 } from '../availability/availability.service';
@@ -30,7 +32,7 @@ import { SimpleRegimeNotAvailableException } from '../common/exceptions/simple-r
 import { FiscalDocumentService } from '../fiscal-documents/fiscal-document.service';
 import { requiresLegacyInvoiceWarning } from '../fiscal-documents/invoice-close-snapshot';
 import { lockOwnedOrder } from './order-lock';
-import { reservationArchiveBlock, actionPolicy, orderTransitionBlock, reverseBlock, completionBlock, reservationTransitionBlock, lifecycleConflict, requireServiceProvided, cancellationReason, throwLifecycleError, emptyEvidence, CommercialEvidence, isPolicyV2, isFreeV2, newReservationPolicy, v2CompletedEvidenceBlock, noShowBlock, hasCommercialEffects, NO_SHOW_REASON, MIRROR_DETACHED_REASON } from '../reservations/reservation-lifecycle';
+import { reservationArchiveBlock, actionPolicy, orderTransitionBlock, reverseBlock, completionBlock, reservationTransitionBlock, reservationReached, lifecycleConflict, requireServiceProvided, cancellationReason, throwLifecycleError, emptyEvidence, CommercialEvidence, isPolicyV2, isFreeV2, newReservationPolicy, v2CompletedEvidenceBlock, noShowBlock, hasCommercialEffects, NO_SHOW_REASON, MIRROR_DETACHED_REASON } from '../reservations/reservation-lifecycle';
 
 export type UnifiedSourceType = 'ORDER' | 'RESERVATION';
 const SCHEDULED_SERVICE_ALONE =
@@ -188,7 +190,12 @@ export class SalesService {
   private async completeReservationV2(businessId: string, id: string) {
     // Same gate the legacy confirmation applied before any commercial closing.
     await this.assertSimpleRegimeAvailableForNewSale(businessId);
-    return this.runSerializableTransaction(async tx => {
+    return this.runSerializableTransaction(tx => this.completeReservationV2InTx(tx, businessId, id)).catch(throwLifecycleError);
+  }
+
+  /** Body of the policy 2 completion; also used by retrospective registration in create(). */
+  private async completeReservationV2InTx(tx: Prisma.TransactionClient, businessId: string, id: string) {
+    {
       await lockOwnedOrder(tx, businessId, id);
       const business = await tx.business.findFirst({ where: { id: businessId, status: 'ACTIVE' }, select: { id: true } });
       if (!business) throw new ForbiddenException({ code: 'BUSINESS_INACTIVE', message: 'El negocio no está activo.' });
@@ -234,7 +241,7 @@ export class SalesService {
       const finalOrder = order ? await tx.order.findFirst({ where: { id, businessId } }) : null;
       const finalEvidence = (await this.loadCommercialEvidence(tx, businessId, [id])).get(id)!;
       return { ...updated, ...this.lifecycleView(order ? 'ORDER' : 'RESERVATION', finalOrder ?? updated, updated, finalEvidence), alreadyCompleted: false };
-    }).catch(throwLifecycleError);
+    }
   }
 
   /** Policy 2: the customer did not attend. Cancels (Order too, for mirrors) without effects. */
@@ -872,7 +879,56 @@ export class SalesService {
     return { dateOnly, startMinute };
   }
 
+  async getManualServiceTimes(businessId: string, itemId: string, dateKey: string, duration?: string) {
+    const date = parseDateKey(dateKey);
+    if (!date) throw new BadRequestException(RESERVATION_ERRORS.invalidDate);
+    const item = await this.prisma.item.findFirst({ where: { id: itemId, businessId, type: 'SERVICE', status: 'ACTIVE' } });
+    if (!item) throw new NotFoundException(RESERVATION_ERRORS.serviceNotFound);
+    const durationMinutes = duration === undefined ? item.durationMinutes : Number(duration);
+    if (!Number.isInteger(durationMinutes) || durationMinutes! <= 0 || durationMinutes! > 1440) throw new BadRequestException(RESERVATION_ERRORS.invalidDuration);
+    // Future availability always uses the catalog duration. Historical suggestions may use the declared duration.
+    return this.availability.getManualSalesSlots({ businessId, itemId, date, durationMinutes: item.durationMinutes }, durationMinutes);
+  }
+
+  private async manualCreationReplay(db: Prisma.TransactionClient | PrismaService, businessId: string, key: string, fingerprint: string) {
+    const order = await db.order.findUnique({
+      where: { businessId_idempotencyKey: { businessId, idempotencyKey: key } },
+      include: { items: { include: this.orderItemRecipeInclude } },
+    });
+    if (!order) return null;
+    if (order.manualRequestFingerprint !== fingerprint) {
+      throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', message: 'La clave de esta operación ya se utilizó con otros datos.' });
+    }
+    const mirror = await db.reservation.findFirst({ where: { id: order.id, businessId } });
+    const { idempotencyKey: _key, manualRequestFingerprint: _fingerprint, ...safeOrder } = order;
+    return { ...safeOrder, sourceType: 'ORDER', commercialPolicyVersion: mirror?.commercialPolicyVersion ?? null, reservationStatus: mirror?.status };
+  }
+
   async create(businessId: string, dto: CreateOrderDto) {
+    // Recovery precedes current catalog, temporal and overlap validation. A committed attempt
+    // remains recoverable even when the service, price or clock changed after its response was lost.
+    const keyed = dto.origin !== 'PUBLIC_STORE' && Boolean(dto.scheduledAt) && Boolean(dto.idempotencyKey);
+    const key = keyed ? createHash('sha256').update(`manual-sale:${businessId}:${dto.idempotencyKey}`).digest('hex') : undefined;
+    const canonical = (value: any): any => Array.isArray(value) ? value.map(canonical)
+      : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, canonical(value[k])])) : value;
+    const fingerprint = key ? createHash('sha256').update(JSON.stringify(canonical({ ...dto, idempotencyKey: undefined }))).digest('hex') : undefined;
+    if (key) {
+      const previous = await this.manualCreationReplay(this.prisma, businessId, key, fingerprint!);
+      if (previous) return previous;
+    }
+    try {
+      return await this.createOnce(businessId, dto, key, fingerprint);
+    } catch (error) {
+      // Includes concurrent unique-key races and a lost commit acknowledgement.
+      if (key) {
+        const committed = await this.manualCreationReplay(this.prisma, businessId, key, fingerprint!);
+        if (committed) return committed;
+      }
+      throw error;
+    }
+  }
+
+  private async createOnce(businessId: string, dto: CreateOrderDto, key?: string, fingerprint?: string) {
     const createStartedAt = Date.now();
     const logTiming = (stage: string, startedAt: number, orderId?: string) => {
       console.log('[SalesService] sales.create.timing', {
@@ -919,6 +975,11 @@ export class SalesService {
     // Only a lone service line gets a mirror reservation; never drop a requested slot silently.
     if (isManual && dto.scheduledAt && !manualScheduledServiceItem) {
       throw new BadRequestException(SCHEDULED_SERVICE_ALONE);
+    }
+    // Retrospective registration: only a manual scheduled service, created and completed in one transaction.
+    const retrospective = dto.serviceProvided === true;
+    if (retrospective && !manualScheduledServiceItem) {
+      throw new BadRequestException({ code: 'RETROSPECTIVE_REQUIRES_MANUAL_SERVICE', message: 'Solo una atención manual con fecha y hora puede registrarse como ya prestada.' });
     }
 
     // Scheduled-service validation runs inside the write transaction (reserveSlot).
@@ -1009,19 +1070,31 @@ export class SalesService {
       businessId,
       dto.items,
       { isManual },
-    );
+    ).catch(error => { if (retrospective) return this.stockConflict(error); throw error; });
     logTiming('resolve-lines', resolveLinesStartedAt);
     const transactionStartedAt = Date.now();
     // Lets the client know a scheduled-service sale is a policy 2 booking (no early close).
     let mirrorPolicyVersion: number | null = null;
-    const order = await this.prisma
-      .$transaction(
+    // Serializable like completeReservationV2: stock and posting must not interleave.
+    const runCreateTransaction = <T,>(operation: (tx: Prisma.TransactionClient) => Promise<T>) =>
+      retrospective || key
+        ? this.runSerializableTransaction(operation)
+        : this.prisma.$transaction(operation, { maxWait: 5000, timeout: 15000 });
+    const order = await runCreateTransaction(
         async (tx) => {
+          if (key) {
+            const previous = await this.manualCreationReplay(tx, businessId, key, fingerprint!);
+            if (previous) {
+              mirrorPolicyVersion = previous.commercialPolicyVersion;
+              return previous;
+            }
+          }
           logTiming('tx.start', Date.now());
           const orderWriteStartedAt = Date.now();
           const createdOrder = await tx.order.create({
             data: {
               businessId,
+              ...(key ? { idempotencyKey: key, manualRequestFingerprint: fingerprint } : {}),
               customerName:
                 dto.origin === 'PUBLIC_STORE'
                   ? dto.customerName?.trim() || null
@@ -1054,7 +1127,23 @@ export class SalesService {
               itemId: manualScheduledServiceItem.id,
               date: dateOnly,
               startMinute,
+              // Authenticated manual sale: past dates/hours are allowed (history).
+              allowPast: true,
+              historicalDurationMinutes: retrospective ? dto.durationMinutes : undefined,
             });
+            // Never complete what has not ended: an in-progress service stays CONFIRMED.
+            if (retrospective && !reservationReached({ date: slot.date }, slot.endMinute)) {
+              throw new BadRequestException({ code: 'RESERVATION_NOT_ENDED', message: 'La atención todavía no terminó. Registrala sin finalizar y finalizala cuando termine.' });
+            }
+            if (reservationReached({ date: slot.date }, slot.endMinute) && !retrospective) {
+              throw new ConflictException({ code: 'SERVICE_PROVIDED_CONFIRMATION_REQUIRED', message: 'La atención ya terminó. Confirmá que el servicio se prestó antes de registrarla.' });
+            }
+            if (retrospective && !key) {
+              throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', message: 'Falta la clave de la operación. Volvé a intentar.' });
+            }
+            if (retrospective) {
+              await tx.orderItem.updateMany({ where: { orderId: createdOrder.id, itemId: slot.itemId }, data: { durationMinutesSnapshot: slot.durationMinutes } });
+            }
             const mirror = this.buildMirrorReservationData({
               businessId,
               orderId: createdOrder.id,
@@ -1093,22 +1182,33 @@ export class SalesService {
             );
           }
 
+          if (retrospective) {
+            // Same v2 completion rules and posting; any stock/accounting error rolls back the sale too.
+            await this.completeReservationV2InTx(tx, businessId, createdOrder.id);
+            return tx.order.findFirstOrThrow({
+              where: { id: createdOrder.id, businessId },
+              include: { items: { include: this.orderItemRecipeInclude } },
+            });
+          }
+
           return createdOrder;
         },
-        { maxWait: 5000, timeout: 15000 },
       )
       .catch((error) => {
         throw toBookingConflict(error);
-      });
+      })
+      .catch(throwLifecycleError);
     logTiming('tx.commit', transactionStartedAt, order.id);
     logTiming('total', createStartedAt, order.id);
 
     console.log(`[SalesService] Created order origin: ${order.origin}`);
 
+    const { idempotencyKey: _key, manualRequestFingerprint: _fingerprint, ...safeOrder } = order as typeof order & { idempotencyKey?: string | null; manualRequestFingerprint?: string | null };
     return {
-      ...order,
+      ...safeOrder,
       sourceType: 'ORDER',
       commercialPolicyVersion: mirrorPolicyVersion,
+      ...(mirrorPolicyVersion === 2 ? { reservationStatus: order.status === 'COMPLETED' ? 'COMPLETED' : 'CONFIRMED' } : {}),
     };
   }
 

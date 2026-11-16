@@ -1,5 +1,4 @@
 "use client";
-import CompleteReservationDialog from "@/src/components/sales/CompleteReservationDialog";
 
 import dynamic from "next/dynamic";
 import {
@@ -10,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AlertTriangle, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ShoppingBag, LineChart, ClipboardCheck, Plus, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -34,6 +33,7 @@ import { SelectionActionBar } from "@/src/components/shared/selection/SelectionA
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
 import { completeReservation, markReservationNoShow, confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { canCancelReservation, reservationCancelPrompt, reservationLink } from "@/src/lib/sales/reservationCancelUi";
+import { saveManualService, type ManualServiceAttempt } from "@/src/lib/sales/retrospectiveSale";
 import { isNoShow } from "@/src/lib/sales/salePresentation";
 import { saleDayKey, type SaleDateBasis } from "@/src/lib/sales/saleDates";
 import { dispatchFiscalDocument, downloadFiscalArtifact, generateElectronicInvoice, getFactusConfiguration, listFiscalDocuments, requestCreditNote, retryFiscalDocument } from "@/src/services/fiscalDocuments";
@@ -382,26 +382,32 @@ function VentaPageContent() {
     });
   }, []);
 
+  const manualServiceAttempt = useRef<ManualServiceAttempt>(null);
+  const createInFlight = useRef(false);
+
   const showConfirmation = (
     title: string,
     actionLabel: string,
     onAction: () => void,
     variant: 'emerald' | 'rose' = 'emerald',
-    dismissLabel = 'Cancelar'
+    dismissLabel = 'Cancelar',
+    message?: string,
+    onDismiss?: () => void,
   ) => {
     toast.custom((t) => (
       <div className={`${t.visible ? 'animate-in fade-in slide-in-from-top-4' : 'animate-out fade-out slide-out-to-top-2'} max-w-xs w-full bg-white shadow-2xl rounded-2xl border border-neutral-100 p-4 pointer-events-auto`}>
         <div className="flex items-start gap-3">
           <div className={`mt-0.5 h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${variant === 'rose' ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
-            <AlertTriangle size={16} />
+            {message ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           </div>
-          <div className="flex-1">
-            <p className="text-[13px] font-medium text-neutral-800 leading-tight mb-3">{title}</p>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[13px] font-medium text-neutral-800 leading-tight ${message ? 'mb-1 font-semibold' : 'mb-3'}`}>{title}</p>
+            {message && <p className="text-[12px] text-neutral-600 leading-snug mb-3">{message}</p>}
             <div className="flex items-center gap-2">
               <button
                 // remove, not dismiss: dismiss queues a 1 s removal by id that also killed a
                 // confirmation reopened within that second (same id) — the dialog never showed.
-                onClick={() => toast.remove(t.id)}
+                onClick={() => { toast.remove(t.id); onDismiss?.(); }}
                 className="flex-1 h-9 rounded-xl bg-neutral-50 text-neutral-500 text-[11px] font-medium uppercase tracking-wider hover:bg-neutral-100 transition"
               >
                 {dismissLabel}
@@ -900,33 +906,45 @@ function VentaPageContent() {
     buyerFiscalContext?: BuyerFiscalContext;
     items: { itemId: string; quantity: number }[];
   }) => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
     try {
       const payload = {
         ...data,
         origin: "MANUAL" as const,
       };
-      console.log("Payload create sale:", payload);
-      const created = await createSale(payload);
+      const created = data.type === "SERVICIO" && data.scheduledAt
+        ? await saveManualService(manualServiceAttempt, payload, createSale, () => new Promise<boolean>(resolve => {
+            showConfirmation(
+              "¿Confirmás que el servicio se prestó?", "SÍ, FINALIZAR", () => resolve(true), "emerald", "VOLVER",
+              "Se registrarán los movimientos de inventario y contabilidad correspondientes", () => resolve(false),
+            );
+          }))
+        : await createSale(payload);
+      if (!created) return;
 
-      // Policy 2 bookings are never closed at creation: the sale happens on «Finalizar atención».
+      // Policy 2 effects are posted only by explicit completion, including the atomic retrospective path.
       const isBooking = (created as { commercialPolicyVersion?: number | null }).commercialPolicyVersion === 2;
       if (data.status === "CERRADO" && !isBooking) {
         await confirmSale(created.id, created.sourceType, data.buyerFiscalContext);
       }
 
-      toast.success(isBooking ? "Turno reservado. Registrá la venta con «Finalizar atención» cuando se preste el servicio." : "Venta registrada manualmente");
+      toast.success(created.reservationStatus === "COMPLETED" ? "Atención pasada registrada y finalizada" : isBooking ? "Turno reservado. Registrá la venta con «Finalizar atención» cuando se preste el servicio." : "Venta registrada manualmente");
       invalidateCache("home:sales");
       invalidateCache("home:businessActivity");
+      manualServiceAttempt.current = null;
+      setIsCreateOpen(false);
       await Promise.all([
         loadOrders(),
         refreshFiscalDocuments().catch(() => []),
-      ]);
-      setIsCreateOpen(false);
+      ]).catch(() => toast.error("La venta se registró. Actualizá la lista para verla."));
       setPendingSmoothScroll(true);
     } catch (error: unknown) {
       console.error("Error creating sale:", error);
       toast.error(getSaleSaveErrorMessage(error));
       throw error;
+    } finally {
+      createInFlight.current = false;
     }
   };
 
@@ -1003,35 +1021,48 @@ function VentaPageContent() {
     );
   }, [detailsSale, loadOrders]);
 
-  const handleOpenEdit = (sale: Sale, action: 'edit' | 'reschedule' = 'edit') => {
-    if (salesBlockedBySimpleRegime || !sale.allowedActions?.includes(action)) return;
+  // Rescheduling is done from this same edit flow; backend grants edit and reschedule together.
+  const handleOpenEdit = (sale: Sale) => {
+    if (salesBlockedBySimpleRegime || !sale.allowedActions?.includes('edit')) return;
     setEditingSale(sale);
     setDetailsSale(null);
     setSelectedSale(null);
   };
   const handleOpenCompletion = (sale: Sale) => {
-    if (sale.allowedActions?.includes('complete')) setCompletionSale(sale);
-  };
-  const [completionSale, setCompletionSale] = useState<Sale | null>(null);
-  const handleCompleteReservation = async (sale: Sale) => {
-    if (!sale.allowedActions?.includes('complete')) throw new Error('Actualizá la reserva antes de finalizar.');
-    try {
-      await completeReservation(sale.id);
-      invalidateCache('home:sales');
-      invalidateCache('home:businessActivity');
-      await loadOrders();
-      setDetailsSale(null);
-      setSelectedSale(null);
-      toast.success('Atención finalizada');
-    } catch (error) {
-      await loadOrders();
-      setDetailsSale(null);
-      setSelectedSale(null);
-      // Close stale decisions; a fresh dialog requires a new explicit declaration.
-      setCompletionSale(null);
-      toast.error(getErrorMessage(error, 'No se pudo finalizar la atención.'));
-      throw error;
-    }
+    // No new confirmation while any sale action is in flight.
+    if (confirmingSaleId || !sale.allowedActions?.includes('complete')) return;
+    showConfirmation(
+      'Finalizar atención',
+      'Sí, finalizar',
+      // Clicking this button is the explicit "service provided" declaration (serviceProvided: true).
+      async () => {
+        const loadingId = 'reservation-complete-loading';
+        try {
+          setConfirmingSaleId(sale.id);
+          toast.loading('Finalizando atención...', { id: loadingId });
+          await completeReservation(sale.id);
+          invalidateCache('home:sales');
+          invalidateCache('home:businessActivity');
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.success('Atención finalizada');
+        } catch (error) {
+          // Never retried: refresh capabilities; a new attempt needs a new confirmation.
+          await loadOrders();
+          setDetailsSale(null);
+          setSelectedSale(null);
+          toast.dismiss(loadingId);
+          toast.error(getErrorMessage(error, 'No se pudo finalizar la atención.'));
+        } finally {
+          setConfirmingSaleId(null);
+        }
+      },
+      'emerald',
+      'Volver',
+      '¿Confirmás que el servicio se prestó? Se registrarán los movimientos de inventario y contabilidad correspondientes.'
+    );
   };
 
   const handleCancelReservation = useCallback((sale: Sale) => {
@@ -1510,7 +1541,6 @@ function VentaPageContent() {
             <SalesList
               sales={filtered}
               onComplete={handleOpenCompletion}
-              onReschedule={salesBlockedBySimpleRegime ? undefined : (sale) => handleOpenEdit(sale, 'reschedule')}
               onCancelReservation={handleCancelReservation}
               onNoShow={handleNoShow}
               onEdit={salesBlockedBySimpleRegime ? undefined : handleOpenEdit}
@@ -1559,7 +1589,6 @@ function VentaPageContent() {
         />
       )}
 
-      {completionSale && <CompleteReservationDialog sale={completionSale} onClose={() => setCompletionSale(null)} onComplete={handleCompleteReservation} />}
       <SaleDetailsModal
         open={!!detailsSale}
         sale={detailsSale}

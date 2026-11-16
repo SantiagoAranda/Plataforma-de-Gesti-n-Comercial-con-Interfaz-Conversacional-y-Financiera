@@ -4,20 +4,23 @@ import {
   verifyIsolatedTestEnvironment,
 } from './business-fixtures';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   INestApplication,
+  NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as crypto from 'node:crypto';
 import { IngredientUnit, ItemType, UnitKind, Weekday } from '@prisma/client';
-import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, afterEach, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PublicService } from '../src/public/public.service';
 import { ReservationsService } from '../src/reservations/reservations.service';
 import { ReservationsController } from '../src/reservations/reservations.controller';
 import { SalesService } from '../src/sales/sales.service';
+import { AccountingService } from '../src/accounting/accounting.service';
 
 const WEEKDAYS: Weekday[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const H = (h: number, m = 0) => h * 60 + m;
@@ -1747,6 +1750,188 @@ describe('Reservas: validación transaccional y concurrencia (PostgreSQL)', () =
         const r = await row(booked.id);
         if (r.status === 'COMPLETED') expect(r.date).toEqual(r0.date);
         else expect(await effects(booked.id)).toEqual({ inventory: [], accounting: [], fiscal: [] });
+      });
+    });
+
+    describe('registro retrospectivo desde Ventas (atención pasada)', () => {
+      const noon = () => jest.useFakeTimers({ now: new Date('2030-06-18T17:00:00Z'), doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'hrtime', 'performance'] });
+      afterEach(() => jest.useRealTimers());
+      const pastKey = () => futureDay(-(offset++));
+      const retro = (itemId: string, scheduledAt: string, extra: Record<string, unknown> = {}) =>
+        sales.create(bizV2, { origin: 'MANUAL', type: 'SERVICIO', status: 'CERRADO', paymentMethod: 'CASH', customerName: 'Historico', scheduledAt, items: [{ itemId, quantity: 1 }], serviceProvided: true, idempotencyKey: crypto.randomUUID(), ...extra } as any) as Promise<any>;
+      const bookingsOn = async (date: string) => prisma.reservation.count({ where: { businessId: bizV2, date: asDate(date) } });
+      const bogotaMinute = () => { const n = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' })); return n.getHours() * 60 + n.getMinutes(); };
+      const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+      it('día anterior: crea y finaliza en una transacción (COMPLETED v2) conservando fecha real, precio y método', async () => {
+        const date = pastKey();
+        const stockBefore = await stockOf(stocked);
+        const created = await retro(svcRecipe, `${date}T07:15`, { paymentMethod: 'BANK_TRANSFER' });
+        expect(created).toMatchObject({ status: 'COMPLETED', reservationStatus: 'COMPLETED', commercialPolicyVersion: 2, paymentMethod: 'BANK_TRANSFER' });
+        const r = await row(created.id);
+        // 07:15 is outside today's 08-20 schedule: history is not judged by the current schedule.
+        expect(r).toMatchObject({ status: 'COMPLETED', commercialPolicyVersion: 2, startMinute: H(7, 15), endMinute: H(8, 15) });
+        expect(r.date.toISOString().slice(0, 10)).toBe(date);
+        expect(r.completedAt!.getTime()).toBeGreaterThan(Date.now() - 60000);
+        const order = await prisma.order.findUniqueOrThrow({ where: { id: created.id } });
+        expect(order).toMatchObject({ status: 'COMPLETED', paymentMethod: 'BANK_TRANSFER' });
+        expect(Number(order.total)).toBe(30000);
+        expect(order.createdAt.getTime()).toBeGreaterThan(Date.now() - 60000);
+        const fx = await effects(created.id);
+        expect(fx.inventory).toHaveLength(1);
+        expect(fx.accounting.some(m => m.pucSubcuentaId === '111005' && m.nature === 'DEBIT')).toBe(true);
+        expect(fx.fiscal).toEqual([]);
+        expect(await stockOf(stocked)).toBe(stockBefore - 1);
+        // Posted on the registration date: historical periods are never rewritten.
+        for (const m of fx.accounting) { expect(m.createdAt.getTime()).toBeGreaterThan(Date.now() - 60000); expect(m.date.toISOString().slice(0, 10)).toBe(new Date().toISOString().slice(0, 10)); }
+        // Re-completing is idempotent and adds nothing.
+        const again: any = await sales.completeReservation(bizV2, created.id, true);
+        expect(again.alreadyCompleted).toBe(true);
+        expect(await effects(created.id)).toEqual(fx);
+      });
+
+      it('hoy con horario ya terminado: registro retrospectivo', async () => {
+        noon();
+        const created = await retro(svcPlain, `${futureDay(0)}T00:00`);
+        expect((await row(created.id)).status).toBe('COMPLETED');
+      });
+
+      it('atención en curso: se registra CONFIRMED y nunca se finaliza sola', async () => {
+        noon();
+        const now = bogotaMinute();
+        const startAt = `${futureDay(0)}T${hhmm(now - 5)}`;
+        await expect(retro(svcFree, startAt)).rejects.toMatchObject(code('RESERVATION_NOT_ENDED'));
+        const booked: any = await sales.create(bizV2, { origin: 'MANUAL', type: 'SERVICIO', status: 'CERRADO', scheduledAt: startAt, items: [{ itemId: svcFree, quantity: 1 }] } as any);
+        expect((await row(booked.id)).status).toBe('CONFIRMED');
+        expect((await prisma.order.findUniqueOrThrow({ where: { id: booked.id } })).status).toBe('SENT');
+      });
+
+      it('fecha futura con declaración de prestación: rechazada sin crear nada; sin declaración queda CONFIRMED', async () => {
+        const date = nextFuture();
+        await expect(retro(svcPlain, `${date}T10:00`)).rejects.toMatchObject(code('RESERVATION_NOT_ENDED'));
+        expect(await bookingsOn(date)).toBe(0);
+        const order = await mirror(svcPlain);
+        expect((await row(order.id)).status).toBe('CONFIRMED');
+      });
+
+      it('doble clic y respuesta perdida: recupera la misma venta antes de evaluar solapamientos', async () => {
+        const date = pastKey();
+        const idempotencyKey = crypto.randomUUID();
+        const stockBefore = await stockOf(stocked);
+        const orders = await prisma.order.count({ where: { businessId: bizV2 } });
+        const [first, second] = await Promise.all([retro(svcRecipe, `${date}T10:00`, { idempotencyKey }), retro(svcRecipe, `${date}T10:00`, { idempotencyKey })]);
+        expect(second.id).toBe(first.id);
+        const fx = await effects(first.id);
+        const replay = await retro(svcRecipe, `${date}T10:00`, { idempotencyKey });
+        expect(replay.id).toBe(first.id);
+        expect(replay).not.toHaveProperty('idempotencyKey');
+        expect(replay).not.toHaveProperty('manualRequestFingerprint');
+        expect(await effects(first.id)).toEqual(fx);
+        await expect(retro(svcRecipe, `${date}T10:00`, { idempotencyKey, customerName: 'Different' })).rejects.toMatchObject(code('IDEMPOTENCY_KEY_REUSED'));
+        await expect(retro(svcRecipe, `${date}T10:00`)).rejects.toBeInstanceOf(ConflictException);
+        expect(await bookingsOn(date)).toBe(1);
+        expect(await prisma.order.count({ where: { businessId: bizV2 } })).toBe(orders + 1);
+        expect(await stockOf(stocked)).toBe(stockBefore - 1);
+      });
+
+      it('duración histórica y precio pactado se conservan; la agenda vigente no reconstruye historia', async () => {
+        const date = pastKey();
+        const times = await sales.getManualServiceTimes(bizV2, svcPlain, date, '25');
+        expect(times).toContainEqual({ time: '08:00', kind: 'HISTORICAL' });
+        expect(times.every(t => t.kind === 'HISTORICAL')).toBe(true);
+        const created = await retro(svcPlain, `${date}T00:17`, { durationMinutes: 25, items: [{ itemId: svcPlain, quantity: 1, unitPrice: 17000 }] });
+        expect((await row(created.id)).endMinute).toBe(42);
+        expect(created.items[0].durationMinutesSnapshot).toBe(25);
+        expect(Number(created.total)).toBe(17000);
+        await expect(retro(svcPlain, `${date}T00:30`, { durationMinutes: 10 })).rejects.toBeInstanceOf(ConflictException);
+        await expect(retro(svcPlain, `${date}T23:50`, { durationMinutes: 30 })).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('sin horarios actuales no ofrece sugerencias, pero conserva bloqueos y separación entre negocios', async () => {
+        const date = pastKey();
+        const item = await prisma.item.create({ data: { businessId: bizV2, name: 'Histórico sin agenda vigente', type: 'SERVICE', price: 100, durationMinutes: 30 } });
+        expect(await sales.getManualServiceTimes(bizV2, item.id, nextFuture())).toEqual([]);
+        expect(await sales.getManualServiceTimes(bizV2, item.id, date)).toEqual([]);
+        await prisma.serviceScheduleBlock.create({ data: { businessId: bizV2, itemId: item.id, date: asDate(date), startMinute: 300, endMinute: 360 } });
+        expect(await sales.getManualServiceTimes(bizV2, item.id, date)).not.toContainEqual({ time: '05:00', kind: 'HISTORICAL' });
+        await expect(retro(item.id, `${date}T05:17`)).rejects.toBeInstanceOf(ConflictException);
+        await expect(sales.getManualServiceTimes(businessId, item.id, date)).rejects.toBeInstanceOf(NotFoundException);
+        expect(await bookingsOn(date)).toBe(0);
+      });
+
+      it('terminó durante el formulario: sin declaración no crea orden, espejo ni clave', async () => {
+        const date = pastKey();
+        const idempotencyKey = crypto.randomUUID();
+        const count = await prisma.order.count({ where: { businessId: bizV2 } });
+        await expect(retro(svcPlain, `${date}T10:00`, { serviceProvided: false, idempotencyKey })).rejects.toMatchObject(code('SERVICE_PROVIDED_CONFIRMATION_REQUIRED'));
+        expect(await prisma.order.count({ where: { businessId: bizV2 } })).toBe(count);
+        expect(await bookingsOn(date)).toBe(0);
+      });
+
+      it('hoy futuro queda CONFIRMED; una respuesta perdida se recupera aunque cambie el catálogo', async () => {
+        noon();
+        const idempotencyKey = crypto.randomUUID();
+        const scheduledAt = `${futureDay(0)}T16:00`;
+        const created = await retro(svcPlain, scheduledAt, { serviceProvided: false, idempotencyKey });
+        expect((await row(created.id)).status).toBe('CONFIRMED');
+        await prisma.item.update({ where: { id: svcPlain }, data: { status: 'INACTIVE' } });
+        try {
+          const replay = await retro(svcPlain, scheduledAt, { serviceProvided: false, idempotencyKey });
+          expect(replay.id).toBe(created.id);
+        } finally { await prisma.item.update({ where: { id: svcPlain }, data: { status: 'ACTIVE' } }); }
+      });
+
+      it('stock insuficiente: no crea venta, espejo ni movimientos', async () => {
+        const date = pastKey();
+        const orders = await prisma.order.count({ where: { businessId: bizV2 } });
+        await expect(retro(svcScarce, `${date}T10:00`)).rejects.toMatchObject(code('INSUFFICIENT_STOCK_FOR_COMPLETION'));
+        expect(await prisma.order.count({ where: { businessId: bizV2 } })).toBe(orders);
+        expect(await bookingsOn(date)).toBe(0);
+        expect(await stockOf(scarce)).toBe(0);
+      });
+
+      it('error contable después del consumo: rollback completo (sin orden, espejo, inventario ni stock)', async () => {
+        const date = pastKey();
+        const orders = await prisma.order.count({ where: { businessId: bizV2 } });
+        const movements = await prisma.inventoryMovement.count({ where: { businessId: bizV2 } });
+        const stockBefore = await stockOf(stocked);
+        const accountingBefore = await prisma.accountingMovement.count({ where: { businessId: bizV2 } });
+        const idempotencyKey = crypto.randomUUID();
+        const accounting = app.get(AccountingService);
+        const post = accounting.postOrderMovements.bind(accounting);
+        const spy = jest.spyOn(accounting, 'postOrderMovements').mockImplementationOnce(async (...args) => {
+          await post(...args);
+          throw new Error('falla contable simulada');
+        });
+        try {
+          await expect(retro(svcRecipe, `${date}T10:00`, { idempotencyKey })).rejects.toThrow('falla contable simulada');
+        } finally {
+          spy.mockRestore();
+        }
+        expect(await prisma.order.count({ where: { businessId: bizV2 } })).toBe(orders);
+        expect(await bookingsOn(date)).toBe(0);
+        expect(await prisma.inventoryMovement.count({ where: { businessId: bizV2 } })).toBe(movements);
+        expect(await stockOf(stocked)).toBe(stockBefore);
+        expect(await prisma.accountingMovement.count({ where: { businessId: bizV2 } })).toBe(accountingBefore);
+        const recovered = await retro(svcRecipe, `${date}T10:00`, { idempotencyKey });
+        expect((await row(recovered.id)).status).toBe('COMPLETED');
+        expect(await stockOf(stocked)).toBe(stockBefore - 1);
+      });
+
+      it('la tienda pública sigue rechazando fechas pasadas y no ofrece horarios', async () => {
+        const date = pastKey();
+        await expect(publicStore.createReservation(slugV2, dto(svcPlain, date))).rejects.toBeInstanceOf(BadRequestException);
+        expect(await publicStore.getAvailability(slugV2, svcPlain, date)).toEqual([]);
+        expect(await reservations.getAvailability(bizV2, svcPlain, date)).toEqual([]);
+        // Historical listing is scoped to authenticated Sales, never public availability.
+        expect(await bookingsOn(date)).toBe(0);
+      });
+
+      it('la declaración solo aplica a una atención manual con agenda', async () => {
+        const date = pastKey();
+        await expect(retro(svcPlain, `${date}T10:00`, { origin: 'PUBLIC_STORE' })).rejects.toBeDefined();
+        await expect(sales.create(bizV2, { origin: 'MANUAL', type: 'SERVICIO', status: 'CERRADO', serviceProvided: true, items: [{ itemId: svcPlain, quantity: 1 }] } as any)).rejects.toMatchObject(code('RETROSPECTIVE_REQUIRES_MANUAL_SERVICE'));
+        expect(await bookingsOn(date)).toBe(0);
       });
     });
 

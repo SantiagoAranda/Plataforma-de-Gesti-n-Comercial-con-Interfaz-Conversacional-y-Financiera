@@ -108,10 +108,10 @@
     "semantic_hash": "6a14da75c497dce6b2d59d4f3362922a"
   },
   "backend/src/accounting/accounting.service.spec.ts": {
-    "mtime": 1789512660.495053,
-    "seen": 1794172669.427216,
-    "ast_hash": "ad043c0d55d410ca7ea5cc3dad85134b",
-    "semantic_hash": "ad043c0d55d410ca7ea5cc3dad85134b"
+    "mtime": 1794600529.1773107,
+    "seen": 1794615300.9231534,
+    "ast_hash": "5003b602f0b4056f068bf32238a19fb1",
+    "semantic_hash": ""
   },
   "backend/src/accounting/accounting.service.ts": {
     "mtime": 1794581710.0626822,
@@ -1038,8 +1038,8 @@
     "semantic_hash": "0cdca8ccaacd4b1b4994e759d40cec63"
   },
   "backend/src/reservations/reservations.controller.ts": {
-    "mtime": 1794581710.077535,
-    "seen": 1794581926.554059,
+    "mtime": 1794757382.9890501,
+    "seen": 1794837035.026355,
     "ast_hash": "8e75bfa7d5abd0871abc84aa2147bc90",
     "semantic_hash": ""
   },
@@ -1056,8 +1056,8 @@
     "semantic_hash": ""
   },
   "backend/src/reservations/reservations.service.ts": {
-    "mtime": 1794581710.0795317,
-    "seen": 1794581926.554059,
+    "mtime": 1794757382.9900541,
+    "seen": 1794837035.026355,
     "ast_hash": "4f6f236ecb638ce54e90bce73e93e9e7",
     "semantic_hash": ""
   },
@@ -1068,10 +1068,10 @@
     "semantic_hash": "dfafeb170a54adc5b4125b27eb58b4e6"
   },
   "backend/src/sales/dto/create-order.dto.ts": {
-    "mtime": 1789512660.608168,
-    "seen": 1794172669.428216,
-    "ast_hash": "5f6e15b58edec69d164a07b7ce36e6c0",
-    "semantic_hash": "5f6e15b58edec69d164a07b7ce36e6c0"
+    "mtime": 1794757346.0471983,
+    "seen": 1794837035.026355,
+    "ast_hash": "b4db5da2ff58ec46251119074dc2a2c1",
+    "semantic_hash": ""
   },
   "backend/src/sales/dto/order-line-input.dto.ts": {
     "mtime": 1787442085.1128845,
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "backend/src/sales/sales.controller.ts": {
-    "mtime": 1794581710.0825322,
-    "seen": 1794581926.5570576,
-    "ast_hash": "a908120dfc1ecf9e9a24e8980ca06a0c",
+    "mtime": 1794757496.135345,
+    "seen": 1794837035.031857,
+    "ast_hash": "81e45e312f7f72d75b54889b73d37a12",
     "semantic_hash": ""
   },
   "backend/src/sales/sales.module.ts": {
@@ -1140,9 +1140,9 @@
     "semantic_hash": ""
   },
   "backend/src/sales/sales.service.ts": {
-    "mtime": 1794581710.0862577,
-    "seen": 1794581926.5570576,
-    "ast_hash": "952a2859e5a42fb532c529c9ac379cb3",
+    "mtime": 1794758023.7416387,
+    "seen": 1794837035.032858,
+    "ast_hash": "33332fc04da3a998473c9c99e6cc460b",
     "semantic_hash": ""
   },
   "backend/src/settings/dto/create-ica-rate.dto.ts": {
@@ -1266,10 +1266,10 @@
     "semantic_hash": "a946060041982f904cfe2354b7578307"
   },
   "backend/src/tax/manual-verification.spec.ts": {
-    "mtime": 1789512660.6445801,
-    "seen": 1794172669.428216,
-    "ast_hash": "f2607752d9b72d6548d98aa2c440075e",
-    "semantic_hash": "f2607752d9b72d6548d98aa2c440075e"
+    "mtime": 1794600529.1783178,
+    "seen": 1794615300.977153,
+    "ast_hash": "6ccddb55a50f31a06e0c7e8ea546ca45",
+    "semantic_hash": ""
   },
   "backend/src/tax/tax.controller.ts": {
     "mtime": 1785871681.0723555,
@@ -1392,9 +1392,9 @@
     "semantic_hash": ""
   },
   "backend/test/sales-flow.e2e-spec.ts": {
-    "mtime": 1793997253.6218164,
-    "seen": 1794172669.428216,
-    "ast_hash": "3f50b6f1e18fc1f6e4b75cc4ba463c27",
+    "mtime": 1794600529.1798275,
+    "seen": 1794615300.9841528,
+    "ast_hash": "a0df88a98dd594ac7ede8eaf2bb71cc9",
     "semantic_hash": ""
   },
   "backend/tsconfig.build.json": {
@@ -1536,9 +1536,9 @@
     "semantic_hash": ""
   },
   "frontend/app/(app)/venta/page.tsx": {
-    "mtime": 1794581710.097121,
-    "seen": 1794581926.576899,
-    "ast_hash": "b53dcdf1047824cb0affc460b1077eeb",
+    "mtime": 1794832513.5179598,
+    "seen": 1794837035.049348,
+    "ast_hash": "0a782b46e11f9463f0263f10893ba0a0",
     "semantic_hash": ""
   },
   "frontend/app/(auth)/layout.tsx": {
@@ -2172,10 +2172,10 @@
     "semantic_hash": ""
   },
   "frontend/src/components/reservations/ReservationSlotPicker.tsx": {
-    "mtime": 1785871681.22719,
-    "seen": 1794172669.428216,
-    "ast_hash": "1418a2f88e29ff6314d1735163bded06",
-    "semantic_hash": "1418a2f88e29ff6314d1735163bded06"
+    "mtime": 1794841490.8503668,
+    "seen": 1794841596.644538,
+    "ast_hash": "07adfd6665042a4afbc8511e21be36dd",
+    "semantic_hash": ""
   },
   "frontend/src/components/sales/ElectronicInvoiceConfirmModal.tsx": {
     "mtime": 1790917222.0304701,
@@ -2202,9 +2202,9 @@
     "semantic_hash": "4a236e9ffca1ded5a0d23cb385f16eb4"
   },
   "frontend/src/components/sales/SaleCard.tsx": {
-    "mtime": 1794581710.111801,
-    "seen": 1794581926.6039968,
-    "ast_hash": "1172b8f2bd6f3213304da09608f1294d",
+    "mtime": 1794619089.3018692,
+    "seen": 1794625004.294533,
+    "ast_hash": "c6a3e39876dfa2fa23eb4e632bf269b8",
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SaleCreateModal.tsx": {
@@ -2214,9 +2214,9 @@
     "semantic_hash": "e2ae087e425cac212d0bab0eeccb345f"
   },
   "frontend/src/components/sales/SaleDetailsModal.tsx": {
-    "mtime": 1794581710.1128018,
-    "seen": 1794581926.6039968,
-    "ast_hash": "5334990b96a8fc7f77ec899b1ac8fd22",
+    "mtime": 1794619084.7670684,
+    "seen": 1794625004.2960384,
+    "ast_hash": "2d7737d063fdb35ffb6f3a7e31ab87d4",
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SaleFiscalSummary.tsx": {
@@ -2238,9 +2238,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SalesChatComposer.tsx": {
-    "mtime": 1794581710.1153793,
-    "seen": 1794581926.6050003,
-    "ast_hash": "4e771c019369aebbf4fd0717dc58d267",
+    "mtime": 1794841490.8523736,
+    "seen": 1794841596.6475375,
+    "ast_hash": "31255ad21421c144507cb1a37fc41047",
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SalesFilterModal.tsx": {
@@ -2250,9 +2250,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SalesList.tsx": {
-    "mtime": 1794581710.1153793,
-    "seen": 1794581926.6050003,
-    "ast_hash": "a58f9700581618f59bef9aa9beef5593",
+    "mtime": 1794615075.7922275,
+    "seen": 1794615301.0236683,
+    "ast_hash": "be97aa29296c087df089876642563786",
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SalesSearchBar.tsx": {
@@ -2730,9 +2730,9 @@
     "semantic_hash": "fc623ad48e7f56716ff56f59cefbff3a"
   },
   "frontend/src/services/sales.ts": {
-    "mtime": 1794581710.1283298,
-    "seen": 1794581926.6269143,
-    "ast_hash": "220f1517b12f7690f2ca3c8ef59c60a4",
+    "mtime": 1794757580.4297297,
+    "seen": 1794837035.1257548,
+    "ast_hash": "154d5ff8b52fc7b045b2402e54503007",
     "semantic_hash": ""
   },
   "frontend/src/types/accounting-form.ts": {
@@ -2934,15 +2934,15 @@
     "semantic_hash": ""
   },
   "backend/src/availability/availability.service.spec.ts": {
-    "mtime": 1794581710.0647702,
-    "seen": 1794581926.5078638,
-    "ast_hash": "11bffc223699cd5353f44799afbbb1d1",
+    "mtime": 1794840120.5069745,
+    "seen": 1794840257.4415252,
+    "ast_hash": "8299306e9ef930db9b37b940620967d0",
     "semantic_hash": ""
   },
   "backend/src/availability/availability.service.ts": {
-    "mtime": 1794581710.065281,
-    "seen": 1794581926.5078638,
-    "ast_hash": "78db2af18d993ec1c39af5d1470dbc54",
+    "mtime": 1794840086.0591755,
+    "seen": 1794840257.4415252,
+    "ast_hash": "856a4fe52d009b0206f66aa6adb06b7a",
     "semantic_hash": ""
   },
   "backend/src/availability/availability.test-utils.ts": {
@@ -3420,9 +3420,9 @@
     "semantic_hash": ""
   },
   "backend/test/reservations-concurrency.e2e-spec.ts": {
-    "mtime": 1794581710.087262,
-    "seen": 1794581926.5696378,
-    "ast_hash": "ba13883d76d693f1378ce0f3e5a0b1af",
+    "mtime": 1794840086.0611584,
+    "seen": 1794840257.4935837,
+    "ast_hash": "c94344da15a3a16dc738feeab403fbfd",
     "semantic_hash": ""
   },
   "backend/test/run-reservations-isolated.cjs": {
@@ -3468,9 +3468,9 @@
     "semantic_hash": ""
   },
   "frontend/app/(app)/venta/cancelReservation.test.cjs": {
-    "mtime": 1794581710.0961206,
-    "seen": 1794581926.576899,
-    "ast_hash": "cf0658dfb040a2de779786b92297d6b2",
+    "mtime": 1794624931.047535,
+    "seen": 1794625004.2636101,
+    "ast_hash": "b942d3aee066fc4e44a6807cf47c0ba8",
     "semantic_hash": ""
   },
   "frontend/src/lib/sales/saleDates.test.cjs": {
@@ -3509,12 +3509,6 @@
     "ast_hash": "6f73a458494491c4af03304dc33f6d7d",
     "semantic_hash": ""
   },
-  "frontend/src/components/sales/CompleteReservationDialog.tsx": {
-    "mtime": 1794581710.1097956,
-    "seen": 1794581926.6029983,
-    "ast_hash": "f5a80dbbb14d878468b08258429095da",
-    "semantic_hash": ""
-  },
   "docs/verification/block-2.1/results.json": {
     "mtime": 1794581710.091455,
     "seen": 1794581926.571142,
@@ -3534,9 +3528,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/sales/salePresentation.test.cjs": {
-    "mtime": 1794581710.1153793,
-    "seen": 1794581926.6057475,
-    "ast_hash": "54e0e442f0a4d6fa73f0073c75548a4d",
+    "mtime": 1794619109.6028273,
+    "seen": 1794625004.2980447,
+    "ast_hash": "ca4c1ee6ef995cc403917c9d6975d868",
     "semantic_hash": ""
   },
   "frontend/src/lib/sales/salePresentation.ts": {
@@ -3582,9 +3576,9 @@
     "semantic_hash": ""
   },
   "frontend/src/components/sales/SalesChatComposer.test.cjs": {
-    "mtime": 1794581710.1138005,
-    "seen": 1794581926.6050003,
-    "ast_hash": "8beac5a48b6d07f6e0a87fe2d6b2559c",
+    "mtime": 1794841490.8533738,
+    "seen": 1794841596.6475375,
+    "ast_hash": "39f822fac7da9a81ccb5534bed4ff094",
     "semantic_hash": ""
   },
   "docs/verification/selector-estados-2026-11-13.md": {
@@ -3605,9 +3599,123 @@
     "ast_hash": "7db0a06f8e5072e426fe6bb5bbaf38be",
     "semantic_hash": ""
   },
+  "docs/verification/production-readiness-2026-11-13.md": {
+    "mtime": 1794610050.039837,
+    "seen": 1794615301.0641098,
+    "ast_hash": "c85af258b634e856dfb7680760e3b370",
+    "semantic_hash": ""
+  },
+  "backend/scripts/test-retrospective-local.ps1": {
+    "mtime": 1794832549.7157872,
+    "seen": 1794837034.9622018,
+    "ast_hash": "d079b9d337b1b4b6c38d5b46061eceec",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/reservations/ReservationSlotPicker.test.cjs": {
+    "mtime": 1794841490.8533738,
+    "seen": 1794841596.644538,
+    "ast_hash": "992369e9d69fb2d9748ad14d66911584",
+    "semantic_hash": ""
+  },
+  "frontend/src/lib/sales/retrospectiveSale.test.cjs": {
+    "mtime": 1794757738.6910045,
+    "seen": 1794837035.119686,
+    "ast_hash": "cff25e3fef64e48e6a3feaa68701f092",
+    "semantic_hash": ""
+  },
+  "frontend/src/lib/sales/retrospectiveSale.ts": {
+    "mtime": 1794757580.4262254,
+    "seen": 1794837035.119686,
+    "ast_hash": "8650001726c6fa870ff084d1b7270f6e",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/desktop-confirmation.png": {
+    "mtime": 1794832696.121242,
+    "seen": 1794837035.1394134,
+    "ast_hash": "83fd7b7189d735f5280f7ac49b4688a2",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/desktop-public.png": {
+    "mtime": 1794758171.8679776,
+    "seen": 1794837035.1394134,
+    "ast_hash": "1398ff015389e867cbe00669c2d2de0b",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/desktop.png": {
+    "mtime": 1794758171.635098,
+    "seen": 1794837035.1394134,
+    "ast_hash": "f91034b023cb85a95817de7a010312a2",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/mobile-confirmation.png": {
+    "mtime": 1794832697.0359275,
+    "seen": 1794837035.1394134,
+    "ast_hash": "d73d026ed6eb7e0e7d885d9c23f601bb",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/mobile-public.png": {
+    "mtime": 1794758172.4870672,
+    "seen": 1794837035.1394134,
+    "ast_hash": "d6d13b3f97edd3ece3e59f3214a888d6",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/mobile.png": {
+    "mtime": 1794758172.2519898,
+    "seen": 1794837035.1394134,
+    "ast_hash": "bfe86d64fe03e8f7bc7d97556b13fc8f",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/results.json": {
+    "mtime": 1794837096.921698,
+    "seen": 1794840257.4955873,
+    "ast_hash": "da144f6b03b8a78c6915165096af4d69",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/README.md": {
+    "mtime": 1794840305.4538877,
+    "seen": 1794840324.0766008,
+    "ast_hash": "59d2d9104264949a004ec256c35d8ab9",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/historical-slots.md": {
+    "mtime": 1794840305.4548895,
+    "seen": 1794840324.0766008,
+    "ast_hash": "b187a7409f0044f5f473ec2be4af0278",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/desktop-historical-slots.png": {
+    "mtime": 1794840305.455889,
+    "seen": 1794840324.077605,
+    "ast_hash": "fe3b1caa01b8b03c50d1595453685ed1",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/mobile-historical-slots.png": {
+    "mtime": 1794840305.4568896,
+    "seen": 1794840324.077605,
+    "ast_hash": "a9f595f5a039dde28bbefe6c61a47035",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/visual-cleanup.md": {
+    "mtime": 1794841576.5488923,
+    "seen": 1794841596.6828282,
+    "ast_hash": "b37779aa2d4b51b5acd5e043e11c9a56",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/desktop-cleanup.png": {
+    "mtime": 1794841576.5482357,
+    "seen": 1794841596.68383,
+    "ast_hash": "512decdb6e3bd94e51c253df6078b6a9",
+    "semantic_hash": ""
+  },
+  "docs/verification/retrospective-sales/mobile-cleanup.png": {
+    "mtime": 1794841576.5488923,
+    "seen": 1794841596.6847405,
+    "ast_hash": "6d2a3b33836ffa744bfa30a732bc92f4",
+    "semantic_hash": ""
+  },
   "backend/package-lock.json": {
-    "mtime": 1794599062.1038778,
-    "seen": 1794599466.8732896,
+    "mtime": 1794613921.1062126,
+    "seen": 1794615301.06812,
     "ast_hash": "db46c971ef454254220dba5375a64c2d",
     "semantic_hash": ""
   },

@@ -46,18 +46,18 @@ test('products and unbooked services keep commercial status; missing/invalid sta
 });
 test('card removes redundant attention heading and does not run an action on opening',()=>{
   const called=[];
-  render(h(SaleCard,{sale:{...sale,allowedActions:['complete','reschedule','cancel','edit','delete']},onComplete:s=>called.push(['complete',s.sourceType]),onReschedule:()=>called.push('reschedule'),onCancelReservation:()=>called.push('cancel'),onEdit:()=>{},onDelete:()=>{}}));
+  render(h(SaleCard,{sale:{...sale,allowedActions:['complete','reschedule','cancel','edit','delete']},onComplete:s=>called.push(['complete',s.sourceType]),onCancelReservation:()=>called.push('cancel'),onEdit:()=>{},onDelete:()=>{}}));
   assert.ok(screen.getByText('Confirmado'));assert.equal(screen.queryByText(/Atención:/),null);assert.equal(screen.queryByText('Cerrado'),null);
   fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
   assert.deepEqual(called,[]);
-  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Finalizar atención','Reprogramar','Cancelar reserva','Editar','Eliminar','Ver detalles']);
+  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Finalizar atención','Cancelar reserva','Editar','Eliminar','Ver detalles']);
   fireEvent.click(screen.getByRole('button',{name:'Finalizar atención'}));
   assert.deepEqual(called,[['complete','RESERVATION']]);assert.equal(screen.queryByRole('dialog'),null);
 });
-for (const [action,label] of [['complete','Finalizar atención'],['reschedule','Reprogramar'],['cancel','Cancelar reserva']]) test(`only ${action} is offered and passes mirror sourceType`,()=>{
-  const called=[];const props={sale:{...sale,sourceType:'ORDER',allowedActions:[action]},onComplete:s=>called.push(s.sourceType),onReschedule:s=>called.push(s.sourceType),onCancelReservation:s=>called.push(s.sourceType)};
+for (const [action,label] of [['complete','Finalizar atención'],['edit','Editar'],['cancel','Cancelar reserva']]) test(`only ${action} is offered and passes mirror sourceType`,()=>{
+  const called=[];const props={sale:{...sale,sourceType:'ORDER',allowedActions:[action]},onComplete:s=>called.push(s.sourceType),onEdit:s=>called.push(s.sourceType),onCancelReservation:s=>called.push(s.sourceType)};
   render(h(SaleCard,props));fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
-  for(const other of ['Finalizar atención','Reprogramar','Cancelar reserva']) assert.equal(Boolean(screen.queryByRole('button',{name:other})),other===label);
+  for(const other of ['Finalizar atención','Editar','Cancelar reserva']) assert.equal(Boolean(screen.queryByRole('button',{name:other})),other===label);
   fireEvent.click(screen.getByRole('button',{name:label}));assert.deepEqual(called,['ORDER']);
 });
 test('current capabilities remove stale actions while the menu is open; cancelled archive stays explicit',()=>{
@@ -126,4 +126,23 @@ test('«No asistió» is offered only when the backend allows noShow',()=>{
   render(h(SaleCard,{sale:{...sale,allowedActions:['complete']},onNoShow:()=>assert.fail('not allowed'),onComplete:()=>{}}));
   fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
   assert.equal(Boolean(screen.queryByRole('button',{name:'No asistió'})),false);
+});
+// Footer shows only allowed reservation actions in one row; accessible names stay complete.
+test('detail footer: Ausente/Finalizar follow allowedActions and keep full accessible names',()=>{
+  const SaleDetailsModal=require('./SaleDetailsModal.tsx').default;
+  const called=[];
+  const props={open:true,onClose:()=>{},onNoShow:s=>called.push(['noShow',s.id]),onComplete:s=>called.push(['complete',s.id]),onConfirm:()=>called.push(['confirm'])};
+  const footerButtons=()=>['No asistió','Finalizar atención','Confirmar'].filter(name=>screen.queryByRole('button',{name}));
+  const view=render(h(SaleDetailsModal,{...props,sale:{...sale,allowedActions:['noShow','complete']}}));
+  assert.deepEqual(footerButtons(),['No asistió','Finalizar atención']);
+  assert.ok(screen.getByText('Ausente'));assert.ok(screen.getByText('Finalizar'));
+  assert.equal(screen.queryByRole('button',{name:'Cerrar'}).textContent,'');
+  fireEvent.click(screen.getByRole('button',{name:'No asistió'}));fireEvent.click(screen.getByRole('button',{name:'Finalizar atención'}));
+  assert.deepEqual(called,[['noShow','test'],['complete','test']]);
+  view.rerender(h(SaleDetailsModal,{...props,sale:{...sale,allowedActions:['complete']}}));
+  assert.deepEqual(footerButtons(),['Finalizar atención']);
+  view.rerender(h(SaleDetailsModal,{...props,sale:{...sale,reservationStatus:'COMPLETED',allowedActions:[]}}));
+  assert.deepEqual(footerButtons(),[]);
+  view.rerender(h(SaleDetailsModal,{...props,sale:{...sale,sourceType:'ORDER',type:'PRODUCTO',status:'PENDIENTE',reservationStatus:null,scheduledAt:null,allowedActions:['confirm','edit','delete']}}));
+  assert.deepEqual(footerButtons(),['Confirmar']);
 });

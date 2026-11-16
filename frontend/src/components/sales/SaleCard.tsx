@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, CalendarDays, X, Pencil, Trash2 } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2 } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
@@ -68,7 +68,6 @@ type Props = {
   onSelect?: () => void;
   onDetails?: (sale: Sale) => void;
   onComplete?: (sale: Sale) => void;
-  onReschedule?: (sale: Sale) => void;
   onCancelReservation?: (sale: Sale) => void;
   onNoShow?: (sale: Sale) => void;
   onEdit?: (sale: Sale) => void;
@@ -104,7 +103,7 @@ export default function SaleCard({
   sale,
   selected = false,
   onSelect,
-  onDetails, onComplete, onReschedule, onCancelReservation, onNoShow, onEdit, onDelete,
+  onDetails, onComplete, onCancelReservation, onNoShow, onEdit, onDelete,
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
@@ -186,12 +185,11 @@ export default function SaleCard({
     const run = (action: () => void) => { close(); action(); };
     return <>
       {onComplete && canUseSaleAction(sale, 'complete') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onComplete(sale))}><Check size={16} />Finalizar atención</button>}
-      {onReschedule && canUseSaleAction(sale, 'reschedule') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onReschedule(sale))}><CalendarDays size={16} />Reprogramar</button>}
       {onCancelReservation && canUseSaleAction(sale, 'cancel') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onCancelReservation(sale))}><X size={16} />Cancelar reserva</button>}
       {onNoShow && canUseSaleAction(sale, 'noShow') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onNoShow(sale))}><X size={16} />No asistió</button>}
       {onEdit && canUseSaleAction(sale, 'edit') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onEdit(sale))}><Pencil size={16} />Editar</button>}
       {onDelete && canUseSaleAction(sale, 'delete') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onDelete(sale))}><Trash2 size={16} />Eliminar</button>}
-      <button type="button" className={cardMenuActionClass} onClick={() => run(handleDetails)}>Ver detalles</button>
+      <button type="button" className={cardMenuActionClass} onClick={() => run(handleDetails)}><Eye size={16} />Ver detalles</button>
     </>;
   };
 

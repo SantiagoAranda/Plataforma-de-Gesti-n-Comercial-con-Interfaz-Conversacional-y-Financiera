@@ -67,6 +67,11 @@ export class SalesController {
     return this.salesService.generateElectronicInvoice(req.user.businessId, saleId);
   }
 
+  @Get('manual-service-times')
+  getManualServiceTimes(@Req() req: any, @Query('itemId') itemId: string, @Query('date') date: string, @Query('durationMinutes') duration?: string) {
+    return this.salesService.getManualServiceTimes(req.user.businessId, itemId, date, duration);
+  }
+
   @Get(':id/reservation-availability')
   getReservationAvailability(
     @Req() req: any,

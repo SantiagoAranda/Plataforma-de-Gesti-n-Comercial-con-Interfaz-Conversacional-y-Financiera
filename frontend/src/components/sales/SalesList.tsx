@@ -15,7 +15,6 @@ type Props = {
   onSelect?: (sale: Sale) => void;
   onDetails?: (sale: Sale) => void;
   onComplete?: (sale: Sale) => void;
-  onReschedule?: (sale: Sale) => void;
   onCancelReservation?: (sale: Sale) => void;
   onNoShow?: (sale: Sale) => void;
   onEdit?: (sale: Sale) => void;
@@ -68,7 +67,7 @@ export default function SalesList({
   targetId,
   onSaleElement,
   onSelect,
-  onDetails, onComplete, onReschedule, onCancelReservation, onNoShow, onEdit, onDelete,
+  onDetails, onComplete, onCancelReservation, onNoShow, onEdit, onDelete,
   onReceipt,
   onSendWhatsApp,
   taxSettingsEnabled = false,
@@ -111,7 +110,6 @@ export default function SalesList({
               <SaleCard
                 sale={s}
                 onComplete={onComplete}
-                onReschedule={onReschedule}
                 onCancelReservation={onCancelReservation}
                 onNoShow={onNoShow}
                 onEdit={onEdit}

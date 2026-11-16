@@ -42,6 +42,9 @@ export type ReserveSlotInput = {
   allowInactiveService?: boolean;
   // Other agendas the operation touches (e.g. the source day of a reschedule).
   extraLockKeys?: AgendaKey[];
+  // Authenticated manual sales only (retrospective registration). Never set by public flows.
+  allowPast?: boolean;
+  historicalDurationMinutes?: number;
 };
 
 export type SlotIssue = 'OUTSIDE_SCHEDULE' | 'OFF_GRID' | 'BLOCKED' | 'OVERLAP';
@@ -276,6 +279,31 @@ export class AvailabilityService {
     return days.get(formatDateKey(query.date)) ?? [];
   }
 
+  /** Authenticated Sales only: historical starts are suggestions, not current availability. */
+  async getManualSalesSlots(query: SlotQuery & { date: Date }, historicalDuration = query.durationMinutes) {
+    const today = this.businessToday(query.businessId);
+    const future = await this.getSlots(query);
+    const slots = future.map(time => ({ time, kind: 'AVAILABLE' as 'AVAILABLE' | 'HISTORICAL' }));
+    if (query.date > today.date) return slots;
+    const duration = historicalDuration;
+    if (!isValidDuration(duration)) throw new BadRequestException(RESERVATION_ERRORS.invalidDuration);
+    const range = await this.loadRange(this.prisma, query, query.date, query.date);
+    const limit = query.date < today.date ? DAY_MINUTES : today.minute;
+    const historical = computeSlots({
+      windows: range.windowsFor(query.date),
+      blocks: range.blocksFor(query.date),
+      reservations: range.reservationsFor(query.date),
+      durationMinutes: duration,
+      slotIntervalMinutes: query.slotIntervalMinutes,
+    });
+    // Current windows suggest convenient starts; they do not certify historical availability.
+    for (const time of historical) {
+      const [hour, minute] = time.split(':').map(Number);
+      if (hour * 60 + minute < limit) slots.push({ time, kind: 'HISTORICAL' });
+    }
+    return slots.sort((a, b) => a.time.localeCompare(b.time));
+  }
+
   /** Days of the month (UTC date-only) with at least one slot, as "YYYY-MM-DD". */
   async getAvailableDates(
     query: SlotQuery & { year: number; monthIndex: number },
@@ -372,7 +400,8 @@ export class AvailabilityService {
     if (item.status !== 'ACTIVE' && !input.allowInactiveService) {
       throw new BadRequestException(RESERVATION_ERRORS.serviceInactive);
     }
-    if (!isValidDuration(item.durationMinutes)) {
+    const durationMinutes = input.allowPast && input.historicalDurationMinutes != null ? input.historicalDurationMinutes : item.durationMinutes;
+    if (!isValidDuration(durationMinutes)) {
       throw new BadRequestException(RESERVATION_ERRORS.invalidDuration);
     }
 
@@ -389,7 +418,7 @@ export class AvailabilityService {
     ) {
       throw new BadRequestException(RESERVATION_ERRORS.invalidStart);
     }
-    const endMinute = startMinute + item.durationMinutes;
+    const endMinute = startMinute + durationMinutes;
     if (endMinute > DAY_MINUTES) {
       throw new BadRequestException(RESERVATION_ERRORS.outsideSchedule);
     }
@@ -401,11 +430,15 @@ export class AvailabilityService {
     }
 
     const today = this.businessToday(input.businessId);
-    if (
+    const isPast =
       date < today.date ||
-      (date.getTime() === today.date.getTime() && startMinute < today.minute)
-    ) {
+      (date.getTime() === today.date.getTime() && startMinute < today.minute);
+    if (isPast && !input.allowPast) {
       throw new BadRequestException(RESERVATION_ERRORS.past);
+    }
+
+    if (input.historicalDurationMinutes != null && (!input.allowPast || !isPast || date.getTime() === today.date.getTime() && endMinute > today.minute)) {
+      throw new BadRequestException({ code: 'RESERVATION_NOT_ENDED', message: 'La duración real solo se puede indicar para una atención ya terminada.' });
     }
 
     await this.lockAgenda(tx, [
@@ -424,12 +457,20 @@ export class AvailabilityService {
       date,
       date,
     );
-    const issue = evaluateSlot({
+    // Today's schedule may not match the historical one: a past start only has to be
+    // free of blocks and other bookings (which also rejects a duplicate registration).
+    const issue = isPast
+      ? isBlocked(startMinute, endMinute, day.blocksFor(date))
+        ? 'BLOCKED'
+        : overlapsReservation(startMinute, endMinute, day.reservationsFor(date))
+          ? 'OVERLAP'
+          : null
+      : evaluateSlot({
       windows: day.windowsFor(date),
       blocks: day.blocksFor(date),
       reservations: day.reservationsFor(date),
       startMinute,
-      durationMinutes: item.durationMinutes,
+      durationMinutes,
     });
     if (issue === 'OUTSIDE_SCHEDULE') {
       throw new BadRequestException(RESERVATION_ERRORS.outsideSchedule);
@@ -444,7 +485,7 @@ export class AvailabilityService {
       date,
       startMinute,
       endMinute,
-      durationMinutes: item.durationMinutes,
+      durationMinutes,
     };
   }
 

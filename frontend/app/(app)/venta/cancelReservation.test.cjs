@@ -39,7 +39,7 @@ const stubs = {
   '@/src/components/shared/EmptyStateCard': { EmptyStateCard: Null },
   '@/src/components/sales/SalesList': {
     __esModule: true,
-    default: ({ sales, onDetails, onComplete, onReschedule, onCancelReservation }) => h('ul', null, sales.map((s) => h('li', { key: s.id }, h('button', { onClick: () => onDetails(s) }, `ver ${s.id}`), ...[['complete',onComplete],['reschedule',onReschedule],['cancel',onCancelReservation]].filter(([action,handler])=>handler && s.allowedActions?.includes(action)).map(([action,handler])=>h('button',{key:action,onClick:()=>handler(s)},`menu ${action} ${s.id}`))))),
+    default: ({ sales, onDetails, onComplete, onEdit, onCancelReservation }) => h('ul', null, sales.map((s) => h('li', { key: s.id }, h('button', { onClick: () => onDetails(s) }, `ver ${s.id}`), ...[['complete',onComplete],['edit',onEdit],['cancel',onCancelReservation]].filter(([action,handler])=>handler && s.allowedActions?.includes(action)).map(([action,handler])=>h('button',{key:action,onClick:()=>handler(s)},`menu ${action} ${s.id}`))))),
   },
   '@/src/components/sales/SalesChatComposer': { __esModule: true, default: ({mode,sale,onSave}) => mode === 'edit' ? h('button',{onClick:()=>onSave({...sale,scheduledAt:'2026-12-01T10:00:00'})},'guardar turno') : null },
   './SalesChatComposer': { __esModule: true, default: Null },
@@ -233,19 +233,32 @@ test('the 11/11 calendar shows a service sold on 09/11 only under "Fecha del tur
 });
 
 
-test('Finalizar requires an explicit unchecked declaration and submits once', async () => {
+test('Finalizar opens one compact confirmation and submits serviceProvided once', async () => {
   await openDetails(reservation('CONFIRMADO', { allowedActions: ['complete','cancel'] }));
-  fireEvent.click(screen.getByRole('button', { name: 'Finalizar atenci\u00f3n' }));
-  const check = screen.getByRole('checkbox');
-  assert.equal(check.checked, false);
-  const dialog = screen.getByRole('dialog');
-  const button = require('@testing-library/react').within(dialog).getByRole('button', { name: 'Finalizar atenci\u00f3n' });
-  assert.equal(button.disabled, true);
-  assert.match(dialog.textContent, /Ana/); assert.match(dialog.textContent, /Corte/);
-  fireEvent.click(check);
-  assert.equal(button.disabled, false);
-  await act(async () => { fireEvent.click(button); fireEvent.click(button); });
-  await waitFor(() => assert.equal(calls.filter(x => x.includes('/complete')).length, 1));
+  fireEvent.click(screen.getByRole('button', { name: 'Finalizar atención' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Finalizar atención' }));
+  const confirms = await screen.findAllByRole('button', { name: 'Sí, finalizar' });
+  assert.equal(confirms.length, 1, 'a single confirmation');
+  assert.equal(screen.queryByRole('checkbox'), null);
+  assert.equal(screen.queryByRole('dialog', { name: /Finalizar/ }), null);
+  assert.ok(screen.getByText(/Se registrarán los movimientos de inventario y contabilidad/));
+  assert.equal(calls.filter(x => x.includes('/complete')).length, 0, 'opening never completes');
+  await act(async () => { fireEvent.click(confirms[0]); });
+  // While in flight a new confirmation cannot be opened.
+  fireEvent.click(screen.queryByRole('button', { name: 'Finalizar atención' }) ?? document.body);
+  await screen.findByText('Atención finalizada');
+  assert.equal(screen.queryByRole('button', { name: 'Sí, finalizar' }), null);
+  assert.equal(calls.filter(x => x.includes('/complete')).length, 1);
+  await waitFor(() => assert.equal(screen.queryByText('Detalle de Venta'), null));
+});
+
+test('Volver on the completion confirmation makes no request', async () => {
+  await openDetails(reservation('CONFIRMADO', { allowedActions: ['complete'] }));
+  fireEvent.click(screen.getByRole('button', { name: 'Finalizar atención' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Volver' }));
+  await waitFor(() => assert.equal(screen.queryByRole('button', { name: 'Sí, finalizar' }), null));
+  assert.equal(calls.filter(x => x.includes('/complete')).length, 0);
+  assert.ok(screen.getByText('Detalle de Venta'));
 });
 
 test('Finalizada has no ordinary cancel, confirm or delete', async () => {
@@ -276,39 +289,37 @@ test('commercial and appointment filters preserve their independent meanings', a
 
 test('completion conflict refreshes capabilities and closes the stale decision without retrying', async () => {
  await openDetails(reservation('CONFIRMADO',{allowedActions:['complete','cancel']}));
- fireEvent.click(screen.getByRole('button',{name:'Finalizar atenci\u00f3n'}));
- fireEvent.click(screen.getByRole('checkbox'));
+ fireEvent.click(screen.getByRole('button',{name:'Finalizar atención'}));
  completeConflict = true;
- fireEvent.click(require('@testing-library/react').within(screen.getByRole('dialog')).getByRole('button',{name:'Finalizar atenci\u00f3n'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Sí, finalizar'}));
  await screen.findByText('La reserva cambio de estado');
- assert.equal(screen.queryByRole('dialog'),null);
+ assert.equal(screen.queryByRole('button',{name:'Sí, finalizar'}),null);
  assert.equal(calls.filter(c=>c.includes('/complete')).length,1);
  fireEvent.click(await screen.findByText('ver res-1'));
- assert.equal(screen.queryByRole('button',{name:'Finalizar atenci\u00f3n'}),null);
+ assert.equal(screen.queryByRole('button',{name:'Finalizar atención'}),null);
 });
 
-for(const sourceType of ['ORDER','RESERVATION']) test(`menu reprogramar reuses sale editing with ${sourceType}`, async()=>{
- rows=[reservation('PENDIENTE',{sourceType,allowedActions:['reschedule']})];calls=[];editPayload=null;
+for(const sourceType of ['ORDER','RESERVATION']) test(`menu editar reschedules through sale editing with ${sourceType}`, async()=>{
+ rows=[reservation('PENDIENTE',{sourceType,allowedActions:['edit','reschedule']})];calls=[];editPayload=null;
  render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
- fireEvent.click(await screen.findByText('menu reschedule res-1'));
+ fireEvent.click(await screen.findByText('menu edit res-1'));
  fireEvent.click(await screen.findByText('guardar turno'));
  await screen.findByText('Venta actualizada');
  assert.ok(calls.includes(`PATCH /sales/res-1?sourceType=${sourceType}`));
  assert.equal(editPayload.scheduledAt,'2026-12-01T10:00:00');
  assert.ok(calls.filter(c=>c.startsWith('GET /sales')).length>=2);
 });
-test('card completion uses the existing explicit declaration dialog',async()=>{
+test('card completion uses the compact confirmation; Volver then confirm completes once',async()=>{
  rows=[reservation('CONFIRMADO',{allowedActions:['complete']})];calls=[];
  render(h(React.Fragment,null,h(Toaster),h(VentaPage)));
  fireEvent.click(await screen.findByText('menu complete res-1'));
- assert.equal(screen.getByRole('checkbox').checked,false);
- fireEvent.click(screen.getByRole('button',{name:'Volver'}));
+ fireEvent.click(await screen.findByRole('button',{name:'Volver'}));
+ assert.equal(calls.filter(c=>c.includes('/complete')).length,0);
  fireEvent.click(screen.getByText('menu complete res-1'));
- assert.equal(screen.getByRole('checkbox').checked,false);
- fireEvent.click(screen.getByRole('checkbox'));
- fireEvent.click(screen.getByRole('button',{name:'Finalizar atenci\u00f3n'}));
- await screen.findByText('Atenci\u00f3n finalizada');
+ fireEvent.click(await screen.findByRole('button',{name:'Sí, finalizar'}));
+ await screen.findByText('Atención finalizada');
  assert.equal(calls.filter(c=>c==='POST /reservations/res-1/complete').length,1);
+ assert.ok(rows.every(r=>r.reservationStatus==='COMPLETED'));
 });
 test('card mirror cancellation targets the ORDER route',async()=>{
  rows=[reservation('PENDIENTE',{sourceType:'ORDER',allowedActions:['cancel']})];calls=[];cancelResponse=()=>[200,{}];

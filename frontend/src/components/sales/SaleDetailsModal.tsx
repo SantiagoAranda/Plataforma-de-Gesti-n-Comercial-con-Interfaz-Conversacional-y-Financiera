@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Pencil, Trash2, Loader2, AlertTriangle } from "lucide-react";
+import { X, Pencil, Trash2, Loader2, AlertTriangle, Check, UserX } from "lucide-react";
 import type { Sale } from "@/src/types/sales";
 import SalesChatComposer from "./SalesChatComposer";
 import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
@@ -95,6 +95,9 @@ export default function SaleDetailsModal({
 
   const canConfirm = canUseSaleAction(sale, "confirm");
   const canEditSale = Boolean(onEdit) && canUseSaleAction(sale, "edit");
+  const canComplete = Boolean(onComplete) && canUseSaleAction(sale, "complete");
+  const canNoShow = Boolean(onNoShow) && canUseSaleAction(sale, "noShow");
+  const headerIconClass = "w-9 h-9 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition disabled:opacity-50";
 
   const total = sale.total ?? sale.items.reduce((acc, it) => acc + (it.price ?? 0), 0);
   const hasFiscalSummary = Boolean(sale.fiscalSummary) && (
@@ -133,81 +136,75 @@ export default function SaleDetailsModal({
     <div className="fixed inset-0 z-[9998] flex items-end justify-center bg-black/40 sm:items-center sm:p-4 backdrop-blur-sm">
       <div className="w-full sm:max-w-md flex flex-col bg-white rounded-t-[32px] sm:rounded-2xl shadow-2xl overflow-hidden h-[90vh] sm:h-auto sm:max-h-[85vh] relative animate-in slide-in-from-bottom-full duration-300">
         {/* Header Section */}
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between bg-white shrink-0">
-          <div className="flex flex-col min-w-0">
-            <h2 className="font-semibold text-slate-900 text-base truncate">Detalle de Venta</h2>
-            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
-              #{sale.id?.slice(-8) || "N/A"}
+        <div className="px-5 pt-4 pb-3 border-b border-slate-100 bg-white shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col min-w-0">
+              <h2 className="font-semibold text-slate-900 text-base truncate">Detalle de Venta</h2>
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
+                #{sale.id?.slice(-8) || "N/A"}
+              </span>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
+              {canEditSale && (
+                <button
+                  type="button"
+                  onClick={() => onEdit?.(sale)}
+                  disabled={confirming}
+                  className={headerIconClass}
+                  title="Editar"
+                  aria-label="Editar venta"
+                >
+                  <Pencil size={17} />
+                </button>
+              )}
+              {/* An active reservation is cancelled, not deleted: one destructive icon only. Both open their existing confirmation. */}
+              {onCancelReservation && canUseSaleAction(sale, "cancel") ? (
+                <button
+                  type="button"
+                  onClick={() => onCancelReservation(sale)}
+                  disabled={confirming}
+                  className={`${headerIconClass} text-rose-500 hover:bg-rose-50 hover:text-rose-600`}
+                  title="Cancelar reserva"
+                  aria-label="Cancelar reserva"
+                >
+                  <Trash2 size={17} />
+                </button>
+              ) : onCancel && !onCancelReservation && canUseSaleAction(sale, "delete") && (
+                <button
+                  type="button"
+                  onClick={handleCancelAction}
+                  disabled={confirming}
+                  className={`${headerIconClass} text-rose-500 hover:bg-rose-50 hover:text-rose-600`}
+                  title="Eliminar"
+                  aria-label="Eliminar venta"
+                >
+                  <Trash2 size={17} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className={headerIconClass}
+                aria-label="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${statusStyles.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dotColor}`} />
+              {statusStyles.label}
+            </span>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${paymentMethodStyles}`}>
+              {paymentMethodText}
+            </span>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${originStyles}`}>
+              {originLabel}
             </span>
           </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-full">
-            {onComplete && canUseSaleAction(sale, 'complete') && <button type="button" disabled={confirming} onClick={() => onComplete(sale)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs text-white">Finalizar atención</button>}
-            {canEditSale && (
-              <button
-                onClick={() => onEdit?.(sale)}
-                disabled={confirming}
-                className="w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50"
-                title="Editar"
-                aria-label="Editar venta"
-              >
-                <Pencil size={16} />
-              </button>
-            )}
-            {onCancelReservation && canUseSaleAction(sale, "cancel") && (
-              <button
-                onClick={() => onCancelReservation(sale)}
-                disabled={confirming}
-                className="h-9 px-3 flex items-center justify-center rounded-xl border border-rose-100 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
-                aria-label="Cancelar reserva"
-              >
-                Cancelar reserva
-              </button>
-            )}
-            {onNoShow && canUseSaleAction(sale, "noShow") && (
-              <button
-                onClick={() => onNoShow(sale)}
-                disabled={confirming}
-                className="h-9 px-3 flex items-center justify-center rounded-xl border border-rose-100 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition disabled:opacity-50"
-                aria-label="Registrar que el cliente no asistió"
-              >
-                No asistió
-              </button>
-            )}
-            {/* An active reservation is cancelled, not deleted: one destructive action only. */}
-            {onCancel && !onCancelReservation && canUseSaleAction(sale, "delete") && (
-              <button
-                onClick={handleCancelAction}
-                disabled={confirming}
-                className="w-9 h-9 flex items-center justify-center rounded-xl border border-rose-100 text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition disabled:opacity-50"
-                title="Eliminar"
-                aria-label="Eliminar venta"
-              >
-                <Trash2 size={16} />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100 transition text-slate-500"
-              aria-label="Cerrar"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Chips Strip */}
-        <div className="px-5 py-2.5 bg-slate-50/50 border-b border-slate-100 flex flex-wrap items-center gap-2 shrink-0">
-          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusStyles.badge}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${statusStyles.dotColor}`} />
-            {statusStyles.label}
-          </span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${paymentMethodStyles}`}>
-            {paymentMethodText}
-          </span>
-          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${originStyles}`}>
-            {originLabel}
-          </span>
         </div>
 
         {/* Scrollable Body embedding read-only Composer */}
@@ -244,34 +241,56 @@ export default function SaleDetailsModal({
             </div>
           )}
 
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex flex-col min-w-0">
+          {/* One row; on narrow widths or large amounts the actions wrap below instead of truncating the total. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            <div className="flex flex-col">
               <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest leading-none mb-1">
                 {footerLabel}
               </span>
-              <span className="text-xl font-bold text-slate-900 leading-none truncate">
+              <span className="text-xl font-bold text-slate-900 leading-none whitespace-nowrap">
                 ${formatMoney(footerValue)}
               </span>
             </div>
 
-            <div className="flex items-center shrink-0">
-              {canConfirm && onConfirm ? (
-                <button
-                  onClick={handleConfirmAction}
-                  disabled={confirming}
-                  className="h-10 px-5 rounded-full bg-emerald-600 text-white font-medium text-[11px] uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
-                >
-                  {confirming ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : "Confirmar"}
-                </button>
-              ) : (
-                <button
-                  onClick={onClose}
-                  className="h-10 px-5 rounded-full bg-slate-900 text-white font-medium text-[11px] uppercase tracking-widest hover:brightness-110 transition active:scale-95 whitespace-nowrap"
-                >
-                  Cerrar
-                </button>
-              )}
+            {(canNoShow || canComplete || (canConfirm && onConfirm)) && (
+            <div className="ml-auto flex items-center gap-2">
+            {canNoShow && (
+              <button
+                type="button"
+                onClick={() => onNoShow?.(sale)}
+                disabled={confirming}
+                className="h-11 px-3 inline-flex items-center gap-1.5 rounded-full border border-rose-300 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                aria-label="No asistió"
+                title="No asistió"
+              >
+                <UserX size={15} aria-hidden="true" />
+                Ausente
+              </button>
+            )}
+            {canComplete && (
+              <button
+                type="button"
+                onClick={() => onComplete?.(sale)}
+                disabled={confirming}
+                className="h-11 px-3.5 inline-flex items-center gap-1.5 rounded-full bg-emerald-700 text-xs font-semibold text-white hover:bg-emerald-800 transition active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                aria-label="Finalizar atención"
+                title="Finalizar atención"
+              >
+                <Check size={15} aria-hidden="true" />
+                Finalizar
+              </button>
+            )}
+            {canConfirm && onConfirm && (
+              <button
+                onClick={handleConfirmAction}
+                disabled={confirming}
+                className="h-10 px-5 shrink-0 rounded-full bg-emerald-600 text-white font-medium text-[11px] uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 whitespace-nowrap"
+              >
+                {confirming ? <Loader2 className="animate-spin h-3.5 w-3.5" /> : "Confirmar"}
+              </button>
+            )}
             </div>
+            )}
           </div>
         </div>
       </div>

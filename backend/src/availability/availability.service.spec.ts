@@ -201,6 +201,48 @@ describe('AvailabilityService', () => {
     durationMinutes: 60,
   };
 
+  describe('manual historical suggestions', () => {
+    const historical = (times: string[]) => times.map(time => ({ time, kind: 'HISTORICAL' }));
+    it.each([
+      ['specific window', [win(480, 660)], ['08:00', '09:00', '10:00']],
+      ['split windows', [win(480, 600), win(840, 960)], ['08:00', '09:00', '14:00', '15:00']],
+      ['general fallback', [win(480, 660, null)], ['08:00', '09:00', '10:00']],
+      ['specific overrides general', [win(480, 600), win(840, 960, null)], ['08:00', '09:00']],
+      ['closed weekday', [win(480, 660, ITEM_ID, TODAY), win(840, 960, null)], []],
+      ['no configured windows', [], []],
+    ])('%s uses the same grid as future bookings', async (_name, windows, times) => {
+      const svc = service({ durationMinutes: 60, windows: windows as Fixture['windows'] });
+      expect(await svc.getManualSalesSlots({ ...query, date: day(PAST) })).toEqual(historical(times as string[]));
+      expect(await svc.getSlots({ ...query, date: day(FUTURE) })).toEqual(times);
+      expect(await svc.getSlots({ ...query, date: day(PAST) })).toEqual([]);
+    });
+
+    it('respects explicit interval and actual duration at the window boundary', async () => {
+      const svc = service({ durationMinutes: 60, windows: [win(480, 660)] });
+      expect(await svc.getManualSalesSlots({ ...query, date: day(PAST), slotIntervalMinutes: 30 }, 90))
+        .toEqual(historical(['08:00', '08:30', '09:00', '09:30']));
+    });
+
+    it('uses different windows on different weekdays', async () => {
+      const svc = service({ durationMinutes: 60, windows: [win(480, 600), win(840, 960, ITEM_ID, '2026-11-03')] });
+      expect(await svc.getManualSalesSlots({ ...query, date: day('2026-11-03') })).toEqual(historical(['14:00', '15:00']));
+    });
+
+    it('keeps blocks and overlaps when suggesting history', async () => {
+      const svc = service({ durationMinutes: 60, windows: [win(480, 660)],
+        blocks: [{date: PAST, startMinute: 480, endMinute: 540}],
+        reservations: [{date: PAST, startMinute: 540, endMinute: 600}] });
+      expect(await svc.getManualSalesSlots({ ...query, date: day(PAST) })).toEqual(historical(['10:00']));
+    });
+
+    it('today combines past suggestions and unchanged future availability without duplicates', async () => {
+      const svc = service({ durationMinutes: 60, windows: [win(480, 720, ITEM_ID, TODAY)] });
+      expect(await svc.getManualSalesSlots({ ...query, date: day(TODAY) })).toEqual([
+        ...historical(['08:00', '09:00', '10:00']), {time: '11:00', kind: 'AVAILABLE'},
+      ]);
+    });
+  });
+
   it('service-specific windows replace the general business schedule', async () => {
     const svc = service({
       durationMinutes: 60,

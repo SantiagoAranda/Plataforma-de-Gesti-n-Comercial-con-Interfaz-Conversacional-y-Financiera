@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/src/lib/api";
+import { getBusinessDayKey } from "@/src/lib/businessDate";
 import { formatLocalDateKey } from "@/src/lib/datetime";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+// Retain exact-time entry for future use; manual sales currently use suggested buttons only.
+const SHOW_HISTORICAL_EXACT_TIME = false;
 const WEEKDAYS = ["D", "L", "M", "M", "J", "V", "S"] as const;
 const MONTHS_ES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -29,6 +32,7 @@ type Props = {
   disabled?: boolean;
   durationMin?: number;
   availabilitySaleId?: string;
+  manualSale?: boolean;
 };
 
 function startOfMonth(d: Date) {
@@ -124,8 +128,18 @@ export default function ReservationSlotPicker({
   disabled = false,
   durationMin,
   availabilitySaleId,
+  manualSale = false,
 }: Props) {
+  const historyEnabled = mode === "private" && manualSale && !availabilitySaleId;
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!historyEnabled) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [historyEnabled]);
+  const todayKey = getBusinessDayKey(new Date(clockNow))!;
   const today = useMemo(() => new Date(), []);
+  const isHistoricalTime = (time: string) => !!selectedDate && Date.parse(`${selectedDate}T${time}:00-05:00`) < clockNow;
   const initialDate = selectedDate ? new Date(`${selectedDate}T00:00:00`) : today;
   const [viewMonth, setViewMonth] = useState(() => startOfMonth(initialDate));
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -197,8 +211,9 @@ export default function ReservationSlotPicker({
     }
     if (mode === "public" && !businessSlug) return;
 
-    const path =
-      mode === "public"
+    const path = historyEnabled
+      ? `/sales/manual-service-times?itemId=${encodeURIComponent(itemId)}&date=${selectedDate}${durationMin ? `&durationMinutes=${durationMin}` : ""}`
+      : mode === "public"
         ? `/public/${businessSlug}/availability?itemId=${itemId}&date=${selectedDate}`
         : availabilitySaleId
           ? `/sales/${availabilitySaleId}/reservation-availability?date=${selectedDate}`
@@ -207,16 +222,17 @@ export default function ReservationSlotPicker({
     let alive = true;
     setLoadingSlots(true);
     setTimeSlots([]);
-    fetchJson<string[]>(path)
+    fetchJson<Array<string | { time: string; kind: string }>>(path)
       .then((data) => {
         if (!alive) return;
-        const slots = Array.isArray(data) ? data : [];
+        const slots = Array.isArray(data) ? data.map(slot => typeof slot === "string" ? slot : slot.time) : [];
         setTimeSlots(slots);
         if (selectedStartMinute != null) {
           const stillValid = slots.some(
             (s) => minutesFromTime(s) === selectedStartMinute,
           );
-          if (!stillValid) {
+          const exactHistory = SHOW_HISTORICAL_EXACT_TIME && historyEnabled && Date.parse(`${selectedDate}T${timeFromMinutes(selectedStartMinute)}:00-05:00`) < Date.now();
+          if (!stillValid && !exactHistory) {
             onChangeRef.current({ date: selectedDate, time: null, startMinute: null });
           }
         }
@@ -232,7 +248,7 @@ export default function ReservationSlotPicker({
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availabilitySaleId, businessSlug, fetchJson, itemId, mode, selectedDate, disabled]);
+  }, [availabilitySaleId, businessSlug, fetchJson, itemId, mode, selectedDate, disabled, historyEnabled, durationMin]);
 
   function formatFriendlyDate(dateStr: string): string {
     const date = new Date(`${dateStr}T00:00:00`);
@@ -277,7 +293,7 @@ export default function ReservationSlotPicker({
 
   function handlePickDate(date: Date, inMonth: boolean) {
     const key = formatLocalDateKey(date);
-    if (!inMonth || !availableDateSet.has(key)) return;
+    if (!inMonth || !(historyEnabled && key <= todayKey) && !availableDateSet.has(key)) return;
     onChangeRef.current({ date: key, time: null, startMinute: null });
   }
 
@@ -294,7 +310,7 @@ export default function ReservationSlotPicker({
       <div className="mb-3">
         <div className="text-lg font-medium text-neutral-800">Selecciona una fecha</div>
         <div className="text-xs text-neutral-500">
-          Selecciona día y horario disponible
+          {historyEnabled ? "Selecciona fecha y hora de la atención" : "Selecciona día y horario disponible"}
         </div>
       </div>
 
@@ -368,7 +384,8 @@ export default function ReservationSlotPicker({
           {grid.map(({ date, inMonth }, i) => {
             const dateKey = formatLocalDateKey(date);
             const selected = selectedDate && sameDay(new Date(`${selectedDate}T00:00:00`), date);
-            const isAvailable = inMonth && availableDateSet.has(dateKey);
+            const isHistoricalDay = historyEnabled && dateKey <= todayKey;
+            const isAvailable = inMonth && (isHistoricalDay || availableDateSet.has(dateKey));
 
             return (
               <button
@@ -380,6 +397,8 @@ export default function ReservationSlotPicker({
                   "h-8 w-8 mx-auto flex items-center justify-center rounded-full text-xs font-semibold transition-all duration-200",
                   selected
                     ? "bg-emerald-500 text-white shadow-sm"
+                    : isHistoricalDay && inMonth
+                      ? "text-neutral-700 hover:bg-neutral-100"
                     : isAvailable
                       ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       : "text-neutral-300",
@@ -400,11 +419,24 @@ export default function ReservationSlotPicker({
       </div>
 
       <div className="mt-5">
-        <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Horarios Disponibles</div>
+        <div className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">{historyEnabled && selectedDate && selectedDate <= todayKey ? "Horarios de la atención" : "Horarios Disponibles"}</div>
 
+        {SHOW_HISTORICAL_EXACT_TIME && historyEnabled && selectedDate && selectedDate <= todayKey && (
+          <label className="mt-3 flex flex-col gap-1 text-xs text-neutral-500">
+            Horarios históricos · también podés indicar la hora exacta
+            <input aria-label="Hora histórica exacta" type="time" step="60" value={selectedTime ?? ""} disabled={disabled}
+              onChange={event => {
+                const time = event.target.value;
+                if (/^\d{2}:\d{2}$/.test(time) && isHistoricalTime(time)) handlePickTime(time);
+              }} className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-neutral-700" />
+            <span>El horario histórico no indica disponibilidad. Se validan bloqueos y otras atenciones al guardar.</span>
+          </label>
+        )}
         {selectedDate && !loadingSlots && timeSlots.length === 0 && !disabled && (
           <div className="mt-3 text-sm text-black/40">
-            No hay horarios disponibles para este día.
+            {historyEnabled && selectedDate < todayKey
+              ? "No hay horarios sugeridos para este día según la configuración actual."
+              : "No hay horarios disponibles para este día."}
           </div>
         )}
 
@@ -414,7 +446,7 @@ export default function ReservationSlotPicker({
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           {(() => {
-            const slotsToDisplay = disabled && selectedTime && !timeSlots.includes(selectedTime)
+            const slotsToDisplay = (disabled || SHOW_HISTORICAL_EXACT_TIME && historyEnabled && selectedTime && isHistoricalTime(selectedTime)) && selectedTime && !timeSlots.includes(selectedTime)
               ? [selectedTime, ...timeSlots]
               : timeSlots;
             return slotsToDisplay.map((slot) => (
@@ -428,6 +460,7 @@ export default function ReservationSlotPicker({
                   selectedTime === slot
                     ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
                     : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50",
+                  historyEnabled && isHistoricalTime(slot) && selectedTime !== slot && "border-dashed text-neutral-500",
                   disabled && selectedTime !== slot && "opacity-40 cursor-not-allowed"
                 )}
               >

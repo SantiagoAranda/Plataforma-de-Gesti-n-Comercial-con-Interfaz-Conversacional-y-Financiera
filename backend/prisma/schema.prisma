@@ -908,6 +908,7 @@ model Order {
   publicRequestId          String?
   publicRequestFingerprint String?
   idempotencyKey           String?
+  manualRequestFingerprint String?
 
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)

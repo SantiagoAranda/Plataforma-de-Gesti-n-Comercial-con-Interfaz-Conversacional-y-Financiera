@@ -16,8 +16,10 @@ const { render, screen, fireEvent, cleanup, act } = require('@testing-library/re
 const h = React.createElement;
 const catalog = [
   { id: 'product', name: 'Producto QA', price: 100, type: 'PRODUCT', inventoryMode: 'NONE' },
+  { id: 'service90', name: 'Servicio 90 QA', price: 300, type: 'SERVICE', durationMinutes: 90 },
   { id: 'service', name: 'Servicio QA', price: 200, type: 'SERVICE', durationMinutes: 60 },
 ];
+let fixtureDate = '2099-12-01';
 const component = (defaultExport) => ({ __esModule: true, default: defaultExport });
 const stubs = {
   '@/src/lib/api': { api: async () => catalog },
@@ -26,8 +28,8 @@ const stubs = {
   '@/src/components/shared/ItemSelector': component(({ options, onChange, value }) =>
     h('select', { 'aria-label': 'Ítem QA', value, onChange: e => onChange(e.target.value) },
       h('option', { value: '' }, 'Seleccionar'), ...options.map(i => h('option', { key: i.id, value: i.id }, i.name)))),
-  '@/src/components/reservations/ReservationSlotPicker': component(({ onChange }) =>
-    h('button', { type: 'button', onClick: () => onChange({ date: '2099-12-01', startMinute: 600 }) }, 'Elegir turno QA')),
+  '@/src/components/reservations/ReservationSlotPicker': component(({ onChange, durationMin }) =>
+    h('button', { type: 'button', 'data-duration': durationMin, onClick: () => onChange({ date: fixtureDate, startMinute: 600 }) }, 'Elegir turno QA')),
   '@/src/components/shared/PhoneSelector': component(() => null),
   '@/src/components/shared/MunicipalitySelect': component(() => null),
   '@/src/components/shared/ProductOptionSelector': component(() => null),
@@ -46,7 +48,7 @@ Module._extensions['.tsx'] = Module._extensions['.ts'] = (module, filename) => {
   }).outputText, filename);
 };
 const Composer = require('./SalesChatComposer.tsx').default;
-afterEach(cleanup);
+afterEach(() => { cleanup(); fixtureDate = '2099-12-01'; });
 async function mount(props = {}) {
   const saved = [];
   await act(async () => render(h(Composer, { expanded: true, onCancelComposer() {}, onSave: data => saved.push(data), ...props })));
@@ -118,3 +120,37 @@ for (const ids of [['product', 'service'], ['service', 'product'], ['service']])
     assert.equal(screen.queryByText('Atención:'), null);
   });
 }
+
+test('retrospective duration stays hidden and configured duration is submitted with the agreed price', async () => {
+  const saved=await mount(); add('service');
+  fireEvent.click(screen.getByRole('button',{name:'Elegir turno QA'}));
+  assert.equal(screen.queryByLabelText('Duración real en minutos'),null);
+  fixtureDate='2020-01-01';
+  fireEvent.click(screen.getByRole('button',{name:'Elegir turno QA'}));
+  assert.equal(screen.queryByLabelText('Duración real en minutos'),null);
+  assert.equal(screen.queryByText(/Atención pasada.*Duración real/),null);
+  await save();
+  assert.equal(saved[0].durationMinutes,60);
+  assert.equal(saved[0].items[0].unitPrice,200);
+  assert.equal(saved[0].scheduledAt,'2020-01-01T10:00:00');
+  assert.equal(saved[0].serviceProvided,undefined); // Only the separate confirmation may declare provision.
+});
+
+test('configured duration follows service changes and remains stable across dates', async () => {
+  const saved=await mount();
+  for (const [id,duration] of [['service',60],['service90',90],['service',60]]) {
+    add(id);
+    for (const date of ['2020-01-01','2020-02-02','2099-12-01']) {
+      fixtureDate=date;
+      const picker=screen.getByRole('button',{name:'Elegir turno QA'});
+      fireEvent.click(picker);
+      assert.equal(picker.dataset.duration,String(duration));
+      assert.equal(screen.queryByLabelText('Duración real en minutos'),null);
+      await save();
+      assert.equal(saved.at(-1).durationMinutes,duration);
+      assert.equal(saved.at(-1).scheduledAt,`${date}T10:00:00`);
+      assert.equal(saved.at(-1).serviceProvided,undefined);
+    }
+    remove();
+  }
+});

@@ -24,10 +24,12 @@ import MunicipalitySelect from "@/src/components/shared/MunicipalitySelect";
 import { api } from "@/src/lib/api";
 import { isValidEmail } from "@/src/lib/email";
 import { parseLocalDateTimeParts } from "@/src/lib/datetime";
+import { serviceHasEnded } from "@/src/lib/sales/retrospectiveSale";
 import { useTaxSettings } from "@/src/hooks/useTaxSettings";
 import { useFeatureFlags } from "@/src/hooks/useFeatureFlags";
 import {
   agendaPayloadForLine,
+  buildLocalScheduledAt,
   requiresServiceAgenda,
   resolveAgendaLineType,
 } from "@/src/lib/sales/serviceAgenda";
@@ -138,6 +140,9 @@ function deriveSaleConceptFromItems(items: EditableItem[], saleType: Sale["type"
   return SALE_CONCEPT_PRIORITY.find((concept) => concepts.includes(concept)) ?? concepts[0];
 }
 
+// Keep retrospective duration editing implemented but unavailable in Nueva Venta.
+const SHOW_RETROSPECTIVE_DURATION = false;
+
 export default function SalesChatComposer({
   mode = "create",
   sale = null,
@@ -193,6 +198,13 @@ export default function SalesChatComposer({
   const [scheduledDate, setScheduledDate] = useState<string | null>(null);
   const [selectedStartMinute, setSelectedStartMinute] = useState<number | null>(null);
   const [manualDuration, setManualDuration] = useState("60");
+  const [historicalDuration, setHistoricalDuration] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!expanded || mode !== "create") return;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [expanded, mode]);
   const [formError, setFormError] = useState<string | null>(null);
   const [buyerEmailError, setBuyerEmailError] = useState<string | null>(null);
   const [isSearchCriterionOpen, setIsSearchCriterionOpen] = useState(false);
@@ -310,6 +322,14 @@ export default function SalesChatComposer({
   }, [items, businessItems]);
   const agendaItemType = agendaItem?.itemType;
   const requiresAgenda = requiresServiceAgenda(agendaItem, businessItems);
+  const selectedScheduledAt = buildLocalScheduledAt(scheduledDate, selectedStartMinute);
+  const configuredDuration = mode === "create"
+    ? businessItems.find(item => item.id === agendaItem?.itemId)?.durationMinutes ?? agendaItem?.durationMin
+    : agendaItem?.durationMin;
+  const effectiveDuration = (SHOW_RETROSPECTIVE_DURATION ? historicalDuration : null)
+    ?? configuredDuration ?? Number(manualDuration);
+  const isRetrospective = mode === "create" && requiresAgenda && serviceHasEnded(selectedScheduledAt, effectiveDuration, clockNow);
+  useEffect(() => { setHistoricalDuration(null); }, [scheduledDate, selectedStartMinute, agendaItem?.itemId, expanded]);
   // A scheduled service is a booking (born CONFIRMED, sold on «Finalizar atención»): no sale status to pick.
   // Historical policy 1 sales keep their selector when edited.
   const isBookingForm = mode === "create" ? requiresAgenda : sale?.commercialPolicyVersion === 2;
@@ -552,7 +572,7 @@ export default function SalesChatComposer({
     if (cleanedItems.length === 0) return;
 
     const serviceItem = agendaItem;
-    const serviceDuration = serviceItem?.durationMin ?? Number(manualDuration || 0);
+    const serviceDuration = mode === "create" ? effectiveDuration : serviceItem?.durationMin ?? Number(manualDuration || 0);
     const agendaPayload = agendaPayloadForLine({
       requiresAgenda,
       date: scheduledDate,
@@ -799,14 +819,29 @@ export default function SalesChatComposer({
               selectedStartMinute={selectedStartMinute}
               disabled={isReadonly}
               availabilitySaleId={mode === "edit" ? sale?.id : undefined}
-              durationMin={agendaItem.durationMin || Number(manualDuration) || undefined}
+              manualSale={mode === "create"}
+              durationMin={effectiveDuration || undefined}
               onChange={({ date, startMinute }) => {
                 setScheduledDate(date);
                 setSelectedStartMinute(startMinute);
               }}
             />
 
-            {!isReadonly && !agendaItem.durationMin && (
+            {SHOW_RETROSPECTIVE_DURATION && isRetrospective && (
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                <span>Atención pasada · Duración real en minutos</span>
+                <input aria-label="Duración real en minutos" type="number" min="1" max="1440" value={effectiveDuration}
+                  onChange={e => {
+                    const value = Number(e.target.value);
+                    if (Number.isInteger(value) && value > 0 && selectedStartMinute != null && selectedStartMinute + value <= 1440 && serviceHasEnded(selectedScheduledAt, value)) {
+                      setHistoricalDuration(value);
+                      setFormError(null);
+                    } else setFormError("La duración real debe corresponder a una atención ya terminada y finalizar dentro del mismo día.");
+                  }}
+                  className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none focus:border-emerald-500" />
+              </label>
+            )}
+            {!isRetrospective && !isReadonly && !agendaItem.durationMin && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-slate-500 px-1">Duración en minutos</span>
                 <input
@@ -819,7 +854,7 @@ export default function SalesChatComposer({
                 />
               </div>
             )}
-            {!isReadonly && items[0]?.durationMin && (
+            {!isRetrospective && !isReadonly && items[0]?.durationMin && (
               <p className="px-1 text-[11px] font-semibold text-emerald-700">
                 Duración: {items[0].durationMin} min
               </p>
@@ -1108,6 +1143,7 @@ export default function SalesChatComposer({
 
   return (
     <div
+      inert={isSubmitting}
       className={`fixed inset-x-0 bottom-0 ${expanded ? "z-50" : "z-30"} px-3 py-3 lg:left-[408px] lg:right-0 pointer-events-none`}
       style={{ paddingBottom: "calc(12px + env(safe-area-inset-bottom))" }}
     >

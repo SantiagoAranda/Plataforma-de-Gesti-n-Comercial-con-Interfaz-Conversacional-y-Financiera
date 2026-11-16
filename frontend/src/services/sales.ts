@@ -104,6 +104,8 @@ export function createSale(data: {
   status?: "PENDIENTE" | "CERRADO";
   scheduledAt?: string;
   durationMinutes?: number;
+  serviceProvided?: boolean;
+  idempotencyKey?: string;
   buyerFiscalContext?: SaleFiscalContext;
   items: SaleLineInput[];
 }) {
