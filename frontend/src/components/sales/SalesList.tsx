@@ -2,6 +2,7 @@
 
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
+import type { DocumentKind } from "@/src/components/commercial-documents/types";
 import SaleCard from "./SaleCard";
 import { getBusinessDayKey } from "@/src/lib/businessDate";
 import { canGenerateElectronicInvoice, type InvoiceCapability } from "@/src/lib/sales/manualInvoiceUi";
@@ -34,6 +35,7 @@ type Props = {
   invoiceCapability?: InvoiceCapability;
   generatingInvoiceSaleId?: string | null;
   onGenerateElectronicInvoice?: (sale: Sale) => void;
+  onViewDocument?: (sale: Sale, kind: DocumentKind) => void;
 };
 
 function groupSalesByDate(sales: Sale[]) {
@@ -83,6 +85,7 @@ export default function SalesList({
   invoiceCapability,
   generatingInvoiceSaleId,
   onGenerateElectronicInvoice,
+  onViewDocument,
 }: Props) {
   const groups = groupSalesByDate(sales);
 
@@ -132,6 +135,7 @@ export default function SalesList({
                 canGenerateElectronicInvoice={Boolean(invoiceCapability && canGenerateElectronicInvoice(s, Boolean(invoice), invoiceCapability, Boolean(generatingInvoiceSaleId)))}
                 factusEnabled={invoiceCapability?.factusEnabled === true}
                 onGenerateElectronicInvoice={onGenerateElectronicInvoice}
+                onViewDocument={onViewDocument}
               />
             </div>
             );

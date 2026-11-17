@@ -25,6 +25,7 @@ import SalesChatComposer, {
 import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/SalesFilterModal";
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 const SaleReceiptModal = dynamic(() => import("@/src/components/sales/SaleReceiptModal"), { ssr: false });
+const SaleDocumentModal = dynamic(() => import("@/src/components/sales/SaleDocumentModal"), { ssr: false });
 import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
 import ElectronicInvoiceConfirmModal from "@/src/components/sales/ElectronicInvoiceConfirmModal";
 import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirmation, firstInvoiceConfirmationStep } from "@/src/lib/sales/manualInvoiceUi";
@@ -328,6 +329,7 @@ function VentaPageContent() {
   const [confirmingSaleId, setConfirmingSaleId] = useState<string | null>(null);
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
+  const [documentView, setDocumentView] = useState<{ sale: Sale; kind: "quotation" | "delivery" } | null>(null);
   const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
   const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
   const [fiscalDocumentsStatus, setFiscalDocumentsStatus] = useState<"loading" | "loaded" | "error">("loading");
@@ -1572,6 +1574,7 @@ function VentaPageContent() {
               }}
               generatingInvoiceSaleId={generatingInvoiceSaleId}
               onGenerateElectronicInvoice={handleStartElectronicInvoice}
+              onViewDocument={(sale, kind) => setDocumentView({ sale, kind })}
             />
           )}
           <div ref={bottomRef} className="h-px w-full" />
@@ -1620,6 +1623,10 @@ function VentaPageContent() {
         business={receiptBusiness}
         fiscalDocument={receiptFiscalDocument}
       />
+
+      {documentView && (
+        <SaleDocumentModal sale={documentView.sale} kind={documentView.kind} business={receiptBusiness} onClose={() => setDocumentView(null)} />
+      )}
 
       <FiscalDocumentDetailModal document={fiscalDetail} onClose={() => setFiscalDetail(null)} />
       <ElectronicInvoiceConfirmModal

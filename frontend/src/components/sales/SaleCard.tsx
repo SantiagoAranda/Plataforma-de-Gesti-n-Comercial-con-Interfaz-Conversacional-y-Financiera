@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2 } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2, FileText, Truck } from "lucide-react";
+import type { DocumentKind } from "@/src/components/commercial-documents/types";
+import { canShowSaleDocument, DOCUMENT_LABEL } from "@/src/lib/sales/saleDocument";
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
@@ -87,6 +89,7 @@ type Props = {
   canGenerateElectronicInvoice?: boolean;
   factusEnabled?: boolean;
   onGenerateElectronicInvoice?: (sale: Sale) => void;
+  onViewDocument?: (sale: Sale, kind: DocumentKind) => void;
 };
 
 function getItemUnitPrice(it: Sale["items"][number]) {
@@ -119,6 +122,7 @@ export default function SaleCard({
   canGenerateElectronicInvoice = false,
   factusEnabled = false,
   onGenerateElectronicInvoice,
+  onViewDocument,
 }: Props) {
   const router = useRouter();
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
@@ -190,8 +194,16 @@ export default function SaleCard({
       {onEdit && canUseSaleAction(sale, 'edit') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onEdit(sale))}><Pencil size={16} />Editar</button>}
       {onDelete && canUseSaleAction(sale, 'delete') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onDelete(sale))}><Trash2 size={16} />Eliminar</button>}
       <button type="button" className={cardMenuActionClass} onClick={() => run(handleDetails)}><Eye size={16} />Ver detalles</button>
+      {documentActions(close)}
     </>;
   };
+
+  const documentActions = (close: () => void) => onViewDocument ? (["quotation", "delivery"] as const).filter((kind) => canShowSaleDocument(sale, kind)).map((kind) => (
+    <button key={kind} type="button" className={cardMenuActionClass} onClick={() => { close(); onViewDocument(sale, kind); }}>
+      {kind === "quotation" ? <FileText size={16} /> : <Truck size={16} />}{DOCUMENT_LABEL[kind]}
+    </button>
+  )) : null;
+  const hasDocuments = Boolean(onViewDocument) && (canShowSaleDocument(sale, "quotation") || canShowSaleDocument(sale, "delivery"));
 
   return (
     <div
@@ -240,7 +252,7 @@ export default function SaleCard({
             </span>
             {fiscalPresentation && fiscalDocument && onFiscalView && onFiscalDownload && onFiscalDispatch && onFiscalRetry && onFiscalAnnul && onCompleteAnnulment ? (
               <FiscalDocumentMenu
-                leadingActions={operational ? reservationActions : undefined}
+                leadingActions={operational ? reservationActions : hasDocuments ? documentActions : undefined}
                 document={fiscalDocument}
                 canEmit={factusEnabled}
                 creditNote={creditNote}
@@ -261,9 +273,12 @@ export default function SaleCard({
                 {commercialMenuOpen && <div className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); if (onDetails) onDetails(sale); else router.push(`/ventas/${sale.id}`); }}>Ver detalles</button>
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); onGenerateElectronicInvoice(sale); }}>Generar factura electrónica</button>
+                  {documentActions(() => setCommercialMenuOpen(false))}
                 </div>}
               </div>
-            ) : <button
+            ) : hasDocuments ? <CardActionsMenu open={commercialMenuOpen} onOpenChange={setCommercialMenuOpen}>
+              {reservationActions(() => setCommercialMenuOpen(false))}
+            </CardActionsMenu> : <button
               type="button"
               aria-label="Ver detalles"
               onClick={(e) => {
