@@ -25,6 +25,11 @@ import {
   toBookingConflict,
 } from '../availability/availability.service';
 import { TaxPreviewDto } from '../tax/dto/tax-preview.dto';
+import {
+  assertNoHiddenPrices,
+  publicItemPrice,
+  toPublicItem,
+} from '../items/item-public-view';
 import { FeatureFlagsService } from '../common/config/feature-flags';
 import { getFactusMunicipalities } from '../settings/factus-municipalities.catalog';
 
@@ -316,6 +321,20 @@ export class PublicService {
     if (!this.taxService) {
       throw new BadRequestException('Tax preview is not available');
     }
+    // Without a client unitPrice the preview prices lines with Item.price:
+    // hidden prices and hidden items must never reach it from the public store.
+    const restricted = await this.prisma.item.findMany({
+      where: {
+        id: { in: (dto.cartItems ?? []).map((line) => line.itemId) },
+        businessId: business.id,
+        OR: [{ visibleInCatalog: false }, { publishWithoutPrice: true }],
+      },
+      select: { id: true, visibleInCatalog: true, publishWithoutPrice: true },
+    });
+    if (restricted.some((item) => item.visibleInCatalog === false)) {
+      throw new BadRequestException('Invalid items');
+    }
+    assertNoHiddenPrices(restricted);
     return this.taxService.calculateTaxPreview(business.id, dto);
   }
 
@@ -640,6 +659,7 @@ export class PublicService {
     const where: any = {
       businessId: business.id,
       status: 'ACTIVE',
+      visibleInCatalog: true,
     };
 
     if (type) where.type = type;
@@ -743,7 +763,7 @@ export class PublicService {
       ]),
     );
 
-    const visibleItems: any[] = [];
+    const visibleItems: typeof data = [];
     for (const [index, item] of data.entries()) {
       const sellability = itemSellabilities[index];
       if (sellability.sellable) {
@@ -768,8 +788,7 @@ export class PublicService {
         visibleItems.map(async (item) => {
           const { currentStock, averageCost, ...cleanItem } = item;
           return {
-            ...cleanItem,
-            price: Number(item.price),
+            ...toPublicItem(cleanItem),
             sellability: { sellable: true },
             recipes: item.recipes
               .filter((recipe: PublicRecipeLine) => recipe.isOptional)
@@ -804,6 +823,7 @@ export class PublicService {
         businessId: business.id,
         type: 'SERVICE',
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
     });
 
@@ -826,6 +846,7 @@ export class PublicService {
         businessId: business.id,
         type: 'SERVICE',
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
     });
 
@@ -874,6 +895,16 @@ export class PublicService {
           if (previous)
             return this.resolvePublicReservationReplay(previous, fingerprint!);
         }
+        // Hidden from the catalog = not bookable publicly. A hidden price is bookable.
+        const hiddenService = await tx.item.findFirst({
+          where: {
+            id: dto.itemId,
+            businessId: business.id,
+            visibleInCatalog: false,
+          },
+          select: { id: true },
+        });
+        if (hiddenService) throw new BadRequestException('Invalid service');
         const slot = await this.availability.reserveSlot(tx, {
           businessId: business.id,
           itemId: dto.itemId,
@@ -966,6 +997,7 @@ export class PublicService {
         id: { in: uniqueItemIds },
         businessId: business.id,
         status: 'ACTIVE',
+        visibleInCatalog: true,
       },
       include: {
         recipes: {
@@ -987,6 +1019,8 @@ export class PublicService {
       dbItems.some((item) => item.status !== 'ACTIVE')
     )
       throw new BadRequestException('Invalid items');
+    // Cart may hold price-on-request lines; a direct order cannot (WhatsApp / quotation instead).
+    assertNoHiddenPrices(dbItems);
     const dbItemById = new Map(dbItems.map((item) => [item.id, item]));
 
     const visibleCustomizationNotes: string[] = [];
@@ -1268,6 +1302,7 @@ export class PublicService {
             id: true,
             name: true,
             price: true,
+            publishWithoutPrice: true,
             durationMinutes: true,
           },
         },
@@ -1310,7 +1345,7 @@ export class PublicService {
       date: reservation.date.toISOString(),
       item: {
         ...reservation.item,
-        price: Number(reservation.item.price),
+        price: publicItemPrice(reservation.item),
       },
     };
   }
@@ -1405,6 +1440,7 @@ export class PublicService {
             id: true,
             name: true,
             price: true,
+            publishWithoutPrice: true,
             durationMinutes: true,
           },
         },
@@ -1427,7 +1463,7 @@ export class PublicService {
       date: reservation.date.toISOString(),
       item: {
         ...reservation.item,
-        price: Number(reservation.item.price),
+        price: publicItemPrice(reservation.item),
       },
     }));
   }

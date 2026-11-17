@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pruebas - El mejor negocio</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Custom scrollbar hiding for smooth pill navigation */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen text-gray-800 flex justify-center">
+
+    <!-- Container matching mobile UI layout -->
+    <div class="w-full max-w-md bg-white px-4 py-3 flex flex-col min-h-screen">
+
+        <!-- Header Section -->
+        <header class="flex items-center justify-between my-2">
+            <!-- Profile / Brand Info -->
+            <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-amber-700 via-red-600 to-rose-800 flex items-center justify-center text-white shadow-xs">
+                    <!-- Star Icon inside circle -->
+                    <i class="fa-regular fa-star text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-gray-900 leading-tight">Pruebas</h1>
+                    <p class="text-xs text-gray-500 font-medium">El mejor negocio</p>
+                </div>
+            </div>
+
+            <!-- Header Action Icons (Exact replication) -->
+            <div class="flex items-center space-x-2">
+                <button class="w-10 h-10 rounded-full border border-gray-100 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-50 transition active:scale-95 shadow-2xs">
+                    <i class="fa-regular fa-calendar text-base"></i>
+                </button>
+                <button class="w-10 h-10 rounded-full border border-gray-100 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-50 transition active:scale-95 shadow-2xs">
+                    <i class="fa-solid fa-location-dot text-base"></i>
+                </button>
+                <button class="w-10 h-10 rounded-full border border-gray-100 bg-white flex items-center justify-center text-gray-700 hover:bg-gray-50 transition active:scale-95 shadow-2xs">
+                    <i class="fa-solid fa-bag-shopping text-base"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Search Input Bar -->
+        <div class="relative my-2">
+            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                <i class="fa-solid fa-magnifying-glass text-gray-400 text-sm"></i>
+            </div>
+            <input 
+                type="text" 
+                id="search-input"
+                placeholder="Buscar..." 
+                class="w-full pl-10 pr-4 py-2.5 bg-slate-100/80 rounded-full text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/50 transition-all font-medium"
+            >
+        </div>
+
+        <!-- 1. FILTRO DE TIPO (PRODUCTOS / SERVICIOS) EN UN SOLO BOTÓN SELECTOR -->
+        <div class="flex items-center space-x-2 mt-3.5">
+            <div class="relative shrink-0">
+                <button id="type-selector-btn" onclick="toggleTypeDropdown()" class="px-4 py-2 rounded-full bg-[#E8F0FE] text-[#1A73E8] font-semibold text-xs hover:bg-blue-100 transition active:scale-95 flex items-center space-x-1.5 shadow-2xs">
+                    <i class="fa-solid fa-layer-group text-xs"></i>
+                    <span id="selected-type-label">Tipo: Todos</span>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-gray-500"></i>
+                </button>
+
+                <!-- Menú Flotante de Tipo -->
+                <div id="type-dropdown" class="hidden absolute top-full left-0 mt-1.5 w-40 bg-white rounded-2xl shadow-xl border border-gray-100 py-1.5 z-50">
+                    <button onclick="selectTypeOption('todos')" class="w-full text-left px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-between">
+                        <span>Todos</span>
+                        <i id="check-todos" class="fa-solid fa-check text-[#1A73E8] text-xs"></i>
+                    </button>
+                    <button onclick="selectTypeOption('producto')" class="w-full text-left px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-between">
+                        <span>Productos</span>
+                        <i id="check-producto" class="fa-solid fa-check text-[#1A73E8] text-xs hidden"></i>
+                    </button>
+                    <button onclick="selectTypeOption('servicio')" class="w-full text-left px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-between">
+                        <span>Servicios</span>
+                        <i id="check-servicio" class="fa-solid fa-check text-[#1A73E8] text-xs hidden"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Divisor sutil -->
+            <div class="h-4 w-[1px] bg-gray-200"></div>
+
+            <!-- 2. BARRAS DE CATEGORÍAS PRINCIPALES (Píldoras Horizontales) -->
+            <div id="main-categories-container" class="flex items-center space-x-2 overflow-x-auto no-scrollbar py-0.5">
+                <!-- Se renderizan por JS según el Tipo seleccionado -->
+            </div>
+        </div>
+
+        <!-- 3. SUBCATEGORÍAS DINÁMICAS (Se muestran directo al elegir una Categoría) -->
+        <div id="subcat-wrapper" class="hidden flex-col mt-2.5 pt-2 border-t border-gray-100">
+            <div class="flex items-center justify-between mb-1.5">
+                <span id="subcat-title-label" class="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Subcategorías</span>
+                <button onclick="clearSubcategoryFilter()" class="text-[10px] text-gray-400 hover:text-red-500 font-medium">
+                    Limpiar subcategoría
+                </button>
+            </div>
+            <div id="subcat-container" class="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
+                <!-- Subcategorías mostradas al seleccionar una categoría -->
+            </div>
+        </div>
+
+        <!-- Catalog Grid -->
+        <main class="grid grid-cols-2 gap-3.5 mt-4 pb-10" id="product-grid">
+
+            <!-- Card 1: MacBook Pro 13 -->
+            <div class="product-card flex flex-col" data-type="producto" data-category="tecnologia" data-subcat="laptops" data-name="macbook pro 13 computador portatil apple">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&q=80&w=600" 
+                        alt="MacBook Pro 13" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=MacBook'"
+                    >
+                    <div class="absolute bottom-3 left-3 bg-[#f97316] text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        ENVÍO GRATIS
+                    </div>
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">MacBook Pro 13</h3>
+                    <p class="text-xs text-gray-400 font-normal truncate mt-0.5">Computador portátil Apple...</p>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$2.399.000</p>
+                </div>
+            </div>
+
+            <!-- Card 2: AirPods Pro 2 -->
+            <div class="product-card flex flex-col" data-type="producto" data-category="tecnologia" data-subcat="accesorios" data-name="airpods pro audifonos inalambricos apple tech">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?auto=format&fit=crop&q=80&w=600" 
+                        alt="AirPods Pro 2" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=AirPods'"
+                    >
+                    <div class="absolute bottom-3 left-3 bg-emerald-600 text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        EN STOCK
+                    </div>
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">AirPods Pro 2</h3>
+                    <p class="text-xs text-gray-400 font-normal truncate mt-0.5">Audio espacial, cancelacion de ruido</p>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$1.150.000</p>
+                </div>
+            </div>
+
+            <!-- Card 3: Flores -->
+            <div class="product-card flex flex-col" data-type="producto" data-category="flores" data-subcat="rosas" data-name="flores 20 rosas ramoo regalo">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1561181286-d3fee7d55364?auto=format&fit=crop&q=80&w=600" 
+                        alt="Flores" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Flores'"
+                    >
+                    <div class="absolute bottom-3 left-3 bg-[#3b82f6] text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        20 ROSAS
+                    </div>
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">Flores</h3>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$20.000</p>
+                </div>
+            </div>
+
+            <!-- Card 4: Caja de Tulipanes -->
+            <div class="product-card flex flex-col" data-type="producto" data-category="flores" data-subcat="tulipanes" data-name="caja tulipanes ramo flores regalo premium">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1526047932273-341f2a7631f9?auto=format&fit=crop&q=80&w=600" 
+                        alt="Caja de Tulipanes" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Tulipanes'"
+                    >
+                    <div class="absolute bottom-3 left-3 bg-purple-600 text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        PREMIUM
+                    </div>
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">Caja Tulipanes</h3>
+                    <p class="text-xs text-gray-400 font-normal truncate mt-0.5">Arreglo floral exclusivo</p>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$85.000</p>
+                </div>
+            </div>
+
+            <!-- Card 5: Agendar Cita (Manicura) -->
+            <div class="product-card flex flex-col" data-type="servicio" data-category="unas" data-subcat="agendar" data-name="agendar cita manicura belleza uñas">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&q=80&w=600" 
+                        alt="Agendar Cita" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Agendar'"
+                    >
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">Agendar Cita</h3>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$15.000</p>
+                </div>
+            </div>
+
+            <!-- Card 6: Tradicional - Francés -->
+            <div class="product-card flex flex-col" data-type="servicio" data-category="unas" data-subcat="diseno" data-name="tradicional frances manicura uñas spa">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&q=80&w=600" 
+                        alt="Tradicional - Francés" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Manicura'"
+                    >
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug truncate">Tradicional - Francés</h3>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$35.000</p>
+                </div>
+            </div>
+
+            <!-- Card 7: Masaje Relajante -->
+            <div class="product-card flex flex-col" data-type="servicio" data-category="bienestar" data-subcat="masajes" data-name="masaje relajante spa bienestar cuerpo corporal">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&q=80&w=600" 
+                        alt="Masaje Relajante" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Masaje'"
+                    >
+                    <div class="absolute bottom-3 left-3 bg-pink-600 text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                        1 HORA
+                    </div>
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">Masaje Relajante</h3>
+                    <p class="text-xs text-gray-400 font-normal truncate mt-0.5">Aceites esenciales & aromaterapia</p>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$120.000</p>
+                </div>
+            </div>
+
+            <!-- Card 8: Smartwatch Serie 9 -->
+            <div class="product-card flex flex-col" data-type="producto" data-category="tecnologia" data-subcat="accesorios" data-name="smartwatch reloj inteligente tech gadget">
+                <div class="relative aspect-[3/4] w-full rounded-[28px] overflow-hidden bg-gray-100 shadow-2xs">
+                    <img 
+                        src="https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?auto=format&fit=crop&q=80&w=600" 
+                        alt="Smartwatch Serie 9" 
+                        class="w-full h-full object-cover"
+                        onerror="this.src='https://placehold.co/300x400/e2e8f0/475569?text=Smartwatch'"
+                    >
+                    <button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center shadow-md active:scale-90 transition-transform">
+                        <i class="fa-solid fa-plus text-base"></i>
+                    </button>
+                </div>
+                <div class="mt-2.5 px-0.5">
+                    <h3 class="font-bold text-gray-900 text-sm leading-snug">Smartwatch Serie 9</h3>
+                    <p class="text-xs text-gray-400 font-normal truncate mt-0.5">Monitoreo de salud y deportes</p>
+                    <p class="text-sm font-bold text-gray-900 mt-1">$450.000</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        let currentType = 'todos';
+        let currentCategory = null;
+        let currentSubcategory = null;
+
+        // Estructura de Categorías y sus Subcategorías
+        const categoriesMap = {
+            tecnologia: {
+                name: '💻 Tecnología',
+                type: 'producto',
+                subcategories: [
+                    { id: 'laptops', name: 'Laptops' },
+                    { id: 'accesorios', name: 'Accesorios Tech' }
+                ]
+            },
+            flores: {
+                name: '💐 Flores & Regalos',
+                type: 'producto',
+                subcategories: [
+                    { id: 'rosas', name: 'Rosas' },
+                    { id: 'tulipanes', name: 'Tulipanes' }
+                ]
+            },
+            unas: {
+                name: '💅 Uñas & Manicura',
+                type: 'servicio',
+                subcategories: [
+                    { id: 'agendar', name: 'Agendamiento' },
+                    { id: 'diseno', name: 'Diseños Francés' }
+                ]
+            },
+            bienestar: {
+                name: '🧘 Bienestar & Spa',
+                type: 'servicio',
+                subcategories: [
+                    { id: 'masajes', name: 'Masajes Relajantes' }
+                ]
+            }
+        };
+
+        function toggleTypeDropdown() {
+            const dropdown = document.getElementById('type-dropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        function selectTypeOption(typeKey) {
+            currentType = typeKey;
+            currentCategory = null;
+            currentSubcategory = null;
+
+            // Actualizar etiqueta del Selector de Tipo
+            const label = document.getElementById('selected-type-label');
+            label.innerText = typeKey === 'todos' ? 'Tipo: Todos' : (typeKey === 'producto' ? 'Productos' : 'Servicios');
+
+            // Indicadores de check
+            ['todos', 'producto', 'servicio'].forEach(key => {
+                const check = document.getElementById(`check-${key}`);
+                if (check) {
+                    if (key === typeKey) check.classList.remove('hidden');
+                    else check.classList.add('hidden');
+                }
+            });
+
+            document.getElementById('type-dropdown').classList.add('hidden');
+
+            renderCategories();
+            renderSubcategories();
+            applyFilters();
+        }
+
+        function renderCategories() {
+            const container = document.getElementById('main-categories-container');
+            let html = '';
+
+            Object.keys(categoriesMap).forEach(catKey => {
+                const cat = categoriesMap[catKey];
+                
+                // Mostrar solo categorías coincidentes con el Tipo activo
+                if (currentType === 'todos' || cat.type === currentType) {
+                    const isSelected = currentCategory === catKey;
+                    html += `
+                        <button onclick="selectCategory('${catKey}')" class="px-4 py-2 rounded-full ${isSelected ? 'bg-gray-900 text-white font-semibold' : 'bg-[#f3f4f6] text-gray-700 font-medium hover:bg-gray-200'} text-xs transition active:scale-95 shrink-0">
+                            ${cat.name}
+                        </button>
+                    `;
+                }
+            });
+
+            container.innerHTML = html;
+        }
+
+        function selectCategory(catKey) {
+            if (currentCategory === catKey) {
+                currentCategory = null;
+                currentSubcategory = null;
+            } else {
+                currentCategory = catKey;
+                currentSubcategory = null;
+            }
+
+            renderCategories();
+            renderSubcategories();
+            applyFilters();
+        }
+
+        function renderSubcategories() {
+            const wrapper = document.getElementById('subcat-wrapper');
+            const container = document.getElementById('subcat-container');
+
+            if (!currentCategory || !categoriesMap[currentCategory]) {
+                wrapper.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+
+            const subcats = categoriesMap[currentCategory].subcategories;
+            let html = '';
+
+            subcats.forEach(sub => {
+                const isSelected = currentSubcategory === sub.id;
+                html += `
+                    <button onclick="selectSubcategory('${sub.id}')" class="px-3 py-1.5 rounded-xl ${isSelected ? 'bg-[#1A73E8] text-white font-semibold shadow-2xs' : 'bg-blue-50/70 text-[#1A73E8] font-medium hover:bg-blue-100'} text-[11px] transition shrink-0">
+                        ${sub.name}
+                    </button>
+                `;
+            });
+
+            container.innerHTML = html;
+            wrapper.classList.remove('hidden');
+        }
+
+        function selectSubcategory(subKey) {
+            if (currentSubcategory === subKey) {
+                currentSubcategory = null;
+            } else {
+                currentSubcategory = subKey;
+            }
+
+            renderSubcategories();
+            applyFilters();
+        }
+
+        function clearSubcategoryFilter() {
+            currentSubcategory = null;
+            renderSubcategories();
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const cards = document.querySelectorAll('.product-card');
+            const searchInput = document.getElementById('search-input');
+            const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+            cards.forEach(card => {
+                const typeMatches = (currentType === 'todos' || card.dataset.type === currentType);
+                const categoryMatches = (!currentCategory || card.dataset.category === currentCategory);
+                const subcatMatches = (!currentSubcategory || card.dataset.subcat === currentSubcategory);
+                const nameMatches = card.dataset.name.includes(searchVal);
+
+                if (typeMatches && categoryMatches && subcatMatches && nameMatches) {
+                    card.style.display = 'flex';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        // Inicializar componentes
+        renderCategories();
+        applyFilters();
+
+        // Listener de Búsqueda
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.addEventListener('input', applyFilters);
+        }
+    </script>
+</body>
+</html>

@@ -129,7 +129,31 @@ export type Item = {
   createdAt?: string;
   updatedAt?: string;
   _count?: { images: number };
+} & ItemCatalogAttributes;
+
+/**
+ * F1.1 catalog attributes (backend contract). Internal endpoints return all of
+ * them; public endpoints omit barcode/quotation fields/visibleInCatalog and send
+ * `price: null` when publishWithoutPrice is true (see PublicCatalogItem).
+ */
+export type ItemCatalogAttributes = {
+  visibleInCatalog?: boolean;
+  publishWithoutPrice?: boolean;
+  includeInQuotation?: boolean;
+  quotationDescription?: string | null;
+  brand?: string | null;
+  barcode?: string | null;
+  categoryId?: string | null;
+  subcategoryId?: string | null;
+  customCategoryName?: string | null;
+  customSubcategoryName?: string | null;
 };
+
+/** Item as returned by /public/:slug/items: the internal price may be hidden. */
+export type PublicCatalogItem = Omit<
+  Item,
+  "price" | "barcode" | "quotationDescription" | "includeInQuotation" | "visibleInCatalog"
+> & { price: number | null };
 
 export type TimeRange = {
   start: string;

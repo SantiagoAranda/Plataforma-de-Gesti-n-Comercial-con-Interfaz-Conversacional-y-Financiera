@@ -1,0 +1,2781 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Scanner & Order Manager</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Html5-QRCode Library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f3ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html, body {
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #0b0f17;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        /* Contenedor de cámara */
+        #reader {
+            border: none !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+        #reader video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        #reader__scan_region {
+            background: transparent !important;
+        }
+        #reader__dashboard {
+            display: none !important;
+        }
+
+        /* Target Reticle (Cuadro minimalista de escaneo) */
+        .scanner-viewfinder {
+            position: absolute;
+            top: 48%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            max-width: 300px;
+            height: 58%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .scanner-corner {
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-color: #ffffff;
+            border-style: solid;
+            opacity: 0.85;
+        }
+        .corner-tl { top: 0; left: 0; border-width: 2.5px 0 0 2.5px; border-top-left-radius: 6px; }
+        .corner-tr { top: 0; right: 0; border-width: 2.5px 2.5px 0 0; border-top-right-radius: 6px; }
+        .corner-bl { bottom: 0; left: 0; border-width: 0 0 2.5px 2.5px; border-bottom-left-radius: 6px; }
+        .corner-br { bottom: 0; right: 0; border-width: 0 2.5px 0 0; border-bottom-right-radius: 6px; }
+
+        /* Laser Line Minimalista */
+        @keyframes laserSweep {
+            0%, 100% { top: 12%; opacity: 0.2; }
+            50% { top: 88%; opacity: 0.8; }
+        }
+        .laser-line {
+            position: absolute;
+            width: 100%;
+            height: 1.5px;
+            background: linear-gradient(90deg, transparent, #ffffff, transparent);
+            animation: laserSweep 2.2s ease-in-out infinite;
+        }
+
+        /* Shadow suave sheet */
+        .sheet-shadow {
+            box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        /* Scrollbar limpio */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 3px;
+            height: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+
+        /* Pill Toggle Activo / Inactivo */
+        .toggle-pill-active {
+            background-color: #0f172a;
+            color: #ffffff;
+        }
+        .toggle-pill-inactive {
+            color: #64748b;
+            background-color: transparent;
+        }
+
+        /* Notificación Toast */
+        #toast {
+            position: fixed;
+            bottom: 96px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease-in-out;
+            z-index: 100;
+        }
+        #toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .bottom-bar {
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            box-shadow: 0 3px 12px rgba(15, 23, 42, 0.12), inset 0 1px 0 #ffffff;
+        }
+
+        /* Producto nuevo: entra desde arriba con un pequeño rebote */
+        @keyframes itemEnter {
+            0%   { opacity: 0; transform: translateY(-14px) scale(0.94); }
+            60%  { opacity: 1; transform: translateY(2px) scale(1.02); }
+            100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        /* Destello verde al leer */
+        @keyframes scanFlash {
+            0%   { background-color: #bbf7d0; box-shadow: 0 0 0 2px #34d399; }
+            100% { background-color: #f8fafc; box-shadow: 0 0 0 0 transparent; }
+        }
+        /* Cantidad que sube */
+        @keyframes qtyBump {
+            0%   { transform: scale(1); color: #059669; }
+            40%  { transform: scale(1.5); color: #059669; }
+            100% { transform: scale(1); }
+        }
+        @keyframes totalBump {
+            0%   { transform: scale(1); }
+            35%  { transform: scale(1.12); color: #059669; }
+            100% { transform: scale(1); }
+        }
+        @keyframes hintBounce { 0%, 100% { transform: translateY(-1px); } 50% { transform: translateY(2px); } }
+        .more-hint-arrow { animation: hintBounce 1s ease-in-out infinite; }
+        .scan-flash { animation: scanFlash 1.2s ease-out; }
+        .item-enter { animation: itemEnter .42s cubic-bezier(.2, .9, .3, 1.2), scanFlash 1.2s ease-out; }
+        .qty-bump { display: inline-block; animation: qtyBump .45s ease-out; }
+        @keyframes badgePop { 0% { transform: scale(0.4); } 60% { transform: scale(1.35); } 100% { transform: scale(1); } }
+        .badge-pop { animation: badgePop .35s cubic-bezier(.2, .9, .3, 1.2); }
+        .total-bump { display: inline-block; animation: totalBump .4s ease-out; }
+        .swipe-card { touch-action: pan-y; background-color: #f8fafc; will-change: transform; }
+        .tap-edit { cursor: pointer; }
+
+        /* Atajos rápidos sobre la cámara */
+        .qa-btn {
+            position: relative;
+            width: 32px; height: 32px; border-radius: 9999px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.42);
+            -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff; font-size: 12px;
+            transition: transform .1s ease, background-color .15s ease, border-color .15s ease;
+        }
+        .qa-btn:active { transform: scale(0.9); }
+        .qa-btn-ok { border-color: rgba(52, 211, 153, 0.7); background: rgba(5, 150, 105, 0.45); }
+        .qa-badge {
+            position: absolute; top: -5px; right: -5px;
+            min-width: 16px; height: 16px; padding: 0 4px; border-radius: 9999px;
+            background: #06b6d4; color: #ffffff; border: 1.5px solid #0b0f17;
+            font-size: 9px; font-weight: 800; line-height: 13px; text-align: center;
+        }
+
+        .safe-bottom-padding {
+            padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+        }
+
+        /* Impresión del navegador: solo se imprime el recibo (mismo diseño que la vista previa) */
+        @media print {
+            html, body {
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                background: #fff !important;
+                display: block !important;
+            }
+            /* Se oculta TODO excepto la tirilla (display:none evita páginas en blanco y recortes) */
+            body > *:not(#thermalReceiptPrint) { display: none !important; }
+            #thermalReceiptPrint {
+                display: block !important;
+                position: static !important;
+                width: var(--paper-w, 58mm) !important;
+                margin: 0 !important;
+                padding: 2mm !important;
+                box-sizing: border-box !important;
+                background: #fff !important;
+                color: #000 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            #thermalReceiptPrint > div { margin: 0 auto !important; }
+            /* @page size se inyecta por JS según el papel elegido (applyPrintPaper) */
+            @page { margin: 0; }
+        }
+    </style>
+</head>
+<body class="h-[100dvh] w-full text-slate-800 flex flex-col justify-between overflow-hidden bg-slate-950">
+
+    <!-- Barra Deshacer -->
+    <div id="undoBar" class="hidden fixed left-1/2 -translate-x-1/2 bottom-[88px] z-[70] bg-slate-900 text-white rounded-full pl-4 pr-1.5 py-1.5 flex items-center gap-3 shadow-xl text-xs font-semibold">
+        <span id="undoMsg">Producto eliminado</span>
+        <button id="btnUndo" class="px-3.5 py-1.5 rounded-full bg-white text-slate-900 font-extrabold uppercase tracking-wider text-[10px] active:scale-95 transition">Deshacer</button>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 border border-slate-700">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toastMsg">Mensaje de notificación</span>
+    </div>
+
+    <!-- TOP SECTION: CAMERA VIEWPORT MINIMALISTA -->
+    <div class="relative w-full flex-1 min-h-[150px] bg-slate-950 overflow-hidden flex items-center justify-center">
+        
+        <!-- Live Camera Container -->
+        <div id="reader" class="absolute inset-0 z-0"></div>
+
+        <!-- Estado de la cámara (solo se ve mientras conecta o si falla) -->
+        <div id="cameraPlaceholder" class="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center justify-end px-4 pb-3 text-center">
+            <p id="cameraMsg" class="text-[11px] font-semibold text-slate-300 leading-snug mb-2 max-w-[300px]">Iniciando cámara…</p>
+            <div id="camActions" class="hidden items-center gap-2">
+                <button id="btnActivateCamera" type="button" class="px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition shadow">
+                    <i class="fa-solid fa-rotate-right"></i> Reintentar
+                </button>
+                <button id="btnScanPhoto" type="button" class="px-3.5 py-2 rounded-full bg-emerald-500 border border-emerald-400 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 transition">
+                    <i class="fa-regular fa-image"></i> Foto
+                </button>
+                <button id="btnCameraHelp" type="button" class="w-8 h-8 rounded-full bg-white/15 border border-white/20 text-white text-xs font-bold flex items-center justify-center active:scale-95 transition" aria-label="Cómo activar la cámara">
+                    <i class="fa-solid fa-question"></i>
+                </button>
+            </div>
+            <input type="file" id="scanFileInput" accept="image/*" capture="environment" class="hidden">
+        </div>
+
+        <!-- Scanning Reticle -->
+        <div id="viewfinder" class="scanner-viewfinder hidden">
+            <div class="scanner-corner corner-tl"></div>
+            <div class="scanner-corner corner-tr"></div>
+            <div class="scanner-corner corner-bl"></div>
+            <div class="scanner-corner corner-br"></div>
+            <div class="laser-line"></div>
+        </div>
+
+        <!-- Atajos rápidos (solo icono, siempre visibles) -->
+        <div class="absolute top-3.5 right-3.5 z-20 flex items-center gap-1.5">
+            <button id="btnConnectBluetooth" class="qa-btn" title="Impresora Bluetooth" aria-label="Impresora Bluetooth">
+                <i id="btStatusIcon" class="fa-brands fa-bluetooth-b"></i>
+                <span id="btStatusText" class="sr-only">Impresora</span>
+            </button>
+            <button id="btnOpenSettings" class="qa-btn" title="Ajustes del recibo" aria-label="Ajustes del recibo">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <button id="btnHoldCart" class="qa-btn" title="Poner en espera" aria-label="Poner en espera">
+                <i class="fa-solid fa-pause"></i>
+                <span id="badgeHoldCount" class="qa-badge hidden">0</span>
+            </button>
+            <button id="btnOpenCatalog" class="qa-btn" title="Catálogo rápido" aria-label="Catálogo rápido">
+                <i class="fa-solid fa-grip"></i>
+            </button>
+            <button id="btnOpenHistory" class="qa-btn" title="Historial de ventas" aria-label="Historial de ventas">
+                <i class="fa-solid fa-receipt"></i>
+                <span id="badgeSalesCount" class="qa-badge hidden">0</span>
+            </button>
+            <button id="btnAddManual" class="qa-btn" title="Añadir producto" aria-label="Añadir producto">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            <button id="btnSimulateScan" class="qa-btn" title="Simular escaneo" aria-label="Simular escaneo">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </button>
+        </div>
+
+        <!-- Status Badge -->
+        <div class="absolute top-3.5 left-3.5 z-20">
+            <div id="scanStatus" class="px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white text-[10px] font-semibold flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>Listo</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM SHEET UI MINIMALISTA Y LIMPIO -->
+    <div class="bg-white rounded-t-[28px] sheet-shadow flex flex-col flex-none z-30 max-w-md mx-auto w-full relative -mt-3 overflow-hidden min-h-0">
+        
+        <!-- Drag Handle Indicator -->
+        <div class="w-full flex justify-center pt-2 pb-0 shrink-0">
+            <div class="w-8 h-1 bg-slate-200 rounded-full"></div>
+        </div>
+
+        <!-- Header Limpio con Titular y Pill Toggle -->
+        <div class="px-5 pt-1 pb-2 flex items-center justify-between shrink-0 border-b border-slate-100">
+            <div>
+                <h2 id="mainHeaderTitle" class="text-lg font-bold text-slate-900 tracking-tight">Caja Registradora</h2>
+                <p id="mainHeaderSub" class="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase mt-0.5">CATÁLOGO DE MI NEGOCIO</p>
+            </div>
+
+            <!-- Toggle Selector Pill Minimalista -->
+            <div class="bg-slate-100 p-1 rounded-full flex items-center gap-1">
+                <button id="pillBtnItems" class="px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-active">
+                    Productos
+                </button>
+                <button id="pillBtnCustomer" class="px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-inactive">
+                    Cliente
+                </button>
+            </div>
+        </div>
+
+        <!-- Pagination Dots -->
+        <div class="flex justify-center items-center gap-1.5 pt-1.5 pb-1 shrink-0">
+            <div id="dot0" class="w-5 h-1 bg-slate-900 rounded-full transition-all duration-200"></div>
+            <div id="dot1" class="w-1.5 h-1 bg-slate-200 rounded-full transition-all duration-200"></div>
+        </div>
+
+        <!-- CARRUSEL DESLIZABLE -->
+        <div class="overflow-hidden relative w-full touch-pan-y" id="carouselContainer">
+            <div id="mainSheetTrack" class="relative flex w-[200%] transition-transform duration-300 ease-out">
+                
+                <!-- VISTA 1: LISTA DE PRODUCTOS ESCANEADOS Y CALCULADORA DE CAJA -->
+                <div class="w-[50%] flex flex-col px-5 pb-1 pt-2">
+                    <!-- Buscador de Productos -->
+                    <div class="flex items-center gap-2 mb-2 shrink-0">
+                    <div class="relative flex-1 min-w-0">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs pointer-events-none"></i>
+                        <input type="text" id="searchInput" placeholder="Buscar producto por nombre o código..." 
+                            class="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-9 py-2 text-[13px] text-slate-900 font-medium focus:outline-none focus:border-slate-900 transition">
+                        <button type="button" id="btnClearSearch" tabindex="-1" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs p-1.5 z-10 focus:outline-none" onmousedown="event.preventDefault();" ontouchstart="event.preventDefault();">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                    </div>
+
+                    <!-- Lista de Ítems Escaneados -->
+                    <div class="relative flex-none h-[min(248px,32dvh)]">
+                    <div class="h-full overflow-y-auto custom-scrollbar space-y-2 pr-0.5" id="scannedList">
+                        <!-- Estado Vacío -->
+                        <div id="emptyListState" class="h-full flex flex-col items-center justify-center py-4 text-slate-300">
+                            <i class="fa-solid fa-barcode text-2xl mb-1 text-slate-200"></i>
+                            <p class="text-xs font-medium text-slate-400">Sin productos escaneados</p>
+                        </div>
+                    </div>
+
+                    <!-- Aviso: hay más productos al deslizar -->
+                    <div id="moreHint" class="hidden absolute inset-x-0 bottom-0 h-16 pointer-events-none flex items-end justify-center pb-1 bg-gradient-to-t from-white via-white/90 to-transparent">
+                        <button type="button" id="btnMoreHint" class="pointer-events-auto flex items-center gap-1.5 bg-slate-900 text-white text-[10px] font-extrabold rounded-full pl-3 pr-2.5 py-1 shadow-lg active:scale-95 transition">
+                            <span id="moreHintText">+1 más</span>
+                            <i class="fa-solid fa-chevron-down text-[9px] more-hint-arrow"></i>
+                        </button>
+                    </div>
+                    </div>
+
+                    <!-- Panel de Cobro Rápido (Caja Registradora) -->
+                    <div class="mt-2 pt-2 border-t border-slate-100 space-y-2 shrink-0">
+                        <div class="flex items-center justify-between">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Efectivo Recibido</label>
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total <span id="topTotal" class="text-sm font-extrabold text-slate-900 tabular-nums normal-case tracking-tight">$0</span></span>
+                            <span id="calcChangeText" class="text-sm font-extrabold text-emerald-600">Cambio: $0</span>
+                        </div>
+                        
+                        <!-- Fila de Efectivo + Botón Descuento a la Derecha -->
+                        <div class="flex gap-2 items-center">
+                            <div class="relative flex-1">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">$</span>
+                                <input type="text" id="cashReceivedInput" inputmode="numeric" pattern="[0-9.]*" autocomplete="off" placeholder="0"
+                                    class="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-7 pr-7 py-2 text-[13px] text-slate-900 font-extrabold focus:outline-none focus:border-slate-900 transition">
+                                <button type="button" id="btnClearCash" tabindex="-1" class="hidden absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs w-8 h-8 flex items-center justify-center z-10 focus:outline-none" onmousedown="event.preventDefault();" title="Limpiar efectivo" aria-label="Limpiar efectivo">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            
+                            <button id="btnExactCash" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-xl transition uppercase tracking-wider shrink-0">
+                                Exacto
+                            </button>
+
+                            <!-- Botón de Descuento Posicionado a la Derecha -->
+                            <div class="relative shrink-0 flex items-center gap-1.5">
+                                <button id="btnDiscountMenu" class="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm">
+                                    <i class="fa-solid fa-percent text-[8px]"></i>
+                                    <span id="discountBtnLabel">Desc.</span>
+                                    <i class="fa-solid fa-chevron-down text-[7px] opacity-70"></i>
+                                </button>
+                                <button id="btnClearDiscount" class="px-2.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/60 text-[10px] font-bold rounded-xl transition hidden" title="Quitar descuento">
+                                    <i class="fa-solid fa-xmark text-[9px]"></i>
+                                </button>
+
+                                <!-- Menú Popover de Descuentos -->
+                                <div id="discountDropdown" class="hidden absolute bottom-full right-0 mb-2 w-52 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-3 space-y-2">
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-1 pb-2 border-b border-slate-100">
+                                        Porcentajes Rápidos
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-1.5 pt-1">
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="5">5%</button>
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="10">10%</button>
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="15">15%</button>
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="20">20%</button>
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="30">30%</button>
+                                        <button class="btnPresetDiscount py-2 bg-slate-50 hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 text-[10px] font-bold rounded-lg transition text-center border border-slate-200/60" data-percent="50">50%</button>
+                                    </div>
+                                    <div class="pt-2 border-t border-slate-100">
+                                        <button id="btnCustomDiscount" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition flex items-center justify-center gap-1 shadow-sm">
+                                            <i class="fa-solid fa-pen-to-square text-[8px]"></i> Personalizado
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Atajos rápidos: Billetes -->
+                        <div class="grid grid-cols-[1.5rem_repeat(6,minmax(0,1fr))] items-center gap-1.5">
+                            <span class="text-center text-slate-400" title="Billetes"><i class="fa-solid fa-money-bill-wave text-sm"></i></span>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="2000">2.000</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="5000">5.000</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="10000">10.000</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="20000">20.000</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="50000">50.000</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-xl transition" data-amount="100000">100.000</button>
+                        </div>
+
+                        <!-- Atajos rápidos: Monedas -->
+                        <div class="grid grid-cols-[1.5rem_repeat(6,minmax(0,1fr))] items-center gap-1.5">
+                            <span class="text-center text-amber-500" title="Monedas"><i class="fa-solid fa-coins text-sm"></i></span>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-amber-50/80 border border-amber-200/60 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-xl transition" data-amount="50">50</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-amber-50/80 border border-amber-200/60 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-xl transition" data-amount="100">100</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-amber-50/80 border border-amber-200/60 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-xl transition" data-amount="200">200</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-amber-50/80 border border-amber-200/60 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-xl transition" data-amount="500">500</button>
+                            <button class="btnQuickCash w-full px-1 py-1.5 bg-amber-50/80 border border-amber-200/60 hover:bg-amber-100 text-amber-800 text-[10px] font-bold rounded-xl transition" data-amount="1000">1.000</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VISTA 2: DATOS DEL CLIENTE -->
+                <div class="absolute top-0 bottom-0 left-1/2 w-1/2 flex flex-col px-5 pb-4 pt-1 overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                        <div>
+                            <span class="text-sm font-bold text-slate-900 block">Datos del Cliente</span>
+                            <span class="text-xs font-medium text-slate-400 block mt-0.5">Información de Facturación / Envío</span>
+                        </div>
+                        <span id="customerStatusBadge" class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Pendiente</span>
+                    </div>
+
+                    <form id="customerForm" class="space-y-4 flex-1" onsubmit="event.preventDefault();">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nombre Completo / Razón Social</label>
+                            <input type="text" id="custName" value="Consumidor Final" placeholder="Ej: Carlos Mendoza" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">NIT / Cédula</label>
+                            <input type="text" id="custDoc" value="222222222222" placeholder="Ej: 1020304050" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Teléfono / WhatsApp</label>
+                            <input type="tel" id="custPhone" value="3001234567" placeholder="Ej: 300 123 4567" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Correo Electrónico (Factura)</label>
+                            <input type="email" id="custEmail" value="cliente@ejemplo.com" placeholder="Ej: cliente@correo.com" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Dirección de Entrega</label>
+                            <input type="text" id="custAddress" value="Venta en Mostrador" placeholder="Ej: Calle 45 # 22 - 10" 
+                                class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Método de Pago</label>
+                            <select id="custPayment" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-[13px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                                <option value="Efectivo">Efectivo</option>
+                                <option value="Nequi / Daviplata">Nequi / Daviplata</option>
+                                <option value="Tarjeta Débito/Crédito">Tarjeta Débito/Crédito</option>
+                                <option value="Transferencia Bancaria">Transferencia Bancaria</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Barra inferior: vaciar · subtotal · enviar -->
+        <div class="px-3 pt-1.5 safe-bottom-padding bg-white shrink-0 z-20">
+            <div class="bottom-bar flex items-center gap-2 rounded-full border border-slate-200 pl-1.5 pr-1 py-1">
+                <button id="btnClearAll" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition shrink-0 active:scale-90" title="Vaciar Lista" aria-label="Vaciar lista">
+                    <i class="fa-solid fa-xmark text-base"></i>
+                </button>
+                <span class="flex flex-col leading-tight">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Subtotal</span>
+                    <span class="inline-flex items-center gap-1 mt-0.5 bg-[#0b3d62]/10 text-[#0b3d62] rounded-full px-2 py-0.5 text-xs font-extrabold self-start">
+                        <i class="fa-solid fa-bag-shopping text-[10px]"></i><span id="statBarItems">0 ítems</span>
+                    </span>
+                </span>
+                <span id="statBarTotal" class="ml-auto text-lg font-extrabold text-slate-900 tracking-tight tabular-nums">$0</span>
+                <button id="btnReviewOrder" class="relative w-10 h-10 rounded-full bg-[#0b3d62] hover:bg-[#0a3453] text-white flex items-center justify-center shrink-0 transition active:scale-90 shadow-md" title="Revisar Cliente" aria-label="Revisar Cliente">
+                    <i id="btnReviewIcon" class="fa-regular fa-paper-plane text-base"></i>
+                    <span id="statBarBadge" class="hidden absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-emerald-500 text-white text-[11px] font-extrabold items-center justify-center border-2 border-white">0</span>
+                    <span id="btnReviewText" class="sr-only">Revisar Cliente</span>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Ayuda: cómo activar la cámara -->
+    <div id="modalCameraHelp" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-100 max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                <h3 class="text-sm font-bold text-slate-900">Cómo activar la cámara</h3>
+                <button id="btnCloseCameraHelp" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center text-xs"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar space-y-4 text-xs text-slate-600 leading-relaxed">
+                <div>
+                    <p class="font-bold text-slate-900 mb-1">1. Lo más estable: abrirla con HTTPS</p>
+                    <p>Si abres el archivo .html directo desde Archivos, Descargas o WhatsApp, el navegador no muestra el candado ni recuerda el permiso, y por eso se pierde cada vez. Sube el archivo a una dirección <b>https://</b> (tu sitio, GitHub Pages o Netlify) y ábrelo desde <b>Chrome</b>: ahí sí aparece el candado y el permiso se queda guardado.</p>
+                </div>
+                <div>
+                    <p class="font-bold text-slate-900 mb-1">2. Revisa el permiso del celular</p>
+                    <p>Ajustes de Android → Apps → Chrome → Permisos → Cámara → <b>Permitir</b>.</p>
+                </div>
+                <div>
+                    <p class="font-bold text-slate-900 mb-1">3. Revisa el permiso dentro de Chrome</p>
+                    <p>Chrome ⋮ → Configuración → Configuración de sitios → Cámara → deja activado «Preguntar antes de acceder».</p>
+                </div>
+                <div>
+                    <p class="font-bold text-slate-900 mb-1">Mientras tanto</p>
+                    <p>Usa el botón <b>Foto</b>: abre la cámara del celular, tomas la foto del código y la lectura se hace igual, sin necesitar este permiso.</p>
+                </div>
+            </div>
+            <button id="btnCameraHelpOk" class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition uppercase tracking-wider mt-4">Entendido</button>
+        </div>
+    </div>
+
+    <!-- Tirilla para impresión del navegador: se llena con el MISMO diseño del recibo mostrado -->
+    <div id="thermalReceiptPrint" class="hidden"></div>
+
+    <!-- Modal Entrada Manual Minimalista -->
+    <div id="modalManual" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-xs shadow-xl border border-slate-100 transition">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-sm font-bold text-slate-900">Añadir Producto</h3>
+                <button id="btnCloseModal" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="productForm" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Código de Barras / QR</label>
+                    <input type="text" id="inputCode" required placeholder="Ej: 770123456789" 
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-900 font-mono font-bold focus:outline-none focus:border-slate-900">
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nombre del Producto</label>
+                    <input type="text" id="inputName" required placeholder="Ej: Galletas Oreo 126g" 
+                        class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-slate-900">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Precio ($ COP)</label>
+                        <input type="number" id="inputPrice" step="50" min="0" value="3500" required 
+                            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-slate-900">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Cantidad</label>
+                        <input type="number" id="inputQty" min="1" value="1" required 
+                            class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-900 font-bold focus:outline-none focus:border-slate-900">
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition uppercase tracking-wider mt-2">
+                    Guardar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Ajustes del Recibo -->
+    <div id="modalSettings" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-xs shadow-xl border border-slate-100 transition max-h-[92vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-bold text-slate-900">Ajustes del Recibo</h3>
+                <button id="btnCloseSettings" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Ancho del papel</label>
+            <div id="paperToggle" class="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg mb-1">
+                <button type="button" data-paper="58" class="paper-opt py-2 rounded-md text-xs font-bold transition">58 mm <span class="font-medium opacity-70">(32 col.)</span></button>
+                <button type="button" data-paper="80" class="paper-opt py-2 rounded-md text-xs font-bold transition">80 mm <span class="font-medium opacity-70">(48 col.)</span></button>
+            </div>
+            <p class="text-[10px] text-slate-400 mb-4">Se aplica a la vista previa, la impresión del navegador y la impresora Bluetooth.</p>
+
+            <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Información personalizada al final</label>
+            <textarea id="inputFooterText" rows="4" maxlength="200"
+                placeholder="Ej: Horario: Lun-Sab 8am-8pm&#10;WhatsApp 300 123 4567&#10;Cambios dentro de 8 dias"
+                class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-900 font-semibold focus:outline-none focus:border-slate-900 resize-none"></textarea>
+            <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>Cada renglón se centra en el recibo</span>
+                <span id="footerCounter">0/200</span>
+            </div>
+
+            <div class="flex items-center justify-between mt-4 mb-1.5">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Textos rápidos</p>
+                <button id="btnEditPresets" type="button" class="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline">Editar</button>
+            </div>
+            <div id="presetsBox" class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto"></div>
+            <p id="presetsHint" class="text-[10px] text-slate-400 mt-1.5">Toca uno para agregarlo o quitarlo del recibo.</p>
+
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-4 mb-1.5">Así se verá al final</p>
+            <pre id="footerPreview" class="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-2.5 text-[10px] leading-tight text-slate-800 font-mono text-center whitespace-pre-wrap"></pre>
+            <p class="text-[10px] text-slate-400 mt-2">La última línea «Software SACTEC by SAVIK» siempre se imprime. En la impresora se omiten las tildes.</p>
+
+            <button id="btnSaveSettings" class="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition uppercase tracking-wider mt-4">
+                Guardar
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal Catálogo de Productos Frecuentes -->
+    <div id="modalCatalog" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-100 transition max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                <div>
+                    <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Catálogo Frecuente</h3>
+                    <p class="text-[10px] text-slate-400">Toca para agregar rápido</p>
+                </div>
+                <button id="btnCloseCatalog" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="catalogGrid" class="grid grid-cols-2 gap-3 overflow-y-auto custom-scrollbar p-1 flex-1">
+                <!-- Ítems del catálogo -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cuentas en Espera -->
+    <div id="modalHold" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-5 w-full max-w-xs shadow-xl border border-slate-100 transition max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Cuentas en Espera</h3>
+                <button id="btnCloseHold" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div id="holdList" class="space-y-3 overflow-y-auto custom-scrollbar p-1 flex-1">
+                <!-- Cuentas retenidas -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Historial de Ventas / Recibos de Caja -->
+    <div id="modalHistory" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl border border-slate-100 transition max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-900">Historial de Ventas</h3>
+                    <p id="totalDailySales" class="text-[10px] font-bold text-emerald-600">Total acumulado: $0</p>
+                </div>
+                <button id="btnCloseHistory" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Listado de Ventas -->
+            <div id="salesListContainer" class="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1 my-3">
+                <!-- Ventas agregadas aquí dinámicamente -->
+            </div>
+
+            <div class="pt-4 border-t border-slate-100 flex gap-3 shrink-0">
+                <button id="btnClearHistory" class="flex-1 py-2.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 font-bold rounded-xl text-xs transition">
+                    Vaciar Historial
+                </button>
+                <button id="btnCloseHistoryBtn" class="flex-1 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-xs transition">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Previsualización de Recibo / Factura Electrónica -->
+    <div id="modalReceiptPreview" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl border border-slate-100 flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-3 pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-1.5">
+                    <h3 class="text-xs font-bold text-slate-900" id="previewModalTitle">Factura de Compra</h3>
+                    <span id="facturaBadge" class="text-[9px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full hidden">
+                        <i class="fa-solid fa-shield-halved text-[8px] mr-0.5"></i> FE DIAN
+                    </span>
+                </div>
+                <button id="btnCloseReceiptPreview" class="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-800 flex items-center justify-center transition text-xs">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div id="previewReceiptContent" class="flex-1 overflow-y-auto custom-scrollbar p-2.5 bg-slate-50 border border-slate-200/60 rounded-xl font-mono text-[11px] text-slate-800 space-y-2">
+                <!-- Render de la tirilla -->
+            </div>
+
+            <!-- Botones de Acción (Generación, Impresión ESC/POS y PDF) -->
+            <div class="mt-4 space-y-2 shrink-0">
+                <button id="btnEmitFEFromPreview" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> Generar Factura Electrónica
+                </button>
+                <button id="btnPrintBluetooth" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20">
+                    <i class="fa-brands fa-bluetooth-b text-sm"></i> Imprimir por Bluetooth (ESC/POS)
+                </button>
+                <button id="btnPrintFromPreview" class="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-print"></i> Imprimir Ticket Térmico / PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- qrcode-generator 1.4.4 (MIT) - genera el QR de la factura sin conexión -->
+    <script>
+var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],f={},c=function(t,r){o=function(t){for(var r=new Array(t),e=0;e<t;e+=1){r[e]=new Array(t);for(var n=0;n<t;n+=1)r[e][n]=null}return r}(i=4*e+17),l(0,0),l(i-7,0),l(0,i-7),s(),h(),d(t,r),e>=7&&v(t),null==a&&(a=p(e,n,u)),w(a,r)},l=function(t,r){for(var e=-1;e<=7;e+=1)if(!(t+e<=-1||i<=t+e))for(var n=-1;n<=7;n+=1)r+n<=-1||i<=r+n||(o[t+e][r+n]=0<=e&&e<=6&&(0==n||6==n)||0<=n&&n<=6&&(0==e||6==e)||2<=e&&e<=4&&2<=n&&n<=4)},h=function(){for(var t=8;t<i-8;t+=1)null==o[t][6]&&(o[t][6]=t%2==0);for(var r=8;r<i-8;r+=1)null==o[6][r]&&(o[6][r]=r%2==0)},s=function(){for(var t=B.getPatternPosition(e),r=0;r<t.length;r+=1)for(var n=0;n<t.length;n+=1){var i=t[r],a=t[n];if(null==o[i][a])for(var u=-2;u<=2;u+=1)for(var f=-2;f<=2;f+=1)o[i+u][a+f]=-2==u||2==u||-2==f||2==f||0==u&&0==f}},v=function(t){for(var r=B.getBCHTypeNumber(e),n=0;n<18;n+=1){var a=!t&&1==(r>>n&1);o[Math.floor(n/3)][n%3+i-8-3]=a}for(n=0;n<18;n+=1){a=!t&&1==(r>>n&1);o[n%3+i-8-3][Math.floor(n/3)]=a}},d=function(t,r){for(var e=n<<3|r,a=B.getBCHTypeInfo(e),u=0;u<15;u+=1){var f=!t&&1==(a>>u&1);u<6?o[u][8]=f:u<8?o[u+1][8]=f:o[i-15+u][8]=f}for(u=0;u<15;u+=1){f=!t&&1==(a>>u&1);u<8?o[8][i-u-1]=f:u<9?o[8][15-u-1+1]=f:o[8][15-u-1]=f}o[i-8][8]=!t},w=function(t,r){for(var e=-1,n=i-1,a=7,u=0,f=B.getMaskFunction(r),c=i-1;c>0;c-=2)for(6==c&&(c-=1);;){for(var g=0;g<2;g+=1)if(null==o[n][c-g]){var l=!1;u<t.length&&(l=1==(t[u]>>>a&1)),f(n,c-g)&&(l=!l),o[n][c-g]=l,-1==(a-=1)&&(u+=1,a=7)}if((n+=e)<0||i<=n){n-=e,e=-e;break}}},p=function(t,r,e){for(var n=A.getRSBlocks(t,r),o=b(),i=0;i<e.length;i+=1){var a=e[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var u=0;for(i=0;i<n.length;i+=1)u+=n[i].dataCount;if(o.getLengthInBits()>8*u)throw"code length overflow. ("+o.getLengthInBits()+">"+8*u+")";for(o.getLengthInBits()+4<=8*u&&o.put(0,4);o.getLengthInBits()%8!=0;)o.putBit(!1);for(;!(o.getLengthInBits()>=8*u||(o.put(236,8),o.getLengthInBits()>=8*u));)o.put(17,8);return function(t,r){for(var e=0,n=0,o=0,i=new Array(r.length),a=new Array(r.length),u=0;u<r.length;u+=1){var f=r[u].dataCount,c=r[u].totalCount-f;n=Math.max(n,f),o=Math.max(o,c),i[u]=new Array(f);for(var g=0;g<i[u].length;g+=1)i[u][g]=255&t.getBuffer()[g+e];e+=f;var l=B.getErrorCorrectPolynomial(c),h=k(i[u],l.getLength()-1).mod(l);for(a[u]=new Array(l.getLength()-1),g=0;g<a[u].length;g+=1){var s=g+h.getLength()-a[u].length;a[u][g]=s>=0?h.getAt(s):0}}var v=0;for(g=0;g<r.length;g+=1)v+=r[g].totalCount;var d=new Array(v),w=0;for(g=0;g<n;g+=1)for(u=0;u<r.length;u+=1)g<i[u].length&&(d[w]=i[u][g],w+=1);for(g=0;g<o;g+=1)for(u=0;u<r.length;u+=1)g<a[u].length&&(d[w]=a[u][g],w+=1);return d}(o,n)};f.addData=function(t,r){var e=null;switch(r=r||"Byte"){case"Numeric":e=M(t);break;case"Alphanumeric":e=x(t);break;case"Byte":e=m(t);break;case"Kanji":e=L(t);break;default:throw"mode:"+r}u.push(e),a=null},f.isDark=function(t,r){if(t<0||i<=t||r<0||i<=r)throw t+","+r;return o[t][r]},f.getModuleCount=function(){return i},f.make=function(){if(e<1){for(var t=1;t<40;t++){for(var r=A.getRSBlocks(t,n),o=b(),i=0;i<u.length;i++){var a=u[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var g=0;for(i=0;i<r.length;i++)g+=r[i].dataCount;if(o.getLengthInBits()<=8*g)break}e=t}c(!1,function(){for(var t=0,r=0,e=0;e<8;e+=1){c(!0,e);var n=B.getLostPoint(f);(0==e||t>n)&&(t=n,r=e)}return r}())},f.createTableTag=function(t,r){t=t||2;var e="";e+='<table style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: "+(r=void 0===r?4*t:r)+"px;",e+='">',e+="<tbody>";for(var n=0;n<f.getModuleCount();n+=1){e+="<tr>";for(var o=0;o<f.getModuleCount();o+=1)e+='<td style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: 0px;",e+=" width: "+t+"px;",e+=" height: "+t+"px;",e+=" background-color: ",e+=f.isDark(n,o)?"#000000":"#ffffff",e+=";",e+='"/>';e+="</tr>"}return e+="</tbody>",e+="</table>"},f.createSvgTag=function(t,r,e,n){var o={};"object"==typeof arguments[0]&&(t=(o=arguments[0]).cellSize,r=o.margin,e=o.alt,n=o.title),t=t||2,r=void 0===r?4*t:r,(e="string"==typeof e?{text:e}:e||{}).text=e.text||null,e.id=e.text?e.id||"qrcode-description":null,(n="string"==typeof n?{text:n}:n||{}).text=n.text||null,n.id=n.text?n.id||"qrcode-title":null;var i,a,u,c,g=f.getModuleCount()*t+2*r,l="";for(c="l"+t+",0 0,"+t+" -"+t+",0 0,-"+t+"z ",l+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',l+=o.scalable?"":' width="'+g+'px" height="'+g+'px"',l+=' viewBox="0 0 '+g+" "+g+'" ',l+=' preserveAspectRatio="xMinYMin meet"',l+=n.text||e.text?' role="img" aria-labelledby="'+y([n.id,e.id].join(" ").trim())+'"':"",l+=">",l+=n.text?'<title id="'+y(n.id)+'">'+y(n.text)+"</title>":"",l+=e.text?'<description id="'+y(e.id)+'">'+y(e.text)+"</description>":"",l+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',l+='<path d="',a=0;a<f.getModuleCount();a+=1)for(u=a*t+r,i=0;i<f.getModuleCount();i+=1)f.isDark(a,i)&&(l+="M"+(i*t+r)+","+u+c);return l+='" stroke="transparent" fill="black"/>',l+="</svg>"},f.createDataURL=function(t,r){t=t||2,r=void 0===r?4*t:r;var e=f.getModuleCount()*t+2*r,n=r,o=e-r;return I(e,e,function(r,e){if(n<=r&&r<o&&n<=e&&e<o){var i=Math.floor((r-n)/t),a=Math.floor((e-n)/t);return f.isDark(a,i)?0:1}return 1})},f.createImgTag=function(t,r,e){t=t||2,r=void 0===r?4*t:r;var n=f.getModuleCount()*t+2*r,o="";return o+="<img",o+=' src="',o+=f.createDataURL(t,r),o+='"',o+=' width="',o+=n,o+='"',o+=' height="',o+=n,o+='"',e&&(o+=' alt="',o+=y(e),o+='"'),o+="/>"};var y=function(t){for(var r="",e=0;e<t.length;e+=1){var n=t.charAt(e);switch(n){case"<":r+="&lt;";break;case">":r+="&gt;";break;case"&":r+="&amp;";break;case'"':r+="&quot;";break;default:r+=n}}return r};return f.createASCII=function(t,r){if((t=t||1)<2)return function(t){t=void 0===t?2:t;var r,e,n,o,i,a=1*f.getModuleCount()+2*t,u=t,c=a-t,g={"██":"█","█ ":"▀"," █":"▄","  ":" "},l={"██":"▀","█ ":"▀"," █":" ","  ":" "},h="";for(r=0;r<a;r+=2){for(n=Math.floor((r-u)/1),o=Math.floor((r+1-u)/1),e=0;e<a;e+=1)i="█",u<=e&&e<c&&u<=r&&r<c&&f.isDark(n,Math.floor((e-u)/1))&&(i=" "),u<=e&&e<c&&u<=r+1&&r+1<c&&f.isDark(o,Math.floor((e-u)/1))?i+=" ":i+="█",h+=t<1&&r+1>=c?l[i]:g[i];h+="\n"}return a%2&&t>0?h.substring(0,h.length-a-1)+Array(a+1).join("▀"):h.substring(0,h.length-1)}(r);t-=1,r=void 0===r?2*t:r;var e,n,o,i,a=f.getModuleCount()*t+2*r,u=r,c=a-r,g=Array(t+1).join("██"),l=Array(t+1).join("  "),h="",s="";for(e=0;e<a;e+=1){for(o=Math.floor((e-u)/t),s="",n=0;n<a;n+=1)i=1,u<=n&&n<c&&u<=e&&e<c&&f.isDark(o,Math.floor((n-u)/t))&&(i=0),s+=i?g:l;for(o=0;o<t;o+=1)h+=s+"\n"}return h.substring(0,h.length-1)},f.renderTo2dContext=function(t,r){r=r||2;for(var e=f.getModuleCount(),n=0;n<e;n++)for(var o=0;o<e;o++)t.fillStyle=f.isDark(n,o)?"black":"white",t.fillRect(n*r,o*r,r,r)},f};t.stringToBytes=(t.stringToBytesFuncs={default:function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);r.push(255&n)}return r}}).default,t.createStringToBytes=function(t,r){var e=function(){for(var e=S(t),n=function(){var t=e.read();if(-1==t)throw"eof";return t},o=0,i={};;){var a=e.read();if(-1==a)break;var u=n(),f=n()<<8|n();i[String.fromCharCode(a<<8|u)]=f,o+=1}if(o!=r)throw o+" != "+r;return i}(),n="?".charCodeAt(0);return function(t){for(var r=[],o=0;o<t.length;o+=1){var i=t.charCodeAt(o);if(i<128)r.push(i);else{var a=e[t.charAt(o)];"number"==typeof a?(255&a)==a?r.push(a):(r.push(a>>>8),r.push(255&a)):r.push(n)}}return r}};var r,e,n,o,i,a=1,u=2,f=4,c=8,g={L:1,M:0,Q:3,H:2},l=0,h=1,s=2,v=3,d=4,w=5,p=6,y=7,B=(r=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],e=1335,n=7973,i=function(t){for(var r=0;0!=t;)r+=1,t>>>=1;return r},(o={}).getBCHTypeInfo=function(t){for(var r=t<<10;i(r)-i(e)>=0;)r^=e<<i(r)-i(e);return 21522^(t<<10|r)},o.getBCHTypeNumber=function(t){for(var r=t<<12;i(r)-i(n)>=0;)r^=n<<i(r)-i(n);return t<<12|r},o.getPatternPosition=function(t){return r[t-1]},o.getMaskFunction=function(t){switch(t){case l:return function(t,r){return(t+r)%2==0};case h:return function(t,r){return t%2==0};case s:return function(t,r){return r%3==0};case v:return function(t,r){return(t+r)%3==0};case d:return function(t,r){return(Math.floor(t/2)+Math.floor(r/3))%2==0};case w:return function(t,r){return t*r%2+t*r%3==0};case p:return function(t,r){return(t*r%2+t*r%3)%2==0};case y:return function(t,r){return(t*r%3+(t+r)%2)%2==0};default:throw"bad maskPattern:"+t}},o.getErrorCorrectPolynomial=function(t){for(var r=k([1],0),e=0;e<t;e+=1)r=r.multiply(k([1,C.gexp(e)],0));return r},o.getLengthInBits=function(t,r){if(1<=r&&r<10)switch(t){case a:return 10;case u:return 9;case f:case c:return 8;default:throw"mode:"+t}else if(r<27)switch(t){case a:return 12;case u:return 11;case f:return 16;case c:return 10;default:throw"mode:"+t}else{if(!(r<41))throw"type:"+r;switch(t){case a:return 14;case u:return 13;case f:return 16;case c:return 12;default:throw"mode:"+t}}},o.getLostPoint=function(t){for(var r=t.getModuleCount(),e=0,n=0;n<r;n+=1)for(var o=0;o<r;o+=1){for(var i=0,a=t.isDark(n,o),u=-1;u<=1;u+=1)if(!(n+u<0||r<=n+u))for(var f=-1;f<=1;f+=1)o+f<0||r<=o+f||0==u&&0==f||a==t.isDark(n+u,o+f)&&(i+=1);i>5&&(e+=3+i-5)}for(n=0;n<r-1;n+=1)for(o=0;o<r-1;o+=1){var c=0;t.isDark(n,o)&&(c+=1),t.isDark(n+1,o)&&(c+=1),t.isDark(n,o+1)&&(c+=1),t.isDark(n+1,o+1)&&(c+=1),0!=c&&4!=c||(e+=3)}for(n=0;n<r;n+=1)for(o=0;o<r-6;o+=1)t.isDark(n,o)&&!t.isDark(n,o+1)&&t.isDark(n,o+2)&&t.isDark(n,o+3)&&t.isDark(n,o+4)&&!t.isDark(n,o+5)&&t.isDark(n,o+6)&&(e+=40);for(o=0;o<r;o+=1)for(n=0;n<r-6;n+=1)t.isDark(n,o)&&!t.isDark(n+1,o)&&t.isDark(n+2,o)&&t.isDark(n+3,o)&&t.isDark(n+4,o)&&!t.isDark(n+5,o)&&t.isDark(n+6,o)&&(e+=40);var g=0;for(o=0;o<r;o+=1)for(n=0;n<r;n+=1)t.isDark(n,o)&&(g+=1);return e+=Math.abs(100*g/r/r-50)/5*10},o),C=function(){for(var t=new Array(256),r=new Array(256),e=0;e<8;e+=1)t[e]=1<<e;for(e=8;e<256;e+=1)t[e]=t[e-4]^t[e-5]^t[e-6]^t[e-8];for(e=0;e<255;e+=1)r[t[e]]=e;var n={glog:function(t){if(t<1)throw"glog("+t+")";return r[t]},gexp:function(r){for(;r<0;)r+=255;for(;r>=256;)r-=255;return t[r]}};return n}();function k(t,r){if(void 0===t.length)throw t.length+"/"+r;var e=function(){for(var e=0;e<t.length&&0==t[e];)e+=1;for(var n=new Array(t.length-e+r),o=0;o<t.length-e;o+=1)n[o]=t[o+e];return n}(),n={getAt:function(t){return e[t]},getLength:function(){return e.length},multiply:function(t){for(var r=new Array(n.getLength()+t.getLength()-1),e=0;e<n.getLength();e+=1)for(var o=0;o<t.getLength();o+=1)r[e+o]^=C.gexp(C.glog(n.getAt(e))+C.glog(t.getAt(o)));return k(r,0)},mod:function(t){if(n.getLength()-t.getLength()<0)return n;for(var r=C.glog(n.getAt(0))-C.glog(t.getAt(0)),e=new Array(n.getLength()),o=0;o<n.getLength();o+=1)e[o]=n.getAt(o);for(o=0;o<t.getLength();o+=1)e[o]^=C.gexp(C.glog(t.getAt(o))+r);return k(e,0).mod(t)}};return n}var A=function(){var t=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],r=function(t,r){var e={};return e.totalCount=t,e.dataCount=r,e},e={};return e.getRSBlocks=function(e,n){var o=function(r,e){switch(e){case g.L:return t[4*(r-1)+0];case g.M:return t[4*(r-1)+1];case g.Q:return t[4*(r-1)+2];case g.H:return t[4*(r-1)+3];default:return}}(e,n);if(void 0===o)throw"bad rs block @ typeNumber:"+e+"/errorCorrectionLevel:"+n;for(var i=o.length/3,a=[],u=0;u<i;u+=1)for(var f=o[3*u+0],c=o[3*u+1],l=o[3*u+2],h=0;h<f;h+=1)a.push(r(c,l));return a},e}(),b=function(){var t=[],r=0,e={getBuffer:function(){return t},getAt:function(r){var e=Math.floor(r/8);return 1==(t[e]>>>7-r%8&1)},put:function(t,r){for(var n=0;n<r;n+=1)e.putBit(1==(t>>>r-n-1&1))},getLengthInBits:function(){return r},putBit:function(e){var n=Math.floor(r/8);t.length<=n&&t.push(0),e&&(t[n]|=128>>>r%8),r+=1}};return e},M=function(t){var r=a,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+2<r.length;)t.put(o(r.substring(n,n+3)),10),n+=3;n<r.length&&(r.length-n==1?t.put(o(r.substring(n,n+1)),4):r.length-n==2&&t.put(o(r.substring(n,n+2)),7))}},o=function(t){for(var r=0,e=0;e<t.length;e+=1)r=10*r+i(t.charAt(e));return r},i=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);throw"illegal char :"+t};return n},x=function(t){var r=u,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+1<r.length;)t.put(45*o(r.charAt(n))+o(r.charAt(n+1)),11),n+=2;n<r.length&&t.put(o(r.charAt(n)),6)}},o=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);if("A"<=t&&t<="Z")return t.charCodeAt(0)-"A".charCodeAt(0)+10;switch(t){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+t}};return n},m=function(r){var e=f,n=t.stringToBytes(r),o={getMode:function(){return e},getLength:function(t){return n.length},write:function(t){for(var r=0;r<n.length;r+=1)t.put(n[r],8)}};return o},L=function(r){var e=c,n=t.stringToBytesFuncs.SJIS;if(!n)throw"sjis not supported.";!function(){var t=n("友");if(2!=t.length||38726!=(t[0]<<8|t[1]))throw"sjis not supported."}();var o=n(r),i={getMode:function(){return e},getLength:function(t){return~~(o.length/2)},write:function(t){for(var r=o,e=0;e+1<r.length;){var n=(255&r[e])<<8|255&r[e+1];if(33088<=n&&n<=40956)n-=33088;else{if(!(57408<=n&&n<=60351))throw"illegal char at "+(e+1)+"/"+n;n-=49472}n=192*(n>>>8&255)+(255&n),t.put(n,13),e+=2}if(e<r.length)throw"illegal char at "+(e+1)}};return i},D=function(){var t=[],r={writeByte:function(r){t.push(255&r)},writeShort:function(t){r.writeByte(t),r.writeByte(t>>>8)},writeBytes:function(t,e,n){e=e||0,n=n||t.length;for(var o=0;o<n;o+=1)r.writeByte(t[o+e])},writeString:function(t){for(var e=0;e<t.length;e+=1)r.writeByte(t.charCodeAt(e))},toByteArray:function(){return t},toString:function(){var r="";r+="[";for(var e=0;e<t.length;e+=1)e>0&&(r+=","),r+=t[e];return r+="]"}};return r},S=function(t){var r=t,e=0,n=0,o=0,i={read:function(){for(;o<8;){if(e>=r.length){if(0==o)return-1;throw"unexpected end of file./"+o}var t=r.charAt(e);if(e+=1,"="==t)return o=0,-1;t.match(/^\s$/)||(n=n<<6|a(t.charCodeAt(0)),o+=6)}var i=n>>>o-8&255;return o-=8,i}},a=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(43==t)return 62;if(47==t)return 63;throw"c:"+t};return i},I=function(t,r,e){for(var n=function(t,r){var e=t,n=r,o=new Array(t*r),i={setPixel:function(t,r,n){o[r*e+t]=n},write:function(t){t.writeString("GIF87a"),t.writeShort(e),t.writeShort(n),t.writeByte(128),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(255),t.writeByte(255),t.writeByte(255),t.writeString(","),t.writeShort(0),t.writeShort(0),t.writeShort(e),t.writeShort(n),t.writeByte(0);var r=a(2);t.writeByte(2);for(var o=0;r.length-o>255;)t.writeByte(255),t.writeBytes(r,o,255),o+=255;t.writeByte(r.length-o),t.writeBytes(r,o,r.length-o),t.writeByte(0),t.writeString(";")}},a=function(t){for(var r=1<<t,e=1+(1<<t),n=t+1,i=u(),a=0;a<r;a+=1)i.add(String.fromCharCode(a));i.add(String.fromCharCode(r)),i.add(String.fromCharCode(e));var f,c,g,l=D(),h=(f=l,c=0,g=0,{write:function(t,r){if(t>>>r!=0)throw"length over";for(;c+r>=8;)f.writeByte(255&(t<<c|g)),r-=8-c,t>>>=8-c,g=0,c=0;g|=t<<c,c+=r},flush:function(){c>0&&f.writeByte(g)}});h.write(r,n);var s=0,v=String.fromCharCode(o[s]);for(s+=1;s<o.length;){var d=String.fromCharCode(o[s]);s+=1,i.contains(v+d)?v+=d:(h.write(i.indexOf(v),n),i.size()<4095&&(i.size()==1<<n&&(n+=1),i.add(v+d)),v=d)}return h.write(i.indexOf(v),n),h.write(e,n),h.flush(),l.toByteArray()},u=function(){var t={},r=0,e={add:function(n){if(e.contains(n))throw"dup key:"+n;t[n]=r,r+=1},size:function(){return r},indexOf:function(r){return t[r]},contains:function(r){return void 0!==t[r]}};return e};return i}(t,r),o=0;o<r;o+=1)for(var i=0;i<t;i+=1)n.setPixel(i,o,e(i,o));var a=D();n.write(a);for(var u=function(){var t=0,r=0,e=0,n="",o={},i=function(t){n+=String.fromCharCode(a(63&t))},a=function(t){if(t<0);else{if(t<26)return 65+t;if(t<52)return t-26+97;if(t<62)return t-52+48;if(62==t)return 43;if(63==t)return 47}throw"n:"+t};return o.writeByte=function(n){for(t=t<<8|255&n,r+=8,e+=1;r>=6;)i(t>>>r-6),r-=6},o.flush=function(){if(r>0&&(i(t<<6-r),t=0,r=0),e%3!=0)for(var o=3-e%3,a=0;a<o;a+=1)n+="="},o.toString=function(){return n},o}(),f=a.toByteArray(),c=0;c<f.length;c+=1)u.writeByte(f[c]);return u.flush(),"data:image/gif;base64,"+u};return t}();qrcode.stringToBytesFuncs["UTF-8"]=function(t){return function(t){for(var r=[],e=0;e<t.length;e++){var n=t.charCodeAt(e);n<128?r.push(n):n<2048?r.push(192|n>>6,128|63&n):n<55296||n>=57344?r.push(224|n>>12,128|n>>6&63,128|63&n):(e++,n=65536+((1023&n)<<10|1023&t.charCodeAt(e)),r.push(240|n>>18,128|n>>12&63,128|n>>6&63,128|63&n))}return r}(t)},function(t){"function"==typeof define&&define.amd?define([],t):"object"==typeof exports&&(module.exports=t())}(function(){return qrcode});
+    </script>
+
+    <script>
+        // Formateador de moneda en Pesos Colombianos (COP)
+        const formatCOP = (amount) => {
+            return new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount || 0);
+        };
+
+        function showToast(message, type = "success") {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+
+            if (!toast || !toastMsg || !toastIcon) return;
+
+            toastMsg.innerText = message;
+            if (type === "error") {
+                toastIcon.className = "fa-solid fa-circle-exclamation text-rose-400";
+            } else {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400";
+            }
+
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2500);
+        }
+
+        // --- Estado de la Aplicación ---
+        const initialMockData = [
+            { code: "770200801234", name: "Galletas Ducales 294g", price: 6500, quantity: 1 },
+            { code: "770200100567", name: "Gaseosa Coca-Cola 1.5L", price: 5200, quantity: 1 }
+        ];
+
+        const presetCatalog = [
+            { code: "CAT-001", name: "Papas Margarita Pollo 110g", price: 4500 },
+            { code: "CAT-002", name: "Gaseosa Coca-Cola 1.5L", price: 5200 },
+            { code: "CAT-003", name: "Galletas Ducales 294g", price: 6500 },
+            { code: "CAT-004", name: "Chocolatina Jet 12g", price: 1200 },
+            { code: "CAT-005", name: "Pony Malta 330ml", price: 2500 },
+            { code: "CAT-006", name: "Agua Cristal 600ml", price: 2000 },
+            { code: "CAT-007", name: "Arequipe Alpina 220g", price: 5800 },
+            { code: "CAT-008", name: "Empanada de Carne (Local)", price: 3000 }
+        ];
+
+        let inventory = [];
+        let salesHistory = [];
+        let heldCarts = [];
+        let discountPercent = 0;
+        let lastCompletedSale = null;
+        let html5QrCode = null;
+        let isCameraActive = false;
+        let currentSlideIndex = 0; // 0 = Productos, 1 = Cliente
+        let searchQuery = "";
+        let bluetoothDevice = null;
+        let bluetoothCharacteristic = null;
+
+        // Elementos DOM
+        const scanStatus = document.getElementById('scanStatus');
+        const viewfinder = document.getElementById('viewfinder');
+        const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+        const cameraMsg = document.getElementById('cameraMsg');
+        const btnActivateCamera = document.getElementById('btnActivateCamera');
+        const btnScanPhoto = document.getElementById('btnScanPhoto');
+        const scanFileInput = document.getElementById('scanFileInput');
+        const btnCameraHelp = document.getElementById('btnCameraHelp');
+        const camActions = document.getElementById('camActions');
+        const modalCameraHelp = document.getElementById('modalCameraHelp');
+        
+        const scannedList = document.getElementById('scannedList');
+        const emptyListState = document.getElementById('emptyListState');
+        const statBarTotal = document.getElementById('statBarTotal');
+        const statBarItems = document.getElementById('statBarItems');
+        const statBarBadge = document.getElementById('statBarBadge');
+        const searchInput = document.getElementById('searchInput');
+        const btnClearSearch = document.getElementById('btnClearSearch');
+        const cashReceivedInput = document.getElementById('cashReceivedInput');
+        const btnClearCash = document.getElementById('btnClearCash');
+        const calcChangeText = document.getElementById('calcChangeText');
+        const btnExactCash = document.getElementById('btnExactCash');
+        const btnDiscountMenu = document.getElementById('btnDiscountMenu');
+        const discountDropdown = document.getElementById('discountDropdown');
+        const discountBtnLabel = document.getElementById('discountBtnLabel');
+        const btnCustomDiscount = document.getElementById('btnCustomDiscount');
+        const btnClearDiscount = document.getElementById('btnClearDiscount');
+        const btnOpenHistory = document.getElementById('btnOpenHistory');
+        const badgeSalesCount = document.getElementById('badgeSalesCount');
+        
+        const btnHoldCart = document.getElementById('btnHoldCart');
+        const badgeHoldCount = document.getElementById('badgeHoldCount');
+        const modalHold = document.getElementById('modalHold');
+        const btnCloseHold = document.getElementById('btnCloseHold');
+        const holdList = document.getElementById('holdList');
+
+        const btnOpenCatalog = document.getElementById('btnOpenCatalog');
+        const modalCatalog = document.getElementById('modalCatalog');
+        const btnCloseCatalog = document.getElementById('btnCloseCatalog');
+        const catalogGrid = document.getElementById('catalogGrid');
+
+        const modalHistory = document.getElementById('modalHistory');
+        const btnCloseHistory = document.getElementById('btnCloseHistory');
+        const btnCloseHistoryBtn = document.getElementById('btnCloseHistoryBtn');
+        const salesListContainer = document.getElementById('salesListContainer');
+        const totalDailySales = document.getElementById('totalDailySales');
+        const btnClearHistory = document.getElementById('btnClearHistory');
+
+        const modalReceiptPreview = document.getElementById('modalReceiptPreview');
+        const btnCloseReceiptPreview = document.getElementById('btnCloseReceiptPreview');
+        const previewReceiptContent = document.getElementById('previewReceiptContent');
+        const btnPrintFromPreview = document.getElementById('btnPrintFromPreview');
+        const btnEmitFEFromPreview = document.getElementById('btnEmitFEFromPreview');
+        const facturaBadge = document.getElementById('facturaBadge');
+        const previewModalTitle = document.getElementById('previewModalTitle');
+
+        const carouselContainer = document.getElementById('carouselContainer');
+        const mainSheetTrack = document.getElementById('mainSheetTrack');
+        const pillBtnItems = document.getElementById('pillBtnItems');
+        const pillBtnCustomer = document.getElementById('pillBtnCustomer');
+        const dot0 = document.getElementById('dot0');
+        const dot1 = document.getElementById('dot1');
+        const customerStatusBadge = document.getElementById('customerStatusBadge');
+        
+        const custName = document.getElementById('custName');
+        const custDoc = document.getElementById('custDoc');
+        const custPhone = document.getElementById('custPhone');
+        const custEmail = document.getElementById('custEmail');
+        const custAddress = document.getElementById('custAddress');
+        const custPayment = document.getElementById('custPayment');
+
+        const modalManual = document.getElementById('modalManual');
+        const btnAddManual = document.getElementById('btnAddManual');
+        const btnCloseModal = document.getElementById('btnCloseModal');
+        const productForm = document.getElementById('productForm');
+        
+        const inputCode = document.getElementById('inputCode');
+        const inputName = document.getElementById('inputName');
+        const inputPrice = document.getElementById('inputPrice');
+        const inputQty = document.getElementById('inputQty');
+        
+        const btnSimulateScan = document.getElementById('btnSimulateScan');
+        const btnClearAll = document.getElementById('btnClearAll');
+        const btnReviewOrder = document.getElementById('btnReviewOrder');
+        const btnReviewText = document.getElementById('btnReviewText');
+        const btnReviewIcon = document.getElementById('btnReviewIcon');
+
+        // ---------- CUFE simulado ----------
+        // Estructura real del CUFE (DIAN): SHA-384 (96 hex) de la concatenación
+        // NumFac+FecFac+HorFac+ValFac+CodImp1+ValImp1+CodImp2+ValImp2+CodImp3+ValImp3+ValTot+NitOFE+NumAdq+ClTec+TipoAmb
+        // Aquí la clave técnica (ClTec) es ficticia: el código tiene el formato correcto pero NO es válido ante la DIAN.
+        const SIM_CLTEC = 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c'; // clave técnica de pruebas (ficticia)
+        const SIM_NIT_OFE = '901234567';
+        function sha384Hex(msg) {
+            const M = (1n << 64n) - 1n;
+            const rotr = (x, n) => ((x >> n) | (x << (64n - n))) & M;
+            const K = ['428a2f98d728ae22','7137449123ef65cd','b5c0fbcfec4d3b2f','e9b5dba58189dbbc','3956c25bf348b538','59f111f1b605d019','923f82a4af194f9b','ab1c5ed5da6d8118','d807aa98a3030242','12835b0145706fbe','243185be4ee4b28c','550c7dc3d5ffb4e2','72be5d74f27b896f','80deb1fe3b1696b1','9bdc06a725c71235','c19bf174cf692694','e49b69c19ef14ad2','efbe4786384f25e3','0fc19dc68b8cd5b5','240ca1cc77ac9c65','2de92c6f592b0275','4a7484aa6ea6e483','5cb0a9dcbd41fbd4','76f988da831153b5','983e5152ee66dfab','a831c66d2db43210','b00327c898fb213f','bf597fc7beef0ee4','c6e00bf33da88fc2','d5a79147930aa725','06ca6351e003826f','142929670a0e6e70','27b70a8546d22ffc','2e1b21385c26c926','4d2c6dfc5ac42aed','53380d139d95b3df','650a73548baf63de','766a0abb3c77b2a8','81c2c92e47edaee6','92722c851482353b','a2bfe8a14cf10364','a81a664bbc423001','c24b8b70d0f89791','c76c51a30654be30','d192e819d6ef5218','d69906245565a910','f40e35855771202a','106aa07032bbd1b8','19a4c116b8d2d0c8','1e376c085141ab53','2748774cdf8eeb99','34b0bcb5e19b48a8','391c0cb3c5c95a63','4ed8aa4ae3418acb','5b9cca4f7763e373','682e6ff3d6b2b8a3','748f82ee5defb2fc','78a5636f43172f60','84c87814a1f0ab72','8cc702081a6439ec','90befffa23631e28','a4506cebde82bde9','bef9a3f7b2c67915','c67178f2e372532b','ca273eceea26619c','d186b8c721c0c207','eada7dd6cde0eb1e','f57d4f7fee6ed178','06f067aa72176fba','0a637dc5a2c898a6','113f9804bef90dae','1b710b35131c471b','28db77f523047d84','32caab7b40c72493','3c9ebe0a15c9bebc','431d67c49c100d4c','4cc5d4becb3e42b6','597f299cfc657e2a','5fcb6fab3ad6faec','6c44198c4a475817'].map(h => BigInt('0x' + h));
+            let H = ['cbbb9d5dc1059ed8','629a292a367cd507','9159015a3070dd17','152fecd8f70e5939','67332667ffc00b31','8eb44a8768581511','db0c2e0d64f98fa7','47b5481dbefa4fa4'].map(h => BigInt('0x' + h));
+            const bytes = Array.from(new TextEncoder().encode(msg));
+            const bitLen = BigInt(bytes.length) * 8n;
+            bytes.push(0x80);
+            while (bytes.length % 128 !== 112) bytes.push(0);
+            for (let i = 0; i < 8; i++) bytes.push(0);                       // parte alta de la longitud (128 bits)
+            for (let i = 7; i >= 0; i--) bytes.push(Number((bitLen >> BigInt(i * 8)) & 0xffn));
+            for (let off = 0; off < bytes.length; off += 128) {
+                const w = new Array(80);
+                for (let t = 0; t < 16; t++) {
+                    let v = 0n;
+                    for (let j = 0; j < 8; j++) v = (v << 8n) | BigInt(bytes[off + t * 8 + j]);
+                    w[t] = v;
+                }
+                for (let t = 16; t < 80; t++) {
+                    const s0 = rotr(w[t - 15], 1n) ^ rotr(w[t - 15], 8n) ^ (w[t - 15] >> 7n);
+                    const s1 = rotr(w[t - 2], 19n) ^ rotr(w[t - 2], 61n) ^ (w[t - 2] >> 6n);
+                    w[t] = (w[t - 16] + s0 + w[t - 7] + s1) & M;
+                }
+                let [a, b, c, d, e, f, g, h] = H;
+                for (let t = 0; t < 80; t++) {
+                    const S1 = rotr(e, 14n) ^ rotr(e, 18n) ^ rotr(e, 41n);
+                    const ch = (e & f) ^ (~e & M & g);
+                    const t1 = (h + S1 + ch + K[t] + w[t]) & M;
+                    const S0 = rotr(a, 28n) ^ rotr(a, 34n) ^ rotr(a, 39n);
+                    const maj = (a & b) ^ (a & c) ^ (b & c);
+                    const t2 = (S0 + maj) & M;
+                    h = g; g = f; f = e; e = (d + t1) & M; d = c; c = b; b = a; a = (t1 + t2) & M;
+                }
+                H = [a, b, c, d, e, f, g, h].map((v, i) => (H[i] + v) & M);
+            }
+            return H.slice(0, 6).map(v => v.toString(16).padStart(16, '0')).join('');   // SHA-384 = 6 palabras = 96 hex
+        }
+
+        // Convierte "30/10/2026, 10:15:30 a. m." en {fecha:'2026-10-30', hora:'10:15:30'}
+        function parseSaleDateParts(dateStr) {
+            const m = String(dateStr || '').replace(/[\u00A0\u202F]/g, ' ')
+                .match(/(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([ap])?/i);
+            if (!m) {
+                const n = new Date(), z = x => String(x).padStart(2, '0');
+                return { fecha: `${n.getFullYear()}-${z(n.getMonth() + 1)}-${z(n.getDate())}`, hora: `${z(n.getHours())}:${z(n.getMinutes())}:${z(n.getSeconds())}` };
+            }
+            let h = parseInt(m[4], 10);
+            const ap = (m[7] || '').toLowerCase();
+            if (ap === 'p' && h < 12) h += 12;
+            if (ap === 'a' && h === 12) h = 0;
+            return { fecha: `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`, hora: `${String(h).padStart(2, '0')}:${m[5]}:${m[6]}` };
+        }
+
+        // Genera el CUFE simulado a partir de los datos de la venta (ya con su número de factura definitivo)
+        function generateCUFE(sale) {
+            const total = Math.round(sale.total || 0);
+            const iva = Math.round(total * 0.19 / 1.19);
+            const base = total - iva;
+            const { fecha, hora } = parseSaleDateParts(sale.date);
+            const f2 = n => Number(n).toFixed(2);
+            const doc = String(sale.doc || '222222222222').replace(/\D/g, '') || '222222222222';
+            const raw = String(sale.id) + fecha + hora + '-05:00' + f2(base)
+                + '01' + f2(iva) + '04' + f2(0) + '03' + f2(0)
+                + f2(total) + SIM_NIT_OFE + doc + SIM_CLTEC + '2';
+            return sha384Hex(raw);
+        }
+
+        // ---------- Código QR de la factura electrónica (DIAN) ----------
+        // Contenido según el Anexo Técnico: campos de la factura + CUFE + enlace de consulta.
+        // Ambiente de pruebas (TipoAmb = 2): catalogo-vpfe-hab. Para producción usar
+        // https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey= con la clave técnica real.
+        const SIM_QR_URL = 'https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey=';
+        function buildDianQrText(sale) {
+            const total = Math.round(sale.total || 0);
+            const iva = Math.round(total * 0.19 / 1.19);
+            const base = total - iva;
+            const { fecha, hora } = parseSaleDateParts(sale.date);
+            const f2 = n => Number(n).toFixed(2);
+            const doc = String(sale.doc || '222222222222').replace(/\D/g, '') || '222222222222';
+            return [
+                'NumFac: ' + sale.id,
+                'FecFac: ' + fecha,
+                'HorFac: ' + hora + '-05:00',
+                'NitFac: ' + SIM_NIT_OFE,
+                'DocAdq: ' + doc,
+                'ValFac: ' + f2(base),
+                'ValIva: ' + f2(iva),
+                'ValOtroIm: ' + f2(0),
+                'ValTolFac: ' + f2(total),
+                'CUFE: ' + sale.cufe,
+                'QRCode: ' + SIM_QR_URL + sale.cufe
+            ].join('\n');
+        }
+        // Matriz de módulos (true = negro) con borde blanco de 3 módulos
+        function makeQrMatrix(text) {
+            const qr = qrcode(0, 'L');           // versión automática, corrección L (menos denso)
+            qr.addData(text);
+            qr.make();
+            const n = qr.getModuleCount(), Q = 3, size = n + Q * 2;
+            const m = [];
+            for (let r = 0; r < size; r++) {
+                const row = [];
+                for (let c = 0; c < size; c++) {
+                    const rr = r - Q, cc = c - Q;
+                    row.push(rr >= 0 && cc >= 0 && rr < n && cc < n && qr.isDark(rr, cc));
+                }
+                m.push(row);
+            }
+            return m;
+        }
+
+        function loadInventory() {
+            try {
+                const storedInv = localStorage.getItem('scan_items_v3');
+                inventory = storedInv ? JSON.parse(storedInv) : [...initialMockData];
+                
+                const storedSales = localStorage.getItem('sales_history_v3');
+                salesHistory = storedSales ? JSON.parse(storedSales) : [];
+
+                const storedHeld = localStorage.getItem('held_carts_v3');
+                heldCarts = storedHeld ? JSON.parse(storedHeld) : [];
+            } catch (e) {
+                console.error("Error al cargar datos de localStorage", e);
+                inventory = [...initialMockData];
+            }
+            updateBadges();
+            renderInventory();
+        }
+
+        function saveInventory() {
+            localStorage.setItem('scan_items_v3', JSON.stringify(inventory));
+            renderInventory();
+        }
+
+        function saveSalesHistory() {
+            localStorage.setItem('sales_history_v3', JSON.stringify(salesHistory));
+            updateBadges();
+        }
+
+        function saveHeldCarts() {
+            localStorage.setItem('held_carts_v3', JSON.stringify(heldCarts));
+            updateBadges();
+        }
+
+        function updateBadges() {
+            if (badgeSalesCount) {
+                badgeSalesCount.innerText = salesHistory.length;
+                badgeSalesCount.classList.toggle('hidden', salesHistory.length === 0);
+            }
+            if (badgeHoldCount) {
+                badgeHoldCount.innerText = heldCarts.length;
+                if (heldCarts.length > 0) {
+                    badgeHoldCount.classList.remove('hidden');
+                } else {
+                    badgeHoldCount.classList.add('hidden');
+                }
+            }
+        }
+
+        function calculateTotal() {
+            const raw = inventory.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            return discountPercent > 0 ? raw * (1 - discountPercent / 100) : raw;
+        }
+
+        // Efectivo recibido: valor numérico y formato con punto de mil
+        function getCashValue() {
+            return parseInt(cashReceivedInput.value.replace(/\D/g, ''), 10) || 0;
+        }
+        function setCashValue(n) {
+            const d = String(Math.max(0, Math.round(n || 0)));
+            cashReceivedInput.value = n > 0 ? d.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
+        }
+
+        function updateCashRegister() {
+            const total = calculateTotal();
+            const cash = getCashValue();
+
+            if (cashReceivedInput.value.length > 0 && btnClearCash) {
+                btnClearCash.classList.remove('hidden');
+            } else if (btnClearCash) {
+                btnClearCash.classList.add('hidden');
+            }
+
+            if (cash > 0 && cash >= total) {
+                const change = cash - total;
+                calcChangeText.innerText = `Cambio: ${formatCOP(change)}`;
+                calcChangeText.className = "text-sm font-extrabold text-emerald-600";
+            } else if (cash > 0 && cash < total) {
+                const missing = total - cash;
+                calcChangeText.innerText = `Falta: ${formatCOP(missing)}`;
+                calcChangeText.className = "text-sm font-extrabold text-rose-500";
+            } else {
+                calcChangeText.innerText = `Cambio: ${formatCOP(0)}`;
+                calcChangeText.className = "text-sm font-extrabold text-slate-400";
+            }
+        }
+
+        function updateDiscountButtonsUI() {
+            if (!discountBtnLabel) return;
+            if (discountPercent > 0) {
+                discountBtnLabel.innerText = `${discountPercent}%`;
+                if (btnClearDiscount) btnClearDiscount.classList.remove('hidden');
+            } else {
+                discountBtnLabel.innerText = "Desc.";
+                if (btnClearDiscount) btnClearDiscount.classList.add('hidden');
+            }
+        }
+
+        function goToSlide(index) {
+            currentSlideIndex = index;
+            if (index === 0) {
+                mainSheetTrack.style.transform = "translateX(0%)";
+                pillBtnItems.className = "px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-active";
+                pillBtnCustomer.className = "px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-inactive";
+                dot0.className = "w-5 h-1 bg-slate-900 rounded-full transition-all duration-200";
+                dot1.className = "w-1.5 h-1 bg-slate-200 rounded-full transition-all duration-200";
+                btnReviewText.innerText = "Revisar Cliente";
+                btnReviewIcon.className = "fa-regular fa-paper-plane text-base";
+            } else {
+                mainSheetTrack.style.transform = "translateX(-50%)";
+                pillBtnCustomer.className = "px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-active";
+                pillBtnItems.className = "px-3 py-1 rounded-full text-xs font-bold transition-all duration-200 toggle-pill-inactive";
+                dot1.className = "w-5 h-1 bg-slate-900 rounded-full transition-all duration-200";
+                dot0.className = "w-1.5 h-1 bg-slate-200 rounded-full transition-all duration-200";
+                btnReviewText.innerText = "Finalizar Venta";
+                btnReviewIcon.className = "fa-solid fa-check text-base";
+            }
+        }
+
+        if (pillBtnItems) pillBtnItems.addEventListener('click', () => goToSlide(0));
+        if (pillBtnCustomer) pillBtnCustomer.addEventListener('click', () => goToSlide(1));
+
+        if (btnDiscountMenu) {
+            btnDiscountMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (discountDropdown) discountDropdown.classList.toggle('hidden');
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (discountDropdown && !discountDropdown.contains(e.target) && e.target !== btnDiscountMenu) {
+                discountDropdown.classList.add('hidden');
+            }
+        });
+
+        // --- Conexión Bluetooth Web API para Impresoras Térmicas ESC/POS ---
+        async function connectBluetoothPrinter() {
+            if (!navigator.bluetooth) {
+                showToast("Tu navegador no soporta Web Bluetooth. Usa Chrome en Android o Desktop.", "error");
+                return false;
+            }
+
+            try {
+                showToast("Buscando impresoras Bluetooth...");
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [
+                        '000018f0-0000-1000-8000-00805f9b34fb',
+                        '00001101-0000-1000-8000-00805f9b34fb',
+                        'e7810a71-73ae-499d-8c15-faa9aef0c3f2'
+                    ]
+                });
+
+                showToast(`Conectando a ${device.name || 'Impresora'}...`);
+                const server = await device.gatt.connect();
+                const services = await server.getPrimaryServices();
+                
+                let targetCharacteristic = null;
+
+                for (const service of services) {
+                    const characteristics = await service.getCharacteristics();
+                    for (const char of characteristics) {
+                        if (char.properties.write || char.properties.writeWithoutResponse) {
+                            targetCharacteristic = char;
+                            break;
+                        }
+                    }
+                    if (targetCharacteristic) break;
+                }
+
+                if (!targetCharacteristic) {
+                    throw new Error("No se encontró canal de escritura ESC/POS en el dispositivo.");
+                }
+
+                bluetoothDevice = device;
+                bluetoothCharacteristic = targetCharacteristic;
+
+                const btIcon = document.getElementById('btStatusIcon');
+                const btText = document.getElementById('btStatusText');
+                const btnBT = document.getElementById('btnConnectBluetooth');
+                
+                if (btIcon) btIcon.className = "fa-brands fa-bluetooth-b text-emerald-300";
+                if (btText) btText.innerText = "Conectado";
+                if (btnBT) btnBT.className = "qa-btn qa-btn-ok";
+
+                device.addEventListener('gattserverdisconnected', () => {
+                    bluetoothDevice = null;
+                    bluetoothCharacteristic = null;
+                    if (btIcon) btIcon.className = "fa-brands fa-bluetooth-b";
+                    if (btText) btText.innerText = "Impresora";
+                    if (btnBT) btnBT.className = "qa-btn";
+                    showToast("Impresora Bluetooth desconectada", "error");
+                });
+
+                showToast(`Impresora "${device.name || 'ESC/POS'}" conectada exitosamente`);
+                return true;
+            } catch (error) {
+                console.error("Error conectando Bluetooth:", error);
+                if (error.name !== 'NotFoundError') {
+                    showToast("Error al conectar Bluetooth: " + error.message, "error");
+                }
+                return false;
+            }
+        }
+
+        // --- Ajustes del recibo (texto personalizado al final) ---
+        const SOFTWARE_CREDIT = 'Software SACTEC by SAVIK';
+        const SETTINGS_KEY = 'receipt_settings_v1';
+        function readSettings() {
+            try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') || {}; }
+            catch (e) { return {}; }
+        }
+        function writeSettings(patch) {
+            try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...readSettings(), ...patch })); return true; }
+            catch (e) { return false; }
+        }
+        function getReceiptFooter() { return String(readSettings().footerText || '').trim(); }
+        function saveReceiptFooter(text) { return writeSettings({ footerText: String(text || '').trim() }); }
+
+        // Ancho de papel: 58 mm (por defecto) u 80 mm
+        //  cols = columnas de texto | fontPx = tamaño en pantalla/impresión | printMm = ancho de la hoja
+        const PAPER_PROFILES = {
+            58: { cols: 32, fontPx: 10.5, printMm: 58 },
+            80: { cols: 48, fontPx: 9.6,  printMm: 80 }
+        };
+        function getPaperWidth() { return Number(readSettings().paperWidth) === 80 ? 80 : 58; }
+        function savePaperWidth(mm) { return writeSettings({ paperWidth: Number(mm) === 80 ? 80 : 58 }); }
+        function getPaperProfile() { return PAPER_PROFILES[getPaperWidth()]; }
+
+        // --- Texto seguro para impresora térmica (JK-5804P) ---
+        // La impresora no entiende UTF-8: el espacio no separable (U+00A0) que genera
+        // Intl.NumberFormat se imprimía como "á". Se limpia todo a ASCII puro.
+        function toPrinterText(str) {
+            return String(str ?? '')
+                .replace(/[\u00A0\u2007\u202F\u2009\u200B]/g, ' ')   // espacios especiales -> espacio normal
+                .replace(/[\u2018\u2019]/g, "'")
+                .replace(/[\u201C\u201D]/g, '"')
+                .replace(/[\u2013\u2014]/g, '-')
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')       // quita tildes (á->a, ñ->n)
+                .replace(/[^\x20-\x7E\n]/g, '');                        // elimina cualquier otro carácter no ASCII
+        }
+        // Moneda sin espacios raros: $5.800
+        const copPrint = (amount) => '$' + Math.round(Math.abs(amount || 0))
+            .toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        const copPrintSigned = (amount) => (amount < 0 ? '-' : '') + copPrint(amount);
+
+        // --- Generador de Comandos ESC/POS ---
+        const ESC_ = 0x1B, GS_ = 0x1D;
+        const LINE_SPACING = 26; // puntos entre líneas (30 = normal). Súbelo si se ve muy apretado
+        const ITEM_GAP = 6;      // espacio fino entre productos, en puntos (8 puntos = 1 mm)
+        const BLOCK_GAP = 10;    // espacio fino alrededor del TOTAL, en puntos
+        const FEED_END = 3;      // líneas en blanco al final para rasgar (2 a 4)
+        // El recibo se define UNA sola vez (lista de renglones). De ahí salen la vista previa,
+        // la impresora Bluetooth (ESC/POS) y la impresión del navegador: siempre idénticos.
+        function buildReceiptModel(sale) {
+            const W = getPaperProfile().cols; // 32 columnas (58 mm) o 48 columnas (80 mm)
+            const rows = [];
+            let align = 'l', bold = false;
+            const line = (str = '', o = {}) => rows.push({
+                k: 'line', align,
+                segs: [{ t: toPrinterText(str), b: o.b !== undefined ? o.b : bold, d: !!o.d }]
+            });
+            const gap = (n) => rows.push({ k: 'gap', n });
+            const money = copPrintSigned;
+
+            // Izquierda + derecha en una sola línea de W columnas
+            const lr = (left, right) => {
+                left = toPrinterText(left); right = toPrinterText(right);
+                const room = W - right.length - 1;
+                if (left.length > room) left = left.substring(0, Math.max(room, 0));
+                return left + ' '.repeat(Math.max(W - left.length - right.length, 1)) + right;
+            };
+            // Partir texto largo en varias líneas sin cortar palabras
+            const wrap = (text, width) => {
+                const words = toPrinterText(text).split(/\s+/).filter(Boolean);
+                const lines = []; let cur = '';
+                words.forEach(w => {
+                    while (w.length > width) { // palabra más larga que la línea
+                        if (cur) { lines.push(cur); cur = ''; }
+                        lines.push(w.substring(0, width)); w = w.substring(width);
+                    }
+                    if (!cur) cur = w;
+                    else if ((cur + ' ' + w).length <= width) cur += ' ' + w;
+                    else { lines.push(cur); cur = w; }
+                });
+                if (cur) lines.push(cur);
+                return lines.length ? lines : [''];
+            };
+            // Campo "Etiqueta : valor" alineado
+            const field = (label, value) => {
+                const prefix = label.padEnd(8) + ': ';
+                wrap(value, W - prefix.length).forEach((l, i) =>
+                    line((i === 0 ? prefix : ' '.repeat(prefix.length)) + l));
+            };
+            const sep = () => line('-'.repeat(W));
+
+            // Fecha/hora en formato AAAA/MM/DD y 24 horas
+            let fecha = '', hora = '';
+            const m = toPrinterText(sale.date).match(/(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([ap])?/i);
+            if (m) {
+                let h = parseInt(m[4], 10);
+                const ap = (m[7] || '').toLowerCase();
+                if (ap === 'p' && h < 12) h += 12;
+                if (ap === 'a' && h === 12) h = 0;
+                fecha = `${m[3]}/${m[2].padStart(2, '0')}/${m[1].padStart(2, '0')}`;
+                hora = `${String(h).padStart(2, '0')}:${m[5]}:${m[6]}`;
+            }
+
+            // ---------- ENCABEZADO ----------
+            align = 'c';
+            line("MI NEGOCIO", { d: true });          // doble ancho
+            line("COLOMBIA S.A.S.", { d: true });
+            line("NIT: 901.234.567-8 Resp. IVA");
+            if (sale.isElectronic) line("Res. DIAN 18760000001 FE-1/50000");
+            line("Calle 10 # 43A - 25, Medellin");
+            line("Tel: (+57) 300 123 4567");
+            bold = true;
+            line(sale.isElectronic ? "FACTURA ELECTRONICA DE VENTA" : "RECIBO DE PAGO");
+            bold = false;
+            sep();
+
+            // ---------- DATOS ----------
+            align = 'l';
+            field(sale.isElectronic ? 'Factura' : 'Recibo', sale.id);
+            field('Fecha', fecha ? `${fecha} ${hora}` : sale.date);
+            field('Pago', sale.paymentMethod);
+            field('Cliente', sale.customer);
+            if (sale.doc) field('Nit/C.C.', sale.doc);
+            // El correo de relleno no se imprime (ahorra papel)
+            if (sale.email && sale.email !== 'cliente@ejemplo.com') field('Email', sale.email);
+            sep();
+
+            // ---------- PRODUCTOS ----------
+            bold = true;
+            line(lr('# Descripcion', 'Total'));
+            line('   Cant x Valor Unitario');
+            bold = false;
+            sep();
+
+            let totalUnits = 0;
+            sale.items.forEach((item, idx) => {
+                totalUnits += item.quantity;
+                const n = String(idx + 1).padEnd(3);
+                wrap(String(item.name).toUpperCase(), W - 3).forEach((l, i) =>
+                    line((i === 0 ? n : '   ') + l));
+                line(lr(`   ${item.quantity} un x ${money(item.price)}`, money(item.price * item.quantity)));
+                if (idx < sale.items.length - 1) gap(ITEM_GAP); // pequeña separación entre productos
+            });
+            sep();
+
+            // ---------- TOTALES ----------
+            const subtotal = sale.subtotal || sale.total;
+            const discAmt = Math.max(subtotal - sale.total, 0);
+            line(lr('TOTAL ITEMS:', String(totalUnits)));
+            if (discAmt > 0) {
+                line(lr('SUBTOTAL:', money(subtotal)));
+                line(lr(`DESCUENTO (${sale.discountPercent || 0}%):`, '-' + money(discAmt)));
+            }
+            const totalStr = money(sale.total);
+            gap(BLOCK_GAP);
+            // "TOTAL" en negrita y el valor en doble ancho, en la misma línea
+            const bigW = totalStr.length * 2;
+            if (5 + 1 + bigW <= W) {
+                rows.push({ k: 'line', align, segs: [
+                    { t: 'TOTAL', b: true, d: false },
+                    { t: ' '.repeat(W - 5 - bigW), b: true, d: false },
+                    { t: totalStr, b: false, d: true }
+                ] });
+            } else {
+                bold = true;
+                line(lr('TOTAL', totalStr));
+                bold = false;
+            }
+            gap(BLOCK_GAP);                           // separación entre TOTAL y recibido/cambio
+            line(lr('RECIBIDO:', money(sale.cashReceived)));
+            line(lr('CAMBIO:', money(sale.change)));
+
+            // ---------- INFORMACION TRIBUTARIA (solo factura electronica) ----------
+            if (sale.isElectronic) {
+                const iva = Math.round(sale.total * 0.19 / 1.19);
+                const base = sale.total - iva;
+                gap(BLOCK_GAP + 8);                       // separación respecto a RECIBIDO/CAMBIO
+                line('-[ INFORMACION TRIBUTARIA ]-'.padStart(29, '-').padEnd(W, '-'));
+                line('Descrip.'.padEnd(8) + '%'.padStart(5) + 'Vlr_Base'.padStart(9) + 'Vlr_Impto'.padStart(10));
+                line('IVA'.padEnd(8) + '19.00'.padStart(5) + money(base).padStart(9) + money(iva).padStart(10));
+                if (sale.cufe) {
+                    align = 'c';
+                    line('VALIDACION DIAN APROBADA');
+                    align = 'l';
+                    line('CUFE:', { b: true });
+                    for (let i = 0; i < sale.cufe.length; i += W) line(sale.cufe.substring(i, i + W));
+                    // ---------- CODIGO QR (validacion DIAN) ----------
+                    try {
+                        const m = makeQrMatrix(buildDianQrText(sale));
+                        const targetDots = getPaperWidth() === 80 ? 480 : 336;   // ancho máx. del QR en puntos
+                        const scale = Math.max(2, Math.floor(targetDots / m.length));
+                        gap(BLOCK_GAP);
+                        align = 'c';
+                        line('Escanee para validar');
+                        line('en la DIAN');
+                        rows.push({ k: 'qr', m, scale });
+                        align = 'l';
+                    } catch (e) {
+                        console.error('No se pudo generar el QR de la factura', e);
+                    }
+                }
+            }
+
+            // ---------- PIE ----------
+            gap(BLOCK_GAP);
+            align = 'c';
+            line("*** GRACIAS POR SU COMPRA ***");
+            const customFooter = getReceiptFooter();
+            if (customFooter) {
+                customFooter.split(/\r?\n/).forEach(row => {
+                    if (row.trim()) wrap(row, W).forEach(l => line(l));
+                });
+            }
+            gap(BLOCK_GAP);
+            line(SOFTWARE_CREDIT);
+            rows.push({ k: 'feed', n: FEED_END });    // avance final para poder rasgar
+            return rows;
+        }
+
+        // Renglones -> bytes ESC/POS para la impresora
+        function encodeEscPos(rows) {
+            const bytes = [];
+            const push = (...a) => bytes.push(...a);
+            push(ESC_, 0x40);                         // iniciar
+            push(ESC_, 0x33, LINE_SPACING);           // interlineado compacto (ahorra papel)
+            let al = 'l', b = false, d = false;
+            rows.forEach(r => {
+                if (r.k === 'gap')  { push(ESC_, 0x4A, r.n); return; }
+                if (r.k === 'feed') { push(ESC_, 0x64, r.n); return; }
+                if (r.k === 'qr') {
+                    if (al !== 'c') { push(ESC_, 0x61, 1); al = 'c'; }
+                    const size = r.m.length, sc = r.scale, wb = Math.ceil((size * sc) / 8), BAND = 8;
+                    for (let y0 = 0; y0 < size; y0 += BAND) {
+                        const band = r.m.slice(y0, y0 + BAND), h = band.length * sc;
+                        push(GS_, 0x76, 0x30, 0x00, wb & 255, wb >> 8, h & 255, h >> 8);
+                        band.forEach(row => {
+                            const line8 = new Array(wb).fill(0);
+                            row.forEach((dark, x) => {
+                                if (!dark) return;
+                                for (let k = 0; k < sc; k++) { const px = x * sc + k; line8[px >> 3] |= 0x80 >> (px & 7); }
+                            });
+                            for (let k = 0; k < sc; k++) push(...line8);
+                        });
+                    }
+                    return;
+                }
+                if (r.align !== al) { push(ESC_, 0x61, r.align === 'c' ? 1 : 0); al = r.align; }
+                r.segs.forEach(sg => {
+                    if (!sg.t) return;
+                    if (!!sg.d !== d) { push(ESC_, 0x21, sg.d ? 0x20 : 0x00); d = !!sg.d; b = false; }
+                    if (!!sg.b !== b) { push(ESC_, 0x45, sg.b ? 1 : 0); b = !!sg.b; }
+                    for (let i = 0; i < sg.t.length; i++) push(sg.t.charCodeAt(i));
+                });
+                push(0x0A);
+            });
+            return new Uint8Array(bytes);
+        }
+
+        function buildEscPosReceipt(sale) {
+            return encodeEscPos(buildReceiptModel(sale));
+        }
+
+        // Renglones -> HTML con el mismo ancho (columnas según el papel) y proporciones de la impresora
+        function renderReceiptHtml(rows, fontPx = 12) {
+            const LH = 26 / 12; // alto de renglón = 26 puntos; ancho de carácter = 12 puntos
+            const body = rows.map(r => {
+                if (r.k === 'gap')  return `<div style="height:${(r.n / 12).toFixed(3)}ch"></div>`;
+                if (r.k === 'feed') return `<div style="height:${(r.n * LH).toFixed(3)}ch"></div>`;
+                if (r.k === 'qr') {
+                    const size = r.m.length;
+                    let d = '';
+                    r.m.forEach((row, y) => {
+                        let x = 0;
+                        while (x < size) {
+                            if (!row[x]) { x++; continue; }
+                            let x2 = x; while (x2 < size && row[x2]) x2++;
+                            d += `M${x} ${y}h${x2 - x}v1h-${x2 - x}z`;
+                            x = x2;
+                        }
+                    });
+                    const wch = (size * r.scale / 12).toFixed(3);   // 12 puntos = 1 carácter de ancho
+                    return `<div style="text-align:center;line-height:0;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" style="width:${wch}ch;height:${wch}ch;display:inline-block;" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${d}" fill="#000"/></svg></div>`;
+                }
+                const inner = r.segs.map(sg => {
+                    const t = escapeHtml(sg.t);
+                    const w = sg.b ? 'font-weight:800;' : '';
+                    if (sg.d) return `<span style="display:inline-block;width:${sg.t.length * 2}ch;text-align:left;${w}"><span style="display:inline-block;transform:scaleX(2);transform-origin:0 50%;">${t}</span></span>`;
+                    return `<span style="${w}">${t}</span>`;
+                }).join('');
+                return `<div style="text-align:${r.align === 'c' ? 'center' : 'left'};white-space:pre;height:${LH.toFixed(4)}ch;line-height:${LH.toFixed(4)}ch;">${inner || '&nbsp;'}</div>`;
+            }).join('');
+            return `<div style="width:${getPaperProfile().cols}ch;margin:0 auto;font-family:'Courier New',Courier,ui-monospace,monospace;font-size:${fontPx}px;color:#000;background:#fff;">${body}</div>`;
+        }
+
+        async function printBluetoothReceipt(sale) {
+            if (!bluetoothCharacteristic || !bluetoothDevice || !bluetoothDevice.gatt.connected) {
+                const connected = await connectBluetoothPrinter();
+                if (!connected) return;
+            }
+
+            try {
+                showToast("Enviando tirilla a la impresora...");
+                const data = buildEscPosReceipt(sale);
+
+                const chunkSize = 100;
+                for (let i = 0; i < data.length; i += chunkSize) {
+                    const chunk = data.slice(i, i + chunkSize);
+                    if (bluetoothCharacteristic.properties.writeWithoutResponse) {
+                        await bluetoothCharacteristic.writeValueWithoutResponse(chunk);
+                    } else {
+                        await bluetoothCharacteristic.writeValue(chunk);
+                    }
+                }
+
+                showToast("Tirilla impresa correctamente por Bluetooth");
+            } catch (err) {
+                console.error("Error al imprimir por Bluetooth:", err);
+                showToast("Error en la impresión Bluetooth: " + err.message, "error");
+            }
+        }
+
+        const btnConnectBluetooth = document.getElementById('btnConnectBluetooth');
+        if (btnConnectBluetooth) {
+            btnConnectBluetooth.addEventListener('click', connectBluetoothPrinter);
+        }
+
+        const btnPrintBluetooth = document.getElementById('btnPrintBluetooth');
+        if (btnPrintBluetooth) {
+            btnPrintBluetooth.addEventListener('click', () => {
+                if (lastCompletedSale) {
+                    printBluetoothReceipt(lastCompletedSale);
+                } else {
+                    showToast("No hay ticket activo para imprimir", "error");
+                }
+            });
+        }
+
+        cashReceivedInput.addEventListener('input', () => {
+            const digits = cashReceivedInput.value.replace(/\D/g, '').slice(0, 9);
+            setCashValue(parseInt(digits, 10) || 0);
+            updateCashRegister();
+        });
+
+        if (btnClearCash) {
+            btnClearCash.addEventListener('click', () => {
+                cashReceivedInput.value = '';
+                updateCashRegister();
+            });
+        }
+
+        btnExactCash.addEventListener('click', () => {
+            const total = calculateTotal();
+            setCashValue(total);
+            updateCashRegister();
+        });
+
+        document.querySelectorAll('.btnQuickCash').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const val = parseFloat(e.target.dataset.amount);
+                setCashValue(getCashValue() + val);
+                updateCashRegister();
+            });
+        });
+
+        document.querySelectorAll('.btnPresetDiscount').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const pct = parseFloat(e.currentTarget.dataset.percent);
+                if (discountPercent === pct) {
+                    discountPercent = 0;
+                    showToast("Descuento retirado");
+                } else {
+                    discountPercent = pct;
+                    showToast(`Descuento del ${pct}% aplicado`);
+                }
+                if (discountDropdown) discountDropdown.classList.add('hidden');
+                renderInventory();
+            });
+        });
+
+        if (btnClearDiscount) {
+            btnClearDiscount.addEventListener('click', () => {
+                discountPercent = 0;
+                showToast("Descuento retirado");
+                renderInventory();
+            });
+        }
+
+        btnCustomDiscount.addEventListener('click', () => {
+            if (discountDropdown) discountDropdown.classList.add('hidden');
+            const input = prompt("Ingresa el porcentaje de descuento (0 - 100):", discountPercent);
+            if (input !== null) {
+                const val = parseFloat(input);
+                if (!isNaN(val) && val >= 0 && val <= 100) {
+                    discountPercent = val;
+                    showToast(val > 0 ? `Descuento del ${val}% aplicado` : "Descuento retirado");
+                    renderInventory();
+                } else {
+                    showToast("Porcentaje inválido", "error");
+                }
+            }
+        });
+
+        // --- Cuentas en Espera ---
+        btnHoldCart.addEventListener('click', () => {
+            if (inventory.length === 0 && heldCarts.length === 0) {
+                showToast("No hay productos en la orden actual", "error");
+                return;
+            }
+            if (inventory.length > 0) {
+                const holdItem = {
+                    id: 'HOLD-' + Math.floor(100 + Math.random() * 900),
+                    time: new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }),
+                    items: [...inventory],
+                    discountPercent: discountPercent
+                };
+                heldCarts.push(holdItem);
+                inventory = [];
+                discountPercent = 0;
+                cashReceivedInput.value = '';
+                saveInventory();
+                saveHeldCarts();
+                showToast("Orden guardada en espera");
+            } else {
+                openHoldModal();
+            }
+        });
+
+        function openHoldModal() {
+            if (heldCarts.length === 0) {
+                holdList.innerHTML = `<p class="text-xs text-slate-400 text-center py-4">No hay cuentas en espera</p>`;
+            } else {
+                holdList.innerHTML = heldCarts.map((cart, idx) => `
+                    <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3">
+                        <div>
+                            <span class="text-xs font-bold text-slate-900 block">${cart.id} (${cart.time})</span>
+                            <span class="text-[10px] text-slate-400 block">${cart.items.reduce((s, i) => s + i.quantity, 0)} ítems - ${formatCOP(cart.items.reduce((s, i) => s + (i.price * i.quantity), 0))}</span>
+                        </div>
+                        <button onclick="restoreHoldCart(${idx})" class="px-3.5 py-2 bg-brand-600 text-white font-bold rounded-lg text-xs hover:bg-brand-700 transition">
+                            Reanudar
+                        </button>
+                    </div>
+                `).join('');
+            }
+            modalHold.classList.remove('hidden');
+        }
+
+        function restoreHoldCart(index) {
+            if (heldCarts[index]) {
+                if (inventory.length > 0) {
+                    if (!confirm("¿Deseas reemplazar la venta actual con la cuenta en espera?")) return;
+                }
+                inventory = [...heldCarts[index].items];
+                discountPercent = heldCarts[index].discountPercent || 0;
+                heldCarts.splice(index, 1);
+                saveHeldCarts();
+                saveInventory();
+                modalHold.classList.add('hidden');
+                showToast("Orden reanudada");
+            }
+        }
+
+        btnCloseHold.addEventListener('click', () => modalHold.classList.add('hidden'));
+
+        // --- Catálogo Rápido ---
+        btnOpenCatalog.addEventListener('click', () => {
+            catalogGrid.innerHTML = presetCatalog.map(prod => `
+                <button onclick="addPresetProduct('${prod.code}')" class="p-3.5 bg-slate-50 hover:bg-brand-50 border border-slate-200/80 rounded-xl text-left transition flex flex-col justify-between active:scale-95">
+                    <span class="text-xs font-bold text-slate-800 line-clamp-2">${escapeHtml(prod.name)}</span>
+                    <span class="text-xs font-extrabold text-brand-600 mt-2">${formatCOP(prod.price)}</span>
+                </button>
+            `).join('');
+            modalCatalog.classList.remove('hidden');
+        });
+
+        function addPresetProduct(code) {
+            const prod = presetCatalog.find(p => p.code === code);
+            if (prod) {
+                const existing = inventory.find(i => i.code === prod.code);
+                if (existing) {
+                    existing.quantity += 1;
+                } else {
+                    inventory.unshift({ ...prod, quantity: 1 });
+                }
+                saveInventory();
+                showToast(`+1 ${prod.name}`);
+            }
+        }
+
+        btnCloseCatalog.addEventListener('click', () => modalCatalog.classList.add('hidden'));
+
+        function checkCustomerFields() {
+            const hasData = custName.value.trim() && custPhone.value.trim() && custAddress.value.trim();
+            if (hasData) {
+                customerStatusBadge.className = "text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full";
+                customerStatusBadge.innerText = "Completado";
+            } else {
+                customerStatusBadge.className = "text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full";
+                customerStatusBadge.innerText = "Pendiente";
+            }
+            return hasData;
+        }
+
+        [custName, custDoc, custPhone, custEmail, custAddress].forEach(input => {
+            input.addEventListener('input', checkCustomerFields);
+        });
+
+        btnReviewOrder.addEventListener('click', () => {
+            if (inventory.length === 0) {
+                showToast("No hay elementos escaneados", "error");
+                return;
+            }
+
+            if (currentSlideIndex === 0) {
+                goToSlide(1);
+            } else {
+                if (!custName.value.trim()) {
+                    showToast("Ingresa el nombre del cliente", "error");
+                    custName.focus();
+                    return;
+                }
+                if (!custPhone.value.trim()) {
+                    showToast("Ingresa el teléfono del cliente", "error");
+                    custPhone.focus();
+                    return;
+                }
+                if (!custAddress.value.trim()) {
+                    showToast("Ingresa la dirección de envío", "error");
+                    custAddress.focus();
+                    return;
+                }
+
+                const totalPrice = calculateTotal();
+                const rawTotal = inventory.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                const cashProvided = getCashValue() || totalPrice;
+
+                if (cashProvided < totalPrice) {
+                    showToast("Monto recibido insuficiente", "error");
+                    return;
+                }
+
+                executeSale({
+                    customer: custName.value.trim(),
+                    doc: custDoc.value.trim() || '222222222222',
+                    phone: custPhone.value.trim(),
+                    email: custEmail.value.trim() || 'cliente@ejemplo.com',
+                    address: custAddress.value.trim(),
+                    paymentMethod: custPayment.value,
+                    totalPrice: totalPrice,
+                    rawTotal: rawTotal,
+                    cashProvided: cashProvided,
+                    isElectronic: false
+                });
+            }
+        });
+
+        function executeSale(data) {
+            const change = data.cashProvided - data.totalPrice;
+            const prefix = data.isElectronic ? 'FE-' : 'REC-';
+
+            const saleRecord = {
+                id: prefix + Math.floor(100000 + Math.random() * 900000),
+                date: new Date().toLocaleString('es-CO'),
+                customer: data.customer,
+                doc: data.doc,
+                phone: data.phone,
+                email: data.email,
+                address: data.address,
+                paymentMethod: data.paymentMethod,
+                items: [...inventory],
+                subtotal: data.rawTotal,
+                discountPercent: discountPercent,
+                total: data.totalPrice,
+                cashReceived: data.cashProvided,
+                change: change,
+                isElectronic: !!data.isElectronic,
+                cufe: null
+            };
+            if (saleRecord.isElectronic) saleRecord.cufe = generateCUFE(saleRecord);
+
+            salesHistory.unshift(saleRecord);
+            saveSalesHistory();
+            lastCompletedSale = saleRecord;
+
+            openReceiptPreview(saleRecord);
+
+            if (data.isElectronic) {
+                showToast(`¡Factura Electrónica ${saleRecord.id} generada!`);
+            } else {
+                showToast(`¡Venta completada! Cambio: ${formatCOP(change)}`);
+            }
+
+            inventory = [];
+            discountPercent = 0;
+            cashReceivedInput.value = '';
+            custName.value = 'Consumidor Final';
+            custDoc.value = '222222222222';
+            custPhone.value = '3001234567';
+            custEmail.value = 'cliente@ejemplo.com';
+            custAddress.value = 'Venta en Mostrador';
+            checkCustomerFields();
+            saveInventory();
+            goToSlide(0);
+        }
+
+        function convertToElectronicInvoice(sale) {
+            if (!sale) return;
+            sale.isElectronic = true;
+            if (!sale.id.startsWith('FE-')) {
+                sale.id = 'FE-' + sale.id.replace('REC-', '');
+            }
+            sale.cufe = generateCUFE(sale);
+            saveSalesHistory();
+            openReceiptPreview(sale);
+            showToast(`Factura Electrónica ${sale.id} generada con éxito (Validado DIAN)`);
+        }
+
+        btnEmitFEFromPreview.addEventListener('click', () => {
+            if (lastCompletedSale) {
+                if (lastCompletedSale.isElectronic) {
+                    showToast("Esta venta ya es una Factura Electrónica", "error");
+                } else {
+                    convertToElectronicInvoice(lastCompletedSale);
+                }
+            }
+        });
+
+        function openReceiptPreview(sale) {
+            lastCompletedSale = sale;
+            const iva = sale.isElectronic ? Math.round(sale.total * 0.19 / 1.19) : 0;
+
+            if (sale.isElectronic) {
+                facturaBadge.classList.remove('hidden');
+                previewModalTitle.innerText = "Factura Electrónica";
+                btnEmitFEFromPreview.classList.add('hidden');
+            } else {
+                facturaBadge.classList.add('hidden');
+                previewModalTitle.innerText = "Recibo de Pago";
+                btnEmitFEFromPreview.classList.remove('hidden');
+            }
+
+            previewReceiptContent.innerHTML =
+                '<div style="width:fit-content;margin:0 auto;padding:8px 8px;zoom:1.15;background:#fff;box-shadow:0 1px 5px rgba(15,23,42,.18);">' +
+                renderReceiptHtml(buildReceiptModel(sale), getPaperProfile().fontPx) + '</div>';
+            modalReceiptPreview.classList.remove('hidden');
+        }
+
+        btnCloseReceiptPreview.addEventListener('click', () => {
+            modalReceiptPreview.classList.add('hidden');
+        });
+
+        btnPrintFromPreview.addEventListener('click', () => {
+            if (lastCompletedSale) {
+                printThermalReceipt(lastCompletedSale);
+            }
+        });
+
+        // Ajusta el tamaño de hoja (@page) y el ancho de la tirilla al papel elegido
+        function applyPrintPaper() {
+            const prof = getPaperProfile();
+            document.documentElement.style.setProperty('--paper-w', prof.printMm + 'mm');
+            let st = document.getElementById('paperPageStyle');
+            if (!st) { st = document.createElement('style'); st.id = 'paperPageStyle'; document.head.appendChild(st); }
+            st.textContent = `@media print { @page { size: ${prof.printMm}mm auto; margin: 0; } }`;
+            return prof;
+        }
+        applyPrintPaper();
+
+        function printThermalReceipt(sale) {
+            const prof = applyPrintPaper();
+            document.getElementById('thermalReceiptPrint').innerHTML = renderReceiptHtml(buildReceiptModel(sale), prof.fontPx);
+            setTimeout(() => {
+                window.print();
+            }, 100);
+        }
+
+        function renderSalesHistory() {
+            const dailyTotal = salesHistory.reduce((sum, sale) => sum + sale.total, 0);
+            totalDailySales.innerText = `Total acumulado: ${formatCOP(dailyTotal)}`;
+
+            if (salesHistory.length === 0) {
+                salesListContainer.innerHTML = `
+                    <div class="text-center py-8 text-slate-300">
+                        <i class="fa-solid fa-receipt text-2xl mb-1 text-slate-200"></i>
+                        <p class="text-xs text-slate-400">Sin ventas registradas hoy</p>
+                    </div>
+                `;
+                return;
+            }
+
+            salesListContainer.innerHTML = salesHistory.map((sale, index) => `
+                <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-100 text-xs">
+                    <div class="flex justify-between items-center font-bold text-slate-900 border-b border-slate-200/60 pb-2 mb-2 gap-2">
+                        <span class="flex items-center gap-1">
+                            ${sale.isElectronic ? '<i class="fa-solid fa-shield-halved text-emerald-600 text-[10px]" title="Factura Electrónica"></i>' : ''}
+                            ${sale.id}
+                        </span>
+                        <div class="flex items-center gap-1">
+                            <span class="text-emerald-600 font-extrabold mr-1 text-xs">${formatCOP(sale.total)}</span>
+                            <button onclick="viewSaleReceipt(${index})" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-[9px] font-bold flex items-center gap-1 transition" title="Ver Recibo">
+                                <i class="fa-solid fa-eye text-[8px]"></i> Ver
+                            </button>
+                            <button onclick="reprintSale(${index})" class="px-2.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-[9px] font-bold flex items-center gap-1 transition" title="Imprimir Tirilla">
+                                <i class="fa-solid fa-print text-[8px]"></i> Imprimir
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-[10px] text-slate-500 space-y-1">
+                        <p><i class="fa-solid fa-user text-[8px] mr-1"></i> ${escapeHtml(sale.customer)} (${escapeHtml(sale.doc || '222222222222')})</p>
+                        <p><i class="fa-solid fa-clock text-[8px] mr-1"></i> ${sale.date}</p>
+                        <p><i class="fa-solid fa-credit-card text-[8px] mr-1"></i> Pago: ${sale.paymentMethod}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function viewSaleReceipt(index) {
+            if (salesHistory[index]) {
+                openReceiptPreview(salesHistory[index]);
+            }
+        }
+
+        function reprintSale(index) {
+            if (salesHistory[index]) {
+                printThermalReceipt(salesHistory[index]);
+            }
+        }
+
+        btnOpenHistory.addEventListener('click', () => {
+            renderSalesHistory();
+            modalHistory.classList.remove('hidden');
+        });
+
+        btnCloseHistory.addEventListener('click', () => modalHistory.classList.add('hidden'));
+        btnCloseHistoryBtn.addEventListener('click', () => modalHistory.classList.add('hidden'));
+
+        btnClearHistory.addEventListener('click', () => {
+            if (salesHistory.length === 0) return;
+            if (confirm("¿Deseas borrar el historial de ventas?")) {
+                salesHistory = [];
+                saveSalesHistory();
+                renderSalesHistory();
+                showToast("Historial vaciado");
+            }
+        });
+
+        let isStarting = false;
+
+        function getScanner() {
+            if (!html5QrCode) {
+                const F = Html5QrcodeSupportedFormats;
+                html5QrCode = new Html5Qrcode("reader", {
+                    verbose: false,
+                    formatsToSupport: [
+                        F.QR_CODE, F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E,
+                        F.CODE_128, F.CODE_39, F.CODE_93, F.ITF, F.CODABAR,
+                        F.DATA_MATRIX
+                    ],
+                    // Detector nativo del navegador (mejor lectura de códigos de barras en Chrome Android)
+                    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+                });
+            }
+            return html5QrCode;
+        }
+
+        function setCameraMessage(text, isError) {
+            cameraMsg.textContent = text;
+            cameraMsg.className = "text-[11px] font-semibold leading-snug mb-2 max-w-[300px] " +
+                (isError ? "text-amber-300" : "text-slate-300");
+        }
+
+        // true si el HTML se abrió directo desde el celular (sin candado ni permisos guardados)
+        function isOpenedAsLocalFile() {
+            const proto = location.protocol;
+            return proto === 'file:' || proto === 'content:' || proto === 'blob:';
+        }
+
+        function isPermissionError(err) {
+            const name = (err && (err.name || err.type)) || '';
+            const text = String((err && err.message) || err || '');
+            return name === 'NotAllowedError' || name === 'PermissionDeniedError' ||
+                   /permission|denied|not allowed/i.test(text);
+        }
+
+        function explainCameraError(err) {
+            const name = (err && (err.name || err.type)) || '';
+            const text = String((err && err.message) || err || '');
+            if (isOpenedAsLocalFile()) {
+                return "Abierta como archivo local: el navegador no guarda el permiso. Usa «Foto» o abre la página por HTTPS (toca ?).";
+            }
+            if (!window.isSecureContext) {
+                return "La cámara solo funciona con HTTPS. Abre la página con https:// (toca ?).";
+            }
+            if (isPermissionError(err)) {
+                return "Permiso de cámara denegado. Toca ? para ver cómo activarlo, o usa «Foto».";
+            }
+            if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || /no camera|not found|requested device/i.test(text)) {
+                return "No se encontró ninguna cámara en este dispositivo.";
+            }
+            if (name === 'NotReadableError' || name === 'TrackStartError' || /in use|could not start|not readable/i.test(text)) {
+                return "La cámara está siendo usada por otra app. Ciérrala y pulsa «Activar cámara».";
+            }
+            if (name === 'SecurityError') {
+                return "El navegador bloqueó la cámara en esta página. Revisa los permisos del sitio.";
+            }
+            return "No se pudo iniciar la cámara" + (text ? ": " + text.slice(0, 70) : ".");
+        }
+
+        function showCameraOff(statusText, dotColor) {
+            isCameraActive = false;
+            cameraPlaceholder.classList.remove('hidden');
+            viewfinder.classList.add('hidden');
+            scanStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span><span>${statusText}</span>`;
+        }
+
+        // Pide el permiso explícitamente (esto abre el diálogo del navegador) y libera la cámara enseguida
+        async function requestCameraAccess() {
+            if (!window.isSecureContext) {
+                const e = new Error("Contexto no seguro"); e.name = "SecurityError"; throw e;
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                const e = new Error("Este navegador no permite usar la cámara"); e.name = "NotSupportedError"; throw e;
+            }
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: "environment" } },
+                audio: false
+            });
+            stream.getTracks().forEach(t => t.stop());
+        }
+
+        async function startScanner() {
+            if (isCameraActive || isStarting) return;
+            isStarting = true;
+            camActions.classList.add('hidden'); camActions.classList.remove('flex');
+            setCameraMessage("Solicitando acceso a la cámara…", false);
+            scanStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span><span>Conectando</span>`;
+
+            try {
+                await requestCameraAccess();
+
+                // Intentos de más a menos exigente, por si el celular no admite alguna configuración
+                const attempts = [
+                    { cam: { facingMode: "environment" }, cfg: { fps: 12, videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } } },
+                    { cam: { facingMode: "environment" }, cfg: { fps: 12 } },
+                    { cam: null, cfg: { fps: 12 } }
+                ];
+
+                let started = false;
+                let lastErr = null;
+
+                for (const att of attempts) {
+                    try {
+                        const scanner = getScanner();
+                        let cam = att.cam;
+                        if (!cam) {
+                            const cams = await Html5Qrcode.getCameras();
+                            if (!cams || !cams.length) {
+                                const e = new Error("Sin cámaras"); e.name = "NotFoundError"; throw e;
+                            }
+                            const back = cams.find(c => /back|rear|trasera|environment/i.test(c.label));
+                            cam = (back || cams[cams.length - 1]).id;
+                        }
+                        await scanner.start(cam, att.cfg, (text) => onScanSuccess(text), () => {});
+                        started = true;
+                        break;
+                    } catch (e) {
+                        lastErr = e;
+                        try { if (html5QrCode) { await html5QrCode.stop(); } } catch (_) {}
+                        try { if (html5QrCode) { html5QrCode.clear(); } } catch (_) {}
+                        html5QrCode = null;
+                        if (isPermissionError(e)) break;
+                    }
+                }
+
+                if (!started) throw lastErr || new Error("No se pudo iniciar");
+
+                isCameraActive = true;
+                camActions.classList.add('hidden'); camActions.classList.remove('flex');
+                cameraPlaceholder.classList.add('hidden');
+                viewfinder.classList.remove('hidden');
+                scanStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>Escaneando</span>`;
+
+                // Enfoque continuo si el celular lo permite
+                try { await html5QrCode.applyVideoConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (_) {}
+            } catch (err) {
+                console.warn("No se pudo iniciar la cámara", err);
+                setCameraMessage(explainCameraError(err), true);
+                showCameraOff("Sin cámara", "bg-rose-400");
+                camActions.classList.remove('hidden'); camActions.classList.add('flex');
+            } finally {
+                isStarting = false;
+            }
+        }
+
+        async function stopScanner() {
+            if (html5QrCode && isCameraActive) {
+                try {
+                    await html5QrCode.stop();
+                    setCameraMessage("Cámara en pausa. Toca para reactivarla.", false);
+                    showCameraOff("Pausado", "bg-amber-400");
+                } catch (err) {
+                    console.error("Error al pausar cámara", err);
+                }
+            }
+        }
+
+        // Leer un código desde una foto (útil si la cámara en vivo está bloqueada)
+        async function scanFromImage(file) {
+            if (!file) return;
+            const wasActive = isCameraActive;
+            try {
+                if (isCameraActive) { await stopScanner(); }
+                const scanner = getScanner();
+                const text = await scanner.scanFile(file, false);
+                onScanSuccess(text, { force: true });
+            } catch (e) {
+                showToast("No se detectó ningún código en la foto", "error");
+            } finally {
+                scanFileInput.value = "";
+                if (wasActive) { startScanner(); }
+            }
+        }
+
+        // Deslizar un producto a la izquierda o derecha para eliminarlo
+        (function () {
+            let st = null;
+            let justSwiped = false;
+
+            scannedList.addEventListener('pointerdown', (e) => {
+                const card = e.target.closest('.swipe-card');
+                if (!card || e.target.closest('button')) return;
+                st = { card, wrap: card.parentElement, x: e.clientX, y: e.clientY, dx: 0, locked: false, id: e.pointerId };
+            });
+
+            scannedList.addEventListener('pointermove', (e) => {
+                if (!st) return;
+                const dx = e.clientX - st.x, dy = e.clientY - st.y;
+                if (!st.locked) {
+                    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { st = null; return; }
+                    if (Math.abs(dx) > 10) {
+                        st.locked = true;
+                        st.wrap.style.backgroundColor = '#f43f5e';
+                        try { st.card.setPointerCapture(st.id); } catch (_) {}
+                    } else return;
+                }
+                st.dx = dx;
+                st.card.style.transition = 'none';
+                st.card.style.transform = `translateX(${dx}px)`;
+            });
+
+            const finish = (e) => {
+                if (!st) return;
+                const { card, wrap, dx, locked } = st;
+                const code = card.dataset.code;
+                st = null;
+                if (!locked) return;
+                justSwiped = true;
+                setTimeout(() => { justSwiped = false; }, 350);
+                const w = card.offsetWidth;
+                if (e.type === 'pointerup' && Math.abs(dx) > w * 0.35) {
+                    card.style.transition = 'transform .2s ease-in, opacity .2s ease-in';
+                    card.style.transform = `translateX(${dx > 0 ? w : -w}px)`;
+                    card.style.opacity = '0';
+                    if (navigator.vibrate) { try { navigator.vibrate(25); } catch (_) {} }
+                    setTimeout(() => {
+                        wrap.style.height = wrap.offsetHeight + 'px';
+                        void wrap.offsetHeight;
+                        wrap.style.transition = 'height .2s ease, margin .2s ease';
+                        wrap.style.height = '0px';
+                        wrap.style.marginTop = '0px';
+                    }, 180);
+                    takeUndoSnapshot();
+                    setTimeout(() => {
+                        inventory = inventory.filter(i => i.code !== code);
+                        saveInventory();
+                        showUndo("Producto eliminado");
+                    }, 400);
+                } else {
+                    card.style.transition = 'transform .2s ease-out';
+                    card.style.transform = 'translateX(0)';
+                    setTimeout(() => { wrap.style.backgroundColor = ''; }, 200);
+                }
+            };
+            scannedList.addEventListener('pointerup', finish);
+            scannedList.addEventListener('pointercancel', finish);
+
+            // Evita que el toque final del deslizar abra la edición
+            scannedList.addEventListener('click', (e) => {
+                if (justSwiped) { e.stopPropagation(); e.preventDefault(); }
+            }, true);
+        })();
+
+        // Lector físico (USB/Bluetooth): escribe el código muy rápido y termina con Enter
+        let wedgeBuf = '', wedgeLast = 0;
+        document.addEventListener('keydown', (e) => {
+            const t = e.target;
+            const typing = t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName);
+            if (e.key === 'Enter') {
+                if (!typing && wedgeBuf.length >= 4) { e.preventDefault(); onScanSuccess(wedgeBuf, { force: true }); }
+                wedgeBuf = '';
+                return;
+            }
+            if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+            const now = Date.now();
+            if (now - wedgeLast > 80) wedgeBuf = '';
+            wedgeLast = now;
+            if (!typing) wedgeBuf += e.key;
+        });
+
+        // Escribir un código en el buscador y pulsar Enter lo añade
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            const v = searchInput.value.trim();
+            if (v && (inventory.some(i => i.code === v) || /^\d{6,}$/.test(v))) {
+                onScanSuccess(v, { force: true });
+                btnClearSearch.click();
+            }
+        });
+
+        btnActivateCamera.addEventListener('click', () => startScanner());
+        btnCameraHelp.addEventListener('click', () => modalCameraHelp.classList.remove('hidden'));
+        document.getElementById('btnCloseCameraHelp').addEventListener('click', () => modalCameraHelp.classList.add('hidden'));
+        document.getElementById('btnCameraHelpOk').addEventListener('click', () => modalCameraHelp.classList.add('hidden'));
+        btnScanPhoto.addEventListener('click', () => scanFileInput.click());
+        scanFileInput.addEventListener('change', (e) => scanFromImage(e.target.files && e.target.files[0]));
+
+        // Si el usuario vuelve a la página (p. ej. después de dar permiso en ajustes), reintenta solo
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && !isCameraActive && !isStarting) {
+                startScanner();
+            }
+        });
+
+        // Control para no sumar el mismo código decenas de veces mientras sigue frente a la cámara
+        let lastScanCode = null;
+        let lastScanSeen = 0;
+        const SCAN_GAP_MS = 900;
+
+        // Precio inventado pero estable: el mismo código siempre da el mismo precio (entre $1.000 y $25.000, en múltiplos de $100)
+        function fakePriceFromCode(code) {
+            let h = 0;
+            for (let i = 0; i < code.length; i++) {
+                h = (h * 31 + code.charCodeAt(i)) >>> 0;
+            }
+            return 1000 + (h % 241) * 100;
+        }
+
+        function onScanSuccess(decodedText, opts = {}) {
+            const code = String(decodedText == null ? '' : decodedText).trim();
+            if (!code) return;
+
+            const now = Date.now();
+            if (!opts.force && code === lastScanCode && (now - lastScanSeen) < SCAN_GAP_MS) {
+                lastScanSeen = now; // sigue a la vista: no se vuelve a sumar
+                return;
+            }
+            lastScanCode = code;
+            lastScanSeen = now;
+
+            playBeep();
+            if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
+
+            const existingIndex = inventory.findIndex(i => i.code === code);
+            flashCode = code;
+            flashIsNew = existingIndex === -1;
+            setTimeout(() => { if (flashCode === code) flashCode = null; }, 1200);
+
+            if (existingIndex !== -1) {
+                inventory[existingIndex].quantity += 1;
+                showToast(`+1 ${inventory[existingIndex].name}`);
+                // el último leído sube al inicio de la lista
+                inventory.unshift(inventory.splice(existingIndex, 1)[0]);
+            } else {
+                // Si el código coincide con un producto del catálogo se usa; si no, el nombre es el propio código leído
+                const known = knownProducts[code] || presetCatalog.find(p => p.code === code);
+                const name = known ? known.name : (code.length > 80 ? code.slice(0, 80) + '…' : code);
+                const price = known ? known.price : fakePriceFromCode(code);
+
+                inventory.unshift({ code: code, name: name, price: price, quantity: 1 });
+                showToast(`Añadido: ${name}`);
+            }
+            saveInventory();
+
+            if (currentSlideIndex !== 0) {
+                goToSlide(0);
+            }
+        }
+
+        function playBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.08);
+            } catch(e){}
+        }
+
+        if (btnSimulateScan) {
+            btnSimulateScan.addEventListener('click', () => {
+                const mockCodes = ["770200801234", "770200100567", "CAT-001", "CAT-004", "SIM-" + Math.floor(100 + Math.random() * 900)];
+                const randomCode = mockCodes[Math.floor(Math.random() * mockCodes.length)];
+                onScanSuccess(randomCode, { force: true });
+            });
+        }
+
+        // ---- Productos recordados: lo que edites se reutiliza al volver a escanear ese código ----
+        let knownProducts = {};
+        try { knownProducts = JSON.parse(localStorage.getItem('known_products_v1') || '{}'); } catch (e) { knownProducts = {}; }
+        // ---- Deshacer eliminaciones ----
+        let undoSnap = null, undoTimer = null;
+        function takeUndoSnapshot() { undoSnap = JSON.parse(JSON.stringify(inventory)); }
+        function hideUndo() { document.getElementById('undoBar').classList.add('hidden'); }
+        function showUndo(msg) {
+            document.getElementById('undoMsg').innerText = msg;
+            document.getElementById('undoBar').classList.remove('hidden');
+            clearTimeout(undoTimer);
+            undoTimer = setTimeout(() => { hideUndo(); undoSnap = null; }, 5000);
+        }
+        document.getElementById('btnUndo').addEventListener('click', () => {
+            if (!undoSnap) return;
+            inventory = undoSnap;
+            undoSnap = null;
+            clearTimeout(undoTimer);
+            hideUndo();
+            saveInventory();
+            showToast("Restaurado");
+        });
+
+        let flashCode = null;
+        let flashIsNew = false;
+
+        function editItem(code) {
+            const item = inventory.find(i => i.code === code);
+            if (!item) return;
+            const name = prompt("Nombre del producto:", item.name);
+            if (name === null) return;
+            const priceTxt = prompt("Precio (solo números):", String(item.price));
+            if (priceTxt === null) return;
+            const price = parseInt(String(priceTxt).replace(/\D/g, ''), 10);
+            item.name = name.trim() || item.name;
+            if (!isNaN(price) && price >= 0) item.price = price;
+            knownProducts[code] = { name: item.name, price: item.price };
+            try { localStorage.setItem('known_products_v1', JSON.stringify(knownProducts)); } catch (e) {}
+            saveInventory();
+            showToast("Producto guardado");
+        }
+
+        function setQty(code) {
+            const item = inventory.find(i => i.code === code);
+            if (!item) return;
+            const txt = prompt("Cantidad:", String(item.quantity));
+            if (txt === null) return;
+            const q = parseInt(txt, 10);
+            if (isNaN(q)) return;
+            if (q <= 0) {
+                takeUndoSnapshot();
+                inventory = inventory.filter(i => i.code !== code);
+                showUndo("Producto eliminado");
+            } else {
+                item.quantity = q;
+            }
+            saveInventory();
+        }
+
+        function updateQty(code, delta) {
+            const index = inventory.findIndex(i => i.code === code);
+            if (index !== -1) {
+                if (inventory[index].quantity + delta <= 0) takeUndoSnapshot();
+                inventory[index].quantity += delta;
+                if (inventory[index].quantity <= 0) {
+                    inventory.splice(index, 1);
+                    showUndo("Producto eliminado");
+                }
+                saveInventory();
+            }
+        }
+
+        function renderInventory() {
+            const totalUnits = inventory.reduce((sum, item) => sum + item.quantity, 0);
+            const totalPrice = calculateTotal();
+
+            statBarTotal.innerText = formatCOP(totalPrice);
+            const topTotalEl = document.getElementById('topTotal');
+            if (topTotalEl) {
+                if (topTotalEl.innerText !== formatCOP(totalPrice)) {
+                    topTotalEl.innerText = formatCOP(totalPrice);
+                    topTotalEl.classList.remove('total-bump'); void topTotalEl.offsetWidth; topTotalEl.classList.add('total-bump');
+                }
+            }
+            statBarItems.innerText = totalUnits + (totalUnits === 1 ? ' ítem' : ' ítems');
+            if (statBarBadge.innerText !== String(totalUnits)) {
+                statBarBadge.innerText = totalUnits;
+                statBarBadge.classList.toggle('hidden', totalUnits === 0);
+                statBarBadge.classList.toggle('flex', totalUnits > 0);
+                statBarBadge.classList.remove('badge-pop'); void statBarBadge.offsetWidth; statBarBadge.classList.add('badge-pop');
+            }
+            if (statBarTotal.dataset.last !== String(totalPrice)) {
+                statBarTotal.dataset.last = String(totalPrice);
+                statBarTotal.classList.remove('total-bump'); void statBarTotal.offsetWidth; statBarTotal.classList.add('total-bump');
+            }
+
+            updateCashRegister();
+            updateDiscountButtonsUI();
+
+            if (inventory.length === 0) {
+                scannedList.innerHTML = '';
+                scannedList.appendChild(emptyListState);
+                return;
+            }
+
+            const filteredItems = inventory.filter(item => 
+                item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                item.code.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+
+            if (filteredItems.length === 0) {
+                scannedList.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center py-6 text-slate-300">
+                        <i class="fa-solid fa-magnifying-glass text-xl mb-1 text-slate-200"></i>
+                        <p class="text-xs font-medium text-slate-400">Sin coincidencias con "${escapeHtml(searchQuery)}"</p>
+                    </div>
+                `;
+                return;
+            }
+
+            scannedList.innerHTML = filteredItems.map(item => `
+                <div class="swipe-wrap relative rounded-2xl overflow-hidden">
+                  <i class="fa-solid fa-trash-can absolute left-5 top-1/2 -translate-y-1/2 text-white text-sm pointer-events-none"></i>
+                  <i class="fa-solid fa-trash-can absolute right-5 top-1/2 -translate-y-1/2 text-white text-sm pointer-events-none"></i>
+                <div class="swipe-card rounded-2xl px-3.5 py-2 flex items-center justify-between border border-slate-100 ${item.code === flashCode ? (flashIsNew ? 'item-enter' : 'scan-flash') : ''}" data-code="${escapeHtml(item.code)}">
+                    <div class="flex-1 min-w-0 pr-3 tap-edit" onclick="editItem(${escapeHtml(JSON.stringify(item.code))})" title="Toca para editar nombre y precio">
+                        <h3 class="font-bold text-slate-900 text-[13px] truncate">${escapeHtml(item.name)}</h3>
+                        <p class="text-xs font-semibold text-slate-400">${formatCOP(item.price)}</p>
+                    </div>
+
+                    <div class="flex items-center bg-white rounded-full px-2 py-1 border border-slate-200/80 space-x-1 shadow-sm">
+                        <button onclick="updateQty(${escapeHtml(JSON.stringify(item.code))}, -1)" class="text-slate-400 hover:text-slate-900 font-bold text-xs focus:outline-none transition w-7 h-7 flex items-center justify-center">
+                            <i class="fa-solid fa-minus text-[9px]"></i>
+                        </button>
+                        <span class="text-xs font-extrabold text-slate-900 min-w-[1.25rem] text-center tap-edit ${item.code === flashCode && !flashIsNew ? 'qty-bump' : ''}" onclick="setQty(${escapeHtml(JSON.stringify(item.code))})" title="Toca para escribir la cantidad">${item.quantity}</span>
+                        <button onclick="updateQty(${escapeHtml(JSON.stringify(item.code))}, 1)" class="text-slate-400 hover:text-slate-900 font-bold text-xs focus:outline-none transition w-7 h-7 flex items-center justify-center">
+                            <i class="fa-solid fa-plus text-[9px]"></i>
+                        </button>
+                    </div>
+                </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            return (text || '').replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value.trim();
+                if (searchQuery.length > 0) {
+                    btnClearSearch.classList.remove('hidden');
+                } else {
+                    btnClearSearch.classList.add('hidden');
+                }
+                renderInventory();
+            });
+        }
+
+        if (btnClearSearch) {
+            const handleClearSearch = (e) => {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                searchInput.value = '';
+                searchQuery = '';
+                btnClearSearch.classList.add('hidden');
+                renderInventory();
+                if (document.activeElement === searchInput) {
+                    searchInput.blur();
+                }
+            };
+
+            btnClearSearch.addEventListener('click', handleClearSearch);
+            btnClearSearch.addEventListener('touchstart', handleClearSearch, { passive: false });
+        }
+
+        // --- Modal de Ajustes del Recibo ---
+        const modalSettings = document.getElementById('modalSettings');
+        const inputFooterText = document.getElementById('inputFooterText');
+        const footerCounter = document.getElementById('footerCounter');
+        const footerPreview = document.getElementById('footerPreview');
+
+        function refreshFooterPreview() {
+            const txt = inputFooterText.value.trim();
+            footerCounter.innerText = `${inputFooterText.value.length}/200`;
+            if (!presetsEditMode) renderPresets();
+            footerPreview.innerText = '*** GRACIAS POR SU COMPRA ***\n' + (txt ? txt + '\n' : '') + '\n' + SOFTWARE_CREDIT;
+        }
+        // --- Textos prefabricados (editables) ---
+        const PRESETS_KEY = 'receipt_presets_v1';
+        const DEFAULT_PRESETS = [
+            // Agradecimiento
+            'Gracias por preferirnos, vuelva pronto',
+            'Gracias por su compra',
+            'Que tenga un excelente dia',
+            // Horarios y contacto
+            'Horario: Lun-Sab 8am - 8pm',
+            'Horario: Lun-Dom 7am - 9pm',
+            'WhatsApp: 300 123 4567',
+            'Domicilios: 300 123 4567',
+            'Siguenos en Instagram @minegocio',
+            // Cambios y garantia
+            'Cambios dentro de 8 dias con este recibo',
+            'Sin recibo no hay cambios',
+            'No se aceptan devoluciones de dinero',
+            'Conserve este recibo como garantia',
+            'Garantia de 30 dias por defectos de fabrica',
+            'Producto perecedero no tiene cambio',
+            // Pagos y avisos
+            'Aceptamos Nequi y Daviplata',
+            'Pagos Nequi / Daviplata: 300 123 4567',
+            'Revise su cambio antes de retirarse',
+            'Precios con IVA incluido',
+            'Documento no valido como factura de venta',
+            'Solicite su factura electronica',
+            'Propina voluntaria no incluida'
+        ];
+        let presets = (() => {
+            try {
+                const saved = JSON.parse(localStorage.getItem(PRESETS_KEY) || 'null');
+                if (Array.isArray(saved)) return saved.map(String);
+            } catch (e) {}
+            return DEFAULT_PRESETS.slice();
+        })();
+        let presetsEditMode = false;
+        const savePresets = () => { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch (e) {} };
+
+        const presetsBox = document.getElementById('presetsBox');
+        const presetsHint = document.getElementById('presetsHint');
+        const btnEditPresets = document.getElementById('btnEditPresets');
+
+        const footerLines = () => inputFooterText.value.split(/\r?\n/).map(l => l.trim());
+
+        function togglePresetInFooter(text) {
+            const lines = inputFooterText.value.split(/\r?\n/);
+            const idx = lines.findIndex(l => l.trim() === text.trim());
+            if (idx >= 0) {
+                lines.splice(idx, 1);                       // ya estaba: se quita
+            } else {
+                lines.push(text.trim());                    // no estaba: se agrega
+            }
+            const next = lines.filter(l => l.trim() !== '').join('\n');
+            if (next.length > 200) { showToast("Máximo 200 caracteres", "error"); return; }
+            inputFooterText.value = next;
+            refreshFooterPreview();
+        }
+
+        function renderPresets() {
+            presetsBox.innerHTML = '';
+            btnEditPresets.innerText = presetsEditMode ? 'Listo' : 'Editar';
+
+            if (!presetsEditMode) {
+                presetsHint.innerText = presets.length
+                    ? 'Toca uno para agregarlo o quitarlo del recibo.'
+                    : 'No hay textos rápidos. Toca «Editar» para crear uno.';
+                const used = footerLines();
+                presets.forEach(text => {
+                    if (!text.trim()) return;
+                    const on = used.includes(text.trim());
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.textContent = (on ? '✓ ' : '+ ') + text;
+                    chip.className = 'text-left px-2.5 py-1.5 rounded-full text-[11px] font-semibold border transition ' +
+                        (on ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-400');
+                    chip.addEventListener('click', () => togglePresetInFooter(text));
+                    presetsBox.appendChild(chip);
+                });
+                return;
+            }
+
+            // Modo edición: cambiar, borrar o añadir textos
+            presetsHint.innerText = 'Cambia el texto, bórralo o añade uno nuevo. Se guarda solo.';
+            presetsBox.className = 'flex flex-col gap-1.5 max-h-56 overflow-y-auto';
+            presets.forEach((text, i) => {
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-1.5';
+                const input = document.createElement('input');
+                input.type = 'text'; input.value = text; input.maxLength = 60;
+                input.className = 'flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-[11px] text-slate-900 font-semibold focus:outline-none focus:border-slate-900';
+                input.addEventListener('input', () => { presets[i] = input.value; savePresets(); });
+                const del = document.createElement('button');
+                del.type = 'button'; del.title = 'Borrar';
+                del.className = 'w-8 h-8 shrink-0 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center text-xs transition';
+                del.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                del.addEventListener('click', () => { presets.splice(i, 1); savePresets(); renderPresets(); });
+                row.append(input, del);
+                presetsBox.appendChild(row);
+            });
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'w-full py-2 rounded-lg border border-dashed border-slate-300 text-[11px] font-bold text-slate-500 hover:text-slate-900 hover:border-slate-500 transition';
+            add.innerHTML = '<i class="fa-solid fa-plus mr-1"></i> Añadir texto';
+            add.addEventListener('click', () => {
+                presets.push(''); savePresets(); renderPresets();
+                const inputs = presetsBox.querySelectorAll('input');
+                if (inputs.length) inputs[inputs.length - 1].focus();
+            });
+            presetsBox.appendChild(add);
+
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'w-full py-2 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600 hover:bg-slate-200 transition';
+            restore.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Añadir textos sugeridos';
+            restore.addEventListener('click', () => {
+                const have = new Set(presets.map(t => t.trim()));
+                const missing = DEFAULT_PRESETS.filter(t => !have.has(t));
+                if (!missing.length) { showToast("Ya tienes todos los textos sugeridos"); return; }
+                presets.push(...missing); savePresets(); renderPresets();
+                showToast(`${missing.length} textos sugeridos añadidos`);
+            });
+            presetsBox.appendChild(restore);
+        }
+
+        function setPresetsEditMode(on) {
+            presetsEditMode = on;
+            if (!on) {
+                presets = presets.map(t => t.trim()).filter(Boolean);   // quita los vacíos al terminar
+                savePresets();
+                presetsBox.className = 'flex flex-wrap gap-1.5 max-h-40 overflow-y-auto';
+            }
+            renderPresets();
+        }
+        btnEditPresets.addEventListener('click', () => setPresetsEditMode(!presetsEditMode));
+
+        // Selector de papel (se guarda al pulsar "Guardar")
+        let pendingPaper = getPaperWidth();
+        function refreshPaperToggle() {
+            document.querySelectorAll('#paperToggle .paper-opt').forEach(b => {
+                const on = Number(b.dataset.paper) === pendingPaper;
+                b.className = 'paper-opt py-2 rounded-md text-xs font-bold transition ' +
+                    (on ? 'bg-slate-900 text-white shadow' : 'bg-transparent text-slate-500 hover:text-slate-900');
+            });
+        }
+        document.querySelectorAll('#paperToggle .paper-opt').forEach(b =>
+            b.addEventListener('click', () => { pendingPaper = Number(b.dataset.paper); refreshPaperToggle(); }));
+
+        document.getElementById('btnOpenSettings').addEventListener('click', () => {
+            pendingPaper = getPaperWidth();
+            refreshPaperToggle();
+            inputFooterText.value = getReceiptFooter();
+            if (presetsEditMode) setPresetsEditMode(false);
+            refreshFooterPreview();
+            renderPresets();
+            modalSettings.classList.remove('hidden');
+        });
+        document.getElementById('btnCloseSettings').addEventListener('click', () => { if (presetsEditMode) setPresetsEditMode(false); modalSettings.classList.add('hidden'); });
+        modalSettings.addEventListener('click', (e) => { if (e.target === modalSettings) modalSettings.classList.add('hidden'); });
+        inputFooterText.addEventListener('input', refreshFooterPreview);
+        document.getElementById('btnSaveSettings').addEventListener('click', () => {
+            if (presetsEditMode) setPresetsEditMode(false);
+            if (saveReceiptFooter(inputFooterText.value) && savePaperWidth(pendingPaper)) {
+                applyPrintPaper();
+                modalSettings.classList.add('hidden');
+                showToast("Ajustes guardados");
+            } else {
+                showToast("No se pudieron guardar los ajustes", "error");
+            }
+        });
+
+        btnAddManual.addEventListener('click', () => {
+            inputCode.value = "770" + Math.floor(100000000 + Math.random() * 900000000);
+            inputName.value = "";
+            inputPrice.value = "3500";
+            inputQty.value = "1";
+            modalManual.classList.remove('hidden');
+        });
+
+        btnCloseModal.addEventListener('click', () => {
+            modalManual.classList.add('hidden');
+        });
+
+        productForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const code = inputCode.value.trim();
+            const name = inputName.value.trim();
+            const price = parseFloat(inputPrice.value) || 0;
+            const qty = parseInt(inputQty.value) || 1;
+
+            if (code && name) {
+                const index = inventory.findIndex(i => i.code === code);
+                if (index !== -1) {
+                    inventory[index].name = name;
+                    inventory[index].price = price;
+                    inventory[index].quantity += qty;
+                } else {
+                    inventory.unshift({ code, name, price, quantity: qty });
+                }
+                saveInventory();
+                modalManual.classList.add('hidden');
+                showToast("Producto guardado");
+            }
+        });
+
+        btnClearAll.addEventListener('click', () => {
+            if (inventory.length === 0) return;
+            takeUndoSnapshot();
+            inventory = [];
+            saveInventory();
+            showUndo("Lista vaciada");
+        });
+
+        // --- Aviso de "hay más productos" cuando la lista pasa de 4 ---
+        const moreHint = document.getElementById('moreHint');
+        const moreHintText = document.getElementById('moreHintText');
+        function updateMoreHint() {
+            const hiddenPx = scannedList.scrollHeight - scannedList.clientHeight - scannedList.scrollTop;
+            if (hiddenPx > 6) {
+                const n = Math.max(1, Math.ceil((hiddenPx - 4) / 64)); // cada producto ocupa ~64px
+                moreHintText.innerText = n === 1 ? '+1 más · desliza' : `+${n} más · desliza`;
+                moreHint.classList.remove('hidden');
+            } else {
+                moreHint.classList.add('hidden');
+            }
+        }
+        scannedList.addEventListener('scroll', updateMoreHint, { passive: true });
+        new MutationObserver(() => requestAnimationFrame(updateMoreHint)).observe(scannedList, { childList: true });
+        window.addEventListener('resize', updateMoreHint);
+        document.getElementById('btnMoreHint').addEventListener('click', () => {
+            scannedList.scrollBy({ top: scannedList.clientHeight - 40, behavior: 'smooth' });
+        });
+
+        window.onload = function() {
+            loadInventory();
+            checkCustomerFields();
+            startScanner();
+        };
+    </script>
+</body>
+</html>

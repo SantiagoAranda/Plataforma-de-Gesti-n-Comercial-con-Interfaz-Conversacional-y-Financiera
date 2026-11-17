@@ -459,6 +459,20 @@ model Item {
 
   durationMinutes Int?
 
+  // F1.1 catalog attributes. Public visibility is independent of `status`;
+  // hiding the price never touches `price` (internal price stays mandatory).
+  visibleInCatalog      Boolean @default(true)
+  publishWithoutPrice   Boolean @default(false)
+  includeInQuotation    Boolean @default(false)
+  quotationDescription  String? @db.VarChar(400)
+  brand                 String? @db.VarChar(80)
+  barcode               String? @db.VarChar(64)
+  // Stable ids from items/item-categories.ts; "otra" uses the custom names.
+  categoryId            String? @db.VarChar(64)
+  subcategoryId         String? @db.VarChar(128)
+  customCategoryName    String? @db.VarChar(60)
+  customSubcategoryName String? @db.VarChar(60)
+
   inventoryMode InventoryMode @default(NONE)
 
   // Stock threshold used for low-stock alerts on SIMPLE products.
@@ -499,6 +513,8 @@ model Item {
   @@index([inventoryMode])
   @@index([businessId, status, type])
   @@index([businessId, inventoryMode])
+  // Not unique: archived (INACTIVE) items keep their code; uniqueness is decided in F1.4.
+  @@index([businessId, barcode])
 }
 
 model ItemImage {

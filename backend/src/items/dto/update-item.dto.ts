@@ -10,11 +10,13 @@ import {
   Matches,
   Min,
   Max,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { InventoryMode, ItemType, SaleConcept } from '@prisma/client';
 import { ScheduleInput } from './create-item.dto';
+import { ItemCatalogFieldsDto } from './item-catalog-fields.dto';
 
 class BadgeInput {
   @IsString()
@@ -25,7 +27,7 @@ class BadgeInput {
   color?: string;
 }
 
-export class UpdateItemDto {
+export class UpdateItemDto extends ItemCatalogFieldsDto {
   @IsOptional()
   @IsEnum(ItemType)
   type?: ItemType;
@@ -43,10 +45,13 @@ export class UpdateItemDto {
   @IsNotEmpty()
   name?: string;
 
-  @IsOptional()
+  // Internal price is mandatory: null must be rejected, not coerced to 0.
+  @ValidateIf((_, value) => value !== undefined)
   @IsNumber()
   @Min(0)
-  @Transform(({ value }) => Number(value))
+  @Transform(({ value }: { value: unknown }) =>
+    value === null || value === undefined ? value : Number(value),
+  )
   price?: number;
 
   @IsOptional()

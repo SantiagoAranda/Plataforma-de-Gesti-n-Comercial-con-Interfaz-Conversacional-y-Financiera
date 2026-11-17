@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SACTEC - Dashboard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts - Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              dark: '#0f172a',
+              bg: '#f8fafc',
+              green: '#10b981',
+              emerald: '#059669',
+              pink: '#f43f5e',
+              orange: '#f59e0b',
+              blue: '#2563eb',
+              lightBlue: '#eff6ff',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f6f8fa;
+    }
+    /* Smooth progress bar styling */
+    .custom-progress {
+      height: 6px;
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex justify-center">
+
+  <!-- Main Mobile Container -->
+  <div class="w-full max-w-md bg-[#f6f8fa] min-h-screen pb-24 relative flex flex-col shadow-xl">
+    
+    <!-- Top Header Bar -->
+    <header class="bg-[#0b1320] text-white px-5 py-3.5 flex items-center justify-between shadow-md">
+      <div>
+        <h1 class="text-base font-bold tracking-wide leading-tight">SACTEC</h1>
+        <p class="text-xs text-slate-400 font-normal">sactec.dev</p>
+      </div>
+      <button class="text-slate-300 hover:text-white text-lg p-1">
+        <i class="fa-solid fa-ellipsis-vertical"></i>
+      </button>
+    </header>
+
+    <!-- Content Area -->
+    <main class="p-4 space-y-4 flex-1">
+      
+      <!-- Title & Date Selector Header -->
+      <div class="flex items-center justify-between pt-1 pb-1">
+        <div>
+          <h2 class="text-2xl font-extrabold text-slate-900 leading-tight">Dashboard</h2>
+          <p class="text-sm text-slate-500 font-medium">Resumen del negocio</p>
+        </div>
+        <button class="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+          <i class="fa-regular fa-calendar text-slate-500"></i>
+          <span>Oct 2026</span>
+        </button>
+      </div>
+
+      <!-- Card 1: Ganancia Neta -->
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
+        <div class="flex justify-between items-start mb-1">
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">GANANCIA NETA</span>
+              <span class="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-md">Sin impuestos: $ 56.400</span>
+            </div>
+            <div class="text-3xl font-extrabold text-slate-900 mt-1">
+              $ 46.800
+            </div>
+          </div>
+          <div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500">
+            <i class="fa-solid fa-arrow-trend-up text-base"></i>
+          </div>
+        </div>
+
+        <hr class="my-4 border-slate-100" />
+
+        <!-- Distribución de flujo -->
+        <div>
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">DISTRIBUCIÓN DE FLUJO</span>
+            <span class="text-[11px] font-bold text-emerald-600">EFICIENCIA: 59%</span>
+          </div>
+
+          <!-- Segmented Progress Bar -->
+          <div class="h-2.5 w-full bg-slate-100 rounded-full flex overflow-hidden mb-3">
+            <div class="bg-emerald-500 h-full" style="width: 59%"></div>
+            <div class="bg-rose-500 h-full" style="width: 31%"></div>
+            <div class="bg-amber-500 h-full" style="width: 10%"></div>
+          </div>
+
+          <!-- Legend -->
+          <div class="flex items-center gap-4 text-xs font-semibold text-slate-600">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+              <span>Ganancia</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+              <span>Gastos</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
+              <span>Legal</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card 2: Date Navigator -->
+      <div class="bg-white rounded-2xl p-2.5 shadow-sm border border-slate-100/80">
+        <div class="bg-slate-50/80 rounded-xl px-4 py-2.5 flex items-center justify-between">
+          <button class="text-slate-400 hover:text-slate-600 px-1">
+            <i class="fa-solid fa-chevron-left text-xs"></i>
+          </button>
+          <div class="flex items-center gap-2 text-slate-700 font-semibold text-sm">
+            <i class="fa-regular fa-calendar text-slate-500"></i>
+            <span>Mié, 28 Oct</span>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600 px-1">
+            <i class="fa-solid fa-chevron-right text-xs"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Card 3: Operación Comercial -->
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80 space-y-5">
+        
+        <!-- Header -->
+        <div class="flex items-center gap-2.5 text-slate-900 font-extrabold text-base tracking-wide">
+          <i class="fa-solid fa-bag-shopping text-slate-600"></i>
+          <span>OPERACIÓN COMERCIAL</span>
+        </div>
+
+        <!-- Metric 1: Ventas Brutas -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 text-xs font-bold">
+                <i class="fa-solid fa-arrow-up-right-from-square rotate-0"></i>
+              </div>
+              <span class="text-sm font-semibold text-slate-700">Ventas Brutas</span>
+            </div>
+            <span class="text-sm font-extrabold text-slate-900">$ 80.000</span>
+          </div>
+          <div class="relative pt-1">
+            <div class="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="bg-emerald-500 h-full w-full"></div>
+            </div>
+            <div class="text-right text-[10px] font-semibold text-slate-400 mt-1">100%</div>
+          </div>
+        </div>
+
+        <!-- Metric 2: Devoluciones -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-400 text-xs font-bold">
+                <i class="fa-solid fa-arrow-down-left-and-arrow-up-right-to-corner rotate-90 scale-x-[-1]"></i>
+              </div>
+              <span class="text-sm font-semibold text-slate-700">Devoluciones</span>
+            </div>
+            <span class="text-sm font-extrabold text-slate-900">$ 0</span>
+          </div>
+          <div class="relative pt-1">
+            <div class="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="bg-rose-400 h-full w-0"></div>
+            </div>
+            <div class="text-right text-[10px] font-semibold text-slate-400 mt-1">0%</div>
+          </div>
+        </div>
+
+        <!-- Metric 3: Ventas Netas -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500 text-xs font-bold">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+              </div>
+              <span class="text-sm font-semibold text-slate-700">Ventas Netas</span>
+            </div>
+            <span class="text-sm font-extrabold text-slate-900">$ 80.000</span>
+          </div>
+          <div class="relative pt-1">
+            <div class="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="bg-emerald-500 h-full w-full"></div>
+            </div>
+            <div class="text-right text-[10px] font-semibold text-slate-400 mt-1">100%</div>
+          </div>
+        </div>
+
+        <!-- Metric 4: Costos -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-400 text-xs font-bold">
+                <i class="fa-solid fa-arrow-down-left-and-arrow-up-right-to-corner rotate-90 scale-x-[-1]"></i>
+              </div>
+              <span class="text-sm font-semibold text-slate-700">Costos</span>
+            </div>
+            <span class="text-sm font-extrabold text-slate-900">$ 0</span>
+          </div>
+          <div class="relative pt-1">
+            <div class="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="bg-rose-400 h-full w-0"></div>
+            </div>
+            <div class="text-right text-[10px] font-semibold text-slate-400 mt-1">0%</div>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="fixed bottom-3 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-sm bg-white/95 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xl p-1.5 flex items-center justify-between z-50">
+      
+      <!-- Home -->
+      <button class="flex-1 flex flex-col items-center py-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+        <i class="fa-solid fa-house text-lg mb-0.5"></i>
+        <span class="text-[10px] font-semibold">Home</span>
+      </button>
+
+      <!-- Dashboard (Active) -->
+      <button class="flex-1 flex flex-col items-center py-1.5 text-blue-600 transition-colors">
+        <i class="fa-solid fa-chart-line text-lg mb-0.5"></i>
+        <span class="text-[10px] font-bold">Dashboard</span>
+      </button>
+
+      <!-- Mi Tienda -->
+      <button class="flex-1 flex flex-col items-center py-1.5 text-slate-400 hover:text-slate-600 transition-colors">
+        <i class="fa-solid fa-store text-lg mb-0.5"></i>
+        <span class="text-[10px] font-semibold">Mi Tienda</span>
+      </button>
+
+      <!-- Action Button (Floating / Blue highlight) -->
+      <button class="bg-blue-50 border border-blue-200 text-blue-700 rounded-xl p-2.5 ml-1 shadow-sm hover:bg-blue-100 transition-colors">
+        <i class="fa-solid fa-receipt text-lg"></i>
+      </button>
+      
+    </nav>
+
+    <!-- Bottom Mobile Indicator Bar -->
+    <div class="w-full flex justify-center pb-1 pt-2 fixed bottom-0 left-0">
+      <div class="w-32 h-1 bg-blue-600 rounded-full"></div>
+    </div>
+
+  </div>
+
+</body>
+</html>

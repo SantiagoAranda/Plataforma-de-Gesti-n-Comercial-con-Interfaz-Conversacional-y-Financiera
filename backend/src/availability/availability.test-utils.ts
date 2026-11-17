@@ -70,6 +70,7 @@ export function createFakePrisma(fixture: Fixture) {
     type: fixture.itemType ?? 'SERVICE',
     status: fixture.itemStatus ?? 'ACTIVE',
     durationMinutes: fixture.durationMinutes,
+    visibleInCatalog: true, // DB default (F1.1)
   };
   const items: any[] = [item, ...(fixture.extraItems ?? [])];
   const windows = fixture.windows.map((w, i) => ({

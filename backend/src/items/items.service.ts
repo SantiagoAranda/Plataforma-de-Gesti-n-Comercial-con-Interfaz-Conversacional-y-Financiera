@@ -12,6 +12,8 @@ import { InventoryService } from '../inventory/inventory.service';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { AddItemImageDto } from './dto/add-item-image.dto';
 import { CreateItemDto } from './dto/create-item.dto';
+import { ItemCatalogFieldsDto } from './dto/item-catalog-fields.dto';
+import { optionalText, resolveCategoryFields } from './item-catalog';
 
 @Injectable()
 export class ItemsService {
@@ -35,6 +37,19 @@ export class ItemsService {
         color: b.color || '#ef4444',
       }))
       .slice(0, 2);
+  }
+
+  /** F1.1 attributes; undefined values are skipped by Prisma (partial update). */
+  private catalogData(dto: ItemCatalogFieldsDto) {
+    return {
+      visibleInCatalog: dto.visibleInCatalog,
+      publishWithoutPrice: dto.publishWithoutPrice,
+      includeInQuotation: dto.includeInQuotation,
+      quotationDescription: optionalText(dto.quotationDescription),
+      brand: optionalText(dto.brand),
+      barcode: optionalText(dto.barcode),
+      ...resolveCategoryFields(dto),
+    };
   }
 
   private mapItemWithSchedule<
@@ -134,6 +149,7 @@ export class ItemsService {
             badgeColor: firstBadge?.color ?? legacyBadgeColor,
             badges: finalBadges.length ? finalBadges : null,
             durationMinutes: dto.durationMinutes,
+            ...this.catalogData(dto),
           },
         });
 
@@ -235,10 +251,16 @@ export class ItemsService {
   ) {
     const itemStatus =
       status === 'INACTIVE' ? ItemStatus.INACTIVE : ItemStatus.ACTIVE;
+    const where: Prisma.ItemWhereInput = {
+      businessId,
+      status: itemStatus,
+      // Hidden items stay available to management and sales, never to the store.
+      ...(context === 'public-store' ? { visibleInCatalog: true } : {}),
+    };
 
     if (lightweight) {
       const items = await this.prisma.item.findMany({
-        where: { businessId, status: itemStatus },
+        where,
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
@@ -255,6 +277,16 @@ export class ItemsService {
           badgeText: true,
           badgeColor: true,
           badges: true,
+          visibleInCatalog: true,
+          publishWithoutPrice: true,
+          includeInQuotation: true,
+          quotationDescription: true,
+          brand: true,
+          barcode: true,
+          categoryId: true,
+          subcategoryId: true,
+          customCategoryName: true,
+          customSubcategoryName: true,
           createdAt: true,
           updatedAt: true,
           _count: {
@@ -279,10 +311,7 @@ export class ItemsService {
     }
 
     const items = await this.prisma.item.findMany({
-      where: {
-        businessId,
-        status: itemStatus,
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         images: {
@@ -391,6 +420,8 @@ export class ItemsService {
     if (!existing) throw new NotFoundException('Item not found');
 
     const nextType = dto.type ?? existing.type;
+    // Validate before opening the transaction.
+    const catalogData = this.catalogData(dto);
 
     const nextInventoryMode = this.resolveInventoryMode(
       nextType,
@@ -492,6 +523,7 @@ export class ItemsService {
             dto.durationMinutes === undefined && dto.type === undefined
               ? undefined
               : nextDuration,
+          ...catalogData,
         },
       });
 
