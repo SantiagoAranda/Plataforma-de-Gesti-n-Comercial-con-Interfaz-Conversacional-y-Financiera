@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 import CommercialDocumentViewer from "./CommercialDocumentViewer";
 import type { CommercialDocumentData, DocumentKind } from "./types";
@@ -11,10 +11,12 @@ export default function DocumentModal({
   kind,
   data,
   onClose,
+  footer,
 }: {
   kind: DocumentKind;
   data: CommercialDocumentData;
   onClose: () => void;
+  footer?: ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -40,6 +42,7 @@ export default function DocumentModal({
           </button>
         </div>
         <CommercialDocumentViewer kind={kind} data={data} />
+        {footer}
       </div>
     </div>
   );

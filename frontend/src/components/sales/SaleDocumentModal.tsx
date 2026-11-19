@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import DocumentModal from "@/src/components/commercial-documents/DocumentModal";
 import type { DocumentKind } from "@/src/components/commercial-documents/types";
+import SignedDeliveryPanel from "./SignedDeliveryPanel";
 import type { BusinessLogoProfile } from "@/src/lib/businessLogo";
 import { saleToDocumentData } from "@/src/lib/sales/saleDocument";
 import type { Sale } from "@/src/types/sales";
@@ -19,5 +20,12 @@ export default function SaleDocumentModal({
   onClose: () => void;
 }) {
   const data = useMemo(() => saleToDocumentData(sale, kind, business), [sale, kind, business]);
-  return <DocumentModal kind={kind} data={data} onClose={onClose} />;
+  return (
+    <DocumentModal
+      kind={kind}
+      data={data}
+      onClose={onClose}
+      footer={kind === "delivery" ? <SignedDeliveryPanel orderId={sale.id} /> : undefined}
+    />
+  );
 }
