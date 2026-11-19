@@ -1282,6 +1282,13 @@ export class PublicService {
     };
   }
 
+  getQuotation(token: string) {
+    if (!this.quotationsService) {
+      throw new ServiceUnavailableException('Cotizaciones no disponibles');
+    }
+    return this.quotationsService.findByPublicToken(token);
+  }
+
   /* =====================================================
      CREATE QUOTATION (solicitud desde la tienda)
   ===================================================== */

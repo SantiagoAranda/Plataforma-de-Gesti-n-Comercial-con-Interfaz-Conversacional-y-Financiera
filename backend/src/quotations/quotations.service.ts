@@ -141,6 +141,20 @@ export class QuotationsService {
     return this.serialize(await this.load(this.prisma, businessId, id));
   }
 
+  /** Consulta pública por el token (UUID no adivinable): el cliente ve su cotización sin iniciar sesión. */
+  async findByPublicToken(token: string) {
+    const row = await this.prisma.quotation.findUnique({
+      where: { publicToken: token },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+        business: { select: { name: true, fiscalId: true, phoneWhatsapp: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('Cotización no encontrada');
+    const { business, ...quotation } = row;
+    return { quotation: this.serialize(quotation), business };
+  }
+
   /** Solo cotizaciones OPEN. Editar una ya enviada la devuelve a «no enviada». */
   async update(businessId: string, id: string, dto: UpdateQuotationDto) {
     const lines = dto.items

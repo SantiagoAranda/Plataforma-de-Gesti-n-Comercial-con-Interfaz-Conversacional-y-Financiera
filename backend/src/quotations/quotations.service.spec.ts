@@ -53,6 +53,17 @@ function fakePrisma(items: Row[] = []) {
     },
     quotation: {
       findUnique: async ({ where }: any) => {
+        if (where.publicToken) {
+          const byToken = quotations.find(
+            (x) => x.publicToken === where.publicToken,
+          );
+          return byToken
+            ? {
+                ...withItems(byToken),
+                business: { name: 'Tecno', fiscalId: '900', phoneWhatsapp: '300' },
+              }
+            : null;
+        }
         const k = where.businessId_requestKeyHash;
         const q = quotations.find(
           (x) =>
@@ -346,6 +357,17 @@ describe('QuotationsService', () => {
       });
       expect(loser.id).toBe(winner.id);
       expect(prisma.quotations).toHaveLength(1);
+    });
+
+    it('la consulta pública por token devuelve cotización y negocio, y 404 si no existe', async () => {
+      const { service } = make();
+      const created = await service.create(A, { items: [line()] });
+      const found = await service.findByPublicToken(created.publicToken);
+      expect(found.quotation.id).toBe(created.id);
+      expect(found.business.name).toBe('Tecno');
+      await expect(service.findByPublicToken('nope')).rejects.toThrow(
+        'Cotización no encontrada',
+      );
     });
   });
 

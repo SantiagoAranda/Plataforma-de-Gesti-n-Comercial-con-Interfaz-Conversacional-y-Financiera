@@ -56,7 +56,7 @@ export function quotationToDocumentData(q: Quotation, business: DocumentBusiness
 const money = (n: number) => `$${new Intl.NumberFormat("es-CO", { maximumFractionDigits: 0 }).format(n)}`;
 
 /** Enlace de WhatsApp con el resumen de la cotización; null si el cliente no dejó número. */
-export function quotationWhatsAppUrl(q: Quotation, businessName?: string) {
+export function quotationWhatsAppUrl(q: Quotation, businessName?: string, link?: string) {
   if (!q.customer.whatsapp) return null;
   const until = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Bogota" }).format(new Date(q.validUntil));
   const lines = [
@@ -66,6 +66,7 @@ export function quotationWhatsAppUrl(q: Quotation, businessName?: string) {
     "",
     `*Total: ${money(q.total)}*`,
     `Válida hasta el ${until}.`,
+    ...(link ? ["", `Ver y descargar: ${link}`] : []),
   ];
   return buildWhatsAppUrl(q.customer.whatsapp, lines.join("\n"));
 }

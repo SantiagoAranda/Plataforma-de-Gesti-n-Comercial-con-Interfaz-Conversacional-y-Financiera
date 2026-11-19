@@ -46,6 +46,13 @@ export class PublicController {
     return reservation;
   }
 
+  // También antes de ':slug/...' por la misma razón.
+  @Get('quotations/:token')
+  @Header('Cache-Control', 'no-store')
+  getQuotation(@Param('token') token: string) {
+    return this.publicService.getQuotation(token);
+  }
+
   // Canonical slug for server-side 308 redirects and store metadata.
   @Get(':slug/resolve')
   @Header('Cache-Control', 'no-store')

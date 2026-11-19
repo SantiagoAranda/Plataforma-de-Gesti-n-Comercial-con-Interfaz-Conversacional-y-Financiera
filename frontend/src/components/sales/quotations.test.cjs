@@ -73,6 +73,8 @@ test('el enlace de WhatsApp resume la cotización; sin número no hay enlace', (
   assert.match(text, /1 x Asesoría: consultar precio/);
   assert.match(text, /\*Total: \$138\.040\*/);
   assert.match(text, /Válida hasta el 4 de diciembre de 2026/);
+  assert.match(decodeURIComponent(quotationWhatsAppUrl(quote(), 'Tecno', 'https://app.co/cotizacion/t').split('text=')[1]), /Ver y descargar: https:\/\/app\.co\/cotizacion\/t/);
+  assert.doesNotMatch(text, /Ver y descargar/);
   assert.equal(quotationWhatsAppUrl(quote({ customer: { name: 'Ana', whatsapp: null, email: null, document: null } })), null);
 });
 

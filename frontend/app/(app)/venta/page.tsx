@@ -820,7 +820,11 @@ function VentaPageContent() {
   };
 
   const handleSendQuotation = async (quotation: Quotation) => {
-    const url = quotationWhatsAppUrl(quotation, receiptBusiness?.name);
+    const url = quotationWhatsAppUrl(
+      quotation,
+      receiptBusiness?.name,
+      `${window.location.origin}/cotizacion/${quotation.publicToken}`,
+    );
     if (!url) {
       toast.error("El cliente no dejó número de WhatsApp");
       return;
