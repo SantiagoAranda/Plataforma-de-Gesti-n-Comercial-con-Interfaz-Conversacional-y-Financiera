@@ -56,7 +56,11 @@ export class QuotationsService {
     return new Date();
   }
 
-  async create(businessId: string, dto: CreateQuotationDto) {
+  async create(
+    businessId: string,
+    dto: CreateQuotationDto,
+    origin: 'MANUAL' | 'PUBLIC_STORE' = 'MANUAL',
+  ) {
     const lines = await this.resolveLines(this.prisma, businessId, dto.items);
     const keyHash = dto.idempotencyKey
       ? createHash('sha256')
@@ -92,7 +96,7 @@ export class QuotationsService {
           data: {
             businessId,
             number: (last?.number ?? 0) + 1,
-            origin: 'MANUAL',
+            origin,
             customerName: clean(dto.customerName),
             customerWhatsapp: clean(dto.customerWhatsapp),
             customerEmail: clean(dto.customerEmail),

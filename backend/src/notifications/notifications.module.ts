@@ -16,6 +16,6 @@ import { WebPushTransport } from './web-push.transport';
   ],
   controllers: [PushNotificationsController],
   providers: [VapidProvider, WebPushTransport, PushNotificationsService],
-  exports: [PushNotificationsService],
+  exports: [PushNotificationsService, ThrottlerModule],
 })
 export class NotificationsModule {}

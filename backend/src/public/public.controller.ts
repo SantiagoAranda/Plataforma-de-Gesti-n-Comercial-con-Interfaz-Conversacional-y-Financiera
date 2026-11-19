@@ -1,4 +1,6 @@
-import { UseInterceptors } from '@nestjs/common';
+import { UseGuards, UseInterceptors } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { CreatePublicQuotationDto } from './dto/create-public-quotation.dto';
 import { ReservationConflictInterceptor } from '../reservations/reservation-conflict.interceptor';
 import {
   Controller,
@@ -95,6 +97,17 @@ export class PublicController {
   @Post(':slug/order')
   createOrder(@Param('slug') slug: string, @Body() dto: CreatePublicOrderDto) {
     return this.publicService.createOrder(slug, dto);
+  }
+
+  // Público y sin login: se limita por IP para que no llene de cotizaciones ni de notificaciones.
+  @Post(':slug/quotation')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 600_000 } })
+  createQuotation(
+    @Param('slug') slug: string,
+    @Body() dto: CreatePublicQuotationDto,
+  ) {
+    return this.publicService.createQuotation(slug, dto);
   }
 
   @Get(':slug/fiscal-settings')

@@ -6,11 +6,14 @@ import {
   ForbiddenException,
   Logger,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePublicOrderDto } from './dto/create-public-order.dto';
 import { CreatePublicReservationDto } from './dto/create-public-reservation.dto';
+import { CreatePublicQuotationDto } from './dto/create-public-quotation.dto';
+import { QuotationsService } from '../quotations/quotations.service';
 import { IngredientStatus, Prisma } from '@prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { StorageService } from '../storage/storage.service';
@@ -206,6 +209,8 @@ export class PublicService {
     } as FeatureFlagsService,
     @Optional()
     private availability: AvailabilityService = new AvailabilityService(prisma),
+    @Optional()
+    private quotationsService?: QuotationsService,
   ) {}
 
   // Single resolver for every public :slug route: current slug or a historical alias in
@@ -1274,6 +1279,64 @@ export class PublicService {
     return {
       message: 'Order created',
       orderId: order.publicToken,
+    };
+  }
+
+  /* =====================================================
+     CREATE QUOTATION (solicitud desde la tienda)
+  ===================================================== */
+
+  async createQuotation(slug: string, dto: CreatePublicQuotationDto) {
+    if (!this.quotationsService) {
+      throw new ServiceUnavailableException('Cotizaciones no disponibles');
+    }
+    const business = await this.findActiveBusiness(slug);
+
+    // Solo productos que la tienda publica: sin esto se cotizaría catálogo oculto.
+    const ids = [...new Set(dto.items.map((line) => line.itemId))];
+    const visible = await this.prisma.item.count({
+      where: {
+        id: { in: ids },
+        businessId: business.id,
+        status: 'ACTIVE',
+        visibleInCatalog: true,
+      },
+    });
+    if (visible !== ids.length) throw new BadRequestException('Invalid items');
+
+    const quotation = await this.quotationsService.create(
+      business.id,
+      {
+        idempotencyKey: dto.idempotencyKey,
+        customerName: dto.customerName,
+        customerWhatsapp: dto.customerWhatsapp,
+        customerEmail: dto.customerEmail,
+        customerDocument: dto.customerDocument,
+        note: dto.note,
+        items: dto.items.map(({ itemId, quantity }) => ({ itemId, quantity })),
+      },
+      'PUBLIC_STORE',
+    );
+
+    // El tag del push es por cotización: un reintento reemplaza el aviso en vez de duplicarlo.
+    void this.pushNotificationsService
+      ?.notifyQuotationRequested({
+        businessId: business.id,
+        quotationId: quotation.id,
+        displayNumber: quotation.displayNumber,
+        customerName: quotation.customer.name,
+      })
+      .catch((error: unknown) => {
+        this.logger.error(
+          `No se pudo notificar la cotización ${quotation.id}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+
+    return {
+      message: 'Quotation created',
+      quotationId: quotation.publicToken,
+      number: quotation.displayNumber,
     };
   }
 

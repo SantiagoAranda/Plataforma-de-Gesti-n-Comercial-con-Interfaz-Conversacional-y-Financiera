@@ -386,6 +386,8 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const checkoutAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const quotationAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const [isRequestingQuotation, setIsRequestingQuotation] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollYRef = useRef(0);
@@ -1129,6 +1131,50 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     }
   };
 
+  // Solo líneas y datos de contacto: el backend pone precios, nombres y vigencia.
+  const handleRequestQuotation = async (documentVal?: string) => {
+    if (preview) {
+      toast("Modo administrador: no se pueden solicitar cotizaciones");
+      return;
+    }
+    if (isRequestingQuotation) return;
+
+    try {
+      setIsRequestingQuotation(true);
+      const payload = {
+        customerName,
+        customerWhatsapp: `${countryCode}${phoneNumber}`,
+        customerDocument: documentVal?.trim() || undefined,
+        items: cartItems.map((item) => ({ itemId: item.id, quantity: item.quantity })),
+      };
+      const fingerprint = JSON.stringify(payload);
+      if (quotationAttemptRef.current?.fingerprint !== fingerprint) {
+        quotationAttemptRef.current = { fingerprint, key: generateCreationId() };
+      }
+
+      const res = await fetch(`${API_URL}/public/${slug}/quotation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, idempotencyKey: quotationAttemptRef.current.key }),
+      });
+      if (!res.ok) {
+        toast.error(await readApiError(res));
+        return;
+      }
+
+      const { number } = (await res.json()) as { number?: string };
+      toast.success(number ? `Cotización ${number} solicitada` : "Cotización solicitada");
+      quotationAttemptRef.current = null;
+      setCart([]);
+      setShowCartModal(false);
+    } catch (error) {
+      console.error("Quotation error:", error);
+      toast.error("Error al solicitar la cotización");
+    } finally {
+      setIsRequestingQuotation(false);
+    }
+  };
+
   return (
     <div
       ref={transitionContainerRef}
@@ -1350,6 +1396,8 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
+                onRequestQuotation={handleRequestQuotation}
+                isRequestingQuotation={isRequestingQuotation}
                 onClose={() => setShowCartModal(false)}
                 payableTotal={
                   hasFiscalConfiguration && publicTaxPreviewStatus === "ready"
