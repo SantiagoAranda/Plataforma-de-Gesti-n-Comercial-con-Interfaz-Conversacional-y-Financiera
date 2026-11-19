@@ -27,7 +27,7 @@ require.extensions['.tsx']=require.extensions['.ts']=(module,filename)=>module._
 const {getSaleBadge}=require('../../lib/sales/salePresentation.ts');
 const {menuPosition}=require('./CardActionsMenu.tsx');
 const SaleCard=require('./SaleCard.tsx').default;
-const {saleToDocumentData,canShowSaleDocument}=require('../../lib/sales/saleDocument.ts');
+const {saleToDocumentData,saleDocumentKinds}=require('../../lib/sales/saleDocument.ts');
 const h=React.createElement;
 afterEach(cleanup);
 const order={id:'abcdef123456',sourceType:'ORDER',status:'PENDIENTE',type:'PRODUCTO',customerName:'Ana',customerWhatsapp:'3001112233',items:[{name:'Mouse',qty:2,unitPrice:50000,price:100000},{name:'Funda',qty:1,unitPrice:0,price:20000,options:[{optionName:'Azul',groupTitle:'Color',priceDelta:0}]}],total:142800,createdAt:'2026-11-12T15:00:00Z',origin:'MANUAL',fiscalSummary:{subtotal:120000,iva:22800,impoconsumo:0},fiscalContext:{buyerDocumentType:'CC',buyerDocumentNumber:'1020',buyerEmail:'ana@x.co',buyerIsRegimenSimple:false}};
@@ -45,25 +45,51 @@ test('saleToDocumentData arma número, cliente, líneas e IVA reales de la venta
   assert.equal(e.customer.name,'Consumidor final');assert.equal(e.business.name,'Mi Negocio');assert.equal(e.business.nit,undefined);
 });
 
-test('canShowSaleDocument: no hay documentos de ventas canceladas; la orden de entrega solo para productos',()=>{
-  assert.equal(canShowSaleDocument(order,'quotation'),true);assert.equal(canShowSaleDocument(order,'delivery'),true);
-  assert.equal(canShowSaleDocument({...order,type:'SERVICIO'},'quotation'),true);assert.equal(canShowSaleDocument({...order,type:'SERVICIO'},'delivery'),false);
-  assert.equal(canShowSaleDocument({...order,status:'CANCELADO'},'quotation'),false);assert.equal(canShowSaleDocument({...order,items:[]},'quotation'),false);
+test('saleDocumentKinds: documentos según el estado de la venta (prototipo del menú)',()=>{
+  // Pendiente: solo Cotización (productos y servicios)
+  assert.deepEqual(saleDocumentKinds(order),['quotation']);
+  assert.deepEqual(saleDocumentKinds({...order,type:'SERVICIO'}),['quotation']);
+  assert.deepEqual(saleDocumentKinds({...order,status:'PENDIENTE DE CIERRE'}),['quotation']);
+  // Cerrada sin factura: ninguno (solo factura electrónica y comprobante)
+  assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'}),[]);
+  // Facturada o validada: documentos relacionados; la orden de entrega solo para productos
+  for (const st of ['PENDING','PROCESSING','SUBMITTED_PENDING_DIAN','VALIDATED']) {
+    assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'},st),['delivery','quotation'],st);
+    assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO',type:'SERVICIO'},st),['quotation'],st);
+  }
+  // Factura rechazada, con error o acreditada, cancelada o sin líneas: ninguno
+  for (const st of ['REJECTED','RETRYABLE_FAILURE','LOCAL_PERSISTENCE_FAILURE','CREDITED']) assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'},st),[],st);
+  assert.deepEqual(saleDocumentKinds({...order,status:'CANCELADO'}),[]);
+  assert.deepEqual(saleDocumentKinds({...order,items:[]}),[]);
 });
 
-test('el menú de la tarjeta ofrece los documentos y abre el elegido',()=>{
+test('venta pendiente: el menú ofrece la cotización y el botón principal es «Ver cotización»',()=>{
   const called=[];
   render(h(SaleCard,{sale:order,onViewDocument:(s,k)=>called.push([s.id,k])}));
+  assert.ok(screen.getByRole('button',{name:'Ver cotización'}));assert.equal(screen.queryByRole('button',{name:'Ver factura'}),null);
   fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
-  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Ver detalles','Cotización','Orden de entrega']);
-  fireEvent.click(screen.getByRole('button',{name:'Orden de entrega'}));
-  assert.deepEqual(called,[['abcdef123456','delivery']]);assert.equal(screen.queryByRole('dialog'),null);
+  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Ver detalles','Cotización']);
+  fireEvent.click(screen.getByRole('button',{name:'Cotización'}));
+  assert.deepEqual(called,[['abcdef123456','quotation']]);assert.equal(screen.queryByRole('dialog'),null);
+  fireEvent.click(screen.getByRole('button',{name:'Ver cotización'}));
+  assert.deepEqual(called[1],['abcdef123456','quotation']);
 });
 
-test('sin onViewDocument o con venta cancelada el menú no cambia',()=>{
+test('venta cerrada sin factura: «Ver comprobante» y «Comprobante de pago», sin documentos comerciales',()=>{
+  const receipts=[];
+  render(h(SaleCard,{sale:{...order,status:'CERRADO'},onReceipt:s=>receipts.push(s.id),onViewDocument:()=>assert.fail('no debe ofrecer documentos')}));
+  assert.ok(screen.getByRole('button',{name:'Ver comprobante'}));
+  fireEvent.click(screen.getByRole('button',{name:'Ver comprobante'}));
+  fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
+  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Ver detalles','Comprobante de pago']);
+  fireEvent.click(screen.getByRole('button',{name:'Comprobante de pago'}));
+  assert.deepEqual(receipts,['abcdef123456','abcdef123456']);
+});
+
+test('sin onViewDocument o con venta cancelada el menú y el botón no cambian',()=>{
   render(h(SaleCard,{sale:order}));
-  assert.equal(screen.queryByRole('button',{name:'Cotización'}),null);
+  assert.equal(screen.queryByRole('button',{name:'Cotización'}),null);assert.ok(screen.getByRole('button',{name:'Ver factura'}));
   cleanup();
   render(h(SaleCard,{sale:{...order,status:'CANCELADO'},onViewDocument:()=>assert.fail('no debe llamarse')}));
-  assert.equal(screen.queryByRole('dialog'),null);assert.ok(screen.getByRole('button',{name:'Ver detalles'}));
+  assert.equal(screen.queryByRole('dialog'),null);assert.ok(screen.getByRole('button',{name:'Ver detalles'}));assert.ok(screen.getByRole('button',{name:'Ver factura'}));
 });

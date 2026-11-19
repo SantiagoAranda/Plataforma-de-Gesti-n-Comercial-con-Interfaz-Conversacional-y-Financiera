@@ -215,6 +215,16 @@ enum OrderStatus {
   COMPLETED
 }
 
+// Cotización: documento comercial sin efectos en inventario, contabilidad, impuestos fiscales ni Factus.
+// OPEN = vigente (puede estar vencida según validUntil, se calcula al leer). CONVERTED lo fija la conversión a venta.
+enum QuotationStatus {
+  OPEN
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  CONVERTED
+}
+
 enum ReservationStatus {
   PENDING
   CONFIRMED
@@ -337,6 +347,7 @@ model Business {
 
   items        Item[]
   orders       Order[]
+  quotations   Quotation[]
   reservations Reservation[]
   pushSubscriptions PushSubscription[]
 
@@ -496,6 +507,7 @@ model Item {
   scheduleBlocks     ServiceScheduleBlock[]
   reservations       Reservation[]
   orderItems         OrderItem[]
+  quotationItems     QuotationItem[]
   recipes            Recipe[]
   serviceIngredients ServiceIngredient[]     @relation("ServiceIngredients")
   inventoryMovements InventoryMovement[]
@@ -2462,4 +2474,70 @@ model SimpleTaxAnnualReturn {
 
   @@unique([businessId, taxYear])
   @@index([businessId, status])
+}
+
+model Quotation {
+  id          String @id @default(uuid())
+  publicToken String @unique @default(uuid())
+
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  // Consecutivo por negocio (COT-0001). Se asigna dentro de la transacción de creación.
+  number Int
+  status QuotationStatus @default(OPEN)
+  origin SaleOrigin      @default(MANUAL)
+
+  customerName     String?
+  customerWhatsapp String?
+  customerEmail    String?
+  customerDocument String?
+  note             String? @db.VarChar(1000)
+
+  validityDays Int      @default(15)
+  validUntil   DateTime
+
+  sentAt      DateTime?
+  acceptedAt  DateTime?
+  rejectedAt  DateTime?
+  cancelledAt DateTime?
+  convertedAt DateTime?
+
+  // Estimado congelado al guardar; las líneas sin precio no suman.
+  subtotal Decimal @default(0) @db.Decimal(14, 2)
+  taxTotal Decimal @default(0) @db.Decimal(14, 2)
+  total    Decimal @default(0) @db.Decimal(14, 2)
+  currency String  @default("COP") @db.VarChar(3)
+
+  // Idempotencia: sha256(businessId:clave) y huella del contenido. Nunca se exponen.
+  requestKeyHash     String?
+  requestFingerprint String?
+
+  items QuotationItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([businessId, number])
+  @@unique([businessId, requestKeyHash])
+  @@index([businessId, status])
+  @@index([businessId, createdAt])
+}
+
+model QuotationItem {
+  id          String    @id @default(uuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  itemId String?
+  item   Item?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  position    Int
+  name        String
+  description String? @db.VarChar(400)
+  quantity    Int
+  // null = "Consultar precio" (Item.publishWithoutPrice): no suma al total.
+  unitPrice Decimal? @db.Decimal(14, 2)
+
+  @@index([quotationId])
 }

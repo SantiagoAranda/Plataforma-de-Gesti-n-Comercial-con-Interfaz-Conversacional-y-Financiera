@@ -3,7 +3,7 @@
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export type FilterStatus = "ALL" | "PENDING" | "CLOSED" | "CANCELLED" | "CONFIRMED" | "COMPLETED" | "NO_SHOW";
+export type FilterStatus = "ALL" | "PENDING" | "CLOSED" | "CANCELLED" | "CONFIRMED" | "COMPLETED" | "NO_SHOW" | "QUOTATIONS";
 
 type Props = {
   open: boolean;

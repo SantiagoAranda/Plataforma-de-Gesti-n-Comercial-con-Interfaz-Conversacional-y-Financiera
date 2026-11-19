@@ -26,12 +26,17 @@ import SalesFilterModal, { type FilterStatus } from "@/src/components/sales/Sale
 import SaleDetailsModal from "@/src/components/sales/SaleDetailsModal";
 const SaleReceiptModal = dynamic(() => import("@/src/components/sales/SaleReceiptModal"), { ssr: false });
 const SaleDocumentModal = dynamic(() => import("@/src/components/sales/SaleDocumentModal"), { ssr: false });
+const QuotationDocumentModal = dynamic(() => import("@/src/components/sales/QuotationDocumentModal"), { ssr: false });
 import FiscalDocumentDetailModal from "@/src/components/sales/FiscalDocumentDetailModal";
 import ElectronicInvoiceConfirmModal from "@/src/components/sales/ElectronicInvoiceConfirmModal";
 import { canSubmitInvoiceStep, cancelInvoiceConfirmation, continueInvoiceConfirmation, firstInvoiceConfirmationStep } from "@/src/lib/sales/manualInvoiceUi";
 
 import { SelectionActionBar } from "@/src/components/shared/selection/SelectionActionBar";
 import { buildWhatsAppUrl, formatSaleMessage } from "@/src/lib/whatsapp";
+import QuotationList from "@/src/components/sales/QuotationList";
+import { listQuotations, transitionQuotation } from "@/src/services/quotations";
+import { quotationView, quotationWhatsAppUrl } from "@/src/lib/quotations/quotationPresentation";
+import type { Quotation, QuotationAction } from "@/src/types/quotations";
 import { completeReservation, markReservationNoShow, confirmSale, cancelSale, listSales, getSale, deleteSale, updateSale, createSale, reverseSale, updateOrderItemOptionalIngredients, type ApiOrder } from "@/src/services/sales";
 import { canCancelReservation, reservationCancelPrompt, reservationLink } from "@/src/lib/sales/reservationCancelUi";
 import { saveManualService, type ManualServiceAttempt } from "@/src/lib/sales/retrospectiveSale";
@@ -330,6 +335,8 @@ function VentaPageContent() {
   const [detailsSale, setDetailsSale] = useState<Sale | null>(null);
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null);
   const [documentView, setDocumentView] = useState<{ sale: Sale; kind: "quotation" | "delivery" } | null>(null);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [quotationDoc, setQuotationDoc] = useState<Quotation | null>(null);
   const [receiptFiscalDocument, setReceiptFiscalDocument] = useState<FiscalDocument | null>(null);
   const [fiscalDocuments, setFiscalDocuments] = useState<FiscalDocument[]>([]);
   const [fiscalDocumentsStatus, setFiscalDocumentsStatus] = useState<"loading" | "loaded" | "error">("loading");
@@ -584,6 +591,13 @@ function VentaPageContent() {
   // Alias para compatibilidad con el DayPickerCalendar (marcado de fechas)
   const salesForSelectedDate = salesForPeriod;
 
+  const filterCounts = useMemo(() => ({
+    pending: salesForSelectedDate.filter((s) => s.status === "PENDIENTE" || s.status === "PENDIENTE DE CIERRE").length,
+    closed: salesForSelectedDate.filter(isRealizedSale).length,
+    cancelled: salesForSelectedDate.filter((s) => s.status === "CANCELADO" && !isNoShow(s)).length,
+    quotations: quotations.filter((q) => quotationView(q) === "OPEN").length,
+  }), [salesForSelectedDate, quotations]);
+
   const filtered = useMemo(() => {
     let result = salesForSelectedDate;
 
@@ -773,6 +787,51 @@ function VentaPageContent() {
   }, [sales.length, pendingSmoothScroll, scrollToBottom]);
 
   const businessName = typeof window !== "undefined" ? localStorage.getItem("businessName") || "Mi Negocio" : "Mi Negocio";
+
+  // Las cotizaciones no cuentan como ventas: viven aparte y se muestran con el chip «Cotizaciones».
+  const refreshQuotations = useCallback(async () => {
+    try {
+      const rows = await listQuotations();
+      setQuotations(Array.isArray(rows) ? rows : []);
+    } catch {
+      toast.error("No se pudieron cargar las cotizaciones");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshQuotations();
+  }, [refreshQuotations]);
+
+  const applyQuotation = (updated: Quotation) =>
+    setQuotations((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+
+  const handleQuotationAction = async (quotation: Quotation, action: Exclude<QuotationAction, "send">) => {
+    const prompt: Record<string, string> = {
+      reject: "¿Marcar la cotización como rechazada? Ya no podrá aceptarse.",
+      cancel: "¿Cancelar la cotización? Esta acción no se puede deshacer.",
+    };
+    if (prompt[action] && !window.confirm(prompt[action])) return;
+    try {
+      applyQuotation(await transitionQuotation(quotation.id, action));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo actualizar la cotización");
+      void refreshQuotations();
+    }
+  };
+
+  const handleSendQuotation = async (quotation: Quotation) => {
+    const url = quotationWhatsAppUrl(quotation, receiptBusiness?.name);
+    if (!url) {
+      toast.error("El cliente no dejó número de WhatsApp");
+      return;
+    }
+    window.open(url, "_blank");
+    try {
+      applyQuotation(await transitionQuotation(quotation.id, "send"));
+    } catch {
+      void refreshQuotations();
+    }
+  };
 
   const handleSendWhatsApp = (sale: Sale) => {
     if (!sale.customerWhatsapp) {
@@ -1522,7 +1581,26 @@ function VentaPageContent() {
             </section>
           )}
 
-          {!loading && !error && filtered.length === 0 && (
+          {!loading && !error && filterStatus === "QUOTATIONS" && (
+            quotations.length === 0 ? (
+              <div className="mx-auto w-full max-w-md px-3 py-4 sm:max-w-3xl sm:px-4">
+                <EmptyStateCard
+                  icon={ShoppingBag}
+                  title="Aún no hay cotizaciones"
+                  description="Aquí aparecerán las cotizaciones que tus clientes soliciten desde la tienda."
+                />
+              </div>
+            ) : (
+              <QuotationList
+                quotations={quotations}
+                onView={setQuotationDoc}
+                onSend={handleSendQuotation}
+                onAction={handleQuotationAction}
+              />
+            )
+          )}
+
+          {!loading && !error && filterStatus !== "QUOTATIONS" && filtered.length === 0 && (
             <div className="mx-auto w-full max-w-md px-3 py-4 sm:max-w-3xl sm:px-4">
               <EmptyStateCard
                 icon={ShoppingBag}
@@ -1539,7 +1617,7 @@ function VentaPageContent() {
             </div>
           )}
 
-          {!loading && !error && filtered.length > 0 && (
+          {!loading && !error && filterStatus !== "QUOTATIONS" && filtered.length > 0 && (
             <SalesList
               sales={filtered}
               onComplete={handleOpenCompletion}
@@ -1628,6 +1706,10 @@ function VentaPageContent() {
         <SaleDocumentModal sale={documentView.sale} kind={documentView.kind} business={receiptBusiness} onClose={() => setDocumentView(null)} />
       )}
 
+      {quotationDoc && (
+        <QuotationDocumentModal quotation={quotationDoc} business={receiptBusiness} onClose={() => setQuotationDoc(null)} />
+      )}
+
       <FiscalDocumentDetailModal document={fiscalDetail} onClose={() => setFiscalDetail(null)} />
       <ElectronicInvoiceConfirmModal
         sale={manualInvoiceSale}
@@ -1655,6 +1737,7 @@ function VentaPageContent() {
           onSearchChange={setQ}
           filterStatus={filterStatus}
           onFilterStatusChange={setFilterStatus}
+          filterCounts={filterCounts}
           onSave={salesBlockedBySimpleRegime ? async () => undefined : handleCreateSale}
           taxSettingsEnabled={taxSettingsEnabled}
           electronicInvoicingEnabled={electronicInvoicingEnabled}

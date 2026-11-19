@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2, FileText, Truck } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2, FileText, Truck, ReceiptText } from "lucide-react";
 import type { DocumentKind } from "@/src/components/commercial-documents/types";
-import { canShowSaleDocument, DOCUMENT_LABEL } from "@/src/lib/sales/saleDocument";
+import { saleDocumentKinds, DOCUMENT_LABEL } from "@/src/lib/sales/saleDocument";
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
@@ -198,12 +198,24 @@ export default function SaleCard({
     </>;
   };
 
-  const documentActions = (close: () => void) => onViewDocument ? (["quotation", "delivery"] as const).filter((kind) => canShowSaleDocument(sale, kind)).map((kind) => (
-    <button key={kind} type="button" className={cardMenuActionClass} onClick={() => { close(); onViewDocument(sale, kind); }}>
-      {kind === "quotation" ? <FileText size={16} /> : <Truck size={16} />}{DOCUMENT_LABEL[kind]}
-    </button>
-  )) : null;
-  const hasDocuments = Boolean(onViewDocument) && (canShowSaleDocument(sale, "quotation") || canShowSaleDocument(sale, "delivery"));
+  const documentKinds = saleDocumentKinds(sale, fiscalDocument?.status);
+  // Cerrada sin factura: el prototipo ofrece solo la factura electrónica y el comprobante de pago.
+  const showReceipt = !fiscalDocument && sale.status === "CERRADO" && Boolean(onReceipt);
+  const documentActions = (close: () => void) => <>
+    {showReceipt && <button type="button" className={cardMenuActionClass} onClick={() => { close(); onReceipt?.(sale); }}><ReceiptText size={16} />Comprobante de pago</button>}
+    {onViewDocument && documentKinds.map((kind) => (
+      <button key={kind} type="button" className={cardMenuActionClass} onClick={() => { close(); onViewDocument(sale, kind); }}>
+        {kind === "quotation" ? <FileText size={16} /> : <Truck size={16} />}{DOCUMENT_LABEL[kind]}
+      </button>
+    ))}
+  </>;
+  const hasDocuments = showReceipt || (Boolean(onViewDocument) && documentKinds.length > 0);
+  // Botón principal según el estado (prototipo del menú de Ventas).
+  const primary = !fiscalDocument && onViewDocument && documentKinds.includes("quotation") && sale.status !== "CONFIRMADO" && sale.status !== "FINALIZADA"
+    ? { label: "Ver cotización", run: () => onViewDocument(sale, "quotation") }
+    : !fiscalDocument && sale.status === "CERRADO"
+      ? { label: "Ver comprobante", run: undefined }
+      : { label: "Ver factura", run: undefined };
 
   return (
     <div
@@ -373,6 +385,7 @@ export default function SaleCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (primary.run) return primary.run();
               if (onReceipt) return onReceipt(sale);
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
@@ -380,7 +393,7 @@ export default function SaleCard({
             className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-[#0B3F64] py-2.5 rounded-full font-bold text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-wider shadow-sm"
           >
             <ExternalLink className="h-3.5 w-3.5 text-[#0B3F64]" />
-            Ver factura
+            {primary.label}
           </button>
         </div>
 
