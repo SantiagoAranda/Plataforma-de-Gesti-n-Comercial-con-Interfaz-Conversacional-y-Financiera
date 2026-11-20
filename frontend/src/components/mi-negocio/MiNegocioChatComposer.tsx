@@ -112,7 +112,7 @@ export function MiNegocioChatComposer({
             rightIconVariant={isOpen ? "send" : "search"}
             inputKind={isOpen ? "textarea" : "input"}
             textareaRef={textareaRef}
-            textareaProps={{ rows: 1, maxLength: Math.max(300, description.length) }}
+            textareaProps={{ rows: 1, maxLength: Math.max(300, description.length), "aria-label": "Descripción general" }}
             plusAriaLabel={isOpen ? "Cancelar" : "Nuevo item"}
             submitAriaLabel={label}
             className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"

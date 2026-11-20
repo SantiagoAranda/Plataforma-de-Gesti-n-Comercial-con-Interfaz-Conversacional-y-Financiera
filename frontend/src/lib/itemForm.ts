@@ -13,9 +13,10 @@ export function catalogDraft(item: ItemCatalogAttributes = {}): ItemCatalogAttri
     customSubcategoryName: item.customSubcategoryName ?? null,
   };
 }
+export const isValidBarcode = (barcode?: string | null) => /^[\x21-\x7E]{0,64}$/.test(barcode?.trim() ?? "");
 export function validateCatalog(draft: ItemCatalogAttributes): string | null {
   if ((draft.brand?.trim().length ?? 0) > 80) return "La marca admite hasta 80 caracteres.";
-  if (!/^[\x21-\x7E]{0,64}$/.test(draft.barcode?.trim() ?? "")) return "El código admite hasta 64 caracteres visibles, sin espacios.";
+  if (!isValidBarcode(draft.barcode)) return "El código admite hasta 64 caracteres visibles, sin espacios.";
   if ((draft.quotationDescription?.trim().length ?? 0) > 400) return "La descripción de cotización admite hasta 400 caracteres.";
   if ([draft.customCategoryName, draft.customSubcategoryName].some(value => (value?.trim().length ?? 0) > 60)) return "Los nombres personalizados admiten hasta 60 caracteres.";
   if (draft.categoryId === OTHER_CATEGORY_ID) {

@@ -31,7 +31,7 @@ export default function ItemFormModal({ open, onClose, onSaved, editingItem }: {
     </button>}>
     {form.isLoadingDetail ? <p role="status">Cargando detalle...</p> : <fieldset disabled={form.isSubmitting}><ItemFormContent {...form.contentProps} /></fieldset>}
     <label className="text-sm">Descripción
-      <textarea disabled={form.isSubmitting || form.isLoadingDetail} value={form.description} onChange={(e) => form.setDescription(e.target.value)} maxLength={Math.max(300, form.description.length)}
+      <textarea aria-label="Descripción general" disabled={form.isSubmitting || form.isLoadingDetail} value={form.description} onChange={(e) => form.setDescription(e.target.value)} maxLength={Math.max(300, form.description.length)}
         className="mt-2 w-full rounded-xl border border-neutral-200 p-3" />
     </label>
   </ItemPanelLayout>;

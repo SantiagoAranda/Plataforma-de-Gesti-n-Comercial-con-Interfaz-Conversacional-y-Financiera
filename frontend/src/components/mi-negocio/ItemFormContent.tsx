@@ -335,30 +335,26 @@ export function ItemFormContent(props: ItemFormContentProps) {
   return (
     <div className="space-y-6">
       {/* HEADER DEL MODAL */}
-      <div className="flex flex-col gap-0.5 mb-2 px-1">
-        <h2 className="font-medium text-slate-900 text-lg">
+      <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        <h2 className="min-w-0 text-lg font-semibold leading-tight text-slate-900 sm:text-xl">
           {editingItem
             ? (type === "PRODUCT" ? "Editar Producto" : "Editar Servicio")
             : (type === "PRODUCT" ? "Nuevo Producto" : "Nuevo Servicio")}
         </h2>
-        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">
-          CATÁLOGO DE MI NEGOCIO
-        </span>
-      </div>
-
-      <div role="tablist" aria-label="Secciones del ítem" className="flex rounded-full bg-slate-100 p-1">
-        {([["data", "Datos"], ["tax", "IVA"], ["qr", "Código QR"]] as const).map(([id, label]) =>
-          <button type="button" role="tab" id={"item-tab-" + id} aria-controls={"item-panel-" + id} aria-selected={tab === id} key={id}
-            onClick={() => setTab(id)}
-            onKeyDown={e => {
-              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-              e.preventDefault();
-              const ids = ["data", "tax", "qr"] as const;
-              const next = ids[(ids.indexOf(id) + (e.key === "ArrowRight" ? 1 : 2)) % 3];
-              setTab(next); document.getElementById("item-tab-" + next)?.focus();
-            }}
-            tabIndex={tab === id ? 0 : -1}
-            className={`flex-1 rounded-full px-3 py-2 text-sm font-medium ${tab === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>{label}</button>)}
+        <div role="tablist" aria-label="Secciones del ítem" className="flex shrink-0 rounded-full bg-slate-100 p-1">
+          {([["tax", "IVA"], ["data", "Datos"], ["qr", "Código/QR"]] as const).map(([id, label]) =>
+            <button type="button" role="tab" id={"item-tab-" + id} aria-controls={"item-panel-" + id} aria-selected={tab === id} key={id}
+              onClick={() => setTab(id)}
+              onKeyDown={e => {
+                if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                e.preventDefault();
+                const ids = ["tax", "data", "qr"] as const;
+                const next = ids[(ids.indexOf(id) + (e.key === "ArrowRight" ? 1 : 2)) % 3];
+                setTab(next); document.getElementById("item-tab-" + next)?.focus();
+              }}
+              tabIndex={tab === id ? 0 : -1}
+              className={`whitespace-nowrap rounded-full px-2.5 py-1.5 text-[11px] font-semibold transition-colors sm:px-3 sm:text-xs ${tab === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{label}</button>)}
+        </div>
       </div>
       <div id="item-panel-tax" role="tabpanel" aria-labelledby="item-tab-tax" hidden={tab !== "tax"}>
       {taxSettingsEnabled && (
@@ -462,7 +458,6 @@ export function ItemFormContent(props: ItemFormContentProps) {
       <div id="item-panel-qr" role="tabpanel" aria-labelledby="item-tab-qr" hidden={tab !== "qr"}
         className="rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-600">
         La generación de códigos QR y el escáner estarán disponibles en una etapa posterior.
-        Puedes ingresar el código de barras manualmente en Datos.
       </div>
       <div id="item-panel-data" role="tabpanel" aria-labelledby="item-tab-data" hidden={tab !== "data"}>
       <div className="space-y-6">
@@ -534,11 +529,11 @@ export function ItemFormContent(props: ItemFormContentProps) {
       {/* PRECIO + DURACION */}
       <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="space-y-2">
-          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio interno</label>
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio</label>
           <div className={`flex items-center rounded-2xl border px-4 h-[48px] shadow-sm transition ${formErrors.price ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white"}`}>
             <span className="text-neutral-400 text-sm mr-2">$</span>
             <input
-              aria-label="Precio interno" type="text" inputMode="decimal" placeholder="0,00" value={priceDisplay}
+              aria-label="Precio" type="text" inputMode="decimal" placeholder="0,00" value={priceDisplay}
               onChange={(e) => {
                 const f = formatPriceInput(e.target.value);
                 setPriceDisplay(f); setPrice(parsePriceInput(f)); setFormErrors(p => ({ ...p, price: undefined }));

@@ -2052,15 +2052,15 @@
     "semantic_hash": "97497543ca6430a67365729508fb0254"
   },
   "frontend/src/components/mi-negocio/ItemFormContent.tsx": {
-    "mtime": 1795183329.341302,
-    "seen": 1795184266.7098763,
-    "ast_hash": "074b8dd8f983e634e6a790593f2a7098",
+    "mtime": 1795196297.389274,
+    "seen": 1795196808.2198162,
+    "ast_hash": "2fe2789515838da0a594f2e04d588a2b",
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemFormModal.tsx": {
-    "mtime": 1795183329.3418233,
-    "seen": 1795184266.7098763,
-    "ast_hash": "1d45125283dc8a949bde43e3dcf2e2ef",
+    "mtime": 1795196279.3070226,
+    "seen": 1795196808.2198162,
+    "ast_hash": "09d1d79a64e2be525066d16669bf3ce0",
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemPanelLayout.tsx": {
@@ -2070,9 +2070,9 @@
     "semantic_hash": "fc3c1a67bf31fc11a5a60b6e3531cfbb"
   },
   "frontend/src/components/mi-negocio/MiNegocioChatComposer.tsx": {
-    "mtime": 1795183329.3428648,
-    "seen": 1795184266.7108774,
-    "ast_hash": "a79a7cff79682d4b9d8d3a3f72a33904",
+    "mtime": 1795196280.181507,
+    "seen": 1795196808.2198162,
+    "ast_hash": "7b736dcdb06c74646a7851b240173cc6",
     "semantic_hash": ""
   },
   "frontend/src/components/movements/MovementBreakdownList.tsx": {
@@ -3954,21 +3954,21 @@
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemCatalogFields.tsx": {
-    "mtime": 1795183329.3392215,
-    "seen": 1795184266.7098763,
-    "ast_hash": "92f4d9f716f101f2df546e74fd035eea",
+    "mtime": 1795196327.4575403,
+    "seen": 1795196808.2198162,
+    "ast_hash": "1acfa0be79c893f6e3474749b955205b",
     "semantic_hash": ""
   },
   "frontend/src/components/mi-negocio/ItemCategoryPicker.tsx": {
-    "mtime": 1795183329.3402584,
-    "seen": 1795184266.7098763,
-    "ast_hash": "c0f1b4d71ae07e87338f23a6b1b349f3",
+    "mtime": 1795196397.324537,
+    "seen": 1795196808.2198162,
+    "ast_hash": "8c92054492215e9b71748f41a3021a1d",
     "semantic_hash": ""
   },
   "frontend/src/hooks/useItemForm.test.cjs": {
-    "mtime": 1795183329.3465574,
-    "seen": 1795184266.7422986,
-    "ast_hash": "371eabfdb45da6937dacb6e144f15779",
+    "mtime": 1795196478.5348437,
+    "seen": 1795196808.2358196,
+    "ast_hash": "5775d943b26d08909d899fc4c46338be",
     "semantic_hash": ""
   },
   "frontend/src/hooks/useItemForm.ts": {
@@ -3984,9 +3984,9 @@
     "semantic_hash": ""
   },
   "frontend/src/lib/itemForm.ts": {
-    "mtime": 1795183329.3491714,
-    "seen": 1795184266.7574155,
-    "ast_hash": "6b4090501e7c17fb4e18cc4e8fb1a294",
+    "mtime": 1795196278.4613957,
+    "seen": 1795196808.2438204,
+    "ast_hash": "4a030ab5bee08f8e5277efe7cbc634c6",
     "semantic_hash": ""
   },
   "docs/verification/f1.2-b/README.md": {
