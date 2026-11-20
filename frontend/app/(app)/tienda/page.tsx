@@ -1,5 +1,7 @@
 "use client";
 
+import { publicPriceLabel, publicPrice } from "@/src/lib/publicCatalog";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { api } from "@/src/lib/api";
@@ -20,27 +22,17 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/src/components/layout/BottomNav";
-import { formatPriceInput } from "@/src/lib/itemHelpers";
 import { readBusinessProfile } from "@/src/lib/businessProfile";
 import { getBusinessProfile } from "@/src/lib/businessLogo";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import { cn } from "@/src/lib/utils";
 import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 
-const formatCop = (value: number) => {
-  const safeValue = Number.isFinite(value) ? value : 0;
-  const formatted = new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  }).format(safeValue);
-  return formatted.replace("COP", "$").replace(/\s+/g, "");
-};
-
 type Item = {
   id: string;
   name: string;
   price: number;
+  publishWithoutPrice?: boolean;
   type: "PRODUCT" | "SERVICE";
   status: "ACTIVE" | "INACTIVE";
   durationMinutes?: number;
@@ -227,7 +219,7 @@ export default function MiTiendaPage() {
   useEffect(() => {
     const fetchMyItems = async () => {
       try {
-        const data = await api<Item[]>("/items");
+        const data = await api<Item[]>("/items?context=public-store");
 
         setItems(
           data.map((item) => ({
@@ -670,7 +662,7 @@ function AdminProductCard({
           </div>
         ) : null}
         <div className="mt-1 text-[15px] font-semibold text-slate-900">
-          {formatCop(Number(item.price || 0))}
+          {publicPriceLabel(publicPrice(item.price, item.publishWithoutPrice))}
         </div>
       </div>
     </div>
@@ -830,7 +822,7 @@ function PrivateProductDetailOverlay({
                 </div>
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                   <div className="text-3xl font-semibold tracking-tight text-slate-900">
-                    ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
+                    {publicPriceLabel(publicPrice(item.price, item.publishWithoutPrice))}
                   </div>
                 </div>
                 {item.type === "SERVICE" && item.durationMinutes && (
@@ -909,7 +901,7 @@ function PrivateProductDetailOverlay({
                       PRECIO
                     </div>
                     <div className="text-4xl font-semibold tracking-tight text-slate-900">
-                      ${formatPriceInput(Number(item.price).toFixed(2).replace(".", ","))}
+                      {publicPriceLabel(publicPrice(item.price, item.publishWithoutPrice))}
                     </div>
                     {item.type === "SERVICE" && item.durationMinutes && (
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">

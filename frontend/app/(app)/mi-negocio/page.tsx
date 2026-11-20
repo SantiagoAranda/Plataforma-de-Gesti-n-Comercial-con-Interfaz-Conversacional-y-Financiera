@@ -3,11 +3,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  X,
-  Clock,
   Search,
   ArrowDown,
-  Calendar as CalendarIcon,
   PackagePlus,
   Plus,
 } from "lucide-react";
@@ -20,93 +17,20 @@ import { getBusinessProfile } from "@/src/lib/businessLogo";
 import { ItemCard } from "@/src/components/mi-negocio/ItemCard";
 import ItemDetailModal from "@/src/components/mi-negocio/ItemDetailModal";
 import { MiNegocioChatComposer } from "@/src/components/mi-negocio/MiNegocioChatComposer";
+import { useItemForm } from "@/src/hooks/useItemForm";
 import { ItemFormContent } from "@/src/components/mi-negocio/ItemFormContent";
 import {
   Item,
-  ItemType,
-  ItemImage,
-  PendingImage,
-  WeeklySchedule,
-  FormErrors,
-  ItemInventoryMode,
 } from "@/src/types/item";
 import {
-  generateCreationId,
-  createInitialWeek,
-  WEEKDAY_ENUM,
-  formatPriceInput,
   timeToMinutes,
-  minutesToTime,
 } from "@/src/lib/itemHelpers";
-import { getItemBadges } from "@/src/lib/itemBadges";
 import { getRecipesBulk } from "@/src/services/inventory";
-import {
-  MAX_ITEM_IMAGES,
-  MAX_ITEM_IMAGE_SIZE_BYTES,
-} from "@/src/lib/itemImages";
 import { DateSeparator } from "@/src/components/shared/DateSeparator";
 import {
   formatBusinessDateTime,
   getRelativeBusinessDayLabel,
 } from "@/src/lib/businessDate";
-
-async function compressImageFile(file: File, maxWidth = 1600, maxHeight = 1600, quality = 0.85): Promise<File> {
-  if (!file || !file.type.startsWith("image/") || file.size < 300 * 1024) {
-    return file;
-  }
-
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-
-      if (width > maxWidth || height > maxHeight) {
-        if (width > height) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        } else {
-          width = Math.round((width * maxHeight) / height);
-          height = maxHeight;
-        }
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        resolve(file);
-        return;
-      }
-
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(file);
-            return;
-          }
-          // blob.type: Safari no exporta WebP y devuelve PNG.
-          const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, `.${blob.type.split("/")[1]}`), {
-            type: blob.type,
-            lastModified: Date.now(),
-          });
-          resolve(compressedFile);
-        },
-        // JPEG no tiene transparencia: los PNG/WebP transparentes quedaban con fondo negro.
-        file.type === "image/jpeg" ? "image/jpeg" : "image/webp",
-        quality
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(file);
-    };
-    img.src = url;
-  });
-}
 
 function MiNegocioPageContent() {
   const router = useRouter();
@@ -145,46 +69,15 @@ function MiNegocioPageContent() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const shouldStickToBottomRef = useRef(true);
   const isInitialLoadRef = useRef(true);
-  const submitInFlightRef = useRef(false);
 
-  // Composer / Form states
-  const [composerMode, setComposerMode] = useState<
-    "closed" | "create" | "edit"
-  >("closed");
-  const [type, setType] = useState<ItemType>("PRODUCT");
-  const [name, setName] = useState("");
-  const [badgeText1, setBadgeText1] = useState("");
-  const [badgeColor1, setBadgeColor1] = useState("#ef4444");
-  const [badgeText2, setBadgeText2] = useState("");
-  const [badgeColor2, setBadgeColor2] = useState("#ef4444");
-  const [price, setPrice] = useState("");
-  const [priceDisplay, setPriceDisplay] = useState("");
-  const [appliesImpoconsumo, setAppliesImpoconsumo] = useState(false);
-  const [impoconsumoRatePercent, setImpoconsumoRatePercent] = useState("");
-  const [description, setDescription] = useState("");
-  const [existingImages, setExistingImages] = useState<ItemImage[]>([]);
-  const [newImages, setNewImages] = useState<PendingImage[]>([]);
-  const [removedImageIds, setRemovedImageIds] = useState<string[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
-  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
-  const [createdItemId, setCreatedItemId] = useState<string | null>(null);
-  const [imageUploadFailed, setImageUploadFailed] = useState(false);
-  const [duration, setDuration] = useState(60);
-  const [durationInput, setDurationInput] = useState("1");
-  const [durationAdjustmentMessage, setDurationAdjustmentMessage] = useState<
-    string | null
-  >(null);
-  const [week, setWeek] = useState<WeeklySchedule[]>(createInitialWeek);
-  const [currentDayIndex, setCurrentDayIndex] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
-  // Detail and confirmation dialogs own their interaction surface and footer.
-  // The fixed catalog composer must be unmounted while either is open.
+  const form = useItemForm((savedItem) => {
+    setItems((prev) => prev.some((item) => item.id === savedItem.id)
+      ? prev.map((item) => item.id === savedItem.id ? savedItem : item)
+      : [savedItem, ...prev]);
+    shouldStickToBottomRef.current = true;
+  }, setToast);
+  const { composerMode, type, description, setDescription, week, isSubmitting, handleToggleComposer, handleStartEdit, handleSend } = form;
   const hasModalSurfaceOpen = Boolean(itemForDetail || deleteId);
-
-  const [inventoryMode, setInventoryMode] = useState<ItemInventoryMode>("NONE");
-  const [saleConcept, setSaleConcept] = useState<"GOODS" | "SERVICES" | "HONORARIOS" | "ARRENDAMIENTOS" | "FOOD_BEVERAGES" | "OTHER">("GOODS");
 
   const fetchItems = useCallback(async (isInitial = false) => {
     try {
@@ -252,170 +145,12 @@ function MiNegocioPageContent() {
     );
   });
 
-  const resetForm = useCallback(() => {
-    setName("");
-    setBadgeText1("");
-    setBadgeColor1("#ef4444");
-    setBadgeText2("");
-    setBadgeColor2("#ef4444");
-    setPrice("");
-    setPriceDisplay("");
-    setAppliesImpoconsumo(false);
-    setImpoconsumoRatePercent("");
-    setDescription("");
-    setNewImages([]);
-    setExistingImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setPendingImageFile(null);
-    setCreatedItemId(null);
-    setImageUploadFailed(false);
-    setDuration(60);
-    setDurationInput("1");
-    setDurationAdjustmentMessage(null);
-    setWeek(createInitialWeek());
-    setCurrentDayIndex(0);
-    setFormErrors({});
-    setType("PRODUCT");
-    setInventoryMode("NONE");
-    setSaleConcept("GOODS");
-    setEditingItem(null);
-  }, []);
-
-  const handleToggleComposer = () => {
-    if (composerMode !== "closed") {
-      setComposerMode("closed");
-      resetForm();
-    } else {
-      setComposerMode("create");
-    }
-  };
-
-  const handleStartEdit = (item: Item | null) => {
-    if (!item) {
-      setComposerMode("create");
-      resetForm();
-      return;
-    }
-
-    setEditingItem(item);
-    setCreatedItemId(item.id);
-    setImageUploadFailed(false);
-    setComposerMode("edit");
-
-    setType(item.type);
-    setSaleConcept(item.saleConcept || (item.type === "SERVICE" ? "SERVICES" : "GOODS"));
-    const nextInventoryMode: ItemInventoryMode =
-      item.type === "SERVICE" ? "NONE" : (item.inventoryMode ?? "NONE");
-    setInventoryMode(nextInventoryMode);
-    setName(item.name);
-
-    const badges = getItemBadges(item);
-    setBadgeText1(badges[0]?.text ?? "");
-    setBadgeColor1(badges[0]?.color ?? "#ef4444");
-    setBadgeText2(badges[1]?.text ?? "");
-    setBadgeColor2(badges[1]?.color ?? "#ef4444");
-
-    setPrice(String(item.price));
-    setPriceDisplay(formatPriceInput(String(item.price).replace(".", ",")));
-    setAppliesImpoconsumo(Boolean(item.appliesImpoconsumo));
-    setImpoconsumoRatePercent(
-      item.impoconsumoRate == null
-        ? ""
-        : String(Number(item.impoconsumoRate) * 100),
-    );
-    setDescription(item.description ?? "");
-    setExistingImages(item.images ?? []);
-    setNewImages([]);
-    setRemovedImageIds([]);
-    setImageError(null);
-    setPendingImageFile(null);
-    setDuration(item.durationMinutes ?? 60);
-    setDurationInput(
-      item.durationMinutes ? String(item.durationMinutes / 60) : "1",
-    );
-    setDurationAdjustmentMessage(null);
-
-    const nextWeek = createInitialWeek();
-    if (item.type === "SERVICE" && item.schedule?.length) {
-      nextWeek.forEach((d) => {
-        d.active = false;
-        d.ranges = [];
-      });
-      item.schedule.forEach((slot) => {
-        const dayIdx = WEEKDAY_ENUM.indexOf(slot.weekday);
-        if (dayIdx !== -1) {
-          nextWeek[dayIdx].active = true;
-          nextWeek[dayIdx].ranges.push({
-            start: minutesToTime(slot.startMinute),
-            end: minutesToTime(slot.endMinute),
-          });
-        }
-      });
-    }
-    setWeek(nextWeek);
-    const firstActive = nextWeek.findIndex((d) => d.active);
-    setCurrentDayIndex(firstActive !== -1 ? firstActive : 0);
-  };
-
+  const editId = searchParams.get("itemId") ?? searchParams.get("editItem") ?? searchParams.get("edit");
   useEffect(() => {
-    const itemId = searchParams.get("itemId") ?? searchParams.get("editItem");
-    if (!itemId || !items.length) return;
-    const item = items.find((candidate) => candidate.id === itemId);
-    if (item) {
-      handleStartEdit(item);
-      router.replace("/mi-negocio", { scroll: false });
-    }
-  }, [items, router, searchParams]);
-
-  const handleAddImages = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const selectedFiles = Array.from(files);
-
-    const fileWithLargeSize = selectedFiles.find((file) => file.size > 2 * 1024 * 1024);
-    if (fileWithLargeSize) {
-      setImageError("El peso máximo de la imagen es de 2 MB");
-      return;
-    }
-
-    const totalImages = existingImages.length + newImages.length;
-    const availableSlots = MAX_ITEM_IMAGES - totalImages;
-
-    if (availableSlots <= 0) {
-      setImageError(`Puedes subir hasta ${MAX_ITEM_IMAGES} imágenes.`);
-      return;
-    }
-
-    setImageError(null);
-
-    const nextPendingImages: PendingImage[] = [];
-    selectedFiles.slice(0, availableSlots).forEach((file) => {
-      nextPendingImages.push({
-        id: generateCreationId(),
-        file,
-        previewUrl: URL.createObjectURL(file),
-      });
-    });
-    const nextImages = [...newImages, ...nextPendingImages];
-    setNewImages(nextImages);
-    setPendingImageFile(nextImages[0]?.file ?? null);
-    setImageUploadFailed(false);
-  };
-
-  const handleRemoveExistingImage = (id: string) => {
-    setExistingImages((prev) => prev.filter((img) => img.id !== id));
-    setRemovedImageIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-  };
-
-  const handleRemoveNewImage = (id: string) => {
-    const image = newImages.find((candidate) => candidate.id === id);
-    if (image) URL.revokeObjectURL(image.previewUrl);
-
-    const nextImages = newImages.filter((candidate) => candidate.id !== id);
-    setNewImages(nextImages);
-    setPendingImageFile(nextImages[0]?.file ?? null);
-    if (nextImages.length === 0) setImageUploadFailed(false);
-  };
+    if (!editId) return;
+    void handleStartEdit({ id: editId } as Item);
+    router.replace("/mi-negocio", { scroll: false });
+  }, [editId, handleStartEdit, router]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     setIsAtBottom(true);
@@ -446,260 +181,6 @@ function MiNegocioPageContent() {
       scrollToBottom("smooth");
     }
   }, [items.length, loading, scrollToBottom]);
-
-  const handleSend = async () => {
-    if (isSubmitting || submitInFlightRef.current) return;
-
-    if (type === "SERVICE") {
-      const hasOverlap = week.some((day) => {
-        if (!day.active || day.ranges.length !== 2) return false;
-        const m1s = timeToMinutes(day.ranges[0].start);
-        const m1e = timeToMinutes(day.ranges[0].end);
-        const m2s = timeToMinutes(day.ranges[1].start);
-        const m2e = timeToMinutes(day.ranges[1].end);
-
-        const first = m1s <= m2s ? { s: m1s, e: m1e } : { s: m2s, e: m2e };
-        const second = m1s <= m2s ? { s: m2s, e: m2e } : { s: m1s, e: m1e };
-        return first.e >= second.s;
-      });
-
-      if (hasOverlap) return;
-    }
-
-    const errors: FormErrors = {};
-    if (!name.trim()) errors.name = "El nombre es obligatorio";
-    if (!price || parseFloat(price) <= 0) {
-      errors.price = "El precio debe ser mayor a 0";
-    }
-    const parsedImpoconsumoRate = impoconsumoRatePercent
-      ? Number(impoconsumoRatePercent.replace(",", "."))
-      : null;
-    if (
-      type === "PRODUCT" &&
-      appliesImpoconsumo &&
-      parsedImpoconsumoRate !== null &&
-      (!Number.isFinite(parsedImpoconsumoRate) ||
-        parsedImpoconsumoRate <= 0 ||
-        parsedImpoconsumoRate > 100)
-    ) {
-      errors.impoconsumoRate = "La tarifa debe ser mayor a 0 y máximo 100";
-    }
-
-    let finalDuration = duration;
-    if (type === "SERVICE") {
-      const n = parseFloat(durationInput);
-      if (!durationInput || isNaN(n)) {
-        finalDuration = 60;
-        setDuration(60);
-        setDurationInput("1");
-        setDurationAdjustmentMessage(null);
-      } else {
-        let rounded = Math.round(n);
-        if (rounded <= 0) rounded = 1;
-        finalDuration = rounded * 60;
-        setDuration(finalDuration);
-        setDurationInput(String(rounded));
-        if (n !== rounded) {
-          setDurationAdjustmentMessage(
-            `La duración se ha ajustado a ${rounded} hora(s)`,
-          );
-        } else {
-          setDurationAdjustmentMessage(null);
-        }
-      }
-      if (finalDuration < 5) errors.duration = "Mínimo 5 min";
-      if (!week.some((d) => d.active && d.ranges.length > 0)) {
-        errors.schedule = "Selecciona al menos un día con horario";
-      }
-    }
-
-    if (type === "SERVICE" && inventoryMode !== "NONE") {
-      setInventoryMode("NONE");
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    submitInFlightRef.current = true;
-    setIsSubmitting(true);
-
-    try {
-      const schedule =
-        type === "SERVICE"
-          ? week.flatMap((day, dayIndex) =>
-            day.active
-              ? day.ranges.map((r) => ({
-                weekday: WEEKDAY_ENUM[dayIndex],
-                startMinute: timeToMinutes(r.start),
-                endMinute: timeToMinutes(r.end),
-              }))
-              : [],
-          )
-          : [];
-
-      const cleanedBadgeText1 = badgeText1.trim();
-      const cleanedBadgeColor1 = badgeColor1.trim();
-      const cleanedBadgeText2 = badgeText2.trim();
-      const cleanedBadgeColor2 = badgeColor2.trim();
-
-      const nextBadges = [
-        cleanedBadgeText1
-          ? { text: cleanedBadgeText1, color: cleanedBadgeColor1 || "#ef4444" }
-          : null,
-        cleanedBadgeText2
-          ? { text: cleanedBadgeText2, color: cleanedBadgeColor2 || "#ef4444" }
-          : null,
-      ].filter(Boolean) as Array<{ text: string; color: string }>;
-
-      const finalBadgeText = nextBadges[0]?.text ?? null;
-      const finalBadgeColor = nextBadges[0]?.color ?? null;
-
-      const body = {
-        type,
-        name,
-        price: parseFloat(price),
-        saleConcept,
-        appliesImpoconsumo: type === "PRODUCT" && appliesImpoconsumo,
-        impoconsumoRate:
-          type === "PRODUCT" &&
-            appliesImpoconsumo &&
-            parsedImpoconsumoRate !== null
-            ? parsedImpoconsumoRate / 100
-            : null,
-        description: description.trim() || null,
-        durationMinutes: type === "SERVICE" ? finalDuration : null,
-        inventoryMode: type === "SERVICE" ? "NONE" : inventoryMode,
-        schedule,
-        badges: nextBadges.length ? nextBadges : null,
-        badgeText: finalBadgeText,
-        badgeColor: finalBadgeColor || (finalBadgeText ? "#ef4444" : null),
-      };
-
-      let savedItem: Item;
-      let failedImages: PendingImage[] = [];
-      let targetItemId = editingItem?.id ?? createdItemId;
-      const wasCreating = !targetItemId;
-
-      if (targetItemId) {
-        savedItem = await api<Item>(`/items/${targetItemId}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-
-        for (const id of removedImageIds) {
-          await api(`/items/${targetItemId}/images/${id}`, {
-            method: "DELETE",
-          });
-        }
-
-        for (const img of newImages) {
-          const fileToUpload = await compressImageFile(img.file);
-          const formData = new FormData();
-          formData.append("file", fileToUpload);
-          try {
-            await api(`/items/${targetItemId}/images/upload`, {
-              method: "POST",
-              body: formData,
-            });
-          } catch (error) {
-            console.error(error);
-            failedImages.push(img);
-          }
-        }
-
-        try {
-          savedItem = await api<Item>(`/items/${targetItemId}`);
-        } catch (error) {
-          console.error(error);
-        }
-      } else {
-        const created = await api<Item>(`/items`, {
-          method: "POST",
-          body: JSON.stringify({ ...body, id: generateCreationId() }),
-        });
-
-        savedItem = created;
-        targetItemId = created.id;
-
-        setCreatedItemId(created.id);
-        setEditingItem(created);
-        setComposerMode("edit");
-        setImageUploadFailed(false);
-
-        for (const img of newImages) {
-          const fileToUpload = await compressImageFile(img.file);
-          const formData = new FormData();
-          formData.append("file", fileToUpload);
-          try {
-            await api(`/items/${created.id}/images/upload`, {
-              method: "POST",
-              body: formData,
-            });
-          } catch (error) {
-            console.error(error);
-            failedImages.push(img);
-          }
-        }
-
-        if (failedImages.length === 0) {
-          try {
-            savedItem = await api<Item>(`/items/${created.id}`);
-          } catch (error) {
-            console.error(error);
-          }
-        }
-      }
-
-      invalidateCache("mi-negocio:items:ACTIVE");
-      invalidateCache("home:businessActivity");
-
-      setItems((prev) => {
-        const exists = prev.find((i) => i.id === savedItem.id);
-        if (exists) {
-          return prev.map((i) => (i.id === savedItem.id ? savedItem : i));
-        }
-        return [savedItem, ...prev];
-      });
-
-      shouldStickToBottomRef.current = true;
-
-      if (failedImages.length > 0) {
-        setCreatedItemId(targetItemId);
-        setImageUploadFailed(true);
-        setPendingImageFile(failedImages[0]?.file ?? pendingImageFile);
-        setToast({
-          message:
-            type === "SERVICE"
-              ? "Servicio creado, pero no se pudo subir la imagen. Podés reintentar la imagen sin crear otro servicio."
-              : "Producto creado, pero no se pudo subir la imagen. Podés reintentar la imagen sin crear otro producto.",
-          type: "error",
-        });
-        setEditingItem(savedItem);
-        setComposerMode("edit");
-        setExistingImages(savedItem.images ?? existingImages);
-        setNewImages(failedImages);
-        setRemovedImageIds([]);
-        return;
-      }
-
-      setToast({
-        message: wasCreating ? "Item creado" : "Item actualizado",
-        type: "success",
-      });
-      setImageUploadFailed(false);
-      setPendingImageFile(null);
-      setComposerMode("closed");
-      resetForm();
-    } catch (err) {
-      console.error(err);
-      setToast({ message: "Error al guardar", type: "error" });
-    } finally {
-      submitInFlightRef.current = false;
-      setIsSubmitting(false);
-    }
-  };
 
   const handleDelete = async (item: Item) => {
     try {
@@ -857,10 +338,7 @@ function MiNegocioPageContent() {
               description="Crea tu primer producto o servicio desde la barra inferior para armar tu catálogo."
               actionLabel="Crear producto o servicio"
               actionIcon={Plus}
-              onAction={() => {
-                setEditingItem(null);
-                setComposerMode("create");
-              }}
+              onAction={() => { void handleStartEdit(null); }}
             />
           </div>
         )}
@@ -882,51 +360,9 @@ function MiNegocioPageContent() {
         onSubmit={handleSend}
         isSubmitting={isSubmitting}
         type={type}
-        submitDisabled={hasScheduleOverlap}
+        submitDisabled={hasScheduleOverlap || form.isLoadingDetail}
       >
-        <ItemFormContent
-          type={type}
-          setType={setType}
-          inventoryMode={inventoryMode}
-          setInventoryMode={setInventoryMode}
-          name={name}
-          setName={setName}
-          badgeText1={badgeText1}
-          setBadgeText1={setBadgeText1}
-          badgeColor1={badgeColor1}
-          setBadgeColor1={setBadgeColor1}
-          badgeText2={badgeText2}
-          setBadgeText2={setBadgeText2}
-          badgeColor2={badgeColor2}
-          setBadgeColor2={setBadgeColor2}
-          priceDisplay={priceDisplay}
-          setPriceDisplay={setPriceDisplay}
-          setPrice={setPrice}
-          appliesImpoconsumo={appliesImpoconsumo}
-          setAppliesImpoconsumo={setAppliesImpoconsumo}
-          impoconsumoRatePercent={impoconsumoRatePercent}
-          setImpoconsumoRatePercent={setImpoconsumoRatePercent}
-          durationInput={durationInput}
-          setDurationInput={setDurationInput}
-          setDuration={setDuration}
-          durationAdjustmentMessage={durationAdjustmentMessage}
-          setDurationAdjustmentMessage={setDurationAdjustmentMessage}
-          week={week}
-          setWeek={setWeek}
-          currentDayIndex={currentDayIndex}
-          setCurrentDayIndex={setCurrentDayIndex}
-          existingImages={existingImages}
-          newImages={newImages}
-          handleAddImages={handleAddImages}
-          handleRemoveExistingImage={handleRemoveExistingImage}
-          handleRemoveNewImage={handleRemoveNewImage}
-          formErrors={formErrors}
-          setFormErrors={setFormErrors}
-          imageError={imageError}
-          editingItem={!!editingItem}
-          saleConcept={saleConcept}
-          setSaleConcept={setSaleConcept}
-        />
+        {form.isLoadingDetail ? <p role="status">Cargando detalle...</p> : <fieldset disabled={isSubmitting}><ItemFormContent {...form.contentProps} /></fieldset>}
       </MiNegocioChatComposer>}
 
       <ItemDetailModal

@@ -1,0 +1,167 @@
+[
+  {
+    "file": "app/(app)/mi-negocio/page.tsx",
+    "baseline": {
+      "errors": 6,
+      "warnings": 7,
+      "rules": [
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "react-hooks/set-state-in-effect",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "react-hooks/set-state-in-effect",
+        "react-hooks/set-state-in-effect",
+        "react-hooks/exhaustive-deps",
+        "prefer-const",
+        "react-hooks/purity",
+        "prefer-const"
+      ]
+    },
+    "current": {
+      "errors": 4,
+      "warnings": 1,
+      "messages": [
+        {
+          "line": 43,
+          "rule": "react-hooks/set-state-in-effect",
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders"
+        },
+        {
+          "line": 69,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "message": "'isAtBottom' is assigned a value but never used."
+        },
+        {
+          "line": 126,
+          "rule": "react-hooks/set-state-in-effect",
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders"
+        },
+        {
+          "line": 231,
+          "rule": "react-hooks/purity",
+          "message": "Error: Cannot call impure function during render"
+        },
+        {
+          "line": 234,
+          "rule": "prefer-const",
+          "message": "'label' is never reassigned. Use 'const' instead."
+        }
+      ]
+    }
+  },
+  {
+    "file": "src/components/mi-negocio/ItemFormContent.tsx",
+    "baseline": {
+      "errors": 1,
+      "warnings": 11,
+      "rules": [
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@typescript-eslint/no-unused-vars",
+        "@next/next/no-img-element",
+        "@next/next/no-img-element",
+        "@typescript-eslint/no-explicit-any"
+      ]
+    },
+    "current": {
+      "errors": 0,
+      "warnings": 2,
+      "messages": [
+        {
+          "line": 504,
+          "rule": "@next/next/no-img-element",
+          "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element"
+        },
+        {
+          "line": 510,
+          "rule": "@next/next/no-img-element",
+          "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element"
+        }
+      ]
+    }
+  },
+  {
+    "file": "src/components/mi-negocio/ItemFormModal.tsx",
+    "baseline": {
+      "errors": 2,
+      "warnings": 1,
+      "rules": [
+        "react-hooks/set-state-in-effect",
+        "react-hooks/immutability",
+        "react-hooks/exhaustive-deps"
+      ]
+    },
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/components/mi-negocio/MiNegocioChatComposer.tsx",
+    "baseline": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": []
+    },
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/hooks/useItemForm.ts",
+    "baseline": null,
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/lib/itemForm.ts",
+    "baseline": null,
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/lib/itemCategories.ts",
+    "baseline": null,
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/components/mi-negocio/ItemCatalogFields.tsx",
+    "baseline": null,
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  },
+  {
+    "file": "src/components/mi-negocio/ItemCategoryPicker.tsx",
+    "baseline": null,
+    "current": {
+      "errors": 0,
+      "warnings": 0,
+      "messages": []
+    }
+  }
+]

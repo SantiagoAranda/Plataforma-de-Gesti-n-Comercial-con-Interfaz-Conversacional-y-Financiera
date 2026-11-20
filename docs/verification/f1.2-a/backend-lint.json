@@ -1,0 +1,117 @@
+[
+  {
+    "file": "backend/src/public/public-catalog-visibility.spec.ts",
+    "before": {
+      "errors": 96,
+      "warnings": 12,
+      "rules": {
+        "@typescript-eslint/no-unsafe-return": 2,
+        "@typescript-eslint/no-unsafe-assignment": 39,
+        "@typescript-eslint/no-unsafe-call": 22,
+        "@typescript-eslint/no-unsafe-member-access": 30,
+        "prettier/prettier": 3,
+        "@typescript-eslint/no-unsafe-argument": 12
+      }
+    },
+    "after": {
+      "errors": 110,
+      "warnings": 13,
+      "rules": {
+        "@typescript-eslint/no-unsafe-return": 2,
+        "@typescript-eslint/no-unsafe-assignment": 45,
+        "@typescript-eslint/no-unsafe-call": 25,
+        "@typescript-eslint/no-unsafe-member-access": 35,
+        "prettier/prettier": 3,
+        "@typescript-eslint/no-unsafe-argument": 13
+      }
+    }
+  },
+  {
+    "file": "backend/src/public/public.controller.ts",
+    "before": {
+      "errors": 1,
+      "warnings": 0,
+      "rules": {
+        "prettier/prettier": 1
+      }
+    },
+    "after": {
+      "errors": 1,
+      "warnings": 0,
+      "rules": {
+        "prettier/prettier": 1
+      }
+    }
+  },
+  {
+    "file": "backend/src/public/public.service.spec.ts",
+    "before": {
+      "errors": 188,
+      "warnings": 7,
+      "rules": {
+        "@typescript-eslint/no-unsafe-return": 1,
+        "@typescript-eslint/no-unsafe-assignment": 66,
+        "@typescript-eslint/no-unsafe-call": 39,
+        "@typescript-eslint/no-unsafe-member-access": 70,
+        "@typescript-eslint/no-unsafe-argument": 7,
+        "prettier/prettier": 12
+      }
+    },
+    "after": {
+      "errors": 214,
+      "warnings": 7,
+      "rules": {
+        "@typescript-eslint/no-unsafe-return": 2,
+        "@typescript-eslint/no-unsafe-assignment": 71,
+        "@typescript-eslint/no-unsafe-call": 45,
+        "@typescript-eslint/no-unsafe-member-access": 79,
+        "@typescript-eslint/require-await": 5,
+        "@typescript-eslint/no-unsafe-argument": 7,
+        "prettier/prettier": 12
+      }
+    }
+  },
+  {
+    "file": "backend/src/public/public.service.ts",
+    "before": {
+      "errors": 51,
+      "warnings": 2,
+      "rules": {
+        "prettier/prettier": 21,
+        "@typescript-eslint/no-redundant-type-constituents": 2,
+        "@typescript-eslint/no-unsafe-assignment": 7,
+        "@typescript-eslint/no-unsafe-return": 2,
+        "@typescript-eslint/no-unused-vars": 9,
+        "@typescript-eslint/require-await": 1,
+        "@typescript-eslint/no-unsafe-member-access": 5,
+        "@typescript-eslint/no-unsafe-call": 1,
+        "@typescript-eslint/no-unsafe-argument": 2,
+        "@typescript-eslint/no-unnecessary-type-assertion": 2,
+        "@typescript-eslint/no-base-to-string": 1
+      }
+    },
+    "after": {
+      "errors": 51,
+      "warnings": 2,
+      "rules": {
+        "prettier/prettier": 21,
+        "@typescript-eslint/no-redundant-type-constituents": 2,
+        "@typescript-eslint/no-unsafe-assignment": 7,
+        "@typescript-eslint/no-unsafe-return": 2,
+        "@typescript-eslint/no-unused-vars": 9,
+        "@typescript-eslint/require-await": 1,
+        "@typescript-eslint/no-unsafe-member-access": 5,
+        "@typescript-eslint/no-unsafe-call": 1,
+        "@typescript-eslint/no-unsafe-argument": 2,
+        "@typescript-eslint/no-unnecessary-type-assertion": 2,
+        "@typescript-eslint/no-base-to-string": 1
+      }
+    }
+  },
+  {
+    "file": "backend/test/public-catalog-visibility.e2e-spec.ts",
+    "errors": 0,
+    "warnings": 0,
+    "messages": []
+  }
+]

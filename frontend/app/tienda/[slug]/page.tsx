@@ -36,7 +36,7 @@ const resolveStore = cache(async (slug: string): Promise<Store | null | undefine
 
 // Precarga de productos (categoría inicial) con el slug canónico; el cliente la reutiliza.
 const getStoreItems = (slug: string) =>
-  fetch(`${API_URL}/public/${encodeURIComponent(slug)}/items?type=`, { next: { revalidate: 60 } });
+  fetch(`${API_URL}/public/${encodeURIComponent(slug)}/items?type=`, { cache: "no-store" });
 
 export async function generateMetadata({ params }: Props) {
   const slug = decodeSlug((await params)?.slug ?? "");

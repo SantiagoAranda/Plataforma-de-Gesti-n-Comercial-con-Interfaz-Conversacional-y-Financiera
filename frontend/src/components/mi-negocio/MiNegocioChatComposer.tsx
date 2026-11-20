@@ -37,10 +37,10 @@ export function MiNegocioChatComposer({
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handleDescriptionChange = (val: string) => {
-    if (val.length <= 250) {
+    if (val.length <= Math.max(300, description.length)) {
       onDescriptionChange(val);
     } else {
-      onDescriptionChange(val.slice(0, 250));
+      onDescriptionChange(val.slice(0, Math.max(300, description.length)));
     }
   };
 
@@ -106,19 +106,20 @@ export function MiNegocioChatComposer({
             onSubmit={onSubmit}
             placeholder={isOpen ? placeholders[type] : "Buscar producto o servicio..."}
             isSubmitting={isSubmitting}
+            disabled={isSubmitting}
             submitDisabled={submitDisabled}
             leftIconVariant={isOpen ? "x" : "plus"}
             rightIconVariant={isOpen ? "send" : "search"}
             inputKind={isOpen ? "textarea" : "input"}
             textareaRef={textareaRef}
-            textareaProps={{ rows: 1, maxLength: 250 }}
+            textareaProps={{ rows: 1, maxLength: Math.max(300, description.length) }}
             plusAriaLabel={isOpen ? "Cancelar" : "Nuevo item"}
             submitAriaLabel={label}
             className="rounded-[24px] border border-slate-200 bg-white p-1 shadow-sm"
             counter={
               isOpen && isExpanded ? (
                 <span className="absolute -top-7 z-10 whitespace-nowrap text-[10px] font-medium text-neutral-400">
-                  {description.length}/250
+                  {description.length}/300
                 </span>
               ) : null
             }

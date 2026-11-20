@@ -1,4 +1,7 @@
 "use client";
+import { ItemCatalogAttributes } from "@/src/types/item";
+import { ItemCatalogFields } from "./ItemCatalogFields";
+
 
 import { X, Clock, ChevronDown, Check } from "lucide-react";
 import { CustomSelect, CustomSelectOption } from "@/src/components/ui/CustomSelect";
@@ -15,7 +18,6 @@ import {
 import {
   formatPriceInput,
   parsePriceInput,
-  rangesOverlap,
 } from "@/src/lib/itemHelpers";
 import {
   MAX_ITEM_IMAGES,
@@ -216,6 +218,14 @@ function TimeSelectAMPM({
 }
 
 interface ItemFormContentProps {
+  tab: "data" | "tax" | "qr";
+  setTab: (value: "data" | "tax" | "qr") => void;
+  catalog: ItemCatalogAttributes;
+  setCatalog: (value: ItemCatalogAttributes) => void;
+  catalogError: string | null;
+  priceValue: number | null;
+  durationMinutesInput: string;
+  setDurationMinutesInput: (value: string) => void;
   type: ItemType;
   setType: (type: ItemType) => void;
   inventoryMode: ItemInventoryMode;
@@ -239,9 +249,6 @@ interface ItemFormContentProps {
   setImpoconsumoRatePercent: (value: string) => void;
   durationInput: string;
   setDurationInput: (val: string) => void;
-  setDuration: (val: number) => void;
-  durationAdjustmentMessage: string | null;
-  setDurationAdjustmentMessage: (msg: string | null) => void;
   week: WeeklySchedule[];
   setWeek: (week: WeeklySchedule[]) => void;
   currentDayIndex: number;
@@ -267,14 +274,6 @@ export function ItemFormContent(props: ItemFormContentProps) {
     setInventoryMode,
     name,
     setName,
-    badgeText1,
-    setBadgeText1,
-    badgeColor1,
-    setBadgeColor1,
-    badgeText2,
-    setBadgeText2,
-    badgeColor2,
-    setBadgeColor2,
     priceDisplay,
     setPriceDisplay,
     setPrice,
@@ -284,9 +283,6 @@ export function ItemFormContent(props: ItemFormContentProps) {
     setImpoconsumoRatePercent,
     durationInput,
     setDurationInput,
-    setDuration,
-    durationAdjustmentMessage,
-    setDurationAdjustmentMessage,
     week,
     setWeek,
     currentDayIndex,
@@ -304,6 +300,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
     setSaleConcept,
   } = props;
 
+  const { tab, setTab } = props;
   const { taxSettingsEnabled } = useTaxSettings();
 
   const totalImages = existingImages.length + newImages.length;
@@ -349,141 +346,21 @@ export function ItemFormContent(props: ItemFormContentProps) {
         </span>
       </div>
 
-      {/* TOGGLE PRODUCTO / SERVICIO */}
-      {!editingItem && (
-        <div className="flex bg-neutral-100 rounded-full p-1">
-          <button
-            onClick={() => {
-              setType("PRODUCT");
-              setFormErrors((p) => ({ ...p, schedule: undefined }));
+      <div role="tablist" aria-label="Secciones del ítem" className="flex rounded-full bg-slate-100 p-1">
+        {([["data", "Datos"], ["tax", "IVA"], ["qr", "Código QR"]] as const).map(([id, label]) =>
+          <button type="button" role="tab" id={"item-tab-" + id} aria-controls={"item-panel-" + id} aria-selected={tab === id} key={id}
+            onClick={() => setTab(id)}
+            onKeyDown={e => {
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              const ids = ["data", "tax", "qr"] as const;
+              const next = ids[(ids.indexOf(id) + (e.key === "ArrowRight" ? 1 : 2)) % 3];
+              setTab(next); document.getElementById("item-tab-" + next)?.focus();
             }}
-            className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "PRODUCT" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
-          >
-            Producto
-          </button>
-          <button
-            onClick={() => {
-              setType("SERVICE");
-              setInventoryMode("NONE");
-              setFormErrors((p) => ({ ...p, schedule: undefined }));
-            }}
-            className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "SERVICE" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
-          >
-            Servicio
-          </button>
-        </div>
-      )}
-
-      {/* FOTOS */}
-      <div className="space-y-3">
-        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Fotos</label>
-        <div className="flex flex-wrap gap-3">
-          <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl transition ${totalImages >= MAX_ITEM_IMAGES ? "border-neutral-200 text-neutral-200 cursor-not-allowed" : "border-[#0B3F64] text-[#0B3F64] bg-[#0B3F64]/5 hover:bg-[#0B3F64]/10"}`}>
-            +
-            <input type="file" accept="image/*" multiple className="hidden" disabled={totalImages >= MAX_ITEM_IMAGES} onChange={(e) => { handleAddImages(e.target.files); e.target.value = ""; }} />
-          </label>
-          {existingImages.map((img) => (
-            <div key={img.id} className="relative w-20 h-20 rounded-2xl overflow-hidden border border-neutral-100 shadow-sm">
-              <img src={img.url} alt="" className="w-full h-full object-cover" />
-              <button onClick={() => handleRemoveExistingImage(img.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"><X size={12} /></button>
-            </div>
-          ))}
-          {newImages.map((img) => (
-            <div key={img.id} className="relative w-20 h-20 rounded-2xl overflow-hidden border border-neutral-100 shadow-sm">
-              <img src={img.previewUrl} alt="" className="w-full h-full object-cover" />
-              <button onClick={() => handleRemoveNewImage(img.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"><X size={12} /></button>
-            </div>
-          ))}
-        </div>
-        {imageError && (
-          <p className="text-xs font-medium text-rose-600 mt-2 transition-all">
-            {imageError}
-          </p>
-        )}
+            tabIndex={tab === id ? 0 : -1}
+            className={`flex-1 rounded-full px-3 py-2 text-sm font-medium ${tab === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>{label}</button>)}
       </div>
-
-      {/* NOMBRE */}
-      <div className="space-y-2">
-        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Nombre</label>
-        <input
-          placeholder={type === "PRODUCT" ? "Ej: Hamburguesa Simple" : "Ej: Corte de Cabello"}
-          value={name}
-          onChange={(e) => { setName(e.target.value); setFormErrors(p => ({ ...p, name: undefined })); }}
-          className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-[#0B3F64]"}`}
-        />
-        {formErrors.name && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.name}</p>}
-      </div>
-
-      {/* PRECIO + DURACION */}
-      <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
-        <div className="space-y-2">
-          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio</label>
-          <div className={`flex items-center rounded-2xl border px-4 h-[48px] shadow-sm transition ${formErrors.price ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white"}`}>
-            <span className="text-neutral-400 text-sm mr-2">$</span>
-            <input
-              type="text" inputMode="decimal" placeholder="0,00" value={priceDisplay}
-              onChange={(e) => {
-                const f = formatPriceInput(e.target.value);
-                setPriceDisplay(f); setPrice(parsePriceInput(f)); setFormErrors(p => ({ ...p, price: undefined }));
-              }}
-              className="flex-1 bg-transparent outline-none text-sm font-semibold"
-            />
-          </div>
-          {formErrors.price && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.price}</p>}
-        </div>
-
-        {type === "SERVICE" && (
-          <div className="space-y-2">
-            <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Duración</label>
-            <div className="relative">
-              <input
-                type="text" inputMode="decimal" value={durationInput}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9.,]/g, "").replace(",", ".");
-                  const parts = v.split(".");
-                  const cleanValue = parts[0] + (parts.length > 1 ? "." + parts.slice(1).join("") : "");
-                  setDurationInput(cleanValue);
-                  setDurationAdjustmentMessage(null);
-                  setFormErrors(p => ({ ...p, duration: undefined }));
-                }}
-                onBlur={() => {
-                  const n = parseFloat(durationInput);
-                  if (!durationInput || isNaN(n)) {
-                    setDuration(60);
-                    setDurationInput("1");
-                    setDurationAdjustmentMessage(null);
-                  } else {
-                    let rounded = Math.round(n);
-                    if (rounded <= 0) rounded = 1;
-
-                    if (n !== rounded) {
-                      setDurationAdjustmentMessage(`La duración se ha ajustado a ${rounded} hora(s)`);
-                    } else {
-                      setDurationAdjustmentMessage(null);
-                    }
-                    setDuration(rounded * 60);
-                    setDurationInput(String(rounded));
-                  }
-                }}
-                className={`w-full rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm outline-none transition ${formErrors.duration ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white focus:border-[#0B3F64]"
-                  }`}
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-400 text-[10px] font-medium uppercase">horas</span>
-            </div>
-            {durationAdjustmentMessage && (
-              <p className="text-[11px] font-medium text-amber-600 mt-1">
-                {durationAdjustmentMessage}
-              </p>
-            )}
-            {formErrors.duration && (
-              <p className="text-[10px] font-medium text-red-500 uppercase mt-1">
-                {formErrors.duration}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
+      <div id="item-panel-tax" role="tabpanel" aria-labelledby="item-tab-tax" hidden={tab !== "tax"}>
       {taxSettingsEnabled && (
         <section className="space-y-4 rounded-2xl border border-neutral-100 bg-neutral-50/70 p-4">
           <div>
@@ -502,7 +379,7 @@ export function ItemFormContent(props: ItemFormContentProps) {
               </label>
               <CustomSelect
                 value={saleConcept}
-                onChange={(val) => setSaleConcept(val as any)}
+                onChange={(val) => setSaleConcept(val as ItemFormContentProps["saleConcept"])}
                 options={SALE_CONCEPT_OPTIONS}
               />
             </div>
@@ -579,6 +456,121 @@ export function ItemFormContent(props: ItemFormContentProps) {
           </div>
         </section>
       )}
+
+        {!taxSettingsEnabled && <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">La configuración fiscal se administra desde los ajustes del negocio.</p>}
+      </div>
+      <div id="item-panel-qr" role="tabpanel" aria-labelledby="item-tab-qr" hidden={tab !== "qr"}
+        className="rounded-2xl border border-dashed border-slate-200 p-5 text-sm text-slate-600">
+        La generación de códigos QR y el escáner estarán disponibles en una etapa posterior.
+        Puedes ingresar el código de barras manualmente en Datos.
+      </div>
+      <div id="item-panel-data" role="tabpanel" aria-labelledby="item-tab-data" hidden={tab !== "data"}>
+      <div className="space-y-6">
+      {/* TOGGLE PRODUCTO / SERVICIO */}
+      {!editingItem && (
+        <div className="flex bg-neutral-100 rounded-full p-1">
+          <button
+            onClick={() => {
+              setType("PRODUCT");
+              setFormErrors((p) => ({ ...p, schedule: undefined }));
+            }}
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "PRODUCT" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
+          >
+            Producto
+          </button>
+          <button
+            onClick={() => {
+              setType("SERVICE");
+              setInventoryMode("NONE");
+              setFormErrors((p) => ({ ...p, schedule: undefined }));
+            }}
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition ${type === "SERVICE" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
+          >
+            Servicio
+          </button>
+        </div>
+      )}
+
+      {/* FOTOS */}
+      <div className="space-y-3">
+        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Fotos</label>
+        <div className="flex flex-wrap gap-3">
+          <label className={`w-20 h-20 border-2 border-dashed rounded-2xl flex items-center justify-center cursor-pointer text-xl transition ${totalImages >= MAX_ITEM_IMAGES ? "border-neutral-200 text-neutral-200 cursor-not-allowed" : "border-[#0B3F64] text-[#0B3F64] bg-[#0B3F64]/5 hover:bg-[#0B3F64]/10"}`}>
+            +
+            <input type="file" accept="image/*" multiple className="hidden" disabled={totalImages >= MAX_ITEM_IMAGES} onChange={(e) => { handleAddImages(e.target.files); e.target.value = ""; }} />
+          </label>
+          {existingImages.map((img) => (
+            <div key={img.id} className="relative w-20 h-20 rounded-2xl overflow-hidden border border-neutral-100 shadow-sm">
+              <img src={img.url} alt="" className="w-full h-full object-cover" />
+              <button onClick={() => handleRemoveExistingImage(img.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"><X size={12} /></button>
+            </div>
+          ))}
+          {newImages.map((img) => (
+            <div key={img.id} className="relative w-20 h-20 rounded-2xl overflow-hidden border border-neutral-100 shadow-sm">
+              <img src={img.previewUrl} alt="" className="w-full h-full object-cover" />
+              <button onClick={() => handleRemoveNewImage(img.id)} className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center"><X size={12} /></button>
+            </div>
+          ))}
+        </div>
+        {imageError && (
+          <p className="text-xs font-medium text-rose-600 mt-2 transition-all">
+            {imageError}
+          </p>
+        )}
+      </div>
+
+      {/* NOMBRE */}
+      <div className="space-y-2">
+        <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Nombre</label>
+        <input
+          aria-label="Nombre" placeholder={type === "PRODUCT" ? "Ej: Hamburguesa Simple" : "Ej: Corte de Cabello"}
+          value={name}
+          onChange={(e) => { setName(e.target.value); setFormErrors(p => ({ ...p, name: undefined })); }}
+          className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition ${formErrors.name ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white shadow-sm focus:border-[#0B3F64]"}`}
+        />
+        {formErrors.name && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.name}</p>}
+      </div>
+
+      {/* PRECIO + DURACION */}
+      <div className={`grid gap-4 ${type === "SERVICE" ? "grid-cols-2" : "grid-cols-1"}`}>
+        <div className="space-y-2">
+          <label className="text-[10px] font-medium uppercase tracking-widest text-neutral-400">Precio interno</label>
+          <div className={`flex items-center rounded-2xl border px-4 h-[48px] shadow-sm transition ${formErrors.price ? "border-red-300 bg-red-50" : "border-neutral-100 bg-white"}`}>
+            <span className="text-neutral-400 text-sm mr-2">$</span>
+            <input
+              aria-label="Precio interno" type="text" inputMode="decimal" placeholder="0,00" value={priceDisplay}
+              onChange={(e) => {
+                const f = formatPriceInput(e.target.value);
+                setPriceDisplay(f); setPrice(parsePriceInput(f)); setFormErrors(p => ({ ...p, price: undefined }));
+              }}
+              className="min-w-0 flex-1 bg-transparent outline-none text-sm font-semibold"
+            />
+          </div>
+          {formErrors.price && <p className="text-[10px] font-medium text-red-500 uppercase">{formErrors.price}</p>}
+        </div>
+
+        {type === "SERVICE" && <div className="space-y-2">
+          <p className="text-xs font-medium text-slate-500">Duración</p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs text-slate-500">Horas
+              <input type="number" min="0" step="1" value={durationInput}
+                onChange={e => { setDurationInput(e.target.value); setFormErrors(p => ({ ...p, duration: undefined })); }}
+                className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900" />
+            </label>
+            <label className="text-xs text-slate-500">Minutos
+              <input type="number" min="0" max="59" step="1" value={props.durationMinutesInput}
+                onChange={e => { props.setDurationMinutesInput(e.target.value); setFormErrors(p => ({ ...p, duration: undefined })); }}
+                className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-900" />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[15, 30, 45, 60, 90, 120].map(minutes => <button type="button" key={minutes}
+              onClick={() => { setDurationInput(String(Math.floor(minutes / 60))); props.setDurationMinutesInput(String(minutes % 60)); setFormErrors(p => ({ ...p, duration: undefined })); }}
+              className="rounded-full bg-slate-100 px-2.5 py-1.5 text-xs text-slate-600">{minutes} min</button>)}
+          </div>
+          {formErrors.duration && <p role="alert" className="text-xs text-red-600">{formErrors.duration}</p>}
+        </div>}
+      </div>
 
       {/* INVENTARIO (PRODUCT ONLY) */}
       {type === "PRODUCT" && (
@@ -850,6 +842,10 @@ export function ItemFormContent(props: ItemFormContentProps) {
             />
           </div>
         </div>
+      </div>
+      <ItemCatalogFields value={props.catalog} onChange={props.setCatalog} name={name}
+        price={props.priceValue} type={type} error={props.catalogError} />
+      </div>
       </div>
     </div>
   );

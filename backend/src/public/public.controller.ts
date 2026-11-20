@@ -24,6 +24,7 @@ export class PublicController {
   // ── Ruta pública de consulta de reserva por ID (sin autenticación) ──────
   // IMPORTANTE: debe declararse ANTES de ':slug/...' para evitar colisión de rutas.
   @Get('reservations/:id')
+  @Header('Cache-Control', 'no-store')
   async getReservationById(@Param('id') id: string) {
     const reservation = await this.publicService.findReservationById(id);
     if (!reservation) throw new NotFoundException('Reserva no encontrada');
@@ -31,6 +32,7 @@ export class PublicController {
   }
 
   @Post('reservations/:id/cancel')
+  @Header('Cache-Control', 'no-store')
   async cancelReservation(
     @Param('id') id: string,
     @Body() dto: CancelPublicReservationDto,
@@ -54,6 +56,7 @@ export class PublicController {
   }
 
   @Get(':slug/reservations')
+  @Header('Cache-Control', 'no-store')
   findReservationsByPhone(
     @Param('slug') slug: string,
     @Query('phone') phone: string,
@@ -62,11 +65,13 @@ export class PublicController {
   }
 
   @Get(':slug/items')
+  @Header('Cache-Control', 'no-store')
   listPublicItems(@Param('slug') slug: string, @Query('type') type?: string) {
     return this.publicService.listPublicItems(slug, type);
   }
 
   @Get(':slug/availability')
+  @Header('Cache-Control', 'no-store')
   getAvailability(
     @Param('slug') slug: string,
     @Query('itemId') itemId: string,
@@ -76,6 +81,7 @@ export class PublicController {
   }
 
   @Get(':slug/availability-calendar')
+  @Header('Cache-Control', 'no-store')
   getAvailabilityCalendar(
     @Param('slug') slug: string,
     @Query('itemId') itemId: string,
@@ -85,6 +91,7 @@ export class PublicController {
   }
 
   @Post(':slug/reserve')
+  @Header('Cache-Control', 'no-store')
   createReservation(
     @Param('slug') slug: string,
     @Body() dto: CreatePublicReservationDto,
@@ -93,11 +100,13 @@ export class PublicController {
   }
 
   @Post(':slug/order')
+  @Header('Cache-Control', 'no-store')
   createOrder(@Param('slug') slug: string, @Body() dto: CreatePublicOrderDto) {
     return this.publicService.createOrder(slug, dto);
   }
 
   @Get(':slug/fiscal-settings')
+  @Header('Cache-Control', 'no-store')
   getFiscalSettings(@Param('slug') slug: string) {
     return this.publicService.getFiscalSettings(slug);
   }
@@ -110,6 +119,7 @@ export class PublicController {
   }
 
   @Post(':slug/tax-preview')
+  @Header('Cache-Control', 'no-store')
   calculateTaxPreview(@Param('slug') slug: string, @Body() dto: TaxPreviewDto) {
     return this.publicService.calculateTaxPreview(slug, dto);
   }

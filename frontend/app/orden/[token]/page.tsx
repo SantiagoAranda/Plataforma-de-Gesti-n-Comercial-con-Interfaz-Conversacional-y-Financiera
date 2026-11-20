@@ -10,12 +10,14 @@ import { bookingAttemptKey, bookingErrorMessage, type BookingAttempt } from "@/s
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+import { publicPrice, publicPriceLabel } from "@/src/lib/publicCatalog";
+
 type ItemType = "PRODUCT" | "SERVICE";
 
 type Item = {
   id: string;
   name: string;
-  price: number;
+  price: number | null;
   type: ItemType;
   durationMinutes?: number;
   images?: { id: string; url: string }[];
@@ -37,7 +39,7 @@ export default function PublicStorePage() {
 
     const fetchItems = async () => {
       try {
-        const res = await fetch(`${API_URL}/public/${token}/items`);
+        const res = await fetch(`${API_URL}/public/${token}/items`, { cache: "no-store" });
 
         if (!res.ok) throw new Error();
 
@@ -46,7 +48,7 @@ export default function PublicStorePage() {
         setItems(
           data.data.map((item: any) => ({
             ...item,
-            price: Number(item.price),
+            price: publicPrice(item.price, item.publishWithoutPrice),
           }))
         );
       } catch {
@@ -222,7 +224,7 @@ function ProductCard({
       <div className="p-3 flex flex-col gap-2">
         <div className="text-sm font-semibold">{item.name}</div>
         <div className="text-emerald-600 font-medium text-sm">
-          ${item.price.toFixed(2)}
+          {publicPriceLabel(item.price)}
         </div>
 
         <button

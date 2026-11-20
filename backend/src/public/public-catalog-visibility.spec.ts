@@ -63,6 +63,14 @@ describe('PublicService catalog visibility (F1.1)', () => {
       item: { findFirst: mockFn().mockResolvedValue(null) },
       reservation: { findUnique: mockFn().mockResolvedValue(null) },
     };
+    tx.$queryRaw = mockFn().mockResolvedValue([
+      {
+        id: 'item-priced',
+        status: 'ACTIVE',
+        visibleInCatalog: true,
+        publishWithoutPrice: false,
+      },
+    ]);
     prisma.$transaction = mockFn().mockImplementation((fn: any) => fn(tx));
     const service = new PublicService(
       prisma,
@@ -116,6 +124,41 @@ describe('PublicService catalog visibility (F1.1)', () => {
       }
     }
     expect(JSON.stringify(result)).not.toContain('950000');
+  });
+
+  it('masks option surcharges in public JSON without mutating their internal values', async () => {
+    const options = [
+      {
+        id: 'option-1',
+        groupId: 'group-1',
+        name: 'Roble',
+        targetType: 'NONE',
+        priceDelta: new Prisma.Decimal(4321),
+        selectedByDefault: true,
+        removable: true,
+        sortOrder: 0,
+      },
+    ];
+    const optionGroups = [
+      {
+        id: 'group-1',
+        title: 'Material',
+        isActive: true,
+        quantityMode: 'NO_QUANTITY',
+        options,
+      },
+    ];
+    const { service } = createService({
+      itemFindMany: mockFn().mockResolvedValue([
+        { ...hiddenPriceItem, optionGroups },
+        { ...pricedItem, optionGroups },
+      ]),
+    });
+    const result = await service.listPublicItems('demo');
+    expect(result.data[0].optionGroups[0].options[0].priceDelta).toBeNull();
+    expect(result.data[1].optionGroups[0].options[0].priceDelta).toBe(4321);
+    expect(Number(options[0].priceDelta)).toBe(4321);
+    expect(JSON.stringify(result.data[0])).not.toContain('4321');
   });
 
   it('rejects a direct public order containing a price-on-request line without creating it', async () => {
@@ -172,12 +215,31 @@ describe('PublicService catalog visibility (F1.1)', () => {
   });
 
   it('keeps the public tax preview unchanged for visible priced lines', async () => {
-    const { service, calculateTaxPreview } = createService();
+    const { service, calculateTaxPreview, tx } = createService();
     const dto = { cartItems: [{ itemId: 'item-priced', quantity: 1 }] } as any;
     await expect(service.calculateTaxPreview('demo', dto)).resolves.toEqual({
       subtotal: 1,
     });
-    expect(calculateTaxPreview).toHaveBeenCalledWith(business.id, dto);
+    expect(calculateTaxPreview).toHaveBeenCalledWith(business.id, dto, tx);
+  });
+
+  it('rechecks publication before a tax calculation can read the internal price (F1.2-A race)', async () => {
+    const { service, tx, calculateTaxPreview } = createService();
+    // Initial restriction query saw a visible item; the later locked read sees the committed change.
+    tx.$queryRaw = mockFn().mockResolvedValue([
+      {
+        id: 'item-priced',
+        status: 'ACTIVE',
+        visibleInCatalog: true,
+        publishWithoutPrice: true,
+      },
+    ]);
+    await expect(
+      service.calculateTaxPreview('demo', {
+        cartItems: [{ itemId: 'item-priced', quantity: 1 }],
+      } as any),
+    ).rejects.toMatchObject({ response: { code: 'PRICE_ON_REQUEST' } });
+    expect(calculateTaxPreview).not.toHaveBeenCalled();
   });
 
   const booking = {

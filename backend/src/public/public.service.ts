@@ -316,6 +316,36 @@ export class PublicService {
     return getFactusMunicipalities();
   }
 
+  /** Serialize public pricing with the merchant's ordinary Item UPDATE. */
+  private async assertPublicPricedItems(
+    tx: Prisma.TransactionClient,
+    businessId: string,
+    itemIds: string[],
+  ) {
+    const ids = [...new Set(itemIds)];
+    if (!ids.length) return;
+    const items = await tx.$queryRaw<
+      Array<{
+        id: string;
+        status: string;
+        visibleInCatalog: boolean;
+        publishWithoutPrice: boolean;
+      }>
+    >(Prisma.sql`
+      SELECT id, status, "visibleInCatalog", "publishWithoutPrice"
+      FROM "Item"
+      WHERE "businessId" = ${businessId} AND id IN (${Prisma.join(ids)})
+      ORDER BY id FOR SHARE
+    `);
+    if (
+      items.length !== ids.length ||
+      items.some((item) => item.status !== 'ACTIVE' || !item.visibleInCatalog)
+    ) {
+      throw new BadRequestException('Invalid items');
+    }
+    assertNoHiddenPrices(items);
+  }
+
   async calculateTaxPreview(slug: string, dto: TaxPreviewDto) {
     const business = await this.findActiveBusiness(slug);
     if (!this.taxService) {
@@ -335,7 +365,17 @@ export class PublicService {
       throw new BadRequestException('Invalid items');
     }
     assertNoHiddenPrices(restricted);
-    return this.taxService.calculateTaxPreview(business.id, dto);
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.assertPublicPricedItems(
+          tx,
+          business.id,
+          (dto.cartItems ?? []).map((line) => line.itemId),
+        );
+        return this.taxService.calculateTaxPreview(business.id, dto, tx);
+      },
+      { maxWait: 5000, timeout: 15000 },
+    );
   }
 
   private publicOrderFingerprint(dto: CreatePublicOrderDto) {
@@ -485,6 +525,7 @@ export class PublicService {
   private async mapPublicOptionGroups(
     groups: PublicOptionGroupForCatalog[],
     optionSellabilityById: Map<string, { sellable: boolean }>,
+    hidePrices = false,
   ) {
     return Promise.all(
       groups
@@ -542,7 +583,9 @@ export class PublicService {
                   quantity:
                     option.quantity == null ? null : Number(option.quantity),
                   unitId: option.unitId,
-                  priceDelta: Number(option.priceDelta ?? 0),
+                  priceDelta: hidePrices
+                    ? null
+                    : Number(option.priceDelta ?? 0),
                   selectedByDefault: option.selectedByDefault,
                   removable: option.removable,
                   sortOrder: option.sortOrder,
@@ -637,6 +680,7 @@ export class PublicService {
           select: {
             id: true,
             name: true,
+            phoneWhatsapp: true,
             slug: true,
             logoUrl: true,
             logoObjectKey: true,
@@ -803,6 +847,7 @@ export class PublicService {
             optionGroups: await this.mapPublicOptionGroups(
               item.optionGroups as PublicOptionGroupForCatalog[],
               optionSellabilityById,
+              item.publishWithoutPrice,
             ),
           };
         }),
@@ -1166,10 +1211,9 @@ export class PublicService {
       total: Prisma.Decimal;
     };
     try {
-      const createOrder = async (
-        db: Prisma.TransactionClient | PrismaService,
-      ) =>
-        db.order.create({
+      const createOrder = async (db: Prisma.TransactionClient) => {
+        await this.assertPublicPricedItems(db, business.id, uniqueItemIds);
+        return db.order.create({
           data: {
             businessId: business.id,
             publicRequestId: dto.idempotencyKey,
@@ -1203,6 +1247,7 @@ export class PublicService {
             },
           },
         });
+      };
       order =
         this.taxService && buyerFiscalContext
           ? await this.prisma.$transaction(
@@ -1231,7 +1276,10 @@ export class PublicService {
               },
               { maxWait: 5000, timeout: 15000 },
             )
-          : await createOrder(this.prisma);
+          : await this.prisma.$transaction(createOrder, {
+              maxWait: 5000,
+              timeout: 15000,
+            });
     } catch (error) {
       if (!this.isPublicOrderIdempotencyConflict(error)) throw error;
       const concurrentOrder = await this.prisma.order.findUnique({

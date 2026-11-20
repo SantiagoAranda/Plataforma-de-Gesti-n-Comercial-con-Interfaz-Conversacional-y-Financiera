@@ -1,3 +1,4 @@
+import { publicPriceLabel } from "@/src/lib/publicCatalog";
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
@@ -30,7 +31,7 @@ interface ReservationDetail {
   item: {
     id: string;
     name: string;
-    price: number;
+    price: number | null;
     durationMinutes: number | null;
   };
   business: {
@@ -106,17 +107,6 @@ function formatDate(isoDate: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
-}
-
-function formatPrice(value: number): string {
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  })
-    .format(value)
-    .replace("COP", "$")
-    .replace(/\s+/g, "");
 }
 
 function capitalize(str: string): string {
@@ -291,7 +281,7 @@ export default async function ReservationDetailPage({
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-slate-800">{reservation.item.name}</span>
                   <span className="flex-shrink-0 text-[15px] font-semibold text-slate-950">
-                    {formatPrice(reservation.item.price)}
+                    {publicPriceLabel(reservation.item.price)}
                   </span>
                 </div>
               }

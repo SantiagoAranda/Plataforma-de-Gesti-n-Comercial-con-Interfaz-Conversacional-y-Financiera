@@ -77,6 +77,16 @@ describe('PublicService', () => {
         update: mockFn().mockResolvedValue({}),
       },
     } as any;
+    prisma.$queryRaw = mockFn().mockImplementation(async () =>
+      items.map((item) => ({
+        ...item,
+        visibleInCatalog: true,
+        publishWithoutPrice: false,
+      })),
+    );
+    prisma.$transaction = mockFn().mockImplementation(async (fn: any) =>
+      fn(prisma),
+    );
     const notifyAutomaticSaleCreated = mockFn().mockResolvedValue(undefined);
 
     return {
@@ -110,6 +120,39 @@ describe('PublicService', () => {
       buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentType: 'NIT', buyerDocumentNumber: null,
     });
     expect(company).toMatchObject({ buyerType: 'JURIDICA', buyerName: 'Empresa', buyerDocumentNumber: null });
+  });
+
+  it('rejects an item hidden after initial pricing but before order creation (F1.2-A race)', async () => {
+    const { service, prisma, resolveSelectionsForOrderLine } = createService();
+    let hidden = false;
+    prisma.item.findMany.mockImplementation(async () => [
+      {
+        ...baseItem,
+        visibleInCatalog: true,
+        publishWithoutPrice: hidden,
+      },
+    ]);
+    prisma.$queryRaw.mockImplementation(async () => [
+      {
+        ...baseItem,
+        visibleInCatalog: true,
+        publishWithoutPrice: hidden,
+      },
+    ]);
+    resolveSelectionsForOrderLine.mockImplementation(async () => {
+      // Deterministic interleaving: the merchant's update commits during option resolution.
+      hidden = true;
+      return { optionsTotal: new Prisma.Decimal(0), snapshots: [] };
+    });
+    await expect(
+      service.createOrder('demo', {
+        idempotencyKey: '00000000-0000-4000-8000-000000000099',
+        customerName: 'Customer',
+        customerWhatsapp: '573001112233',
+        items: [{ itemId: 'item-1', quantity: 1 }],
+      }),
+    ).rejects.toMatchObject({ response: { code: 'PRICE_ON_REQUEST' } });
+    expect(prisma.order.create).not.toHaveBeenCalled();
   });
 
   it('persists excluded optional ingredient ids on public order items', async () => {
@@ -851,7 +894,7 @@ describe('PublicService', () => {
         ],
       }),
     };
-    const tx = { order: transactionOrder } as any;
+    const tx = { order: transactionOrder, $queryRaw: prisma.$queryRaw } as any;
     prisma.$transaction = (jest.fn() as any).mockImplementation(
       (callback: (client: unknown) => unknown) => callback(tx),
     );

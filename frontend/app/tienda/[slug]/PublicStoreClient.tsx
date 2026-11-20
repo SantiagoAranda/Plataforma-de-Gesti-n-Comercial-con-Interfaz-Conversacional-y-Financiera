@@ -28,6 +28,7 @@ import { formatPriceInput, generateCreationId } from "@/src/lib/itemHelpers";
 import { Footer, FooterConfig, FooterPhone, FooterSocial, formatFooterPhone } from "@/src/components/layout/Footer";
 import { getItemBadges, getContrastColor } from "@/src/lib/itemBadges";
 import type { BuyerFiscalContext, TaxPreviewResponse } from "@/src/lib/tax/api";
+import { publicPrice, publicPriceLabel, publicLinePrice, consultationUrl } from "@/src/lib/publicCatalog";
 import { normalizePublicTaxPreview } from "@/src/lib/tax/publicPreview";
 import { toggleBuyerFiscalFlag } from "@/src/components/sales/SaleTaxPanel";
 
@@ -128,7 +129,7 @@ type PublicOption = {
   name: string;
   description?: string | null;
   targetType: "NONE" | "INGREDIENT" | "ITEM";
-  priceDelta: number;
+  priceDelta: number | null;
   selectedByDefault: boolean;
   removable: boolean;
   sortOrder: number;
@@ -151,7 +152,8 @@ type PublicOptionGroup = {
 type Item = {
   id: string;
   name: string;
-  price: number;
+  price: number | null;
+  publishWithoutPrice?: boolean;
   type: ItemType;
   inventoryMode?: "NONE" | "SIMPLE" | "RECIPE_BASED" | null;
   description?: string;
@@ -321,8 +323,13 @@ function parsePublicItems(data: any): Item[] {
   const list = Array.isArray(data?.data) ? data.data : [];
   return list.map((item: any) => ({
     ...item,
-    price: Number(item.price || 0),
-    previousPrice:
+    price: publicPrice(item.price, item.publishWithoutPrice),
+    optionGroups: item.optionGroups?.map((group: PublicOptionGroup) => ({
+      ...group, options: group.options.map((option) => ({
+        ...option, priceDelta: publicPrice(option.priceDelta, item.publishWithoutPrice || item.price == null),
+      })),
+    })),
+    previousPrice: item.publishWithoutPrice || item.price == null ? null :
       item.previousPrice != null
         ? Number(item.previousPrice)
         : item.compareAtPrice != null
@@ -343,7 +350,13 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     slug.trim().toLowerCase() === "sactec" &&
     searchParams.get("from") === "login";
 
-  const initialDataRef = useRef<any>(initialData ?? null);
+  const catalogRef = useRef<Item[]>(parsePublicItems(initialData));
+  const [knownItems, setKnownItems] = useState(() => new Map(parsePublicItems(initialData).map((item) => [item.id, item])));
+  const catalogRequestRef = useRef(0);
+  const [catalogChecking, setCatalogChecking] = useState(false);
+  const [catalogError, setCatalogError] = useState(false);
+  const [businessWhatsapp, setBusinessWhatsapp] = useState<string>(initialData?.business?.phoneWhatsapp ?? "");
+  const businessContactRef = useRef({ name: initialData?.business?.name ?? "", phone: initialData?.business?.phoneWhatsapp ?? "" });
   const [items, setItems] = useState<Item[]>(() => parsePublicItems(initialData));
   const [businessName, setBusinessName] = useState<string>(initialData?.business?.name ?? "");
   const [businessSubtitle, setBusinessSubtitle] = useState("");
@@ -380,6 +393,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
   const [hasFiscalConfiguration, setHasFiscalConfiguration] = useState(false);
   const [simpleRegimeSalesEnabled, setSimpleRegimeSalesEnabled] = useState(false);
   const [publicTaxPreview, setPublicTaxPreview] = useState<TaxPreviewResponse | null>(null);
+  const [previewRequestKey, setPreviewRequestKey] = useState<string | null>(null);
   const [publicTaxPreviewStatus, setPublicTaxPreviewStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
 
   const [category, setCategory] = useState<string>("");
@@ -586,66 +600,102 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedProduct]);
 
-  useEffect(() => {
-    if (!slug) {
-      setLoading(false);
-      return;
-    }
-
-    const fetchItems = async () => {
-      try {
-        // Datos precargados por el servidor: solo válidos para la primera carga (category "").
-        let data = initialDataRef.current;
-        initialDataRef.current = null;
-        if (!data || category !== "") {
-          const res = await fetch(
-            `${API_URL}/public/${slug}/items?type=${category}`
-          );
-
-          if (!res.ok) throw new Error("Error loading items");
-
-          data = await res.json();
+  // Always fetch the complete catalog; the PRODUCT/SERVICE selector is only a view.
+  const refreshCatalog = useCallback(async () => {
+    const request = ++catalogRequestRef.current;
+    setCatalogChecking(true);
+    setCatalogError(false);
+    try {
+      const res = await fetch(`${API_URL}/public/${encodeURIComponent(slug)}/items`, { cache: "no-store" });
+      if (!res.ok) throw new Error("No se pudo verificar el catálogo");
+      const data = await res.json();
+      if (request !== catalogRequestRef.current) throw new Error("El catálogo se está actualizando");
+      if (!Array.isArray(data?.data)) throw new Error("Catálogo inválido");
+      if (data.business?.slug && data.business.slug !== slug) {
+        router.replace(`/tienda/${encodeURIComponent(data.business.slug)}${window.location.search}`);
+        throw new Error("Actualizando la dirección de la tienda");
+      }
+      const nextItems = parsePublicItems(data);
+      const nextIds = new Set(nextItems.map((item) => item.id));
+      // Retain names and selections for unavailable cart lines, but discard all their money.
+      setKnownItems((previous) => {
+        const next = new Map(previous);
+        for (const [id, old] of next) {
+          if (!nextIds.has(id)) next.set(id, {
+            ...old, price: null, previousPrice: null,
+            optionGroups: old.optionGroups?.map((group) => ({ ...group,
+              options: group.options.map((option) => ({ ...option, priceDelta: null })),
+            })),
+          });
         }
-
-        // Redirección Canónica
-        if (data?.business?.slug && data.business.slug !== slug) {
-          const params = new URLSearchParams(searchParams.toString());
-          router.replace(`/tienda/${data.business.slug}${params.toString() ? `?${params.toString()}` : ''}`);
-          return;
-        }
-
-        const itemsList = Array.isArray(data?.data) ? data.data : [];
-
-        if (data?.business?.name) {
-          setBusinessName(data.business.name);
-        }
-        setBusinessLogoUrl(data?.business?.logoUrl || null);
-        setFooterSettings(data?.business?.storeFooterSettings ?? null);
-
-        const parsedItems = parsePublicItems(data);
-        setItems(parsedItems);
-
-        const targetItemId = searchParams.get("producto") || searchParams.get("item");
-        if (targetItemId) {
-          const targetItem = parsedItems.find((it: Item) => String(it.id) === String(targetItemId));
-          if (targetItem) {
-            if (targetItem.type === "SERVICE") {
-              setSelectedService(targetItem);
-            } else {
-              setSelectedProduct(targetItem);
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Fetch items error:", error);
-        toast.error("No se pudieron cargar los productos");
-      } finally {
+        for (const item of nextItems) next.set(item.id, item);
+        return JSON.stringify([...previous]) === JSON.stringify([...next]) ? previous : next;
+      });
+      const changed = JSON.stringify(catalogRef.current) !== JSON.stringify(nextItems);
+      catalogRef.current = nextItems;
+      if (changed) {
+        setPublicTaxPreview(null);
+        setPublicTaxPreviewStatus("idle");
+        setItems(nextItems);
+      }
+      const current = (old: Item | null) => old ? nextItems.find((item) => item.id === old.id) ?? null : null;
+      setSelectedProduct(current);
+      setSelectedService(current);
+      setCustomizingProduct(current);
+      setBusinessName(data.business?.name ?? "");
+      setBusinessWhatsapp(data.business?.phoneWhatsapp ?? "");
+      businessContactRef.current = { name: data.business?.name ?? "", phone: data.business?.phoneWhatsapp ?? "" };
+      setBusinessLogoUrl(data.business?.logoUrl || null);
+      setFooterSettings(data.business?.storeFooterSettings ?? null);
+      return { items: nextItems, changed };
+    } catch (error) {
+      if (request === catalogRequestRef.current) setCatalogError(true);
+      throw error;
+    } finally {
+      if (request === catalogRequestRef.current) {
+        setCatalogChecking(false);
         setLoading(false);
       }
-    };
+    }
+  }, [slug, router]);
 
-    fetchItems();
-  }, [slug, category]);
+  useEffect(() => {
+    if (!slug) return;
+    const refresh = () => { void refreshCatalog().catch(() => {}); };
+    const requestState = catalogRequestRef;
+    const initialRefresh = window.setTimeout(refresh, 0);
+    window.addEventListener("focus", refresh);
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      ++requestState.current;
+      window.clearTimeout(initialRefresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [slug, refreshCatalog]);
+
+  useEffect(() => {
+    if (!showCartModal) return;
+    const refresh = () => { void refreshCatalog().catch(() => {}); };
+    refresh();
+    const timer = window.setInterval(refresh, 30000);
+    return () => window.clearInterval(timer);
+  }, [showCartModal, refreshCatalog]);
+
+  const openedDeepLink = useRef<string | null>(null);
+  useEffect(() => {
+    const targetId = searchParams.get("producto") || searchParams.get("item");
+    if (!targetId || openedDeepLink.current === targetId) return;
+    const item = items.find((entry) => entry.id === targetId);
+    if (!item) return;
+    const timer = window.setTimeout(() => {
+      openedDeepLink.current = targetId;
+      if (item.type === "SERVICE") setSelectedService(item);
+      else setSelectedProduct(item);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [items, searchParams]);
 
   const footerConfig = useMemo<FooterConfig>(() => {
     const description =
@@ -862,7 +912,8 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
   const cartItems = useMemo(() => {
     return cart
       .map((line) => {
-        const item = items.find((i) => i.id === line.itemId);
+        const current = items.find((i) => i.id === line.itemId);
+        const item = current ?? knownItems.get(line.itemId);
         if (!item) return null;
         const excludedNames = line.excludedOptionalIngredientIds
           .map(
@@ -872,15 +923,17 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
           )
           .filter(Boolean) as string[];
         const selectedOptions = selectedOptionsForItem(item, line.optionSelections);
-        const optionsTotal = selectedOptions.reduce(
-          (acc, option) => acc + Number(option.priceDelta || 0),
-          0,
+        const invalidSelection = line.optionSelections.some((selection) =>
+          !(item.optionGroups ?? []).some((group) => group.id === selection.groupId &&
+            group.options.some((option) => option.id === selection.optionId &&
+              (selection.action === "REMOVE" || option.hasStock !== false))),
         );
         return {
           ...item,
           cartKey: cartLineKey(line),
           quantity: line.quantity,
-          price: item.price + optionsTotal,
+          unavailable: !current || invalidSelection,
+          price: publicLinePrice(item.price, selectedOptions.map((option) => option.priceDelta)),
           basePrice: item.price,
           optionSelections: line.optionSelections,
           selectedOptionNames: selectedOptions.map((option) => option.name),
@@ -896,25 +949,46 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
       .filter(Boolean) as (Item & {
         quantity: number;
         cartKey: string;
-        basePrice: number;
+        basePrice: number | null;
+        unavailable: boolean;
         optionSelections: OptionSelection[];
         selectedOptionNames: string[];
         selectedOptionSummary: Array<{
           groupTitle: string;
           optionName: string;
-          priceDelta: number;
+          priceDelta: number | null;
         }>;
         excludedOptionalIngredientIds: string[];
         excludedOptionalIngredientNames: string[];
       })[];
-  }, [cart, items]);
+  }, [cart, items, knownItems]);
 
-  const cartTotal = useMemo(() => {
-    return cartItems.reduce(
-      (acc, item) => acc + item.price * item.quantity,
-      0
-    );
-  }, [cartItems]);
+  const hasHiddenPrices = cartItems.some((item) => item.price == null);
+  const hasUnavailableItems = cartItems.some((item) => item.unavailable);
+  const consultationAvailable = consultationUrl(businessWhatsapp, businessName, cartItems) !== null;
+  const handleConsult = async () => {
+    if (preview || isSubmittingOrder || !cartItems.length) return;
+    // Open synchronously to avoid popup blockers, navigate only after fresh validation.
+    const popup = window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
+    setIsSubmittingOrder(true);
+    try {
+      const fresh = await refreshCatalog();
+      if (fresh.changed || hasUnavailableItems) {
+        popup?.close();
+        toast("El catálogo cambió. Revisa tu selección antes de consultar.");
+        return;
+      }
+      const contact = businessContactRef.current;
+      const url = consultationUrl(contact.phone, contact.name, cartItems);
+      if (!url) throw new Error("El negocio no tiene un número de WhatsApp válido");
+      if (popup) popup.location.replace(url);
+      else window.location.assign(url);
+    } catch (error) {
+      popup?.close();
+      toast.error(error instanceof Error ? error.message : "No se pudo preparar la consulta");
+    } finally { setIsSubmittingOrder(false); }
+  };
 
   const cartCount = useMemo(
     () => cart.reduce((acc, line) => acc + line.quantity, 0),
@@ -986,8 +1060,12 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     return () => { cancelled = true; };
   }, [slug]);
 
+  const taxRequestKey = JSON.stringify({ slug, buyerFiscalContext, cartItems });
+  const currentTaxPreview = previewRequestKey === taxRequestKey ? publicTaxPreview : null;
+  const currentTaxPreviewStatus = previewRequestKey === taxRequestKey ? publicTaxPreviewStatus : "loading";
+
   useEffect(() => {
-    if (!hasFiscalConfiguration || cartItems.length === 0) {
+    if (!hasFiscalConfiguration || cartItems.length === 0 || hasHiddenPrices || hasUnavailableItems || catalogError) {
       setPublicTaxPreview(null);
       setPublicTaxPreviewStatus("idle");
       return;
@@ -995,10 +1073,15 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
     // Never display a fiscal total calculated for a previous cart or buyer.
     setPublicTaxPreview(null);
     setPublicTaxPreviewStatus("loading");
+    setPreviewRequestKey(taxRequestKey);
     let cancelled = false;
+    const controller = new AbortController();
+    const catalogSnapshot = JSON.stringify(catalogRef.current);
     const timer = window.setTimeout(async () => {
       try {
         const res = await fetch(`${API_URL}/public/${slug}/tax-preview`, {
+          cache: "no-store",
+          signal: controller.signal,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1013,25 +1096,27 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
         if (!res.ok) throw new Error("Public tax preview failed");
         const preview = normalizePublicTaxPreview(await res.json());
         if (!preview) throw new Error("Invalid public tax preview response");
-        if (!cancelled) {
+        if (!cancelled && catalogSnapshot === JSON.stringify(catalogRef.current)) {
           setPublicTaxPreview(preview);
           setPublicTaxPreviewStatus("ready");
         }
       } catch {
-        if (!cancelled) setPublicTaxPreviewStatus("error");
+        if (!cancelled && catalogSnapshot === JSON.stringify(catalogRef.current)) setPublicTaxPreviewStatus("error");
       }
     }, 350);
     return () => {
       cancelled = true;
+      controller.abort();
       window.clearTimeout(timer);
     };
-  }, [buyerFiscalContext, cartItems, hasFiscalConfiguration, slug]);
+  }, [buyerFiscalContext, cartItems, hasFiscalConfiguration, slug, hasHiddenPrices, hasUnavailableItems, catalogError, taxRequestKey]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
+    const visibleItems = category ? items.filter((item) => item.type === category) : items;
+    if (!q) return visibleItems;
 
-    return items.filter((i) => {
+    return visibleItems.filter((i) => {
       const name = i.name?.toLowerCase() ?? "";
       const desc = i.description?.toLowerCase() ?? "";
       const typeLabel = i.type === "SERVICE" ? "servicio" : "producto";
@@ -1042,7 +1127,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
         typeLabel.includes(q)
       );
     });
-  }, [items, query]);
+  }, [items, query, category]);
 
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -1055,10 +1140,16 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
       toast("Modo administrador: no se pueden realizar pedidos");
       return;
     }
-    if (isSubmittingOrder) return;
+    if (isSubmittingOrder || hasHiddenPrices || hasUnavailableItems || !cartItems.length) return;
+    if (hasFiscalConfiguration && currentTaxPreviewStatus !== "ready") return;
 
     try {
       setIsSubmittingOrder(true);
+      const fresh = await refreshCatalog();
+      if (fresh.changed) {
+        toast("El catálogo cambió. Revisa los precios y tu selección antes de confirmar.");
+        return;
+      }
       const note = documentVal?.trim() ? `CEDULA: ${documentVal.trim()}` : null;
       const checkoutPayload = {
         customerName,
@@ -1097,6 +1188,7 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
       });
 
       if (!res.ok) {
+        await refreshCatalog().catch(() => {});
         const message = await readApiError(res);
         toast.error(message);
         return;
@@ -1328,6 +1420,11 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
             <div className="relative z-10 w-full max-w-md">
               <CartSummary
                 items={cartItems}
+                onConsult={handleConsult}
+                consultationAvailable={consultationAvailable}
+                isCatalogChecking={catalogChecking}
+                catalogError={catalogError}
+                submitting={isSubmittingOrder}
                 onIncreaseQty={increaseQty}
                 onDecreaseQty={decreaseQty}
                 onRemove={removeItem}
@@ -1350,36 +1447,36 @@ export default function PublicStoreClient({ initialData }: { initialData?: any }
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 onConfirm={(doc) => handleConfirmOrder(doc)}
-                onClose={() => setShowCartModal(false)}
+                onClose={() => { if (!isSubmittingOrder) setShowCartModal(false); }}
                 payableTotal={
-                  hasFiscalConfiguration && publicTaxPreviewStatus === "ready"
-                    ? publicTaxPreview?.netReceived
+                  hasFiscalConfiguration && currentTaxPreviewStatus === "ready"
+                    ? currentTaxPreview?.netReceived
                     : undefined
                 }
                 isFiscalTotalPending={
-                  hasFiscalConfiguration && cartItems.length > 0 && publicTaxPreviewStatus === "loading"
+                  hasFiscalConfiguration && cartItems.length > 0 && currentTaxPreviewStatus === "loading"
                 }
                 hasFiscalTotalError={
-                  hasFiscalConfiguration && cartItems.length > 0 && publicTaxPreviewStatus === "error"
+                  hasFiscalConfiguration && cartItems.length > 0 && currentTaxPreviewStatus === "error"
                 }
-                taxPreviewContent={hasFiscalConfiguration ? (
+                taxPreviewContent={hasFiscalConfiguration && !hasHiddenPrices && !hasUnavailableItems && !catalogChecking && !catalogError ? (
                   <section className="rounded-xl border border-slate-200 bg-white px-4 py-3" aria-live="polite">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-700">Resumen del pedido</span>
-                      {publicTaxPreviewStatus === "loading" && (
+                      {currentTaxPreviewStatus === "loading" && (
                         <span className="text-[11px] text-slate-500">Calculando…</span>
                       )}
                     </div>
-                    {publicTaxPreview ? (
+                    {currentTaxPreview ? (
                       <div className="space-y-1 text-xs text-neutral-600">
-                        <div className="flex justify-between"><span>Subtotal</span><span>{formatCop(publicTaxPreview.subtotal)}</span></div>
-                        {publicTaxPreview.vatTotal > 0 && <div className="flex justify-between"><span>IVA</span><span>{formatCop(publicTaxPreview.vatTotal)}</span></div>}
-                        {publicTaxPreview.impoconsumoTotal > 0 && <div className="flex justify-between"><span>Impoconsumo</span><span>{formatCop(publicTaxPreview.impoconsumoTotal)}</span></div>}
-                        {publicTaxPreview.reteFuenteTotal > 0 && <div className="flex justify-between"><span>ReteFuente</span><span>-{formatCop(publicTaxPreview.reteFuenteTotal)}</span></div>}
-                        {publicTaxPreview.reteIvaTotal > 0 && <div className="flex justify-between"><span>ReteIVA</span><span>-{formatCop(publicTaxPreview.reteIvaTotal)}</span></div>}
-                        {publicTaxPreview.reteIcaTotal > 0 && <div className="flex justify-between"><span>ReteICA</span><span>-{formatCop(publicTaxPreview.reteIcaTotal)}</span></div>}
+                        <div className="flex justify-between"><span>Subtotal</span><span>{formatCop(currentTaxPreview.subtotal)}</span></div>
+                        {currentTaxPreview.vatTotal > 0 && <div className="flex justify-between"><span>IVA</span><span>{formatCop(currentTaxPreview.vatTotal)}</span></div>}
+                        {currentTaxPreview.impoconsumoTotal > 0 && <div className="flex justify-between"><span>Impoconsumo</span><span>{formatCop(currentTaxPreview.impoconsumoTotal)}</span></div>}
+                        {currentTaxPreview.reteFuenteTotal > 0 && <div className="flex justify-between"><span>ReteFuente</span><span>-{formatCop(currentTaxPreview.reteFuenteTotal)}</span></div>}
+                        {currentTaxPreview.reteIvaTotal > 0 && <div className="flex justify-between"><span>ReteIVA</span><span>-{formatCop(currentTaxPreview.reteIvaTotal)}</span></div>}
+                        {currentTaxPreview.reteIcaTotal > 0 && <div className="flex justify-between"><span>ReteICA</span><span>-{formatCop(currentTaxPreview.reteIcaTotal)}</span></div>}
                       </div>
-                    ) : publicTaxPreviewStatus === "error" ? (
+                    ) : currentTaxPreviewStatus === "error" ? (
                       <p className="text-xs text-amber-700">No se pudo actualizar el resumen fiscal.</p>
                     ) : (
                       <p className="text-xs text-slate-500">Calculando impuestos…</p>
@@ -1751,9 +1848,7 @@ function ProductOptionsCustomizer({
       ),
     [item.optionGroups, selectedSet],
   );
-  const finalPrice =
-    item.price +
-    selectedOptions.reduce((acc, option) => acc + Number(option.priceDelta || 0), 0);
+  const finalPrice = publicLinePrice(item.price, selectedOptions.map((option) => option.priceDelta));
 
   const validationMessage = useMemo(() => {
     for (const group of item.optionGroups ?? []) {
@@ -1855,7 +1950,7 @@ function ProductOptionsCustomizer({
                             ? "No disponible"
                             : "Sin stock"}
                         </span>
-                      ) : option.priceDelta > 0 ? (
+                      ) : item.price != null && option.priceDelta != null && option.priceDelta > 0 ? (
                         <span className="mt-0.5 block text-[11px] font-semibold text-orange-600">
                           +{formatCop(option.priceDelta)}
                         </span>
@@ -1882,7 +1977,7 @@ function ProductOptionsCustomizer({
           className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-sm font-bold text-white shadow-md transition hover:bg-orange-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ShoppingBag className="h-4 w-4" />
-          Confirmar pedido - {formatCop(finalPrice)}
+          Añadir selección - {publicPriceLabel(finalPrice)}
         </button>
       </div>
     </div>
@@ -2076,7 +2171,7 @@ function ProductCard({
           </div>
         ) : null}
         <div className="mt-1 text-[16px] font-semibold text-black">
-          {formatCop(item.price)}
+          {publicPriceLabel(item.price)}
         </div>
       </div>
     </div>
@@ -2236,9 +2331,9 @@ function ProductDetailOverlay({
                     </div>
                     <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
                       <div className="text-2xl font-bold tracking-tight text-slate-900">
-                        ${formatPrice(item.price)}
+                        {publicPriceLabel(item.price)}
                       </div>
-                      {item.previousPrice != null &&
+                      {item.price != null && item.previousPrice != null &&
                         Number.isFinite(item.previousPrice) &&
                         item.previousPrice > item.price && (
                           <div className="text-base text-slate-400 line-through">
@@ -2605,9 +2700,9 @@ function ReelLikeProductView({
             </div>
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
               <div className="text-2xl font-bold tracking-tight text-slate-900">
-                ${formatPrice(item.price)}
+                {publicPriceLabel(item.price)}
               </div>
-              {item.previousPrice != null &&
+              {item.price != null && item.previousPrice != null &&
                 Number.isFinite(item.previousPrice) &&
                 item.previousPrice > item.price && (
                   <div className="ml-3 text-base text-slate-400 line-through">

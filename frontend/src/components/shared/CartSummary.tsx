@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { publicPriceLabel, publicCartTotal } from "@/src/lib/publicCatalog";
 import { type ReactNode } from "react";
 import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,7 +10,8 @@ interface CartItem {
   id: string;
   cartKey?: string;
   name: string;
-  price: number;
+  price: number | null;
+  unavailable?: boolean;
   quantity: number;
   selectedOptionNames?: string[];
   excludedOptionalIngredientNames?: string[];
@@ -29,6 +31,11 @@ type Props = {
   onPaymentMethodChange: (val: "CASH" | "BANK_TRANSFER") => void;
   onConfirm: (documentVal?: string) => void;
   onClose: () => void;
+  onConsult?: () => void;
+  consultationAvailable?: boolean;
+  isCatalogChecking?: boolean;
+  catalogError?: boolean;
+  submitting?: boolean;
   taxPreviewContent?: ReactNode;
   fiscalContent?: ReactNode;
   /** Total fiscal calculado por el backend; no cambia el subtotal comercial. */
@@ -56,9 +63,17 @@ export default function CartSummary({
   payableTotal,
   isFiscalTotalPending = false,
   hasFiscalTotalError = false,
+  onConsult,
+  consultationAvailable = false,
+  isCatalogChecking = false,
+  catalogError = false,
+  submitting = false,
 }: Props) {
-  const lineSubtotal = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
-  const total = payableTotal ?? lineSubtotal;
+  const lineSubtotal = publicCartTotal(items);
+  const needsConsultation = lineSubtotal === null;
+  const unavailable = items.some((item) => item.unavailable);
+  const blocked = unavailable || isCatalogChecking || catalogError || submitting;
+  const total = needsConsultation ? null : payableTotal ?? lineSubtotal;
 
   const formatPrice = (value: number) => {
     return value.toLocaleString("es-CO", {
@@ -71,6 +86,8 @@ export default function CartSummary({
   const isNameValid = customerName.trim().length >= 3;
   const { isValid: isPhoneValid } = validatePhoneNumber(countryCode, phoneNumber);
   const isFormValid =
+    !blocked &&
+    !needsConsultation &&
     isNameValid &&
     isPhoneValid &&
     items.length > 0 &&
@@ -78,6 +95,7 @@ export default function CartSummary({
     !hasFiscalTotalError;
 
   const handleConfirm = () => {
+    if (needsConsultation || blocked) return;
     if (items.length === 0) {
       toast.error("El carrito está vacío.");
       return;
@@ -108,7 +126,7 @@ export default function CartSummary({
       {/* Close Button */}
       <button
         type="button"
-        onClick={onClose}
+        disabled={submitting} onClick={onClose}
         className="absolute top-4 right-4 p-2 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-50 transition z-10 cursor-pointer"
         aria-label="Cerrar modal"
       >
@@ -120,7 +138,7 @@ export default function CartSummary({
         <ShoppingBag className="h-5 w-5 text-emerald-500" />
         <div>
           <h2 className="text-[17px] font-semibold text-neutral-800 leading-tight">Resumen de Pedido</h2>
-          <p className="text-[11px] text-neutral-400 font-medium mt-0.5">Gestiona tu pago de forma clara</p>
+          <p className="text-[11px] text-neutral-400 font-medium mt-0.5">{needsConsultation ? "Consulta los precios de tu selección" : "Gestiona tu pago de forma clara"}</p>
         </div>
       </div>
 
@@ -138,7 +156,7 @@ export default function CartSummary({
                   {item.name}
                 </span>
                 <span className="block text-sm font-medium text-emerald-600 mt-0.5">
-                  ${formatPrice(item.price)}
+                  {item.unavailable ? "No disponible" : publicPriceLabel(item.price)}
                 </span>
                 {item.selectedOptionNames?.length ? (
                   <span className="mt-1 block text-[11px] font-semibold text-neutral-500">
@@ -156,7 +174,7 @@ export default function CartSummary({
               <div className="flex items-center gap-2 bg-neutral-100 rounded-full px-2.5 py-1 shrink-0">
                 <button
                   type="button"
-                  onClick={() => onDecreaseQty(item.cartKey ?? item.id)}
+                  disabled={submitting} onClick={() => onDecreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Minus size={12} />
@@ -166,7 +184,7 @@ export default function CartSummary({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onIncreaseQty(item.cartKey ?? item.id)}
+                  disabled={submitting} onClick={() => onIncreaseQty(item.cartKey ?? item.id)}
                   className="text-neutral-500 hover:text-neutral-800 font-semibold text-sm w-4 h-4 flex items-center justify-center transition"
                 >
                   <Plus size={12} />
@@ -174,12 +192,12 @@ export default function CartSummary({
               </div>
               <div className="flex shrink-0 gap-1">
                 {onEdit && (
-                  <button type="button" onClick={() => onEdit(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-emerald-600" aria-label="Editar producto">
+                  <button type="button" disabled={submitting} onClick={() => onEdit(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-emerald-600" aria-label="Editar producto">
                     <Pencil size={14} />
                   </button>
                 )}
                 {onRemove && (
-                  <button type="button" onClick={() => onRemove(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-rose-600" aria-label="Eliminar producto">
+                  <button type="button" disabled={submitting} onClick={() => onRemove(item.cartKey ?? item.id)} className="p-1.5 text-neutral-400 hover:text-rose-600" aria-label="Eliminar producto">
                     <Trash2 size={14} />
                   </button>
                 )}
@@ -194,9 +212,9 @@ export default function CartSummary({
           )}
         </div>
 
-        {fiscalContent}
+        {!needsConsultation && fiscalContent}
 
-        <div>
+        {!needsConsultation && <div>
           <span className="sr-only">Medio de pago</span>
           <div className="grid h-11 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
             <button
@@ -222,21 +240,30 @@ export default function CartSummary({
               Transferencia
             </button>
           </div>
-        </div>
+        </div>}
 
-        {taxPreviewContent}
+        {!needsConsultation && !blocked && taxPreviewContent}
 
       </div>
 
       <div className="shrink-0 border-t border-neutral-100 bg-white px-5 pb-5 pt-4 sm:px-6 sm:pb-6">
         <div className="flex items-center justify-between">
-          <span className="text-base font-medium text-neutral-800">Total a pagar</span>
+          <span className="text-base font-medium text-neutral-800">{needsConsultation ? "Total a consultar" : "Total a pagar"}</span>
           <span className="text-2xl font-semibold text-neutral-900">
-            {isFiscalTotalPending ? "Calculando…" : hasFiscalTotalError ? "No disponible" : `$${formatPrice(total)}`}
+            {needsConsultation ? "—" : blocked ? "Por verificar" : isFiscalTotalPending ? "Calculando…" : hasFiscalTotalError ? "No disponible" : `$${formatPrice(total!)}`}
           </span>
         </div>
 
-        <button
+        {unavailable && <p role="status" className="mt-2 text-sm text-amber-700">Hay productos no disponibles. Retíralos para continuar.</p>}
+        {catalogError && <p role="status" className="mt-2 text-sm text-amber-700">No pudimos verificar el catálogo. Vuelve a abrir el carrito para reintentar.</p>}
+        {needsConsultation && !consultationAvailable && <p role="status" className="mt-2 text-sm text-amber-700">El negocio no tiene un número de WhatsApp válido para consultas.</p>}
+        {needsConsultation ? (
+          <button type="button" onClick={() => { if (!blocked && consultationAvailable) onConsult?.(); }}
+            disabled={blocked || !consultationAvailable || !onConsult}
+            className="mt-4 h-12 w-full rounded-xl bg-emerald-600 text-sm font-medium text-white disabled:opacity-50">
+            Consultar por WhatsApp
+          </button>
+        ) : <button
           type="button"
           onClick={handleConfirm}
           disabled={!isFormValid}
@@ -245,7 +272,7 @@ export default function CartSummary({
         >
           <ShoppingBag size={16} />
           Confirmar Pedido
-        </button>
+        </button>}
       </div>
     </div>
   );

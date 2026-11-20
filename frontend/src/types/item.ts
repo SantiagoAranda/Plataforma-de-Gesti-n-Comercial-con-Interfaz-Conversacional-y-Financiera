@@ -152,8 +152,13 @@ export type ItemCatalogAttributes = {
 /** Item as returned by /public/:slug/items: the internal price may be hidden. */
 export type PublicCatalogItem = Omit<
   Item,
-  "price" | "barcode" | "quotationDescription" | "includeInQuotation" | "visibleInCatalog"
-> & { price: number | null };
+  "price" | "barcode" | "quotationDescription" | "includeInQuotation" | "visibleInCatalog" | "optionGroups"
+> & {
+  price: number | null;
+  optionGroups?: Array<Omit<PublicItemOptionGroup, "options"> & {
+    options: Array<Omit<PublicItemOption, "priceDelta"> & { priceDelta: number | null }>;
+  }>;
+};
 
 export type TimeRange = {
   start: string;

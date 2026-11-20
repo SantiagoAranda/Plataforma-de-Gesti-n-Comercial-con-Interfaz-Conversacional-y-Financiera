@@ -1,0 +1,147 @@
+[
+  {
+    "file": "frontend/app/(app)/tienda/page.tsx",
+    "before": {
+      "errors": 4,
+      "warnings": 12,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 8,
+        "react-hooks/set-state-in-effect": 4,
+        "@next/next/no-img-element": 4
+      }
+    },
+    "after": {
+      "errors": 4,
+      "warnings": 12,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 8,
+        "react-hooks/set-state-in-effect": 4,
+        "@next/next/no-img-element": 4
+      }
+    }
+  },
+  {
+    "file": "frontend/app/orden/[token]/page.tsx",
+    "before": {
+      "errors": 2,
+      "warnings": 5,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 4,
+        "@typescript-eslint/no-explicit-any": 2,
+        "@next/next/no-img-element": 1
+      }
+    },
+    "after": {
+      "errors": 2,
+      "warnings": 5,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 4,
+        "@typescript-eslint/no-explicit-any": 2,
+        "@next/next/no-img-element": 1
+      }
+    }
+  },
+  {
+    "file": "frontend/app/reserva/[id]/page.tsx",
+    "before": {
+      "errors": 0,
+      "warnings": 1,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 1
+      }
+    },
+    "after": {
+      "errors": 0,
+      "warnings": 1,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 1
+      }
+    }
+  },
+  {
+    "file": "frontend/app/tienda/[slug]/PublicStoreClient.tsx",
+    "before": {
+      "errors": 11,
+      "warnings": 15,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 9,
+        "@typescript-eslint/no-explicit-any": 5,
+        "react-hooks/set-state-in-effect": 6,
+        "react-hooks/exhaustive-deps": 1,
+        "@next/next/no-img-element": 5
+      }
+    },
+    "after": {
+      "errors": 9,
+      "warnings": 12,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 7,
+        "@typescript-eslint/no-explicit-any": 4,
+        "react-hooks/set-state-in-effect": 5,
+        "@next/next/no-img-element": 5
+      }
+    }
+  },
+  {
+    "file": "frontend/app/tienda/[slug]/page.tsx",
+    "before": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    },
+    "after": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    }
+  },
+  {
+    "file": "frontend/src/components/reservations/AppointmentLookupModal.tsx",
+    "before": {
+      "errors": 0,
+      "warnings": 2,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 2
+      }
+    },
+    "after": {
+      "errors": 0,
+      "warnings": 2,
+      "rules": {
+        "@typescript-eslint/no-unused-vars": 2
+      }
+    }
+  },
+  {
+    "file": "frontend/src/components/shared/CartSummary.tsx",
+    "before": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    },
+    "after": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    }
+  },
+  {
+    "file": "frontend/src/types/item.ts",
+    "before": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    },
+    "after": {
+      "errors": 0,
+      "warnings": 0,
+      "rules": {}
+    }
+  },
+  {
+    "file": "frontend/src/lib/publicCatalog.ts",
+    "errors": 0,
+    "warnings": 0,
+    "messages": []
+  }
+]

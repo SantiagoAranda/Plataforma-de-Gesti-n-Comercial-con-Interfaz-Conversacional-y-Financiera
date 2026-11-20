@@ -1,5 +1,7 @@
 "use client";
 
+import { publicPriceLabel } from "@/src/lib/publicCatalog";
+
 import React, { useState } from "react";
 import Link from "next/link";
 import {
@@ -36,7 +38,7 @@ export type PublicReservationItem = {
   item: {
     id: string;
     name: string;
-    price: number;
+    price: number | null;
     durationMinutes: number | null;
   };
   business: {
@@ -69,20 +71,6 @@ function formatDate(isoDate: string): string {
   } catch {
     return isoDate;
   }
-}
-
-function formatCurrency(value: number): string {
-  const safeValue = Number.isFinite(value) ? value : 0;
-  const hasDecimals = safeValue % 1 !== 0;
-  return new Intl.NumberFormat("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: hasDecimals ? 2 : 0,
-    minimumFractionDigits: hasDecimals ? 2 : 0,
-  })
-    .format(safeValue)
-    .replace("COP", "$")
-    .replace(/\s+/g, "");
 }
 
 function StatusBadge({ status }: { status: "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" }) {
@@ -153,6 +141,7 @@ export default function AppointmentLookupModal({
       const fullPhone = `${countryCode}${cleanNumber}`;
       const res = await fetch(
         `${API_URL}/public/${slug}/reservations?phone=${encodeURIComponent(fullPhone)}`,
+        { cache: "no-store" },
       );
 
       if (!res.ok) {
@@ -344,11 +333,11 @@ export default function AppointmentLookupModal({
                         {res.item?.durationMinutes && ` (${res.item.durationMinutes} min)`}
                       </span>
                     </div>
-                    {res.item?.price != null && (
+                    {res.item != null && (
                       <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 font-medium">
                         <span className="text-slate-500">Valor del servicio:</span>
                         <span className="font-bold text-neutral-900">
-                          {formatCurrency(res.item.price)}
+                          {publicPriceLabel(res.item.price)}
                         </span>
                       </div>
                     )}
