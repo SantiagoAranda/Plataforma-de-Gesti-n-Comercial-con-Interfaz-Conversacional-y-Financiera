@@ -15,7 +15,7 @@ const INVOICED = ["PENDING", "PROCESSING", "SUBMITTED_PENDING_DIAN", "VALIDATED"
 /**
  * Documentos que el menú ofrece según el estado de la venta (prototipo del menú de Ventas):
  * - Pendiente: Cotización.
- * - Cerrada sin factura: ninguno (solo factura electrónica y comprobante).
+ * - Cerrada sin factura: orden de entrega (solo productos); además de factura electrónica y comprobante.
  * - Facturada o validada: documentos relacionados (orden de entrega, solo productos, y cotización).
  * - Cancelada, o factura rechazada o acreditada: ninguno.
  */
@@ -28,7 +28,8 @@ export function saleDocumentKinds(
     if (!INVOICED.includes(fiscalStatus)) return [];
     return sale.type === "PRODUCTO" ? ["delivery", "quotation"] : ["quotation"];
   }
-  return sale.status === "CERRADO" ? [] : ["quotation"];
+  if (sale.status === "CERRADO") return sale.type === "PRODUCTO" ? ["delivery"] : [];
+  return ["quotation"];
 }
 
 export type DocumentBusinessProfile = Pick<BusinessLogoProfile, "name" | "fiscalId" | "phoneWhatsapp">;

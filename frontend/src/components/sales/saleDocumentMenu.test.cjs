@@ -50,8 +50,9 @@ test('saleDocumentKinds: documentos según el estado de la venta (prototipo del 
   assert.deepEqual(saleDocumentKinds(order),['quotation']);
   assert.deepEqual(saleDocumentKinds({...order,type:'SERVICIO'}),['quotation']);
   assert.deepEqual(saleDocumentKinds({...order,status:'PENDIENTE DE CIERRE'}),['quotation']);
-  // Cerrada sin factura: ninguno (solo factura electrónica y comprobante)
-  assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'}),[]);
+  // Cerrada sin factura: orden de entrega solo para productos
+  assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'}),['delivery']);
+  assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO',type:'SERVICIO'}),[]);
   // Facturada o validada: documentos relacionados; la orden de entrega solo para productos
   for (const st of ['PENDING','PROCESSING','SUBMITTED_PENDING_DIAN','VALIDATED']) {
     assert.deepEqual(saleDocumentKinds({...order,status:'CERRADO'},st),['delivery','quotation'],st);
@@ -75,15 +76,18 @@ test('venta pendiente: el menú ofrece la cotización y el botón principal es �
   assert.deepEqual(called[1],['abcdef123456','quotation']);
 });
 
-test('venta cerrada sin factura: «Ver comprobante» y «Comprobante de pago», sin documentos comerciales',()=>{
-  const receipts=[];
-  render(h(SaleCard,{sale:{...order,status:'CERRADO'},onReceipt:s=>receipts.push(s.id),onViewDocument:()=>assert.fail('no debe ofrecer documentos')}));
+test('venta cerrada sin factura: «Ver comprobante», «Comprobante de pago» y «Orden de entrega»',()=>{
+  const receipts=[],docs=[];
+  render(h(SaleCard,{sale:{...order,status:'CERRADO'},onReceipt:s=>receipts.push(s.id),onViewDocument:(s,k)=>docs.push([s.id,k])}));
   assert.ok(screen.getByRole('button',{name:'Ver comprobante'}));
   fireEvent.click(screen.getByRole('button',{name:'Ver comprobante'}));
   fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
-  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Ver detalles','Comprobante de pago']);
+  assert.deepEqual(Array.from(screen.getByRole('dialog').querySelectorAll('button')).map(b=>b.textContent),['Ver detalles','Comprobante de pago','Orden de entrega']);
   fireEvent.click(screen.getByRole('button',{name:'Comprobante de pago'}));
   assert.deepEqual(receipts,['abcdef123456','abcdef123456']);
+  fireEvent.click(screen.getByRole('button',{name:'Opciones de venta'}));
+  fireEvent.click(screen.getByRole('button',{name:'Orden de entrega'}));
+  assert.deepEqual(docs,[['abcdef123456','delivery']]);
 });
 
 test('sin onViewDocument o con venta cancelada el menú y el botón no cambian',()=>{

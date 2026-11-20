@@ -199,7 +199,7 @@ export default function SaleCard({
   };
 
   const documentKinds = saleDocumentKinds(sale, fiscalDocument?.status);
-  // Cerrada sin factura: el prototipo ofrece solo la factura electrónica y el comprobante de pago.
+  // Cerrada sin factura: factura electrónica, comprobante de pago y (productos) orden de entrega.
   const showReceipt = !fiscalDocument && sale.status === "CERRADO" && Boolean(onReceipt);
   const documentActions = (close: () => void) => <>
     {showReceipt && <button type="button" className={cardMenuActionClass} onClick={() => { close(); onReceipt?.(sale); }}><ReceiptText size={16} />Comprobante de pago</button>}
