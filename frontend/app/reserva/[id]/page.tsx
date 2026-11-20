@@ -11,6 +11,7 @@ import {
 import CancelReservationButton from "./CancelReservationButton";
 import ReservationBackButton from "./ReservationBackButton";
 import { canCancelPublicReservation } from "@/src/lib/sales/reservationCancelUi";
+import { cleanText, shareMetadata } from "@/src/lib/publicMetadata";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,17 +74,26 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const reservation = await getReservation(id);
+  // Private link (customer name and phone on the page): never indexed, and previews show only the business.
+  const robots = { index: false, follow: false };
 
   if (!reservation) {
     return {
       title: "Reserva no encontrada",
       description: "No se pudo localizar la información de esta reserva.",
+      robots,
     };
   }
 
+  const name = cleanText(reservation.business.name) || "SACTEC";
   return {
-    title: `Tu Reserva – ${reservation.business.name}`,
-    description: `Detalle de tu turno confirmado en ${reservation.business.name}.`,
+    // No url and no business logo: the public reservation response has no logo, so the SACTEC image is used.
+    ...shareMetadata({
+      title: `Reservas en ${name} | SACTEC`,
+      description: `Consultá los servicios disponibles y gestioná tus reservas en ${name}.`,
+      imageAlt: name,
+    }),
+    robots,
   };
 }
 

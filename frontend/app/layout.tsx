@@ -5,20 +5,37 @@ import SessionBoundary from '../src/components/auth/SessionBoundary';
 import PushForegroundListener from "../src/components/notifications/PushForegroundListener";
 import ToastLimitListener from "../src/components/notifications/ToastLimitListener";
 
+import { SACTEC_DESCRIPTION as DESCRIPTION, SACTEC_SHARE_IMAGE as SHARE_IMAGE } from "../src/lib/publicMetadata";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://sactec.dev"),
   title: {
     default: "SACTEC",
     template: "%s | SACTEC",
   },
-  description: "MVP Gestión Comercial",
+  applicationName: "SACTEC",
+  description: DESCRIPTION,
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Gestión Comercial",
+    title: "SACTEC",
   },
   icons: {
-    apple: "/icons/icon-192x192.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "SACTEC",
+    title: "SACTEC",
+    description: DESCRIPTION,
+    images: [SHARE_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SACTEC",
+    description: DESCRIPTION,
+    images: [SHARE_IMAGE.url],
   },
 };
 
