@@ -414,6 +414,30 @@ export class PushNotificationsService {
     });
   }
 
+  async notifyQuotationRequested(quotation: {
+    businessId: string;
+    quotationId: string;
+    displayNumber: string;
+    customerName?: string | null;
+  }) {
+    const customer = quotation.customerName?.trim();
+
+    await this.sendToBusiness(quotation.businessId, {
+      title: 'Nueva cotización solicitada',
+      body: customer
+        ? `${customer} pidió la cotización ${quotation.displayNumber}`
+        : `Nueva cotización ${quotation.displayNumber}`,
+      icon: '/icons/icon-192x192.png',
+      badge: '/icons/badge-72x72.png',
+      tag: `quotation-${quotation.quotationId}`,
+      data: {
+        type: 'QUOTATION_REQUESTED',
+        quotationId: quotation.quotationId,
+        url: '/venta',
+      },
+    });
+  }
+
   async sendToBusiness(
     businessId: string,
     unstamped: Omit<PushPayload, 'recipientBusinessId'>,

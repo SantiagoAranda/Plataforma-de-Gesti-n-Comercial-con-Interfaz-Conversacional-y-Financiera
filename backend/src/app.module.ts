@@ -13,6 +13,8 @@ import { ItemsModule } from './items/items.module';
 import { SalesModule } from './sales/sales.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { PublicModule } from './public/public.module';
+import { QuotationsModule } from './quotations/quotations.module';
+import { SignedDeliveriesModule } from './signed-deliveries/signed-deliveries.module';
 import { MovementsModule } from './movements/movements.module';
 import { AccountingModule } from './accounting/accounting.module';
 
@@ -41,6 +43,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     SalesModule,
     ReservationsModule,
     PublicModule,
+    QuotationsModule,
+    SignedDeliveriesModule,
     MovementsModule,
     AccountingModule,
     IngredientsModule,

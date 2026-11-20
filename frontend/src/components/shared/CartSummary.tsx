@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { type ReactNode } from "react";
-import { ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
+import { FileText, ShoppingBag, Minus, Plus, Pencil, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { validatePhoneNumber } from "@/src/constants/countryCodes";
 
@@ -35,6 +35,9 @@ type Props = {
   payableTotal?: number;
   isFiscalTotalPending?: boolean;
   hasFiscalTotalError?: boolean;
+  /** Si se pasa, aparece «Solicitar cotización»: no cobra ni descuenta inventario. */
+  onRequestQuotation?: (documentVal?: string) => void;
+  isRequestingQuotation?: boolean;
 };
 
 export default function CartSummary({
@@ -56,6 +59,8 @@ export default function CartSummary({
   payableTotal,
   isFiscalTotalPending = false,
   hasFiscalTotalError = false,
+  onRequestQuotation,
+  isRequestingQuotation = false,
 }: Props) {
   const lineSubtotal = items.reduce((acc, it) => acc + it.price * it.quantity, 0);
   const total = payableTotal ?? lineSubtotal;
@@ -77,30 +82,38 @@ export default function CartSummary({
     !isFiscalTotalPending &&
     !hasFiscalTotalError;
 
-  const handleConfirm = () => {
+  const validate = (checkFiscalTotal = true) => {
     if (items.length === 0) {
       toast.error("El carrito está vacío.");
-      return;
+      return false;
     }
-    if (isFiscalTotalPending) {
+    // La cotización no usa el total fiscal: no debe bloquearse mientras se calcula.
+    if (checkFiscalTotal && isFiscalTotalPending) {
       toast.error("Estamos calculando el total de tu pedido.");
-      return;
+      return false;
     }
-    if (hasFiscalTotalError) {
+    if (checkFiscalTotal && hasFiscalTotalError) {
       toast.error("No fue posible calcular el total de tu pedido. Intenta nuevamente.");
-      return;
+      return false;
     }
     if (customerName.trim().length < 3) {
       toast.error("Por favor, ingresa tu nombre completo (mínimo 3 caracteres).");
-      return;
+      return false;
     }
     const { isValid, error } = validatePhoneNumber(countryCode, phoneNumber);
     if (!isValid) {
       toast.error(error || "El número de teléfono es incorrecto.");
-      return;
+      return false;
     }
+    return true;
+  };
 
-    onConfirm(documentNumber);
+  const handleConfirm = () => {
+    if (validate()) onConfirm(documentNumber);
+  };
+
+  const handleRequestQuotation = () => {
+    if (validate(false)) onRequestQuotation?.(documentNumber);
   };
 
   return (
@@ -246,6 +259,18 @@ export default function CartSummary({
           <ShoppingBag size={16} />
           Confirmar Pedido
         </button>
+
+        {onRequestQuotation && (
+          <button
+            type="button"
+            onClick={handleRequestQuotation}
+            disabled={isRequestingQuotation || items.length === 0}
+            className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 text-sm font-medium text-violet-800 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText size={16} />
+            {isRequestingQuotation ? "Enviando…" : "Solicitar cotización"}
+          </button>
+        )}
       </div>
     </div>
   );

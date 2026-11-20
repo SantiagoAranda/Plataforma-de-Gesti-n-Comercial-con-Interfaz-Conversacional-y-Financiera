@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2 } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, MessageCircle, MoreVertical, AlertTriangle, Eye, X, Pencil, Trash2, FileText, Truck, ReceiptText } from "lucide-react";
+import type { DocumentKind } from "@/src/components/commercial-documents/types";
+import { saleDocumentKinds, DOCUMENT_LABEL } from "@/src/lib/sales/saleDocument";
 import type { Sale } from "@/src/types/sales";
 import type { FiscalDocument } from "@/src/types/fiscal-documents";
 import { useSaleBadge, canUseSaleAction } from "@/src/lib/sales/salePresentation";
@@ -87,6 +89,7 @@ type Props = {
   canGenerateElectronicInvoice?: boolean;
   factusEnabled?: boolean;
   onGenerateElectronicInvoice?: (sale: Sale) => void;
+  onViewDocument?: (sale: Sale, kind: DocumentKind) => void;
 };
 
 function getItemUnitPrice(it: Sale["items"][number]) {
@@ -119,6 +122,7 @@ export default function SaleCard({
   canGenerateElectronicInvoice = false,
   factusEnabled = false,
   onGenerateElectronicInvoice,
+  onViewDocument,
 }: Props) {
   const router = useRouter();
   const [hasPriceDivergence, setHasPriceDivergence] = useState(false);
@@ -190,8 +194,28 @@ export default function SaleCard({
       {onEdit && canUseSaleAction(sale, 'edit') && <button type="button" className={cardMenuActionClass} onClick={() => run(() => onEdit(sale))}><Pencil size={16} />Editar</button>}
       {onDelete && canUseSaleAction(sale, 'delete') && <button type="button" className={`${cardMenuActionClass} text-rose-700`} onClick={() => run(() => onDelete(sale))}><Trash2 size={16} />Eliminar</button>}
       <button type="button" className={cardMenuActionClass} onClick={() => run(handleDetails)}><Eye size={16} />Ver detalles</button>
+      {documentActions(close)}
     </>;
   };
+
+  const documentKinds = saleDocumentKinds(sale, fiscalDocument?.status);
+  // Cerrada sin factura: factura electrónica, comprobante de pago y (productos) orden de entrega.
+  const showReceipt = !fiscalDocument && sale.status === "CERRADO" && Boolean(onReceipt);
+  const documentActions = (close: () => void) => <>
+    {showReceipt && <button type="button" className={cardMenuActionClass} onClick={() => { close(); onReceipt?.(sale); }}><ReceiptText size={16} />Comprobante de pago</button>}
+    {onViewDocument && documentKinds.map((kind) => (
+      <button key={kind} type="button" className={cardMenuActionClass} onClick={() => { close(); onViewDocument(sale, kind); }}>
+        {kind === "quotation" ? <FileText size={16} /> : <Truck size={16} />}{DOCUMENT_LABEL[kind]}
+      </button>
+    ))}
+  </>;
+  const hasDocuments = showReceipt || (Boolean(onViewDocument) && documentKinds.length > 0);
+  // Botón principal según el estado (prototipo del menú de Ventas).
+  const primary = !fiscalDocument && onViewDocument && documentKinds.includes("quotation") && sale.status !== "CONFIRMADO" && sale.status !== "FINALIZADA"
+    ? { label: "Ver cotización", run: () => onViewDocument(sale, "quotation") }
+    : !fiscalDocument && sale.status === "CERRADO"
+      ? { label: "Ver comprobante", run: undefined }
+      : { label: "Ver factura", run: undefined };
 
   return (
     <div
@@ -240,7 +264,7 @@ export default function SaleCard({
             </span>
             {fiscalPresentation && fiscalDocument && onFiscalView && onFiscalDownload && onFiscalDispatch && onFiscalRetry && onFiscalAnnul && onCompleteAnnulment ? (
               <FiscalDocumentMenu
-                leadingActions={operational ? reservationActions : undefined}
+                leadingActions={operational ? reservationActions : hasDocuments ? documentActions : undefined}
                 document={fiscalDocument}
                 canEmit={factusEnabled}
                 creditNote={creditNote}
@@ -261,9 +285,12 @@ export default function SaleCard({
                 {commercialMenuOpen && <div className="absolute right-0 top-8 z-30 w-56 rounded-xl border border-slate-100 bg-white p-1.5 shadow-xl">
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); if (onDetails) onDetails(sale); else router.push(`/ventas/${sale.id}`); }}>Ver detalles</button>
                   <button type="button" className="w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={() => { setCommercialMenuOpen(false); onGenerateElectronicInvoice(sale); }}>Generar factura electrónica</button>
+                  {documentActions(() => setCommercialMenuOpen(false))}
                 </div>}
               </div>
-            ) : <button
+            ) : hasDocuments ? <CardActionsMenu open={commercialMenuOpen} onOpenChange={setCommercialMenuOpen}>
+              {reservationActions(() => setCommercialMenuOpen(false))}
+            </CardActionsMenu> : <button
               type="button"
               aria-label="Ver detalles"
               onClick={(e) => {
@@ -358,6 +385,7 @@ export default function SaleCard({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              if (primary.run) return primary.run();
               if (onReceipt) return onReceipt(sale);
               if (onDetails) return onDetails(sale);
               router.push(`/ventas/${sale.id}`);
@@ -365,7 +393,7 @@ export default function SaleCard({
             className="flex-[1] flex items-center justify-center gap-2 bg-white border border-slate-200 text-[#0B3F64] py-2.5 rounded-full font-bold text-[10px] hover:bg-slate-50 transition-colors uppercase tracking-wider shadow-sm"
           >
             <ExternalLink className="h-3.5 w-3.5 text-[#0B3F64]" />
-            Ver factura
+            {primary.label}
           </button>
         </div>
 

@@ -155,6 +155,7 @@ export default function SalesChatComposer({
   taxSettingsEnabled: propEnabled,
   filterStatus = "ALL",
   onFilterStatusChange,
+  filterCounts,
   electronicInvoicingEnabled = false,
   searchCriterion = "GENERAL",
   onSearchCriterionChange,
@@ -174,6 +175,8 @@ export default function SalesChatComposer({
   taxSettingsEnabled?: boolean;
   filterStatus?: FilterStatus;
   onFilterStatusChange?: (status: FilterStatus) => void;
+  /** Cantidad por chip (ventas del período y cotizaciones vigentes). */
+  filterCounts?: { pending: number; closed: number; cancelled: number; quotations: number };
   electronicInvoicingEnabled?: boolean;
   searchCriterion?: SalesSearchCriterion;
   onSearchCriterionChange?: (criterion: SalesSearchCriterion) => void;
@@ -1324,7 +1327,7 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Pendientes
+                  Pendientes{filterCounts ? ` (${filterCounts.pending})` : ""}
                 </button>
                 <button
                   type="button"
@@ -1337,7 +1340,7 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Cerradas
+                  Cerradas{filterCounts ? ` (${filterCounts.closed})` : ""}
                 </button>
                 <button
                   type="button"
@@ -1350,7 +1353,20 @@ export default function SalesChatComposer({
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}
                 >
-                  Canceladas
+                  Canceladas{filterCounts ? ` (${filterCounts.cancelled})` : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFilterStatusChange(filterStatus === "QUOTATIONS" ? "ALL" : "QUOTATIONS")
+                  }
+                  className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    filterStatus === "QUOTATIONS"
+                      ? "border-violet-700 bg-violet-100 text-violet-800 font-semibold"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  Cotizaciones{filterCounts ? ` (${filterCounts.quotations})` : ""}
                 </button>
                 </>}
                 {electronicInvoicingEnabled && onFiscalFilterActiveChange && (
